@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * Modbus RTU采集器（使用modbus-master-tcp库）
@@ -35,6 +36,7 @@ import java.util.concurrent.*;
 public class ModbusRtuCollector extends AbstractModbusCollector {
 
     private ModbusRtuClient client;
+    private SerialPortClientTransport transport;
     private String serialPort;
     private int baudRate;
     private int dataBits;
@@ -44,9 +46,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     private int timeout;
     private ByteOrder byteOrder = ByteOrder.BIG_ENDIAN;
     private int interFrameDelay = 5; // 帧间延时(ms)
-    private final Map<RegisterType, Map<Integer, DataPoint>> registerCache = new ConcurrentHashMap<>();
     private static final int MAX_WRITE_REGISTERS = 123;
     private static final int MAX_WRITE_COILS = 1968;
+    private static final int MAX_CONNECT_ATTEMPTS = 3;
 
     @Override
     public String getCollectorType() {
@@ -74,7 +76,14 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         timeout = connectionConfig.getReadTimeout();
         slaveId = connectionConfig.getInt("slaveId",1);
 
-        var transport = SerialPortClientTransport.create(cfg -> {
+        if (client != null || transport != null) {
+            log.warn("检测到残留的Modbus RTU连接，先执行断开再重连");
+            doDisconnect();
+        }
+
+        ensureSerialPortAvailable(serialPort);
+
+        transport = SerialPortClientTransport.create(cfg -> {
             cfg.setSerialPort(serialPort);
             cfg.setBaudRate(baudRate);
             cfg.setDataBits(dataBits);
@@ -82,8 +91,28 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             cfg.setStopBits(stopBits);
         });
 
-        client = ModbusRtuClient.create(transport);
-        client.connect();
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt++) {
+            client = ModbusRtuClient.create(transport);
+            try {
+                client.connect();
+                lastError = null;
+                break;
+            } catch (Exception e) {
+                lastError = e;
+                log.warn("Modbus RTU 连接第{}次尝试失败，准备重试", attempt, e);
+                disconnectClientQuietly();
+                if (attempt < MAX_CONNECT_ATTEMPTS) {
+                    long backoff = (long) Math.pow(2, attempt) * 200L;
+                    sleepQuietly(backoff);
+                }
+            }
+        }
+
+        if (lastError != null) {
+            closeTransportQuietly();
+            throw lastError;
+        }
 
         log.info("Modbus RTU 连接成功: {} baud={} dataBits={} stopBits={} parity={}",
                 serialPort, baudRate, dataBits, stopBits, parity.name()
@@ -92,10 +121,8 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     @Override
     protected void doDisconnect() throws Exception {
-        if (client != null) {
-            client.disconnect();
-            client = null;
-        }
+        disconnectClientQuietly();
+        closeTransportQuietly();
         registerCache.clear();
         log.info("Modbus RTU连接已断开");
     }
@@ -124,50 +151,20 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-
-        Map<String, Object> results = new HashMap<>();
-
-        for (ModbusReadPlan plan : readPlans) {
-            try {
-                byte[] raw = executeReadPlan(plan);
-
-                if (plan.getRegisterType() == RegisterType.COIL ||
-                        plan.getRegisterType() == RegisterType.DISCRETE_INPUT) {
-                    List<Boolean> boolValues = ModbusUtils.getCoilValues(raw, plan.getQuantity(), parity);
-                    for (PointOffset po : plan.getPointOffsets()) {
-                        Boolean value = null;
-                        int offset = po.getOffset();
-                        if (offset >= 0 && offset < boolValues.size()) {
-                            value = boolValues.get(offset);
-                        }
-                        results.put(po.getPointId(), value);
-                    }
-                } else {
-                    for (PointOffset po : plan.getPointOffsets()) {
-                        Object value = ModbusUtils.parseValue(
-                                raw,
-                                po.getOffset(),
-                                DataType.valueOf(po.getDataType()),
-                                byteOrder
-                        );
-                        results.put(po.getPointId(), value);
-                    }
-                }
-
-            } catch (Exception e) {
-                log.error("ReadPlan 执行失败: unitId={}, type={}, addr={}",
-                        plan.getUnitId(),
-                        plan.getRegisterType(),
-                        plan.getStartAddress(),
-                        e
-                );
-
-                for (PointOffset po : plan.getPointOffsets()) {
-                    results.put(po.getPointId(), null);
-                }
-            }
+        if (readPlans.isEmpty()) {
+            return Collections.emptyMap();
         }
 
+        Map<String, Object> results = new ConcurrentHashMap<>();
+        Map<Integer, List<ModbusReadPlan>> groupedPlans = readPlans.stream()
+                .collect(Collectors.groupingBy(ModbusReadPlan::getUnitId, LinkedHashMap::new, Collectors.toList()));
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (List<ModbusReadPlan> group : groupedPlans.values()) {
+            futures.add(CompletableFuture.runAsync(() -> group.forEach(plan -> processReadPlan(plan, results))));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         return results;
     }
 
@@ -182,30 +179,30 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return switch (plan.getRegisterType()) {
 
             case COIL -> {
-                var resp = client.readCoilsAsync(plan.getUnitId(),
-                        new ReadCoilsRequest(plan.getStartAddress(),plan.getQuantity())
-                ).toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                CompletionStage<ReadCoilsResponse> future = client.readCoilsAsync(plan.getUnitId(),
+                        new ReadCoilsRequest(plan.getStartAddress(), plan.getQuantity()));
+                ReadCoilsResponse resp = rtuWait(future);
                 yield resp.coils();
             }
 
             case DISCRETE_INPUT -> {
-                var resp = client.readDiscreteInputsAsync(plan.getUnitId(),
-                        new ReadDiscreteInputsRequest(plan.getStartAddress(),plan.getQuantity())
-                ).toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                CompletionStage<ReadDiscreteInputsResponse> future = client.readDiscreteInputsAsync(plan.getUnitId(),
+                        new ReadDiscreteInputsRequest(plan.getStartAddress(), plan.getQuantity()));
+                ReadDiscreteInputsResponse resp = rtuWait(future);
                 yield resp.inputs();
             }
 
             case HOLDING_REGISTER -> {
-                var resp = client.readHoldingRegistersAsync(plan.getUnitId(),
-                        new ReadHoldingRegistersRequest(plan.getStartAddress(),plan.getQuantity())
-                ).toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                CompletionStage<ReadHoldingRegistersResponse> future = client.readHoldingRegistersAsync(plan.getUnitId(),
+                        new ReadHoldingRegistersRequest(plan.getStartAddress(), plan.getQuantity()));
+                ReadHoldingRegistersResponse resp = rtuWait(future);
                 yield resp.registers();
             }
 
             case INPUT_REGISTER -> {
-                var resp = client.readInputRegistersAsync(plan.getUnitId(),
-                        new ReadInputRegistersRequest(plan.getStartAddress(),plan.getQuantity())
-                ).toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
+                CompletionStage<ReadInputRegistersResponse> future = client.readInputRegistersAsync(plan.getUnitId(),
+                        new ReadInputRegistersRequest(plan.getStartAddress(), plan.getQuantity()));
+                ReadInputRegistersResponse resp = rtuWait(future);
                 yield resp.registers();
             }
         };
@@ -268,51 +265,6 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
         return results;
     }
-
-    @Override
-    protected void doSubscribe(List<DataPoint> points) {
-        log.info("Modbus RTU订阅: 数量={}", points.size());
-
-        for (DataPoint point : points) {
-            try {
-                ModbusAddress address = parseModbusAddress(point.getAddress());
-                RegisterType type = address.getRegisterType();
-
-                registerCache.computeIfAbsent(type, k -> new ConcurrentHashMap<>())
-                        .put(address.getAddress(), point);
-            } catch (Exception e) {
-                log.error("订阅点位失败: {}", point.getAddress(), e);
-            }
-        }
-    }
-
-    @Override
-    protected void doUnsubscribe(List<DataPoint> points) {
-        log.info("取消Modbus RTU订阅: 数量={}", points.size());
-
-        if (points.isEmpty()) {
-            registerCache.clear();
-        } else {
-            for (DataPoint point : points) {
-                try {
-                    ModbusAddress address = parseModbusAddress(point.getAddress());
-                    RegisterType type = address.getRegisterType();
-
-                    Map<Integer, DataPoint> typeCache = registerCache.get(type);
-                    if (typeCache != null) {
-                        typeCache.remove(address.getAddress());
-
-                        if (typeCache.isEmpty()) {
-                            registerCache.remove(type);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("取消订阅点位失败: {}", point.getAddress(), e);
-                }
-            }
-        }
-    }
-
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -850,6 +802,104 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             Thread.sleep(interFrameDelay);
         }
         return result;
+    }
+
+
+    private void processReadPlan(ModbusReadPlan plan, Map<String, Object> results) {
+        try {
+            byte[] raw = executeReadPlan(plan);
+
+            if (plan.getRegisterType() == RegisterType.COIL ||
+                    plan.getRegisterType() == RegisterType.DISCRETE_INPUT) {
+                List<Boolean> boolValues = ModbusUtils.getCoilValues(raw, plan.getQuantity(), parity);
+                for (PointOffset po : plan.getPointOffsets()) {
+                    Boolean value = null;
+                    int offset = po.getOffset();
+                    if (offset >= 0 && offset < boolValues.size()) {
+                        value = boolValues.get(offset);
+                    }
+                    results.put(po.getPointId(), value);
+                }
+            } else {
+                for (PointOffset po : plan.getPointOffsets()) {
+                    Object value = ModbusUtils.parseValue(
+                            raw,
+                            po.getOffset(),
+                            DataType.valueOf(po.getDataType()),
+                            byteOrder
+                    );
+                    results.put(po.getPointId(), value);
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("ReadPlan 执行失败: unitId={}, type={}, addr={}",
+                    plan.getUnitId(),
+                    plan.getRegisterType(),
+                    plan.getStartAddress(),
+                    e
+            );
+
+            for (PointOffset po : plan.getPointOffsets()) {
+                results.put(po.getPointId(), null);
+            }
+        }
+    }
+
+    private void ensureSerialPortAvailable(String portName) {
+        SerialPort port = SerialPort.getCommPort(portName);
+        if (port == null) {
+            throw new IllegalArgumentException("串口不可用: " + portName);
+        }
+
+        boolean opened = false;
+        try {
+            opened = port.openPort();
+            if (!opened) {
+                throw new IllegalStateException("串口" + portName + "正被占用或不可打开");
+            }
+        } finally {
+            if (opened && port.isOpen()) {
+                port.closePort();
+            }
+        }
+    }
+
+    private void disconnectClientQuietly() {
+        if (client != null) {
+            try {
+                client.disconnect();
+            } catch (Exception e) {
+                log.warn("关闭Modbus RTU客户端失败", e);
+            } finally {
+                client = null;
+            }
+        }
+    }
+
+    private void closeTransportQuietly() {
+        if (transport != null) {
+            try {
+                transport.disconnect()
+                        .toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                log.warn("串口传输关闭被中断", ie);
+            } catch (Exception e) {
+                log.warn("关闭串口传输失败", e);
+            } finally {
+                transport = null;
+            }
+        }
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
