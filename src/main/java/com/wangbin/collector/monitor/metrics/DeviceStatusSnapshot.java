@@ -18,6 +18,9 @@ public class DeviceStatusSnapshot {
     private final int activeConnections;
 
     @Builder.Default
+    private final int expectedConnections = 0;
+
+    @Builder.Default
     private final int healthyDevices = 0;
 
     @Builder.Default
@@ -25,6 +28,9 @@ public class DeviceStatusSnapshot {
 
     @Builder.Default
     private final int dangerDevices = 0;
+
+    @Builder.Default
+    private final List<String> missingConnections = Collections.emptyList();
 
     @Builder.Default
     private final List<DeviceConnectionSnapshot> connections = Collections.emptyList();

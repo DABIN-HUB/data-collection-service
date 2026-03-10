@@ -15,6 +15,9 @@ public class DeviceConnectionSnapshot {
     private final ConnectionStatus status;
     private final boolean connected;
 
+    @Builder.Default
+    private final boolean expectedOnly = false;
+
     private final long lastActivityTime;
     private final long idleTime;
     private final long bytesSent;

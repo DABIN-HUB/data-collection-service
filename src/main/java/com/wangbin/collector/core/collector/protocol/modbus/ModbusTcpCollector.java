@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Modbus TCP采集器
+ * Modbus TCP采集�?
  */
 @Slf4j
 @Component
@@ -52,9 +52,10 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     @Override
     protected void doConnect() throws Exception {
         log.info("开始建立Modbus TCP连接: {}", deviceInfo.getDeviceId());
+        DeviceConnection desiredConfig = requireConnectionConfig();
         ConnectionAdapter adapter = null;
         try {
-            adapter = connectionManager.createConnection(deviceInfo);
+            adapter = connectionManager.createConnection(deviceInfo, desiredConfig);
             connectionManager.connect(deviceInfo.getDeviceId());
         } catch (Exception e) {
             removeConnectionSilently();
@@ -68,7 +69,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         this.connectionAdapter = modbusAdapter;
 
         DeviceConnection connectionConfig = getCurrentConnectionConfig();
-        assert connectionConfig != null;
+        if (connectionConfig == null) {
+            connectionConfig = desiredConfig;
+        }
         this.timeout = connectionConfig.getReadTimeout() != null
                 ? connectionConfig.getReadTimeout()
                 : connectionConfig.getTimeout();
@@ -87,7 +90,6 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 byteOrder,
                 parity.name());
     }
-
 
     @Override
     protected void doDisconnect() throws Exception {
@@ -111,7 +113,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             case DISCRETE_INPUT -> readDiscreteInput(unitId,modbusAddress);
             case HOLDING_REGISTER -> readHoldingRegister(unitId,modbusAddress, point.getDataType());
             case INPUT_REGISTER -> readInputRegister(unitId,modbusAddress, point.getDataType());
-            default -> throw new IllegalArgumentException("不支持的寄存器类型: " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("不支持的寄存器类�? " + modbusAddress.getRegisterType());
         };
     }
 
@@ -193,7 +195,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> writeCoil(unitId,modbusAddress, (Boolean) value);
             case HOLDING_REGISTER -> writeHoldingRegister(unitId,modbusAddress, value, point.getDataType());
-            default -> throw new IllegalArgumentException("该寄存器类型不支持写入: " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("该寄存器类型不支持写�? " + modbusAddress.getRegisterType());
         };
     }
 
@@ -609,7 +611,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 return response != null;
             });
         } catch (Exception e) {
-            log.error("批量写线圈失败: unitId={}, startAddress={}", unitId, startAddress, e);
+            log.error("批量写线圈失�? unitId={}, startAddress={}", unitId, startAddress, e);
             return false;
         }
     }
@@ -627,7 +629,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 return response != null;
             });
         } catch (Exception e) {
-            log.error("批量写入保持寄存器失败: unitId={}, startAddress={}", unitId, startAddress, e);
+            log.error("批量写入保持寄存器失�? unitId={}, startAddress={}", unitId, startAddress, e);
             return false;
         } finally {
             ReferenceCountUtil.release(request);
@@ -733,7 +735,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         if (value instanceof String str) {
             return Boolean.parseBoolean(str);
         }
-        throw new IllegalArgumentException("无法转换为布尔值:" + value);
+        throw new IllegalArgumentException("无法转换为布尔�?" + value);
     }
 
     private record BatchKey(int unitId, RegisterType registerType) {
@@ -750,3 +752,10 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return connectionAdapter != null && connectionAdapter.isConnected();
     }
 }
+
+
+
+
+
+
+
