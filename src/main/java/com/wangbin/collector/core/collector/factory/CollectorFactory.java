@@ -3,6 +3,17 @@ package com.wangbin.collector.core.collector.factory;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
+import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.http.HttpCollector;
+import com.wangbin.collector.core.collector.protocol.iec.Iec104Collector;
+import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
+import com.wangbin.collector.core.collector.protocol.modbus.ModbusRtuCollector;
+import com.wangbin.collector.core.collector.protocol.modbus.ModbusTcpCollector;
+import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
+import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
+import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
+import com.wangbin.collector.core.collector.protocol.websocket.WebSocketCollector;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
@@ -87,62 +98,28 @@ public class CollectorFactory {
      * 注册所有采集器创建器
      */
     private void registerCollectorCreators() {
-        // Modbus协议
-        registerCollector("MODBUS_TCP", deviceInfo -> instantiateCollector(
-                "MODBUS_TCP",
-                "com.wangbin.collector.core.collector.protocol.modbus.ModbusTcpCollector"));
+        // Modbus 协议
+        registerCollector("MODBUS_TCP", ModbusTcpCollector.class);
+        registerCollector("MODBUS_RTU", ModbusRtuCollector.class);
 
-        registerCollector("MODBUS_RTU", deviceInfo -> instantiateCollector(
-                "MODBUS_RTU",
-                "com.wangbin.collector.core.collector.protocol.modbus.ModbusRtuCollector"));
+        // OPC 协议（仅保留项目内已实现协议）
+        registerCollector("OPC_UA", OpcUaCollector.class);
 
-        // OPC协议
-        registerCollector("OPC_DA", deviceInfo -> instantiateCollector(
-                "OPC_DA",
-                "com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector"));
+        // SNMP/COAP/MQTT 协议
+        registerCollector("SNMP", SnmpCollector.class);
+        registerCollector("COAP", CoapCollector.class);
+        registerCollector("MQTT", MqttCollector.class);
 
-        registerCollector("OPC_UA", deviceInfo -> instantiateCollector(
-                "OPC_UA",
-                "com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector"));
-
-        // SNMP协议
-        registerCollector("SNMP", deviceInfo -> instantiateCollector(
-                "SNMP",
-                "com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector"));
-
-        // COAP协议
-        registerCollector("COAP", deviceInfo -> instantiateCollector(
-                "COAP",
-                "com.wangbin.collector.core.collector.protocol.coap.CoapCollector"));
-
-        // MQTT协议
-        registerCollector("MQTT", deviceInfo -> instantiateCollector(
-                "MQTT",
-                "com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector"));
-
-        // IEC协议
-        registerCollector("IEC104", deviceInfo -> instantiateCollector(
-                "IEC104",
-                "com.wangbin.collector.core.collector.protocol.iec.Iec104Collector"));
-
-        registerCollector("IEC61850", deviceInfo -> instantiateCollector(
-                "IEC61850",
-                "com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector"));
+        // IEC 协议
+        registerCollector("IEC104", Iec104Collector.class);
+        registerCollector("IEC61850", Iec61850Collector.class);
 
         // 自定义协议
-        registerCollector("CUSTOM_TCP", deviceInfo -> instantiateCollector(
-                "CUSTOM_TCP",
-                "com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector"));
+        registerCollector("CUSTOM_TCP", CustomProtocolCollector.class);
 
-        // HTTP协议
-        registerCollector("HTTP", deviceInfo -> instantiateCollector(
-                "HTTP",
-                "com.wangbin.collector.core.collector.protocol.http.HttpCollector"));
-
-        // WebSocket协议
-        registerCollector("WEBSOCKET", deviceInfo -> instantiateCollector(
-                "WEBSOCKET",
-                "com.wangbin.collector.core.collector.protocol.websocket.WebSocketCollector"));
+        // HTTP / WebSocket 协议
+        registerCollector("HTTP", HttpCollector.class);
+        registerCollector("WEBSOCKET", WebSocketCollector.class);
 
         log.info("采集器工厂初始化完成，支持 {} 种协议", collectorCreators.size());
     }
@@ -150,15 +127,18 @@ public class CollectorFactory {
     /**
      * 使用Spring BeanFactory创建采集器实例，确保AOP等BeanPostProcessor生效
      */
-    private ProtocolCollector instantiateCollector(String protocolType, String className) {
+    public void registerCollector(String protocolType, Class<? extends ProtocolCollector> collectorClass) {
+        registerCollector(protocolType, deviceInfo -> instantiateCollector(protocolType, collectorClass));
+    }
+
+    private ProtocolCollector instantiateCollector(String protocolType, Class<? extends ProtocolCollector> collectorClass) {
         try {
-            Class<?> clazz = Class.forName(className);
             if (beanFactory != null) {
-                return (ProtocolCollector) beanFactory.createBean(clazz);
+                return beanFactory.createBean(collectorClass);
             }
-            return (ProtocolCollector) clazz.getDeclaredConstructor().newInstance();
+            return collectorClass.getDeclaredConstructor().newInstance();
         } catch (Exception e) {
-            throw new RuntimeException(String.format("%s采集器加载失败", protocolType), e);
+            throw new RuntimeException(String.format("%s采集器加载失败: %s", protocolType, collectorClass.getName()), e);
         }
     }
 
