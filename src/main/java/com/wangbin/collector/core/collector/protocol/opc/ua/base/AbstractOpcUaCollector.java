@@ -7,6 +7,7 @@ import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
 import com.wangbin.collector.core.collector.protocol.opc.ua.util.OpcUaAddressParser;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.OpcUaConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.MonitoredItemServiceOperationResult;
@@ -35,7 +36,6 @@ import java.util.function.Consumer;
 @Slf4j
 public abstract class AbstractOpcUaCollector extends BaseCollector {
 
-    // 使用统一连接管理
     private ConnectionAdapter<OpcUaClient> connectionAdapter;
     protected OpcUaClient client;
     protected String endpointUrl;
@@ -49,31 +49,40 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
 
     @Override
     protected void doConnect() throws Exception {
-        // 初始化配置
-        initOpcUaConfig(deviceInfo);
-        // 创建并建立连接
-        connectionAdapter = connectionManager.createConnection(deviceInfo);
-        connectionAdapter.connect();
-        
-        // 获取OPC UA客户端（无需类型转换）
-        client = connectionAdapter.getClient();
+        log.info("开始建立 OPC UA 连接: {}", deviceInfo.getDeviceId());
+
+        DeviceConnection connection = requireConnectionConfig();
+        initOpcUaConfig(deviceInfo, connection);
+
+        ConnectionAdapter adapter = null;
+        try {
+            adapter = connectionManager.createConnection(deviceInfo, connection);
+            connectionManager.connect(deviceInfo.getDeviceId());
+        } catch (Exception e) {
+            removeConnectionSilently();
+            throw e;
+        }
+
+        if (!(adapter instanceof OpcUaConnectionAdapter opcUaAdapter)) {
+            removeConnectionSilently();
+            throw new IllegalStateException("OPC UA连接适配器类型不匹配");
+        }
+
+        this.connectionAdapter = opcUaAdapter;
+        this.client = opcUaAdapter.getClient();
+
+        log.info("OPC UA连接建立成功: endpoint={} securityPolicy={}", endpointUrl, securityPolicy);
     }
 
     @Override
     protected void doDisconnect() {
-        if (connectionAdapter != null) {
-            try {
-                connectionAdapter.disconnect();
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            } catch (Exception e) {
-                log.error("断开OPC UA连接失败", e);
-            }
-        }
+        removeConnectionSilently();
+        connectionAdapter = null;
+        client = null;
         subscriptions.clear();
     }
 
-    protected void initOpcUaConfig(DeviceInfo deviceInfo) {
-        DeviceConnection connection = requireConnectionConfig();
+    protected void initOpcUaConfig(DeviceInfo deviceInfo, DeviceConnection connection) {
         endpointUrl = connection.getUrl();
         securityPolicy = connection.getSecurityPolicy();
         username = connection.getUsername();
@@ -124,8 +133,8 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
     }
 
     protected OpcUaMonitoredItem addMonitoredItem(OpcUaSubscription subscription,
-                                                  OpcUaAddress address,
-                                                  Consumer<OpcUaMonitoredItem> configurator) throws Exception {
+                                                   OpcUaAddress address,
+                                                   Consumer<OpcUaMonitoredItem> configurator) throws Exception {
         OpcUaMonitoredItem item = OpcUaMonitoredItem.newDataItem(address.toNodeId(), MonitoringMode.Reporting);
 
         Double publishingInterval = subscription.getPublishingInterval();
@@ -161,5 +170,15 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
                 Unsigned.uint(DeadbandType.Absolute.getValue()),
                 address.getDeadband()
         );
+    }
+
+    private void removeConnectionSilently() {
+        try {
+            if (connectionManager != null && deviceInfo != null) {
+                connectionManager.removeConnection(deviceInfo.getDeviceId());
+            }
+        } catch (Exception e) {
+            log.error("断开OPC UA连接失败: {}", deviceInfo != null ? deviceInfo.getDeviceId() : "unknown", e);
+        }
     }
 }
