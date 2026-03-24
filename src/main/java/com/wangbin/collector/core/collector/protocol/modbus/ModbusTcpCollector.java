@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * Modbus TCP采集�?
+ * Modbus TCP采集器
  */
 @Slf4j
 @Component
@@ -113,7 +113,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             case DISCRETE_INPUT -> readDiscreteInput(unitId,modbusAddress);
             case HOLDING_REGISTER -> readHoldingRegister(unitId,modbusAddress, point.getDataType());
             case INPUT_REGISTER -> readInputRegister(unitId,modbusAddress, point.getDataType());
-            default -> throw new IllegalArgumentException("不支持的寄存器类�? " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("不支持的寄存器类�? " + modbusAddress.getRegisterType());
         };
     }
 
@@ -195,7 +195,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> writeCoil(unitId,modbusAddress, (Boolean) value);
             case HOLDING_REGISTER -> writeHoldingRegister(unitId,modbusAddress, value, point.getDataType());
-            default -> throw new IllegalArgumentException("该寄存器类型不支持写�? " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("该寄存器类型不支持写�? " + modbusAddress.getRegisterType());
         };
     }
 
@@ -611,7 +611,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 return response != null;
             });
         } catch (Exception e) {
-            log.error("批量写线圈失�? unitId={}, startAddress={}", unitId, startAddress, e);
+            log.error("批量写线圈失�? unitId={}, startAddress={}", unitId, startAddress, e);
             return false;
         }
     }
@@ -629,7 +629,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 return response != null;
             });
         } catch (Exception e) {
-            log.error("批量写入保持寄存器失�? unitId={}, startAddress={}", unitId, startAddress, e);
+            log.error("批量写入保持寄存器失�? unitId={}, startAddress={}", unitId, startAddress, e);
             return false;
         } finally {
             ReferenceCountUtil.release(request);

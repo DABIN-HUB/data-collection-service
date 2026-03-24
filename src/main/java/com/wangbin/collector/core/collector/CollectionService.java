@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 采集服务 - 对外提供统一的采集接�?
+ * 采集服务 - 对外提供统一的采集接口
  */
 @Slf4j
 @Service
@@ -46,21 +46,21 @@ public class CollectionService {
     }
 
     /**
-     * 重新加载所有设�?
+     * 重新加载所有设�?
      */
     public void reloadAllDevices() {
         collectionScheduler.reloadAllDevices();
     }
 
     /**
-     * 获取设备状�?
+     * 获取设备状�?
      */
     public Map<String, Object> getDeviceStatus(String deviceId) {
         return collectionScheduler.getDeviceScheduleStatus(deviceId);
     }
 
     /**
-     * 获取所有设备统�?
+     * 获取所有设备统�?
      */
     public Map<String, Map<String, Object>> getAllStatistics() {
         return collectionStatistics.getAllStatistics();
