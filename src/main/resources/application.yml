@@ -7,7 +7,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/data_collection?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: 123456
+    password: wangbin@123
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -17,7 +17,7 @@ spring:
   data:
     redis:
       host: 127.0.0.1
-      port: 6739
+      port: 6379
       database: 0
       timeout: 3000
       password: 123456
@@ -94,7 +94,7 @@ collector:
     flush-interval: 1000
     mqtt:
       enabled: true
-      broker-url: tcp://43.138.73.155:1883
+      broker-url: tcp://127.0.0.1:1883
       client-id: byxuTQjqn6TCDwJ0.collector-1
       username: collector-1&byxuTQjqn6TCDwJ0
       password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab8

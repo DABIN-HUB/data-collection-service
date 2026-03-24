@@ -1,12 +1,17 @@
 package com.wangbin.collector.monitor.metrics;
 
+import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.connection.model.ConnectionMetrics;
+import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -17,12 +22,30 @@ import java.util.stream.Collectors;
 public class DeviceMonitorService {
 
     private final ConnectionManager connectionManager;
+    private final CollectionServiceHealthTracker collectionServiceHealthTracker;
 
     public DeviceStatusSnapshot getDeviceStatus() {
         List<ConnectionAdapter> allConnections = connectionManager.getAllConnections();
-        List<DeviceConnectionSnapshot> snapshots = allConnections.stream()
-                .map(this::buildSnapshot)
-                .collect(Collectors.toList());
+        Map<String, ConnectionAdapter> connectionByDevice = allConnections.stream()
+                .collect(Collectors.toMap(ConnectionAdapter::getDeviceId, adapter -> adapter, (a, b) -> a, LinkedHashMap::new));
+
+        List<DeviceConnectionSnapshot> snapshots = new ArrayList<>();
+        List<String> runningDevices = new ArrayList<>(collectionServiceHealthTracker.getRunningDevicesSnapshot());
+        List<String> missingConnections = new ArrayList<>();
+
+        for (String deviceId : runningDevices) {
+            ConnectionAdapter adapter = connectionByDevice.remove(deviceId);
+            if (adapter != null) {
+                snapshots.add(buildSnapshot(adapter));
+            } else {
+                snapshots.add(buildMissingSnapshot(deviceId));
+                missingConnections.add(deviceId);
+            }
+        }
+
+        for (ConnectionAdapter adapter : connectionByDevice.values()) {
+            snapshots.add(buildSnapshot(adapter));
+        }
 
         int activeConnections = (int) snapshots.stream()
                 .filter(DeviceConnectionSnapshot::isConnected)
@@ -32,8 +55,10 @@ public class DeviceMonitorService {
                 .collect(HealthCounter::new, HealthCounter::accept, HealthCounter::combine);
 
         return DeviceStatusSnapshot.builder()
-                .totalConnections(snapshots.size())
+                .totalConnections(allConnections.size())
                 .activeConnections(activeConnections)
+                .expectedConnections(runningDevices.size())
+                .missingConnections(missingConnections)
                 .healthyDevices(healthCounter.healthy)
                 .warningDevices(healthCounter.warning)
                 .dangerDevices(healthCounter.danger)
@@ -60,6 +85,22 @@ public class DeviceMonitorService {
                 .build();
     }
 
+    private DeviceConnectionSnapshot buildMissingSnapshot(String deviceId) {
+        return DeviceConnectionSnapshot.builder()
+                .deviceId(deviceId)
+                .status(ConnectionStatus.CONNECTING)
+                .connected(false)
+                .expectedOnly(true)
+                .lastActivityTime(0L)
+                .idleTime(0L)
+                .bytesSent(0L)
+                .bytesReceived(0L)
+                .errors(0L)
+                .successRate(0.0)
+                .connectionDuration(0L)
+                .build();
+    }
+
     private static class HealthCounter {
         private int healthy;
         private int warning;
@@ -71,7 +112,7 @@ public class DeviceMonitorService {
                 return;
             }
 
-            if (snapshot.getErrors() > 5 || !snapshot.isConnected()) {
+            if (snapshot.getErrors() > 5 || (!snapshot.isConnected() && !snapshot.isExpectedOnly())) {
                 danger++;
                 return;
             }

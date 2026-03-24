@@ -8,6 +8,7 @@ import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,9 @@ public class CollectionScheduler {
 
     @Autowired
     private CollectorProperties collectorProperties;
+
+    @Autowired
+    private CollectionServiceHealthTracker collectionServiceHealthTracker;
 
     // ================== 优化的线程池配置 ==================
 
@@ -398,6 +402,8 @@ public class CollectionScheduler {
             // 7. 更新状态
             deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, true));
             collectionStatistics.startCollection(deviceId, dataPoints.size());
+
+            collectionServiceHealthTracker.markDeviceStarted(deviceId);
 
             log.info("设备 {} 采集启动成功，点数: {}", deviceId, dataPoints.size());
             return true;
@@ -773,7 +779,8 @@ public class CollectionScheduler {
             deviceScheduleInfo.remove(deviceId);
 
             // 5. 停止统计
-            collectionStatistics.stopCollection(deviceId);
+            collectionStatistics.stopCollection(deviceId);
+            collectionServiceHealthTracker.markDeviceStopped(deviceId);
 
             log.info("设备 {} 采集已停止", deviceId);
             return true;
