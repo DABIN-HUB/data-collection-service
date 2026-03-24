@@ -1,5 +1,10 @@
 package com.wangbin.collector.core.collector.strategy;
 
-public class SubscriptionStrategy {
-    // stub
+/**
+ * @deprecated 历史遗留占位类型，当前采集调度未使用。
+ */
+@Deprecated(forRemoval = false)
+public final class SubscriptionStrategy {
+    private SubscriptionStrategy() {
+    }
 }

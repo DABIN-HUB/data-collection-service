@@ -19,9 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -47,6 +45,12 @@ public class CollectionScheduler {
     @Autowired
     private CollectionServiceHealthTracker collectionServiceHealthTracker;
 
+    @Autowired
+    private DeviceBatchPlanner deviceBatchPlanner;
+
+    @Autowired
+    private CollectedDataProcessor collectedDataProcessor;
+
     // ================== 优化的线程池配置 ==================
 
     // 1. 时间片调度器 - 负责宏观调度
@@ -69,11 +73,9 @@ public class CollectionScheduler {
     // 时间片任务队列：timeSliceIndex -> 设备批次列表
     private final Map<Integer, List<DeviceBatchTask>> timeSliceTasks = new ConcurrentHashMap<>();
 
-    // 采集任务队列：deviceId -> 待执行批次
-    private final Map<String, LinkedBlockingQueue<BatchTask>> deviceTaskQueues = new ConcurrentHashMap<>();
-
-    // 活跃连接池：deviceId -> 连接状态
-    private final Map<String, ConnectionState> connectionStates = new ConcurrentHashMap<>();
+    // 配置更新重启防抖：deviceId -> 待执行重启任务
+    private final Map<String, ScheduledFuture<?>> pendingConfigRestartTasks = new ConcurrentHashMap<>();
+    private static final long CONFIG_RESTART_DEBOUNCE_MS = 1000L;
 
     // 性能统计
     private final PerformanceMonitor performanceMonitor = new PerformanceMonitor();
@@ -180,8 +182,8 @@ public class CollectionScheduler {
         // 清空数据结构
         deviceScheduleInfo.clear();
         timeSliceTasks.clear();
-        deviceTaskQueues.clear();
-        connectionStates.clear();
+        pendingConfigRestartTasks.values().forEach(future -> future.cancel(false));
+        pendingConfigRestartTasks.clear();
 
         log.info("高性能采集调度器销毁完成");
     }
@@ -274,8 +276,7 @@ public class CollectionScheduler {
 
         try {
             // 检查设备连接状态
-            ConnectionState connState = connectionStates.get(deviceId);
-            if (connState == null || !connState.connected()) {
+            if (!collectionManager.isDeviceConnected(deviceId)) {
                 if (!reconnectDevice(deviceId)) {
                     log.warn("设备 {} 连接失败，跳过本批次", deviceId);
                     return;
@@ -308,7 +309,6 @@ public class CollectionScheduler {
 
         } catch (Exception e) {
             log.error("设备 {} 批次采集失败", deviceId, e);
-            connectionStates.put(deviceId, new ConnectionState(false, System.currentTimeMillis()));
         } finally {
             long executionTime = System.currentTimeMillis() - startTime;
 
@@ -316,7 +316,6 @@ public class CollectionScheduler {
             if (success) {
                 collectionStatistics.collectionSuccess(deviceId, executionTime);
                 performanceMonitor.recordBatchSuccess(deviceId, points.size(), executionTime);
-                connectionStates.put(deviceId, new ConnectionState(true, System.currentTimeMillis()));
             } else {
                 collectionStatistics.collectionFailed(deviceId);
                 performanceMonitor.recordBatchFailure(deviceId);
@@ -420,25 +419,17 @@ public class CollectionScheduler {
      * 智能调度设备点位（核心优化算法）
      */
     private void scheduleDevicePoints(String deviceId, List<DataPoint> points) {
-        // 1. 智能批量分组
-        List<List<DataPoint>> batches = smartBatchGrouping(points, deviceId);
-
-        // 2. 计算每个批次的采集间隔
-        // 3. 将批次分配到不同时间片（错峰调度）
-        for (int i = 0; i < batches.size(); i++) {
-            List<DataPoint> batch = batches.get(i);
-
-            // 计算批次应该分配到哪个时间片
-            int timeSliceIndex = calculateOptimalTimeSlice(deviceId, i, batches.size());
-
-            // 创建批次任务
-            DeviceBatchTask batchTask = new DeviceBatchTask(deviceId, batch, timeSliceIndex);
-
-            // 添加到对应时间片
-            timeSliceTasks.get(timeSliceIndex).add(batchTask);
+        List<DeviceBatchTask> batchTasks = deviceBatchPlanner.plan(
+                deviceId,
+                points,
+                TIME_SLICE_COUNT.get(),
+                performanceMonitor);
+        for (DeviceBatchTask batchTask : batchTasks) {
+            List<DeviceBatchTask> tasks = timeSliceTasks.get(batchTask.timeSliceIndex);
+            if (tasks != null) {
+                tasks.add(batchTask);
+            }
         }
-
-        log.debug("设备 {} 点位调度完成，批次数: {}", deviceId, batches.size());
     }
 
     /**
@@ -729,12 +720,10 @@ public class CollectionScheduler {
     private boolean connectDevice(String deviceId) {
         try {
             collectionManager.connectDevice(deviceId);
-            connectionStates.put(deviceId, new ConnectionState(true, System.currentTimeMillis()));
             configManager.getDataPointsAndAdaptiveConfig(deviceId);
             return true;
         } catch (Exception e) {
             log.error("设备 {} 连接失败", deviceId, e);
-            connectionStates.put(deviceId, new ConnectionState(false, System.currentTimeMillis()));
             return false;
         }
     }
@@ -745,11 +734,9 @@ public class CollectionScheduler {
     private boolean reconnectDevice(String deviceId) {
         try {
             collectionManager.reconnectDevice(deviceId);
-            connectionStates.put(deviceId, new ConnectionState(true, System.currentTimeMillis()));
             return true;
         } catch (Exception e) {
             log.error("设备 {} 重连失败", deviceId, e);
-            connectionStates.put(deviceId, new ConnectionState(false, System.currentTimeMillis()));
             return false;
         }
     }
@@ -772,14 +759,11 @@ public class CollectionScheduler {
                 log.warn("断开设备 {} 连接失败", deviceId, e);
             }
 
-            // 3. 清除连接状态
-            connectionStates.remove(deviceId);
-
-            // 4. 更新调度信息
+            // 3. 更新调度信息
             deviceScheduleInfo.remove(deviceId);
 
-            // 5. 停止统计
-            collectionStatistics.stopCollection(deviceId);
+            // 4. 停止统计
+            collectionStatistics.stopCollection(deviceId);
             collectionServiceHealthTracker.markDeviceStopped(deviceId);
 
             log.info("设备 {} 采集已停止", deviceId);
@@ -856,27 +840,7 @@ public class CollectionScheduler {
      */
     private void processCollectedData(String deviceId, List<DataPoint> points,
                                       Map<String, Object> values) {
-        // 这里实现数据存储、报警检查等逻辑
-        for (DataPoint point : points) {
-            String pointId = point.getPointId();
-            Object value = values.get(pointId);
-
-            if (value != null) {
-                // TODO: 数据持久化、报警检查等
-                performanceMonitor.recordDataProcessed(deviceId);
-
-                // 如果设备之前有异常，现在恢复正常，重置自适应配置
-                DevicePerformance perf = performanceMonitor.devicePerformance.get(deviceId);
-                if (perf != null && perf.consecutiveFailureCount > 0) {
-                    AdaptiveCollectionUtil.resetAdaptiveConfig(point);
-                }
-
-                // 自适应采集频率调整
-                if (collectorProperties.getAdaptiveCollection().isEnabled()) {
-                    AdaptiveCollectionUtil.adjustCollectionFrequency(deviceId, point, value, collectorProperties.getAdaptiveCollection().getAdjustWindowMs());
-                }
-            }
-        }
+        collectedDataProcessor.process(deviceId, points, values, performanceMonitor);
     }
 
     /**
@@ -1049,7 +1013,7 @@ public class CollectionScheduler {
 
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
         status.put("isRunning", info != null && info.isRunning());
-        status.put("connectionState", connectionStates.get(deviceId));
+        status.put("connected", collectionManager.isDeviceConnected(deviceId));
         status.put("statistics", collectionStatistics.getDeviceStatistics(deviceId));
         status.put("performance", performanceMonitor.getDevicePerformance(deviceId));
 
@@ -1081,21 +1045,18 @@ public class CollectionScheduler {
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         String deviceId = event.getDeviceId();
         if (deviceId != null && isDeviceRunning(deviceId)) {
-            log.info("设备 {} 配置更新，重新启动采集", deviceId);
-            timeSliceScheduler.schedule(() -> {
+            log.info("设备 {} 配置更新，已触发重启计划", deviceId);
+            ScheduledFuture<?> oldTask = pendingConfigRestartTasks.get(deviceId);
+            if (oldTask != null && !oldTask.isDone()) {
+                oldTask.cancel(false);
+            }
+            ScheduledFuture<?> restartTask = timeSliceScheduler.schedule(() -> {
                 stopDevice(deviceId);
                 startDevice(deviceId);
                 configManager.getDataPointsAndAdaptiveConfig(deviceId);
-            }, 1, TimeUnit.SECONDS);
+                pendingConfigRestartTasks.remove(deviceId);
+            }, CONFIG_RESTART_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+            pendingConfigRestartTasks.put(deviceId, restartTask);
         }
     }
-
-
-    /**
-     * 设备连接状态
-     */
-    record ConnectionState(boolean connected, long lastCheckTime) {
-
-    }
-
 }
