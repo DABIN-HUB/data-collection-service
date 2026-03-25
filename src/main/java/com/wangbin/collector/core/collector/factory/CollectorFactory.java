@@ -11,6 +11,7 @@ import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
 import com.wangbin.collector.core.collector.protocol.modbus.ModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.ModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
+import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
 import com.wangbin.collector.core.collector.protocol.websocket.WebSocketCollector;
@@ -102,7 +103,8 @@ public class CollectorFactory {
         registerCollector("MODBUS_TCP", ModbusTcpCollector.class);
         registerCollector("MODBUS_RTU", ModbusRtuCollector.class);
 
-        // OPC 协议（仅保留项目内已实现协议）
+        // OPC 协议
+        registerCollector("OPC_DA", OpcDaCollector.class);
         registerCollector("OPC_UA", OpcUaCollector.class);
 
         // SNMP/COAP/MQTT 协议
