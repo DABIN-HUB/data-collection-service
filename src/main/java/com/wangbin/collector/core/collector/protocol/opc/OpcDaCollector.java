@@ -4,8 +4,10 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.collector.protocol.opc.da.InMemoryOpcDaBridge;
+import com.wangbin.collector.core.collector.protocol.opc.da.OpcDaBridgeMode;
 import com.wangbin.collector.core.collector.protocol.opc.da.OpcDaBridge;
 import com.wangbin.collector.core.collector.protocol.opc.da.OpcDaConfig;
+import com.wangbin.collector.core.collector.protocol.opc.da.RemoteOpcDaBridge;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -36,7 +38,7 @@ public class OpcDaCollector extends BaseCollector {
     private final Map<String, String> subscribedItems = new ConcurrentHashMap<>();
     private final Map<String, Object> latestValues = new ConcurrentHashMap<>();
 
-    private final OpcDaBridge bridge = new InMemoryOpcDaBridge();
+    private OpcDaBridge bridge = new InMemoryOpcDaBridge();
 
     private String serverProgId;
     private String host;
@@ -46,6 +48,11 @@ public class OpcDaCollector extends BaseCollector {
     private String domain;
     private int requestTimeout = 5000;
     private int updateRate = 1000;
+    private OpcDaBridgeMode bridgeMode = OpcDaBridgeMode.INMEMORY;
+    private String bridgeBaseUrl;
+    private String bridgeToken;
+    private int bridgeRetryCount = 1;
+    private long bridgeRetryBackoffMs = 200L;
 
     @Override
     public String getCollectorType() {
@@ -61,7 +68,21 @@ public class OpcDaCollector extends BaseCollector {
     protected void doConnect() throws Exception {
         DeviceConnection connection = requireConnectionConfig();
         initOpcDaConfig(connection);
-        bridge.connect(new OpcDaConfig(serverProgId, host, endpoint, username, password, domain, requestTimeout, updateRate));
+        bridge.connect(new OpcDaConfig(
+                serverProgId,
+                host,
+                endpoint,
+                username,
+                password,
+                domain,
+                requestTimeout,
+                updateRate,
+                bridgeMode.name(),
+                bridgeBaseUrl,
+                bridgeToken,
+                bridgeRetryCount,
+                bridgeRetryBackoffMs
+        ));
         log.info("OPC DA连接建立成功: device={} serverProgId={} host={}",
                 deviceInfo.getDeviceId(), serverProgId, host);
     }
@@ -179,6 +200,8 @@ public class OpcDaCollector extends BaseCollector {
         status.put("endpoint", endpoint);
         status.put("requestTimeout", requestTimeout);
         status.put("updateRate", updateRate);
+        status.put("bridgeMode", bridgeMode.name());
+        status.put("bridgeBaseUrl", bridgeBaseUrl);
         status.put("cachedPoints", addressCache.size());
         status.put("subscribedItems", subscribedItems.size());
         return status;
@@ -228,6 +251,36 @@ public class OpcDaCollector extends BaseCollector {
         if (updateRate <= 0) {
             updateRate = 1000;
         }
+        bridgeMode = OpcDaBridgeMode.from(firstNonBlank(
+                connection.getString("bridgeMode", null),
+                connection.getString("bridge-mode", null),
+                connection.getString("opcDaBridgeMode", null)
+        ));
+        bridgeBaseUrl = firstNonBlank(
+                connection.getString("bridgeBaseUrl", null),
+                connection.getString("bridge-url", null),
+                connection.getString("opcDaBridgeUrl", null),
+                endpoint
+        );
+        bridgeToken = firstNonBlank(
+                connection.getString("bridgeToken", null),
+                connection.getString("bridge-token", null),
+                connection.getString("opcDaBridgeToken", null)
+        );
+        bridgeRetryCount = connection.getInt("bridgeRetryCount", 1);
+        if (bridgeRetryCount < 0) {
+            bridgeRetryCount = 1;
+        }
+        Long retryBackoff = connection.getLong("bridgeRetryBackoffMs", 200L);
+        bridgeRetryBackoffMs = retryBackoff == null || retryBackoff < 0 ? 200L : retryBackoff;
+        bridge = createBridge(bridgeMode);
+    }
+
+    private OpcDaBridge createBridge(OpcDaBridgeMode mode) {
+        if (mode == OpcDaBridgeMode.HTTP) {
+            return new RemoteOpcDaBridge();
+        }
+        return new InMemoryOpcDaBridge();
     }
 
     private String resolveItemId(DataPoint point) {

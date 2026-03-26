@@ -114,7 +114,7 @@ https://github.com/wangbin777/wangbin-iot-cloud
 | OPC_UA | ✅ 已支持 |
 | MQTT | ✅ 已支持 |
 | IEC104 | ✅ 已支持 |
-| OPC_DA | ⏸ 暂不支持 |
+| OPC_DA | ✅ 已支持（HTTP桥接/内存桥） |
 | SNMP | ⚠️ 未充分验证 |
 | COAP | ⚠️ 未充分验证 |
 | IEC61850 | ⚠️ 未充分验证 |

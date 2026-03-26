@@ -8,6 +8,10 @@ public record OpcDaConfig(
         String password,
         String domain,
         int requestTimeout,
-        int updateRate) {
+        int updateRate,
+        String bridgeMode,
+        String bridgeBaseUrl,
+        String bridgeToken,
+        int bridgeRetryCount,
+        long bridgeRetryBackoffMs) {
 }
-
