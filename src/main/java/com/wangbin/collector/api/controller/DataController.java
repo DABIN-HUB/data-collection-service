@@ -6,6 +6,7 @@ import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.storage.service.HistoryDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -31,6 +32,9 @@ public class DataController {
 
     @Autowired
     private ConfigManager configManager;
+    
+    @Autowired(required = false)
+    private HistoryDataService historyDataService;
 
     /**
      * 查询指定设备的指定数据点的实时值
@@ -258,5 +262,38 @@ public class DataController {
             result.put("message", "重置失败");
         }
         return result;
+    }
+
+    @GetMapping("/history/device/{deviceId}/point/{pointId}")
+    public Map<String, Object> getPointHistory(@PathVariable String deviceId,
+                                               @PathVariable String pointId,
+                                               @RequestParam(required = false) Long startTs,
+                                               @RequestParam(required = false) Long endTs,
+                                               @RequestParam(required = false) Integer limit) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (historyDataService == null || !historyDataService.isEnabled()) {
+                result.put("status", "disabled");
+                result.put("message", "TDengine历史存储未启用");
+                result.put("deviceId", deviceId);
+                result.put("pointId", pointId);
+                return result;
+            }
+            List<Map<String, Object>> rows = historyDataService.queryPointHistory(deviceId, pointId, startTs, endTs, limit);
+            result.put("status", "success");
+            result.put("deviceId", deviceId);
+            result.put("pointId", pointId);
+            result.put("count", rows.size());
+            result.put("data", rows);
+            result.put("startTs", startTs);
+            result.put("endTs", endTs);
+            result.put("timestamp", System.currentTimeMillis());
+            return result;
+        } catch (Exception e) {
+            log.error("查询历史数据失败, deviceId={}, pointId={}", deviceId, pointId, e);
+            result.put("status", "error");
+            result.put("message", "查询失败: " + e.getMessage());
+            return result;
+        }
     }
 }

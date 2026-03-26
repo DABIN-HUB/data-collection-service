@@ -8,6 +8,7 @@ import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.service.CacheReportService;
+import com.wangbin.collector.storage.service.HistoryDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
@@ -37,6 +38,9 @@ public class CollectorDataCacheAspect {
 
     @Autowired
     private TelemetryStreamService telemetryStreamService;
+    
+    @Autowired(required = false)
+    private HistoryDataService historyDataService;
 
     @Pointcut("execution(* com.wangbin.collector.core.collector.protocol.base.ProtocolCollector.readPoint(..))")
     public void readPointPointcut() {
@@ -117,7 +121,11 @@ public class CollectorDataCacheAspect {
             long expireTime = getCacheExpireTime(point);
             multiLevelCacheManager.put(cacheKey, value, expireTime);
 
-            telemetryStreamService.append(deviceId, point, toProcessResult(value));
+            ProcessResult processResult = toProcessResult(value);
+            telemetryStreamService.append(deviceId, point, processResult);
+            if (historyDataService != null) {
+                historyDataService.savePoint(deviceId, point, processResult);
+            }
             cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, value);
         } catch (Exception e) {
             log.error("async cache failed", e);
@@ -140,7 +148,11 @@ public class CollectorDataCacheAspect {
                     long expireTime = getCacheExpireTime(point);
                     multiLevelCacheManager.put(cacheKey, cacheValue, expireTime);
 
-                    telemetryStreamService.append(deviceId, point, toProcessResult(cacheValue));
+                    ProcessResult normalized = toProcessResult(cacheValue);
+                    telemetryStreamService.append(deviceId, point, normalized);
+                    if (historyDataService != null) {
+                        historyDataService.savePoint(deviceId, point, normalized);
+                    }
                     cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, processResult);
                 }
             }

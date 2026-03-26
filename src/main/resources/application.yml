@@ -32,10 +32,10 @@ spring:
   profiles:
     active: dev
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/data_collection?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
+    url: jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector
     username: root
-    password: 123456
+    password: taosdata
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -81,6 +81,17 @@ spring:
         keep-alive: 60s
       thread-name-prefix: async-task-
 
+# 采集tdengine配置
+telemetry:
+  tdengine:
+    enabled: false
+    database: wangbin_collector
+    super-table: wangbin_super
+    sub-table-prefix: d_
+    auto-create: true
+    keep-days: 30
+    query-default-limit: 500
+    query-max-limit: 5000
 
 collector:
   #自适应采集配置
@@ -136,13 +147,13 @@ collector:
     flush-interval: 1000
     mqtt:
       enabled: true
-      broker-url: tcp://43.138.73.165:1883
+      broker-url: tcp://43.138.73.155:1883
       client-id: byxuTQjqn6TCDwJ0.collector-1
-      username: collector-1&byxuTQjqn6TCDwJ03
-      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab81
+      username: collector-1&byxuTQjqn6TCDwJ0
+      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab8
       topic-prefix: iot/device
       ack-topic-prefix: /sys
-      gateway-product-key: byxuTQjqn6TCDwJ03
+      gateway-product-key: byxuTQjqn6TCDwJ0
       gateway-device-name: collector-1
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5
@@ -201,7 +212,7 @@ collector:
     keep-alive-interval: 60
 
 mybatis:
-  mapper-locations: classpath:mapper/*.xml
+  mapper-locations: classpath:mapper/**/*.xml
   type-aliases-package: com.wangbin.collector.common.domain.entity
   configuration:
     map-underscore-to-camel-case: true
