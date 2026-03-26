@@ -5,9 +5,12 @@ import com.beanit.iec61850bean.Fc;
 import com.beanit.iec61850bean.FcModelNode;
 import com.beanit.iec61850bean.ServiceError;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.iec.base.AbstractIec61850Collector;
 import com.wangbin.collector.core.collector.protocol.iec.domain.Iec61850Address;
 import com.wangbin.collector.core.collector.protocol.iec.util.Iec61850AddressParser;
+import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.Iec61850ConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
@@ -16,7 +19,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * IEC61850 采集器实现。
+ * IEC61850 collector.
  */
 @Slf4j
 public class Iec61850Collector extends AbstractIec61850Collector {
@@ -35,13 +38,30 @@ public class Iec61850Collector extends AbstractIec61850Collector {
 
     @Override
     protected void doConnect() throws Exception {
-        connectAssociation();
+        initIec61850Config(deviceInfo);
+        DeviceConnection connectionConfig = requireConnectionConfig();
+        ConnectionAdapter<?> adapter = null;
+        try {
+            adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
+            if (!(adapter instanceof Iec61850ConnectionAdapter iec61850Adapter)) {
+                removeConnectionSilently();
+                throw new IllegalStateException("IEC61850 connection adapter type mismatch");
+            }
+            iec61850Adapter.setClientEventListener(createClientEventListener());
+            connectionManager.connect(deviceInfo.getDeviceId());
+            this.association = iec61850Adapter.getClient();
+            reloadServerModel();
+        } catch (Exception e) {
+            removeConnectionSilently();
+            throw e;
+        }
     }
 
     @Override
     protected void doDisconnect() {
+        removeConnectionSilently();
         closeAssociation();
-        log.info("IEC61850连接已断开: {}:{}", host, port);
+        log.info("IEC61850 connection closed: {}:{}", host, port);
     }
 
     @Override
@@ -58,7 +78,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Object value = doReadPoint(point);
                 results.put(point.getPointId(), value);
             } catch (Exception e) {
-                log.error("IEC61850批量读取失败, point={}", point.getPointName(), e);
+                log.error("IEC61850 batch read failed, point={}", point.getPointName(), e);
                 results.put(point.getPointId(), null);
             }
         }
@@ -68,7 +88,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
-        log.debug("IEC61850写入: point={}, address={}, value={}",
+        log.debug("IEC61850 write: point={}, address={}, value={}",
                 point.getPointName(), address.getObjectReference(), value);
         return writeAttribute(address, value);
     }
@@ -81,7 +101,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 boolean success = doWritePoint(entry.getKey(), entry.getValue());
                 results.put(entry.getKey().getPointId(), success);
             } catch (Exception e) {
-                log.error("IEC61850写入失败, point={}", entry.getKey().getPointName(), e);
+                log.error("IEC61850 write failed, point={}", entry.getKey().getPointName(), e);
                 results.put(entry.getKey().getPointId(), false);
             }
         }
@@ -95,18 +115,18 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
                 subscriptionPoints.put(address.getCacheKey(), point);
             } catch (Exception e) {
-                log.warn("IEC61850订阅解析失败, point={}", point.getPointName(), e);
+                log.warn("IEC61850 subscribe parse failed, point={}", point.getPointName(), e);
             }
             subscribedPointMap.put(point.getPointId(), point);
         }
-        log.info("IEC61850订阅完成, size={}", points.size());
+        log.info("IEC61850 subscribe done, size={}", points.size());
     }
 
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             subscriptionPoints.clear();
-            log.info("IEC61850取消所有订阅");
+            log.info("IEC61850 unsubscribe all");
             return;
         }
         for (DataPoint point : points) {
@@ -114,11 +134,11 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
                 subscriptionPoints.remove(address.getCacheKey());
             } catch (Exception e) {
-                log.warn("IEC61850取消订阅解析失败, point={}", point.getPointName(), e);
+                log.warn("IEC61850 unsubscribe parse failed, point={}", point.getPointName(), e);
             }
             subscribedPointMap.remove(point.getPointId());
         }
-        log.info("IEC61850取消订阅, size={}", points.size());
+        log.info("IEC61850 unsubscribe size={}", points.size());
     }
 
     @Override
@@ -143,7 +163,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
             case "set_timeout":
                 Object timeoutValue = params.get("timeout");
                 if (timeoutValue == null) {
-                    throw new IllegalArgumentException("缺少timeout参数");
+                    throw new IllegalArgumentException("missing timeout param");
                 }
                 int newTimeout = Integer.parseInt(timeoutValue.toString());
                 timeout = newTimeout;
@@ -161,7 +181,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Iec61850Address address = parseCommandAddress(params);
                 Object value = params.get("value");
                 if (value == null) {
-                    throw new IllegalArgumentException("缺少value参数");
+                    throw new IllegalArgumentException("missing value param");
                 }
                 writeAttribute(address, value);
                 return "write success";
@@ -189,7 +209,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
 
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.info("IEC61850加载{}个采集点", points.size());
+        log.info("IEC61850 loaded points size={}", points.size());
     }
 
     private Fc resolveDefaultFc(DataPoint point) {
@@ -216,15 +236,15 @@ public class Iec61850Collector extends AbstractIec61850Collector {
             processed = convertData(point, value);
         } catch (Exception e) {
             processed = value;
-            log.debug("IEC61850上送值转换失败, 使用原值: pointId={}", point.getPointId(), e);
+            log.debug("IEC61850 report value convert failed, use raw value: pointId={}", point.getPointId(), e);
         }
-        log.info("IEC61850上送: pointId={} value={}", point.getPointId(), processed);
+        log.info("IEC61850 report: pointId={} value={}", point.getPointId(), processed);
     }
 
     private Iec61850Address parseCommandAddress(Map<String, Object> params) {
         Object addr = params.get("address");
         if (addr == null) {
-            throw new IllegalArgumentException("缺少address参数");
+            throw new IllegalArgumentException("missing address param");
         }
         String fc = params.get("fc") != null ? params.get("fc").toString() : null;
         return Iec61850AddressParser.parse(addr.toString(), fc, Fc.ST);
@@ -232,12 +252,23 @@ public class Iec61850Collector extends AbstractIec61850Collector {
 
     private FcModelNode resolveFcNode(Iec61850Address address) {
         if (address == null) {
-            throw new IllegalArgumentException("地址解析失败");
+            throw new IllegalArgumentException("address parse failed");
         }
         com.beanit.iec61850bean.ModelNode node = findModelNode(address);
         if (!(node instanceof FcModelNode fcNode)) {
-            throw new IllegalArgumentException("地址不是功能约束节点: " + address);
+            throw new IllegalArgumentException("address is not fc node: " + address);
         }
         return fcNode;
+    }
+
+    private void removeConnectionSilently() {
+        if (connectionManager != null && deviceInfo != null) {
+            try {
+                connectionManager.removeConnection(deviceInfo.getDeviceId());
+            } catch (Exception e) {
+                log.warn("Remove IEC61850 connection failed: {}", deviceInfo.getDeviceId(), e);
+            }
+        }
+        association = null;
     }
 }

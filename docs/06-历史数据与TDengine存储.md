@@ -52,6 +52,10 @@ telemetry:
 - `enabled=false`：只关闭“历史写入/查询能力”，不影响采集主链路。
 - `enabled=true`：开启 TDengine 历史写入与查询。
 
+补充（配置收敛）：
+- 协议采集默认参数已从 `application.yml` 移除 `collector.modbus/opc-ua/iec104/snmp` 本地块。
+- 采集协议参数以远程配置中心下发为主；`collector.mqtt` 采集侧兜底参数当前暂保留。
+
 ## 4. 自动建库建表逻辑
 
 由 `TimeSeriesService` 在写入前按需触发（幂等）：

@@ -1,4 +1,4 @@
-server:
+﻿server:
   port: 9090
   servlet:
     context-path: /collector
@@ -187,41 +187,6 @@ collector:
         event: thing/event/post
         state: thing/state/update
 
-#########################下方为协议采集默认值配置###################################
-  modbus:
-    timeout: 3000
-    retries: 2
-    pool-size: 10
-
-  opc-ua:
-    security-policy: None
-    message-mode: Binary
-    request-timeout: 5000
-    subscription-interval: 1000
-    endpoints:
-      server1: opc.tcp://localhost:4840
-      server2: opc.tcp://192.168.1.200:4840
-
-  iec104:
-    timeout: 5000
-    retries: 3
-    common-address: 1
-    general-interrogation-on-connect: true
-    general-interrogation-interval: 600000
-    single-interrogation-on-read-miss: true
-    single-interrogation-group-field: groupId
-    cache-ttl: 5000
-
-  snmp:
-    community: public
-    timeout: 3000
-    retries: 2
-    version: 2c
-    polling-interval: 5000
-    devices:
-      device1: 192.168.1.100
-      device2: 192.168.1.101
-
   mqtt:
     broker-url: tcp://localhost:1883
     client-id: data-collector
@@ -231,7 +196,6 @@ collector:
     clean-session: true
     connection-timeout: 30
     keep-alive-interval: 60
-#########################下方为协议采集默认值配置结束###################################
 
 
 

@@ -17,7 +17,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 抽象的IEC 104采集器
+ * IEC 104 protocol collector base class.
  */
 @Slf4j
 public abstract class AbstractIce104Collector extends BaseCollector {
@@ -75,7 +75,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         }
     }
 
-    public Connection connect(ConnectionEventListener listener) throws Exception {
+    protected Connection connect(ConnectionEventListener listener) throws Exception {
         try {
             InetAddress address = InetAddress.getByName(host);
             ClientConnectionBuilder builder = new ClientConnectionBuilder(address);
@@ -87,32 +87,39 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                     .build();
             Thread.sleep(200);
             connection.startDataTransfer();
-            log.info("IEC 104连接建立成功: {}:{}", host, port);
+            log.info("IEC104 connection established: {}:{}", host, port);
 
-            maybeTriggerGeneralInterrogation("connect");
-            startGeneralInterrogationLoop();
+            onConnectionReady();
             return connection;
         } catch (Exception e) {
-            log.error("IEC 104连接失败: {}:{}", host, port, e);
-            throw new Exception("IEC 104连接失败: " + e.getMessage(), e);
+            log.error("IEC104 connection failed: {}:{}", host, port, e);
+            throw new Exception("IEC104 connection failed: " + e.getMessage(), e);
         }
     }
 
     @Override
     public void doDisconnect() {
+        closeRawConnection();
+        clearProtocolState();
+    }
+
+    protected void closeRawConnection() {
         if (connection != null) {
             try {
                 if (!connection.isStopped()) {
                     connection.stopDataTransfer();
                 }
                 connection.close();
-                log.info("IEC 104连接已断开");
+                log.info("IEC104 connection closed");
             } catch (Exception e) {
-                log.error("断开IEC 104连接失败", e);
+                log.error("Failed to close IEC104 connection", e);
             } finally {
                 connection = null;
             }
         }
+    }
+
+    protected void clearProtocolState() {
         valueCache.clear();
         pendingInterrogations.values()
                 .forEach(f -> f.completeExceptionally(new IOException("connection closed")));
@@ -212,7 +219,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         if (asdu.getTypeIdentification() == ASduType.C_IC_NA_1 &&
                 asdu.getCauseOfTransmission() == CauseOfTransmission.ACTIVATION_TERMINATION) {
 
-            log.info("IEC104 总召完成");
+            log.info("IEC104 interrogation finished");
         }
     }
 
@@ -313,7 +320,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                     future.complete(null);
                     pendingInterrogations.remove(key);
                 }
-                log.info("IEC104 interrogation qualifier {} finished for CA {}", qualifier, commonAddr);
+                log.info("IEC104 interrogation finished");
                 break;
             default:
                 log.debug("IEC104 interrogation cot={} qualifier={} ca={}", cot, qualifier, commonAddr);
@@ -336,13 +343,18 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         return 20;
     }
 
-    private void maybeTriggerGeneralInterrogation(String reason) {
+    protected void onConnectionReady() {
+        maybeTriggerGeneralInterrogation("connect");
+        startGeneralInterrogationLoop();
+    }
+
+    protected void maybeTriggerGeneralInterrogation(String reason) {
         if (iec104Config != null && iec104Config.isGeneralInterrogationOnConnect()) {
             triggerInterrogation(commonAddress, 20, reason);
         }
     }
 
-    private void startGeneralInterrogationLoop() {
+    protected void startGeneralInterrogationLoop() {
         if (iec104Config == null || interrogationScheduler == null) {
             return;
         }
@@ -403,3 +415,5 @@ public abstract class AbstractIce104Collector extends BaseCollector {
 
     public static record InterrogationKey(int commonAddress, int qualifier) {}
 }
+
+

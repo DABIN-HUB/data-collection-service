@@ -1,9 +1,12 @@
 package com.wangbin.collector.core.collector.protocol.iec;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.iec.base.AbstractIce104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.domain.Iec104Address;
 import com.wangbin.collector.core.collector.protocol.iec.util.Iec104Utils;
+import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.Iec104ConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.*;
 import org.openmuc.j60870.ie.*;
@@ -34,8 +37,29 @@ public class Iec104Collector extends AbstractIce104Collector {
     protected void doConnect() throws Exception {
         log.info("Connecting IEC 104 device: {}", getDeviceId());
         initIec104Config(deviceInfo);
-        ConnectionEventListener listener = createConnectionEventListener();
-        connect(listener);
+        DeviceConnection connectionConfig = requireConnectionConfig();
+        ConnectionAdapter<?> adapter = null;
+        try {
+            adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
+            if (!(adapter instanceof Iec104ConnectionAdapter iec104Adapter)) {
+                removeConnectionSilently();
+                throw new IllegalStateException("IEC104 connection adapter type mismatch");
+            }
+            iec104Adapter.setConnectionEventListener(createConnectionEventListener());
+            connectionManager.connect(deviceInfo.getDeviceId());
+            this.connection = iec104Adapter.getClient();
+            onConnectionReady();
+        } catch (Exception e) {
+            removeConnectionSilently();
+            throw e;
+        }
+    }
+
+    @Override
+    public void doDisconnect() {
+        removeConnectionSilently();
+        clearProtocolState();
+        log.info("IEC104 connection closed");
     }
 
     private ConnectionEventListener createConnectionEventListener() {
@@ -684,5 +708,16 @@ public class Iec104Collector extends AbstractIce104Collector {
 
     private String getDeviceId() {
         return deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
+    }
+
+    private void removeConnectionSilently() {
+        if (connectionManager != null && deviceInfo != null) {
+            try {
+                connectionManager.removeConnection(deviceInfo.getDeviceId());
+            } catch (Exception e) {
+                log.warn("Remove IEC104 connection failed: {}", deviceInfo.getDeviceId(), e);
+            }
+        }
+        connection = null;
     }
 }

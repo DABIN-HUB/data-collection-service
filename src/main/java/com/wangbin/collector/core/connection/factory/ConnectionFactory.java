@@ -30,6 +30,8 @@ public class ConnectionFactory {
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
             case "OPC_UA", "OPCUA" -> createOpcUaConnection(deviceInfo, cfg);
+            case "IEC104", "IEC_104" -> createIec104Connection(deviceInfo, cfg);
+            case "IEC61850", "IEC_61850" -> createIec61850Connection(deviceInfo, cfg);
             default -> throw new CollectorException(
                     String.format("不支持的连接类型: %s", connectionType),
                     deviceInfo.getDeviceId(), null
@@ -132,6 +134,24 @@ public class ConnectionFactory {
         } catch (Exception e) {
             log.error("创建OPC UA连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建OPC UA连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createIec104Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new Iec104ConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("创建IEC104连接失败: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("创建IEC104连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createIec61850Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new Iec61850ConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("创建IEC61850连接失败: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("创建IEC61850连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 }

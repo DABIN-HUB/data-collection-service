@@ -1,0 +1,95 @@
+package com.wangbin.collector.core.connection.adapter;
+
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import org.openmuc.j60870.ClientConnectionBuilder;
+import org.openmuc.j60870.Connection;
+import org.openmuc.j60870.ConnectionEventListener;
+
+import java.net.InetAddress;
+
+/**
+ * IEC104 connection adapter.
+ */
+public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connection> {
+
+    private Connection connection;
+    private ConnectionEventListener connectionEventListener;
+
+    public Iec104ConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
+        super(deviceInfo, config);
+    }
+
+    public void setConnectionEventListener(ConnectionEventListener connectionEventListener) {
+        this.connectionEventListener = connectionEventListener;
+    }
+
+    @Override
+    protected void doConnect() throws Exception {
+        String host = resolveHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("IEC104 host is required");
+        }
+        int port = resolvePort() != null ? resolvePort() : 2404;
+        int timeout = resolveTimeout();
+
+        InetAddress address = InetAddress.getByName(host);
+        ClientConnectionBuilder builder = new ClientConnectionBuilder(address)
+                .setPort(port)
+                .setConnectionTimeout(timeout);
+        if (connectionEventListener != null) {
+            builder.setConnectionEventListener(connectionEventListener);
+        }
+        connection = builder.build();
+        Thread.sleep(200L);
+        connection.startDataTransfer();
+        connectionParams.put("host", host);
+        connectionParams.put("port", port);
+        connectionParams.put("timeout", timeout);
+    }
+
+    @Override
+    protected void doDisconnect() throws Exception {
+        if (connection == null) {
+            return;
+        }
+        try {
+            if (!connection.isStopped()) {
+                connection.stopDataTransfer();
+            }
+        } finally {
+            try {
+                connection.close();
+            } finally {
+                connection = null;
+            }
+        }
+    }
+
+    @Override
+    protected void doHeartbeat() {
+        if (connection == null || connection.isStopped()) {
+            throw new IllegalStateException("IEC104 connection is not active");
+        }
+    }
+
+    @Override
+    protected void doAuthenticate() {
+        // IEC104 has no separate authentication phase in current implementation.
+    }
+
+    @Override
+    public Connection getClient() {
+        return connection;
+    }
+
+    private int resolveTimeout() {
+        if (config.getConnectTimeout() != null && config.getConnectTimeout() > 0) {
+            return config.getConnectTimeout();
+        }
+        if (config.getTimeout() != null && config.getTimeout() > 0) {
+            return config.getTimeout();
+        }
+        return 5000;
+    }
+}
