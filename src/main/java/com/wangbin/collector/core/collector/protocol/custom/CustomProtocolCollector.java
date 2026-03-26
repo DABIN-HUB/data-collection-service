@@ -9,33 +9,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 自定义TCP采集器的占位实现。
- * <p>
- * 该实现主要用于确保工厂创建时不会出现类型转换异常，
- * 实际采集逻辑需要根据协议要求在此类中补充。
- * </p>
+ * 自定义协议采集器占位实现。
+ *
+ * 当前仅用于保证工厂创建和生命周期可用，
+ * 实际协议读写/订阅逻辑需要按现场私有协议补齐。
  */
 @Slf4j
 public class CustomProtocolCollector extends BaseCollector {
 
     @Override
     public String getCollectorType() {
-        return "CUSTOM_PTL";
+        return resolveProtocolType();
     }
 
     @Override
     public String getProtocolType() {
-        return "CUSTOM_PTL";
+        return resolveProtocolType();
     }
 
     @Override
     protected void doConnect() {
-        log.info("Custom TCP collector connected: {}", deviceInfo.getDeviceId());
+        log.info("Custom protocol collector connected, deviceId={}, protocolType={}",
+                deviceInfo.getDeviceId(), resolveProtocolType());
     }
 
     @Override
     protected void doDisconnect() {
-        log.info("Custom TCP collector disconnected: {}", deviceInfo.getDeviceId());
+        log.info("Custom protocol collector disconnected, deviceId={}, protocolType={}",
+                deviceInfo.getDeviceId(), resolveProtocolType());
     }
 
     @Override
@@ -80,13 +81,20 @@ public class CustomProtocolCollector extends BaseCollector {
 
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.debug("Custom TCP collector buildReadPlans noop for device {}", deviceId);
+        log.debug("Custom protocol buildReadPlans noop, deviceId={}, protocolType={}",
+                deviceId, resolveProtocolType());
+    }
+
+    private String resolveProtocolType() {
+        if (deviceInfo != null && deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
+            return deviceInfo.getProtocolType().trim().toUpperCase();
+        }
+        return "CUSTOM_TCP";
     }
 
     private UnsupportedOperationException unsupported(String operation) {
-        String message = String.format("CUSTOM_TCP collector does not implement %s yet", operation);
+        String message = String.format("%s collector does not implement %s yet", resolveProtocolType(), operation);
         log.warn(message);
         return new UnsupportedOperationException(message);
     }
-
 }

@@ -1,3 +1,31 @@
+server:
+  port: 9090
+  servlet:
+    context-path: /collector
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 2048
+  tomcat:
+    max-threads: 200
+    min-spare-threads: 20
+    connection-timeout: 5000
+    accept-count: 100
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 spring:
   application:
     name: data-collection-service
@@ -28,6 +56,17 @@ spring:
           min-idle: 5
           max-wait: -1
         shutdown-timeout: 100ms
+      # 采集实时数据redis缓存
+      stream:
+        enabled: true
+        key: collector:telemetry:stream
+        retention-mode: COUNT  #可选COUNT（最近max-length条数据），TIME（最近max-seconds秒数据）
+        max-length: 200
+        max-seconds: 60
+        approximate-trim: true  #为true 时 使用近似裁剪
+        trim-task-enabled: true #为true时 启用time模式定时裁剪
+        trim-interval-ms: 5000  #裁剪周期
+
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -41,6 +80,7 @@ spring:
         queue-capacity: 1000
         keep-alive: 60s
       thread-name-prefix: async-task-
+
 
 collector:
   #自适应采集配置
@@ -71,6 +111,7 @@ collector:
     tenant-id: 1
     api-token: ""
 
+  # 缓存配置
   cache:
     type: local
     local:
@@ -83,6 +124,7 @@ collector:
       default-expire: 3600
       connection-timeout: 3000
 
+  # 数据上报配置
   report:
     enabled: true
     mode: mqtt
@@ -94,13 +136,13 @@ collector:
     flush-interval: 1000
     mqtt:
       enabled: true
-      broker-url: tcp://43.138.73.155:1883
+      broker-url: tcp://43.138.73.165:1883
       client-id: byxuTQjqn6TCDwJ0.collector-1
-      username: collector-1&byxuTQjqn6TCDwJ0
-      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab8
+      username: collector-1&byxuTQjqn6TCDwJ03
+      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab81
       topic-prefix: iot/device
       ack-topic-prefix: /sys
-      gateway-product-key: byxuTQjqn6TCDwJ0
+      gateway-product-key: byxuTQjqn6TCDwJ03
       gateway-device-name: collector-1
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5
@@ -178,31 +220,4 @@ logging:
     max-size: 10MB
     max-history: 30
 
-server:
-  port: 9090
-  servlet:
-    context-path: /collector
-  shutdown: graceful
-  compression:
-    enabled: true
-    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
-    min-response-size: 2048
-  tomcat:
-    max-threads: 200
-    min-spare-threads: 20
-    connection-timeout: 5000
-    accept-count: 100
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-      base-path: /actuator
-  endpoint:
-    health:
-      show-details: always
-  prometheus:
-    metrics:
-      export:
-        enabled: true
