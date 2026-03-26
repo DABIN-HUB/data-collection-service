@@ -1,5 +1,8 @@
 package com.wangbin.collector.core.collector.protocol.http;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
@@ -7,47 +10,50 @@ import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class HttpCollector extends BaseCollector {
 
     private HttpConnectionAdapter httpConnection;
-    
+
     private final Map<String, DataPoint> pointDefinitions = new ConcurrentHashMap<>();
     private final Map<String, Object> latestValues = new ConcurrentHashMap<>();
-    
+
     @Override
     public String getCollectorType() {
         return "HTTP";
     }
-    
+
     @Override
     public String getProtocolType() {
         return "HTTP";
     }
-    
+
     @Override
     protected void doConnect() throws Exception {
         if (connectionManager == null) {
-            throw new IllegalStateException("连接管理器未初始化");
+            throw new IllegalStateException("Connection manager is not initialized");
         }
-        
+
         DeviceConnection connectionConfig = prepareConnectionConfig();
         ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
         connectionManager.connect(deviceInfo.getDeviceId());
-        
+
         if (!(adapter instanceof HttpConnectionAdapter httpAdapter)) {
-            throw new IllegalStateException("HTTP连接适配器类型不匹配");
+            throw new IllegalStateException("HTTP connection adapter type mismatch");
         }
-        
+
         this.httpConnection = httpAdapter;
     }
-    
+
     @Override
     protected void doDisconnect() throws Exception {
         if (connectionManager != null && deviceInfo != null) {
@@ -57,112 +63,301 @@ public class HttpCollector extends BaseCollector {
         latestValues.clear();
         pointDefinitions.clear();
     }
-    
+
     @Override
     protected Object doReadPoint(DataPoint point) {
-        // HTTP协议通常是拉取模式，所以这里直接执行读取操作
         try {
-            Map<String, Object> result = doReadPoints(List.of(point));
-            return result.get(point.getPointId());
-        } catch (Exception e) {
-            log.error("读取单点数据失败: {}", point.getPointId(), e);
-            return null;
-        }
-    }
-    
-    @Override
-    protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-        Map<String, Object> results = new HashMap<>();
-        
-        try {
-            // 这里可以实现批量读取的逻辑
-            for (DataPoint point : points) {
-                // 模拟读取数据
-                Object value = "HTTP Value: " + point.getPointId();
-                results.put(point.getPointId(), value);
+            Map<String, Object> values = requestRead(List.of(point));
+            Object value = values.get(point.getPointId());
+            if (value != null) {
                 latestValues.put(point.getPointId(), value);
             }
+            return value;
         } catch (Exception e) {
-            log.error("批量读取数据失败", e);
+            log.error("HTTP read point failed, pointId={}", point.getPointId(), e);
+            return latestValues.get(point.getPointId());
         }
-        
-        return results;
     }
-    
+
+    @Override
+    protected Map<String, Object> doReadPoints(List<DataPoint> points) {
+        Map<String, Object> result = new HashMap<>();
+        if (points == null || points.isEmpty()) {
+            return result;
+        }
+
+        try {
+            Map<String, Object> values = requestRead(points);
+            for (DataPoint point : points) {
+                String pointId = point.getPointId();
+                Object value = values.get(pointId);
+                if (value != null) {
+                    latestValues.put(pointId, value);
+                }
+                result.put(pointId, value != null ? value : latestValues.get(pointId));
+            }
+            return result;
+        } catch (Exception e) {
+            log.error("HTTP batch read failed, size={}", points.size(), e);
+            for (DataPoint point : points) {
+                result.put(point.getPointId(), latestValues.get(point.getPointId()));
+            }
+            return result;
+        }
+    }
+
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) {
         try {
-            // 实现写入单点数据的逻辑
-            log.info("向HTTP设备写入数据: {} = {}", point.getPointId(), value);
-            return true;
+            JSONObject payload = new JSONObject(new LinkedHashMap<>());
+            payload.put("action", "write");
+            payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            payload.put("pointId", point.getPointId());
+            payload.put("pointCode", point.getPointCode());
+            payload.put("address", point.getAddress());
+            payload.put("value", value);
+            payload.put("timestamp", System.currentTimeMillis());
+
+            httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+
+            byte[] response = tryReceiveResponse();
+            boolean success = parseWriteAck(response);
+            if (success) {
+                latestValues.put(point.getPointId(), value);
+            }
+            return success;
         } catch (Exception e) {
-            log.error("写入单点数据失败: {}", point.getPointId(), e);
+            log.error("HTTP write point failed, pointId={}", point.getPointId(), e);
             return false;
         }
     }
-    
+
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new HashMap<>();
-        
-        try {
-            for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
-                DataPoint point = entry.getKey();
-                Object value = entry.getValue();
-                boolean success = doWritePoint(point, value);
-                results.put(point.getPointId(), success);
-            }
-        } catch (Exception e) {
-            log.error("批量写入数据失败", e);
+        if (points == null || points.isEmpty()) {
+            return results;
         }
-        
+
+        for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+            boolean ok = doWritePoint(entry.getKey(), entry.getValue());
+            results.put(entry.getKey().getPointId(), ok);
+        }
         return results;
     }
-    
+
     @Override
     protected void doSubscribe(List<DataPoint> points) {
-        // HTTP协议通常不支持订阅模式，这里做记录
+        if (points == null || points.isEmpty()) {
+            return;
+        }
         for (DataPoint point : points) {
             pointDefinitions.put(point.getPointId(), point);
         }
+        log.debug("HTTP subscribe register only, count={}", points.size());
     }
-    
+
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            pointDefinitions.clear();
+            return;
+        }
         for (DataPoint point : points) {
             pointDefinitions.remove(point.getPointId());
         }
     }
-    
+
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("isConnected", isConnected());
         status.put("protocolType", getProtocolType());
         status.put("pointCount", pointDefinitions.size());
+        status.put("cachedValueCount", latestValues.size());
+        status.put("connectionStats", httpConnection != null ? httpConnection.getStatistics() : Map.of());
         return status;
     }
-    
+
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
         try {
-            // 实现执行命令的逻辑
-            log.info("执行HTTP命令: {}，参数: {}", command, params);
-            return "Command executed: " + command;
+            JSONObject payload = new JSONObject(new LinkedHashMap<>());
+            payload.put("action", "command");
+            payload.put("command", command);
+            payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            payload.put("params", params != null ? params : Map.of());
+            payload.put("timestamp", System.currentTimeMillis());
+
+            httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+            byte[] response = tryReceiveResponse();
+            if (response == null || response.length == 0) {
+                return Map.of("status", "sent");
+            }
+            return parseCommandResponse(response);
         } catch (Exception e) {
-            log.error("执行命令失败: {}", command, e);
-            return null;
+            log.error("HTTP execute command failed, command={}", command, e);
+            return Map.of("status", "error", "message", e.getMessage());
         }
     }
-    
+
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        // 构建读取计划
+        pointDefinitions.clear();
+        if (points == null) {
+            return;
+        }
         for (DataPoint point : points) {
             pointDefinitions.put(point.getPointId(), point);
         }
     }
-    
+
+    private Map<String, Object> requestRead(List<DataPoint> points) throws Exception {
+        JSONObject payload = new JSONObject(new LinkedHashMap<>());
+        payload.put("action", points.size() == 1 ? "read" : "batchRead");
+        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put("timestamp", System.currentTimeMillis());
+
+        JSONArray pointArray = new JSONArray();
+        for (DataPoint point : points) {
+            JSONObject pointJson = new JSONObject(new LinkedHashMap<>());
+            pointJson.put("pointId", point.getPointId());
+            pointJson.put("pointCode", point.getPointCode());
+            pointJson.put("address", point.getAddress());
+            pointJson.put("dataType", point.getDataType());
+            pointArray.add(pointJson);
+        }
+        payload.put("points", pointArray);
+
+        httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+        byte[] response = tryReceiveResponse();
+        return parseReadResponse(points, response);
+    }
+
+    private byte[] tryReceiveResponse() throws Exception {
+        if (httpConnection == null || !httpConnection.isConnected()) {
+            return null;
+        }
+        int timeout = 1000;
+        DeviceConnection config = httpConnection.getConnectionConfig();
+        if (config != null && config.getReadTimeout() != null && config.getReadTimeout() > 0) {
+            timeout = config.getReadTimeout();
+        }
+        return httpConnection.receive(timeout);
+    }
+
+    private Map<String, Object> parseReadResponse(List<DataPoint> points, byte[] responseBytes) {
+        Map<String, Object> result = new HashMap<>();
+        if (responseBytes == null || responseBytes.length == 0) {
+            return result;
+        }
+
+        String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
+        if (text.isEmpty()) {
+            return result;
+        }
+
+        try {
+            Object parsed = JSON.parse(text);
+
+            if (parsed instanceof JSONObject obj) {
+                Object valuesObj = obj.get("values");
+                if (valuesObj instanceof JSONObject values) {
+                    putValueMap(points, result, values);
+                    return result;
+                }
+
+                Object pointId = obj.get("pointId");
+                if (pointId != null && obj.containsKey("value")) {
+                    result.put(pointId.toString(), obj.get("value"));
+                    return result;
+                }
+
+                putValueMap(points, result, obj);
+                return result;
+            }
+
+            if (parsed instanceof JSONArray array) {
+                for (Object item : array) {
+                    if (!(item instanceof JSONObject itemObj)) {
+                        continue;
+                    }
+                    Object pointId = itemObj.get("pointId");
+                    if (pointId != null && itemObj.containsKey("value")) {
+                        result.put(pointId.toString(), itemObj.get("value"));
+                    }
+                }
+                return result;
+            }
+
+            if (points.size() == 1) {
+                result.put(points.get(0).getPointId(), parsed);
+            }
+            return result;
+        } catch (Exception e) {
+            if (points.size() == 1) {
+                result.put(points.get(0).getPointId(), text);
+            }
+            return result;
+        }
+    }
+
+    private void putValueMap(List<DataPoint> points, Map<String, Object> result, JSONObject source) {
+        for (DataPoint point : points) {
+            String pointId = point.getPointId();
+            if (source.containsKey(pointId)) {
+                result.put(pointId, source.get(pointId));
+                continue;
+            }
+            String pointCode = point.getPointCode();
+            if (pointCode != null && source.containsKey(pointCode)) {
+                result.put(pointId, source.get(pointCode));
+            }
+        }
+    }
+
+    private boolean parseWriteAck(byte[] responseBytes) {
+        if (responseBytes == null || responseBytes.length == 0) {
+            return true;
+        }
+        String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
+        if (text.isEmpty()) {
+            return true;
+        }
+        try {
+            Object parsed = JSON.parse(text);
+            if (parsed instanceof JSONObject obj) {
+                Object success = obj.get("success");
+                if (success instanceof Boolean bool) {
+                    return bool;
+                }
+                Object status = obj.get("status");
+                if (status != null) {
+                    String statusText = status.toString().toLowerCase();
+                    return Objects.equals(statusText, "success") || Objects.equals(statusText, "ok");
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    private Object parseCommandResponse(byte[] responseBytes) {
+        String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
+        if (text.isEmpty()) {
+            return Map.of("status", "empty");
+        }
+        try {
+            return JSON.parse(text);
+        } catch (Exception e) {
+            Map<String, Object> plain = new HashMap<>();
+            plain.put("status", "raw");
+            plain.put("payload", text);
+            return plain;
+        }
+    }
+
     private DeviceConnection prepareConnectionConfig() {
         DeviceConnection config = requireConnectionConfig();
         if (config.getConnectionType() == null || config.getConnectionType().isBlank()) {
@@ -175,7 +370,8 @@ public class HttpCollector extends BaseCollector {
             config.setPort(deviceInfo.getPort());
         }
         if (config.getUrl() == null && config.getHost() != null && config.getPort() != null) {
-            config.setUrl("http://" + config.getHost() + ":" + config.getPort());
+            String scheme = Boolean.TRUE.equals(config.getSslEnabled()) ? "https" : "http";
+            config.setUrl(scheme + "://" + config.getHost() + ":" + config.getPort());
         }
         return config;
     }
