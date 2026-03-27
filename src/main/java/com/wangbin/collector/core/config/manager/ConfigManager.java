@@ -391,6 +391,49 @@ public class ConfigManager {
     }
 
     /**
+     * 更新连接配置
+     *
+     * @param deviceId 设备ID
+     * @param connection 连接信息
+     * @return 是否更新成功
+     */
+    public boolean updateConnectionConfig(String deviceId, DeviceConnection connection) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+
+        try {
+            lock.writeLock().lock();
+
+            if (!deviceCache.containsKey(deviceId)) {
+                log.warn("设备不存在，无法更新连接配置: {}", deviceId);
+                return false;
+            }
+
+            if (connection != null) {
+                connection.setDeviceId(deviceId);
+                connectionCache.put(deviceId, connection);
+            } else {
+                connectionCache.remove(deviceId);
+            }
+
+            rebuildDeviceContext(deviceId);
+
+            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+                    .deviceId(deviceId)
+                    .configType("connection")
+                    .updateTime(new Date())
+                    .build();
+            eventPublisher.publishEvent(event);
+            log.info("连接配置已更新: {}", deviceId);
+            return true;
+        } catch (Exception e) {
+            log.error("更新连接配置失败: {}", deviceId, e);
+            return false;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * 获取所有设备ID列表
      *
      * @return 设备ID列表
@@ -462,6 +505,36 @@ public class ConfigManager {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /**
+     * 清空指定设备的配置缓存
+     *
+     * @param deviceId 设备ID
+     * @return 是否存在并已清空
+     */
+    public boolean clearDeviceConfig(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+
+        boolean existed;
+        lock.readLock().lock();
+        try {
+            existed = deviceCache.containsKey(deviceId)
+                    || pointCache.containsKey(deviceId)
+                    || connectionCache.containsKey(deviceId)
+                    || deviceContextCache.containsKey(deviceId);
+        } finally {
+            lock.readLock().unlock();
+        }
+
+        if (!existed) {
+            log.warn("设备配置不存在，跳过清空: {}", deviceId);
+            return false;
+        }
+
+        removeDeviceConfig(deviceId);
+        log.info("设备配置缓存已清空: {}", deviceId);
+        return true;
     }
 
     /**

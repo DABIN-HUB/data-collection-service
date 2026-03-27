@@ -78,6 +78,16 @@ public class ConfigSyncService {
     private final Map<String, List<DataPoint>> pointConfigs = new ConcurrentHashMap<>();
 
     /**
+     * 连接配置缓存 key:设备编码 value:连接信息
+     */
+    private final Map<String, DeviceConnection> connectionConfigs = new ConcurrentHashMap<>();
+
+    /**
+     * 最近一次触发同步时间
+     */
+    private volatile long lastSyncTime;
+
+    /**
      * 构造函数
      */
     public ConfigSyncService() {
@@ -137,7 +147,7 @@ public class ConfigSyncService {
     public void syncAllConfig() {
         try {
             log.debug("开始执行手动配置同步任务...");
-            syncConfigByType("all");
+            notifyConfigUpdate("all", null);
             log.info("配置同步完成（手动触发）");
         } catch (Exception e) {
             log.error("配置定时同步失败", e);
@@ -280,7 +290,11 @@ public class ConfigSyncService {
 
             if (response.getStatusCode() == HttpStatus.OK) {
                 log.debug("成功加载连接配置: {}", deviceId);
-                return Objects.requireNonNull(response.getBody()).getData();
+                DeviceConnection connection = Objects.requireNonNull(response.getBody()).getData();
+                if (connection != null) {
+                    connectionConfigs.put(deviceId, connection);
+                }
+                return connection;
             } else {
                 log.warn("加载连接配置失败: {}，HTTP状态码: {}", deviceId, response.getStatusCode());
             }
@@ -294,27 +308,22 @@ public class ConfigSyncService {
 
 
     /**
-     * 根据配置类型同步配置
+     * 主动通知配置更新
      *
-     * @param configType 配置类型（device/points/connection/collection/all）
+     * @param configType 配置类型
+     * @param deviceId 受影响的设备ID，可为空
      */
-    private void syncConfigByType(String configType) {
+    public void notifyConfigUpdate(String configType, String deviceId) {
         log.info("开始同步配置类型: {}", configType);
 
         ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                 .configType(configType)
+                .deviceId(deviceId)
                 .updateTime(new Date())
                 .build();
 
-        // 根据配置类型设置设备ID
-        if (!"all".equals(configType)) {
-            // 这里可以根据具体业务逻辑获取受影响的设备ID
-            // 暂时设置为null，由监听器自己处理
-            event.setDeviceId(null);
-        }
-
-        // 通知所有监听器
         notifyConfigListeners(event);
+        lastSyncTime = System.currentTimeMillis();
 
         log.info("配置类型 {} 同步完成", configType);
     }
@@ -398,12 +407,33 @@ public class ConfigSyncService {
         return Collections.unmodifiableMap(pointConfigs);
     }
 
+    public Map<String, DeviceConnection> getConnectionConfigs() {
+        return Collections.unmodifiableMap(connectionConfigs);
+    }
+
+    public long getLastSyncTime() {
+        return lastSyncTime;
+    }
+
+    public long getSyncInterval() {
+        return syncInterval;
+    }
+
+    public String getServiceId() {
+        return serviceId;
+    }
+
+    public int getListenerCount() {
+        return configListeners.size();
+    }
+
     /**
      * 清空配置缓存
      */
     public void clearCache() {
         deviceConfigs.clear();
         pointConfigs.clear();
+        connectionConfigs.clear();
         log.info("配置缓存已清空");
     }
 
