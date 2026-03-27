@@ -74,6 +74,14 @@ public class CollectorProperties {
         private String version = "2c";
         private int pollingInterval = 5000;
         private Map<String, String> devices;
+        private String securityLevel = "authPriv";
+        private String securityName;
+        private String authProtocol = "SHA";
+        private String authPassword;
+        private String privProtocol = "AES128";
+        private String privPassword;
+        private String contextName;
+        private String contextEngineId;
     }
 
     @Data
