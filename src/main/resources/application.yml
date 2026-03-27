@@ -100,6 +100,23 @@ logging:
     name: logs/collector.log
     max-size: 10MB
     max-history: 30
+  access:
+    enabled: true
+    include-paths:
+      - /api/**
+    exclude-paths:
+      - /health
+      - /actuator/**
+    high-risk-rules:
+      - method: POST
+        pattern: /api/config/import
+      - method: POST
+        pattern: /api/config/device/**/clear
+      - method: POST
+        pattern: /api/config/sync/**
+    token-header: X-Collector-Token
+    request-id-header: X-Request-Id
+    max-query-length: 512
 
 # 采集tdengine配置
 telemetry:
