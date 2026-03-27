@@ -113,7 +113,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             case DISCRETE_INPUT -> readDiscreteInput(unitId,modbusAddress);
             case HOLDING_REGISTER -> readHoldingRegister(unitId,modbusAddress, point.getDataType());
             case INPUT_REGISTER -> readInputRegister(unitId,modbusAddress, point.getDataType());
-            default -> throw new IllegalArgumentException("不支持的寄存器类�? " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("不支持的寄存器类型 " + modbusAddress.getRegisterType());
         };
     }
 
