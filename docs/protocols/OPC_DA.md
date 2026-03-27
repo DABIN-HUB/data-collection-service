@@ -92,6 +92,36 @@
 - `bridgeRetryCount`：失败重试次数（不含首次）。
 - `bridgeRetryBackoffMs`：重试退避毫秒（线性递增）。
 
+## 4.1.1 连接字段整理（createFieldConfig 写法）
+
+说明：
+- 以下字段按 `OpcDaCollector` 真实读取顺序整理。
+- 兼容别名也一并列出，便于前端配置时做映射。
+
+```java
+fields.add(createFieldConfig("url", "string", "桥接地址或OPC DA访问地址", false, "http://127.0.0.1:18080/api/v1/opcda", null));
+fields.add(createFieldConfig("host", "string", "OPC DA主机", true, "127.0.0.1", null));
+fields.add(createFieldConfig("serverProgId", "string", "OPC DA服务ProgID", true, "Matrikon.OPC.Simulation.1", null));
+fields.add(createFieldConfig("progId", "string", "ProgID兼容字段", false, "Matrikon.OPC.Simulation.1", null));
+fields.add(createFieldConfig("clsid", "string", "CLSID兼容字段", false, "", null));
+fields.add(createFieldConfig("username", "string", "用户名", false, "", null));
+fields.add(createFieldConfig("password", "string", "密码", false, "", null));
+fields.add(createFieldConfig("domain", "string", "Windows域", false, "", null));
+fields.add(createFieldConfig("requestTimeout", "number", "请求超时(ms)", false, "5000", null));
+fields.add(createFieldConfig("updateRate", "number", "订阅刷新周期(ms)", false, "1000", null));
+fields.add(createFieldConfig("bridgeMode", "string", "桥接模式", true, "INMEMORY", new String[]{"INMEMORY", "HTTP"}));
+fields.add(createFieldConfig("bridge-mode", "string", "桥接模式兼容字段", false, "INMEMORY", new String[]{"INMEMORY", "HTTP"}));
+fields.add(createFieldConfig("opcDaBridgeMode", "string", "桥接模式别名", false, "INMEMORY", new String[]{"INMEMORY", "HTTP"}));
+fields.add(createFieldConfig("bridgeBaseUrl", "string", "桥接基础地址", false, "http://127.0.0.1:18080/api/v1/opcda", null));
+fields.add(createFieldConfig("bridge-url", "string", "桥接地址兼容字段", false, "http://127.0.0.1:18080/api/v1/opcda", null));
+fields.add(createFieldConfig("opcDaBridgeUrl", "string", "桥接地址别名", false, "http://127.0.0.1:18080/api/v1/opcda", null));
+fields.add(createFieldConfig("bridgeToken", "string", "桥接访问令牌", false, "", null));
+fields.add(createFieldConfig("bridge-token", "string", "桥接令牌兼容字段", false, "", null));
+fields.add(createFieldConfig("opcDaBridgeToken", "string", "桥接令牌别名", false, "", null));
+fields.add(createFieldConfig("bridgeRetryCount", "number", "桥接重试次数", false, "1", null));
+fields.add(createFieldConfig("bridgeRetryBackoffMs", "number", "桥接重试退避(ms)", false, "200", null));
+```
+
 ## 4.2 HTTP 接口调用约定（采集服务 -> 桥接服务）
 
 `RemoteOpcDaBridge` 默认调用以下接口：

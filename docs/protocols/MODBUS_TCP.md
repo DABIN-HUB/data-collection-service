@@ -22,6 +22,22 @@
 - `byteOrder`（如 `BIG_ENDIAN`）
 - `parity`
 
+## 连接字段整理（createFieldConfig 写法）
+
+说明：
+- 以下字段按代码实际读取来源整理。
+- `url` 不参与当前 `ModbusTcpCollector` 的字段读取，当前实现以 `host + port` 为主。
+
+```java
+fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+fields.add(createFieldConfig("port", "number", "端口", true, "502", null));
+fields.add(createFieldConfig("slaveId", "number", "从站ID", true, "1", null));
+fields.add(createFieldConfig("byteOrder", "string", "字节顺序", true, "BIG_ENDIAN", new String[]{"BIG_ENDIAN", "LITTLE_ENDIAN"}));
+fields.add(createFieldConfig("parity", "string", "兼容校验位字段", false, "none", new String[]{"none", "odd", "even"}));
+fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "3000", null));
+fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "3000", null));
+```
+
 ## 使用方式
 
 1. 设备 `protocolType` 设置为 `MODBUS_TCP`。

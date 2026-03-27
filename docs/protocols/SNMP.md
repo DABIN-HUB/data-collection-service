@@ -28,6 +28,26 @@
 - `snmpPrivProtocol` / `snmpPrivPassword`
 - `snmpContextName` / `snmpContextEngineId`
 
+## 连接字段整理（createFieldConfig 写法）
+
+```java
+fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+fields.add(createFieldConfig("port", "number", "端口", true, "161", null));
+fields.add(createFieldConfig("community", "string", "团体字", true, "public", null));
+fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
+fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
+fields.add(createFieldConfig("snmpRetries", "number", "重试次数", false, "1", null));
+fields.add(createFieldConfig("snmpVersion", "string", "SNMP版本", true, "2c", new String[]{"1", "2c", "3"}));
+fields.add(createFieldConfig("snmpSecurityName", "string", "SNMPv3安全用户名", false, "", null));
+fields.add(createFieldConfig("snmpSecurityLevel", "string", "SNMPv3安全级别", false, "authPriv", new String[]{"noAuthNoPriv", "authNoPriv", "authPriv"}));
+fields.add(createFieldConfig("snmpAuthProtocol", "string", "SNMPv3认证协议", false, "SHA", new String[]{"MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512", "NONE"}));
+fields.add(createFieldConfig("snmpAuthPassword", "string", "SNMPv3认证密码", false, "", null));
+fields.add(createFieldConfig("snmpPrivProtocol", "string", "SNMPv3加密协议", false, "AES128", new String[]{"DES", "AES128", "AES192", "AES256", "NONE"}));
+fields.add(createFieldConfig("snmpPrivPassword", "string", "SNMPv3加密密码", false, "", null));
+fields.add(createFieldConfig("snmpContextName", "string", "上下文名称", false, "", null));
+fields.add(createFieldConfig("snmpContextEngineId", "string", "上下文引擎ID", false, "", null));
+```
+
 ## 使用方式
 
 1. 设备 `protocolType` 设为 `SNMP`。
