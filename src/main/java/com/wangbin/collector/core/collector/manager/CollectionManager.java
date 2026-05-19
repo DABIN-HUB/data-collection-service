@@ -4,7 +4,12 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.factory.CollectorFactory;
+import com.wangbin.collector.core.collector.protocol.base.CommandableCollector;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.base.ReadPlanCapable;
+import com.wangbin.collector.core.collector.protocol.base.ReadableCollector;
+import com.wangbin.collector.core.collector.protocol.base.SubscribableCollector;
+import com.wangbin.collector.core.collector.protocol.base.WritableCollector;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -70,10 +75,8 @@ public class CollectionManager {
      */
     public void rebuildReadPlans(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("缓存设备执行计划失败", deviceId, null);
-        }
-        collector.rebuildReadPlans(deviceId,points);
+        ReadPlanCapable readPlanCapable = requireCapability(deviceId, collector, ReadPlanCapable.class, "读计划重建");
+        readPlanCapable.rebuildReadPlans(deviceId, points);
     }
 
     /**
@@ -158,11 +161,8 @@ public class CollectionManager {
      */
     public Object readPoint(String deviceId, DataPoint point) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        return collector.readPoint(point);
+        ReadableCollector readableCollector = requireCapability(deviceId, collector, ReadableCollector.class, "点位读取");
+        return readableCollector.readPoint(point);
     }
 
     /**
@@ -170,11 +170,8 @@ public class CollectionManager {
      */
     public Map<String, Object> readPoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        return collector.readPoints(points);
+        ReadableCollector readableCollector = requireCapability(deviceId, collector, ReadableCollector.class, "批量点位读取");
+        return readableCollector.readPoints(points);
     }
 
     /**
@@ -182,11 +179,8 @@ public class CollectionManager {
      */
     public boolean writePoint(String deviceId, DataPoint point, Object value) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        return collector.writePoint(point, value);
+        WritableCollector writableCollector = requireCapability(deviceId, collector, WritableCollector.class, "点位写入");
+        return writableCollector.writePoint(point, value);
     }
 
     /**
@@ -194,11 +188,8 @@ public class CollectionManager {
      */
     public Map<String, Boolean> writePoints(String deviceId, Map<DataPoint, Object> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        return collector.writePoints(points);
+        WritableCollector writableCollector = requireCapability(deviceId, collector, WritableCollector.class, "批量点位写入");
+        return writableCollector.writePoints(points);
     }
 
     /**
@@ -206,11 +197,8 @@ public class CollectionManager {
      */
     public void subscribePoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        collector.subscribe(points);
+        SubscribableCollector subscribableCollector = requireCapability(deviceId, collector, SubscribableCollector.class, "点位订阅");
+        subscribableCollector.subscribe(points);
     }
 
     /**
@@ -218,11 +206,8 @@ public class CollectionManager {
      */
     public void unsubscribePoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        collector.unsubscribe(points);
+        SubscribableCollector subscribableCollector = requireCapability(deviceId, collector, SubscribableCollector.class, "取消点位订阅");
+        subscribableCollector.unsubscribe(points);
     }
 
     /**
@@ -243,11 +228,8 @@ public class CollectionManager {
     public Object executeCommand(String deviceId, String command, Map<String, Object> params)
             throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
-        if (collector == null) {
-            throw new CollectorException("设备未注册", deviceId, null);
-        }
-
-        return collector.executeCommand(command, params);
+        CommandableCollector commandableCollector = requireCapability(deviceId, collector, CommandableCollector.class, "命令执行");
+        return commandableCollector.executeCommand(command, params);
     }
 
     /**
@@ -296,6 +278,19 @@ public class CollectionManager {
         info.put("isConnected", collector.isConnected());
         //info.put("lastConnectTime", collector.getLastConnectTime());
         return info;
+    }
+
+    private <T> T requireCapability(String deviceId,
+                                    ProtocolCollector collector,
+                                    Class<T> capabilityType,
+                                    String operation) {
+        if (collector == null) {
+            throw new CollectorException("设备未注册", deviceId, null);
+        }
+        if (!capabilityType.isInstance(collector)) {
+            throw new CollectorException("采集器不支持" + operation, deviceId, null);
+        }
+        return capabilityType.cast(collector);
     }
 
     /**

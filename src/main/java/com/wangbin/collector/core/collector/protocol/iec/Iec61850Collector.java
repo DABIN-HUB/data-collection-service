@@ -11,6 +11,7 @@ import com.wangbin.collector.core.collector.protocol.iec.domain.Iec61850Address;
 import com.wangbin.collector.core.collector.protocol.iec.util.Iec61850AddressParser;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Iec61850ConnectionAdapter;
+import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
@@ -40,15 +41,14 @@ public class Iec61850Collector extends AbstractIec61850Collector {
     protected void doConnect() throws Exception {
         initIec61850Config(deviceInfo);
         DeviceConnection connectionConfig = requireConnectionConfig();
-        ConnectionAdapter<?> adapter = null;
         try {
-            adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-            if (!(adapter instanceof Iec61850ConnectionAdapter iec61850Adapter)) {
-                removeConnectionSilently();
-                throw new IllegalStateException("IEC61850 connection adapter type mismatch");
-            }
+            ConnectionAdapter<?> adapter = createManagedConnection(connectionConfig);
+            Iec61850ConnectionAdapter iec61850Adapter = requireAdapterType(
+                    adapter,
+                    Iec61850ConnectionAdapter.class,
+                    "IEC61850");
             iec61850Adapter.setClientEventListener(createClientEventListener());
-            connectionManager.connect(deviceInfo.getDeviceId());
+            connectManagedConnection();
             this.association = iec61850Adapter.getClient();
             reloadServerModel();
         } catch (Exception e) {
@@ -231,14 +231,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         if (point == null) {
             return;
         }
-        Object processed;
-        try {
-            processed = convertData(point, value);
-        } catch (Exception e) {
-            processed = value;
-            log.debug("IEC61850 report value convert failed, use raw value: pointId={}", point.getPointId(), e);
-        }
-        log.info("IEC61850 report: pointId={} value={}", point.getPointId(), processed);
+        ProcessResult processResult = ingestPushedValue(point, value);
+        Object finalValue = processResult != null ? processResult.getFinalValue() : value;
+        log.info("IEC61850 report: pointId={} value={}", point.getPointId(), finalValue);
     }
 
     private Iec61850Address parseCommandAddress(Map<String, Object> params) {
@@ -262,13 +257,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
     }
 
     private void removeConnectionSilently() {
-        if (connectionManager != null && deviceInfo != null) {
-            try {
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            } catch (Exception e) {
-                log.warn("Remove IEC61850 connection failed: {}", deviceInfo.getDeviceId(), e);
-            }
-        }
+        removeManagedConnection("IEC61850");
         association = null;
     }
 }

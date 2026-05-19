@@ -2,12 +2,11 @@ package com.wangbin.collector.core.collector.protocol.snmp.base;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpAddress;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpDataType;
 import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpUtils;
 import com.wangbin.collector.core.config.CollectorProperties;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.snmp4j.PDU;
@@ -34,7 +33,7 @@ import java.util.Objects;
  * SNMP 公共能力抽象。
  */
 @Slf4j
-public abstract class AbstractSnmpCollector extends BaseCollector {
+public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
 
     protected SnmpConnectionAdapter snmpConnection;
 
@@ -120,18 +119,11 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
     }
 
     protected void initSnmpConnection(DeviceConnection connectionConfig) throws Exception {
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-        connectionManager.connect(deviceInfo.getDeviceId());
-        if (!(adapter instanceof SnmpConnectionAdapter snmpAdapter)) {
-            throw new IllegalStateException("SNMP连接适配器类型不匹配");
-        }
-        this.snmpConnection = snmpAdapter;
+        this.snmpConnection = createAndConnectAdapter(connectionConfig, SnmpConnectionAdapter.class, "SNMP");
     }
 
     protected void closeSnmpConnection() {
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("SNMP");
         snmpConnection = null;
     }
 

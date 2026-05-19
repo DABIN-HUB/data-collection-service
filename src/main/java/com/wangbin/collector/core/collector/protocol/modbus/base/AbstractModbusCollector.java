@@ -2,7 +2,7 @@ package com.wangbin.collector.core.collector.protocol.modbus.base;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.ModbusAddress;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.RegisterType;
 import com.wangbin.collector.core.collector.protocol.modbus.plan.ModbusReadPlan;
@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Modbus采集器抽象基类
  */
 @Slf4j
-public abstract class AbstractModbusCollector extends BaseCollector {
+public abstract class AbstractModbusCollector extends ConnectionBackedCollector {
 
     protected int timeout = 3000;
     /*protected int slaveId = 1;*/

@@ -5,8 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -20,7 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class HttpCollector extends BaseCollector {
+public class HttpCollector extends ConnectionBackedCollector {
 
     private HttpConnectionAdapter httpConnection;
 
@@ -39,26 +38,13 @@ public class HttpCollector extends BaseCollector {
 
     @Override
     protected void doConnect() throws Exception {
-        if (connectionManager == null) {
-            throw new IllegalStateException("Connection manager is not initialized");
-        }
-
         DeviceConnection connectionConfig = prepareConnectionConfig();
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-        connectionManager.connect(deviceInfo.getDeviceId());
-
-        if (!(adapter instanceof HttpConnectionAdapter httpAdapter)) {
-            throw new IllegalStateException("HTTP connection adapter type mismatch");
-        }
-
-        this.httpConnection = httpAdapter;
+        this.httpConnection = createAndConnectAdapter(connectionConfig, HttpConnectionAdapter.class, "HTTP");
     }
 
     @Override
     protected void doDisconnect() throws Exception {
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("HTTP");
         httpConnection = null;
         latestValues.clear();
         pointDefinitions.clear();

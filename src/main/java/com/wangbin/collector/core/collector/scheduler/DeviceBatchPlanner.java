@@ -22,6 +22,7 @@ import java.util.Map;
 class DeviceBatchPlanner {
 
     private final ConfigManager configManager;
+    private final ProtocolBatchStrategy protocolBatchStrategy;
 
     List<DeviceBatchTask> plan(String deviceId,
                                List<DataPoint> points,
@@ -56,7 +57,8 @@ class DeviceBatchPlanner {
             allBatches.addAll(createSmartBatches(typeGroup, deviceId, performanceMonitor));
         }
 
-        allBatches = mergeSmallBatches(allBatches, 10);
+        String protocol = resolveProtocol(deviceId);
+        allBatches = mergeSmallBatches(allBatches, 10, protocolBatchStrategy.maxMergedBatchSize(protocol));
         log.debug("设备 {} 智能分组完成: {}点 -> {}批", deviceId, points.size(), allBatches.size());
         return allBatches;
     }
@@ -102,6 +104,7 @@ class DeviceBatchPlanner {
         }
 
         int optimalBatchSize = getOptimalBatchSize(deviceId, performanceMonitor);
+        int addressGapThreshold = protocolBatchStrategy.addressGapThreshold(resolveProtocol(deviceId));
         List<DataPoint> currentBatch = new ArrayList<>();
         String lastAddress = null;
 
@@ -115,7 +118,7 @@ class DeviceBatchPlanner {
             if (lastAddress != null && currentAddress != null) {
                 Integer lastNum = extractNumberFromAddress(lastAddress);
                 Integer currentNum = extractNumberFromAddress(currentAddress);
-                if (lastNum != null && currentNum != null && currentNum - lastNum > 50) {
+                if (lastNum != null && currentNum != null && currentNum - lastNum > addressGapThreshold) {
                     if (!currentBatch.isEmpty()) {
                         batches.add(new ArrayList<>(currentBatch));
                         currentBatch.clear();
@@ -132,7 +135,7 @@ class DeviceBatchPlanner {
         return batches;
     }
 
-    private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize) {
+    private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize, int maxBatchSize) {
         if (batches.size() <= 1) {
             return batches;
         }
@@ -155,9 +158,9 @@ class DeviceBatchPlanner {
 
         List<List<DataPoint>> finalBatches = new ArrayList<>();
         for (List<DataPoint> batch : mergedBatches) {
-            if (batch.size() > 100) {
-                for (int i = 0; i < batch.size(); i += 100) {
-                    int end = Math.min(i + 100, batch.size());
+            if (batch.size() > maxBatchSize) {
+                for (int i = 0; i < batch.size(); i += maxBatchSize) {
+                    int end = Math.min(i + maxBatchSize, batch.size());
                     finalBatches.add(new ArrayList<>(batch.subList(i, end)));
                 }
             } else {
@@ -206,33 +209,22 @@ class DeviceBatchPlanner {
             if (deviceInfo != null) {
                 String protocol = deviceInfo.getProtocolType();
                 if (protocol != null) {
-                    return switch (protocol.toUpperCase()) {
-                        case "MODBUS_TCP", "MODBUS_RTU" -> 125;
-                        case "OPC_UA" -> 100;
-                        case "SIEMENS_S7" -> 200;
-                        case "MQTT" -> 30;
-                        case "SNMP" -> 20;
-                        default -> 50;
-                    };
+                    return protocolBatchStrategy.defaultBatchSize(protocol);
                 }
             }
         } catch (Exception e) {
             log.warn("获取设备 {} 协议类型失败，使用默认批量大小", deviceId, e);
         }
-        return 50;
+        return protocolBatchStrategy.defaultBatchSize(null);
     }
 
     private int getProtocolMaxBatchSize(String protocol) {
-        return switch (protocol.toUpperCase()) {
-            case "MODBUS_TCP", "MODBUS_RTU" -> 125;
-            case "OPC_UA" -> 200;
-            case "SIEMENS_S7" -> 300;
-            case "MQTT" -> 50;
-            case "SNMP" -> 30;
-            case "COAP" -> 20;
-            case "IEC104" -> 100;
-            default -> 200;
-        };
+        return protocolBatchStrategy.maxBatchSize(protocol);
+    }
+
+    private String resolveProtocol(String deviceId) {
+        DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+        return deviceInfo != null ? deviceInfo.getProtocolType() : null;
     }
 
     private int calculateOptimalTimeSlice(String deviceId, int batchIndex, int totalBatches, int timeSliceCount) {

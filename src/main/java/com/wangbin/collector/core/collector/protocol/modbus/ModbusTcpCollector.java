@@ -13,7 +13,6 @@ import com.wangbin.collector.core.collector.protocol.modbus.plan.ModbusReadPlan;
 import com.wangbin.collector.core.collector.protocol.modbus.plan.PointOffset;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusUtils;
 import com.wangbin.collector.core.config.CollectorProperties;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.ModbusTcpConnectionAdapter;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -53,20 +52,10 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     protected void doConnect() throws Exception {
         log.info("开始建立Modbus TCP连接: {}", deviceInfo.getDeviceId());
         DeviceConnection desiredConfig = requireConnectionConfig();
-        ConnectionAdapter adapter = null;
-        try {
-            adapter = connectionManager.createConnection(deviceInfo, desiredConfig);
-            connectionManager.connect(deviceInfo.getDeviceId());
-        } catch (Exception e) {
-            removeConnectionSilently();
-            throw e;
-        }
-
-        if (!(adapter instanceof ModbusTcpConnectionAdapter modbusAdapter)) {
-            removeConnectionSilently();
-            throw new IllegalStateException("Modbus TCP连接适配器类型不匹配");
-        }
-        this.connectionAdapter = modbusAdapter;
+        this.connectionAdapter = createAndConnectAdapter(
+                desiredConfig,
+                ModbusTcpConnectionAdapter.class,
+                "Modbus TCP");
 
         DeviceConnection connectionConfig = getCurrentConnectionConfig();
         if (connectionConfig == null) {
@@ -699,13 +688,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
     private void removeConnectionSilently() {
-        if (connectionManager != null && deviceInfo != null) {
-            try {
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            } catch (Exception e) {
-                log.warn("移除 Modbus TCP 连接失败", e);
-            }
-        }
+        removeManagedConnection("Modbus TCP");
         connectionAdapter = null;
     }
 

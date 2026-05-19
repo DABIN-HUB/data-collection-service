@@ -3,7 +3,7 @@ package com.wangbin.collector.core.collector.protocol.opc.ua.base;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
 import com.wangbin.collector.core.collector.protocol.opc.ua.util.OpcUaAddressParser;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
@@ -34,7 +34,7 @@ import java.util.function.Consumer;
  * OPC UA 抽象基类。
  */
 @Slf4j
-public abstract class AbstractOpcUaCollector extends BaseCollector {
+public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
     private ConnectionAdapter<OpcUaClient> connectionAdapter;
     protected OpcUaClient client;
@@ -54,19 +54,10 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
         DeviceConnection connection = requireConnectionConfig();
         initOpcUaConfig(deviceInfo, connection);
 
-        ConnectionAdapter adapter = null;
-        try {
-            adapter = connectionManager.createConnection(deviceInfo, connection);
-            connectionManager.connect(deviceInfo.getDeviceId());
-        } catch (Exception e) {
-            removeConnectionSilently();
-            throw e;
-        }
-
-        if (!(adapter instanceof OpcUaConnectionAdapter opcUaAdapter)) {
-            removeConnectionSilently();
-            throw new IllegalStateException("OPC UA连接适配器类型不匹配");
-        }
+        OpcUaConnectionAdapter opcUaAdapter = createAndConnectAdapter(
+                connection,
+                OpcUaConnectionAdapter.class,
+                "OPC UA");
 
         this.connectionAdapter = opcUaAdapter;
         this.client = opcUaAdapter.getClient();
@@ -76,7 +67,7 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
 
     @Override
     protected void doDisconnect() {
-        removeConnectionSilently();
+        removeManagedConnection("OPC UA");
         connectionAdapter = null;
         client = null;
         subscriptions.clear();
@@ -172,13 +163,4 @@ public abstract class AbstractOpcUaCollector extends BaseCollector {
         );
     }
 
-    private void removeConnectionSilently() {
-        try {
-            if (connectionManager != null && deviceInfo != null) {
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            }
-        } catch (Exception e) {
-            log.error("断开OPC UA连接失败: {}", deviceInfo != null ? deviceInfo.getDeviceId() : "unknown", e);
-        }
-    }
 }

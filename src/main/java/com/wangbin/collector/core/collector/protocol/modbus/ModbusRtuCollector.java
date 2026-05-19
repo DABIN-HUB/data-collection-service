@@ -15,7 +15,6 @@ import com.wangbin.collector.core.collector.protocol.modbus.plan.ModbusReadPlan;
 import com.wangbin.collector.core.collector.protocol.modbus.plan.PointOffset;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusGroupingUtil;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusUtils;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.ModbusRtuConnectionAdapter;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -76,22 +75,11 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
         slaveId = connectionConfig.getInt("slaveId", 1);
 
-        ConnectionAdapter adapter = null;
-        try {
-            adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-            connectionManager.connect(deviceInfo.getDeviceId());
-        } catch (Exception e) {
-            removeConnectionSilently();
-            throw e;
-        }
-
-        if (!(adapter instanceof ModbusRtuConnectionAdapter modbusAdapter)) {
-            removeConnectionSilently();
-            throw new IllegalStateException("Modbus RTU连接适配器类型不匹配");
-        }
-
-        this.connectionAdapter = modbusAdapter;
-        this.client = modbusAdapter.getClient();
+        this.connectionAdapter = createAndConnectAdapter(
+                connectionConfig,
+                ModbusRtuConnectionAdapter.class,
+                "Modbus RTU");
+        this.client = connectionAdapter.getClient();
 
         log.info("Modbus RTU连接建立成功: port={} baud={} dataBits={} stopBits={} parity={}",
                 serialPort, baudRate, dataBits, stopBits, parity.name());
@@ -823,13 +811,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
     private void removeConnectionSilently() {
-        if (connectionManager != null && deviceInfo != null) {
-            try {
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            } catch (Exception e) {
-                log.warn("移除Modbus RTU连接失败", e);
-            }
-        }
+        removeManagedConnection("Modbus RTU");
         connectionAdapter = null;
         client = null;
     }

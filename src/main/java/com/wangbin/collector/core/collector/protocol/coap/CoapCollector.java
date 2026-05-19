@@ -161,6 +161,7 @@ public class CoapCollector extends AbstractCoapCollector {
             return;
         }
         Object value = convertResponse(response, point);
+        ingestPushedValue(dataPoint, value);
         log.info("CoAP鎺ㄩ€?pointId={} value={}", dataPoint.getPointId(), value);
     }
 

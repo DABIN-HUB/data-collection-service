@@ -14,6 +14,7 @@ import org.openmuc.j60870.ie.*;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -22,6 +23,8 @@ import java.util.concurrent.TimeoutException;
  */
 @Slf4j
 public class Iec104Collector extends AbstractIce104Collector {
+
+    private final Map<Iec104Key, DataPoint> spontaneousPointIndex = new ConcurrentHashMap<>();
 
     @Override
     public String getCollectorType() {
@@ -38,15 +41,14 @@ public class Iec104Collector extends AbstractIce104Collector {
         log.info("Connecting IEC 104 device: {}", getDeviceId());
         initIec104Config(deviceInfo);
         DeviceConnection connectionConfig = requireConnectionConfig();
-        ConnectionAdapter<?> adapter = null;
         try {
-            adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-            if (!(adapter instanceof Iec104ConnectionAdapter iec104Adapter)) {
-                removeConnectionSilently();
-                throw new IllegalStateException("IEC104 connection adapter type mismatch");
-            }
+            ConnectionAdapter<?> adapter = createManagedConnection(connectionConfig);
+            Iec104ConnectionAdapter iec104Adapter = requireAdapterType(
+                    adapter,
+                    Iec104ConnectionAdapter.class,
+                    "IEC104");
             iec104Adapter.setConnectionEventListener(createConnectionEventListener());
-            connectionManager.connect(deviceInfo.getDeviceId());
+            connectManagedConnection();
             this.connection = iec104Adapter.getClient();
             onConnectionReady();
         } catch (Exception e) {
@@ -59,6 +61,7 @@ public class Iec104Collector extends AbstractIce104Collector {
     public void doDisconnect() {
         removeConnectionSilently();
         clearProtocolState();
+        spontaneousPointIndex.clear();
         log.info("IEC104 connection closed");
     }
 
@@ -377,7 +380,25 @@ public class Iec104Collector extends AbstractIce104Collector {
 
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
+        spontaneousPointIndex.clear();
+        for (DataPoint point : points) {
+            try {
+                Iec104Address address = Iec104Utils.parseAddress(resolveCommonAddress(point), point.getAddress());
+                spontaneousPointIndex.put(new Iec104Key(address.getCommonAddress(), address.getIoAddress()), point);
+            } catch (Exception e) {
+                log.debug("Skip IEC104 push index for invalid point: {}", point != null ? point.getPointId() : null, e);
+            }
+        }
         log.info("IEC104 points loaded, size={}", points.size());
+    }
+
+    @Override
+    protected void handleSpontaneous(int commonAddress, int ioa, ASduType type, Object value, ASdu asdu) {
+        super.handleSpontaneous(commonAddress, ioa, type, value, asdu);
+        DataPoint point = spontaneousPointIndex.get(new Iec104Key(commonAddress, ioa));
+        if (point != null) {
+            ingestPushedValue(point, value);
+        }
     }
 
     private void handleConnectionClosed(IOException e) {
@@ -711,13 +732,7 @@ public class Iec104Collector extends AbstractIce104Collector {
     }
 
     private void removeConnectionSilently() {
-        if (connectionManager != null && deviceInfo != null) {
-            try {
-                connectionManager.removeConnection(deviceInfo.getDeviceId());
-            } catch (Exception e) {
-                log.warn("Remove IEC104 connection failed: {}", deviceInfo.getDeviceId(), e);
-            }
-        }
+        removeManagedConnection("IEC104");
         connection = null;
     }
 }

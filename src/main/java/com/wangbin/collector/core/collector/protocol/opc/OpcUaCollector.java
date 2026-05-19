@@ -229,6 +229,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
 
     private void handleNotification(DataPoint point, OpcUaAddress address, DataValue value) {
         Object payload = value != null && value.getValue() != null ? value.getValue().getValue() : null;
+        ingestPushedValue(point, payload);
         log.info("OPC UA push device={} pointId={} value={}",
                 deviceInfo.getDeviceId(), point.getPointId(), payload);
     }

@@ -2,12 +2,11 @@ package com.wangbin.collector.core.collector.protocol.coap.base;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.coap.domain.CoapPoint;
 import com.wangbin.collector.core.collector.protocol.coap.util.CoapAddressParser;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.californium.core.CoapClient;
 import org.eclipse.californium.core.CoapHandler;
@@ -23,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * CoAP 公共能力抽象。
  */
 @Slf4j
-public abstract class AbstractCoapCollector extends BaseCollector {
+public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
 
     protected CoapConnectionAdapter coapConnection;
     protected String baseUri;
@@ -33,11 +32,7 @@ public abstract class AbstractCoapCollector extends BaseCollector {
     protected final Map<String, CoapObserveRelation> observeRelations = new ConcurrentHashMap<>();
 
     protected void initCoapConnection() throws Exception {
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo);
-        connectionManager.connect(deviceInfo.getDeviceId());
-        if (!(adapter instanceof CoapConnectionAdapter coapAdapter)) {
-            throw new IllegalStateException("CoAP连接适配器类型不匹配");
-        }
+        CoapConnectionAdapter coapAdapter = createAndConnectAdapter(CoapConnectionAdapter.class, "CoAP");
         this.coapConnection = coapAdapter;
         this.timeout = Math.toIntExact(coapAdapter.getRequestTimeout());
         this.baseUri = coapAdapter.getBaseUri();
@@ -53,9 +48,7 @@ public abstract class AbstractCoapCollector extends BaseCollector {
             }
         });
         observeRelations.clear();
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("CoAP");
         coapConnection = null;
     }
 

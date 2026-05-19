@@ -49,6 +49,9 @@ public class CollectionScheduler {
     private DeviceBatchPlanner deviceBatchPlanner;
 
     @Autowired
+    private ProtocolBatchStrategy protocolBatchStrategy;
+
+    @Autowired
     private CollectedDataProcessor collectedDataProcessor;
 
     // ================== 优化的线程池配置 ==================
@@ -460,7 +463,7 @@ public class CollectionScheduler {
         }
 
         // 3. 小批次合并优化（避免批次太小）
-        allBatches = mergeSmallBatches(allBatches, 10); // 小于10点的批次合并
+        allBatches = mergeSmallBatches(allBatches, 10, resolveProtocol(deviceId)); // 小于10点的批次合并
 
         log.debug("设备 {} 智能分组完成: {}点 -> {}批", deviceId, points.size(), allBatches.size());
         return allBatches;
@@ -524,7 +527,7 @@ public class CollectionScheduler {
 
         // 获取最优批量大小（根据设备性能动态调整）
         int optimalBatchSize = getOptimalBatchSize(deviceId);
-        int maxBatchSize = Math.min(optimalBatchSize * 2, 100); // 最大不超过100点
+        int addressGapThreshold = protocolBatchStrategy.addressGapThreshold(resolveProtocol(deviceId));
 
         List<DataPoint> currentBatch = new ArrayList<>();
         String lastAddress = null;
@@ -545,7 +548,7 @@ public class CollectionScheduler {
                 Integer currentNum = extractNumberFromAddress(currentAddress);
 
                 // 如果地址不连续且差距较大，开始新批次
-                if (lastNum != null && currentNum != null && currentNum - lastNum > 50) {
+                if (lastNum != null && currentNum != null && currentNum - lastNum > addressGapThreshold) {
                     if (!currentBatch.isEmpty()) {
                         batches.add(new ArrayList<>(currentBatch));
                         currentBatch.clear();
@@ -568,7 +571,7 @@ public class CollectionScheduler {
     /**
      * 合并小批次（提高效率）
      */
-    private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize) {
+    private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize, String protocol) {
         if (batches.size() <= 1) {
             return batches;
         }
@@ -595,12 +598,13 @@ public class CollectionScheduler {
         }
 
         // 确保没有超过最大批量大小
+        int maxBatchSize = protocolBatchStrategy.maxMergedBatchSize(protocol);
         List<List<DataPoint>> finalBatches = new ArrayList<>();
         for (List<DataPoint> batch : mergedBatches) {
-            if (batch.size() > 100) { // 最大100点/批
+            if (batch.size() > maxBatchSize) {
                 // 分割大批次
-                for (int i = 0; i < batch.size(); i += 100) {
-                    int end = Math.min(i + 100, batch.size());
+                for (int i = 0; i < batch.size(); i += maxBatchSize) {
+                    int end = Math.min(i + maxBatchSize, batch.size());
                     finalBatches.add(new ArrayList<>(batch.subList(i, end)));
                 }
             } else {
@@ -666,36 +670,25 @@ public class CollectionScheduler {
             if (deviceInfo != null) {
                 String protocol = deviceInfo.getProtocolType();
                 if (protocol != null) {
-                    return switch (protocol.toUpperCase()) {
-                        case "MODBUS_TCP", "MODBUS_RTU" -> 125; // Modbus最大125
-                        case "OPC_UA" -> 100; // OPC UA支持较大批量
-                        case "SIEMENS_S7" -> 200; // S7协议
-                        case "MQTT" -> 30; // MQTT主题不宜太多
-                        case "SNMP" -> 20; // SNMP批量较小
-                        default -> 50; // 默认
-                    };
+                    return protocolBatchStrategy.defaultBatchSize(protocol);
                 }
             }
         } catch (Exception e) {
             log.warn("获取设备 {} 协议类型失败，使用默认批量大小", deviceId, e);
         }
-        return 50;
+        return protocolBatchStrategy.defaultBatchSize(null);
     }
     
     /**
      * 获取协议最大批次大小
      */
     private int getProtocolMaxBatchSize(String protocol) {
-        return switch (protocol.toUpperCase()) {
-            case "MODBUS_TCP", "MODBUS_RTU" -> 125; // Modbus协议限制
-            case "OPC_UA" -> 200; // OPC UA支持较大批量
-            case "SIEMENS_S7" -> 300; // S7协议
-            case "MQTT" -> 50; // MQTT主题数量限制
-            case "SNMP" -> 30; // SNMP批量限制
-            case "COAP" -> 20; // CoAP协议限制
-            case "IEC104" -> 100; // IEC104协议
-            default -> 200; // 默认最大
-        };
+        return protocolBatchStrategy.maxBatchSize(protocol);
+    }
+
+    private String resolveProtocol(String deviceId) {
+        DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+        return deviceInfo != null ? deviceInfo.getProtocolType() : null;
     }
 
     /**

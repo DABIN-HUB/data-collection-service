@@ -9,6 +9,7 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
@@ -29,7 +30,12 @@ import java.util.stream.Collectors;
  * 基础采集器抽象类
  */
 @Slf4j
-public abstract class BaseCollector implements ProtocolCollector {
+public abstract class BaseCollector implements ProtocolCollector,
+        ReadableCollector,
+        WritableCollector,
+        SubscribableCollector,
+        CommandableCollector,
+        ReadPlanCapable {
 
     @Getter
     protected DeviceInfo deviceInfo;
@@ -48,6 +54,9 @@ public abstract class BaseCollector implements ProtocolCollector {
 
     @Autowired(required = false)
     protected ExceptionMonitorService exceptionMonitorService;
+
+    @Autowired(required = false)
+    protected TelemetryIngressService telemetryIngressService;
 
     protected boolean connected = false;
     protected String connectionStatus = "DISCONNECTED";
@@ -211,44 +220,36 @@ public abstract class BaseCollector implements ProtocolCollector {
             // 2. 批量读取原始数据
             Map<String, Object> rawValues = doReadPoints(validPoints);
 
-            // 3. 并行处理数据转换和质量检查
-            Map<String, Object> processedValues = validPoints.parallelStream()
-                    .collect(Collectors.toConcurrentMap(
-                            DataPoint::getPointId,
-                            point -> {
-                                try {
-                                    String pointId = point.getPointId();
-                                    Object rawValue = rawValues.get(pointId);
+            // 3. 逐点处理数据转换和质量检查。不要用 Stream 收集 null 值，避免单点失败拖垮整批。
+            for (DataPoint point : validPoints) {
+                String pointId = point.getPointId();
+                try {
+                    Object rawValue = rawValues.get(pointId);
 
-                                    if (rawValue == null) {
-                                        return null;
-                                    }
+                    if (rawValue == null) {
+                        results.put(pointId, null);
+                        continue;
+                    }
 
-                                    // 数据转换
-                                    Object processedValue = convertData(point, rawValue);
+                    Object processedValue = convertData(point, rawValue);
 
-                                    // 数据质量检查（替代原有的validateData方法）
-                                    ProcessContext context = new ProcessContext();
-                                    context.addAttribute("deviceId", deviceInfo.getDeviceId());
-                                    ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-                                    lastProcessResults.put(pointId, processResult);
+                    ProcessContext context = new ProcessContext();
+                    context.addAttribute("deviceId", deviceInfo.getDeviceId());
+                    ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+                    lastProcessResults.put(pointId, processResult);
 
-                                    // 如果处理失败，不缓存数据（在AOP中会检查）
-                                    if (!processResult.isSuccess()) {
-                                        log.warn("Data quality check failed {}.{}, reason: {}",
-                                                deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
-                                    }
+                    if (!processResult.isSuccess()) {
+                        log.warn("Data quality check failed {}.{}, reason: {}",
+                                deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+                    }
 
-                                    return processResult.getFinalValue();
-                                } catch (Exception e) {
-                                    log.error("处理点位数据失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
-                                    recordException(e, point);
-                                    return null;
-                                }
-                            }
-                    ));
-
-            results.putAll(processedValues);
+                    results.put(pointId, processResult.getFinalValue());
+                } catch (Exception e) {
+                    log.error("处理点位数据失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    recordException(e, point);
+                    results.put(pointId, null);
+                }
+            }
 
             totalReadCount.addAndGet(validPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
@@ -748,6 +749,50 @@ public abstract class BaseCollector implements ProtocolCollector {
     
     public ProcessResult getLatestProcessResult(String pointId) {
         return pointId == null ? null : lastProcessResults.get(pointId);
+    }
+
+    protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
+        if (point == null) {
+            return null;
+        }
+
+        String resolvedDeviceId = point.getDeviceId();
+        if ((resolvedDeviceId == null || resolvedDeviceId.isBlank()) && deviceInfo != null) {
+            resolvedDeviceId = deviceInfo.getDeviceId();
+        }
+
+        try {
+            Object processedValue = convertData(point, rawValue);
+
+            ProcessContext context = new ProcessContext();
+            context.addAttribute("deviceId", resolvedDeviceId);
+            ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+            lastProcessResults.put(point.getPointId(), processResult);
+
+            if (!processResult.isSuccess()) {
+                log.warn("Pushed data quality check failed {}.{}, reason: {}",
+                        resolvedDeviceId, point.getPointName(), processResult.getMessage());
+            }
+
+            lastActivityTime = System.currentTimeMillis();
+            if (telemetryIngressService != null) {
+                telemetryIngressService.append(resolvedDeviceId, point, processResult);
+            }
+            return processResult;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            recordException(e, point);
+
+            ProcessResult error = ProcessResult.error(rawValue,
+                    "pushed telemetry process failed: " + e.getMessage(),
+                    DataQuality.PROCESS_ERROR);
+            lastProcessResults.put(point.getPointId(), error);
+            if (telemetryIngressService != null) {
+                telemetryIngressService.append(resolvedDeviceId, point, error);
+            }
+            return error;
+        }
     }
 
     /**

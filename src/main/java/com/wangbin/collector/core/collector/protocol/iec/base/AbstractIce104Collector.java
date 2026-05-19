@@ -2,7 +2,7 @@ package com.wangbin.collector.core.collector.protocol.iec.base;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.config.CollectorProperties;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * IEC 104 protocol collector base class.
  */
 @Slf4j
-public abstract class AbstractIce104Collector extends BaseCollector {
+public abstract class AbstractIce104Collector extends ConnectionBackedCollector {
 
     @Getter
     protected Connection connection;

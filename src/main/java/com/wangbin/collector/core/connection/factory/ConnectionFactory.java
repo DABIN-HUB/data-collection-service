@@ -7,6 +7,9 @@ import com.wangbin.collector.core.connection.adapter.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 连接工厂
  */
@@ -19,7 +22,7 @@ public class ConnectionFactory {
             throw new IllegalArgumentException("设备信息无效");
         }
         DeviceConnection cfg = connectionConfig != null ? connectionConfig : new DeviceConnection();
-        String connectionType = resolveConnectionType(deviceInfo, cfg);
+        String connectionType = canonicalizeConnectionType(resolveConnectionType(deviceInfo, cfg), cfg);
         return switch (connectionType) {
             case "TCP" -> createTcpConnection(deviceInfo, cfg);
             case "HTTP" -> createHttpConnection(deviceInfo, cfg);
@@ -52,8 +55,73 @@ public class ConnectionFactory {
         return "TCP";
     }
 
+    private String canonicalizeConnectionType(String type, DeviceConnection cfg) {
+        return switch (type) {
+            case "HTTPS" -> {
+                enableSsl(cfg);
+                setDefaultPort(cfg, 443);
+                yield "HTTP";
+            }
+            case "WEBSOCKET_SSL" -> {
+                enableSsl(cfg);
+                setDefaultPort(cfg, 443);
+                yield "WEBSOCKET";
+            }
+            case "MQTT_SSL" -> {
+                enableSsl(cfg);
+                setDefaultPort(cfg, 8883);
+                yield "MQTT";
+            }
+            case "COAP_SSL" -> {
+                enableSsl(cfg);
+                setDefaultPort(cfg, 5684);
+                putExtIfAbsent(cfg, "scheme", "coaps");
+                yield "COAP";
+            }
+            case "SNMP_V1" -> {
+                putExtIfAbsent(cfg, "snmpVersion", "1");
+                setDefaultPort(cfg, 161);
+                yield "SNMP";
+            }
+            case "SNMP_V2C" -> {
+                putExtIfAbsent(cfg, "snmpVersion", "2c");
+                setDefaultPort(cfg, 161);
+                yield "SNMP";
+            }
+            case "SNMP_V3" -> {
+                putExtIfAbsent(cfg, "snmpVersion", "3");
+                setDefaultPort(cfg, 161);
+                yield "SNMP";
+            }
+            case "MODBUS_ASCII" -> "MODBUS_RTU";
+            case "OPCUA" -> "OPC_UA";
+            case "IEC_104" -> "IEC104";
+            case "IEC_61850" -> "IEC61850";
+            case "CUSTOM_TCP" -> "TCP";
+            default -> type;
+        };
+    }
+
     private String normalize(String type) {
         return type.toUpperCase().replace("-", "_");
+    }
+
+    private void enableSsl(DeviceConnection cfg) {
+        cfg.setSslEnabled(true);
+    }
+
+    private void setDefaultPort(DeviceConnection cfg, int port) {
+        if (cfg.getPort() == null) {
+            cfg.setPort(port);
+        }
+    }
+
+    private void putExtIfAbsent(DeviceConnection cfg, String key, Object value) {
+        if (cfg.getExtJson() == null) {
+            cfg.setExtJson(new LinkedHashMap<>());
+        }
+        Map<String, Object> extJson = cfg.getExtJson();
+        extJson.putIfAbsent(key, value);
     }
 
     private ConnectionAdapter<?> createTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {

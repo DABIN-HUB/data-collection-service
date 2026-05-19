@@ -5,8 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.WebSocketConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,7 +18,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class WebSocketCollector extends BaseCollector {
+public class WebSocketCollector extends ConnectionBackedCollector {
 
     private WebSocketConnectionAdapter webSocketConnection;
 
@@ -39,26 +38,13 @@ public class WebSocketCollector extends BaseCollector {
 
     @Override
     protected void doConnect() throws Exception {
-        if (connectionManager == null) {
-            throw new IllegalStateException("Connection manager is not initialized");
-        }
-
         DeviceConnection connectionConfig = prepareConnectionConfig();
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-        connectionManager.connect(deviceInfo.getDeviceId());
-
-        if (!(adapter instanceof WebSocketConnectionAdapter webSocketAdapter)) {
-            throw new IllegalStateException("WebSocket connection adapter type mismatch");
-        }
-
-        this.webSocketConnection = webSocketAdapter;
+        this.webSocketConnection = createAndConnectAdapter(connectionConfig, WebSocketConnectionAdapter.class, "WebSocket");
     }
 
     @Override
     protected void doDisconnect() throws Exception {
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("WebSocket");
 
         webSocketConnection = null;
         latestValues.clear();
@@ -310,8 +296,7 @@ public class WebSocketCollector extends BaseCollector {
                 if (obj.containsKey("pointId") && obj.containsKey("value")) {
                     String pointId = Objects.toString(obj.get("pointId"), null);
                     if (pointId != null) {
-                        latestValues.put(pointId, obj.get("value"));
-                        latestTimestamps.put(pointId, System.currentTimeMillis());
+                        recordInboundValue(pointId, obj.get("value"));
                     }
                     return;
                 }
@@ -334,8 +319,7 @@ public class WebSocketCollector extends BaseCollector {
                     if (itemObj.containsKey("pointId") && itemObj.containsKey("value")) {
                         String pointId = Objects.toString(itemObj.get("pointId"), null);
                         if (pointId != null) {
-                            latestValues.put(pointId, itemObj.get("value"));
-                            latestTimestamps.put(pointId, System.currentTimeMillis());
+                            recordInboundValue(pointId, itemObj.get("value"));
                         }
                     }
                 }
@@ -354,9 +338,18 @@ public class WebSocketCollector extends BaseCollector {
 
             String pointId = resolvePointIdByKey(key);
             if (pointId != null) {
-                latestValues.put(pointId, entry.getValue());
-                latestTimestamps.put(pointId, System.currentTimeMillis());
+                recordInboundValue(pointId, entry.getValue());
             }
+        }
+    }
+
+    private void recordInboundValue(String pointId, Object value) {
+        latestValues.put(pointId, value);
+        latestTimestamps.put(pointId, System.currentTimeMillis());
+
+        DataPoint point = pointDefinitions.get(pointId);
+        if (point != null) {
+            ingestPushedValue(point, value);
         }
     }
 
