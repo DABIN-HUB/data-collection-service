@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.shadow;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.AlarmRule;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
@@ -8,10 +10,15 @@ import com.wangbin.collector.core.report.config.ReportProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.logging.log4j.util.Strings;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,9 +34,20 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class ShadowManager {
 
+    private static final String SHADOW_KEY_PREFIX = "collector:shadow:";
+    private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
+
     private final ReportProperties reportProperties;
     private final Map<String, DeviceShadow> shadows = new ConcurrentHashMap<>();
     private final Set<String> dirtyDevices = ConcurrentHashMap.newKeySet();
+
+    @Autowired(required = false)
+    @Qualifier("cacheRedisTemplate")
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
 
     public ShadowUpdateResult apply(String deviceId, DataPoint point, ProcessResult result) {
         if (deviceId == null || point == null || result == null) {
@@ -57,6 +75,7 @@ public class ShadowManager {
             eventInfo = evaluateEvent(shadow, point, result, eventFieldKey);
         }
 
+        persistShadow(shadow);
         return new ShadowUpdateResult(changeTriggered, eventInfo);
     }
 
@@ -207,7 +226,19 @@ public class ShadowManager {
     }
 
     public DeviceShadow getShadow(String deviceId) {
-        return deviceId == null ? null : shadows.get(deviceId);
+        if (deviceId == null) {
+            return null;
+        }
+        DeviceShadow shadow = shadows.get(deviceId);
+        if (shadow != null) {
+            return shadow;
+        }
+        DeviceShadow restored = loadShadow(deviceId);
+        if (restored == null) {
+            return null;
+        }
+        DeviceShadow existing = shadows.putIfAbsent(deviceId, restored);
+        return existing != null ? existing : restored;
     }
 
     public Set<String> getDirtyDevices() {
@@ -225,6 +256,7 @@ public class ShadowManager {
         if (shadow != null) {
             shadow.setLastReportAt(System.currentTimeMillis());
             shadow.setLastWindow(windowStart, windowEnd);
+            persistShadow(shadow);
         }
         clearDirty(deviceId);
     }
@@ -235,6 +267,7 @@ public class ShadowManager {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow != null) {
             shadow.markReportedValues(properties, propertyTs);
+            persistShadow(shadow);
         }
     }
 
@@ -244,6 +277,273 @@ public class ShadowManager {
         }
         shadows.remove(deviceId);
         dirtyDevices.remove(deviceId);
+        deletePersistedShadow(deviceId);
+    }
+
+    public Map<String, Object> getShadowDocument(String deviceId) {
+        DeviceShadow shadow = getShadow(deviceId);
+        return shadow == null ? null : buildShadowDocument(shadow);
+    }
+
+    public Map<String, Object> getShadowDelta(String deviceId) {
+        DeviceShadow shadow = getShadow(deviceId);
+        if (shadow == null) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("deviceId", shadow.getDeviceId());
+        result.put("version", shadow.currentVersion());
+        result.put("timestamp", shadow.getUpdatedAt());
+        result.put("delta", toValueMap(shadow.deltaSnapshot()));
+        result.put("metadata", toMetaMap(shadow.deltaSnapshot()));
+        return result;
+    }
+
+    public Map<String, Object> updateDesired(String deviceId, Map<String, Object> desiredValues, String source) {
+        return updateDesired(deviceId, desiredValues, source, null);
+    }
+
+    public Map<String, Object> updateDesired(String deviceId,
+                                             Map<String, Object> desiredValues,
+                                             String source,
+                                             Long expectedVersion) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return null;
+        }
+        DeviceShadow shadow = getShadow(deviceId);
+        if (shadow == null) {
+            shadow = shadows.computeIfAbsent(deviceId, DeviceShadow::new);
+        }
+        Map<String, Object> document;
+        synchronized (shadow) {
+            if (expectedVersion != null && shadow.currentVersion() != expectedVersion) {
+                throw new IllegalStateException("shadow version conflict: expected="
+                        + expectedVersion + ", actual=" + shadow.currentVersion());
+            }
+            shadow.updateDesired(desiredValues, source);
+            document = buildShadowDocument(shadow);
+        }
+        persistDocument(deviceId, document);
+        return document;
+    }
+
+    public Map<String, Object> clearDesired(String deviceId, Collection<String> fields) {
+        DeviceShadow shadow = getShadow(deviceId);
+        if (shadow == null) {
+            return null;
+        }
+        shadow.clearDesired(fields);
+        Map<String, Object> document = buildShadowDocument(shadow);
+        persistDocument(deviceId, document);
+        return document;
+    }
+
+    private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("deviceId", shadow.getDeviceId());
+        doc.put("version", shadow.currentVersion());
+        doc.put("timestamp", shadow.getUpdatedAt());
+        doc.put("createdAt", shadow.getCreatedAt());
+        doc.put("lastReportAt", shadow.getLastReportAt());
+        doc.put("lastWindowStart", shadow.getLastWindowStart());
+        doc.put("lastWindowEnd", shadow.getLastWindowEnd());
+
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("reported", toValueMap(shadow.snapshot()));
+        state.put("desired", toValueMap(shadow.desiredSnapshot()));
+        state.put("delta", toValueMap(shadow.deltaSnapshot()));
+        doc.put("state", state);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("reported", toMetaMap(shadow.snapshot()));
+        metadata.put("desired", toMetaMap(shadow.desiredSnapshot()));
+        doc.put("metadata", metadata);
+
+        return doc;
+    }
+
+    private Map<String, Object> toValueMap(Map<String, ValueMeta> metas) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (metas == null) {
+            return values;
+        }
+        metas.forEach((field, meta) -> {
+            if (field != null && meta != null) {
+                values.put(field, meta.getValue());
+            }
+        });
+        return values;
+    }
+
+    private Map<String, Object> toMetaMap(Map<String, ValueMeta> metas) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (metas == null) {
+            return values;
+        }
+        metas.forEach((field, meta) -> {
+            if (field == null || meta == null) {
+                return;
+            }
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("timestamp", meta.getTimestamp());
+            metadata.put("updatedAt", meta.getUpdatedAt());
+            if (meta.getQuality() != null) {
+                metadata.put("quality", meta.getQuality());
+            }
+            if (meta.getSource() != null) {
+                metadata.put("source", meta.getSource());
+            }
+            values.put(field, metadata);
+        });
+        return values;
+    }
+
+    private void persistShadow(DeviceShadow shadow) {
+        if (shadow == null) {
+            return;
+        }
+        persistDocument(shadow.getDeviceId(), buildShadowDocument(shadow));
+    }
+
+    private void persistDocument(String deviceId, Map<String, Object> document) {
+        if (redisTemplate == null || deviceId == null || document == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(shadowKey(deviceId), document);
+        } catch (Exception e) {
+            log.warn("设备影子持久化失败 deviceId={} err={}", deviceId, e.getMessage());
+        }
+    }
+
+    private DeviceShadow loadShadow(String deviceId) {
+        if (redisTemplate == null || deviceId == null) {
+            return null;
+        }
+        try {
+            Object stored = redisTemplate.opsForValue().get(shadowKey(deviceId));
+            if (stored == null) {
+                return null;
+            }
+            Map<String, Object> document = toMap(stored);
+            if (document.isEmpty()) {
+                return null;
+            }
+            return restoreShadow(deviceId, document);
+        } catch (Exception e) {
+            log.warn("设备影子恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+            return null;
+        }
+    }
+
+    private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
+        String deviceId = asString(document.get("deviceId"));
+        DeviceShadow shadow = new DeviceShadow(deviceId != null ? deviceId : fallbackDeviceId);
+        Long version = asLong(document.get("version"));
+        if (version != null) {
+            shadow.restoreVersion(version);
+        }
+        Long createdAt = asLong(document.get("createdAt"));
+        if (createdAt != null) {
+            shadow.setCreatedAt(createdAt);
+        }
+        Long updatedAt = asLong(document.get("timestamp"));
+        if (updatedAt != null) {
+            shadow.setUpdatedAt(updatedAt);
+        }
+        Long lastReportAt = asLong(document.get("lastReportAt"));
+        if (lastReportAt != null) {
+            shadow.setLastReportAt(lastReportAt);
+        }
+        Long lastWindowStart = asLong(document.get("lastWindowStart"));
+        Long lastWindowEnd = asLong(document.get("lastWindowEnd"));
+        if (lastWindowStart != null && lastWindowEnd != null) {
+            shadow.setLastWindow(lastWindowStart, lastWindowEnd);
+        }
+
+        Map<String, Object> state = toMap(document.get("state"));
+        Map<String, Object> metadata = toMap(document.get("metadata"));
+        restoreValues(shadow, state.get("reported"), toMap(metadata.get("reported")), true);
+        restoreValues(shadow, state.get("desired"), toMap(metadata.get("desired")), false);
+        return shadow;
+    }
+
+    private void restoreValues(DeviceShadow shadow,
+                               Object valuesObject,
+                               Map<String, Object> metadata,
+                               boolean reported) {
+        Map<String, Object> values = toMap(valuesObject);
+        values.forEach((field, value) -> {
+            Map<String, Object> metaMap = toMap(metadata.get(field));
+            long timestamp = Optional.ofNullable(asLong(metaMap.get("timestamp"))).orElse(System.currentTimeMillis());
+            long updatedAt = Optional.ofNullable(asLong(metaMap.get("updatedAt"))).orElse(timestamp);
+            String quality = asString(metaMap.get("quality"));
+            String source = asString(metaMap.get("source"));
+            ValueMeta meta = new ValueMeta(value, timestamp, quality, source, updatedAt);
+            if (reported) {
+                shadow.restoreReported(field, meta);
+            } else {
+                shadow.restoreDesired(field, meta);
+            }
+        });
+    }
+
+    private void deletePersistedShadow(String deviceId) {
+        if (redisTemplate == null || deviceId == null) {
+            return;
+        }
+        try {
+            redisTemplate.delete(shadowKey(deviceId));
+        } catch (Exception e) {
+            log.warn("删除设备影子持久化数据失败 deviceId={} err={}", deviceId, e.getMessage());
+        }
+    }
+
+    private String shadowKey(String deviceId) {
+        return SHADOW_KEY_PREFIX + deviceId;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, item) -> {
+                if (key != null) {
+                    result.put(String.valueOf(key), item);
+                }
+            });
+            return result;
+        }
+        if (objectMapper != null && value != null) {
+            try {
+                return objectMapper.convertValue(value, MAP_TYPE);
+            } catch (Exception ignored) {
+                return Collections.emptyMap();
+            }
+        }
+        return Collections.emptyMap();
+    }
+
+    private Long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value != null) {
+            try {
+                return Long.parseLong(String.valueOf(value));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String asString(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
     }
 
     public record ShadowUpdateResult(boolean changeTriggered, EventInfo eventInfo) {

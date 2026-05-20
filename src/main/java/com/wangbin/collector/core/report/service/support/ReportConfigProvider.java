@@ -11,7 +11,10 @@ import org.springframework.stereotype.Component;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -75,6 +78,10 @@ public class ReportConfigProvider {
         params.put(ProtocolConstant.MQTT_PARAM_ACK_TOPIC_PREFIX, mqtt.getAckTopicPrefix());
         params.put(ProtocolConstant.MQTT_PARAM_ACK_TOPIC_SUFFIX, mqtt.getAckTopicSuffix());
         params.put(ProtocolConstant.MQTT_PARAM_ACK_TIMEOUT, mqtt.getAckTimeoutMs());
+        List<String> subscribeTopics = buildSubscribeTopics(mqtt);
+        if (!subscribeTopics.isEmpty()) {
+            params.put(ProtocolConstant.MQTT_PARAM_SUBSCRIBE_TOPICS, subscribeTopics);
+        }
 
         String gatewayProductKey = mqtt.getGatewayProductKey();
         if (gatewayProductKey != null && !gatewayProductKey.isEmpty()) {
@@ -90,6 +97,41 @@ public class ReportConfigProvider {
         config.setParams(params);
 
         return config;
+    }
+
+    private List<String> buildSubscribeTopics(ReportProperties.Mqtt mqtt) {
+        LinkedHashSet<String> topics = new LinkedHashSet<>();
+        if (mqtt.getSubscribeTopics() != null) {
+            mqtt.getSubscribeTopics().stream()
+                    .filter(topic -> topic != null && !topic.isBlank())
+                    .map(String::trim)
+                    .forEach(topics::add);
+        }
+        if (!mqtt.isDownlinkEnabled()) {
+            return new ArrayList<>(topics);
+        }
+
+        List<String> methods = List.of(
+                "thing/property/set",
+                "thing/service/invoke",
+                "thing/config/push",
+                "thing/ota/upgrade"
+        );
+        for (String prefix : List.of(mqtt.getAckTopicPrefix(), mqtt.getTopicPrefix())) {
+            String normalizedPrefix = normalizeTopicPrefix(prefix);
+            for (String method : methods) {
+                topics.add(normalizedPrefix + "/+/+/" + method);
+            }
+        }
+        return new ArrayList<>(topics);
+    }
+
+    private String normalizeTopicPrefix(String prefix) {
+        String value = prefix == null || prefix.isBlank() ? "/sys" : prefix.trim();
+        if (value.length() > 1 && value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
     }
 
     private String resolveClientId(String deviceId, String template) {

@@ -3,9 +3,11 @@ package com.wangbin.collector.core.report.shadow;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import lombok.Data;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -17,6 +19,7 @@ public class DeviceShadow {
 
     private final String deviceId;
     private final Map<String, ValueMeta> latest = new ConcurrentHashMap<>();
+    private final Map<String, ValueMeta> desired = new ConcurrentHashMap<>();
     private final Map<String, PointInfo> pointInfos = new ConcurrentHashMap<>();
     private final Map<String, Object> lastReportedValues = new ConcurrentHashMap<>();
     private final Map<String, Long> lastReportedTs = new ConcurrentHashMap<>();
@@ -24,19 +27,35 @@ public class DeviceShadow {
     private final Map<String, Long> lastEventTriggerAt = new ConcurrentHashMap<>();
     private final Map<String, Long> eventSignatureTimes = new ConcurrentHashMap<>();
     private final AtomicLong sequence = new AtomicLong(0);
+    private final AtomicLong version = new AtomicLong(0);
+    private long createdAt;
     private volatile long lastReportAt;
     private volatile long lastWindowStart;
     private volatile long lastWindowEnd;
+    private volatile long updatedAt;
 
     public DeviceShadow(String deviceId) {
         this.deviceId = deviceId;
-        this.lastReportAt = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        this.createdAt = now;
+        this.lastReportAt = now;
+        this.updatedAt = now;
     }
 
     public void update(String field, ValueMeta valueMeta, DataPoint point) {
-        latest.put(field, valueMeta);
+        if (field == null || field.isBlank() || valueMeta == null) {
+            return;
+        }
+        ValueMeta previous = latest.put(field, valueMeta);
         if (point != null) {
             pointInfos.put(field, new PointInfo(point.getPointId(), point.getPointCode(), point.getPointName()));
+        }
+        boolean changed = isMetaChanged(previous, valueMeta);
+        if (clearDesiredIfSatisfied(field, valueMeta.getValue())) {
+            changed = true;
+        }
+        if (changed) {
+            touch();
         }
     }
 
@@ -46,6 +65,20 @@ public class DeviceShadow {
 
     public Map<String, ValueMeta> snapshot() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(latest));
+    }
+
+    public Map<String, ValueMeta> desiredSnapshot() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(desired));
+    }
+
+    public Map<String, ValueMeta> deltaSnapshot() {
+        Map<String, ValueMeta> delta = new LinkedHashMap<>();
+        desired.forEach((field, meta) -> {
+            if (meta != null && !isDesiredSatisfied(field, meta.getValue())) {
+                delta.put(field, meta);
+            }
+        });
+        return Collections.unmodifiableMap(delta);
     }
 
     public Map<String, PointInfo> snapshotPointInfos() {
@@ -64,6 +97,68 @@ public class DeviceShadow {
         return sequence.incrementAndGet();
     }
 
+    public long currentVersion() {
+        return version.get();
+    }
+
+    public void updateDesired(Map<String, Object> values, String source) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        boolean changed = false;
+        String resolvedSource = source == null || source.isBlank() ? "api" : source;
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            String field = entry.getKey();
+            if (field == null || field.isBlank()) {
+                continue;
+            }
+            ValueMeta meta = new ValueMeta(entry.getValue(), now, "DESIRED", resolvedSource);
+            ValueMeta previous = desired.put(field, meta);
+            if (isMetaChanged(previous, meta)) {
+                changed = true;
+            }
+            if (isDesiredSatisfied(field, entry.getValue()) && desired.remove(field) != null) {
+                changed = true;
+            }
+        }
+        if (changed) {
+            touch();
+        }
+    }
+
+    public void clearDesired(Collection<String> fields) {
+        boolean changed = false;
+        if (fields == null || fields.isEmpty()) {
+            changed = !desired.isEmpty();
+            desired.clear();
+        } else {
+            for (String field : fields) {
+                if (field != null && desired.remove(field) != null) {
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            touch();
+        }
+    }
+
+    public void restoreReported(String field, ValueMeta valueMeta) {
+        if (field != null && !field.isBlank() && valueMeta != null) {
+            latest.put(field, valueMeta);
+        }
+    }
+
+    public void restoreDesired(String field, ValueMeta valueMeta) {
+        if (field != null && !field.isBlank() && valueMeta != null) {
+            desired.put(field, valueMeta);
+        }
+    }
+
+    public void restoreVersion(long version) {
+        this.version.set(Math.max(0, version));
+    }
 
     public void setLastWindow(long start, long end) {
         this.lastWindowStart = start;
@@ -120,6 +215,44 @@ public class DeviceShadow {
         if (signature != null) {
             eventSignatureTimes.put(signature, timestamp);
         }
+    }
+
+    private boolean clearDesiredIfSatisfied(String field, Object reportedValue) {
+        ValueMeta desiredMeta = desired.get(field);
+        if (desiredMeta == null || !valuesEqual(desiredMeta.getValue(), reportedValue)) {
+            return false;
+        }
+        desired.remove(field);
+        return true;
+    }
+
+    private boolean isDesiredSatisfied(String field, Object desiredValue) {
+        ValueMeta reported = latest.get(field);
+        return reported != null && valuesEqual(reported.getValue(), desiredValue);
+    }
+
+    private boolean isMetaChanged(ValueMeta previous, ValueMeta current) {
+        if (previous == null && current == null) {
+            return false;
+        }
+        if (previous == null || current == null) {
+            return true;
+        }
+        return !valuesEqual(previous.getValue(), current.getValue())
+                || !Objects.equals(previous.getQuality(), current.getQuality())
+                || !Objects.equals(previous.getSource(), current.getSource());
+    }
+
+    private boolean valuesEqual(Object left, Object right) {
+        if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
+            return Double.compare(leftNumber.doubleValue(), rightNumber.doubleValue()) == 0;
+        }
+        return Objects.equals(left, right);
+    }
+
+    private void touch() {
+        updatedAt = System.currentTimeMillis();
+        version.incrementAndGet();
     }
 
     public record PointInfo(String pointId, String pointCode, String pointName) {

@@ -97,6 +97,35 @@ class ShadowManagerTest {
         assertEquals("QUALITY", qualityEvent.eventInfo().eventType());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void desiredStateBuildsDeltaAndClearsWhenReportedMatches() {
+        ShadowManager manager = new ShadowManager(properties);
+        DataPoint point = createPoint("dev-shadow", "temperature", Map.of(
+                "reportEnabled", true,
+                "reportField", "temperature"
+        ));
+
+        Map<String, Object> initial = manager.updateDesired("dev-shadow", Map.of("temperature", 26.0), "test");
+        Map<String, Object> initialState = (Map<String, Object>) initial.get("state");
+        assertEquals(Map.of("temperature", 26.0), initialState.get("desired"));
+        assertEquals(Map.of("temperature", 26.0), initialState.get("delta"));
+
+        manager.apply("dev-shadow", point, buildResult(25.0, QualityEnum.GOOD.getCode()));
+        Map<String, Object> mismatch = manager.getShadowDocument("dev-shadow");
+        Map<String, Object> mismatchState = (Map<String, Object>) mismatch.get("state");
+        assertEquals(Map.of("temperature", 25.0), mismatchState.get("reported"));
+        assertEquals(Map.of("temperature", 26.0), mismatchState.get("desired"));
+        assertEquals(Map.of("temperature", 26.0), mismatchState.get("delta"));
+
+        manager.apply("dev-shadow", point, buildResult(26.0, QualityEnum.GOOD.getCode()));
+        Map<String, Object> matched = manager.getShadowDocument("dev-shadow");
+        Map<String, Object> matchedState = (Map<String, Object>) matched.get("state");
+        assertEquals(Map.of("temperature", 26.0), matchedState.get("reported"));
+        assertEquals(Map.of(), matchedState.get("desired"));
+        assertEquals(Map.of(), matchedState.get("delta"));
+    }
+
     private DataPoint createPoint(String deviceId, String alias, Map<String, Object> config) {
         DataPoint point = new DataPoint();
         point.setDeviceId(deviceId);

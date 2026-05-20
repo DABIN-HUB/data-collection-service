@@ -144,6 +144,8 @@ public class ReportProperties {
         private int connectionTimeout = 30;
         private int keepAliveInterval = 60;
         private boolean retained = false;
+        private boolean downlinkEnabled = true;
+        private List<String> subscribeTopics = new ArrayList<>();
         /**
          * 业务自定义主题
          */

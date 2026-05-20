@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
+import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
@@ -12,6 +14,7 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.eclipse.paho.mqttv5.client.*;
 import org.eclipse.paho.mqttv5.client.persist.MemoryPersistence;
@@ -38,6 +41,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     private SubscriptionManager subscriptionManager;
     private final Map<String, MqttConnectionConfig> connectionConfigs = new ConcurrentHashMap<>();
     private final AckManager ackManager = new AckManager();
+    @Autowired(required = false)
+    private MqttDownlinkService downlinkService;
 
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
@@ -47,7 +52,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     protected void doInit() throws Exception {
         log.info("初始化MQTT v5报告处理器...");
 
-        clientManager = new MqttClientManager(ackManager);
+        clientManager = new MqttClientManager(ackManager, downlinkService);
         clientManager.init();
 
         messagePublisher = new MessagePublisher(clientManager);
@@ -75,6 +80,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return buildOfflineResult(data, config,
                         "MQTT client not connected, reconnect scheduled");
             }
+            updateSubscriptions(connConfig);
 
             // 3. 构建发布选项
             MqttPublishOptions publishOptions = buildPublishOptions(data, config);
@@ -145,6 +151,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
                 return results;
             }
+            updateSubscriptions(connConfig);
 
             // 2. 批量发布消息
             for (ReportData data : dataList) {
@@ -962,6 +969,17 @@ public class MqttReportHandler extends AbstractReportHandler {
             return false;
         }
 
+        public String resolveDownlinkReplyTopic(String inboundTopic) {
+            if (inboundTopic == null || inboundTopic.isBlank()) {
+                return null;
+            }
+            String suffix = ackTopicSuffix == null || ackTopicSuffix.isBlank() ? "_reply" : ackTopicSuffix.trim();
+            if (inboundTopic.endsWith(suffix)) {
+                return null;
+            }
+            return inboundTopic + suffix;
+        }
+
         private String normalizePrefix(String prefix) {
             String value = prefix == null || prefix.isBlank() ? "/sys" : prefix.trim();
             if (!value.startsWith("/")) {
@@ -1069,9 +1087,11 @@ public class MqttReportHandler extends AbstractReportHandler {
         private static final long ERROR_LOG_INTERVAL_MS = 10000L;
         private ScheduledExecutorService monitorExecutor;
         private final AckManager ackManager;
+        private final MqttDownlinkService downlinkService;
 
-        public MqttClientManager(AckManager ackManager) {
+        public MqttClientManager(AckManager ackManager, MqttDownlinkService downlinkService) {
             this.ackManager = ackManager;
+            this.downlinkService = downlinkService;
         }
 
         public void init() {
@@ -1239,7 +1259,12 @@ public class MqttReportHandler extends AbstractReportHandler {
                 MqttAsyncClient asyncClient = new MqttAsyncClient(brokerUrl, clientId, persistence);
 
                 MqttConnectionOptions options = buildConnectOptions(config);
-                asyncClient.setCallback(new MqttCallbackHandler(config, ackManager));
+                asyncClient.setCallback(new MqttCallbackHandler(config, ackManager, downlinkService,
+                        (topic, payload, qos) -> {
+                            MqttMessage response = new MqttMessage(payload);
+                            response.setQos(qos);
+                            asyncClient.publish(topic, response);
+                        }));
 
                 // 连接服务器
                 IMqttToken token = asyncClient.connect(options);
@@ -1355,16 +1380,28 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
 
+    @FunctionalInterface
+    private interface DownlinkResponsePublisher {
+        void publish(String topic, byte[] payload, int qos) throws MqttException;
+    }
+
     /**
      * MQTT v5 callback handler
      */
     private static class MqttCallbackHandler implements MqttCallback {
         private final MqttConnectionConfig config;
         private final AckManager ackManager;
+        private final MqttDownlinkService downlinkService;
+        private final DownlinkResponsePublisher responsePublisher;
 
-        private MqttCallbackHandler(MqttConnectionConfig config, AckManager ackManager) {
+        private MqttCallbackHandler(MqttConnectionConfig config,
+                                    AckManager ackManager,
+                                    MqttDownlinkService downlinkService,
+                                    DownlinkResponsePublisher responsePublisher) {
             this.config = config;
             this.ackManager = ackManager;
+            this.downlinkService = downlinkService;
+            this.responsePublisher = responsePublisher;
         }
 
         @Override
@@ -1390,6 +1427,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                     ? message.getPayload().length : 0;
             log.debug("MQTT v5消息接收：topic={} QoS={} bytes={}",
                     topic, message != null ? message.getQos() : -1, payloadLength);
+            handleDownlinkMessage(topic, message);
         }
 
         @Override
@@ -1450,6 +1488,28 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return Integer.parseInt(codeNode.asText());
             } catch (NumberFormatException ex) {
                 return 0;
+            }
+        }
+
+        private void handleDownlinkMessage(String topic, MqttMessage message) {
+            if (downlinkService == null || message == null || message.getPayload() == null) {
+                return;
+            }
+            MqttDownlinkResult result = downlinkService.handle(topic, message.getPayload());
+            if (result == null || !result.isResponseRequired()) {
+                return;
+            }
+            String replyTopic = config.resolveDownlinkReplyTopic(topic);
+            if (replyTopic == null || replyTopic.isBlank() || responsePublisher == null) {
+                return;
+            }
+            try {
+                int qos = Math.max(0, Math.min(1, message.getQos()));
+                responsePublisher.publish(replyTopic, downlinkService.buildResponsePayload(result), qos);
+                log.debug("MQTT 下行响应已发布 topic={} code={} method={}",
+                        replyTopic, result.getCode(), result.getMethod());
+            } catch (Exception e) {
+                log.warn("MQTT 下行响应发布失败 topic={} err={}", replyTopic, e.getMessage());
             }
         }
     }

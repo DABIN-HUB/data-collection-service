@@ -8,13 +8,23 @@ public class ValueMeta {
     private final Object value;
     private final long timestamp;
     private final String quality;
+    private final String source;
     private final long updatedAt;
 
     public ValueMeta(Object value, long timestamp, String quality) {
+        this(value, timestamp, quality, null);
+    }
+
+    public ValueMeta(Object value, long timestamp, String quality, String source) {
+        this(value, timestamp, quality, source, System.currentTimeMillis());
+    }
+
+    public ValueMeta(Object value, long timestamp, String quality, String source, long updatedAt) {
         this.value = value;
         this.timestamp = timestamp;
         this.quality = quality;
-        this.updatedAt = System.currentTimeMillis();
+        this.source = source;
+        this.updatedAt = updatedAt;
     }
 
     public Object getValue() {
@@ -27,6 +37,10 @@ public class ValueMeta {
 
     public String getQuality() {
         return quality;
+    }
+
+    public String getSource() {
+        return source;
     }
 
     public long getUpdatedAt() {
