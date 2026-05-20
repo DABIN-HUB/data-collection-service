@@ -188,6 +188,12 @@ collector:
       cas-enabled: true
       key-prefix: "collector:shadow:"
       ttl-seconds: 86400
+      auto-merge-enabled: true
+      merge-retry-times: 2
+      history-enabled: true
+      history-key-prefix: "collector:shadow:history:"
+      history-max-records: 100
+      history-ttl-seconds: 604800
     mqtt:
       enabled: true
       broker-url: tcp://43.138.73.155:1883

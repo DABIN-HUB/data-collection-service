@@ -50,6 +50,12 @@ public class ShadowController {
         return ApiResult.success(delta);
     }
 
+    @GetMapping("/{deviceId}/history")
+    public ApiResult<List<Map<String, Object>>> getHistory(@PathVariable String deviceId,
+                                                           @RequestParam(defaultValue = "20") int limit) {
+        return ApiResult.success(shadowManager.getShadowHistory(deviceId, limit));
+    }
+
     @PostMapping("/{deviceId}/desired")
     public ApiResult<Map<String, Object>> updateDesired(@PathVariable String deviceId,
                                                         @RequestBody Map<String, Object> request) {

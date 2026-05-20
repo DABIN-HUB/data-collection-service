@@ -216,5 +216,35 @@ public class ReportProperties {
          * 影子 Redis 过期时间，单位秒；小于等于 0 表示不过期。
          */
         private long ttlSeconds = 24 * 60 * 60;
+
+        /**
+         * CAS 冲突后是否基于 Redis 最新影子自动合并并重试。
+         */
+        private boolean autoMergeEnabled = true;
+
+        /**
+         * CAS 冲突后的最大自动重试次数。
+         */
+        private int mergeRetryTimes = 2;
+
+        /**
+         * 是否记录 desired/clear 操作的影子历史审计。
+         */
+        private boolean historyEnabled = true;
+
+        /**
+         * 历史审计 Redis list key 前缀。
+         */
+        private String historyKeyPrefix = "collector:shadow:history:";
+
+        /**
+         * 每个设备最多保留的历史审计条数；小于等于 0 表示不裁剪。
+         */
+        private int historyMaxRecords = 100;
+
+        /**
+         * 历史审计 Redis 过期时间，单位秒；小于等于 0 表示不过期。
+         */
+        private long historyTtlSeconds = 7 * 24 * 60 * 60;
     }
 }

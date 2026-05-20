@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -336,6 +337,32 @@ public class ShadowManager {
         return result;
     }
 
+    public List<Map<String, Object>> getShadowHistory(String deviceId, int limit) {
+        if (!shadowHistoryEnabled() || stringRedisTemplate == null || objectMapper == null
+                || deviceId == null || deviceId.isBlank()) {
+            return List.of();
+        }
+        int resolvedLimit = limit <= 0 ? 20 : Math.min(limit, 200);
+        try {
+            List<String> values = stringRedisTemplate.opsForList()
+                    .range(historyKey(deviceId), 0, resolvedLimit - 1L);
+            if (values == null || values.isEmpty()) {
+                return List.of();
+            }
+            List<Map<String, Object>> history = new ArrayList<>();
+            for (String value : values) {
+                Map<String, Object> item = toMap(value);
+                if (!item.isEmpty()) {
+                    history.add(item);
+                }
+            }
+            return history;
+        } catch (Exception e) {
+            log.warn("查询设备影子历史失败 deviceId={} err={}", deviceId, e.getMessage());
+            return List.of();
+        }
+    }
+
     public Map<String, Object> updateDesired(String deviceId, Map<String, Object> desiredValues, String source) {
         return updateDesired(deviceId, desiredValues, source, null);
     }
@@ -347,6 +374,16 @@ public class ShadowManager {
         if (deviceId == null || deviceId.isBlank()) {
             return null;
         }
+        if (expectedVersion == null && redisCasEnabled() && shadowAutoMergeEnabled()) {
+            return updateDesiredWithAutoMerge(deviceId, desiredValues, source);
+        }
+        return updateDesiredStrict(deviceId, desiredValues, source, expectedVersion);
+    }
+
+    private Map<String, Object> updateDesiredStrict(String deviceId,
+                                                    Map<String, Object> desiredValues,
+                                                    String source,
+                                                    Long expectedVersion) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow == null) {
             shadow = shadows.computeIfAbsent(deviceId, DeviceShadow::new);
@@ -368,7 +405,7 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, casExpectedVersion);
+            persistDocumentCas(deviceId, document, casExpectedVersion, "desired_update");
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
@@ -381,6 +418,15 @@ public class ShadowManager {
         if (shadow == null) {
             return null;
         }
+        if (redisCasEnabled() && shadowAutoMergeEnabled()) {
+            return clearDesiredWithAutoMerge(deviceId, fields);
+        }
+        return clearDesiredStrict(deviceId, fields, shadow);
+    }
+
+    private Map<String, Object> clearDesiredStrict(String deviceId,
+                                                   Collection<String> fields,
+                                                   DeviceShadow shadow) {
         Map<String, Object> document;
         long previousVersion;
         synchronized (shadow) {
@@ -389,12 +435,89 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, previousVersion);
+            persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
         }
         return document;
+    }
+
+    private Map<String, Object> updateDesiredWithAutoMerge(String deviceId,
+                                                           Map<String, Object> desiredValues,
+                                                           String source) {
+        IllegalStateException lastConflict = null;
+        int attempts = shadowMergeAttempts();
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            DeviceShadow shadow = resolveWritableShadow(deviceId);
+            Map<String, Object> document;
+            long previousVersion;
+            synchronized (shadow) {
+                previousVersion = shadow.currentVersion();
+                shadow.updateDesired(desiredValues, source);
+                document = buildShadowDocument(shadow);
+            }
+            try {
+                persistDocumentCas(deviceId, document, previousVersion, "desired_update");
+                shadows.put(deviceId, shadow);
+                return document;
+            } catch (ShadowVersionConflictException e) {
+                lastConflict = e;
+                reloadLocalShadow(deviceId);
+                log.debug("设备影子 desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                        deviceId, attempt + 1, e.getMessage());
+            } catch (IllegalStateException e) {
+                reloadLocalShadow(deviceId);
+                throw e;
+            }
+        }
+        if (lastConflict != null) {
+            throw lastConflict;
+        }
+        return updateDesiredStrict(deviceId, desiredValues, source, null);
+    }
+
+    private Map<String, Object> clearDesiredWithAutoMerge(String deviceId, Collection<String> fields) {
+        IllegalStateException lastConflict = null;
+        int attempts = shadowMergeAttempts();
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            DeviceShadow shadow = resolveWritableShadow(deviceId);
+            Map<String, Object> document;
+            long previousVersion;
+            synchronized (shadow) {
+                previousVersion = shadow.currentVersion();
+                shadow.clearDesired(fields);
+                document = buildShadowDocument(shadow);
+            }
+            try {
+                persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
+                shadows.put(deviceId, shadow);
+                return document;
+            } catch (ShadowVersionConflictException e) {
+                lastConflict = e;
+                reloadLocalShadow(deviceId);
+                log.debug("设备影子 clear desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                        deviceId, attempt + 1, e.getMessage());
+            } catch (IllegalStateException e) {
+                reloadLocalShadow(deviceId);
+                throw e;
+            }
+        }
+        if (lastConflict != null) {
+            throw lastConflict;
+        }
+        DeviceShadow shadow = getShadow(deviceId);
+        return shadow == null ? null : clearDesiredStrict(deviceId, fields, shadow);
+    }
+
+    private DeviceShadow resolveWritableShadow(String deviceId) {
+        DeviceShadow shadow = getShadow(deviceId);
+        if (shadow != null) {
+            return shadow;
+        }
+        DeviceShadow created = new DeviceShadow(deviceId);
+        DeviceShadow existing = shadows.putIfAbsent(deviceId, created);
+        return existing != null ? existing : created;
     }
 
     private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
@@ -457,9 +580,12 @@ public class ShadowManager {
         return values;
     }
 
-    private void persistDocumentCas(String deviceId, Map<String, Object> document, long expectedVersion) {
+    private void persistDocumentCas(String deviceId,
+                                    Map<String, Object> document,
+                                    long expectedVersion,
+                                    String action) {
         if (!redisCasEnabled()) {
-            persistDocument(deviceId, document);
+            persistDocument(deviceId, document, action);
             return;
         }
         try {
@@ -479,8 +605,10 @@ public class ShadowManager {
             ));
             CasResult casResult = parseCasResult(result);
             if (!casResult.success()) {
-                throw new IllegalStateException("shadow version conflict: expected="
-                        + expectedVersion + ", actual=" + casResult.actualVersion());
+                throw new ShadowVersionConflictException(expectedVersion, casResult.actualVersion());
+            }
+            if (shouldRecordHistory(action, expectedVersion, nextVersion)) {
+                appendShadowHistory(deviceId, action, document, expectedVersion);
             }
         } catch (IllegalStateException e) {
             throw e;
@@ -497,10 +625,15 @@ public class ShadowManager {
     }
 
     private void persistDocument(String deviceId, Map<String, Object> document) {
+        persistDocument(deviceId, document, null);
+    }
+
+    private void persistDocument(String deviceId, Map<String, Object> document, String action) {
         if (!shadowPersistenceEnabled() || deviceId == null || document == null) {
             return;
         }
         long ttlMs = shadowTtlMillis();
+        long baseVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(0L) - 1;
         try {
             if (stringRedisTemplate != null && objectMapper != null) {
                 String payload = objectMapper.writeValueAsString(document);
@@ -508,6 +641,9 @@ public class ShadowManager {
                     stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload, ttlMs, TimeUnit.MILLISECONDS);
                 } else {
                     stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload);
+                }
+                if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+                    appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
                 }
                 return;
             }
@@ -518,6 +654,9 @@ public class ShadowManager {
                 redisTemplate.opsForValue().set(shadowKey(deviceId), document, ttlMs, TimeUnit.MILLISECONDS);
             } else {
                 redisTemplate.opsForValue().set(shadowKey(deviceId), document);
+            }
+            if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+                appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
             }
         } catch (Exception e) {
             log.warn("设备影子持久化失败 deviceId={} err={}", deviceId, e.getMessage());
@@ -636,6 +775,15 @@ public class ShadowManager {
         return prefix + deviceId;
     }
 
+    private String historyKey(String deviceId) {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX + "history:" : shadow.getHistoryKeyPrefix();
+        if (prefix == null || prefix.isBlank()) {
+            prefix = DEFAULT_SHADOW_KEY_PREFIX + "history:";
+        }
+        return prefix + deviceId;
+    }
+
     private DeviceShadow refreshLocalShadowIfVersionMismatch(String deviceId,
                                                              DeviceShadow current,
                                                              long expectedVersion) {
@@ -668,9 +816,35 @@ public class ShadowManager {
                 && objectMapper != null;
     }
 
+    private boolean shadowAutoMergeEnabled() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadow == null || shadow.isAutoMergeEnabled();
+    }
+
+    private int shadowMergeAttempts() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        int retries = shadow == null ? 2 : Math.max(0, shadow.getMergeRetryTimes());
+        return retries + 1;
+    }
+
     private boolean shadowPersistenceEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null || shadow.isPersistenceEnabled();
+    }
+
+    private boolean shadowHistoryEnabled() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadow != null && shadow.isHistoryEnabled();
+    }
+
+    private boolean shouldRecordHistory(String action, long baseVersion, Long nextVersion) {
+        if (!shadowHistoryEnabled() || action == null || action.isBlank() || nextVersion == null) {
+            return false;
+        }
+        if (!"desired_update".equals(action) && !"desired_clear".equals(action)) {
+            return false;
+        }
+        return nextVersion != baseVersion;
     }
 
     private long shadowTtlMillis() {
@@ -679,6 +853,48 @@ public class ShadowManager {
             return 0;
         }
         return TimeUnit.SECONDS.toMillis(shadow.getTtlSeconds());
+    }
+
+    private long shadowHistoryTtlSeconds() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadow == null ? 0 : shadow.getHistoryTtlSeconds();
+    }
+
+    private int shadowHistoryMaxRecords() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadow == null ? 0 : shadow.getHistoryMaxRecords();
+    }
+
+    private void appendShadowHistory(String deviceId,
+                                     String action,
+                                     Map<String, Object> document,
+                                     long baseVersion) {
+        if (!shadowHistoryEnabled() || stringRedisTemplate == null || objectMapper == null
+                || deviceId == null || document == null) {
+            return;
+        }
+        try {
+            Map<String, Object> history = new LinkedHashMap<>();
+            history.put("deviceId", deviceId);
+            history.put("action", action);
+            history.put("baseVersion", baseVersion);
+            history.put("version", document.get("version"));
+            history.put("timestamp", System.currentTimeMillis());
+            history.put("document", document);
+
+            String key = historyKey(deviceId);
+            stringRedisTemplate.opsForList().leftPush(key, objectMapper.writeValueAsString(history));
+            int maxRecords = shadowHistoryMaxRecords();
+            if (maxRecords > 0) {
+                stringRedisTemplate.opsForList().trim(key, 0, maxRecords - 1L);
+            }
+            long ttlSeconds = shadowHistoryTtlSeconds();
+            if (ttlSeconds > 0) {
+                stringRedisTemplate.expire(key, ttlSeconds, TimeUnit.SECONDS);
+            }
+        } catch (Exception e) {
+            log.warn("记录设备影子历史失败 deviceId={} action={} err={}", deviceId, action, e.getMessage());
+        }
     }
 
     private CasResult parseCasResult(Object value) {
@@ -773,5 +989,11 @@ public class ShadowManager {
     }
 
     private record CasResult(boolean success, Long actualVersion) {
+    }
+
+    private static class ShadowVersionConflictException extends IllegalStateException {
+        ShadowVersionConflictException(long expectedVersion, Long actualVersion) {
+            super("shadow version conflict: expected=" + expectedVersion + ", actual=" + actualVersion);
+        }
     }
 }
