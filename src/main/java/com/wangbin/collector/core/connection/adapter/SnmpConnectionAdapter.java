@@ -6,7 +6,10 @@ import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpUtils;
 import com.wangbin.collector.core.connection.dispatch.MessageBatchDispatcher;
 import com.wangbin.collector.core.connection.dispatch.OverflowStrategy;
 import lombok.extern.slf4j.Slf4j;
+import org.snmp4j.CommandResponder;
+import org.snmp4j.CommandResponderEvent;
 import org.snmp4j.CommunityTarget;
+import org.snmp4j.PDU;
 import org.snmp4j.Snmp;
 import org.snmp4j.Target;
 import org.snmp4j.TransportMapping;
@@ -18,14 +21,17 @@ import org.snmp4j.security.SecurityModels;
 import org.snmp4j.security.SecurityProtocols;
 import org.snmp4j.security.USM;
 import org.snmp4j.security.UsmUser;
+import org.snmp4j.smi.Address;
 import org.snmp4j.smi.OID;
 import org.snmp4j.smi.OctetString;
 import org.snmp4j.smi.UdpAddress;
+import org.snmp4j.smi.VariableBinding;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -41,6 +47,8 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
     private Target<UdpAddress> target;
     private MessageBatchDispatcher<SnmpOperation<?>> dispatcher;
     private int snmpVersion = SnmpConstants.version2c;
+    private final CopyOnWriteArrayList<SnmpTrapListener> trapListeners = new CopyOnWriteArrayList<>();
+    private final CommandResponder trapResponder = this::handleCommandResponderEvent;
 
     public SnmpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
@@ -48,9 +56,10 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
 
     @Override
     protected void doConnect() throws Exception {
-        transport = new DefaultUdpTransportMapping();
+        transport = createTransportMapping();
         transport.listen();
         snmp = new Snmp(transport);
+        snmp.addCommandResponder(trapResponder);
         snmpVersion = parseVersion(config.getStringConfig("snmpVersion", "2c"));
         configureSecurityModels(snmpVersion);
         target = buildTarget(snmpVersion);
@@ -63,6 +72,7 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         stopDispatcher();
         if (snmp != null) {
             try {
+                snmp.removeCommandResponder(trapResponder);
                 snmp.close();
             } catch (Exception e) {
                 log.warn("关闭 SNMP 会话异常", e);
@@ -116,6 +126,18 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return target;
     }
 
+    public void addTrapListener(SnmpTrapListener listener) {
+        if (listener != null) {
+            trapListeners.addIfAbsent(listener);
+        }
+    }
+
+    public void removeTrapListener(SnmpTrapListener listener) {
+        if (listener != null) {
+            trapListeners.remove(listener);
+        }
+    }
+
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("SNMP 适配器不支持裸数据发送");
@@ -154,6 +176,21 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
             return config.getTimeout();
         }
         return 3000;
+    }
+
+    private TransportMapping<UdpAddress> createTransportMapping() throws java.io.IOException {
+        int trapPort = firstPositive(
+                config.getIntConfig("snmpTrapPort", null),
+                config.getIntConfig("trapPort", null),
+                config.getIntConfig("listenPort", null),
+                0);
+        if (trapPort <= 0) {
+            return new DefaultUdpTransportMapping();
+        }
+        String listenHost = config.getStringConfig("snmpTrapHost",
+                config.getStringConfig("listenHost", "0.0.0.0"));
+        log.info("SNMP Trap/Inform 监听地址 {}:{}", listenHost, trapPort);
+        return new DefaultUdpTransportMapping(new UdpAddress(listenHost + "/" + trapPort));
     }
 
     private Target<UdpAddress> buildTarget(int version) {
@@ -256,6 +293,43 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return securityName;
     }
 
+    private void handleCommandResponderEvent(CommandResponderEvent<?> event) {
+        if (event == null || event.getPDU() == null || trapListeners.isEmpty()) {
+            return;
+        }
+        PDU pdu = event.getPDU();
+        if (!isTrapOrInform(pdu)) {
+            return;
+        }
+        List<VariableBinding> bindings = pdu.getVariableBindings() != null
+                ? new java.util.ArrayList<>(pdu.getVariableBindings())
+                : List.of();
+        for (SnmpTrapListener listener : trapListeners) {
+            try {
+                listener.onTrap(pdu, bindings, event.getPeerAddress());
+            } catch (Exception e) {
+                log.warn("SNMP Trap/Inform 监听处理失败", e);
+            }
+        }
+    }
+
+    private boolean isTrapOrInform(PDU pdu) {
+        int type = pdu.getType();
+        return type == PDU.TRAP || type == PDU.V1TRAP || type == PDU.INFORM;
+    }
+
+    private int firstPositive(Integer... values) {
+        if (values == null) {
+            return 0;
+        }
+        for (Integer value : values) {
+            if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return 0;
+    }
+
     private void startDispatcher() {
         if (dispatcher != null) {
             return;
@@ -292,6 +366,11 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
     @FunctionalInterface
     public interface SnmpCallable<T> {
         T apply(Snmp snmp, Target<UdpAddress> target) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface SnmpTrapListener {
+        void onTrap(PDU pdu, List<VariableBinding> bindings, Address peerAddress);
     }
 
     private static final class SnmpOperation<T> {

@@ -7,13 +7,10 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.enums.DataType;
 import com.wangbin.collector.common.enums.Parity;
 import com.wangbin.collector.core.collector.protocol.modbus.base.AbstractModbusCollector;
-import com.wangbin.collector.core.collector.protocol.modbus.domain.GroupedPoint;
+import com.wangbin.collector.core.collector.protocol.modbus.base.ModbusTransport;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.ModbusAddress;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.ModbusRequestBuilder;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.RegisterType;
-import com.wangbin.collector.core.collector.protocol.modbus.plan.ModbusReadPlan;
-import com.wangbin.collector.core.collector.protocol.modbus.plan.PointOffset;
-import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusGroupingUtil;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusUtils;
 import com.wangbin.collector.core.connection.adapter.ModbusRtuConnectionAdapter;
 import io.netty.util.ReferenceCountUtil;
@@ -24,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 /**
  * Modbus RTU采集器（使用modbus-master-tcp库）
@@ -43,8 +39,69 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     private int timeout;
     private ByteOrder byteOrder = ByteOrder.BIG_ENDIAN;
     private int interFrameDelay = 5; // 帧间延时(ms)\r\n
-    private static final int MAX_WRITE_REGISTERS = 123;
-    private static final int MAX_WRITE_COILS = 1968;
+    private final ModbusTransport transport = new ModbusTransport() {
+        @Override
+        public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
+            return switch (registerType) {
+                case COIL -> {
+                    CompletionStage<ReadCoilsResponse> future = client.readCoilsAsync(
+                            unitId,
+                            new ReadCoilsRequest(startAddress, quantity));
+                    ReadCoilsResponse response = rtuWait(future);
+                    yield response.coils();
+                }
+                case DISCRETE_INPUT -> {
+                    CompletionStage<ReadDiscreteInputsResponse> future = client.readDiscreteInputsAsync(
+                            unitId,
+                            new ReadDiscreteInputsRequest(startAddress, quantity));
+                    ReadDiscreteInputsResponse response = rtuWait(future);
+                    yield response.inputs();
+                }
+                case HOLDING_REGISTER -> {
+                    CompletionStage<ReadHoldingRegistersResponse> future = client.readHoldingRegistersAsync(
+                            unitId,
+                            new ReadHoldingRegistersRequest(startAddress, quantity));
+                    ReadHoldingRegistersResponse response = rtuWait(future);
+                    yield response.registers();
+                }
+                case INPUT_REGISTER -> {
+                    CompletionStage<ReadInputRegistersResponse> future = client.readInputRegistersAsync(
+                            unitId,
+                            new ReadInputRegistersRequest(startAddress, quantity));
+                    ReadInputRegistersResponse response = rtuWait(future);
+                    yield response.registers();
+                }
+            };
+        }
+
+        @Override
+        public boolean writeMultipleCoils(int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
+            WriteMultipleCoilsRequest request = new WriteMultipleCoilsRequest(startAddress, quantity, coilBytes);
+            CompletionStage<WriteMultipleCoilsResponse> future = client.writeMultipleCoilsAsync(unitId, request);
+            try {
+                WriteMultipleCoilsResponse response = rtuWait(future);
+                return response != null;
+            } finally {
+                ReferenceCountUtil.release(request);
+            }
+        }
+
+        @Override
+        public boolean writeMultipleRegisters(int unitId, int startAddress, short[] registers) throws Exception {
+            WriteMultipleRegistersRequest request = ModbusRequestBuilder.buildWriteMultipleRegisters(
+                    startAddress,
+                    registers
+            );
+            CompletionStage<WriteMultipleRegistersResponse> future = client.writeMultipleRegistersAsync(unitId, request);
+            try {
+                WriteMultipleRegistersResponse response = rtuWait(future);
+                return response != null;
+            } finally {
+                ReferenceCountUtil.release(request);
+            }
+        }
+    };
+
     @Override
     public String getCollectorType() {
         return "ModbusRTU";
@@ -114,66 +171,6 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
     @Override
-    protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-        if (readPlans.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Object> results = new ConcurrentHashMap<>();
-        Map<Integer, List<ModbusReadPlan>> groupedPlans = readPlans.stream()
-                .collect(Collectors.groupingBy(ModbusReadPlan::getUnitId, LinkedHashMap::new, Collectors.toList()));
-
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        for (List<ModbusReadPlan> group : groupedPlans.values()) {
-            futures.add(CompletableFuture.runAsync(() -> group.forEach(plan -> processReadPlan(plan, results))));
-        }
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        return results;
-    }
-
-    /**
-     * 执行计划
-     * @param plan
-     * @return
-     * @throws Exception
-     */
-    private byte[] executeReadPlan(ModbusReadPlan plan) throws Exception {
-
-        return switch (plan.getRegisterType()) {
-
-            case COIL -> {
-                CompletionStage<ReadCoilsResponse> future = client.readCoilsAsync(plan.getUnitId(),
-                        new ReadCoilsRequest(plan.getStartAddress(), plan.getQuantity()));
-                ReadCoilsResponse resp = rtuWait(future);
-                yield resp.coils();
-            }
-
-            case DISCRETE_INPUT -> {
-                CompletionStage<ReadDiscreteInputsResponse> future = client.readDiscreteInputsAsync(plan.getUnitId(),
-                        new ReadDiscreteInputsRequest(plan.getStartAddress(), plan.getQuantity()));
-                ReadDiscreteInputsResponse resp = rtuWait(future);
-                yield resp.inputs();
-            }
-
-            case HOLDING_REGISTER -> {
-                CompletionStage<ReadHoldingRegistersResponse> future = client.readHoldingRegistersAsync(plan.getUnitId(),
-                        new ReadHoldingRegistersRequest(plan.getStartAddress(), plan.getQuantity()));
-                ReadHoldingRegistersResponse resp = rtuWait(future);
-                yield resp.registers();
-            }
-
-            case INPUT_REGISTER -> {
-                CompletionStage<ReadInputRegistersResponse> future = client.readInputRegistersAsync(plan.getUnitId(),
-                        new ReadInputRegistersRequest(plan.getStartAddress(), plan.getQuantity()));
-                ReadInputRegistersResponse resp = rtuWait(future);
-                yield resp.registers();
-            }
-        };
-    }
-
-
-    @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String address = point.getAddress();
         if (address == null || address.isEmpty()) {
@@ -191,44 +188,6 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
-    @Override
-    protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
-        Map<String, Boolean> results = new HashMap<>();
-        Map<BatchKey, List<WriteEntry>> grouped = new LinkedHashMap<>();
-
-        for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
-            DataPoint point = entry.getKey();
-            Object value = entry.getValue();
-
-            try {
-                ModbusAddress address = parseModbusAddress(point.getAddress());
-                RegisterType type = address.getRegisterType();
-
-                if (type != RegisterType.COIL && type != RegisterType.HOLDING_REGISTER) {
-                    boolean success = doWritePoint(point, value);
-                    results.put(point.getPointId(), success);
-                    continue;
-                }
-
-                int unitId = sanitizeUnitId(resolveUnitId(point));
-                int registerCount = DataType.fromString(point.getDataType()).getRegisterCount();
-                BatchKey key = new BatchKey(unitId, type);
-                grouped.computeIfAbsent(key, k -> new ArrayList<>())
-                        .add(new WriteEntry(point, value, address.getAddress(), registerCount));
-            } catch (Exception e) {
-                log.error("解析写入点位失败: {}", point.getPointName(), e);
-                results.put(point.getPointId(), false);
-            }
-        }
-
-        for (Map.Entry<BatchKey, List<WriteEntry>> batch : grouped.entrySet()) {
-            List<WriteEntry> entries = batch.getValue();
-            entries.sort(Comparator.comparingInt(WriteEntry::address));
-            processWriteBatch(batch.getKey(), entries, results);
-        }
-
-        return results;
-    }
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -582,157 +541,10 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
-    private void processWriteBatch(BatchKey key,
-                                   List<WriteEntry> entries,
-                                   Map<String, Boolean> results) {
-        int limit = key.registerType == RegisterType.COIL ? MAX_WRITE_COILS : MAX_WRITE_REGISTERS;
-        List<WriteEntry> chunk = new ArrayList<>();
-        int chunkStart = -1;
-        int chunkQuantity = 0;
-
-        for (WriteEntry entry : entries) {
-            if (chunk.isEmpty()) {
-                chunk.add(entry);
-                chunkStart = entry.address();
-                chunkQuantity = entry.registerCount();
-                continue;
-            }
-
-            int expectedAddress = chunkStart + chunkQuantity;
-            boolean contiguous = entry.address() == expectedAddress;
-            boolean exceeds = chunkQuantity + entry.registerCount() > limit;
-
-            if (!contiguous || exceeds) {
-                flushWriteChunk(key, chunkStart, chunk, results);
-                chunk = new ArrayList<>();
-                chunk.add(entry);
-                chunkStart = entry.address();
-                chunkQuantity = entry.registerCount();
-            } else {
-                chunk.add(entry);
-                chunkQuantity += entry.registerCount();
-            }
-        }
-
-        if (!chunk.isEmpty()) {
-            flushWriteChunk(key, chunkStart, chunk, results);
-        }
-    }
-
-    private void flushWriteChunk(BatchKey key,
-                                 int startAddress,
-                                 List<WriteEntry> chunk,
-                                 Map<String, Boolean> results) {
-        if (chunk.isEmpty()) {
-            return;
-        }
-
-        if (chunk.size() == 1) {
-            writeEntriesIndividually(chunk, results);
-            return;
-        }
-
-        boolean success = key.registerType == RegisterType.COIL
-                ? writeCoilChunk(key.unitId, startAddress, chunk)
-                : writeHoldingChunk(key.unitId, startAddress, chunk);
-
-        if (success) {
-            chunk.forEach(entry -> results.put(entry.point().getPointId(), true));
-        } else {
-            writeEntriesIndividually(chunk, results);
-        }
-    }
-
-    private void writeEntriesIndividually(List<WriteEntry> chunk,
-                                          Map<String, Boolean> results) {
-        for (WriteEntry entry : chunk) {
-            try {
-                boolean single = doWritePoint(entry.point(), entry.value());
-                results.put(entry.point().getPointId(), single);
-            } catch (Exception e) {
-                log.error("单点写入失败: {}", entry.point().getPointName(), e);
-                results.put(entry.point().getPointId(), false);
-            }
-        }
-    }
-
-    private boolean writeCoilChunk(int unitId, int startAddress, List<WriteEntry> chunk) {
-        try {
-            List<Boolean> values = new ArrayList<>();
-            for (WriteEntry entry : chunk) {
-                values.add(asBoolean(entry.value()));
-            }
-            byte[] coilBytes = ModbusUtils.buildCoilBytes(values, parity);
-            WriteMultipleCoilsRequest request = new WriteMultipleCoilsRequest(startAddress, values.size(), coilBytes);
-            CompletionStage<WriteMultipleCoilsResponse> future = client.writeMultipleCoilsAsync(unitId, request);
-            WriteMultipleCoilsResponse response = rtuWait(future);
-            return response != null;
-        } catch (Exception e) {
-            log.error("批量写线圈失? unitId={}, startAddress={}", unitId, startAddress, e);
-            return false;
-        }
-    }
-
-    private boolean writeHoldingChunk(int unitId, int startAddress, List<WriteEntry> chunk) {
-        short[] registers = buildRegisterBuffer(chunk);
-        WriteMultipleRegistersRequest request = ModbusRequestBuilder.buildWriteMultipleRegisters(
-                startAddress,
-                registers
-        );
-        CompletionStage<WriteMultipleRegistersResponse> future = client.writeMultipleRegistersAsync(unitId, request);
-        try {
-            WriteMultipleRegistersResponse response = rtuWait(future);
-            return response != null;
-        } catch (Exception e) {
-            log.error("批量写保持寄存器失败: unitId={}, startAddress={}", unitId, startAddress, e);
-            return false;
-        } finally {
-            ReferenceCountUtil.release(request);
-        }
-    }
-
-    private short[] buildRegisterBuffer(List<WriteEntry> chunk) {
-        int total = chunk.stream().mapToInt(WriteEntry::registerCount).sum();
-        short[] buffer = new short[total];
-        int offset = 0;
-        for (WriteEntry entry : chunk) {
-            short[] values = ModbusUtils.valueToRegisters(
-                    entry.value(),
-                    entry.point().getDataType(),
-                    byteOrder
-            );
-            System.arraycopy(values, 0, buffer, offset, values.length);
-            offset += values.length;
-        }
-        return buffer;
-    }
-
-    private boolean asBoolean(Object value) {
-        if (value instanceof Boolean b) {
-            return b;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        if (value instanceof String str) {
-            return Boolean.parseBoolean(str);
-        }
-        throw new IllegalArgumentException("无法转换为布�? " + value);
-    }
-
     // =============== 辅助方法 ===============
 
     private int sanitizeUnitId(Integer unitIdValue) {
         return unitIdValue != null && unitIdValue > 0 ? unitIdValue : slaveId;
-    }
-
-    private record BatchKey(int unitId, RegisterType registerType) {
-    }
-
-    private record WriteEntry(DataPoint point,
-                              Object value,
-                              int address,
-                              int registerCount) {
     }
 
     /**
@@ -769,51 +581,30 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
 
-    private void processReadPlan(ModbusReadPlan plan, Map<String, Object> results) {
-        try {
-            byte[] raw = executeReadPlan(plan);
-
-            if (plan.getRegisterType() == RegisterType.COIL ||
-                    plan.getRegisterType() == RegisterType.DISCRETE_INPUT) {
-                List<Boolean> boolValues = ModbusUtils.getCoilValues(raw, plan.getQuantity(), parity);
-                for (PointOffset po : plan.getPointOffsets()) {
-                    Boolean value = null;
-                    int offset = po.getOffset();
-                    if (offset >= 0 && offset < boolValues.size()) {
-                        value = boolValues.get(offset);
-                    }
-                    results.put(po.getPointId(), value);
-                }
-            } else {
-                for (PointOffset po : plan.getPointOffsets()) {
-                    Object value = ModbusUtils.parseValue(
-                            raw,
-                            po.getOffset(),
-                            DataType.valueOf(po.getDataType()),
-                            byteOrder
-                    );
-                    results.put(po.getPointId(), value);
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("ReadPlan 执行失败: unitId={}, type={}, addr={}",
-                    plan.getUnitId(),
-                    plan.getRegisterType(),
-                    plan.getStartAddress(),
-                    e
-            );
-
-            for (PointOffset po : plan.getPointOffsets()) {
-                results.put(po.getPointId(), null);
-            }
-        }
-    }
-
     private void removeConnectionSilently() {
         removeManagedConnection("Modbus RTU");
         connectionAdapter = null;
         client = null;
+    }
+
+    @Override
+    protected int resolveBatchUnitId(DataPoint point) {
+        return sanitizeUnitId(resolveUnitId(point));
+    }
+
+    @Override
+    protected ModbusTransport getModbusTransport() {
+        return transport;
+    }
+
+    @Override
+    protected ByteOrder getModbusByteOrder() {
+        return byteOrder;
+    }
+
+    @Override
+    protected Parity getModbusParity() {
+        return parity;
     }
 
     @Override

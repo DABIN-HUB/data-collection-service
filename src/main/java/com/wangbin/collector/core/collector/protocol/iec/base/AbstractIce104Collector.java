@@ -9,6 +9,8 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.*;
 import org.openmuc.j60870.ie.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -38,20 +40,22 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected final Map<Iec104Key, CacheEntry> valueCache = new ConcurrentHashMap<>();
     protected final Map<InterrogationKey, CompletableFuture<Void>> pendingInterrogations = new ConcurrentHashMap<>();
     protected ScheduledExecutorService interrogationScheduler;
+    private ScheduledFuture<?> generalInterrogationTask;
 
     private static final AtomicInteger TIMEOUT_THREAD_COUNTER = new AtomicInteger(0);
-    private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(1, r -> {
-        Thread thread = new Thread(r, "iec104-timeout-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
-        thread.setDaemon(true);
-        thread.setUncaughtExceptionHandler((t, e) ->
-                log.warn("IEC104 timeout scheduler thread {} failed", t.getName(), e));
-        return thread;
-    });
+    @Autowired(required = false)
+    @Qualifier("timeSliceScheduler")
+    private ScheduledExecutorService protocolScheduler;
+    private ScheduledExecutorService fallbackProtocolScheduler;
     private final long defaultTimeout = 5000;
 
     @PreDestroy
     protected void shutdownSchedulers() {
-        timeoutScheduler.shutdownNow();
+        cancelGeneralInterrogationTask();
+        if (fallbackProtocolScheduler != null) {
+            fallbackProtocolScheduler.shutdownNow();
+            fallbackProtocolScheduler = null;
+        }
     }
 
     protected void initIec104Config(DeviceInfo deviceInfo) {
@@ -67,11 +71,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         this.timeout = connectionConfig.getTimeout();
         this.timeTag = true;
         if (interrogationScheduler == null) {
-            interrogationScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "iec104-interrogation");
-                t.setDaemon(true);
-                return t;
-            });
+            interrogationScheduler = resolveProtocolScheduler();
         }
     }
 
@@ -124,10 +124,8 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         pendingInterrogations.values()
                 .forEach(f -> f.completeExceptionally(new IOException("connection closed")));
         pendingInterrogations.clear();
-        if (interrogationScheduler != null) {
-            interrogationScheduler.shutdownNow();
-            interrogationScheduler = null;
-        }
+        cancelGeneralInterrogationTask();
+        interrogationScheduler = null;
     }
 
     protected Map<String, Object> handleResponse(Connection conn, ASdu asdu) {
@@ -277,7 +275,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             return list;
         });
 
-        timeoutScheduler.schedule(() -> {
+        resolveProtocolScheduler().schedule(() -> {
             if (future.completeExceptionally(
                     new TimeoutException("IEC104 wait timeout for ca/ioa=" + commonAddress + "/" + ioAddress))) {
                 removePendingFuture(key, future);
@@ -362,7 +360,8 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         if (interval <= 0) {
             return;
         }
-        interrogationScheduler.scheduleAtFixedRate(() -> {
+        cancelGeneralInterrogationTask();
+        generalInterrogationTask = interrogationScheduler.scheduleAtFixedRate(() -> {
             if (!isConnected()) {
                 return;
             }
@@ -396,6 +395,29 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             }
             return future;
         });
+    }
+
+    private ScheduledExecutorService resolveProtocolScheduler() {
+        if (protocolScheduler != null) {
+            return protocolScheduler;
+        }
+        if (fallbackProtocolScheduler == null) {
+            fallbackProtocolScheduler = Executors.newScheduledThreadPool(1, r -> {
+                Thread thread = new Thread(r, "iec104-protocol-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
+                thread.setDaemon(true);
+                thread.setUncaughtExceptionHandler((t, e) ->
+                        log.warn("IEC104 protocol scheduler thread {} failed", t.getName(), e));
+                return thread;
+            });
+        }
+        return fallbackProtocolScheduler;
+    }
+
+    private void cancelGeneralInterrogationTask() {
+        if (generalInterrogationTask != null) {
+            generalInterrogationTask.cancel(true);
+            generalInterrogationTask = null;
+        }
     }
 
     protected Optional<Integer> resolveSingleInterrogationQualifier(String raw) {

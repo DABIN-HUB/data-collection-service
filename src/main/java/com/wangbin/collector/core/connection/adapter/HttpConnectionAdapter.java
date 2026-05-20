@@ -20,6 +20,7 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -33,17 +34,26 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private HttpClient httpClient;
     private String baseUrl;
     private Map<String, String> customHeaders;
-    private ExecutorService executorService;
+    private Executor httpExecutor;
+    private ExecutorService ownedExecutorService;
 
     public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
+        this(deviceInfo, config, null);
+    }
+
+    public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config, Executor httpExecutor) {
         super(deviceInfo, config);
+        this.httpExecutor = httpExecutor;
         initialize();
     }
 
     private void initialize() {
         this.baseUrl = buildBaseUrl();
         this.customHeaders = getCustomHeaders();
-        this.executorService = Executors.newFixedThreadPool(5);
+        if (this.httpExecutor == null) {
+            this.ownedExecutorService = Executors.newFixedThreadPool(5);
+            this.httpExecutor = ownedExecutorService;
+        }
         this.httpClient = createHttpClient();
     }
 
@@ -87,7 +97,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()))
-                .executor(executorService);
+                .executor(httpExecutor);
 
         // 配置SSL
         if (Boolean.TRUE.equals(config.getSslEnabled())) {
@@ -144,16 +154,17 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     @Override
     protected void doDisconnect() throws Exception {
         // 关闭线程池
-        if (executorService != null && !executorService.isShutdown()) {
-            executorService.shutdown();
+        if (ownedExecutorService != null && !ownedExecutorService.isShutdown()) {
+            ownedExecutorService.shutdown();
             try {
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
+                if (!ownedExecutorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                    ownedExecutorService.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                executorService.shutdownNow();
+                ownedExecutorService.shutdownNow();
                 Thread.currentThread().interrupt();
             }
+            ownedExecutorService = null;
         }
         log.info("HTTP连接资源清理完成: {}", connectionId);
     }

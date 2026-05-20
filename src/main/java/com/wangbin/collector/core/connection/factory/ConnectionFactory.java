@@ -5,10 +5,14 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.connection.adapter.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * 连接工厂
@@ -16,6 +20,14 @@ import java.util.Map;
 @Slf4j
 @Component
 public class ConnectionFactory {
+
+    @Autowired(required = false)
+    @Qualifier("ioIntensiveExecutor")
+    private Executor ioExecutor;
+
+    @Autowired(required = false)
+    @Qualifier("timeSliceScheduler")
+    private ScheduledExecutorService protocolScheduler;
 
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
@@ -135,7 +147,7 @@ public class ConnectionFactory {
 
     private ConnectionAdapter<?> createHttpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
-            return new HttpConnectionAdapter(deviceInfo, cfg);
+            return new HttpConnectionAdapter(deviceInfo, cfg, ioExecutor);
         } catch (Exception e) {
             log.error("创建HTTP连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建HTTP连接失败", deviceInfo.getDeviceId(), null);
@@ -153,7 +165,7 @@ public class ConnectionFactory {
 
     private ConnectionAdapter<?> createWebSocketConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
-            return new WebSocketConnectionAdapter(deviceInfo, cfg);
+            return new WebSocketConnectionAdapter(deviceInfo, cfg, ioExecutor, protocolScheduler);
         } catch (Exception e) {
             log.error("创建WebSocket连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建WebSocket连接失败", deviceInfo.getDeviceId(), null);

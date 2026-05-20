@@ -34,6 +34,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private BlockingQueue<byte[]> messageQueue;
     private CompletableFuture<WebSocket> wsFuture;
     private ScheduledExecutorService heartbeatScheduler;
+    private ScheduledExecutorService ownedHeartbeatScheduler;
+    private ScheduledFuture<?> heartbeatTask;
+    private Executor httpExecutor;
     private AtomicBoolean closing = new AtomicBoolean(false);
 
     // WebSocket监听器
@@ -81,7 +84,16 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     };
 
     public WebSocketConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
+        this(deviceInfo, config, null, null);
+    }
+
+    public WebSocketConnectionAdapter(DeviceInfo deviceInfo,
+                                      DeviceConnection config,
+                                      Executor httpExecutor,
+                                      ScheduledExecutorService heartbeatScheduler) {
         super(deviceInfo, config);
+        this.httpExecutor = httpExecutor;
+        this.heartbeatScheduler = heartbeatScheduler;
         initialize();
     }
 
@@ -89,12 +101,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         this.wsUrl = buildWebSocketUrl();
         this.customHeaders = getCustomHeaders();
         this.messageQueue = new LinkedBlockingQueue<>();
-        this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            String id = deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
-            Thread thread = new Thread(r, "websocket-heartbeat-" + id);
-            thread.setDaemon(true);
-            return thread;
-        });
+        resolveHeartbeatScheduler();
         this.httpClient = createHttpClient();
     }
 
@@ -166,6 +173,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()));
+        if (httpExecutor != null) {
+            builder.executor(httpExecutor);
+        }
 
         // 配置SSL
         if (Boolean.TRUE.equals(config.getSslEnabled())) {
@@ -285,6 +295,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
                 webSocket = null;
                 wsFuture = null;
                 messageQueue.clear();
+                shutdownOwnedHeartbeatScheduler();
                 closing.set(false);
             }
         }
@@ -451,7 +462,8 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private void startHeartbeat() {
         int heartbeatInterval = config.getHeartbeatInterval();
         if (heartbeatInterval > 0) {
-            heartbeatScheduler.scheduleAtFixedRate(() -> {
+            stopHeartbeat();
+            heartbeatTask = resolveHeartbeatScheduler().scheduleAtFixedRate(() -> {
                 try {
                     if (isConnected() && !closing.get()) {
                         heartbeat();
@@ -465,17 +477,37 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     }
 
     private void stopHeartbeat() {
-        if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
-            heartbeatScheduler.shutdown();
-            try {
-                if (!heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    heartbeatScheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                heartbeatScheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(true);
+            heartbeatTask = null;
             log.debug("WebSocket心跳任务已停止");
+        }
+    }
+
+    private ScheduledExecutorService resolveHeartbeatScheduler() {
+        if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
+            return heartbeatScheduler;
+        }
+        if (ownedHeartbeatScheduler == null || ownedHeartbeatScheduler.isShutdown()) {
+            ownedHeartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                String id = deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
+                Thread thread = new Thread(r, "websocket-heartbeat-" + id);
+                thread.setDaemon(true);
+                return thread;
+            });
+        }
+        heartbeatScheduler = ownedHeartbeatScheduler;
+        return heartbeatScheduler;
+    }
+
+    private void shutdownOwnedHeartbeatScheduler() {
+        ScheduledExecutorService owned = ownedHeartbeatScheduler;
+        if (owned != null && !owned.isShutdown()) {
+            owned.shutdownNow();
+            if (heartbeatScheduler == owned) {
+                heartbeatScheduler = null;
+            }
+            ownedHeartbeatScheduler = null;
         }
     }
 
@@ -493,6 +525,8 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             disconnect();
         } catch (Exception e) {
             log.error("关闭WebSocket连接异常", e);
+        } finally {
+            shutdownOwnedHeartbeatScheduler();
         }
     }
 
