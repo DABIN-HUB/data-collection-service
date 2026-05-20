@@ -11,6 +11,12 @@
 - 写入通过 publish 到 `writeTopic`。
 - 支持命令：`publish/subscribe/unsubscribe/status`。
 
+边界说明：
+
+- 本文描述的是“MQTT 作为采集协议”的实现，即通过 MQTT topic 采集 MQTT 设备点位。
+- 统一数据上报使用的是 `core/report/handler/MqttReportHandler`，不是本文的 `MqttCollector`。
+- 平台通过 MQTT 下发 `thing.property.set` / `thing.service.invoke` 后再转发到 Modbus、OPC、IEC、SNMP 等协议写入的链路暂未实现，详见 [上下行消息协议与实现状态](../11-上下行消息协议与实现状态.md)。
+
 ## 地址与点位配置
 
 - `address` 或 `additionalConfig.topic` 作为订阅 topic。
