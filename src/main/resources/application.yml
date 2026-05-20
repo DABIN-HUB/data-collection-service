@@ -183,6 +183,11 @@ collector:
     retry-times: 3
     max-queue-size: 5000
     flush-interval: 1000
+    shadow:
+      persistence-enabled: true
+      cas-enabled: true
+      key-prefix: "collector:shadow:"
+      ttl-seconds: 86400
     mqtt:
       enabled: true
       broker-url: tcp://43.138.73.155:1883

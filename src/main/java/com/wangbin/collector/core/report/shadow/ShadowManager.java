@@ -12,10 +12,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.logging.log4j.util.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.connection.ReturnType;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -25,6 +29,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 设备影子管理器：负责缓存设备最新属性、判断变化/事件触发，并维护需要刷新的设备列表。
@@ -34,9 +39,38 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class ShadowManager {
 
-    private static final String SHADOW_KEY_PREFIX = "collector:shadow:";
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
+    private static final String DEFAULT_SHADOW_KEY_PREFIX = "collector:shadow:";
+    private static final String SHADOW_CAS_SCRIPT = """
+            local current = redis.call('GET', KEYS[1])
+            local expected = ARGV[1]
+            local nextVersion = ARGV[2]
+            local ttlMs = tonumber(ARGV[3])
+            local payload = ARGV[4]
+            if current then
+                local ok, doc = pcall(cjson.decode, current)
+                local actual = '-1'
+                if ok and type(doc) == 'table' then
+                    if doc['version'] ~= nil then
+                        actual = tostring(doc['version'])
+                    elseif type(doc[2]) == 'table' and doc[2]['version'] ~= nil then
+                        actual = tostring(doc[2]['version'])
+                    end
+                end
+                if actual ~= expected then
+                    return {0, actual}
+                end
+            elseif expected ~= '0' then
+                return {0, '-1'}
+            end
+            if ttlMs and ttlMs > 0 then
+                redis.call('PSETEX', KEYS[1], ttlMs, payload)
+            else
+                redis.call('SET', KEYS[1], payload)
+            end
+            return {1, nextVersion}
+            """;
 
     private final ReportProperties reportProperties;
     private final Map<String, DeviceShadow> shadows = new ConcurrentHashMap<>();
@@ -45,6 +79,9 @@ public class ShadowManager {
     @Autowired(required = false)
     @Qualifier("cacheRedisTemplate")
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired(required = false)
+    private StringRedisTemplate stringRedisTemplate;
 
     @Autowired(required = false)
     private ObjectMapper objectMapper;
@@ -314,16 +351,28 @@ public class ShadowManager {
         if (shadow == null) {
             shadow = shadows.computeIfAbsent(deviceId, DeviceShadow::new);
         }
+        if (expectedVersion != null && redisCasEnabled()) {
+            shadow = refreshLocalShadowIfVersionMismatch(deviceId, shadow, expectedVersion);
+        }
         Map<String, Object> document;
+        long previousVersion;
+        long casExpectedVersion;
         synchronized (shadow) {
             if (expectedVersion != null && shadow.currentVersion() != expectedVersion) {
                 throw new IllegalStateException("shadow version conflict: expected="
                         + expectedVersion + ", actual=" + shadow.currentVersion());
             }
+            previousVersion = shadow.currentVersion();
+            casExpectedVersion = expectedVersion != null ? expectedVersion : previousVersion;
             shadow.updateDesired(desiredValues, source);
             document = buildShadowDocument(shadow);
         }
-        persistDocument(deviceId, document);
+        try {
+            persistDocumentCas(deviceId, document, casExpectedVersion);
+        } catch (IllegalStateException e) {
+            reloadLocalShadow(deviceId);
+            throw e;
+        }
         return document;
     }
 
@@ -332,9 +381,19 @@ public class ShadowManager {
         if (shadow == null) {
             return null;
         }
-        shadow.clearDesired(fields);
-        Map<String, Object> document = buildShadowDocument(shadow);
-        persistDocument(deviceId, document);
+        Map<String, Object> document;
+        long previousVersion;
+        synchronized (shadow) {
+            previousVersion = shadow.currentVersion();
+            shadow.clearDesired(fields);
+            document = buildShadowDocument(shadow);
+        }
+        try {
+            persistDocumentCas(deviceId, document, previousVersion);
+        } catch (IllegalStateException e) {
+            reloadLocalShadow(deviceId);
+            throw e;
+        }
         return document;
     }
 
@@ -398,6 +457,38 @@ public class ShadowManager {
         return values;
     }
 
+    private void persistDocumentCas(String deviceId, Map<String, Object> document, long expectedVersion) {
+        if (!redisCasEnabled()) {
+            persistDocument(deviceId, document);
+            return;
+        }
+        try {
+            String key = shadowKey(deviceId);
+            String payload = objectMapper.writeValueAsString(document);
+            long ttlMs = shadowTtlMillis();
+            long nextVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(expectedVersion);
+            Object result = stringRedisTemplate.execute((RedisCallback<Object>) connection -> connection.eval(
+                    SHADOW_CAS_SCRIPT.getBytes(StandardCharsets.UTF_8),
+                    ReturnType.MULTI,
+                    1,
+                    key.getBytes(StandardCharsets.UTF_8),
+                    String.valueOf(expectedVersion).getBytes(StandardCharsets.UTF_8),
+                    String.valueOf(nextVersion).getBytes(StandardCharsets.UTF_8),
+                    String.valueOf(ttlMs).getBytes(StandardCharsets.UTF_8),
+                    payload.getBytes(StandardCharsets.UTF_8)
+            ));
+            CasResult casResult = parseCasResult(result);
+            if (!casResult.success()) {
+                throw new IllegalStateException("shadow version conflict: expected="
+                        + expectedVersion + ", actual=" + casResult.actualVersion());
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("shadow CAS failed: " + e.getMessage(), e);
+        }
+    }
+
     private void persistShadow(DeviceShadow shadow) {
         if (shadow == null) {
             return;
@@ -406,34 +497,66 @@ public class ShadowManager {
     }
 
     private void persistDocument(String deviceId, Map<String, Object> document) {
-        if (redisTemplate == null || deviceId == null || document == null) {
+        if (!shadowPersistenceEnabled() || deviceId == null || document == null) {
             return;
         }
+        long ttlMs = shadowTtlMillis();
         try {
-            redisTemplate.opsForValue().set(shadowKey(deviceId), document);
+            if (stringRedisTemplate != null && objectMapper != null) {
+                String payload = objectMapper.writeValueAsString(document);
+                if (ttlMs > 0) {
+                    stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload, ttlMs, TimeUnit.MILLISECONDS);
+                } else {
+                    stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload);
+                }
+                return;
+            }
+            if (redisTemplate == null) {
+                return;
+            }
+            if (ttlMs > 0) {
+                redisTemplate.opsForValue().set(shadowKey(deviceId), document, ttlMs, TimeUnit.MILLISECONDS);
+            } else {
+                redisTemplate.opsForValue().set(shadowKey(deviceId), document);
+            }
         } catch (Exception e) {
             log.warn("设备影子持久化失败 deviceId={} err={}", deviceId, e.getMessage());
         }
     }
 
     private DeviceShadow loadShadow(String deviceId) {
-        if (redisTemplate == null || deviceId == null) {
+        if (!shadowPersistenceEnabled() || deviceId == null) {
             return null;
         }
-        try {
-            Object stored = redisTemplate.opsForValue().get(shadowKey(deviceId));
-            if (stored == null) {
-                return null;
+        if (stringRedisTemplate != null) {
+            try {
+                String stored = stringRedisTemplate.opsForValue().get(shadowKey(deviceId));
+                if (stored != null) {
+                    Map<String, Object> document = toMap(stored);
+                    if (!document.isEmpty()) {
+                        return restoreShadow(deviceId, document);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("设备影子字符串格式恢复失败 deviceId={} err={}", deviceId, e.getMessage());
             }
-            Map<String, Object> document = toMap(stored);
-            if (document.isEmpty()) {
-                return null;
-            }
-            return restoreShadow(deviceId, document);
-        } catch (Exception e) {
-            log.warn("设备影子恢复失败 deviceId={} err={}", deviceId, e.getMessage());
-            return null;
         }
+        if (redisTemplate != null) {
+            try {
+                Object stored = redisTemplate.opsForValue().get(shadowKey(deviceId));
+                if (stored == null) {
+                    return null;
+                }
+                Map<String, Object> document = toMap(stored);
+                if (document.isEmpty()) {
+                    return null;
+                }
+                return restoreShadow(deviceId, document);
+            } catch (Exception e) {
+                log.warn("设备影子恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+            }
+        }
+        return null;
     }
 
     private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
@@ -489,18 +612,90 @@ public class ShadowManager {
     }
 
     private void deletePersistedShadow(String deviceId) {
-        if (redisTemplate == null || deviceId == null) {
+        if (deviceId == null) {
             return;
         }
         try {
-            redisTemplate.delete(shadowKey(deviceId));
+            if (stringRedisTemplate != null) {
+                stringRedisTemplate.delete(shadowKey(deviceId));
+            }
+            if (redisTemplate != null) {
+                redisTemplate.delete(shadowKey(deviceId));
+            }
         } catch (Exception e) {
             log.warn("删除设备影子持久化数据失败 deviceId={} err={}", deviceId, e.getMessage());
         }
     }
 
     private String shadowKey(String deviceId) {
-        return SHADOW_KEY_PREFIX + deviceId;
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX : shadow.getKeyPrefix();
+        if (prefix == null || prefix.isBlank()) {
+            prefix = DEFAULT_SHADOW_KEY_PREFIX;
+        }
+        return prefix + deviceId;
+    }
+
+    private DeviceShadow refreshLocalShadowIfVersionMismatch(String deviceId,
+                                                             DeviceShadow current,
+                                                             long expectedVersion) {
+        if (current != null && current.currentVersion() == expectedVersion) {
+            return current;
+        }
+        DeviceShadow restored = loadShadow(deviceId);
+        if (restored == null) {
+            return current;
+        }
+        shadows.put(deviceId, restored);
+        return restored;
+    }
+
+    private void reloadLocalShadow(String deviceId) {
+        DeviceShadow restored = loadShadow(deviceId);
+        if (restored != null) {
+            shadows.put(deviceId, restored);
+        } else {
+            shadows.remove(deviceId);
+        }
+    }
+
+    private boolean redisCasEnabled() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadowPersistenceEnabled()
+                && shadow != null
+                && shadow.isCasEnabled()
+                && stringRedisTemplate != null
+                && objectMapper != null;
+    }
+
+    private boolean shadowPersistenceEnabled() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        return shadow == null || shadow.isPersistenceEnabled();
+    }
+
+    private long shadowTtlMillis() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        if (shadow == null || shadow.getTtlSeconds() <= 0) {
+            return 0;
+        }
+        return TimeUnit.SECONDS.toMillis(shadow.getTtlSeconds());
+    }
+
+    private CasResult parseCasResult(Object value) {
+        if (value instanceof List<?> list && !list.isEmpty()) {
+            Long success = asRedisLong(list.get(0));
+            Long actualVersion = list.size() > 1 ? asRedisLong(list.get(1)) : null;
+            return new CasResult(success != null && success == 1, actualVersion);
+        }
+        Long success = asRedisLong(value);
+        return new CasResult(success != null && success == 1, null);
+    }
+
+    private Long asRedisLong(Object value) {
+        if (value instanceof byte[] bytes) {
+            return asLong(new String(bytes, StandardCharsets.UTF_8));
+        }
+        return asLong(value);
     }
 
     @SuppressWarnings("unchecked")
@@ -513,6 +708,26 @@ public class ShadowManager {
                 }
             });
             return result;
+        }
+        if (value instanceof List<?> list && list.size() > 1 && list.get(1) instanceof Map<?, ?>) {
+            return toMap(list.get(1));
+        }
+        if (value instanceof String text) {
+            if (text.isBlank() || objectMapper == null) {
+                return Collections.emptyMap();
+            }
+            try {
+                return objectMapper.readValue(text, MAP_TYPE);
+            } catch (Exception ignored) {
+                try {
+                    Object parsed = objectMapper.readValue(text, Object.class);
+                    if (parsed != value) {
+                        return toMap(parsed);
+                    }
+                } catch (Exception ignoredAgain) {
+                    return Collections.emptyMap();
+                }
+            }
         }
         if (objectMapper != null && value != null) {
             try {
@@ -555,5 +770,8 @@ public class ShadowManager {
                             String level,
                             String message,
                             String eventType) {
+    }
+
+    private record CasResult(boolean success, Long actualVersion) {
     }
 }

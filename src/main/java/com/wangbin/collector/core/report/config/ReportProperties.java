@@ -97,6 +97,11 @@ public class ReportProperties {
      */
     private final Mqtt mqtt = new Mqtt();
 
+    /**
+     * 设备影子相关配置
+     */
+    private final Shadow shadow = new Shadow();
+
     public boolean mqttEnabled() {
         return mqtt.isEnabled() && isProtocolEnabled("MQTT");
     }
@@ -188,5 +193,28 @@ public class ReportProperties {
             }
             return value;
         }
+    }
+
+    @Data
+    public static class Shadow {
+        /**
+         * 是否启用 Redis 持久化。
+         */
+        private boolean persistenceEnabled = true;
+
+        /**
+         * desired 写入和清理是否启用 Redis 原子 CAS。
+         */
+        private boolean casEnabled = true;
+
+        /**
+         * Redis key 前缀。
+         */
+        private String keyPrefix = "collector:shadow:";
+
+        /**
+         * 影子 Redis 过期时间，单位秒；小于等于 0 表示不过期。
+         */
+        private long ttlSeconds = 24 * 60 * 60;
     }
 }

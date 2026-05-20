@@ -1,16 +1,28 @@
 package com.wangbin.collector.core.report.shadow;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ShadowManagerTest {
 
@@ -124,6 +136,55 @@ class ShadowManagerTest {
         assertEquals(Map.of("temperature", 26.0), matchedState.get("reported"));
         assertEquals(Map.of(), matchedState.get("desired"));
         assertEquals(Map.of(), matchedState.get("delta"));
+    }
+
+    @Test
+    void desiredUpdateRejectsStaleLocalExpectedVersion() {
+        ShadowManager manager = new ShadowManager(properties);
+
+        manager.updateDesired("dev-version", Map.of("temperature", 26.0), "test");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> manager.updateDesired("dev-version", Map.of("temperature", 27.0), "test", 0L));
+        assertTrue(ex.getMessage().contains("shadow version conflict"));
+    }
+
+    @Test
+    void desiredUpdateUsesRedisCasAndRejectsRemoteConflict() {
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(0L, 7L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> manager.updateDesired("dev-cas", Map.of("temperature", 26.0), "test"));
+
+        assertTrue(ex.getMessage().contains("expected=0"));
+        assertTrue(ex.getMessage().contains("actual=7"));
+    }
+
+    @Test
+    void reportedPersistenceUsesConfiguredTtl() {
+        properties.getShadow().setTtlSeconds(60);
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+        DataPoint point = createPoint("dev-ttl", "temperature", Map.of(
+                "reportEnabled", true,
+                "reportField", "temperature"
+        ));
+
+        manager.apply("dev-ttl", point, buildResult(25.0, QualityEnum.GOOD.getCode()));
+
+        verify(valueOperations).set(eq("collector:shadow:dev-ttl"), anyString(), eq(60000L), eq(TimeUnit.MILLISECONDS));
     }
 
     private DataPoint createPoint(String deviceId, String alias, Map<String, Object> config) {
