@@ -110,6 +110,10 @@ public class ConnectionManager {
 
                 log.info("连接创建成功: {}", deviceId);
                 return connection;
+            } catch (CollectorException e) {
+                log.error("创建连接失败: {}", deviceId, e);
+                recordException(deviceId, e);
+                throw e;
             } catch (Exception e) {
                 log.error("创建连接失败: {}", deviceId, e);
                 recordException(deviceId, e);

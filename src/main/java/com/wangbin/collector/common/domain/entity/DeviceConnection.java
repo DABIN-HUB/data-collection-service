@@ -228,24 +228,66 @@ public class DeviceConnection {
     }
 
     public boolean isValid() {
-        if (connectionType == null || connectionType.isEmpty()) {
+        if (!hasText(connectionType)) {
             return false;
         }
-        String type = connectionType.toUpperCase();
-        switch (type) {
-            case "TCP":
-            case "HTTP":
-            case "MODBUS_TCP":
-            case "COAP":
-            case "SNMP":
-            case "MQTT":
-                return host != null && !host.isEmpty() && port != null && port > 0;
-            case "WEBSOCKET":
-                return url != null && !url.isEmpty();
-            case "MODBUS_RTU":
-            default:
-                return true;
+        return switch (normalizeConnectionType(connectionType)) {
+            case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
+            case "MODBUS_TCP" -> hasHostPort();
+            case "SNMP", "IEC104", "IEC61850" -> hasHost();
+            case "OPC_UA" -> hasText(url)
+                    || hasText(getStringConfig("endpointUrl", null))
+                    || hasText(getStringConfig("endpoint", null))
+                    || hasHost();
+            case "OPC_DA" -> isOpcDaConnectionValid();
+            case "MODBUS_RTU", "CUSTOM_TCP", "CUSTOM_UDP" -> true;
+            default -> true;
+        };
+    }
+
+    private boolean isOpcDaConnectionValid() {
+        String bridgeMode = getStringConfig("bridgeMode",
+                getStringConfig("bridge-mode",
+                        getStringConfig("opcDaBridgeMode", "INMEMORY")));
+        if (!"HTTP".equalsIgnoreCase(bridgeMode)) {
+            return true;
         }
+        return hasText(url)
+                || hasText(getStringConfig("bridgeBaseUrl", null))
+                || hasText(getStringConfig("bridge-url", null))
+                || hasText(getStringConfig("opcDaBridgeUrl", null));
+    }
+
+    private boolean hasUrlOrHostPort() {
+        return hasText(url) || hasHostPort();
+    }
+
+    private boolean hasHostPort() {
+        return hasHost() && port != null && port > 0;
+    }
+
+    private boolean hasHost() {
+        return hasText(host);
+    }
+
+    private String normalizeConnectionType(String type) {
+        String normalized = type.toUpperCase().replace("-", "_");
+        return switch (normalized) {
+            case "HTTPS" -> "HTTP";
+            case "WEBSOCKET_SSL" -> "WEBSOCKET";
+            case "MQTT_SSL" -> "MQTT";
+            case "COAP_SSL" -> "COAP";
+            case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
+            case "MODBUS_ASCII" -> "MODBUS_RTU";
+            case "OPCUA" -> "OPC_UA";
+            case "IEC_104" -> "IEC104";
+            case "IEC_61850" -> "IEC61850";
+            default -> normalized;
+        };
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     public boolean isActive() {

@@ -6,6 +6,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,9 @@ public class ConfigManager {
 
     @Autowired
     private FieldUniquenessValidator fieldUniquenessValidator;
+
+    @Autowired(required = false)
+    private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
 
     /**
      * 初始化方法
@@ -410,6 +414,7 @@ public class ConfigManager {
 
             if (connection != null) {
                 connection.setDeviceId(deviceId);
+                protocolConnectionValidator.validate(deviceCache.get(deviceId), connection);
                 connectionCache.put(deviceId, connection);
             } else {
                 connectionCache.remove(deviceId);

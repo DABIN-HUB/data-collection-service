@@ -10,6 +10,9 @@ import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.WebSocketConnectionAdapter;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,6 +62,10 @@ class ConnectionFactoryProtocolAliasMappingTest {
     @Test
     void shouldMapSnmpVersionAliasToSnmpAdapterWithVersionDefaults() {
         DeviceConnection config = new DeviceConnection();
+        config.setExtJson(ext(
+                "snmpSecurityName", "collector",
+                "snmpSecurityLevel", "noAuthNoPriv"
+        ));
 
         assertInstanceOf(SnmpConnectionAdapter.class, factory.createConnection(device("dev-snmp-v3", "SNMP_V3"), config));
         assertEquals(161, config.getPort());
@@ -79,5 +86,13 @@ class ConnectionFactoryProtocolAliasMappingTest {
         deviceInfo.setProtocolType(protocolType);
         deviceInfo.setIpAddress("127.0.0.1");
         return deviceInfo;
+    }
+
+    private Map<String, Object> ext(Object... entries) {
+        Map<String, Object> extJson = new LinkedHashMap<>();
+        for (int i = 0; i < entries.length; i += 2) {
+            extJson.put(entries[i].toString(), entries[i + 1]);
+        }
+        return extJson;
     }
 }

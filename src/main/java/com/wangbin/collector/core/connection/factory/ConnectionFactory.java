@@ -3,6 +3,7 @@ package com.wangbin.collector.core.connection.factory;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,12 +30,16 @@ public class ConnectionFactory {
     @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
 
+    @Autowired(required = false)
+    private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
+
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new IllegalArgumentException("设备信息无效");
         }
         DeviceConnection cfg = connectionConfig != null ? connectionConfig : new DeviceConnection();
         String connectionType = canonicalizeConnectionType(resolveConnectionType(deviceInfo, cfg), cfg);
+        protocolConnectionValidator.validate(deviceInfo, cfg);
         return switch (connectionType) {
             case "TCP" -> createTcpConnection(deviceInfo, cfg);
             case "HTTP" -> createHttpConnection(deviceInfo, cfg);
