@@ -9,6 +9,11 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class AdaptiveCollectionUtil {
+
+    /**
+     * Default base collection interval in milliseconds.
+     */
+    public static final long DEFAULT_BASE_COLLECTION_INTERVAL = 2000;
     
     /**
      * 默认最小采集间隔（毫秒）
@@ -145,21 +150,25 @@ public class AdaptiveCollectionUtil {
         if (dataPoint == null) {
             throw new IllegalArgumentException("数据点不能为空");
         }
-        
-        // 设置基础采集间隔
-        dataPoint.setBaseCollectionInterval(dataPoint.getBaseCollectionInterval());
-        
-        // 设置当前采集间隔（初始等于基础间隔）
-        dataPoint.setCurrentCollectionInterval(dataPoint.getBaseCollectionInterval());
-        
-        // 设置最小采集间隔
-        dataPoint.setMinCollectionInterval(dataPoint.getMinCollectionInterval() != null ? dataPoint.getMinCollectionInterval() : DEFAULT_MIN_COLLECTION_INTERVAL);
-        
-        // 设置最大采集间隔
-        dataPoint.setMaxCollectionInterval(dataPoint.getMaxCollectionInterval() != null ? dataPoint.getMaxCollectionInterval() : DEFAULT_MAX_COLLECTION_INTERVAL);
-        
-        // 设置变化率阈值
-        dataPoint.setPointChangeThreshold(dataPoint.getPointChangeThreshold() != null ? dataPoint.getPointChangeThreshold() : DEFAULT_CHANGE_THRESHOLD);
+
+        long baseInterval = normalizePositive(dataPoint.getBaseCollectionInterval(), DEFAULT_BASE_COLLECTION_INTERVAL);
+        long minInterval = normalizePositive(dataPoint.getMinCollectionInterval(), DEFAULT_MIN_COLLECTION_INTERVAL);
+        long maxInterval = normalizePositive(dataPoint.getMaxCollectionInterval(), DEFAULT_MAX_COLLECTION_INTERVAL);
+        if (minInterval > maxInterval) {
+            long tmp = minInterval;
+            minInterval = maxInterval;
+            maxInterval = tmp;
+        }
+        baseInterval = Math.max(minInterval, Math.min(baseInterval, maxInterval));
+        double changeThreshold = dataPoint.getPointChangeThreshold() != null
+                ? dataPoint.getPointChangeThreshold()
+                : DEFAULT_CHANGE_THRESHOLD;
+
+        dataPoint.setBaseCollectionInterval(baseInterval);
+        dataPoint.setCurrentCollectionInterval(baseInterval);
+        dataPoint.setMinCollectionInterval(minInterval);
+        dataPoint.setMaxCollectionInterval(maxInterval);
+        dataPoint.setPointChangeThreshold(changeThreshold);
         
         // 初始化稳定计数
         dataPoint.setStableCount(0);
@@ -192,8 +201,9 @@ public class AdaptiveCollectionUtil {
         if (dataPoint == null) {
             return;
         }
-        
-        long baseInterval = dataPoint.getBaseCollectionInterval();
+
+        long baseInterval = normalizePositive(dataPoint.getBaseCollectionInterval(), DEFAULT_BASE_COLLECTION_INTERVAL);
+        dataPoint.setBaseCollectionInterval(baseInterval);
         dataPoint.setCurrentCollectionInterval(baseInterval);
         dataPoint.setStableCount(0);
         dataPoint.setChangeRate(0.0);
@@ -201,6 +211,10 @@ public class AdaptiveCollectionUtil {
         
         log.debug("数据点 {} 自适应配置已重置，采集间隔恢复为基础值 {}ms",
                 dataPoint.getPointId(), baseInterval);
+    }
+
+    private static long normalizePositive(Long value, long defaultValue) {
+        return value != null && value > 0 ? value : defaultValue;
     }
 
     /**

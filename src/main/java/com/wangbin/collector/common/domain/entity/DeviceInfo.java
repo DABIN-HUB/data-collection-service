@@ -96,6 +96,12 @@ public class DeviceInfo {
     /** 备注信息 */
     private String remark;
 
+    /** Config source. Local temporary devices use "local". */
+    private String configSource;
+
+    /** True when the device only exists in the collector runtime cache. */
+    private Boolean temporaryConfig;
+
     // ==================== 业务方法 ====================
 
     /**

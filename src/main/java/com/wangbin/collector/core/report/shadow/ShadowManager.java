@@ -300,11 +300,10 @@ public class ShadowManager {
     }
 
     public void markReportedValues(String deviceId,
-                                   Map<String, Object> properties,
-                                   Map<String, Long> propertyTs) {
+                                   Map<String, Object> properties) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow != null) {
-            shadow.markReportedValues(properties, propertyTs);
+            shadow.markReportedValues(properties);
             persistShadow(shadow);
         }
     }

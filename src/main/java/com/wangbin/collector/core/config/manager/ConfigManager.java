@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +32,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 @Slf4j
 @Component
 public class ConfigManager {
+
+    public static final String CONFIG_SOURCE_LOCAL = "local";
+    public static final String CONFIG_SOURCE_KEY = "configSource";
+    public static final String TEMPORARY_CONFIG_KEY = "temporaryConfig";
 
     /**
      * 设备配置缓存 key:设备ID value:设备信息
@@ -88,6 +93,8 @@ public class ConfigManager {
             lock.writeLock().lock();
             log.info("开始加载所有配置...");
 
+            List<DeviceContext> localTemporaryContexts = snapshotLocalTemporaryContexts();
+
             deviceCache.clear();
             pointCache.clear();
             connectionCache.clear();
@@ -110,6 +117,7 @@ public class ConfigManager {
                     // 加载设备的数据点
                     List<DataPoint> points = configSyncService.loadDataPoints(deviceId);
                     List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
+                    normalizeDataPointCollectionPolicy(device, safePoints);
                     pointCache.put(deviceId, safePoints);
 
                     // 加载连接配置
@@ -127,6 +135,8 @@ public class ConfigManager {
                     log.error("加载设备相关配置失败: {}", deviceId, e);
                 }
             }
+
+            restoreLocalTemporaryContexts(localTemporaryContexts);
 
             log.info("配置加载完成，共加载 {} 个设备配置", devices.size());
         } catch (Exception e) {
@@ -368,11 +378,14 @@ public class ConfigManager {
                 return false;
             }
 
+            List<DataPoint> safePoints = new ArrayList<>(points);
+            normalizeDataPointCollectionPolicy(deviceCache.get(deviceId), safePoints);
+
             if (fieldUniquenessValidator != null) {
-                fieldUniquenessValidator.validate(deviceId, points);
+                fieldUniquenessValidator.validate(deviceId, safePoints);
             }
 
-            pointCache.put(deviceId, new ArrayList<>(points));
+            pointCache.put(deviceId, safePoints);
             rebuildDeviceContext(deviceId);
 
             // 发布配置更新事件
@@ -435,6 +448,103 @@ public class ConfigManager {
             return false;
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Save a complete local temporary device bundle without touching the remote sync source.
+     */
+    public boolean saveLocalDeviceConfig(DeviceInfo device,
+                                         DeviceConnection connection,
+                                         List<DataPoint> points,
+                                         boolean overwrite) {
+        Objects.requireNonNull(device, "device config is required");
+        Objects.requireNonNull(connection, "connection config is required");
+
+        String deviceId = normalizeDeviceId(device.getDeviceId());
+        validateLocalDevice(device, deviceId);
+
+        List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
+        validateLocalPoints(deviceId, safePoints);
+
+        lock.writeLock().lock();
+        try {
+            DeviceInfo existing = deviceCache.get(deviceId);
+            if (existing != null && !isLocalTemporaryDeviceInfo(existing)) {
+                throw new IllegalArgumentException("device already exists from non-local config source: " + deviceId);
+            }
+            if (existing != null && !overwrite) {
+                throw new IllegalArgumentException("local temporary device already exists: " + deviceId);
+            }
+
+            normalizeLocalDevice(device, existing);
+            normalizeLocalConnection(device, connection);
+            normalizeLocalPoints(device, safePoints);
+
+            protocolConnectionValidator.validate(device, connection);
+            if (fieldUniquenessValidator != null) {
+                fieldUniquenessValidator.validate(deviceId, safePoints);
+            }
+
+            deviceCache.put(deviceId, device);
+            connectionCache.put(deviceId, connection);
+            pointCache.put(deviceId, safePoints);
+            rebuildDeviceContext(deviceId);
+
+            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+                    .deviceId(deviceId)
+                    .configType("local")
+                    .connectionChanged(true)
+                    .updateTime(new Date())
+                    .build();
+            eventPublisher.publishEvent(event);
+            log.info("Local temporary device config saved: {}, points={}", deviceId, safePoints.size());
+            return true;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Delete only local temporary device configs. Remote-synced configs are protected.
+     */
+    public boolean deleteLocalDeviceConfig(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+
+        lock.writeLock().lock();
+        try {
+            DeviceInfo existing = deviceCache.get(deviceId);
+            if (existing == null) {
+                return false;
+            }
+            if (!isLocalTemporaryDeviceInfo(existing)) {
+                throw new IllegalArgumentException("refuse to delete non-local device config: " + deviceId);
+            }
+            deviceCache.remove(deviceId);
+            pointCache.remove(deviceId);
+            connectionCache.remove(deviceId);
+            deviceContextCache.remove(deviceId);
+
+            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+                    .deviceId(deviceId)
+                    .configType("local-delete")
+                    .updateTime(new Date())
+                    .build();
+            eventPublisher.publishEvent(event);
+            log.info("Local temporary device config deleted: {}", deviceId);
+            return true;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public boolean isLocalTemporaryDevice(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        lock.readLock().lock();
+        try {
+            return isLocalTemporaryDeviceInfo(deviceCache.get(deviceId));
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -556,6 +666,221 @@ public class ConfigManager {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    private List<DeviceContext> snapshotLocalTemporaryContexts() {
+        if (deviceContextCache.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DeviceContext> snapshots = new ArrayList<>();
+        for (DeviceContext context : deviceContextCache.values()) {
+            if (context != null && isLocalTemporaryDeviceInfo(context.getDeviceInfo())) {
+                snapshots.add(context);
+            }
+        }
+        return snapshots;
+    }
+
+    private void restoreLocalTemporaryContexts(List<DeviceContext> contexts) {
+        if (CollectionUtils.isEmpty(contexts)) {
+            return;
+        }
+        int restored = 0;
+        for (DeviceContext context : contexts) {
+            DeviceInfo device = context.getDeviceInfo();
+            if (device == null || !StringUtils.hasText(device.getDeviceId())) {
+                continue;
+            }
+            String deviceId = device.getDeviceId();
+            if (deviceCache.containsKey(deviceId)) {
+                log.warn("Skip restoring local temporary device because remote config now exists: {}", deviceId);
+                continue;
+            }
+            deviceCache.put(deviceId, device);
+            DeviceConnection connection = context.copyConnectionConfig();
+            if (connection != null) {
+                connectionCache.put(deviceId, connection);
+            }
+            pointCache.put(deviceId, context.copyDataPoints());
+            rebuildDeviceContext(deviceId);
+            restored++;
+        }
+        if (restored > 0) {
+            log.info("Restored {} local temporary device configs after remote sync", restored);
+        }
+    }
+
+    private void validateLocalDevice(DeviceInfo device, String deviceId) {
+        if (!StringUtils.hasText(deviceId)) {
+            throw new IllegalArgumentException("deviceId is required");
+        }
+        if (!StringUtils.hasText(device.getDeviceName())) {
+            throw new IllegalArgumentException("deviceName is required");
+        }
+        if (!StringUtils.hasText(device.getProtocolType())) {
+            throw new IllegalArgumentException("protocolType is required");
+        }
+    }
+
+    private void validateLocalPoints(String deviceId, List<DataPoint> points) {
+        if (CollectionUtils.isEmpty(points)) {
+            throw new IllegalArgumentException("at least one data point is required for local device: " + deviceId);
+        }
+        for (DataPoint point : points) {
+            if (point == null) {
+                throw new IllegalArgumentException("data point cannot be null");
+            }
+            if (!StringUtils.hasText(point.getPointCode())) {
+                throw new IllegalArgumentException("pointCode is required");
+            }
+            if (!StringUtils.hasText(point.getAddress())) {
+                throw new IllegalArgumentException("address is required for point: " + point.getPointCode());
+            }
+            if (!StringUtils.hasText(point.getDataType())) {
+                throw new IllegalArgumentException("dataType is required for point: " + point.getPointCode());
+            }
+        }
+    }
+
+    private void normalizeLocalDevice(DeviceInfo device, DeviceInfo existing) {
+        Date now = new Date();
+        device.setDeviceId(normalizeDeviceId(device.getDeviceId()));
+        device.setProtocolType(device.getProtocolType().trim().toUpperCase(Locale.ROOT));
+        if (!StringUtils.hasText(device.getConnectionType())) {
+            device.setConnectionType(device.getProtocolType());
+        }
+        if (device.getCollectionInterval() == null || device.getCollectionInterval() <= 0) {
+            device.setCollectionInterval(2000);
+        }
+        if (device.getReportInterval() == null || device.getReportInterval() <= 0) {
+            device.setReportInterval(5);
+        }
+        if (!StringUtils.hasText(device.getStatus())) {
+            device.setStatus("OFFLINE");
+        }
+        if (device.getCreateTime() == null) {
+            device.setCreateTime(existing != null ? existing.getCreateTime() : now);
+        }
+        device.setUpdateTime(now);
+        device.setConfigSource(CONFIG_SOURCE_LOCAL);
+        device.setTemporaryConfig(true);
+    }
+
+    private void normalizeLocalConnection(DeviceInfo device, DeviceConnection connection) {
+        connection.setDeviceId(device.getDeviceId());
+        connection.setDeviceName(device.getDeviceName());
+        if (!StringUtils.hasText(connection.getConnectionType())) {
+            connection.setConnectionType(device.getProtocolType());
+        }
+        if (!StringUtils.hasText(connection.getHost()) && StringUtils.hasText(device.getIpAddress())) {
+            connection.setHost(device.getIpAddress());
+        }
+        if (!StringUtils.hasText(device.getIpAddress()) && StringUtils.hasText(connection.getHost())) {
+            device.setIpAddress(connection.getHost());
+        }
+        if (connection.getPort() == null && device.getPort() != null) {
+            connection.setPort(device.getPort());
+        }
+        if (device.getPort() == null && connection.getPort() != null) {
+            device.setPort(connection.getPort());
+        }
+        Map<String, Object> extJson = connection.getExtJson() != null
+                ? new LinkedHashMap<>(connection.getExtJson())
+                : new LinkedHashMap<>();
+        extJson.put(CONFIG_SOURCE_KEY, CONFIG_SOURCE_LOCAL);
+        extJson.put(TEMPORARY_CONFIG_KEY, true);
+        connection.setExtJson(extJson);
+        Date now = new Date();
+        if (connection.getCreateTime() == null) {
+            connection.setCreateTime(now);
+        }
+        connection.setUpdateTime(now);
+    }
+
+    private void normalizeLocalPoints(DeviceInfo device, List<DataPoint> points) {
+        Date now = new Date();
+        for (DataPoint point : points) {
+            point.setDeviceId(device.getDeviceId());
+            point.setDeviceName(device.getDeviceName());
+            if (!StringUtils.hasText(point.getPointId())) {
+                point.setPointId(device.getDeviceId() + ":" + point.getPointCode());
+            }
+            if (!StringUtils.hasText(point.getPointName())) {
+                point.setPointName(point.getPointCode());
+            }
+            if (!StringUtils.hasText(point.getReadWrite())) {
+                point.setReadWrite("R");
+            }
+            if (!StringUtils.hasText(point.getCollectionMode())) {
+                point.setCollectionMode("POLLING");
+            }
+            if (point.getStatus() == null) {
+                point.setStatus(1);
+            }
+            if (point.getCacheEnabled() == null) {
+                point.setCacheEnabled(1);
+            }
+            if (point.getCreateTime() == null) {
+                point.setCreateTime(now);
+            }
+            point.setUpdateTime(now);
+            Map<String, Object> additionalConfig = point.getAdditionalConfig();
+            additionalConfig.put(CONFIG_SOURCE_KEY, CONFIG_SOURCE_LOCAL);
+            additionalConfig.put(TEMPORARY_CONFIG_KEY, true);
+            point.setAdditionalConfig(additionalConfig);
+        }
+        normalizeDataPointCollectionPolicy(device, points);
+    }
+
+    private void normalizeDataPointCollectionPolicy(DeviceInfo device, List<DataPoint> points) {
+        if (CollectionUtils.isEmpty(points)) {
+            return;
+        }
+        long defaultBaseInterval = device != null
+                && device.getCollectionInterval() != null
+                && device.getCollectionInterval() > 0
+                ? device.getCollectionInterval()
+                : AdaptiveCollectionUtil.DEFAULT_BASE_COLLECTION_INTERVAL;
+        for (DataPoint point : points) {
+            if (point == null) {
+                continue;
+            }
+            long minInterval = normalizePositive(point.getMinCollectionInterval(),
+                    AdaptiveCollectionUtil.DEFAULT_MIN_COLLECTION_INTERVAL);
+            long maxInterval = normalizePositive(point.getMaxCollectionInterval(),
+                    AdaptiveCollectionUtil.DEFAULT_MAX_COLLECTION_INTERVAL);
+            if (minInterval > maxInterval) {
+                long tmp = minInterval;
+                minInterval = maxInterval;
+                maxInterval = tmp;
+            }
+            long baseInterval = normalizePositive(point.getBaseCollectionInterval(), defaultBaseInterval);
+            baseInterval = Math.max(minInterval, Math.min(baseInterval, maxInterval));
+
+            point.setBaseCollectionInterval(baseInterval);
+            if (point.getCurrentCollectionInterval() <= 0) {
+                point.setCurrentCollectionInterval(baseInterval);
+            }
+            point.setMinCollectionInterval(minInterval);
+            point.setMaxCollectionInterval(maxInterval);
+            if (point.getPointChangeThreshold() == null) {
+                point.setPointChangeThreshold(AdaptiveCollectionUtil.DEFAULT_CHANGE_THRESHOLD);
+            }
+        }
+    }
+
+    private long normalizePositive(Long value, long defaultValue) {
+        return value != null && value > 0 ? value : defaultValue;
+    }
+
+    private boolean isLocalTemporaryDeviceInfo(DeviceInfo device) {
+        return device != null
+                && CONFIG_SOURCE_LOCAL.equalsIgnoreCase(device.getConfigSource())
+                && Boolean.TRUE.equals(device.getTemporaryConfig());
+    }
+
+    private String normalizeDeviceId(String deviceId) {
+        return deviceId != null ? deviceId.trim() : null;
     }
 
     /**

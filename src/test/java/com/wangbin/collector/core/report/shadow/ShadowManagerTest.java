@@ -52,12 +52,12 @@ class ShadowManagerTest {
         ProcessResult r1 = buildResult(10d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult first = manager.apply("dev-change", point, r1);
         assertFalse(first.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 10d), Map.of("phaseA", System.currentTimeMillis()));
+        manager.markReportedValues("dev-change", Map.of("phaseA", 10d));
 
         ProcessResult r2 = buildResult(13d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult second = manager.apply("dev-change", point, r2);
         assertTrue(second.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 13d), Map.of("phaseA", System.currentTimeMillis()));
+        manager.markReportedValues("dev-change", Map.of("phaseA", 13d));
 
         ProcessResult r3 = buildResult(16d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult third = manager.apply("dev-change", point, r3);

@@ -45,6 +45,26 @@ public class DeviceController {
         return result;
     }
 
+    @PostMapping("/{deviceId}/start-local")
+    public Map<String, Object> startLocalDevice(@PathVariable String deviceId) {
+        Map<String, Object> result = baseResult(deviceId);
+        try {
+            boolean success = collectionService.startLocalDevice(deviceId);
+            if (success) {
+                result.put("status", "success");
+                result.put("message", "本地临时设备启动成功");
+            } else {
+                result.put("status", "error");
+                result.put("message", "设备不是本地临时设备，或启动失败");
+            }
+        } catch (Exception e) {
+            log.error("启动本地临时设备失败: {}", deviceId, e);
+            result.put("status", "error");
+            result.put("message", "启动异常: " + e.getMessage());
+        }
+        return result;
+    }
+
     @PostMapping("/{deviceId}/stop")
     public Map<String, Object> stopDevice(@PathVariable String deviceId) {
         Map<String, Object> result = baseResult(deviceId);

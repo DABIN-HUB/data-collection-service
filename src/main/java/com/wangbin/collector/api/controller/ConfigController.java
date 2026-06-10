@@ -6,6 +6,7 @@ import com.wangbin.collector.api.controller.dto.ConfigExportResponse;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.api.controller.dto.ConfigImportResult;
 import com.wangbin.collector.api.controller.dto.ConfigSummaryResponse;
+import com.wangbin.collector.api.controller.dto.LocalDeviceConfigRequest;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -78,6 +80,55 @@ public class ConfigController {
         data.put("devices", devices);
         data.put("count", devices.size());
         return success(data);
+    }
+
+    @PostMapping("/local/devices")
+    public Map<String, Object> createLocalDevice(@RequestBody LocalDeviceConfigRequest request) {
+        return saveLocalDevice(request, null, request != null && request.isOverwrite());
+    }
+
+    @PutMapping("/local/device/{deviceId}")
+    public Map<String, Object> updateLocalDevice(@PathVariable String deviceId,
+                                                 @RequestBody LocalDeviceConfigRequest request) {
+        return saveLocalDevice(request, deviceId, true);
+    }
+
+    @GetMapping("/local/device/{deviceId}")
+    public Map<String, Object> getLocalDevice(@PathVariable String deviceId) {
+        if (!configManager.isLocalTemporaryDevice(deviceId)) {
+            return error("只能读取本地临时设备配置: " + deviceId);
+        }
+        ConfigBundle bundle = ConfigBundle.builder()
+                .device(configManager.getDevice(deviceId))
+                .connection(configManager.getConnectionConfig(deviceId))
+                .points(configManager.getDataPoints(deviceId))
+                .build();
+        Map<String, Object> data = new HashMap<>();
+        data.put("deviceId", deviceId);
+        data.put("configSource", ConfigManager.CONFIG_SOURCE_LOCAL);
+        data.put("temporaryConfig", true);
+        data.put("bundle", bundle);
+        return success(data);
+    }
+
+    @DeleteMapping("/local/device/{deviceId}")
+    public Map<String, Object> deleteLocalDevice(@PathVariable String deviceId) {
+        try {
+            if (!configManager.isLocalTemporaryDevice(deviceId)) {
+                return error("只能删除本地临时设备配置: " + deviceId);
+            }
+            if (collectionService.isDeviceRunning(deviceId) && !collectionService.stopDevice(deviceId)) {
+                return error("设备正在运行且停止失败，未删除: " + deviceId);
+            }
+            boolean deleted = configManager.deleteLocalDeviceConfig(deviceId);
+            return deleted
+                    ? success("本地临时设备已删除", Map.of("deviceId", deviceId,
+                    "configSource", ConfigManager.CONFIG_SOURCE_LOCAL,
+                    "temporaryConfig", true))
+                    : error("本地临时设备不存在: " + deviceId);
+        } catch (RuntimeException e) {
+            return error(e.getMessage());
+        }
     }
 
     @GetMapping("/device/{deviceId}")
@@ -337,6 +388,49 @@ public class ConfigController {
             return bundle.getConnection().getDeviceId();
         }
         return null;
+    }
+
+    private Map<String, Object> saveLocalDevice(LocalDeviceConfigRequest request,
+                                                String pathDeviceId,
+                                                boolean overwrite) {
+        if (request == null || request.getDevice() == null) {
+            return error("本地设备配置不能为空");
+        }
+        DeviceInfo device = request.getDevice();
+        if (StringUtils.hasText(pathDeviceId)) {
+            device.setDeviceId(pathDeviceId);
+        }
+        if (!StringUtils.hasText(device.getDeviceId())) {
+            return error("deviceId 不能为空");
+        }
+        try {
+            boolean saved = configManager.saveLocalDeviceConfig(
+                    device,
+                    request.getConnection(),
+                    request.getPoints(),
+                    overwrite || request.isOverwrite());
+            if (!saved) {
+                return error("保存本地临时设备失败: " + device.getDeviceId());
+            }
+
+            boolean started = false;
+            if (request.isStartAfterSave()) {
+                started = collectionService.startLocalDevice(device.getDeviceId());
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("deviceId", device.getDeviceId());
+            data.put("configSource", ConfigManager.CONFIG_SOURCE_LOCAL);
+            data.put("temporaryConfig", true);
+            data.put("started", started);
+            data.put("pointCount", request.getPoints() != null ? request.getPoints().size() : 0);
+            String message = request.isStartAfterSave() && !started
+                    ? "本地临时设备已保存，但启动失败"
+                    : "本地临时设备已保存";
+            return success(message, data);
+        } catch (RuntimeException e) {
+            return error(e.getMessage());
+        }
     }
 
     private Map<String, Object> success(Object data) {

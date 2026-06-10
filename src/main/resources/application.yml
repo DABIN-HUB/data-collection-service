@@ -45,10 +45,10 @@ spring:
   data:
     redis:
       host: 127.0.0.1
-      port: 6739
+      port: 6379
       database: 0
       timeout: 3000
-      password: 123456
+      password: 123456888wb
       lettuce:
         pool:
           max-active: 20
@@ -131,6 +131,13 @@ telemetry:
     query-max-limit: 5000
 
 collector:
+  auth:
+    permit-all-paths:
+      - /health
+      - /actuator/**
+      - /admin/**
+    ops-tokens:
+      ops-token: 本地开发运维令牌
   #自适应采集配置
   adaptive-collection:
     enabled: true          # 自适应采集开关，默认开启

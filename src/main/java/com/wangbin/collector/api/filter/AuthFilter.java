@@ -53,7 +53,7 @@ public class AuthFilter extends OncePerRequestFilter {
         if (!properties.isEnabled()) {
             return true;
         }
-        String path = request.getRequestURI();
+        String path = resolveApplicationPath(request);
         return matches(path, properties.getPermitAllPaths());
     }
 
@@ -168,6 +168,16 @@ public class AuthFilter extends OncePerRequestFilter {
             }
         }
         return false;
+    }
+
+    private String resolveApplicationPath(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (StringUtils.hasText(contextPath) && path.startsWith(contextPath)) {
+            String applicationPath = path.substring(contextPath.length());
+            return StringUtils.hasText(applicationPath) ? applicationPath : "/";
+        }
+        return path;
     }
 
     private List<String> combine(List<String> preferred, List<String> fallback) {

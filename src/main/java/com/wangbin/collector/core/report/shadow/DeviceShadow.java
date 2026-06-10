@@ -12,26 +12,54 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 设备影子，缓存设备最新属性值。
+ * 设备影子，保存设备最新属性、期望属性，以及上报/事件判断所需的运行态信息。
  */
 @Data
 public class DeviceShadow {
 
+    /** 设备 ID。 */
     private final String deviceId;
+
+    /** 当前最新采集值，对应影子文档 state.reported。 */
     private final Map<String, ValueMeta> latest = new ConcurrentHashMap<>();
+
+    /** 平台或接口下发的期望值，对应影子文档 state.desired。 */
     private final Map<String, ValueMeta> desired = new ConcurrentHashMap<>();
+
+    /** reportField 到原始点位信息的映射，用于上报快照时补充 pointId/pointCode/pointName。 */
     private final Map<String, PointInfo> pointInfos = new ConcurrentHashMap<>();
+
+    /** 最近一次成功上报的属性值，用于和当前采集值比较，判断是否触发变化上报。 */
     private final Map<String, Object> lastReportedValues = new ConcurrentHashMap<>();
-    private final Map<String, Long> lastReportedTs = new ConcurrentHashMap<>();
+
+    /** 每个字段上一次触发变化上报的时间，用于执行 changeMinIntervalMs 限频。 */
     private final Map<String, Long> lastChangeTriggerAt = new ConcurrentHashMap<>();
+
+    /** 每个字段/事件类型上一次触发事件的时间，用于执行 eventMinIntervalMs 限频。 */
     private final Map<String, Long> lastEventTriggerAt = new ConcurrentHashMap<>();
+
+    /** 相同事件签名上一次触发时间，用于避免同类事件在短时间内重复上报。 */
     private final Map<String, Long> eventSignatureTimes = new ConcurrentHashMap<>();
+
+    /** 当前设备影子生成上报消息时使用的递增序号，写入上报 metadata.seq。 */
     private final AtomicLong sequence = new AtomicLong(0);
+
+    /** 影子版本号。reported 或 desired 变化时递增，不保存历史版本内容。 */
     private final AtomicLong version = new AtomicLong(0);
+
+    /** 这个设备影子第一次创建的时间，毫秒时间戳。 */
     private long createdAt;
+
+    /** 最近一次上报链路标记“已上报”的时间，不等于最近一次采集时间。 */
     private volatile long lastReportAt;
+
+    /** 最近一次完成上报的聚合窗口开始时间，0 表示尚未完成过窗口上报。 */
     private volatile long lastWindowStart;
+
+    /** 最近一次完成上报的聚合窗口结束时间，0 表示尚未完成过窗口上报。 */
     private volatile long lastWindowEnd;
+
+    /** 影子文档最后更新时间，reported 或 desired 变化时刷新。 */
     private volatile long updatedAt;
 
     public DeviceShadow(String deviceId) {
@@ -57,10 +85,6 @@ public class DeviceShadow {
         if (changed) {
             touch();
         }
-    }
-
-    public ValueMeta getLatest(String field) {
-        return latest.get(field);
     }
 
     public Map<String, ValueMeta> snapshot() {
@@ -169,20 +193,13 @@ public class DeviceShadow {
         return lastReportedValues.get(field);
     }
 
-    public Long getLastReportedTimestamp(String field) {
-        return lastReportedTs.get(field);
-    }
-
-    public void markReportedValues(Map<String, Object> values, Map<String, Long> propertyTs) {
+    public void markReportedValues(Map<String, Object> values) {
         if (values == null) {
             return;
         }
         values.forEach((field, value) -> {
             if (field != null) {
                 lastReportedValues.put(field, value);
-                if (propertyTs != null && propertyTs.containsKey(field)) {
-                    lastReportedTs.put(field, propertyTs.get(field));
-                }
             }
         });
     }

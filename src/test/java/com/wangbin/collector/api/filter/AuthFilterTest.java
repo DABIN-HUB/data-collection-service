@@ -36,6 +36,31 @@ class AuthFilterTest {
     }
 
     @Test
+    void shouldAllowAdminStaticResourcesWithoutCredential() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/index.html");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void shouldAllowAdminStaticResourcesWithContextPath() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/collector/admin/index.html");
+        request.setContextPath("/collector");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
     void shouldValidateServiceSignature() throws Exception {
         AuthProperties properties = new AuthProperties();
         AuthProperties.ServiceClient client = new AuthProperties.ServiceClient();

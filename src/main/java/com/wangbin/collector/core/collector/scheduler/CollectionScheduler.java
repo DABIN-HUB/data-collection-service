@@ -1037,6 +1037,13 @@ public class CollectionScheduler {
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         String deviceId = event.getDeviceId();
+        if ("local-delete".equals(event.getConfigType())) {
+            if (deviceId != null && isDeviceRunning(deviceId)) {
+                log.info("设备 {} 本地临时配置已删除，停止采集", deviceId);
+                stopDevice(deviceId);
+            }
+            return;
+        }
         if (deviceId != null && isDeviceRunning(deviceId)) {
             log.info("设备 {} 配置更新，已触发重启计划", deviceId);
             ScheduledFuture<?> oldTask = pendingConfigRestartTasks.get(deviceId);

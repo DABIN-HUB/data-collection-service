@@ -39,6 +39,18 @@ public class CollectionService {
     }
 
     /**
+     * Start a local temporary device from the in-memory config cache.
+     * This intentionally bypasses remote refresh to avoid deleting local-only configs.
+     */
+    public boolean startLocalDevice(String deviceId) {
+        if (!configManager.isLocalTemporaryDevice(deviceId)) {
+            log.warn("Device {} is not a local temporary device, skip local start", deviceId);
+            return false;
+        }
+        return collectionScheduler.startDevice(deviceId);
+    }
+
+    /**
      * 停止设备采集
      */
     public boolean stopDevice(String deviceId) {

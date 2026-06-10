@@ -323,7 +323,7 @@ public class CacheReportService {
             scheduledRetry = true;
             scheduleDeferredRetry(data, config, highPriority, tracker);
         } else if (success) {
-            shadowManager.markReportedValues(data.getDeviceId(), data.getProperties(), data.getPropertyTs());
+            shadowManager.markReportedValues(data.getDeviceId(), data.getProperties());
         } else if (chunkKey != null && tracker.shouldRetry(chunkKey)) {
             scheduledRetry = true;
             log.warn("Chunk retry: device={}, key={}, attempt={} / {}",

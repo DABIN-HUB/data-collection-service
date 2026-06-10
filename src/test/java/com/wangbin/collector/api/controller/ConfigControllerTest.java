@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -98,5 +100,76 @@ class ConfigControllerTest {
                         .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success", is(1)));
+    }
+
+    @Test
+    void shouldCreateLocalTemporaryDeviceAndStartFromLocalCache() throws Exception {
+        Map<String, Object> request = Map.of(
+                "device", Map.of(
+                        "id", "local-1",
+                        "deviceName", "local-device",
+                        "protocolType", "MODBUS_TCP"),
+                "connection", Map.of(
+                        "deviceId", "local-1",
+                        "connectionType", "MODBUS_TCP",
+                        "host", "127.0.0.1",
+                        "port", 502),
+                "points", List.of(Map.of(
+                        "deviceId", "local-1",
+                        "pointCode", "temperature",
+                        "address", "40001",
+                        "dataType", "FLOAT")),
+                "startAfterSave", true);
+
+        when(configManager.saveLocalDeviceConfig(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false)))
+                .thenReturn(true);
+        when(collectionService.startLocalDevice("local-1")).thenReturn(true);
+
+        mockMvc.perform(post("/api/config/local/devices")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.data.configSource", is("local")))
+                .andExpect(jsonPath("$.data.temporaryConfig", is(true)))
+                .andExpect(jsonPath("$.data.started", is(true)));
+
+        verify(configManager).saveLocalDeviceConfig(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false));
+        verify(collectionService).startLocalDevice("local-1");
+    }
+
+    @Test
+    void shouldRejectDeleteForNonLocalDevice() throws Exception {
+        when(configManager.isLocalTemporaryDevice("remote-1")).thenReturn(false);
+
+        mockMvc.perform(delete("/api/config/local/device/remote-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("error")));
+    }
+
+    private DeviceInfo device(String deviceId) {
+        DeviceInfo device = new DeviceInfo();
+        device.setDeviceId(deviceId);
+        device.setDeviceName("local-device");
+        device.setProtocolType("MODBUS_TCP");
+        return device;
+    }
+
+    private DeviceConnection connection(String deviceId) {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setDeviceId(deviceId);
+        connection.setConnectionType("MODBUS_TCP");
+        connection.setHost("127.0.0.1");
+        connection.setPort(502);
+        return connection;
+    }
+
+    private DataPoint point(String deviceId) {
+        DataPoint point = new DataPoint();
+        point.setDeviceId(deviceId);
+        point.setPointCode("temperature");
+        point.setAddress("40001");
+        point.setDataType("FLOAT");
+        return point;
     }
 }
