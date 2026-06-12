@@ -5,14 +5,16 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
 import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.http.HttpCollector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
-import com.wangbin.collector.core.collector.protocol.modbus.ModbusRtuCollector;
-import com.wangbin.collector.core.collector.protocol.modbus.ModbusTcpCollector;
+import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
+import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
+import com.wangbin.collector.core.collector.protocol.s7.S7Collector;
 import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
 import com.wangbin.collector.core.collector.protocol.websocket.WebSocketCollector;
 import lombok.extern.slf4j.Slf4j;
@@ -97,9 +99,15 @@ public class CollectorFactory {
      */
     private void registerCollectorCreators() {
         // Modbus
-        registerCollector("MODBUS_TCP", ModbusTcpCollector.class);
-        registerCollector("MODBUS_RTU", ModbusRtuCollector.class);
-        registerCollector("MODBUS_ASCII", ModbusRtuCollector.class);
+        registerCollector("MODBUS_TCP", Plc4xModbusTcpCollector.class);
+        registerCollector("MODBUS_RTU", Plc4xModbusRtuCollector.class);
+        registerCollector("MODBUS_ASCII", Plc4xModbusRtuCollector.class);
+        registerCollector("SIEMENS_S7", S7Collector.class);
+        registerCollector("S7", S7Collector.class);
+        registerCollector("ETHERNET_IP", EtherNetIpCollector.class);
+        registerCollector("EIP", EtherNetIpCollector.class);
+        registerCollector("LOGIX", EtherNetIpCollector.class);
+        registerCollector("AB_ETH", EtherNetIpCollector.class);
 
         // OPC
         registerCollector("OPC_DA", OpcDaCollector.class);

@@ -20,7 +20,9 @@ class ProtocolControllerTest {
         ApiResult<List<ProtocolSchema>> result = controller.listProtocols();
 
         assertEquals(200, result.getCode());
-        assertEquals(12, result.getData().size());
+        assertEquals(14, result.getData().size());
+        assertTrue(result.getData().stream().anyMatch(schema -> "SIEMENS_S7".equals(schema.getProtocol())));
+        assertTrue(result.getData().stream().anyMatch(schema -> "ETHERNET_IP".equals(schema.getProtocol())));
     }
 
     @Test

@@ -354,9 +354,10 @@ public class ValidatorUtil {
         }
         // 检查是否为支持的协议类型
         String[] supportedProtocols = {
-                "MODBUS_TCP", "MODBUS_RTU", "OPC_DA", "OPC_UA",
-                "SNMP", "MQTT", "COAP", "IEC104", "IEC61850",
-                "HTTP", "HTTPS", "WEBSOCKET", "CUSTOM_TCP"
+                "MODBUS_TCP", "MODBUS_RTU", "MODBUS_ASCII", "SIEMENS_S7", "S7",
+                "OPC_DA", "OPC_UA", "SNMP", "SNMP_V1", "SNMP_V2C", "SNMP_V3",
+                "MQTT", "MQTT_SSL", "COAP", "COAP_SSL", "IEC104", "IEC61850",
+                "HTTP", "HTTPS", "WEBSOCKET", "WEBSOCKET_SSL", "CUSTOM_TCP", "CUSTOM_UDP"
         };
 
         for (String protocol : supportedProtocols) {

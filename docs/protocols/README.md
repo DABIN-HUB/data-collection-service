@@ -2,6 +2,8 @@
 
 - [MODBUS TCP](./MODBUS_TCP.md)
 - [MODBUS RTU](./MODBUS_RTU.md)
+- [SIEMENS S7](./SIEMENS_S7.md)
+- [ETHERNET IP](./ETHERNET_IP.md)
 - [OPC UA](./OPC_UA.md)
 - [OPC DA](./OPC_DA.md)
 - [IEC104](./IEC104.md)

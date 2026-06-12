@@ -28,6 +28,8 @@ public class ProtocolConnectionValidator {
         switch (canonicalize(protocol)) {
             case "HTTP", "MQTT", "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
+            case "SIEMENS_S7" -> requireHost(deviceInfo, connection, protocol);
+            case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "SNMP" -> {
                 requireHost(deviceInfo, connection, protocol);
                 validateSnmp(deviceInfo, connection);
@@ -176,6 +178,8 @@ public class ProtocolConnectionValidator {
             case "COAP_SSL" -> "COAP";
             case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
             case "MODBUS_ASCII" -> "MODBUS_RTU";
+            case "S7" -> "SIEMENS_S7";
+            case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "OPCUA" -> "OPC_UA";
             case "IEC_104" -> "IEC104";
             case "IEC_61850" -> "IEC61850";

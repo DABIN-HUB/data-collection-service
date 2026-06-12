@@ -3,9 +3,11 @@ package com.wangbin.collector.core.connection.factory;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
-import com.wangbin.collector.core.connection.adapter.ModbusRtuConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.Plc4xModbusRtuConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.WebSocketConnectionAdapter;
 import org.junit.jupiter.api.Test;
@@ -73,11 +75,28 @@ class ConnectionFactoryProtocolAliasMappingTest {
     }
 
     @Test
-    void shouldMapModbusAsciiAliasToRtuAdapter() {
+    void shouldMapModbusAsciiAliasToPlc4xRtuAdapter() {
         DeviceConnection config = new DeviceConnection();
 
-        assertInstanceOf(ModbusRtuConnectionAdapter.class,
+        assertInstanceOf(Plc4xModbusRtuConnectionAdapter.class,
                 factory.createConnection(device("dev-modbus-ascii", "MODBUS_ASCII"), config));
+    }
+
+    @Test
+    void shouldMapS7AliasToAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(S7ConnectionAdapter.class, factory.createConnection(device("dev-s7", "S7"), config));
+        assertEquals(102, config.getPort());
+    }
+
+    @Test
+    void shouldMapLogixAliasToEtherNetIpAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(EtherNetIpConnectionAdapter.class,
+                factory.createConnection(device("dev-logix", "LOGIX"), config));
+        assertEquals(44818, config.getPort());
     }
 
     private DeviceInfo device(String deviceId, String protocolType) {

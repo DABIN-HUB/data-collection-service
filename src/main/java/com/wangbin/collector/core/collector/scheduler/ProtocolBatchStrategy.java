@@ -36,7 +36,10 @@ class ProtocolBatchStrategy {
             Map.entry("HTTPS", new BatchLimits(50, 100, 100, 50)),
             Map.entry("WEBSOCKET", new BatchLimits(30, 50, 50, 50)),
             Map.entry("WEBSOCKET_SSL", new BatchLimits(30, 50, 50, 50)),
-            Map.entry("SIEMENS_S7", new BatchLimits(200, 300, 100, 50))
+            Map.entry("SIEMENS_S7", new BatchLimits(200, 300, 100, 50)),
+            Map.entry("ETHERNET_IP", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("EIP", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("LOGIX", new BatchLimits(64, 128, 128, 50))
     );
 
     int defaultBatchSize(String protocol) {

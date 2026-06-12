@@ -46,6 +46,8 @@ public class ConnectionFactory {
             case "MQTT" -> createMqttConnection(deviceInfo, cfg);
             case "WEBSOCKET" -> createWebSocketConnection(deviceInfo, cfg);
             case "COAP" -> createCoapConnection(deviceInfo, cfg);
+            case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
+            case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "MODBUS_TCP" -> createModbusTcpConnection(deviceInfo, cfg);
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
@@ -109,6 +111,14 @@ public class ConnectionFactory {
                 putExtIfAbsent(cfg, "snmpVersion", "3");
                 setDefaultPort(cfg, 161);
                 yield "SNMP";
+            }
+            case "SIEMENS_S7", "S7" -> {
+                setDefaultPort(cfg, 102);
+                yield "SIEMENS_S7";
+            }
+            case "ETHERNET_IP", "EIP", "LOGIX", "AB_ETH" -> {
+                setDefaultPort(cfg, 44818);
+                yield "ETHERNET_IP";
             }
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "OPCUA" -> "OPC_UA";
@@ -186,9 +196,27 @@ public class ConnectionFactory {
         }
     }
 
+    private ConnectionAdapter<?> createS7Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new S7ConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("创建S7连接失败: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("创建S7连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createEtherNetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new EtherNetIpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create EtherNet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create EtherNet/IP connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
+
     private ConnectionAdapter<?> createModbusTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
-            return new ModbusTcpConnectionAdapter(deviceInfo, cfg);
+            return new Plc4xModbusTcpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
             log.error("创建Modbus TCP连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建Modbus TCP连接失败", deviceInfo.getDeviceId(), null);
@@ -197,7 +225,7 @@ public class ConnectionFactory {
 
     private ConnectionAdapter<?> createModbusRtuConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
-            return new ModbusRtuConnectionAdapter(deviceInfo, cfg);
+            return new Plc4xModbusRtuConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
             log.error("创建Modbus RTU连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建Modbus RTU连接失败", deviceInfo.getDeviceId(), null);

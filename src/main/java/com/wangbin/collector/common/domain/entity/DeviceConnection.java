@@ -234,7 +234,7 @@ public class DeviceConnection {
         return switch (normalizeConnectionType(connectionType)) {
             case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
             case "MODBUS_TCP" -> hasHostPort();
-            case "SNMP", "IEC104", "IEC61850" -> hasHost();
+            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "ETHERNET_IP" -> hasHost();
             case "OPC_UA" -> hasText(url)
                     || hasText(getStringConfig("endpointUrl", null))
                     || hasText(getStringConfig("endpoint", null))
@@ -279,6 +279,8 @@ public class DeviceConnection {
             case "COAP_SSL" -> "COAP";
             case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
             case "MODBUS_ASCII" -> "MODBUS_RTU";
+            case "S7" -> "SIEMENS_S7";
+            case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "OPCUA" -> "OPC_UA";
             case "IEC_104" -> "IEC104";
             case "IEC_61850" -> "IEC61850";

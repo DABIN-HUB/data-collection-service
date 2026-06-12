@@ -36,6 +36,7 @@
     <commons-pool2.version>2.12.0</commons-pool2.version>
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
     <tdengine.jdbc.version>3.7.1</tdengine.jdbc.version>
+    <plc4x.version>0.13.0</plc4x.version>
   </properties>
 
   <dependencies>
@@ -166,6 +167,21 @@
       <version>1.7.2</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-modbus</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-s7</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-eip</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
     <!--IEC 61850 https://mvnrepository.com/artifact/com.beanit/iec61850bean -->
     <dependency>
       <groupId>com.beanit</groupId>

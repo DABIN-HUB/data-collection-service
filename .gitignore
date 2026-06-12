@@ -1,5 +1,6 @@
 target/
 *.log
 .idea/
+.m2/
 *.iml
 .vscode/
