@@ -5,7 +5,8 @@
 - `SIEMENS_S7` is no longer a scaffold-only protocol entry.
 - The repository now contains a real PLC4X S7 connect/read/write path.
 - Factory, connection factory, protocol validator, and schema metadata are all wired.
-- Subscription and protocol-level command execution are still not implemented.
+- The current path supports cyclic subscription for configured scalar points.
+- `executeCommand` now exposes thin wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
 
 ## Implementation Entry Points
 
@@ -72,5 +73,23 @@ fields.add(createFieldConfig("timeout", "number", "Protocol timeout (ms)", false
 
 - `S7ConnectionAdapter` builds a real `s7://` PLC4X connection.
 - `S7Collector` supports single-point and batched read/write.
+- `S7Collector` uses PLC4X cyclic subscriptions and reuses the existing `ingestPushedValue(...)` processing path.
+- Subscription interval resolves from point adaptive interval first, then point base interval, then device collection interval.
 - Batched reads are chunked by `maxFieldsPerRequest`.
 - Array-style addresses are rejected for now; the current path targets scalar points first.
+
+## Command Support
+
+`executeCommand` currently supports:
+- `read`
+- `write`
+- `status`
+- `diagnostic`
+
+Point resolution for `read` / `write` follows the same configured-point matching order used elsewhere in the project:
+1. `reportField`
+2. `pointAlias`
+3. `pointCode`
+4. `pointId`
+5. `pointName`
+6. `address`

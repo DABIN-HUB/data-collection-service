@@ -29,7 +29,9 @@ public class ProtocolSchemaService {
         register(built, modbusRtu());
         register(built, siemensS7());
         register(built, etherNetIp());
+        register(built, ads());
         register(built, opcUa());
+        register(built, plc4xOpcUa());
         register(built, opcDa());
         register(built, iec104());
         register(built, iec61850());
@@ -116,7 +118,7 @@ public class ProtocolSchemaService {
 
     private ProtocolSchema siemensS7() {
         return schema("SIEMENS_S7", "Siemens S7", "PLC4X-backed Siemens S7 read/write collector.",
-                true, true, false,
+                true, true, true,
                 List.of("S7"),
                 List.of("DB1.DBW0", "DB1.DBD4", "DB1:4:REAL", "I0.0", "Q0.0", "M10.0"),
                 fields(
@@ -168,6 +170,27 @@ public class ProtocolSchemaService {
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced")));
     }
 
+    private ProtocolSchema ads() {
+        return schema("ADS", "Beckhoff ADS", "PLC4X-backed Beckhoff ADS / AMS collector.",
+                true, true, true,
+                List.of("AMS"),
+                List.of("MAIN.temperature", "0x4020/0x0:REAL", "16416/32:STRING(80)"),
+                fields(
+                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
+                        field("port", "number", "TCP port", false, "48898", null, "connection"),
+                        field("targetAmsNetId", "string", "Target AMS Net ID", true, "", null, "protocol"),
+                        field("targetAmsPort", "number", "Target AMS port", true, "851", null, "protocol"),
+                        field("sourceAmsNetId", "string", "Source AMS Net ID", true, "", null, "protocol"),
+                        field("sourceAmsPort", "number", "Source AMS port", true, "", null, "protocol"),
+                        field("loadSymbolAndDataTypeTables", "boolean", "Load symbol/data type tables", false, "true",
+                                List.of("true", "false"), "advanced"),
+                        field("timeoutRequest", "number", "ADS request timeout (ms)", false, "4000", null, "advanced"),
+                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "64", null, "advanced"),
+                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced")));
+    }
+
     private ProtocolSchema opcUa() {
         return schema("OPC_UA", "OPC UA", "OPC Unified Architecture client.",
                 true, true, true,
@@ -198,6 +221,56 @@ public class ProtocolSchemaService {
                         field("connectTimeout", "number", "Connect timeout (ms)", false, "5000", null, "advanced"),
                         field("subscriptionInterval", "number", "Subscription interval (ms)", false, "1000", null, "advanced"),
                         field("namespaceUri", "string", "Namespace URI", false, "", null, "advanced")));
+    }
+
+    private ProtocolSchema plc4xOpcUa() {
+        return schema("OPC_UA_PLC4X", "OPC UA (PLC4X)", "Parallel PLC4X OPC UA validation path kept separate from the Milo production collector.",
+                true, true, true,
+                List.of("OPCUA_PLC4X"),
+                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001;REAL"),
+                fields(
+                        field("url", "string", "Endpoint URL", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
+                        field("endpointUrl", "string", "Endpoint URL alias", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
+                        field("endpoint", "string", "Endpoint alias", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
+                        field("host", "string", "Host", false, "127.0.0.1", null, "connection"),
+                        field("port", "number", "Port", false, "4840", null, "connection"),
+                        field("discovery", "boolean", "Use discovery endpoint", false, "true",
+                                List.of("true", "false"), "protocol"),
+                        field("authType", "select", "Authentication type", false, "ANONYMOUS",
+                                List.of("ANONYMOUS", "USERNAME", "CERT"), "security"),
+                        field("securityPolicy", "select", "Security policy", false, "NONE",
+                                List.of("NONE", "Basic128Rsa15", "Basic256", "Basic256Sha256",
+                                        "Aes128_Sha256_RsaOaep", "Aes256_Sha256_RsaPss"),
+                                "security"),
+                        field("messageSecurity", "select", "Message security", false, "NONE",
+                                List.of("NONE", "SIGN", "SIGN_ENCRYPT"), "security"),
+                        field("securityMode", "select", "Security mode alias", false, "NONE",
+                                List.of("NONE", "Sign", "SignAndEncrypt"), "security"),
+                        conditional("username", "string", "Username", false, "", null, "security", "authType=USERNAME"),
+                        field("password", "password", "Password", false, "", null, "security"),
+                        field("authParams", "object", "Authentication params alias", false, "{}", null, "security"),
+                        field("keyStoreFile", "string", "Client key store file", false, "", null, "security"),
+                        field("keyStoreType", "string", "Client key store type", false, "pkcs12", null, "security"),
+                        field("keyStorePassword", "password", "Client key store password", false, "", null, "security"),
+                        conditional("clientCertPath", "string", "Client certificate alias", false, "", null,
+                                "security", "authType=CERT or securityPolicy!=NONE"),
+                        field("clientCertPassword", "password", "Client certificate password alias", false, "", null, "security"),
+                        field("trustStoreFile", "string", "Trust store file", false, "", null, "security"),
+                        field("trustStoreType", "string", "Trust store type", false, "pkcs12", null, "security"),
+                        field("trustStorePassword", "password", "Trust store password", false, "", null, "security"),
+                        field("serverCertificateFile", "string", "Pinned server certificate file", false, "", null, "security"),
+                        field("endpointHost", "string", "Endpoint host override", false, "", null, "advanced"),
+                        field("endpointPort", "number", "Endpoint port override", false, "", null, "advanced"),
+                        field("channelLifetime", "number", "Secure channel lifetime (ms)", false, "3600000", null, "advanced"),
+                        field("sessionTimeout", "number", "Session timeout (ms)", false, "120000", null, "advanced"),
+                        field("negotiationTimeout", "number", "Negotiation timeout (ms)", false, "60000", null, "advanced"),
+                        field("connectTimeoutMs", "number", "Connect timeout alias (ms)", false, "60000", null, "advanced"),
+                        field("connectTimeout", "number", "Connect timeout alias (ms)", false, "60000", null, "advanced"),
+                        field("requestTimeout", "number", "Request timeout (ms)", false, "30000", null, "advanced"),
+                        field("requestTimeoutMs", "number", "Request timeout alias (ms)", false, "30000", null, "advanced"),
+                        field("subscriptionInterval", "number", "Subscription interval (ms)", false, "1000", null, "advanced"),
+                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "100", null, "advanced"),
+                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced")));
     }
 
     private ProtocolSchema opcDa() {

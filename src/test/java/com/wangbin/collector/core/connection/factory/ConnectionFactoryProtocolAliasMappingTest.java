@@ -3,9 +3,11 @@ package com.wangbin.collector.core.connection.factory;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Plc4xModbusRtuConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
@@ -97,6 +99,30 @@ class ConnectionFactoryProtocolAliasMappingTest {
         assertInstanceOf(EtherNetIpConnectionAdapter.class,
                 factory.createConnection(device("dev-logix", "LOGIX"), config));
         assertEquals(44818, config.getPort());
+    }
+
+    @Test
+    void shouldMapAmsAliasToAdsAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+        config.setExtJson(ext(
+                "targetAmsNetId", "1.2.3.4.1.1",
+                "targetAmsPort", 851,
+                "sourceAmsNetId", "1.2.3.4.1.2",
+                "sourceAmsPort", 30000
+        ));
+
+        assertInstanceOf(AdsConnectionAdapter.class,
+                factory.createConnection(device("dev-ads", "AMS"), config));
+        assertEquals(48898, config.getPort());
+    }
+
+    @Test
+    void shouldMapPlc4xOpcUaAliasToAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(Plc4xOpcUaConnectionAdapter.class,
+                factory.createConnection(device("dev-opcua-plc4x", "OPCUA_PLC4X"), config));
+        assertEquals(4840, config.getPort());
     }
 
     private DeviceInfo device(String deviceId, String protocolType) {

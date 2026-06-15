@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.factory;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.ads.AdsCollector;
 import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
 import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
 import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollector;
@@ -13,6 +14,7 @@ import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollec
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
+import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.s7.S7Collector;
 import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
@@ -108,10 +110,14 @@ public class CollectorFactory {
         registerCollector("EIP", EtherNetIpCollector.class);
         registerCollector("LOGIX", EtherNetIpCollector.class);
         registerCollector("AB_ETH", EtherNetIpCollector.class);
+        registerCollector("ADS", AdsCollector.class);
+        registerCollector("AMS", AdsCollector.class);
 
         // OPC
         registerCollector("OPC_DA", OpcDaCollector.class);
         registerCollector("OPC_UA", OpcUaCollector.class);
+        registerCollector("OPC_UA_PLC4X", Plc4xOpcUaCollector.class);
+        registerCollector("OPCUA_PLC4X", Plc4xOpcUaCollector.class);
 
         // SNMP / CoAP / MQTT
         registerCollector("SNMP", SnmpCollector.class);

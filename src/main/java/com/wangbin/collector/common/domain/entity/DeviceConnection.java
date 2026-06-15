@@ -234,8 +234,8 @@ public class DeviceConnection {
         return switch (normalizeConnectionType(connectionType)) {
             case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
             case "MODBUS_TCP" -> hasHostPort();
-            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "ETHERNET_IP" -> hasHost();
-            case "OPC_UA" -> hasText(url)
+            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "ETHERNET_IP", "ADS" -> hasHost();
+            case "OPC_UA", "OPC_UA_PLC4X" -> hasText(url)
                     || hasText(getStringConfig("endpointUrl", null))
                     || hasText(getStringConfig("endpoint", null))
                     || hasHost();
@@ -281,7 +281,9 @@ public class DeviceConnection {
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
+            case "AMS" -> "ADS";
             case "OPCUA" -> "OPC_UA";
+            case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
             case "IEC_104" -> "IEC104";
             case "IEC_61850" -> "IEC61850";
             default -> normalized;

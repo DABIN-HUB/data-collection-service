@@ -3,6 +3,7 @@ package com.wangbin.collector.core.config.validator;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.protocol.ads.util.AmsNetIdParser;
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,12 +31,14 @@ public class ProtocolConnectionValidator {
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> requireHost(deviceInfo, connection, protocol);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
+            case "ADS" -> validateAds(deviceInfo, connection);
             case "SNMP" -> {
                 requireHost(deviceInfo, connection, protocol);
                 validateSnmp(deviceInfo, connection);
             }
             case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
             case "OPC_UA", "OPCUA" -> validateOpcUa(deviceInfo, connection);
+            case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection);
             case "OPC_DA" -> validateOpcDa(deviceInfo, connection);
             case "MODBUS_RTU", "MODBUS_ASCII", "CUSTOM_TCP", "CUSTOM_UDP", "TCP" -> {
                 // These protocols have usable defaults or protocol-specific validation later.
@@ -56,11 +59,7 @@ public class ProtocolConnectionValidator {
     }
 
     private void validateOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
-        boolean hasEndpoint = hasText(connection.getUrl())
-                || hasText(connection.getStringConfig("endpointUrl", null))
-                || hasText(connection.getStringConfig("endpoint", null))
-                || hasText(connection.getHost())
-                || hasText(deviceInfo.getIpAddress());
+        boolean hasEndpoint = hasOpcUaEndpoint(deviceInfo, connection);
         if (!hasEndpoint) {
             fail(deviceInfo, "OPC_UA requires url, endpointUrl, endpoint, or host");
         }
@@ -83,6 +82,61 @@ public class ProtocolConnectionValidator {
                 && !securityPolicy.endsWith("#None")
                 && isBlank(connection.getStringConfig("clientCertPath", null))) {
             fail(deviceInfo, "OPC_UA secure securityPolicy requires clientCertPath");
+        }
+    }
+
+    private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
+        String connectionString = connection.getStringConfig("plc4xConnectionString", null);
+        if (!hasOpcUaEndpoint(deviceInfo, connection)
+                && isBlank(connectionString)) {
+            fail(deviceInfo, "OPC_UA_PLC4X requires plc4xConnectionString, url, endpointUrl, endpoint, or host");
+        }
+
+        if (hasText(connectionString)) {
+            return;
+        }
+
+        String authType = firstNonBlank(connection.getStringConfig("authType", null), "ANONYMOUS")
+                .trim()
+                .toUpperCase();
+        String username = firstNonBlank(
+                connection.getStringConfig("username", null),
+                connection.getUsername(),
+                authParam(connection, "username"));
+        String password = firstNonBlank(
+                connection.getStringConfig("password", null),
+                connection.getPassword(),
+                authParam(connection, "password"));
+        if ("USERNAME".equals(authType)) {
+            if (isBlank(username)) {
+                fail(deviceInfo, "OPC_UA_PLC4X authType=USERNAME requires username");
+            }
+            if (isBlank(password)) {
+                fail(deviceInfo, "OPC_UA_PLC4X authType=USERNAME requires password");
+            }
+        } else if (!isBlank(username) && isBlank(password)) {
+            fail(deviceInfo, "OPC_UA_PLC4X username requires password");
+        }
+
+        String keyStoreFile = firstNonBlank(
+                connection.getStringConfig("keyStoreFile", null),
+                connection.getStringConfig("clientCertPath", null));
+        if ("CERT".equals(authType) && isBlank(keyStoreFile)) {
+            fail(deviceInfo, "OPC_UA_PLC4X authType=CERT requires keyStoreFile or clientCertPath");
+        }
+
+        String securityPolicy = firstNonBlank(
+                connection.getStringConfig("securityPolicy", null),
+                "NONE");
+        if (!isBlank(securityPolicy)
+                && !"NONE".equalsIgnoreCase(securityPolicy)
+                && !securityPolicy.endsWith("#None")
+                && isBlank(keyStoreFile)) {
+            fail(deviceInfo, "OPC_UA_PLC4X secure securityPolicy requires keyStoreFile or clientCertPath");
+        }
+
+        if (Boolean.TRUE.equals(connection.getBoolConfig("trustAllServerCert", false))) {
+            fail(deviceInfo, "OPC_UA_PLC4X generated config does not support trustAllServerCert; use trustStoreFile or plc4xConnectionString");
         }
     }
 
@@ -159,6 +213,38 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    private void validateAds(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "ADS");
+
+        String targetAmsNetId = firstNonBlank(
+                connection.getStringConfig("targetAmsNetId", null),
+                connection.getStringConfig("target-ams-net-id", null));
+        if (!AmsNetIdParser.isValid(targetAmsNetId)) {
+            fail(deviceInfo, "ADS requires valid targetAmsNetId");
+        }
+
+        Integer targetAmsPort = firstPositive(
+                connection.getIntConfig("targetAmsPort", null),
+                connection.getIntConfig("target-ams-port", null));
+        if (targetAmsPort == null) {
+            fail(deviceInfo, "ADS requires targetAmsPort");
+        }
+
+        String sourceAmsNetId = firstNonBlank(
+                connection.getStringConfig("sourceAmsNetId", null),
+                connection.getStringConfig("source-ams-net-id", null));
+        if (!AmsNetIdParser.isValid(sourceAmsNetId)) {
+            fail(deviceInfo, "ADS requires valid sourceAmsNetId");
+        }
+
+        Integer sourceAmsPort = firstPositive(
+                connection.getIntConfig("sourceAmsPort", null),
+                connection.getIntConfig("source-ams-port", null));
+        if (sourceAmsPort == null) {
+            fail(deviceInfo, "ADS requires sourceAmsPort");
+        }
+    }
+
     private String resolveProtocol(DeviceInfo deviceInfo, DeviceConnection connection) {
         return firstNonBlank(
                 deviceInfo.getProtocolType(),
@@ -180,11 +266,21 @@ public class ProtocolConnectionValidator {
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
+            case "AMS" -> "ADS";
             case "OPCUA" -> "OPC_UA";
+            case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
             case "IEC_104" -> "IEC104";
             case "IEC_61850" -> "IEC61850";
             default -> normalized;
         };
+    }
+
+    private boolean hasOpcUaEndpoint(DeviceInfo deviceInfo, DeviceConnection connection) {
+        return hasText(connection.getUrl())
+                || hasText(connection.getStringConfig("endpointUrl", null))
+                || hasText(connection.getStringConfig("endpoint", null))
+                || hasText(connection.getHost())
+                || hasText(deviceInfo.getIpAddress());
     }
 
     private Integer firstPositive(Integer... values) {

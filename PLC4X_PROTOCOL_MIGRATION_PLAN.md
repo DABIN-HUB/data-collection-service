@@ -220,13 +220,27 @@ Completed so far:
 - `MODBUS_ASCII` now reuses the same PLC4X serial collector entry and resolves to PLC4X `modbus-ascii` connection strings when the device protocol type is `MODBUS_ASCII`.
 - `SIEMENS_S7` is now wired to a real PLC4X S7 adapter/collector path and no longer a scaffold-only protocol entry.
 - `SIEMENS_S7` currently supports real connect/read/write plus TIA/PLC4X address normalization.
+- `SIEMENS_S7` now supports PLC4X cyclic subscription for configured scalar points.
+- `SIEMENS_S7` now exposes thin `executeCommand` wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
 - `ETHERNET_IP` is now wired to a real PLC4X Logix adapter/collector path with scalar tag connect/read/write support.
+- `ETHERNET_IP` now exposes thin `executeCommand` wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
+- `ETHERNET_IP` subscription status is now explicitly closed as unsupported on the current PLC4X Logix driver path.
+- `ETHERNET_IP` now supports limited whole-array read/write pass-through on the protocol edge when points do not rely on scalar-only processing settings.
+- `ADS` is now wired to a real PLC4X ADS / AMS adapter/collector path and no longer remains a plan-only entry.
+- `ADS` currently supports real connect/read/write plus symbolic/direct address normalization.
+- `ADS` now supports PLC4X cyclic subscription for configured scalar points.
+- `ADS` now exposes thin `executeCommand` wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
+- `OPC_UA_PLC4X` is now wired as a parallel PLC4X validation path without cutting over the existing Milo-based `OPC_UA` production route.
+- `OPC_UA_PLC4X` currently supports real connect/read/write plus NodeId / PLC4X data-type normalization.
+- `OPC_UA_PLC4X` now exposes collector-side cyclic subscription registration for configured scalar points, but end-to-end pushed-value delivery still needs real-server revalidation before cutover claims can be made.
+- `OPC_UA_PLC4X` now exposes thin `executeCommand` wrappers for raw `read`, `write`, and `status` / `diagnostic`, plus a metadata-gated `browse` path.
+- `OPC_UA_PLC4X` now also accepts migration aliases for security and timeout fields such as `securityMode`, `authType`, `authParams`, `clientCertPath`, `clientCertPassword`, `requestTimeoutMs`, and `connectTimeoutMs`.
+- `OPC_UA_PLC4X` local embedded Milo validation now confirms anonymous connect/read/write and compatibility alias connection mapping for security and timeout fields.
 
 In progress:
 
-- Remaining gaps for S7 are subscription support and protocol command coverage.
-- `ETHERNET_IP` currently supports Logix-style tag normalization plus real connect/read/write for scalar tags.
-- Remaining gaps for `ETHERNET_IP` are subscription support, protocol command coverage, and array tag handling.
+- `OPC_UA` cutover is still pending even though the separate `OPC_UA_PLC4X` validation path now exists.
+- `OPC_UA_PLC4X` still needs real-server revalidation for runtime `browse`, subscription value delivery, and X509 behavior.
 
 What stays unchanged in the current implementation:
 
@@ -248,10 +262,8 @@ Current code entry points:
 
 Known remaining gaps:
 
-1. `subscribe` is still explicitly unsupported in `S7Collector`.
-2. `executeCommand` is still explicitly unsupported in `S7Collector`.
-3. Array-style point access is still intentionally rejected; current implementation only targets scalar points.
-4. Current validation is compile + targeted unit tests only; there is still no real PLC end-to-end verification in this repository.
+1. Array-style point access is still intentionally rejected; current implementation only targets scalar points.
+2. Current validation is compile + targeted unit tests only; there is still no real PLC end-to-end verification in this repository.
 
 ### EtherNet/IP
 
@@ -263,43 +275,63 @@ Current code entry points:
 
 Known remaining gaps:
 
-1. `subscribe` is still explicitly unsupported in `EtherNetIpCollector`.
-2. `executeCommand` is still explicitly unsupported in `EtherNetIpCollector`.
-3. Array tag access is still intentionally blocked; current implementation only targets scalar tags.
+1. `subscribe` remains intentionally unsupported because the current PLC4X Logix driver metadata reports no subscribe capability for the active connection path.
+2. `executeCommand` now supports configured-point `read`, `write`, and `status` / `diagnostic`, but no broader protocol-specific command model has been introduced.
+3. Whole-array tags now use a limited raw pass-through path and therefore must not rely on scalar-only processing settings such as scaling, precision, min/max, or alarm processing.
 4. Current validation is compile + targeted unit tests only; there is still no real PLC end-to-end verification in this repository.
+
+### ADS / AMS
+
+Current code entry points:
+
+- `src/main/java/com/wangbin/collector/core/collector/protocol/ads/AdsCollector.java`
+- `src/main/java/com/wangbin/collector/core/connection/adapter/AdsConnectionAdapter.java`
+- `src/main/java/com/wangbin/collector/core/collector/protocol/ads/util/AdsAddressParser.java`
+- `src/main/java/com/wangbin/collector/core/collector/protocol/ads/util/AmsNetIdParser.java`
+
+Known remaining gaps:
+
+1. Array-style point access is still intentionally rejected; current implementation only targets scalar points.
+2. `sourceAmsNetId` and `sourceAmsPort` are required today unless a full PLC4X connection string override is supplied.
+3. Current validation is compile + targeted unit tests only; there is still no real PLC end-to-end verification in this repository.
+
+### OPC UA
+
+Current code entry points:
+
+- `src/main/java/com/wangbin/collector/core/collector/protocol/opc/Plc4xOpcUaCollector.java`
+- `src/main/java/com/wangbin/collector/core/connection/adapter/Plc4xOpcUaConnectionAdapter.java`
+- `src/main/java/com/wangbin/collector/core/collector/protocol/opc/plc4x/domain/Plc4xOpcUaAddress.java`
+- `src/main/java/com/wangbin/collector/core/collector/protocol/opc/plc4x/util/Plc4xOpcUaAddressParser.java`
+
+Known remaining gaps:
+
+1. The production `OPC_UA` route still points to the Milo collector; the PLC4X path is exposed separately as `OPC_UA_PLC4X`.
+2. Array-style point access is still intentionally rejected; the current PLC4X validation path only targets scalar points.
+3. X509 handling now follows PLC4X-native `keyStore/trustStore` fields and still needs real server validation before any production cutover.
+4. `trustAllServerCert=true` is intentionally rejected on the generated PLC4X config path; if that behavior is needed, use `trustStoreFile` or provide a full `plc4xConnectionString`.
+5. Local embedded Milo validation now covers anonymous connect/read/write and compatibility alias mapping, but runtime `browse` metadata returned unsupported on that path and therefore still needs real-server revalidation.
+6. Collector-side cyclic subscription registration succeeds locally, but end-to-end value delivery has not yet been reproduced against the embedded server; keep subscription behavior as validation-in-progress until a real server confirms it.
+7. Local embedded validation had to keep the endpoint path on `_`; current PLC4X driver path parsing should be rechecked before assuming arbitrary endpoint-path compatibility.
 
 ### Shared Closeout Notes
 
-1. If S7 or EtherNet/IP fields change again, keep these files synchronized:
+1. If S7, EtherNet/IP, ADS, or `OPC_UA_PLC4X` fields change again, keep these files synchronized:
    - `ProtocolSchemaService`
    - `docs/protocols/FIELD_CONFIG_SUMMARY.md`
    - protocol-specific docs under `docs/protocols/`
 2. Current targeted verification command is:
-   - `mvn --% -o -Dmaven.repo.local=.m2 -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,S7AddressParserTest,EtherNetIpAddressParserTest test`
+   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest test`
 
 ## Next Session Order
 
 This is the recommended execution order for the next session. Follow it directly unless requirements change.
 
-1. Close out the remaining S7 gaps first.
-   - First confirm whether PLC4X S7 subscription is actually available and usable in this project shape.
-   - If subscription is not realistically supportable, keep it unsupported and document it as an intentional limitation instead of treating it as unfinished code.
-   - Then decide whether `executeCommand` should become a thin wrapper over existing write semantics or stay intentionally unsupported.
-2. Close out the remaining EtherNet/IP gaps second.
-   - Use the same decision rule as S7 for subscription support.
-   - Decide whether `executeCommand` should map to tag write behavior or remain unsupported by design.
-   - Only handle array tags after subscription/command status is clear.
-3. Start `ADS / AMS` only after the two current partially-finished protocols are closed out.
-   - Add PLC4X dependency.
-   - Add `ProtocolType`, `CollectorFactory`, `ConnectionFactory`, `ProtocolConnectionValidator`, `ProtocolSchemaService`, and `ProtocolBatchStrategy` entries.
-   - Implement the planned protocol edge classes:
-     - `AdsCollector`
-     - `AdsConnectionAdapter`
-     - `AdsAddress`
-     - `AdsAddressParser`
-     - `AmsNetIdParser`
-4. Keep `OPC_UA` and `BACnet/IP` after `ADS / AMS`.
-   - `OPC_UA` remains a replacement/refactor problem, not a quick swap.
+1. Continue `OPC_UA` from the new `OPC_UA_PLC4X` validation baseline.
+   - Start from `src/main/resources/mock/opcuaPlc4xDevice.json` as the seed device config for real-server validation.
+   - Re-validate browse behavior, subscription value delivery, endpoint-path compatibility, and security / certificate handling against a real OPC UA server.
+   - Decide whether the existing `OPC_UA` production route can be cut over to the PLC4X collector or must remain dual-path longer.
+2. Keep `BACnet/IP` after `OPC_UA`.
    - `BACnet/IP` remains the highest-uncertainty protocol and should still be treated as a POC-first item.
 
 ## Restart Checklist
@@ -310,11 +342,13 @@ Use this checklist at the start of the next session:
 2. Re-open:
    - `S7Collector`
    - `EtherNetIpCollector`
+   - `AdsCollector`
+   - `Plc4xOpcUaCollector`
    - `ProtocolSchemaService`
 3. Re-run compile:
    - `mvn --% -o -Dmaven.repo.local=.m2 -DskipTests compile`
 4. Re-run targeted tests:
-   - `mvn --% -o -Dmaven.repo.local=.m2 -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,S7AddressParserTest,EtherNetIpAddressParserTest test`
+   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest test`
 5. If all green, start from `Next Session Order` step 1.
 
 ## Risk Notes

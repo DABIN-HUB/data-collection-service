@@ -2,10 +2,13 @@ package com.wangbin.collector.core.collector.protocol.ethernetip;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
 import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpAddressParser;
+import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
+import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.messages.PlcTagResponse;
@@ -13,12 +16,17 @@ import org.apache.plc4x.java.api.messages.PlcWriteRequest;
 import org.apache.plc4x.java.api.messages.PlcWriteResponse;
 import org.apache.plc4x.java.api.types.PlcResponseCode;
 import org.apache.plc4x.java.api.value.PlcValue;
+import org.springframework.beans.factory.annotation.Autowired;
 
+import java.lang.reflect.Array;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -27,6 +35,9 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class EtherNetIpCollector extends ConnectionBackedCollector {
+
+    @Autowired(required = false)
+    private DevicePointResolver devicePointResolver;
 
     private EtherNetIpConnectionAdapter connectionAdapter;
     private final Map<String, EtherNetIpTagAddress> configuredAddresses = new ConcurrentHashMap<>();
@@ -71,9 +82,184 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     }
 
     @Override
+    public Object readPoint(DataPoint point) throws CollectorException {
+        if (!isArrayPoint(point)) {
+            return super.readPoint(point);
+        }
+        checkConnection();
+
+        long startTime = System.currentTimeMillis();
+        try {
+            EtherNetIpTagAddress address = requireAddress(point);
+            validateArrayPointConfiguration(point, address, "read");
+
+            Object rawValue = doReadPoint(point);
+            ProcessResult processResult = buildArrayProcessResult(point, address, rawValue, "array pass-through read");
+            lastProcessResults.put(point.getPointId(), processResult);
+
+            totalReadCount.incrementAndGet();
+            totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+            return processResult.getFinalValue();
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("Point read failed {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            recordException(e, point);
+            throw new CollectorException("点位读取失败", deviceInfo.getDeviceId(),
+                    point.getPointId(), e);
+        }
+    }
+
+    @Override
+    public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
+        if (!containsArrayPoint(points)) {
+            return super.readPoints(points);
+        }
+        checkConnection();
+
+        Map<String, Object> results = new LinkedHashMap<>();
+        List<DataPoint> scalarPoints = new ArrayList<>();
+        List<DataPoint> arrayPoints = new ArrayList<>();
+        partitionPoints(points, scalarPoints, arrayPoints);
+
+        if (!scalarPoints.isEmpty()) {
+            results.putAll(super.readPoints(scalarPoints));
+        }
+        if (arrayPoints.isEmpty()) {
+            return results;
+        }
+
+        long arrayStartTime = System.currentTimeMillis();
+        try {
+            for (DataPoint point : arrayPoints) {
+                validateArrayPointConfiguration(point, requireAddress(point), "read");
+            }
+
+            Map<String, Object> rawValues = doReadPoints(arrayPoints);
+            for (DataPoint point : arrayPoints) {
+                String pointId = point.getPointId();
+                Object rawValue = rawValues.get(pointId);
+                if (rawValue == null) {
+                    results.put(pointId, null);
+                    continue;
+                }
+                try {
+                    EtherNetIpTagAddress address = requireAddress(point);
+                    ProcessResult processResult = buildArrayProcessResult(point, address, rawValue,
+                            "array pass-through batch read");
+                    lastProcessResults.put(pointId, processResult);
+                    results.put(pointId, processResult.getFinalValue());
+                } catch (Exception e) {
+                    log.error("处理 EtherNet/IP 数组点位数据失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    recordException(e, point);
+                    results.put(pointId, null);
+                }
+            }
+
+            totalReadCount.addAndGet(arrayPoints.size());
+            totalReadTime.addAndGet(System.currentTimeMillis() - arrayStartTime);
+            lastActivityTime = System.currentTimeMillis();
+            return results;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("批量点位读取失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(),
+                    null, e);
+        }
+    }
+
+    @Override
+    public boolean writePoint(DataPoint point, Object value) throws CollectorException {
+        if (!isArrayPoint(point)) {
+            return super.writePoint(point, value);
+        }
+        checkConnection();
+
+        long startTime = System.currentTimeMillis();
+        try {
+            if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
+                throw new CollectorException("点位没有写入权限", deviceInfo.getDeviceId(),
+                        point.getPointId());
+            }
+
+            EtherNetIpTagAddress address = requireAddress(point);
+            validateArrayPointConfiguration(point, address, "write");
+            boolean result = doWritePoint(point, value);
+
+            totalWriteCount.incrementAndGet();
+            totalWriteTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+            return result;
+        } catch (CollectorException e) {
+            throw e;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("点位写入失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            recordException(e, point);
+            throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
+                    point.getPointId(), e);
+        }
+    }
+
+    @Override
+    public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
+        if (!containsArrayPoint(points != null ? points.keySet() : null)) {
+            return super.writePoints(points);
+        }
+        checkConnection();
+
+        Map<String, Boolean> results = new LinkedHashMap<>();
+        Map<DataPoint, Object> scalarPoints = new LinkedHashMap<>();
+        Map<DataPoint, Object> arrayPoints = new LinkedHashMap<>();
+        partitionPointValues(points, scalarPoints, arrayPoints);
+
+        if (!scalarPoints.isEmpty()) {
+            results.putAll(super.writePoints(scalarPoints));
+        }
+        if (arrayPoints.isEmpty()) {
+            return results;
+        }
+
+        long arrayStartTime = System.currentTimeMillis();
+        try {
+            for (Map.Entry<DataPoint, Object> entry : arrayPoints.entrySet()) {
+                DataPoint point = entry.getKey();
+                if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
+                    results.put(point.getPointId(), false);
+                    continue;
+                }
+                try {
+                    EtherNetIpTagAddress address = requireAddress(point);
+                    validateArrayPointConfiguration(point, address, "write");
+                    results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
+                } catch (Exception e) {
+                    log.error("PLC4X EtherNet/IP 数组点位写入失败, pointId={}", point.getPointId(), e);
+                    recordException(e, point);
+                    results.put(point.getPointId(), false);
+                }
+            }
+
+            totalWriteCount.addAndGet(arrayPoints.size());
+            totalWriteTime.addAndGet(System.currentTimeMillis() - arrayStartTime);
+            lastActivityTime = System.currentTimeMillis();
+            return results;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("批量点位写入失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("批量点位写入失败", deviceInfo.getDeviceId(),
+                    null, e);
+        }
+    }
+
+    @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
-        ensureScalar(address, point, "read");
         String fieldName = tagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
@@ -112,7 +298,6 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
-        ensureScalar(address, point, "write");
         String fieldName = tagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
@@ -141,8 +326,8 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     continue;
                 }
                 EtherNetIpTagAddress address = requireAddress(point);
-                ensureScalar(address, point, "write");
-                builder.addTagAddress(tagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
+                builder.addTagAddress(tagName(point), address.getPlc4xAddress(),
+                        coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
 
@@ -173,7 +358,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         cacheAddresses(points);
-        throw unsupported("subscribe");
+        throw unsupported("subscribe", "PLC4X Logix driver metadata reports subscribe unsupported for the current connection");
     }
 
     @Override
@@ -216,8 +401,15 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     }
 
     @Override
-    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
-        throw unsupported("executeCommand");
+    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
+        String normalized = normalizeCommand(command);
+        Map<String, Object> safeParams = params != null ? params : Collections.emptyMap();
+        return switch (normalized) {
+            case "read", "read_point", "readpoint" -> executeCommandRead(safeParams);
+            case "write", "write_point", "writepoint" -> executeCommandWrite(safeParams);
+            case "status", "diagnostic" -> getDeviceStatus();
+            default -> throw new IllegalArgumentException("Unsupported PLC4X EtherNet/IP command: " + command);
+        };
     }
 
     @Override
@@ -246,7 +438,14 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     }
 
     private UnsupportedOperationException unsupported(String operation) {
+        return unsupported(operation, null);
+    }
+
+    private UnsupportedOperationException unsupported(String operation, String reason) {
         String message = String.format("PLC4X EtherNet/IP collector does not implement %s", operation);
+        if (reason != null && !reason.isBlank()) {
+            message = message + ": " + reason;
+        }
         log.warn(message);
         return new UnsupportedOperationException(message);
     }
@@ -282,7 +481,6 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 continue;
             }
             EtherNetIpTagAddress address = requireAddress(point);
-            ensureScalar(address, point, "read");
             builder.addTagAddress(tagName(point), address.getPlc4xAddress());
         }
         return await(builder.build().execute());
@@ -297,13 +495,20 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             if (address.isScalar() && plcValue.getLength() == 1) {
                 plcValue = plcValue.getIndex(0);
             } else {
-                throw new IllegalStateException("EtherNet/IP tag arrays are not supported by the current collector: " + address.getRawAddress());
+                return extractArrayValue(plcValue, point, address);
             }
         }
 
-        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
-                ? point.getDataType().trim().toUpperCase()
-                : address.getBasePlcType();
+        if (!address.isScalar()) {
+            throw new IllegalStateException("EtherNet/IP array point did not return list payload: " + address.getRawAddress());
+        }
+        return coerceScalarValue(plcValue, resolvePointType(point, address));
+    }
+
+    private Object coerceScalarValue(PlcValue plcValue, String pointType) {
+        if (plcValue == null) {
+            return null;
+        }
         if (pointType == null) {
             return plcValue.getObject();
         }
@@ -331,13 +536,34 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    private List<Object> extractArrayValue(PlcValue plcValue, DataPoint point, EtherNetIpTagAddress address) {
+        List<Object> values = new ArrayList<>();
+        String pointType = resolvePointType(point, address);
+        int length = plcValue.getLength();
+        for (int i = 0; i < length; i++) {
+            values.add(coerceScalarValue(plcValue.getIndex(i), pointType));
+        }
+        return values;
+    }
+
+    private String resolvePointType(DataPoint point, EtherNetIpTagAddress address) {
+        return point != null && point.getDataType() != null && !point.getDataType().isBlank()
+                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
+                : address.getBasePlcType();
+    }
+
     private Object coerceWriteValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
+        if (!address.isScalar()) {
+            return coerceWriteArrayValue(value, address, point);
+        }
+        return coerceWriteScalarValue(value, address, point);
+    }
+
+    private Object coerceWriteScalarValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
         if (value == null) {
             return null;
         }
-        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
-                ? point.getDataType().trim().toUpperCase()
-                : address.getBasePlcType();
+        String pointType = resolvePointType(point, address);
         if (pointType == null) {
             return value;
         }
@@ -358,6 +584,23 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     ((Number) coerceNumber(value)).doubleValue();
             default -> value;
         };
+    }
+
+    private List<Object> coerceWriteArrayValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
+        List<Object> sourceValues = toObjectList(value);
+        if (sourceValues.isEmpty()) {
+            throw new IllegalArgumentException("EtherNet/IP array write value cannot be empty");
+        }
+        if (address.getArraySize() > 1 && sourceValues.size() != address.getArraySize()) {
+            throw new IllegalArgumentException("EtherNet/IP array write size mismatch, expected "
+                    + address.getArraySize() + " but got " + sourceValues.size());
+        }
+
+        List<Object> coerced = new ArrayList<>(sourceValues.size());
+        for (Object sourceValue : sourceValues) {
+            coerced.add(coerceWriteScalarValue(sourceValue, address, point));
+        }
+        return coerced;
     }
 
     private Number coerceNumber(Object value) {
@@ -383,10 +626,22 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
-    private void ensureScalar(EtherNetIpTagAddress address, DataPoint point, String operation) {
-        if (!address.isScalar()) {
-            throw new IllegalArgumentException("EtherNet/IP " + operation + " does not support array point: " + point.getPointId());
+    private List<Object> toObjectList(Object value) {
+        if (value instanceof List<?> list) {
+            return new ArrayList<>(list);
         }
+        if (value instanceof Collection<?> collection) {
+            return new ArrayList<>(collection);
+        }
+        if (value != null && value.getClass().isArray()) {
+            int length = Array.getLength(value);
+            List<Object> values = new ArrayList<>(length);
+            for (int i = 0; i < length; i++) {
+                values.add(Array.get(value, i));
+            }
+            return values;
+        }
+        throw new IllegalArgumentException("EtherNet/IP array write requires collection or array value");
     }
 
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
@@ -427,6 +682,224 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return point.getPointId() != null && !point.getPointId().isBlank()
                 ? point.getPointId()
                 : cacheKey(point);
+    }
+
+    private Object executeCommandRead(Map<String, Object> params) throws Exception {
+        DataPoint point = resolveCommandPoint(params);
+        Object value = readPoint(point);
+        Map<String, Object> result = new LinkedHashMap<>();
+        populatePointMetadata(result, point);
+        result.put("value", value);
+        return result;
+    }
+
+    private Object executeCommandWrite(Map<String, Object> params) throws Exception {
+        DataPoint point = resolveCommandPoint(params);
+        if (!params.containsKey("value")) {
+            throw new IllegalArgumentException("value is required");
+        }
+        Object value = params.get("value");
+        boolean success = writePoint(point, value);
+        Map<String, Object> result = new LinkedHashMap<>();
+        populatePointMetadata(result, point);
+        result.put("value", value);
+        result.put("success", success);
+        return result;
+    }
+
+    private DataPoint resolveCommandPoint(Map<String, Object> params) {
+        List<DataPoint> points = configManager != null && deviceInfo != null
+                ? configManager.getDataPoints(deviceInfo.getDeviceId())
+                : Collections.emptyList();
+        if (points.isEmpty()) {
+            throw new IllegalArgumentException("No configured EtherNet/IP points found for device: "
+                    + (deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN"));
+        }
+
+        String pointRef = firstNonBlank(
+                asText(params.get("pointRef")),
+                asText(params.get("pointId")),
+                asText(params.get("pointCode")),
+                asText(params.get("pointName")),
+                asText(params.get("field")),
+                asText(params.get("reportField"))
+        );
+        if (hasText(pointRef)) {
+            DataPoint point = resolveConfiguredPoint(points, pointRef);
+            if (point != null) {
+                return point;
+            }
+        }
+
+        String address = asText(params.get("address"));
+        if (hasText(address)) {
+            DataPoint point = points.stream()
+                    .filter(candidate -> candidate != null && hasText(candidate.getAddress())
+                            && normalize(candidate.getAddress()).equals(normalize(address)))
+                    .findFirst()
+                    .orElse(null);
+            if (point != null) {
+                return point;
+            }
+        }
+
+        throw new IllegalArgumentException("Unable to resolve EtherNet/IP point from command params");
+    }
+
+    private DataPoint resolveConfiguredPoint(List<DataPoint> points, String pointRef) {
+        if (devicePointResolver != null) {
+            return devicePointResolver.resolve(points, pointRef).orElse(null);
+        }
+        String normalizedRef = normalize(pointRef);
+        return points.stream()
+                .filter(point -> matchesPointRef(point, normalizedRef))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean matchesPointRef(DataPoint point, String normalizedRef) {
+        return point != null
+                && (normalizedRef.equals(normalize(point.getReportField()))
+                || normalizedRef.equals(normalize(point.getPointAlias()))
+                || normalizedRef.equals(normalize(point.getPointCode()))
+                || normalizedRef.equals(normalize(point.getPointId()))
+                || normalizedRef.equals(normalize(point.getPointName())));
+    }
+
+    private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
+        target.put("pointId", point.getPointId());
+        target.put("pointCode", point.getPointCode());
+        target.put("pointName", point.getPointName());
+        if (point.getAddress() != null) {
+            target.put("address", point.getAddress());
+        }
+    }
+
+    private String normalizeCommand(String command) {
+        return command != null ? command.trim().toLowerCase(Locale.ROOT).replace('-', '_') : "";
+    }
+
+    private String normalize(String value) {
+        return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private String asText(Object value) {
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private boolean isArrayPoint(DataPoint point) {
+        if (point == null) {
+            return false;
+        }
+        return !requireAddress(point).isScalar();
+    }
+
+    private boolean containsArrayPoint(Iterable<DataPoint> points) {
+        if (points == null) {
+            return false;
+        }
+        for (DataPoint point : points) {
+            if (point != null && point.isEnabled() && isArrayPoint(point)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void partitionPoints(List<DataPoint> points, List<DataPoint> scalarPoints, List<DataPoint> arrayPoints) {
+        if (points == null) {
+            return;
+        }
+        for (DataPoint point : points) {
+            if (point == null || !point.isEnabled()) {
+                continue;
+            }
+            if (isArrayPoint(point)) {
+                arrayPoints.add(point);
+            } else {
+                scalarPoints.add(point);
+            }
+        }
+    }
+
+    private void partitionPointValues(Map<DataPoint, Object> points,
+                                      Map<DataPoint, Object> scalarPoints,
+                                      Map<DataPoint, Object> arrayPoints) {
+        if (points == null) {
+            return;
+        }
+        for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+            DataPoint point = entry.getKey();
+            if (point == null) {
+                continue;
+            }
+            if (isArrayPoint(point)) {
+                arrayPoints.put(point, entry.getValue());
+            } else {
+                scalarPoints.put(point, entry.getValue());
+            }
+        }
+    }
+
+    private void validateArrayPointConfiguration(DataPoint point,
+                                                 EtherNetIpTagAddress address,
+                                                 String operation) {
+        if (point == null || address == null || address.isScalar()) {
+            return;
+        }
+        if (point.getScalingFactor() != null && point.getScalingFactor() != 0 && point.getScalingFactor() != 1.0d) {
+            throw new IllegalArgumentException("EtherNet/IP " + operation + " array point does not support scalingFactor: "
+                    + point.getPointId());
+        }
+        if (point.getOffset() != null && point.getOffset() != 0.0d) {
+            throw new IllegalArgumentException("EtherNet/IP " + operation + " array point does not support offset: "
+                    + point.getPointId());
+        }
+        if (point.getPrecision() != null) {
+            throw new IllegalArgumentException("EtherNet/IP " + operation + " array point does not support precision: "
+                    + point.getPointId());
+        }
+        if (point.getMinValue() != null || point.getMaxValue() != null) {
+            throw new IllegalArgumentException("EtherNet/IP " + operation + " array point does not support min/max validation: "
+                    + point.getPointId());
+        }
+        if (point.getAlarmEnabled() != null && point.getAlarmEnabled() == 1) {
+            throw new IllegalArgumentException("EtherNet/IP " + operation + " array point does not support alarm processing: "
+                    + point.getPointId());
+        }
+    }
+
+    private ProcessResult buildArrayProcessResult(DataPoint point,
+                                                  EtherNetIpTagAddress address,
+                                                  Object rawValue,
+                                                  String message) {
+        if (!(rawValue instanceof Collection<?>) && !(rawValue != null && rawValue.getClass().isArray())) {
+            throw new IllegalArgumentException("EtherNet/IP array point did not produce collection payload: " + point.getPointId());
+        }
+        ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
+        processResult.addMetadata("arrayValue", true);
+        processResult.addMetadata("arraySize", address.getArraySize());
+        processResult.addMetadata("processingMode", "protocol_passthrough");
+        if (point != null && point.getAddress() != null) {
+            processResult.addMetadata("address", point.getAddress());
+        }
+        return processResult;
     }
 
     @Override

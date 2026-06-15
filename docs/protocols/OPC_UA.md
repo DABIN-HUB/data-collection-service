@@ -1,4 +1,8 @@
-﻿# OPC UA
+# OPC UA
+
+说明：
+- 当前生产实现仍然是本文档描述的 Milo 路径。
+- PLC4X 并行验证入口已经单独落在 [OPC_UA_PLC4X.md](./OPC_UA_PLC4X.md)。
 
 ## 实现类
 

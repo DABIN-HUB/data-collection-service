@@ -69,6 +69,21 @@ case "ETHERNET_IP":
     fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
     break;
 
+case "ADS":
+    fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+    fields.add(createFieldConfig("port", "number", "TCP端口", false, "48898", null));
+    fields.add(createFieldConfig("targetAmsNetId", "string", "目标AMS Net ID", true, "", null));
+    fields.add(createFieldConfig("targetAmsPort", "number", "目标AMS端口", true, "851", null));
+    fields.add(createFieldConfig("sourceAmsNetId", "string", "源AMS Net ID", true, "", null));
+    fields.add(createFieldConfig("sourceAmsPort", "number", "源AMS端口", true, "", null));
+    fields.add(createFieldConfig("loadSymbolAndDataTypeTables", "boolean", "加载符号/类型表", false, "true", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("timeoutRequest", "number", "ADS请求超时(ms)", false, "4000", null));
+    fields.add(createFieldConfig("maxFieldsPerRequest", "number", "单次最大点位数", false, "64", null));
+    fields.add(createFieldConfig("plc4xConnectionString", "string", "PLC4X连接串覆盖", false, "", null));
+    fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
+    break;
+
 case "OPC_UA":
     fields.add(createFieldConfig("url", "string", "OPC UA绔偣鍦板潃", false, "opc.tcp://127.0.0.1:4840", null));
     fields.add(createFieldConfig("endpointUrl", "string", "绔偣鍦板潃鍏煎瀛楁", false, "opc.tcp://127.0.0.1:4840", null));
@@ -92,6 +107,43 @@ case "OPC_UA":
     fields.add(createFieldConfig("clientCertPath", "string", "瀹㈡埛绔瘉涔﹁矾寰?, false, "", null));
     fields.add(createFieldConfig("clientCertPassword", "string", "瀹㈡埛绔瘉涔﹀瘑鐮?, false, "", null));
     fields.add(createFieldConfig("trustAllServerCert", "boolean", "鏄惁淇′换鎵€鏈夋湇鍔＄璇佷功", false, "false", new String[]{"true", "false"}));
+    break;
+
+case "OPC_UA_PLC4X":
+    fields.add(createFieldConfig("url", "string", "OPC UA端点地址", false, "opc.tcp://127.0.0.1:4840", null));
+    fields.add(createFieldConfig("endpointUrl", "string", "端点地址兼容字段", false, "opc.tcp://127.0.0.1:4840", null));
+    fields.add(createFieldConfig("endpoint", "string", "端点地址别名", false, "opc.tcp://127.0.0.1:4840", null));
+    fields.add(createFieldConfig("host", "string", "主机", false, "127.0.0.1", null));
+    fields.add(createFieldConfig("port", "number", "端口", false, "4840", null));
+    fields.add(createFieldConfig("discovery", "boolean", "是否启用 discovery", false, "true", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("authType", "string", "认证方式", false, "ANONYMOUS", new String[]{"ANONYMOUS", "USERNAME", "CERT"}));
+    fields.add(createFieldConfig("securityPolicy", "string", "安全策略", false, "NONE", new String[]{"NONE", "Basic128Rsa15", "Basic256", "Basic256Sha256", "Aes128_Sha256_RsaOaep", "Aes256_Sha256_RsaPss"}));
+    fields.add(createFieldConfig("messageSecurity", "string", "消息安全模式", false, "NONE", new String[]{"NONE", "SIGN", "SIGN_ENCRYPT"}));
+    fields.add(createFieldConfig("securityMode", "string", "消息安全模式兼容字段", false, "NONE", new String[]{"NONE", "Sign", "SignAndEncrypt"}));
+    fields.add(createFieldConfig("username", "string", "用户名", false, "", null));
+    fields.add(createFieldConfig("password", "string", "密码", false, "", null));
+    fields.add(createFieldConfig("authParams", "object", "认证参数兼容字段", false, "{}", null));
+    fields.add(createFieldConfig("keyStoreFile", "string", "客户端密钥库文件", false, "", null));
+    fields.add(createFieldConfig("keyStoreType", "string", "客户端密钥库类型", false, "pkcs12", null));
+    fields.add(createFieldConfig("keyStorePassword", "string", "客户端密钥库密码", false, "", null));
+    fields.add(createFieldConfig("clientCertPath", "string", "客户端证书兼容字段", false, "", null));
+    fields.add(createFieldConfig("clientCertPassword", "string", "客户端证书密码兼容字段", false, "", null));
+    fields.add(createFieldConfig("trustStoreFile", "string", "信任库文件", false, "", null));
+    fields.add(createFieldConfig("trustStoreType", "string", "信任库类型", false, "pkcs12", null));
+    fields.add(createFieldConfig("trustStorePassword", "string", "信任库密码", false, "", null));
+    fields.add(createFieldConfig("serverCertificateFile", "string", "服务端证书文件", false, "", null));
+    fields.add(createFieldConfig("endpointHost", "string", "端点主机覆盖", false, "", null));
+    fields.add(createFieldConfig("endpointPort", "number", "端点端口覆盖", false, "", null));
+    fields.add(createFieldConfig("channelLifetime", "number", "安全通道生命周期(ms)", false, "3600000", null));
+    fields.add(createFieldConfig("sessionTimeout", "number", "会话超时(ms)", false, "120000", null));
+    fields.add(createFieldConfig("negotiationTimeout", "number", "握手超时(ms)", false, "60000", null));
+    fields.add(createFieldConfig("connectTimeoutMs", "number", "连接超时兼容字段(ms)", false, "60000", null));
+    fields.add(createFieldConfig("connectTimeout", "number", "连接超时兼容字段(ms)", false, "60000", null));
+    fields.add(createFieldConfig("requestTimeout", "number", "请求超时(ms)", false, "30000", null));
+    fields.add(createFieldConfig("requestTimeoutMs", "number", "请求超时兼容字段(ms)", false, "30000", null));
+    fields.add(createFieldConfig("subscriptionInterval", "number", "订阅周期(ms)", false, "1000", null));
+    fields.add(createFieldConfig("maxFieldsPerRequest", "number", "单次最大点位数", false, "100", null));
+    fields.add(createFieldConfig("plc4xConnectionString", "string", "PLC4X连接串覆盖", false, "", null));
     break;
 
 case "OPC_DA":

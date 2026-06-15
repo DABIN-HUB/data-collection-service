@@ -1,12 +1,12 @@
-package com.wangbin.collector.core.collector.protocol.s7;
+package com.wangbin.collector.core.collector.protocol.ads;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
+import com.wangbin.collector.core.collector.protocol.ads.util.AdsAddressParser;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
-import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
-import com.wangbin.collector.core.collector.protocol.s7.util.S7AddressParser;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
-import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionEvent;
@@ -21,6 +21,7 @@ import org.apache.plc4x.java.api.value.PlcValue;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigInteger;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -30,21 +31,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-public class S7Collector extends ConnectionBackedCollector {
+public class AdsCollector extends ConnectionBackedCollector {
 
     private static final long DEFAULT_SUBSCRIPTION_INTERVAL_MS = 2000L;
 
     @Autowired(required = false)
     private DevicePointResolver devicePointResolver;
 
-    private S7ConnectionAdapter connectionAdapter;
-    private final Map<String, S7Address> configuredAddresses = new ConcurrentHashMap<>();
+    private AdsConnectionAdapter connectionAdapter;
+    private final Map<String, AdsAddress> configuredAddresses = new ConcurrentHashMap<>();
     private final Map<String, PlcSubscriptionHandle> subscriptionHandles = new ConcurrentHashMap<>();
     private int timeout = 5000;
     private int maxFieldsPerRequest = 64;
@@ -52,18 +52,18 @@ public class S7Collector extends ConnectionBackedCollector {
 
     @Override
     public String getCollectorType() {
-        return "SIEMENS_S7";
+        return "ADS";
     }
 
     @Override
     public String getProtocolType() {
-        return "SIEMENS_S7";
+        return "ADS";
     }
 
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
-        this.connectionAdapter = createAndConnectAdapter(desiredConfig, S7ConnectionAdapter.class, "S7");
+        this.connectionAdapter = createAndConnectAdapter(desiredConfig, AdsConnectionAdapter.class, "ADS");
 
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
@@ -77,23 +77,23 @@ public class S7Collector extends ConnectionBackedCollector {
         this.maxFieldsPerRequest = Math.max(1, currentConfig.getInt("maxFieldsPerRequest", 64));
         this.subscriptionSupported = currentConfig.getBool("subscriptionEnabled",
                 requireConnection().getClient().getMetadata().isSubscribeSupported());
-        log.info("PLC4X S7 collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
+        log.info("PLC4X ADS collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
 
     @Override
     protected void doDisconnect() {
-        removeManagedConnection("S7");
+        removeManagedConnection("ADS");
         connectionAdapter = null;
         configuredAddresses.clear();
         subscriptionHandles.clear();
         subscriptionSupported = false;
-        log.info("PLC4X S7 collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("PLC4X ADS collector disconnected, deviceId={}", deviceInfo.getDeviceId());
     }
 
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
-        S7Address address = requireAddress(point);
+        AdsAddress address = requireAddress(point);
         ensureScalar(address, point, "read");
         String fieldName = tagName(point);
 
@@ -132,7 +132,7 @@ public class S7Collector extends ConnectionBackedCollector {
 
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
-        S7Address address = requireAddress(point);
+        AdsAddress address = requireAddress(point);
         ensureScalar(address, point, "write");
         String fieldName = tagName(point);
 
@@ -161,7 +161,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 if (point == null) {
                     continue;
                 }
-                S7Address address = requireAddress(point);
+                AdsAddress address = requireAddress(point);
                 ensureScalar(address, point, "write");
                 builder.addTagAddress(tagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
@@ -174,7 +174,7 @@ public class S7Collector extends ConnectionBackedCollector {
             }
             return results;
         } catch (Exception ex) {
-            log.warn("PLC4X S7 batch write failed, falling back to point-by-point writes: {}", ex.getMessage());
+            log.warn("PLC4X ADS batch write failed, falling back to point-by-point writes: {}", ex.getMessage());
             for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
                 DataPoint point = entry.getKey();
                 if (point == null) {
@@ -183,7 +183,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 try {
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception singleEx) {
-                    log.error("PLC4X S7 point write failed, pointId={}", point.getPointId(), singleEx);
+                    log.error("PLC4X ADS point write failed, pointId={}", point.getPointId(), singleEx);
                     results.put(point.getPointId(), false);
                 }
             }
@@ -206,7 +206,7 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            S7Address address = requireAddress(point);
+            AdsAddress address = requireAddress(point);
             ensureScalar(address, point, "subscribe");
             builder.addCyclicTagAddress(
                     tagName(point),
@@ -222,13 +222,13 @@ public class S7Collector extends ConnectionBackedCollector {
             String fieldName = tagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
-                log.warn("PLC4X S7 subscription failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X ADS subscription failed, deviceId={}, pointId={}, responseCode={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 continue;
             }
             PlcSubscriptionHandle handle = response.getSubscriptionHandle(fieldName);
             if (handle == null) {
-                log.warn("PLC4X S7 subscription returned null handle, deviceId={}, pointId={}",
+                log.warn("PLC4X ADS subscription returned null handle, deviceId={}, pointId={}",
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
@@ -237,9 +237,9 @@ public class S7Collector extends ConnectionBackedCollector {
         }
 
         if (registered == 0) {
-            throw new IllegalStateException("PLC4X S7 subscribe did not register any point");
+            throw new IllegalStateException("PLC4X ADS subscribe did not register any point");
         }
-        log.info("PLC4X S7 subscriptions registered, deviceId={}, count={}",
+        log.info("PLC4X ADS subscriptions registered, deviceId={}, count={}",
                 deviceInfo.getDeviceId(), registered);
     }
 
@@ -282,9 +282,22 @@ public class S7Collector extends ConnectionBackedCollector {
         if (connection != null) {
             status.put("host", connection.getHost());
             status.put("port", connection.getPort());
-            status.put("rack", connection.getInt("rack", 0));
-            status.put("slot", connection.getInt("slot", 1));
-            status.put("controllerType", connection.getString("controllerType", "S7_1200"));
+            status.put("targetAmsNetId", firstNonBlank(
+                    connection.getString("targetAmsNetId", null),
+                    connection.getString("target-ams-net-id", null)));
+            status.put("targetAmsPort", firstPositive(
+                    connection.getInt("targetAmsPort", null),
+                    connection.getInt("target-ams-port", null)));
+            status.put("sourceAmsNetId", firstNonBlank(
+                    connection.getString("sourceAmsNetId", null),
+                    connection.getString("source-ams-net-id", null)));
+            status.put("sourceAmsPort", firstPositive(
+                    connection.getInt("sourceAmsPort", null),
+                    connection.getInt("source-ams-port", null)));
+            status.put("loadSymbolAndDataTypeTables", firstBoolean(
+                    connection.getBool("loadSymbolAndDataTypeTables", null),
+                    connection.getBool("load-symbol-and-data-type-tables", null),
+                    Boolean.TRUE));
             status.put("timeout", connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
         }
 
@@ -302,7 +315,7 @@ public class S7Collector extends ConnectionBackedCollector {
             case "read", "read_point", "readpoint" -> executeCommandRead(safeParams);
             case "write", "write_point", "writepoint" -> executeCommandWrite(safeParams);
             case "status", "diagnostic" -> getDeviceStatus();
-            default -> throw new IllegalArgumentException("Unsupported PLC4X S7 command: " + command);
+            default -> throw new IllegalArgumentException("Unsupported PLC4X ADS command: " + command);
         };
     }
 
@@ -320,23 +333,19 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.put(cacheKey(point), S7AddressParser.parse(point));
+            configuredAddresses.put(cacheKey(point), AdsAddressParser.parse(point));
         }
     }
 
-    private S7Address requireAddress(DataPoint point) {
+    private AdsAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
         }
-        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> S7AddressParser.parse(point));
-    }
-
-    private UnsupportedOperationException unsupported(String operation) {
-        return unsupported(operation, null);
+        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> AdsAddressParser.parse(point));
     }
 
     private UnsupportedOperationException unsupported(String operation, String reason) {
-        String message = String.format("PLC4X S7 collector does not implement %s", operation);
+        String message = String.format("PLC4X ADS collector does not implement %s", operation);
         if (reason != null && !reason.isBlank()) {
             message = message + ": " + reason;
         }
@@ -359,7 +368,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
             }
         } catch (Exception ex) {
-            log.error("PLC4X S7 batch read failed, deviceId={}, batchSize={}", deviceInfo.getDeviceId(), batch.size(), ex);
+            log.error("PLC4X ADS batch read failed, deviceId={}, batchSize={}", deviceInfo.getDeviceId(), batch.size(), ex);
             for (DataPoint point : batch) {
                 if (point != null && point.getPointId() != null) {
                     results.put(point.getPointId(), null);
@@ -374,7 +383,7 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            S7Address address = requireAddress(point);
+            AdsAddress address = requireAddress(point);
             ensureScalar(address, point, "read");
             builder.addTagAddress(tagName(point), address.getPlc4xAddress());
         }
@@ -383,24 +392,24 @@ public class S7Collector extends ConnectionBackedCollector {
 
     private void handleSubscriptionEvent(DataPoint point,
                                          String fieldName,
-                                         S7Address address,
+                                         AdsAddress address,
                                          PlcSubscriptionEvent event) {
         try {
             PlcResponseCode responseCode = event != null ? event.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
-                log.warn("PLC4X S7 subscription event failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X ADS subscription event failed, deviceId={}, pointId={}, responseCode={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 return;
             }
             Object rawValue = extractValue(event, fieldName, point, address);
             ingestPushedValue(point, rawValue);
         } catch (Exception ex) {
-            log.warn("PLC4X S7 subscription event process failed, deviceId={}, pointId={}",
+            log.warn("PLC4X ADS subscription event process failed, deviceId={}, pointId={}",
                     deviceInfo.getDeviceId(), point.getPointId(), ex);
         }
     }
 
-    private Object extractValue(PlcReadResponse response, String fieldName, DataPoint point, S7Address address) {
+    private Object extractValue(PlcReadResponse response, String fieldName, DataPoint point, AdsAddress address) {
         PlcValue plcValue = response.getPlcValue(fieldName);
         if (plcValue == null || plcValue.isNull()) {
             return null;
@@ -409,16 +418,19 @@ public class S7Collector extends ConnectionBackedCollector {
             if (address.isScalar() && plcValue.getLength() == 1) {
                 plcValue = plcValue.getIndex(0);
             } else {
-                throw new IllegalStateException("S7 point arrays are not supported by the current collector: " + address.getRawAddress());
+                throw new IllegalStateException("ADS point arrays are not supported by the current collector: " + address.getRawAddress());
             }
         }
 
-        String pointType = point != null && point.getDataType() != null
-                ? point.getDataType().trim().toUpperCase()
+        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
+                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
                 : address.getBasePlcType();
+        if (pointType == null) {
+            return plcValue.getObject();
+        }
         return switch (pointType) {
             case "BOOLEAN", "BOOL" -> plcValue.isBoolean() ? plcValue.getBoolean() : toBoolean(plcValue.getObject());
-            case "STRING", "WSTRING", "CHAR", "WCHAR" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
+            case "STRING", "WSTRING" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
             case "BYTE", "INT8", "SINT" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
             case "UINT8", "USINT" -> plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
             case "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
@@ -440,16 +452,19 @@ public class S7Collector extends ConnectionBackedCollector {
         };
     }
 
-    private Object coerceWriteValue(Object value, S7Address address, DataPoint point) {
+    private Object coerceWriteValue(Object value, AdsAddress address, DataPoint point) {
         if (value == null) {
             return null;
         }
-        String pointType = point != null && point.getDataType() != null
-                ? point.getDataType().trim().toUpperCase()
+        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
+                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
                 : address.getBasePlcType();
+        if (pointType == null) {
+            return value;
+        }
         return switch (pointType) {
             case "BOOLEAN", "BOOL" -> toBoolean(value);
-            case "STRING", "WSTRING", "CHAR", "WCHAR" -> value.toString();
+            case "STRING", "WSTRING" -> value.toString();
             case "BYTE", "INT8", "SINT" -> ((Number) coerceNumber(value)).byteValue();
             case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
                     ((Number) coerceNumber(value)).intValue();
@@ -476,7 +491,7 @@ public class S7Collector extends ConnectionBackedCollector {
         if (value instanceof String text) {
             return text.contains(".") ? Double.parseDouble(text) : Long.parseLong(text);
         }
-        throw new IllegalArgumentException("Cannot convert S7 value to number: " + value);
+        throw new IllegalArgumentException("Cannot convert ADS value to number: " + value);
     }
 
     private boolean toBoolean(Object value) {
@@ -489,19 +504,19 @@ public class S7Collector extends ConnectionBackedCollector {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
-    private void ensureScalar(S7Address address, DataPoint point, String operation) {
+    private void ensureScalar(AdsAddress address, DataPoint point, String operation) {
         if (!address.isScalar()) {
-            throw new IllegalArgumentException("S7 " + operation + " does not support array point: " + point.getPointId());
+            throw new IllegalArgumentException("ADS " + operation + " does not support array point: " + point.getPointId());
         }
     }
 
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
-            throw new IllegalStateException("PLC4X S7 " + operation + " returned null response");
+            throw new IllegalStateException("PLC4X ADS " + operation + " returned null response");
         }
         PlcResponseCode code = response.getResponseCode(fieldName);
         if (code != PlcResponseCode.OK) {
-            throw new IllegalStateException("PLC4X S7 " + operation + " failed with response code: " + code);
+            throw new IllegalStateException("PLC4X ADS " + operation + " failed with response code: " + code);
         }
     }
 
@@ -560,9 +575,9 @@ public class S7Collector extends ConnectionBackedCollector {
         return Duration.ofMillis(Math.max(100L, intervalMs));
     }
 
-    private S7ConnectionAdapter requireConnection() {
+    private AdsConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
-            throw new IllegalStateException("PLC4X S7 connection has not been established");
+            throw new IllegalStateException("PLC4X ADS connection has not been established");
         }
         return connectionAdapter;
     }
@@ -614,7 +629,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 ? configManager.getDataPoints(deviceInfo.getDeviceId())
                 : Collections.emptyList();
         if (points.isEmpty()) {
-            throw new IllegalArgumentException("No configured S7 points found for device: "
+            throw new IllegalArgumentException("No configured ADS points found for device: "
                     + (deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN"));
         }
 
@@ -645,7 +660,7 @@ public class S7Collector extends ConnectionBackedCollector {
             }
         }
 
-        throw new IllegalArgumentException("Unable to resolve S7 point from command params");
+        throw new IllegalArgumentException("Unable to resolve ADS point from command params");
     }
 
     private DataPoint resolveConfiguredPoint(List<DataPoint> points, String pointRef) {
@@ -695,6 +710,30 @@ public class S7Collector extends ConnectionBackedCollector {
             }
         }
         return null;
+    }
+
+    private Integer firstPositive(Integer... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Integer value : values) {
+            if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private boolean firstBoolean(Boolean... values) {
+        if (values == null) {
+            return false;
+        }
+        for (Boolean value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return false;
     }
 
     private String asText(Object value) {

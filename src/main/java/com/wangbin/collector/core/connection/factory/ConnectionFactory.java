@@ -48,10 +48,12 @@ public class ConnectionFactory {
             case "COAP" -> createCoapConnection(deviceInfo, cfg);
             case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
+            case "ADS" -> createAdsConnection(deviceInfo, cfg);
             case "MODBUS_TCP" -> createModbusTcpConnection(deviceInfo, cfg);
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
             case "OPC_UA", "OPCUA" -> createOpcUaConnection(deviceInfo, cfg);
+            case "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
             case "IEC104", "IEC_104" -> createIec104Connection(deviceInfo, cfg);
             case "IEC61850", "IEC_61850" -> createIec61850Connection(deviceInfo, cfg);
             default -> throw new CollectorException(
@@ -119,6 +121,14 @@ public class ConnectionFactory {
             case "ETHERNET_IP", "EIP", "LOGIX", "AB_ETH" -> {
                 setDefaultPort(cfg, 44818);
                 yield "ETHERNET_IP";
+            }
+            case "ADS", "AMS" -> {
+                setDefaultPort(cfg, 48898);
+                yield "ADS";
+            }
+            case "OPC_UA_PLC4X", "OPCUA_PLC4X" -> {
+                setDefaultPort(cfg, 4840);
+                yield "OPC_UA_PLC4X";
             }
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "OPCUA" -> "OPC_UA";
@@ -214,6 +224,15 @@ public class ConnectionFactory {
         }
     }
 
+    private ConnectionAdapter<?> createAdsConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new AdsConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create ADS connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create ADS connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
+
     private ConnectionAdapter<?> createModbusTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Plc4xModbusTcpConnectionAdapter(deviceInfo, cfg);
@@ -247,6 +266,15 @@ public class ConnectionFactory {
         } catch (Exception e) {
             log.error("创建OPC UA连接失败: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建OPC UA连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createPlc4xOpcUaConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new Plc4xOpcUaConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create PLC4X OPC UA connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create PLC4X OPC UA connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 

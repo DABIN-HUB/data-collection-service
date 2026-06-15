@@ -1,0 +1,21 @@
+{
+  "deviceId": "OPCUA_PLC4X_DEVICE_001",
+  "deviceName": "OPC UA PLC4X Demo Server",
+  "protocolType": "OPC_UA_PLC4X",
+  "connectionType": "TCP",
+  "ipAddress": "127.0.0.1",
+  "port": 4840,
+  "protocolConfig": {
+    "endpointUrl": "opc.tcp://127.0.0.1:4840",
+    "authType": "ANONYMOUS",
+    "securityPolicy": "NONE",
+    "messageSecurity": "NONE",
+    "requestTimeoutMs": 5000,
+    "connectTimeoutMs": 5000,
+    "subscriptionInterval": 1000,
+    "username": "",
+    "password": ""
+  },
+  "collectionInterval": 2000,
+  "remark": "Mock device for Plc4xOpcUaCollector"
+}

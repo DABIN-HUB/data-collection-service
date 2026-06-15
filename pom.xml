@@ -182,6 +182,16 @@
       <artifactId>plc4j-driver-eip</artifactId>
       <version>${plc4x.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-ads</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-opcua</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
     <!--IEC 61850 https://mvnrepository.com/artifact/com.beanit/iec61850bean -->
     <dependency>
       <groupId>com.beanit</groupId>

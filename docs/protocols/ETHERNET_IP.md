@@ -6,7 +6,9 @@
 - The implementation uses PLC4X `logix` driver semantics by default.
 - Factory, connection factory, validator, schema metadata, and parser are wired.
 - The current path supports real connect/read/write for scalar tags.
-- Subscription, protocol-level command execution, and array tag access are still not implemented.
+- Protocol-level command execution now exposes thin configured-point wrappers for `read`, `write`, and `status` / `diagnostic`.
+- Subscription remains intentionally unsupported on the current PLC4X Logix path because the driver metadata does not expose subscribe capability.
+- Whole-array tags now support limited raw pass-through read/write on the protocol edge.
 
 ## Implementation Entry Points
 
@@ -37,7 +39,10 @@ The current implementation accepts both Logix-style and symbolic PLC4X forms.
   - `logixType`
   - `plc4xType`
   - `plcType`
-- Array reads and writes are intentionally blocked for now; the current collector targets scalar tags first.
+- Indexed array elements such as `TagArray[1]` continue to behave like ordinary scalar points.
+- Whole-array reads and writes are supported only as protocol-edge pass-through values.
+- Whole-array points must not depend on scalar-only processing settings such as `scalingFactor`, `offset`, `precision`, `minValue`, `maxValue`, or alarm processing.
+- Manual commands should resolve existing configured points by `reportField`, `pointAlias`, `pointCode`, `pointId`, `pointName`, or `address`.
 
 ## Connection Fields
 
@@ -66,4 +71,6 @@ fields.add(createFieldConfig("timeout", "number", "Protocol timeout (ms)", false
 - `EtherNetIpConnectionAdapter` builds a PLC4X `logix:tcp://` connection string by default.
 - `communicationPath` has priority; if absent, the adapter falls back to `backplane` + `slot`.
 - `EtherNetIpCollector` supports single-point and batched read/write.
+- `EtherNetIpCollector.executeCommand(...)` reuses the normal point read/write path instead of introducing a separate protocol command model.
+- Whole-array points are stored and reported as raw collection values; they do not flow through the scalar conversion and quality pipeline in `BaseCollector`.
 - Batched reads are chunked by `maxFieldsPerRequest`.

@@ -11,10 +11,12 @@ public enum ProtocolType {
     MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII", null),
     SIEMENS_S7("SIEMENS_S7", "Siemens S7", 102),
     ETHERNET_IP("ETHERNET_IP", "EtherNet/IP", 44818),
+    ADS("ADS", "Beckhoff ADS", 48898),
 
     // OPC
     OPC_DA("OPC_DA", "OPC DA", null),
     OPC_UA("OPC_UA", "OPC UA", 4840),
+    OPC_UA_PLC4X("OPC_UA_PLC4X", "OPC UA (PLC4X Validation)", 4840),
 
     // SNMP
     SNMP_V1("SNMP_V1", "SNMP v1", 161),
@@ -83,7 +85,9 @@ public enum ProtocolType {
         return this == MODBUS_TCP
                 || this == SIEMENS_S7
                 || this == ETHERNET_IP
+                || this == ADS
                 || this == OPC_UA
+                || this == OPC_UA_PLC4X
                 || this == IEC104
                 || this == HTTP
                 || this == HTTPS
@@ -106,8 +110,8 @@ public enum ProtocolType {
     public int getDefaultTimeout() {
         return switch (this) {
             case MODBUS_TCP, MODBUS_RTU, MODBUS_ASCII -> 3000;
-            case SIEMENS_S7, ETHERNET_IP -> 5000;
-            case OPC_UA -> 10000;
+            case SIEMENS_S7, ETHERNET_IP, ADS -> 5000;
+            case OPC_UA, OPC_UA_PLC4X -> 10000;
             case SNMP_V1, SNMP_V2C, SNMP_V3 -> 5000;
             case MQTT, MQTT_SSL -> 10000;
             case IEC104 -> 15000;

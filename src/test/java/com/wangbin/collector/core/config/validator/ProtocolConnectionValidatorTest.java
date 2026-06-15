@@ -49,6 +49,88 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
+    void shouldRejectPlc4xOpcUaWithoutEndpoint() {
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), new DeviceConnection()));
+    }
+
+    @Test
+    void shouldRequirePlc4xOpcUaPasswordWhenUsernameIsConfigured() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("username", "collector"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldRequirePlc4xOpcUaKeyStoreForSecurePolicy() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("securityPolicy", "Basic256Sha256"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaWithEndpointAndUsernamePassword() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "username", "collector",
+                "password", "secret"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaUsernameAuthWithAuthParams() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("authType", "USERNAME"));
+
+        Map<String, String> authParams = new LinkedHashMap<>();
+        authParams.put("username", "collector");
+        authParams.put("password", "secret");
+        connection.setAuthParams(authParams);
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaCertAuthWithClientCertAlias() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "authType", "CERT",
+                "clientCertPath", "client.p12"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldRejectPlc4xOpcUaTrustAllCompatibilityFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("trustAllServerCert", true));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaRawConnectionStringWithoutEndpointFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
     void shouldRequireOpcDaBridgeUrlInHttpBridgeMode() {
         DeviceConnection connection = new DeviceConnection();
         connection.setExtJson(ext("bridgeMode", "HTTP"));

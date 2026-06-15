@@ -39,7 +39,11 @@ class ProtocolBatchStrategy {
             Map.entry("SIEMENS_S7", new BatchLimits(200, 300, 100, 50)),
             Map.entry("ETHERNET_IP", new BatchLimits(64, 128, 128, 50)),
             Map.entry("EIP", new BatchLimits(64, 128, 128, 50)),
-            Map.entry("LOGIX", new BatchLimits(64, 128, 128, 50))
+            Map.entry("LOGIX", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("ADS", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("AMS", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("OPC_UA_PLC4X", new BatchLimits(100, 200, 100, 50)),
+            Map.entry("OPCUA_PLC4X", new BatchLimits(100, 200, 100, 50))
     );
 
     int defaultBatchSize(String protocol) {
