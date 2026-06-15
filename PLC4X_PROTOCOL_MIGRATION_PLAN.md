@@ -128,7 +128,7 @@ Notes:
 
 Type: replacement is possible, but not recommended as the first migration target.
 
-Suggested new classes for parallel validation:
+Suggested PLC4X replacement classes:
 
 - `Plc4xOpcUaCollector`
 - `Plc4xOpcUaConnectionAdapter`
@@ -230,17 +230,21 @@ Completed so far:
 - `ADS` currently supports real connect/read/write plus symbolic/direct address normalization.
 - `ADS` now supports PLC4X cyclic subscription for configured scalar points.
 - `ADS` now exposes thin `executeCommand` wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
-- `OPC_UA_PLC4X` is now wired as a parallel PLC4X validation path without cutting over the existing Milo-based `OPC_UA` production route.
-- `OPC_UA_PLC4X` currently supports real connect/read/write plus NodeId / PLC4X data-type normalization.
-- `OPC_UA_PLC4X` now exposes collector-side cyclic subscription registration for configured scalar points, but end-to-end pushed-value delivery still needs real-server revalidation before cutover claims can be made.
-- `OPC_UA_PLC4X` now exposes thin `executeCommand` wrappers for raw `read`, `write`, and `status` / `diagnostic`, plus a metadata-gated `browse` path.
-- `OPC_UA_PLC4X` now also accepts migration aliases for security and timeout fields such as `securityMode`, `authType`, `authParams`, `clientCertPath`, `clientCertPassword`, `requestTimeoutMs`, and `connectTimeoutMs`.
-- `OPC_UA_PLC4X` local embedded Milo validation now confirms anonymous connect/read/write and compatibility alias connection mapping for security and timeout fields.
+- `OPC_UA` is now routed to the PLC4X OPC UA collector/connection adapter path.
+- `OPC_UA_PLC4X` is kept as a backward-compatible alias to the same PLC4X OPC UA implementation.
+- `OPC_UA` / `OPC_UA_PLC4X` currently support real connect/read/write plus NodeId / PLC4X data-type normalization.
+- `OPC_UA` / `OPC_UA_PLC4X` expose collector-side cyclic subscription registration for configured scalar points.
+- `OPC_UA` / `OPC_UA_PLC4X` expose thin `executeCommand` wrappers for raw `read`, `write`, `status` / `diagnostic`, plus a metadata-gated `browse` path.
+- `OPC_UA` / `OPC_UA_PLC4X` accept migration aliases for security and timeout fields such as `securityMode`, `authType`, `authParams`, `clientCertPath`, `clientCertPassword`, `requestTimeoutMs`, and `connectTimeoutMs`.
+- Local embedded validation confirms anonymous connect/read/write and compatibility alias connection mapping for security and timeout fields.
+- Real-server validation on the local Prosys Simulation Server confirms `opc.tcp://DESKTOP-IKHU04D:53530/OPCUA/SimulationServer` is readable through the PLC4X route.
+- Real-server validation on `ns=3;i=1030` confirms write success through the PLC4X route.
 
 In progress:
 
-- `OPC_UA` cutover is still pending even though the separate `OPC_UA_PLC4X` validation path now exists.
-- `OPC_UA_PLC4X` still needs real-server revalidation for runtime `browse`, subscription value delivery, and X509 behavior.
+- `OPC_UA` browse behavior is still metadata-gated and currently returned unsupported on the local Prosys Simulation Server.
+- `OPC_UA` subscription registration succeeds, but real-server value delivery is still not proven on the local Prosys Simulation Server.
+- `OPC_UA` X509 behavior still needs real-server validation.
 
 What stays unchanged in the current implementation:
 
@@ -306,31 +310,31 @@ Current code entry points:
 
 Known remaining gaps:
 
-1. The production `OPC_UA` route still points to the Milo collector; the PLC4X path is exposed separately as `OPC_UA_PLC4X`.
-2. Array-style point access is still intentionally rejected; the current PLC4X validation path only targets scalar points.
-3. X509 handling now follows PLC4X-native `keyStore/trustStore` fields and still needs real server validation before any production cutover.
+1. `OPC_UA_PLC4X` is retained only as a backward-compatible alias; new configs should prefer `OPC_UA`.
+2. Array-style point access is still intentionally rejected; the current PLC4X route only targets scalar points.
+3. X509 handling now follows PLC4X-native `keyStore/trustStore` fields and still needs real-server validation.
 4. `trustAllServerCert=true` is intentionally rejected on the generated PLC4X config path; if that behavior is needed, use `trustStoreFile` or provide a full `plc4xConnectionString`.
-5. Local embedded Milo validation now covers anonymous connect/read/write and compatibility alias mapping, but runtime `browse` metadata returned unsupported on that path and therefore still needs real-server revalidation.
-6. Collector-side cyclic subscription registration succeeds locally, but end-to-end value delivery has not yet been reproduced against the embedded server; keep subscription behavior as validation-in-progress until a real server confirms it.
-7. Local embedded validation had to keep the endpoint path on `_`; current PLC4X driver path parsing should be rechecked before assuming arbitrary endpoint-path compatibility.
+5. Local embedded validation covers anonymous connect/read/write and compatibility alias mapping, but runtime `browse` metadata still returned unsupported there.
+6. Real-server validation confirms read and a single writable point (`ns=3;i=1030`) on the local Prosys Simulation Server, but end-to-end subscription value delivery is still unproven.
+7. Endpoint path compatibility is partially validated by the local Prosys endpoint `/OPCUA/SimulationServer`; a broader matrix still needs confirmation before assuming arbitrary path coverage.
 
 ### Shared Closeout Notes
 
-1. If S7, EtherNet/IP, ADS, or `OPC_UA_PLC4X` fields change again, keep these files synchronized:
+1. If S7, EtherNet/IP, ADS, `OPC_UA`, or `OPC_UA_PLC4X` fields change again, keep these files synchronized:
    - `ProtocolSchemaService`
    - `docs/protocols/FIELD_CONFIG_SUMMARY.md`
    - protocol-specific docs under `docs/protocols/`
 2. Current targeted verification command is:
-   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest test`
+   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest,Plc4xOpcUaCollectorRealServerIT test -Dopcua.real.enabled=true`
 
 ## Next Session Order
 
 This is the recommended execution order for the next session. Follow it directly unless requirements change.
 
-1. Continue `OPC_UA` from the new `OPC_UA_PLC4X` validation baseline.
+1. Harden the cut-over `OPC_UA` PLC4X route.
    - Start from `src/main/resources/mock/opcuaPlc4xDevice.json` as the seed device config for real-server validation.
-   - Re-validate browse behavior, subscription value delivery, endpoint-path compatibility, and security / certificate handling against a real OPC UA server.
-   - Decide whether the existing `OPC_UA` production route can be cut over to the PLC4X collector or must remain dual-path longer.
+   - Re-validate browse behavior, subscription value delivery, endpoint-path compatibility, and security / certificate handling against real OPC UA servers.
+   - Decide whether the compatibility alias `OPC_UA_PLC4X` can stay long-term or should be retired after configuration cleanup.
 2. Keep `BACnet/IP` after `OPC_UA`.
    - `BACnet/IP` remains the highest-uncertainty protocol and should still be treated as a POC-first item.
 
@@ -348,11 +352,11 @@ Use this checklist at the start of the next session:
 3. Re-run compile:
    - `mvn --% -o -Dmaven.repo.local=.m2 -DskipTests compile`
 4. Re-run targeted tests:
-   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest test`
+   - `mvn --% -o -Dmaven.repo.local=.m2 -Djdk.net.URLClassPath.disableClassPathURLCheck=true -Dtest=CollectorFactoryProtocolMappingTest,ConnectionFactoryProtocolAliasMappingTest,ProtocolSchemaServiceTest,ProtocolControllerTest,ProtocolBatchStrategyTest,ProtocolConnectionValidatorTest,S7AddressParserTest,S7CollectorTest,EtherNetIpAddressParserTest,EtherNetIpCollectorTest,AmsNetIdParserTest,AdsAddressParserTest,AdsCollectorTest,Plc4xOpcUaAddressParserTest,Plc4xOpcUaCollectorTest,Plc4xOpcUaConnectionAdapterTest,Plc4xOpcUaCollectorIntegrationTest,Plc4xOpcUaCollectorRealServerIT test -Dopcua.real.enabled=true`
 5. If all green, start from `Next Session Order` step 1.
 
 ## Risk Notes
 
 - `MODBUS_TCP` is the safest PLC4X entry point in this repository.
-- `OPC_UA` is not a low-risk swap because the current implementation is not shallow.
+- `OPC_UA` has already been cut over to PLC4X, but it is still not a low-risk protocol because browse, subscription push delivery, and X509 behavior remain server-dependent.
 - `BACnet/IP` should be treated as a separate POC before committing to framework integration.

@@ -81,6 +81,15 @@ class ProtocolSchemaServiceTest {
         assertTrue(ads.getConnectionFields().stream().anyMatch(field -> "targetAmsNetId".equals(field.getName())));
         assertTrue(ads.getConnectionFields().stream().anyMatch(field -> "sourceAmsPort".equals(field.getName())));
 
+        ProtocolSchema opcUa = service.getSchema("OPC_UA").orElseThrow();
+        assertTrue(opcUa.isImplemented());
+        assertTrue(opcUa.isWritable());
+        assertTrue(opcUa.isSubscribable());
+        assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "authType".equals(field.getName())));
+        assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "messageSecurity".equals(field.getName())));
+        assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "keyStoreFile".equals(field.getName())));
+        assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "requestTimeoutMs".equals(field.getName())));
+
         ProtocolSchema plc4xOpcUa = service.getSchema("OPC_UA_PLC4X").orElseThrow();
         assertTrue(plc4xOpcUa.isImplemented());
         assertTrue(plc4xOpcUa.isWritable());

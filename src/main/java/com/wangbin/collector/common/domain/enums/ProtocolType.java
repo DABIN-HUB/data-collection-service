@@ -16,7 +16,7 @@ public enum ProtocolType {
     // OPC
     OPC_DA("OPC_DA", "OPC DA", null),
     OPC_UA("OPC_UA", "OPC UA", 4840),
-    OPC_UA_PLC4X("OPC_UA_PLC4X", "OPC UA (PLC4X Validation)", 4840),
+    OPC_UA_PLC4X("OPC_UA_PLC4X", "OPC UA (PLC4X Alias)", 4840),
 
     // SNMP
     SNMP_V1("SNMP_V1", "SNMP v1", 161),

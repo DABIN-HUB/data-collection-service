@@ -80,7 +80,7 @@ public class CollectorDataPostProcessor {
                     if (historyDataService != null) {
                         historyDataService.savePoint(deviceId, point, normalized);
                     }
-                    cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, processResult);
+                    cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, normalized);
                 }
             }
 

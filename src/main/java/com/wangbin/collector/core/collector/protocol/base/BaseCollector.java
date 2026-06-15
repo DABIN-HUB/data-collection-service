@@ -136,8 +136,14 @@ public abstract class BaseCollector implements ProtocolCollector,
         try {
             log.info("开始断开设备: {}", deviceInfo.getDeviceId());
 
-            // 取消所有订阅
-            unsubscribe(new ArrayList<>());
+            Exception unsubscribeFailure = null;
+            try {
+                // 取消所有订阅
+                unsubscribe(new ArrayList<>());
+            } catch (Exception e) {
+                unsubscribeFailure = e;
+                log.warn("unsubscribe before disconnect failed, device={}", deviceInfo.getDeviceId(), e);
+            }
 
             // 执行实际断开逻辑
             doDisconnect();
@@ -145,6 +151,12 @@ public abstract class BaseCollector implements ProtocolCollector,
             connected = false;
             connectionStatus = "DISCONNECTED";
             lastDisconnectTime = System.currentTimeMillis();
+            subscribedPointMap.clear();
+            subscribedPointsSet.clear();
+
+            if (unsubscribeFailure != null) {
+                lastError = unsubscribeFailure.getMessage();
+            }
 
             log.info("设备断开成功: {}", deviceInfo.getDeviceId());
         } catch (Exception e) {
@@ -395,7 +407,11 @@ public abstract class BaseCollector implements ProtocolCollector,
 
             // 记录订阅的点位
             for (DataPoint point : points) {
+                if (point == null) {
+                    continue;
+                }
                 subscribedPointMap.put(point.getPointId(), point);
+                subscribedPointsSet.add(point.getPointId());
             }
 
             log.info("点位订阅成功: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
@@ -426,6 +442,7 @@ public abstract class BaseCollector implements ProtocolCollector,
                     doUnsubscribe(allSubscribedPoints);
                 }
                 subscribedPointMap.clear();
+                subscribedPointsSet.clear();
 
                 log.info("所有点位取消订阅成功: {}", deviceInfo.getDeviceId());
             } else {
@@ -436,7 +453,11 @@ public abstract class BaseCollector implements ProtocolCollector,
 
                 // 移除订阅的点位
                 for (DataPoint point : points) {
+                    if (point == null) {
+                        continue;
+                    }
                     subscribedPointMap.remove(point.getPointId());
+                    subscribedPointsSet.remove(point.getPointId());
                 }
 
                 log.info("点位取消订阅成功: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
@@ -461,7 +482,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             status.put("connectionStatus", connectionStatus);
             status.put("lastConnectTime", lastConnectTime);
             status.put("lastActivityTime", lastActivityTime);
-            status.put("subscribedPoints", subscribedPointsSet.size());
+            status.put("subscribedPoints", subscribedPointMap.size());
             status.put("totalReadCount", totalReadCount.get());
             status.put("totalWriteCount", totalWriteCount.get());
             status.put("totalErrorCount", totalErrorCount.get());
@@ -488,8 +509,9 @@ public abstract class BaseCollector implements ProtocolCollector,
             log.debug("执行设备命令: {}, 命令: {}", deviceInfo.getDeviceId(), command);
 
             // 执行实际命令
-            Integer slaveId = (Integer)params.getOrDefault("slaveId", 1);
-            Object result = doExecuteCommand(slaveId,command, params);
+            Map<String, Object> commandParams = params != null ? params : Collections.emptyMap();
+            int slaveId = resolveIntParameter(commandParams.get("slaveId"), 1, "slaveId");
+            Object result = doExecuteCommand(slaveId, command, commandParams);
 
             lastActivityTime = System.currentTimeMillis();
 
@@ -539,7 +561,7 @@ public abstract class BaseCollector implements ProtocolCollector,
         stats.put("averageWriteTime", avgWriteTime);
         stats.put("lastActivityTime", lastActivityTime);
         stats.put("connectionDuration", connected ? System.currentTimeMillis() - lastConnectTime : 0);
-        stats.put("subscribedPoints", subscribedPointsSet.size());
+        stats.put("subscribedPoints", subscribedPointMap.size());
 
         return stats;
     }
@@ -831,5 +853,26 @@ public abstract class BaseCollector implements ProtocolCollector,
                     (deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN"));
         }
         return connection;
+    }
+
+    private int resolveIntParameter(Object value, int defaultValue, String name) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                return defaultValue;
+            }
+            try {
+                return Integer.parseInt(trimmed);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid integer parameter " + name + ": " + value, e);
+            }
+        }
+        throw new IllegalArgumentException("Invalid integer parameter " + name + " type: " + value.getClass().getName());
     }
 }

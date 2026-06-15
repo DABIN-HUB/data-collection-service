@@ -37,8 +37,8 @@ public class ProtocolConnectionValidator {
                 validateSnmp(deviceInfo, connection);
             }
             case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
-            case "OPC_UA", "OPCUA" -> validateOpcUa(deviceInfo, connection);
-            case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection);
+            case "OPC_UA" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA");
+            case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA_PLC4X");
             case "OPC_DA" -> validateOpcDa(deviceInfo, connection);
             case "MODBUS_RTU", "MODBUS_ASCII", "CUSTOM_TCP", "CUSTOM_UDP", "TCP" -> {
                 // These protocols have usable defaults or protocol-specific validation later.
@@ -58,38 +58,11 @@ public class ProtocolConnectionValidator {
         }
     }
 
-    private void validateOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
-        boolean hasEndpoint = hasOpcUaEndpoint(deviceInfo, connection);
-        if (!hasEndpoint) {
-            fail(deviceInfo, "OPC_UA requires url, endpointUrl, endpoint, or host");
-        }
-
-        String authType = connection.getStringConfig("authType", "ANONYMOUS").trim().toUpperCase();
-        if ("USERNAME".equals(authType)) {
-            String username = firstNonBlank(connection.getUsername(), authParam(connection, "username"));
-            if (isBlank(username)) {
-                fail(deviceInfo, "OPC_UA authType=USERNAME requires username");
-            }
-        } else if ("CERT".equals(authType)) {
-            if (isBlank(connection.getStringConfig("clientCertPath", null))) {
-                fail(deviceInfo, "OPC_UA authType=CERT requires clientCertPath");
-            }
-        }
-
-        String securityPolicy = connection.getStringConfig("securityPolicy", "None");
-        if (!isBlank(securityPolicy)
-                && !"None".equalsIgnoreCase(securityPolicy)
-                && !securityPolicy.endsWith("#None")
-                && isBlank(connection.getStringConfig("clientCertPath", null))) {
-            fail(deviceInfo, "OPC_UA secure securityPolicy requires clientCertPath");
-        }
-    }
-
-    private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
+    private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
         String connectionString = connection.getStringConfig("plc4xConnectionString", null);
         if (!hasOpcUaEndpoint(deviceInfo, connection)
                 && isBlank(connectionString)) {
-            fail(deviceInfo, "OPC_UA_PLC4X requires plc4xConnectionString, url, endpointUrl, endpoint, or host");
+            fail(deviceInfo, protocolLabel + " requires plc4xConnectionString, url, endpointUrl, endpoint, or host");
         }
 
         if (hasText(connectionString)) {
@@ -109,20 +82,20 @@ public class ProtocolConnectionValidator {
                 authParam(connection, "password"));
         if ("USERNAME".equals(authType)) {
             if (isBlank(username)) {
-                fail(deviceInfo, "OPC_UA_PLC4X authType=USERNAME requires username");
+                fail(deviceInfo, protocolLabel + " authType=USERNAME requires username");
             }
             if (isBlank(password)) {
-                fail(deviceInfo, "OPC_UA_PLC4X authType=USERNAME requires password");
+                fail(deviceInfo, protocolLabel + " authType=USERNAME requires password");
             }
         } else if (!isBlank(username) && isBlank(password)) {
-            fail(deviceInfo, "OPC_UA_PLC4X username requires password");
+            fail(deviceInfo, protocolLabel + " username requires password");
         }
 
         String keyStoreFile = firstNonBlank(
                 connection.getStringConfig("keyStoreFile", null),
                 connection.getStringConfig("clientCertPath", null));
         if ("CERT".equals(authType) && isBlank(keyStoreFile)) {
-            fail(deviceInfo, "OPC_UA_PLC4X authType=CERT requires keyStoreFile or clientCertPath");
+            fail(deviceInfo, protocolLabel + " authType=CERT requires keyStoreFile or clientCertPath");
         }
 
         String securityPolicy = firstNonBlank(
@@ -132,11 +105,11 @@ public class ProtocolConnectionValidator {
                 && !"NONE".equalsIgnoreCase(securityPolicy)
                 && !securityPolicy.endsWith("#None")
                 && isBlank(keyStoreFile)) {
-            fail(deviceInfo, "OPC_UA_PLC4X secure securityPolicy requires keyStoreFile or clientCertPath");
+            fail(deviceInfo, protocolLabel + " secure securityPolicy requires keyStoreFile or clientCertPath");
         }
 
         if (Boolean.TRUE.equals(connection.getBoolConfig("trustAllServerCert", false))) {
-            fail(deviceInfo, "OPC_UA_PLC4X generated config does not support trustAllServerCert; use trustStoreFile or plc4xConnectionString");
+            fail(deviceInfo, protocolLabel + " generated config does not support trustAllServerCert; use trustStoreFile or plc4xConnectionString");
         }
     }
 

@@ -52,8 +52,7 @@ public class ConnectionFactory {
             case "MODBUS_TCP" -> createModbusTcpConnection(deviceInfo, cfg);
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
-            case "OPC_UA", "OPCUA" -> createOpcUaConnection(deviceInfo, cfg);
-            case "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
+            case "OPC_UA", "OPCUA", "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
             case "IEC104", "IEC_104" -> createIec104Connection(deviceInfo, cfg);
             case "IEC61850", "IEC_61850" -> createIec61850Connection(deviceInfo, cfg);
             default -> throw new CollectorException(
@@ -126,12 +125,15 @@ public class ConnectionFactory {
                 setDefaultPort(cfg, 48898);
                 yield "ADS";
             }
+            case "OPC_UA", "OPCUA" -> {
+                setDefaultPort(cfg, 4840);
+                yield "OPC_UA";
+            }
             case "OPC_UA_PLC4X", "OPCUA_PLC4X" -> {
                 setDefaultPort(cfg, 4840);
                 yield "OPC_UA_PLC4X";
             }
             case "MODBUS_ASCII" -> "MODBUS_RTU";
-            case "OPCUA" -> "OPC_UA";
             case "IEC_104" -> "IEC104";
             case "IEC_61850" -> "IEC61850";
             case "CUSTOM_TCP" -> "TCP";

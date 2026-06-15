@@ -125,6 +125,15 @@ class ConnectionFactoryProtocolAliasMappingTest {
         assertEquals(4840, config.getPort());
     }
 
+    @Test
+    void shouldMapOpcUaPrimaryProtocolToPlc4xAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(Plc4xOpcUaConnectionAdapter.class,
+                factory.createConnection(device("dev-opcua", "OPC_UA"), config));
+        assertEquals(4840, config.getPort());
+    }
+
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

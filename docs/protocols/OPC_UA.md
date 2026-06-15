@@ -1,59 +1,58 @@
 # OPC UA
 
-说明：
-- 当前生产实现仍然是本文档描述的 Milo 路径。
-- PLC4X 并行验证入口已经单独落在 [OPC_UA_PLC4X.md](./OPC_UA_PLC4X.md)。
+## 当前实现
 
-## 实现类
+- 生产 `OPC_UA` 路由已经切到 PLC4X。
+- 兼容协议别名 `OPCUA`。
+- 旧的 Milo `OpcUaCollector` / `OpcUaConnectionAdapter` 仍在仓库中保留，但当前默认路由不再使用。
 
-- `core/collector/protocol/opc/OpcUaCollector`
-- 基类：`core/collector/protocol/opc/ua/base/AbstractOpcUaCollector`
+核心类：
 
-## 实现方式
+- `core/collector/protocol/opc/Plc4xOpcUaCollector`
+- `core/connection/adapter/Plc4xOpcUaConnectionAdapter`
+- `core/collector/protocol/opc/plc4x/domain/Plc4xOpcUaAddress`
+- `core/collector/protocol/opc/plc4x/util/Plc4xOpcUaAddressParser`
 
-- 基于 Milo 客户端。
-- 支持批量读、写、订阅（Subscription + MonitoredItem）。
-- 支持命令：`read`、`write`、`browse`。
+## 能力边界
 
-## 地址与点位配置
+- 支持 connect / read / write。
+- 支持 collector 侧订阅注册，但不同服务器上的值回推能力仍需逐台验证。
+- `browse` 是否可用取决于 PLC4X runtime metadata 和目标服务器行为，不能默认视为可用。
+- 当前只支持标量点位；数组点位仍然拒绝。
 
-- `DataPoint.address` 可直接填 `nodeId`。
-- 或在 `additionalConfig` 配：`nodeId/namespace/identifier/identifierType`。
-- 可配订阅参数：`samplingInterval`、`queueSize`、`deadband`、`subscribe`。
+## 点位配置
 
-## 连接字段整理（createFieldConfig 写法）
+- `DataPoint.address` 直接使用 OPC UA `NodeId`，例如 `ns=2;s=Channel1.Device1.Tag1`、`ns=3;i=1001`。
+- 若地址里未显式带 PLC4X 数据类型后缀，解析器会结合 `DataPoint.dataType` 尝试补齐，例如 `;REAL`、`;BOOL`。
+- 兼容 `additionalConfig` 中的 `namespace`、`identifier`、`identifierType`。
+- 订阅兼容字段仍可使用：`samplingInterval`、`queueSize`、`deadband`、`subscribe`。
 
-说明：
-- `url`、`endpointUrl`、`endpoint`、`host + port` 都会参与端点解析，通常任选一种即可。
-- 若启用安全通道或证书认证，还需要补充证书相关字段。
+## 连接字段
 
-```java
-fields.add(createFieldConfig("url", "string", "OPC UA端点地址", false, "opc.tcp://127.0.0.1:4840", null));
-fields.add(createFieldConfig("endpointUrl", "string", "端点地址兼容字段", false, "opc.tcp://127.0.0.1:4840", null));
-fields.add(createFieldConfig("endpoint", "string", "端点地址别名", false, "opc.tcp://127.0.0.1:4840", null));
-fields.add(createFieldConfig("host", "string", "主机", false, "127.0.0.1", null));
-fields.add(createFieldConfig("port", "number", "端口", false, "4840", null));
-fields.add(createFieldConfig("securityPolicy", "string", "安全策略", true, "None", new String[]{"None", "Basic128Rsa15", "Basic256", "Basic256Sha256", "Aes128_Sha256_RsaOaep", "Aes256_Sha256_RsaPss"}));
-fields.add(createFieldConfig("securityMode", "string", "安全模式", true, "None", new String[]{"None", "Sign", "SignAndEncrypt"}));
-fields.add(createFieldConfig("authType", "string", "认证方式", true, "ANONYMOUS", new String[]{"ANONYMOUS", "USERNAME", "CERT"}));
-fields.add(createFieldConfig("username", "string", "用户名", false, "", null));
-fields.add(createFieldConfig("password", "string", "密码", false, "", null));
-fields.add(createFieldConfig("authParams", "object", "兼容认证参数", false, "{}", null));
-fields.add(createFieldConfig("requestTimeoutMs", "number", "请求超时(ms)", false, "5000", null));
-fields.add(createFieldConfig("requestTimeout", "number", "请求超时兼容字段(ms)", false, "5000", null));
-fields.add(createFieldConfig("connectTimeoutMs", "number", "连接超时(ms)", false, "5000", null));
-fields.add(createFieldConfig("connectTimeout", "number", "连接超时兼容字段(ms)", false, "5000", null));
-fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
-fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
-fields.add(createFieldConfig("subscriptionInterval", "number", "订阅发布间隔(ms)", false, "1000", null));
-fields.add(createFieldConfig("namespaceUri", "string", "命名空间URI", false, "", null));
-fields.add(createFieldConfig("clientCertPath", "string", "客户端证书路径", false, "", null));
-fields.add(createFieldConfig("clientCertPassword", "string", "客户端证书密码", false, "", null));
-fields.add(createFieldConfig("trustAllServerCert", "boolean", "是否信任所有服务端证书", false, "false", new String[]{"true", "false"}));
-```
+主字段分组如下，完整列表以 `ProtocolSchemaService` 和 `docs/protocols/FIELD_CONFIG_SUMMARY.md` 为准。
+
+- 端点：`url`、`endpointUrl`、`endpoint`、`host`、`port`
+- 连接策略：`discovery`、`plc4xConnectionString`
+- 认证：`authType`、`username`、`password`、`authParams`
+- 安全：`securityPolicy`、`messageSecurity`、`securityMode`
+- 证书：`keyStoreFile`、`keyStorePassword`、`trustStoreFile`、`trustStorePassword`
+- 兼容别名：`clientCertPath`、`clientCertPassword`、`requestTimeoutMs`、`connectTimeoutMs`
+
+注意：
+
+- 自动生成的 PLC4X 配置不支持 `trustAllServerCert=true`。
+- 如果需要放宽服务端证书校验，使用 `trustStoreFile`，或者直接提供 `plc4xConnectionString`。
 
 ## 使用方式
 
-1. 设备 `protocolType` 设置 `OPC_UA`。
-2. 连接配置提供 `url`（opc.tcp）、安全策略等。
-3. 点位配置 `nodeId` 或可解析的命名空间+标识。
+1. 设备 `protocolType` 设置为 `OPC_UA`。
+2. 连接配置提供端点和认证参数。
+3. 点位地址保持 OPC UA `NodeId` 风格。
+
+## 当前验证结论
+
+- 本地嵌入式服务器已验证匿名 connect/read/write。
+- 本机 Prosys Simulation Server 已验证 `opc.tcp://DESKTOP-IKHU04D:53530/OPCUA/SimulationServer` 可读。
+- `ns=3;i=1030` 已实测可写。
+- 当前实服上 `browse` 仍返回 unsupported。
+- 当前实服上订阅注册成功，但值回推尚未证实。

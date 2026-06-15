@@ -49,6 +49,56 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
+    void shouldRequireOpcUaPasswordWhenUsernameIsConfigured() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("username", "collector"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRequireOpcUaKeyStoreForSecurePolicy() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("securityPolicy", "Basic256Sha256"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptOpcUaWithEndpointAndUsernamePassword() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "username", "collector",
+                "password", "secret"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRejectOpcUaTrustAllCompatibilityFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("trustAllServerCert", true));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptOpcUaRawConnectionStringWithoutEndpointFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
     void shouldRejectPlc4xOpcUaWithoutEndpoint() {
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), new DeviceConnection()));

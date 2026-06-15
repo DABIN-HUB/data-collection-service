@@ -36,6 +36,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
@@ -50,15 +51,30 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     private int maxFieldsPerRequest = 100;
     private boolean subscriptionSupported;
     private boolean browseSupported;
+    private final AtomicLong subscriptionEventCount = new AtomicLong();
+    private volatile Long lastSubscriptionEventTs;
+    private volatile String lastSubscriptionPointId;
+    private volatile String lastSubscriptionPointCode;
+    private volatile String lastSubscriptionError;
 
     @Override
     public String getCollectorType() {
-        return "OPC_UA_PLC4X";
+        return declaredProtocolType();
     }
 
     @Override
     public String getProtocolType() {
-        return "OPC_UA_PLC4X";
+        return declaredProtocolType();
+    }
+
+    private String declaredProtocolType() {
+        if (deviceInfo == null || deviceInfo.getProtocolType() == null) {
+            return "OPC_UA";
+        }
+        String normalized = deviceInfo.getProtocolType().trim().toUpperCase(Locale.ROOT).replace("-", "_");
+        return "OPC_UA_PLC4X".equals(normalized) || "OPCUA_PLC4X".equals(normalized)
+                ? "OPC_UA_PLC4X"
+                : "OPC_UA";
     }
 
     @Override
@@ -79,6 +95,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         this.subscriptionSupported = currentConfig.getBool("subscriptionEnabled",
                 requireConnection().getClient().getMetadata().isSubscribeSupported());
         this.browseSupported = requireConnection().getClient().getMetadata().isBrowseSupported();
+        resetSubscriptionDiagnostics();
         log.info("PLC4X OPC UA collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
@@ -91,6 +108,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         subscriptionHandles.clear();
         subscriptionSupported = false;
         browseSupported = false;
+        resetSubscriptionDiagnostics();
         log.info("PLC4X OPC UA collector disconnected, deviceId={}", deviceInfo.getDeviceId());
     }
 
@@ -282,6 +300,11 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         status.put("configuredPointCount", configuredAddresses.size());
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
         status.put("activeSubscriptions", subscriptionHandles.size());
+        status.put("subscriptionEventCount", subscriptionEventCount.get());
+        status.put("lastSubscriptionEventTs", lastSubscriptionEventTs);
+        status.put("lastSubscriptionPointId", lastSubscriptionPointId);
+        status.put("lastSubscriptionPointCode", lastSubscriptionPointCode);
+        status.put("lastSubscriptionError", lastSubscriptionError);
 
         DeviceConnection connection = getCurrentConnectionConfig();
         if (connection != null) {
@@ -397,16 +420,31 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         try {
             PlcResponseCode responseCode = event.getResponseCode(fieldName);
             if (responseCode != PlcResponseCode.OK) {
+                lastSubscriptionError = "responseCode=" + responseCode;
                 log.warn("PLC4X OPC UA subscription event failed, deviceId={}, pointId={}, responseCode={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 return;
             }
             Object rawValue = extractValue(event.getPlcValue(fieldName), point, address);
             ingestPushedValue(point, rawValue);
+            subscriptionEventCount.incrementAndGet();
+            lastSubscriptionEventTs = System.currentTimeMillis();
+            lastSubscriptionPointId = point.getPointId();
+            lastSubscriptionPointCode = point.getPointCode();
+            lastSubscriptionError = null;
         } catch (Exception ex) {
+            lastSubscriptionError = ex.getMessage();
             log.warn("PLC4X OPC UA subscription event process failed, deviceId={}, pointId={}",
                     deviceInfo.getDeviceId(), point.getPointId(), ex);
         }
+    }
+
+    private void resetSubscriptionDiagnostics() {
+        subscriptionEventCount.set(0L);
+        lastSubscriptionEventTs = null;
+        lastSubscriptionPointId = null;
+        lastSubscriptionPointCode = null;
+        lastSubscriptionError = null;
     }
 
     private Object extractValue(PlcValue plcValue, DataPoint point, Plc4xOpcUaAddress address) {

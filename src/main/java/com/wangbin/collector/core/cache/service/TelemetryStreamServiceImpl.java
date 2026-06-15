@@ -62,7 +62,7 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         }
     }
 
-    @Scheduled(fixedDelayString = "${telemetry.stream.trim-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${spring.data.redis.stream.trim-interval-ms:${telemetry.stream.trim-interval-ms:5000}}")
     public void trimByTimeRetention() {
         if (!properties.isEnabled()
                 || !properties.isTrimTaskEnabled()
