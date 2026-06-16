@@ -85,14 +85,6 @@
               <select id="localProtocolSelect"></select>
             </label>
             <label>
-              主机/地址
-              <input id="localHost" type="text" placeholder="127.0.0.1">
-            </label>
-            <label>
-              端口
-              <input id="localPort" type="number" placeholder="502">
-            </label>
-            <label>
               基础采集间隔 BaseCollectionInterval (ms)
               <input id="localCollectionInterval" type="number" value="2000">
             </label>
@@ -109,11 +101,9 @@
               <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
             </label>
           </div>
+          <div id="localProtocolMeta" class="meta-box"></div>
+          <form id="localConnectionForm" class="dynamic-form"></form>
           <div class="grid two local-json-grid">
-            <label>
-              连接配置 JSON
-              <textarea id="localConnectionJson" spellcheck="false"></textarea>
-            </label>
             <label>
               点位配置 JSON 数组
               <textarea id="localPointsJson" spellcheck="false"></textarea>
@@ -122,7 +112,7 @@
           <div class="inline-actions local-options">
             <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
             <label class="check-line"><input id="localStartAfterSave" type="checkbox"> 保存后立即本地启动</label>
-            <button id="formatLocalJsonBtn">格式化 JSON</button>
+            <button id="formatLocalPointsBtn">格式化点位 JSON</button>
             <button id="saveLocalDeviceBtn" class="primary">保存本地临时设备</button>
           </div>
         </div>

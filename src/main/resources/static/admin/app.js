@@ -3,6 +3,7 @@ const state = {
   devices: [],
   protocols: [],
   currentProtocol: null,
+  currentLocalProtocol: null,
   localDeviceEditingId: null,
   realtimeTimer: null
 };
@@ -16,7 +17,7 @@ const commonConnectionFields = new Set([
   "username", "password", "clientId", "productKey", "deviceSecret", "authToken",
   "sslEnabled", "sslCertPath", "sslKeyPath", "keepAlive", "bufferSize",
   "autoReconnect", "maxPendingMessages", "dispatchBatchSize", "dispatchFlushInterval",
-  "overflowStrategy"
+  "overflowStrategy", "securityPolicy", "authParams"
 ]);
 
 const adaptiveDefaults = {
@@ -43,11 +44,11 @@ function bindEvents() {
   $("#openLocalDeviceBtn").addEventListener("click", () => openLocalDeviceForm());
   $("#cancelLocalDeviceBtn").addEventListener("click", closeLocalDeviceForm);
   $("#saveLocalDeviceBtn").addEventListener("click", saveLocalDevice);
-  $("#formatLocalJsonBtn").addEventListener("click", formatLocalDeviceJson);
+  $("#formatLocalPointsBtn").addEventListener("click", formatLocalPointsJson);
   $("#exportConfigBtn").addEventListener("click", exportConfig);
   $("#syncConfigBtn").addEventListener("click", syncConfig);
   $("#protocolSelect").addEventListener("change", renderSelectedProtocol);
-  $("#localProtocolSelect").addEventListener("change", refreshLocalConnectionTemplate);
+  $("#localProtocolSelect").addEventListener("change", renderLocalProtocolSelection);
   $("#connectionDeviceSelect").addEventListener("change", loadDeviceDiff);
   $("#loadConnectionBtn").addEventListener("click", loadConnection);
   $("#saveConnectionBtn").addEventListener("click", saveConnection);
@@ -193,8 +194,8 @@ function isLocalDevice(device) {
 function fillDeviceSelects() {
   const options = state.devices.map((device) => {
     const id = device.id || device.deviceId;
-    const source = isLocalDevice(device) ? "本地临时" : "同步";
-    return `<option value="${escapeAttr(id)}">${escapeHtml(device.deviceName || id)} (${escapeHtml(id)} · ${source})</option>`;
+    const source = isLocalDevice(device) ? "local" : "sync";
+    return `<option value="${escapeAttr(id)}">${escapeHtml(device.deviceName || id)} (${escapeHtml(id)} / ${source})</option>`;
   }).join("");
   ["#connectionDeviceSelect", "#realtimeDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
     const select = $(selector);
@@ -204,6 +205,262 @@ function fillDeviceSelects() {
       select.value = previous;
     }
   });
+}
+
+function getProtocolSchema(protocolCode) {
+  return state.protocols.find((item) => item.protocol === protocolCode) || null;
+}
+
+function groupTitle(group) {
+  switch (group) {
+    case "connection":
+      return "Connection";
+    case "protocol":
+      return "Protocol";
+    case "security":
+      return "Security";
+    case "advanced":
+      return "Advanced";
+    case "topic":
+      return "Topics";
+    case "request":
+      return "Request";
+    case "bridge":
+      return "Bridge";
+    default:
+      return "Fields";
+  }
+}
+
+function renderProtocolMeta(protocol) {
+  if (!protocol) {
+    return "No protocol metadata";
+  }
+  const status = protocol.implemented ? "Implemented" : "Placeholder";
+  return `
+    <strong>${escapeHtml(protocol.title)}</strong>
+    <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
+    <p>${escapeHtml(protocol.description || "")}</p>
+    <p>Aliases: ${(protocol.aliases || []).map(escapeHtml).join(", ") || "-"}</p>
+    <p>Address hints: ${(protocol.pointAddressHints || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-"}</p>
+  `;
+}
+
+function fieldDefaultValue(field) {
+  if (!field) {
+    return "";
+  }
+  if (field.defaultValue !== null && field.defaultValue !== undefined) {
+    return field.defaultValue;
+  }
+  return field.type === "object" ? "{}" : "";
+}
+
+function renderField(field, formId) {
+  const required = field.required ? `<span class="field-required">*</span>` : "";
+  const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
+  const value = fieldDefaultValue(field);
+  const inputName = escapeAttr(field.name);
+  let control;
+  if (field.type === "select" || field.type === "boolean") {
+    const options = field.options && field.options.length ? field.options : ["true", "false"];
+    control = `<select name="${inputName}" data-form-id="${escapeAttr(formId)}">${options.map((option) =>
+      `<option value="${escapeAttr(option)}" ${String(option) === String(value) ? "selected" : ""}>${escapeHtml(option)}</option>`
+    ).join("")}</select>`;
+  } else if (field.type === "object") {
+    control = `<textarea name="${inputName}" data-form-id="${escapeAttr(formId)}" rows="4">${escapeHtml(value || "{}")}</textarea>`;
+  } else {
+    const inputType = field.type === "password" ? "password" : field.type === "number" ? "number" : "text";
+    control = `<input name="${inputName}" data-form-id="${escapeAttr(formId)}" type="${inputType}" value="${escapeAttr(value)}">`;
+  }
+  return `
+    <label data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
+      ${escapeHtml(field.label || field.name)} ${required} ${hint}
+      ${control}
+      <span class="field-error hidden"></span>
+    </label>`;
+}
+
+function renderProtocolForm(containerSelector, protocol, formId) {
+  const container = $(containerSelector);
+  if (!container) {
+    return;
+  }
+  if (!protocol || !Array.isArray(protocol.connectionFields) || !protocol.connectionFields.length) {
+    container.innerHTML = "<p>No configurable connection fields for this protocol.</p>";
+    return;
+  }
+  const groups = new Map();
+  protocol.connectionFields.forEach((field) => {
+    const group = field.group || "fields";
+    if (!groups.has(group)) {
+      groups.set(group, []);
+    }
+    groups.get(group).push(field);
+  });
+  container.innerHTML = Array.from(groups.entries()).map(([group, fields]) => `
+    <section class="field-group" data-group="${escapeAttr(group)}">
+      <h3>${escapeHtml(groupTitle(group))}</h3>
+      <div class="dynamic-form">
+        ${fields.map((field) => renderField(field, formId)).join("")}
+      </div>
+    </section>
+  `).join("");
+  bindConditionalFields(containerSelector, protocol);
+}
+
+function evaluateSimpleCondition(containerSelector, condition) {
+  const match = condition.match(/^([^=!]+)\s*(!=|=)\s*(.+)$/);
+  if (!match) {
+    return true;
+  }
+  const fieldName = match[1].trim();
+  const operator = match[2];
+  const expected = match[3].trim();
+  const input = $(`${containerSelector} [name="${cssEscape(fieldName)}"]`);
+  if (!input) {
+    return false;
+  }
+  const actual = String(input.value ?? "").trim();
+  if (expected.includes("/")) {
+    const candidates = expected.split("/").map((item) => item.trim());
+    return operator === "!=" ? !candidates.includes(actual) : candidates.includes(actual);
+  }
+  return operator === "!=" ? actual !== expected : actual === expected;
+}
+
+function conditionMatches(containerSelector, condition) {
+  if (!condition) {
+    return true;
+  }
+  return condition
+    .split(/\s+or\s+/i)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .some((item) => evaluateSimpleCondition(containerSelector, item));
+}
+
+function bindConditionalFields(containerSelector, protocol) {
+  const container = $(containerSelector);
+  if (!container || !protocol) {
+    return;
+  }
+  const refresh = () => applyConditionalFields(containerSelector, protocol);
+  container.querySelectorAll("[name]").forEach((input) => {
+    input.addEventListener("change", refresh);
+    input.addEventListener("input", refresh);
+  });
+  refresh();
+}
+
+function applyConditionalFields(containerSelector, protocol) {
+  const container = $(containerSelector);
+  if (!container || !protocol) {
+    return;
+  }
+  protocol.connectionFields.forEach((field) => {
+    const label = container.querySelector(`[data-field="${cssEscape(field.name)}"]`);
+    if (!label) {
+      return;
+    }
+    const active = conditionMatches(containerSelector, field.requiredWhen);
+    if (field.requiredWhen) {
+      label.classList.toggle("hidden", !active);
+    }
+    label.dataset.active = active ? "true" : "false";
+  });
+}
+
+function fillProtocolForm(containerSelector, protocol, connection) {
+  if (!protocol) {
+    return;
+  }
+  const ext = connection?.extJson || {};
+  $(containerSelector)?.querySelectorAll("[name]").forEach((input) => {
+    const name = input.name;
+    const value = connection?.[name] ?? ext[name];
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (input.tagName === "TEXTAREA" && typeof value === "object") {
+      input.value = JSON.stringify(value, null, 2);
+    } else {
+      input.value = String(value);
+    }
+  });
+  applyConditionalFields(containerSelector, protocol);
+}
+
+function clearFieldErrors(containerSelector) {
+  $(containerSelector)?.querySelectorAll(".field-error").forEach((node) => {
+    node.textContent = "";
+    node.classList.add("hidden");
+  });
+}
+
+function setFieldError(label, message) {
+  const target = label.querySelector(".field-error");
+  if (!target) {
+    return;
+  }
+  target.textContent = message;
+  target.classList.remove("hidden");
+}
+
+function collectProtocolForm(containerSelector, protocol, deviceId) {
+  const payload = {
+    deviceId,
+    connectionType: protocol?.protocol || "",
+    extJson: {}
+  };
+  if (!protocol) {
+    return payload;
+  }
+  clearFieldErrors(containerSelector);
+  const errors = [];
+  $(containerSelector)?.querySelectorAll("[name]").forEach((input) => {
+    const name = input.name;
+    const field = protocol.connectionFields.find((item) => item.name === name) || {};
+    const label = input.closest("label");
+    const active = !label || label.dataset.active !== "false";
+    if (!active) {
+      return;
+    }
+    const rawValue = input.value;
+    const trimmed = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+    const required = Boolean(field.required) || Boolean(field.requiredWhen && active);
+    if (required && (trimmed === "" || trimmed === null || trimmed === undefined)) {
+      errors.push(`${field.label || field.name} is required`);
+      if (label) {
+        setFieldError(label, "Required");
+      }
+      return;
+    }
+    let parsed;
+    try {
+      parsed = parseValue(rawValue, field.type);
+    } catch (error) {
+      errors.push(`${field.label || field.name}: ${error.message}`);
+      if (label) {
+        setFieldError(label, "Invalid format");
+      }
+      return;
+    }
+    if (parsed === "" || parsed === null || parsed === undefined) {
+      return;
+    }
+    if (commonConnectionFields.has(name)) {
+      payload[name] = parsed;
+    } else {
+      payload.extJson[name] = parsed;
+    }
+  });
+  if (errors.length) {
+    const error = new Error(errors[0]);
+    error.validationErrors = errors;
+    throw error;
+  }
+  return payload;
 }
 
 function openLocalDeviceForm(bundle = null) {
@@ -218,25 +475,25 @@ function openLocalDeviceForm(bundle = null) {
   const protocol = device.protocolType || connection.connectionType || $("#localProtocolSelect").value || "MODBUS_TCP";
   const adaptive = resolveAdaptiveDefaults(device, points);
 
-  $("#localEditorTitle").textContent = state.localDeviceEditingId ? "修改本地临时设备" : "新增本地临时设备";
+  $("#localEditorTitle").textContent = state.localDeviceEditingId ? "Edit local temporary device" : "Create local temporary device";
   $("#localDeviceId").value = deviceId;
   $("#localDeviceId").disabled = Boolean(state.localDeviceEditingId);
   $("#localDeviceName").value = device.deviceName || "";
   $("#localProtocolSelect").value = protocol;
-  $("#localHost").value = connection.host || device.ipAddress || "";
-  $("#localPort").value = connection.port || device.port || "";
   $("#localCollectionInterval").value = adaptive.baseCollectionInterval;
   $("#localMinCollectionInterval").value = adaptive.minCollectionInterval;
   $("#localMaxCollectionInterval").value = adaptive.maxCollectionInterval;
   $("#localPointChangeThreshold").value = adaptive.pointChangeThreshold;
   $("#localStartAfterSave").checked = false;
   $("#localOverwrite").checked = Boolean(state.localDeviceEditingId);
-  $("#localConnectionJson").value = JSON.stringify({
-    ...connection,
-    connectionType: connection.connectionType || protocol,
-    extJson: connection.extJson || {}
-  }, null, 2);
   $("#localPointsJson").value = JSON.stringify(points, null, 2);
+  renderLocalProtocolSelection();
+  fillProtocolForm("#localConnectionForm", state.currentLocalProtocol, {
+    ...connection,
+    host: connection.host || device.ipAddress,
+    port: connection.port || device.port,
+    connectionType: connection.connectionType || protocol
+  });
 }
 
 function closeLocalDeviceForm() {
@@ -245,15 +502,11 @@ function closeLocalDeviceForm() {
   $("#localDeviceId").disabled = false;
 }
 
-function refreshLocalConnectionTemplate() {
-  if (state.localDeviceEditingId) {
-    return;
-  }
-  const protocol = $("#localProtocolSelect").value || "MODBUS_TCP";
-  $("#localConnectionJson").value = JSON.stringify({
-    connectionType: protocol,
-    extJson: {}
-  }, null, 2);
+function renderLocalProtocolSelection() {
+  const protocolCode = $("#localProtocolSelect").value || "MODBUS_TCP";
+  state.currentLocalProtocol = getProtocolSchema(protocolCode);
+  $("#localProtocolMeta").innerHTML = renderProtocolMeta(state.currentLocalProtocol);
+  renderProtocolForm("#localConnectionForm", state.currentLocalProtocol, "localConnectionForm");
 }
 
 function defaultPointTemplate(deviceId) {
@@ -311,23 +564,19 @@ function readAdaptiveFormValues() {
   };
 }
 
-function formatLocalDeviceJson() {
+function formatLocalPointsJson() {
   try {
-    $("#localConnectionJson").value = JSON.stringify(JSON.parse($("#localConnectionJson").value || "{}"), null, 2);
     const points = JSON.parse($("#localPointsJson").value || "[]");
     $("#localPointsJson").value = JSON.stringify(Array.isArray(points) ? points : [points], null, 2);
   } catch (error) {
-    toast(`JSON 格式错误: ${error.message}`, true);
+    toast(`JSON format error: ${error.message}`, true);
   }
 }
 
 function buildLocalDeviceRequest() {
   const deviceId = $("#localDeviceId").value.trim();
   const protocol = $("#localProtocolSelect").value || "MODBUS_TCP";
-  const host = $("#localHost").value.trim();
-  const portText = $("#localPort").value.trim();
-  const port = portText ? Number(portText) : null;
-  const connection = JSON.parse($("#localConnectionJson").value || "{}");
+  const connection = collectProtocolForm("#localConnectionForm", state.currentLocalProtocol, deviceId);
   const rawPoints = JSON.parse($("#localPointsJson").value || "[]");
   const adaptive = readAdaptiveFormValues();
   const points = (Array.isArray(rawPoints) ? rawPoints : [rawPoints]).map((point) => ({
@@ -344,6 +593,8 @@ function buildLocalDeviceRequest() {
       temporaryConfig: true
     }
   }));
+  const host = connection.host;
+  const port = connection.port;
 
   return {
     device: {
@@ -362,8 +613,6 @@ function buildLocalDeviceRequest() {
       ...connection,
       deviceId,
       connectionType: connection.connectionType || protocol,
-      host: connection.host || host || undefined,
-      port: connection.port || port || undefined,
       extJson: {
         ...(connection.extJson || {}),
         configSource: "local",
@@ -386,7 +635,7 @@ async function saveLocalDevice() {
     method: editing ? "PUT" : "POST",
     body: JSON.stringify(payload)
   });
-  toast("本地临时设备已保存");
+  toast("Local temporary device saved");
   closeLocalDeviceForm();
   await Promise.all([loadDevices(), loadOverview()]);
   if (payload.startAfterSave) {
@@ -412,126 +661,56 @@ async function deleteLocalDevice(deviceId) {
 async function loadProtocols() {
   const body = await callApi("/api/protocols");
   state.protocols = dataOf(body) || [];
-  $("#protocolCount").textContent = `${state.protocols.length} 种协议`;
+  $("#protocolCount").textContent = `${state.protocols.length} protocols`;
   $("#protocolSelect").innerHTML = state.protocols
     .map((protocol) => `<option value="${protocol.protocol}">${protocol.title} (${protocol.protocol})</option>`)
     .join("");
   $("#localProtocolSelect").innerHTML = state.protocols
     .map((protocol) => `<option value="${protocol.protocol}">${protocol.title} (${protocol.protocol})</option>`)
     .join("");
-  refreshLocalConnectionTemplate();
+  renderLocalProtocolSelection();
   renderSelectedProtocol();
 }
 
 function renderSelectedProtocol() {
   const protocolCode = $("#protocolSelect").value;
-  state.currentProtocol = state.protocols.find((item) => item.protocol === protocolCode);
+  state.currentProtocol = getProtocolSchema(protocolCode);
   const protocol = state.currentProtocol;
   if (!protocol) {
     $("#connectionForm").innerHTML = "";
-    $("#protocolMeta").textContent = "暂无协议信息";
+    $("#protocolMeta").textContent = "No protocol metadata";
     return;
   }
-  const status = protocol.implemented ? "已实现" : "占位";
-  $("#protocolMeta").innerHTML = `
-    <strong>${escapeHtml(protocol.title)}</strong>
-    <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
-    <p>${escapeHtml(protocol.description || "")}</p>
-    <p>别名：${(protocol.aliases || []).map(escapeHtml).join(", ") || "-"}</p>
-    <p>地址示例：${(protocol.pointAddressHints || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-"}</p>
-  `;
-  $("#connectionForm").innerHTML = (protocol.connectionFields || []).map(renderField).join("")
-    || "<p>该协议当前没有可配置连接字段。</p>";
-}
-
-function renderField(field) {
-  const required = field.required ? `<span class="field-required">*</span>` : "";
-  const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
-  const value = field.defaultValue ?? "";
-  const inputName = escapeAttr(field.name);
-  let control;
-  if (field.type === "select" || field.type === "boolean") {
-    const options = field.options && field.options.length ? field.options : ["true", "false"];
-    control = `<select name="${inputName}">${options.map((option) =>
-      `<option value="${escapeAttr(option)}" ${String(option) === String(value) ? "selected" : ""}>${escapeHtml(option)}</option>`
-    ).join("")}</select>`;
-  } else if (field.type === "object") {
-    control = `<textarea name="${inputName}" rows="4">${escapeHtml(value || "{}")}</textarea>`;
-  } else {
-    const inputType = field.type === "password" ? "password" : field.type === "number" ? "number" : "text";
-    control = `<input name="${inputName}" type="${inputType}" value="${escapeAttr(value)}">`;
-  }
-  return `
-    <label data-field="${inputName}">
-      ${escapeHtml(field.label || field.name)} ${required} ${hint}
-      ${control}
-    </label>`;
+  $("#protocolMeta").innerHTML = renderProtocolMeta(protocol);
+  renderProtocolForm("#connectionForm", protocol, "connectionForm");
 }
 
 async function loadConnection() {
   const deviceId = $("#connectionDeviceSelect").value;
   if (!deviceId) {
-    toast("请先选择设备", true);
+    toast("Select a device first", true);
     return;
   }
   const body = await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`);
   const connection = dataOf(body).connection || {};
-  fillConnectionForm(connection);
+  fillProtocolForm("#connectionForm", state.currentProtocol, connection);
   await loadDeviceDiff();
-  toast("连接配置已读取");
-}
-
-function fillConnectionForm(connection) {
-  const ext = connection.extJson || {};
-  $("#connectionForm").querySelectorAll("[name]").forEach((input) => {
-    const name = input.name;
-    const value = connection[name] ?? ext[name];
-    if (value === undefined || value === null) {
-      return;
-    }
-    if (input.tagName === "TEXTAREA" && typeof value === "object") {
-      input.value = JSON.stringify(value, null, 2);
-    } else {
-      input.value = String(value);
-    }
-  });
+  toast("Connection config loaded");
 }
 
 async function saveConnection() {
   const deviceId = $("#connectionDeviceSelect").value;
   const protocol = $("#protocolSelect").value;
   if (!deviceId || !protocol) {
-    toast("请选择设备和协议", true);
+    toast("Select both device and protocol", true);
     return;
   }
-  const payload = collectConnectionPayload(protocol, deviceId);
+  const payload = collectProtocolForm("#connectionForm", state.currentProtocol, deviceId);
   await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });
-  toast("连接配置已保存");
-}
-
-function collectConnectionPayload(protocol, deviceId) {
-  const payload = {
-    deviceId,
-    connectionType: protocol,
-    extJson: {}
-  };
-  $("#connectionForm").querySelectorAll("[name]").forEach((input) => {
-    const name = input.name;
-    const field = state.currentProtocol.connectionFields.find((item) => item.name === name) || {};
-    const parsed = parseValue(input.value, field.type);
-    if (parsed === "" || parsed === null || parsed === undefined) {
-      return;
-    }
-    if (commonConnectionFields.has(name)) {
-      payload[name] = parsed;
-    } else {
-      payload.extJson[name] = parsed;
-    }
-  });
-  return payload;
+  toast("Connection config saved");
 }
 
 function parseValue(value, type) {
@@ -831,6 +1010,13 @@ function formatValue(value) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(String(value ?? ""));
+  }
+  return String(value ?? "").replace(/["\\]/g, "\\$&");
 }
 
 function escapeHtml(value) {

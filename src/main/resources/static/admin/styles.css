@@ -346,6 +346,10 @@ label {
   min-height: 15rem;
 }
 
+.local-json-grid > label:first-child {
+  grid-column: 1 / -1;
+}
+
 .local-options {
   margin-top: 0.9rem;
 }
@@ -372,6 +376,34 @@ label {
   border-radius: 16px;
   background: rgba(24, 52, 45, 0.08);
   color: var(--ink);
+}
+
+.dynamic-form {
+  margin-bottom: 1rem;
+}
+
+.field-group {
+  margin: 0 0 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 252, 240, 0.58);
+}
+
+.field-group h3 {
+  margin: 0 0 0.8rem;
+  color: var(--green);
+  font-size: 0.92rem;
+}
+
+.field-error {
+  color: var(--red);
+  font-size: 0.76rem;
+}
+
+.field-description {
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .help-text {

@@ -344,8 +344,25 @@ public class ProtocolSchemaService {
                                 List.of("true", "false"), "advanced"),
                         field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
                         field("heartbeatInterval", "number", "Heartbeat interval (ms)", false, "60000", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("sessionExpiryInterval", "number", "Session expiry interval (s)", false, "86400", null, "advanced"),
+                        field("receiveMaximum", "number", "Receive maximum", false, "65535", null, "advanced"),
+                        field("willTopic", "string", "Will topic", false, "", null, "topic"),
+                        field("willMessage", "string", "Will message", false, "", null, "topic"),
+                        field("willQos", "select", "Will QoS", false, "0",
+                                List.of("0", "1", "2"), "topic"),
+                        field("willRetained", "boolean", "Will retained flag", false, "false",
+                                List.of("true", "false"), "topic"),
+                        field("authTopic", "string", "Auth topic", false, "", null, "security"),
+                        field("messageProperties", "object", "MQTT v5 message properties", false, "{}", null, "advanced"),
+                        field("maxPendingMessages", "number", "Max pending messages", false, "5000", null, "advanced"),
+                        field("dispatchBatchSize", "number", "Dispatch batch size", false, "1", null, "advanced"),
+                        field("dispatchFlushInterval", "number", "Dispatch flush interval (ms)", false, "0", null, "advanced"),
                         field("overflowStrategy", "select", "Overflow strategy", false, "BLOCK",
-                                List.of("BLOCK", "DROP_LATEST", "DROP_OLDEST"), "advanced")));
+                                List.of("BLOCK", "DROP_LATEST", "DROP_OLDEST"), "advanced"),
+                        field("productKey", "string", "Product key", false, "", null, "security"),
+                        field("deviceSecret", "password", "Device secret", false, "", null, "security"),
+                        field("authParams", "object", "Extended auth params", false, "{}", null, "security")));
     }
 
     private ProtocolSchema snmp() {
@@ -373,6 +390,10 @@ public class ProtocolSchemaService {
                                 "security", "snmpSecurityLevel=authPriv"),
                         conditional("snmpPrivPassword", "password", "SNMPv3 privacy password", false, "", null,
                                 "security", "snmpSecurityLevel=authPriv"),
+                        conditional("snmpContextName", "string", "SNMPv3 context name", false, "", null,
+                                "security", "snmpVersion=3"),
+                        conditional("snmpContextEngineId", "string", "SNMPv3 context engine ID", false, "", null,
+                                "security", "snmpVersion=3"),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"),
                         field("snmpRetries", "number", "Retry count", false, "1", null, "advanced")));
@@ -390,6 +411,9 @@ public class ProtocolSchemaService {
                         field("scheme", "select", "Scheme", false, "coap", List.of("coap", "coaps"), "connection"),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
                         field("timeout", "number", "Protocol timeout (ms)", false, "3000", null, "advanced"),
+                        field("maxPendingMessages", "number", "Max pending requests", false, "1024", null, "advanced"),
+                        field("dispatchBatchSize", "number", "Dispatch batch size", false, "1", null, "advanced"),
+                        field("dispatchFlushInterval", "number", "Dispatch flush interval (ms)", false, "0", null, "advanced"),
                         field("overflowStrategy", "select", "Overflow strategy", false, "BLOCK",
                                 List.of("BLOCK", "DROP_LATEST", "DROP_OLDEST"), "advanced")));
     }
@@ -412,10 +436,20 @@ public class ProtocolSchemaService {
                         field("queryParams", "object", "Query parameters", false, "{}", null, "request"),
                         field("sendEndpoint", "string", "Send endpoint", false, "/api/data", null, "request"),
                         field("receiveEndpoint", "string", "Receive endpoint", false, "/api/receive", null, "request"),
+                        field("receiveMethod", "select", "Receive method", false, "GET",
+                                List.of("GET", "POST", "PUT", "DELETE"), "request"),
                         field("healthCheckPath", "string", "Health check path", false, "/health", null, "advanced"),
+                        field("heartbeatEndpoint", "string", "Heartbeat endpoint", false, "/health", null, "advanced"),
                         field("username", "string", "Username", false, "", null, "security"),
                         field("password", "password", "Password", false, "", null, "security"),
                         field("authToken", "password", "Bearer token", false, "", null, "security"),
+                        field("authEndpoint", "string", "Auth endpoint", false, "/api/auth", null, "security"),
+                        field("authMethod", "select", "Auth method", false, "POST",
+                                List.of("GET", "POST", "PUT", "DELETE"), "security"),
+                        field("proxyHost", "string", "Proxy host", false, "", null, "advanced"),
+                        field("proxyPort", "number", "Proxy port", false, "8080", null, "advanced"),
+                        field("deviceSecret", "password", "Device secret", false, "", null, "security"),
+                        field("authParams", "object", "Extended auth params", false, "{}", null, "security"),
                         field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced")));
     }
@@ -437,13 +471,21 @@ public class ProtocolSchemaService {
                         field("username", "string", "Username", false, "", null, "security"),
                         field("password", "password", "Password", false, "", null, "security"),
                         field("authToken", "password", "Bearer token", false, "", null, "security"),
+                        field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("writeTimeout", "number", "Write timeout (ms)", false, "5000", null, "advanced"),
                         field("subprotocol", "string", "Subprotocol", false, "collector-v1", null, "advanced"),
                         field("binaryMode", "boolean", "Binary mode", false, "false",
                                 List.of("true", "false"), "advanced"),
                         field("heartbeatInterval", "number", "Heartbeat interval (ms)", false, "60000", null, "advanced"),
                         field("heartbeatMessage", "string", "Heartbeat message", false, "ping", null, "advanced"),
                         field("heartbeatUsePing", "boolean", "Use ping frame", false, "true",
-                                List.of("true", "false"), "advanced")));
+                                List.of("true", "false"), "advanced"),
+                        field("authWaitResponse", "boolean", "Wait for auth response", false, "true",
+                                List.of("true", "false"), "security"),
+                        field("productKey", "string", "Product key", false, "", null, "security"),
+                        field("deviceSecret", "password", "Device secret", false, "", null, "security"),
+                        field("authParams", "object", "Extended auth params", false, "{}", null, "security")));
     }
 
     private ProtocolSchema customTcp() {
