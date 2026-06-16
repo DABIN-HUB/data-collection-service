@@ -3,6 +3,7 @@ package com.wangbin.collector.core.connection.factory;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,9 @@ public class ConnectionFactory {
     @Autowired(required = false)
     private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
 
+    @Autowired(required = false)
+    private ProtocolDescriptorRegistry protocolDescriptorRegistry = new ProtocolDescriptorRegistry();
+
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new IllegalArgumentException("设备信息无效");
@@ -52,9 +56,9 @@ public class ConnectionFactory {
             case "MODBUS_TCP" -> createModbusTcpConnection(deviceInfo, cfg);
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
-            case "OPC_UA", "OPCUA", "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
-            case "IEC104", "IEC_104" -> createIec104Connection(deviceInfo, cfg);
-            case "IEC61850", "IEC_61850" -> createIec61850Connection(deviceInfo, cfg);
+            case "OPC_UA", "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
+            case "IEC104" -> createIec104Connection(deviceInfo, cfg);
+            case "IEC61850" -> createIec61850Connection(deviceInfo, cfg);
             default -> throw new CollectorException(
                     String.format("不支持的连接类型: %s", connectionType),
                     deviceInfo.getDeviceId(), null
@@ -76,91 +80,11 @@ public class ConnectionFactory {
     }
 
     private String canonicalizeConnectionType(String type, DeviceConnection cfg) {
-        return switch (type) {
-            case "HTTPS" -> {
-                enableSsl(cfg);
-                setDefaultPort(cfg, 443);
-                yield "HTTP";
-            }
-            case "WEBSOCKET_SSL" -> {
-                enableSsl(cfg);
-                setDefaultPort(cfg, 443);
-                yield "WEBSOCKET";
-            }
-            case "MQTT_SSL" -> {
-                enableSsl(cfg);
-                setDefaultPort(cfg, 8883);
-                yield "MQTT";
-            }
-            case "COAP_SSL" -> {
-                enableSsl(cfg);
-                setDefaultPort(cfg, 5684);
-                putExtIfAbsent(cfg, "scheme", "coaps");
-                yield "COAP";
-            }
-            case "SNMP_V1" -> {
-                putExtIfAbsent(cfg, "snmpVersion", "1");
-                setDefaultPort(cfg, 161);
-                yield "SNMP";
-            }
-            case "SNMP_V2C" -> {
-                putExtIfAbsent(cfg, "snmpVersion", "2c");
-                setDefaultPort(cfg, 161);
-                yield "SNMP";
-            }
-            case "SNMP_V3" -> {
-                putExtIfAbsent(cfg, "snmpVersion", "3");
-                setDefaultPort(cfg, 161);
-                yield "SNMP";
-            }
-            case "SIEMENS_S7", "S7" -> {
-                setDefaultPort(cfg, 102);
-                yield "SIEMENS_S7";
-            }
-            case "ETHERNET_IP", "EIP", "LOGIX", "AB_ETH" -> {
-                setDefaultPort(cfg, 44818);
-                yield "ETHERNET_IP";
-            }
-            case "ADS", "AMS" -> {
-                setDefaultPort(cfg, 48898);
-                yield "ADS";
-            }
-            case "OPC_UA", "OPCUA" -> {
-                setDefaultPort(cfg, 4840);
-                yield "OPC_UA";
-            }
-            case "OPC_UA_PLC4X", "OPCUA_PLC4X" -> {
-                setDefaultPort(cfg, 4840);
-                yield "OPC_UA_PLC4X";
-            }
-            case "MODBUS_ASCII" -> "MODBUS_RTU";
-            case "IEC_104" -> "IEC104";
-            case "IEC_61850" -> "IEC61850";
-            case "CUSTOM_TCP" -> "TCP";
-            default -> type;
-        };
+        return protocolDescriptorRegistry.applyConnectionDefaults(type, cfg);
     }
 
     private String normalize(String type) {
         return type.toUpperCase().replace("-", "_");
-    }
-
-    private void enableSsl(DeviceConnection cfg) {
-        cfg.setSslEnabled(true);
-    }
-
-    private void setDefaultPort(DeviceConnection cfg, int port) {
-        if (cfg.getPort() == null) {
-            cfg.setPort(port);
-        }
-    }
-
-    private void putExtIfAbsent(DeviceConnection cfg, String key, Object value) {
-        if (cfg.getExtJson() == null) {
-            cfg.setExtJson(new LinkedHashMap<>());
-        }
-        Map<String, Object> extJson = cfg.getExtJson();
-        extJson.putIfAbsent(key, value);
     }
 
     private ConnectionAdapter<?> createTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {

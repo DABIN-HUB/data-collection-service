@@ -1,116 +1,87 @@
 package com.wangbin.collector.core.cache.aspect;
 
-import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
-import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
-import com.wangbin.collector.core.cache.model.CacheKey;
-import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
-import com.wangbin.collector.core.report.service.CacheReportService;
-import com.wangbin.collector.storage.service.HistoryDataService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Asynchronous post-processing for collected data.
+ * Async entrypoint for telemetry post-processing.
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class CollectorDataPostProcessor {
 
-    @Autowired
-    private MultiLevelCacheManager multiLevelCacheManager;
+    @Qualifier("cacheAsyncExecutor")
+    private final Executor cacheAsyncExecutor;
+    private final TelemetryPostProcessPipeline pipeline;
 
-    @Autowired
-    private CacheReportService cacheReportService;
-
-    @Autowired
-    private TelemetryStreamService telemetryStreamService;
-
-    @Autowired(required = false)
-    private HistoryDataService historyDataService;
-
-    @Async("cacheAsyncExecutor")
     public void savePointAsync(String deviceId, DataPoint point, Object value) {
-        try {
-            if (!shouldCache(point) || value == null) {
-                log.debug("skip cache for {}.{}", deviceId, point.getPointName());
+        submit(deviceId, point, () -> {
+            ProcessResult processResult = toProcessResult(value);
+            if (processResult == null) {
                 return;
             }
-
-            CacheKey cacheKey = CacheKey.dataKey(deviceId, point.getPointId());
-            long expireTime = getCacheExpireTime(point);
-            multiLevelCacheManager.put(cacheKey, value, expireTime);
-
-            ProcessResult processResult = toProcessResult(value);
-            telemetryStreamService.append(deviceId, point, processResult);
-            if (historyDataService != null) {
-                historyDataService.savePoint(deviceId, point, processResult);
-            }
-            cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, value);
-        } catch (Exception e) {
-            log.error("async cache failed", e);
-        }
+            pipeline.process(new TelemetryPostProcessContext(
+                    deviceId,
+                    point,
+                    processResult,
+                    value,
+                    System.currentTimeMillis()
+            ));
+        });
     }
 
-    @Async("cacheAsyncExecutor")
-    public void saveBatchAsync(String deviceId, List<DataPoint> points, Map<String, Object> values,
+    public void saveBatchAsync(String deviceId,
+                               List<DataPoint> points,
+                               Map<String, Object> values,
                                BaseCollector collector) {
-        try {
+        submit(deviceId, null, () -> {
+            if (points == null || values == null || values.isEmpty()) {
+                return;
+            }
             for (DataPoint point : points) {
+                if (point == null) {
+                    continue;
+                }
                 String pointId = point.getPointId();
                 Object value = values.get(pointId);
-
-                if (value != null && shouldCache(point)) {
-                    ProcessResult processResult = collector != null
-                            ? collector.getLatestProcessResult(pointId) : null;
-                    Object cacheValue = processResult != null ? processResult : value;
-                    CacheKey cacheKey = CacheKey.dataKey(deviceId, pointId);
-                    long expireTime = getCacheExpireTime(point);
-                    multiLevelCacheManager.put(cacheKey, cacheValue, expireTime);
-
-                    ProcessResult normalized = toProcessResult(cacheValue);
-                    telemetryStreamService.append(deviceId, point, normalized);
-                    if (historyDataService != null) {
-                        historyDataService.savePoint(deviceId, point, normalized);
-                    }
-                    cacheReportService.reportPoint(deviceId, MessageConstant.MESSAGE_TYPE_PROPERTY_POST, point, normalized);
+                if (value == null) {
+                    continue;
                 }
+                ProcessResult collectorResult = collector != null
+                        ? collector.getLatestProcessResult(pointId)
+                        : null;
+                Object cacheValue = collectorResult != null ? collectorResult : value;
+                ProcessResult processResult = toProcessResult(cacheValue);
+                if (processResult == null) {
+                    continue;
+                }
+                pipeline.process(new TelemetryPostProcessContext(
+                        deviceId,
+                        point,
+                        processResult,
+                        cacheValue,
+                        System.currentTimeMillis()
+                ));
             }
-
-            log.debug("async batch cache success, device={}, points={}", deviceId, points.size());
-        } catch (Exception e) {
-            log.error("async batch cache failed", e);
-        }
-    }
-
-    private boolean shouldCache(DataPoint point) {
-        return point != null && point.needCache();
-    }
-
-    private long getCacheExpireTime(DataPoint point) {
-        if (point.getCacheDuration() != null && point.getCacheDuration() > 0) {
-            return point.getCacheDuration() * 1000L;
-        }
-
-        if (point.getPriority() != null) {
-            if (point.getPriority() <= 3) {
-                return 7200_000L;
-            } else if (point.getPriority() <= 7) {
-                return 3600_000L;
-            }
-        }
-
-        return 1800_000L;
+            log.debug("async batch post-process success, device={}, points={}", deviceId, points.size());
+        });
     }
 
     private ProcessResult toProcessResult(Object value) {
+        if (value == null) {
+            return null;
+        }
         if (value instanceof ProcessResult processResult) {
             return processResult;
         }
@@ -118,7 +89,30 @@ public class CollectorDataPostProcessor {
         fallback.setSuccess(true);
         fallback.setRawValue(value);
         fallback.setProcessedValue(value);
-        fallback.setMessage("fallback process result for stream");
+        fallback.setMessage("fallback process result for telemetry pipeline");
         return fallback;
+    }
+
+    private void submit(String deviceId, DataPoint point, Runnable task) {
+        if (deviceId == null || deviceId.isBlank() || task == null) {
+            return;
+        }
+        try {
+            cacheAsyncExecutor.execute(() -> {
+                try {
+                    task.run();
+                } catch (Exception e) {
+                    log.error("async telemetry post-process failed, device={}, point={}",
+                            deviceId,
+                            point != null ? point.getPointId() : "batch",
+                            e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("telemetry post-process rejected, device={}, point={}, reason={}",
+                    deviceId,
+                    point != null ? point.getPointId() : "batch",
+                    e.getMessage());
+        }
     }
 }

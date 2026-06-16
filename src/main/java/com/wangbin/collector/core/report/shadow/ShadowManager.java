@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /**
  * 设备影子管理器：负责缓存设备最新属性、判断变化/事件触发，并维护需要刷新的设备列表。
@@ -43,6 +44,7 @@ public class ShadowManager {
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final String DEFAULT_SHADOW_KEY_PREFIX = "collector:shadow:";
+    private static final String DEFAULT_DIRTY_SET_KEY = "collector:shadow:dirty";
     private static final String SHADOW_CAS_SCRIPT = """
             local current = redis.call('GET', KEYS[1])
             local expected = ARGV[1]
@@ -91,18 +93,28 @@ public class ShadowManager {
         if (deviceId == null || point == null || result == null) {
             return ShadowUpdateResult.EMPTY;
         }
+        String reportField = point.getReportField();
+        boolean shouldMarkDirty = reportField != null && point.isReportEnabled();
+        ShadowUpdateResult updateResult = mutateReportedShadow(deviceId,
+                shadow -> applyToShadow(shadow, deviceId, point, result));
+        if (shouldMarkDirty) {
+            markDirty(deviceId);
+        }
+        return updateResult != null ? updateResult : ShadowUpdateResult.EMPTY;
+    }
 
-        DeviceShadow shadow = shadows.computeIfAbsent(deviceId, DeviceShadow::new);
+    private ShadowUpdateResult applyToShadow(DeviceShadow shadow,
+                                             String deviceId,
+                                             DataPoint point,
+                                             ProcessResult result) {
         boolean changeTriggered = false;
         EventInfo eventInfo = null;
         String field = point.getReportField();
-
 
         if (field != null && point.isReportEnabled()) {
             QualityEnum qualityEnum = QualityEnum.fromCode(result.getQuality());
             ValueMeta meta = new ValueMeta(result.getFinalValue(), System.currentTimeMillis(), qualityEnum.getText());
             shadow.update(field, meta, point);
-            dirtyDevices.add(deviceId);
             changeTriggered = shouldTriggerChange(shadow, point, result, field);
         }
 
@@ -112,8 +124,6 @@ public class ShadowManager {
                     : Optional.ofNullable(point.getPointCode()).orElse(point.getPointId());
             eventInfo = evaluateEvent(shadow, point, result, eventFieldKey);
         }
-
-        persistShadow(shadow);
         return new ShadowUpdateResult(changeTriggered, eventInfo);
     }
 
@@ -280,32 +290,33 @@ public class ShadowManager {
     }
 
     public Set<String> getDirtyDevices() {
-        return Collections.unmodifiableSet(dirtyDevices);
+        Set<String> devices = new java.util.LinkedHashSet<>(dirtyDevices);
+        devices.addAll(loadPersistedDirtyDevices());
+        return Collections.unmodifiableSet(devices);
     }
 
     public void clearDirty(String deviceId) {
         if (deviceId != null) {
             dirtyDevices.remove(deviceId);
+            removePersistedDirty(deviceId);
         }
     }
 
     public void markReported(String deviceId, long windowStart, long windowEnd) {
-        DeviceShadow shadow = getShadow(deviceId);
-        if (shadow != null) {
+        mutateReportedShadow(deviceId, shadow -> {
             shadow.setLastReportAt(System.currentTimeMillis());
             shadow.setLastWindow(windowStart, windowEnd);
-            persistShadow(shadow);
-        }
+            return shadow;
+        });
         clearDirty(deviceId);
     }
 
     public void markReportedValues(String deviceId,
                                    Map<String, Object> properties) {
-        DeviceShadow shadow = getShadow(deviceId);
-        if (shadow != null) {
+        mutateReportedShadow(deviceId, shadow -> {
             shadow.markReportedValues(properties);
-            persistShadow(shadow);
-        }
+            return shadow;
+        });
     }
 
     public void removeShadow(String deviceId) {
@@ -313,7 +324,7 @@ public class ShadowManager {
             return;
         }
         shadows.remove(deviceId);
-        dirtyDevices.remove(deviceId);
+        clearDirty(deviceId);
         deletePersistedShadow(deviceId);
     }
 
@@ -507,6 +518,52 @@ public class ShadowManager {
         }
         DeviceShadow shadow = getShadow(deviceId);
         return shadow == null ? null : clearDesiredStrict(deviceId, fields, shadow);
+    }
+
+    private <T> T mutateReportedShadow(String deviceId, Function<DeviceShadow, T> mutator) {
+        if (deviceId == null || deviceId.isBlank() || mutator == null) {
+            return null;
+        }
+        if (!redisCasEnabled()) {
+            DeviceShadow shadow = resolveWritableShadow(deviceId);
+            synchronized (shadow) {
+                T result = mutator.apply(shadow);
+                persistShadow(shadow);
+                shadows.put(deviceId, shadow);
+                return result;
+            }
+        }
+
+        IllegalStateException lastConflict = null;
+        int attempts = shadowMergeAttempts();
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            DeviceShadow shadow = resolveWritableShadow(deviceId);
+            long previousVersion;
+            T result;
+            Map<String, Object> document;
+            synchronized (shadow) {
+                previousVersion = shadow.currentVersion();
+                result = mutator.apply(shadow);
+                document = buildShadowDocument(shadow);
+            }
+            try {
+                persistDocumentCas(deviceId, document, previousVersion, "reported_update");
+                shadows.put(deviceId, shadow);
+                return result;
+            } catch (ShadowVersionConflictException e) {
+                lastConflict = e;
+                reloadLocalShadow(deviceId);
+                log.debug("璁惧褰卞瓙 reported CAS 鍐茬獊锛屽噯澶囬噸璇?deviceId={} attempt={} err={}",
+                        deviceId, attempt + 1, e.getMessage());
+            } catch (IllegalStateException e) {
+                reloadLocalShadow(deviceId);
+                throw e;
+            }
+        }
+        if (lastConflict != null) {
+            throw lastConflict;
+        }
+        return null;
     }
 
     private DeviceShadow resolveWritableShadow(String deviceId) {
@@ -781,6 +838,81 @@ public class ShadowManager {
             prefix = DEFAULT_SHADOW_KEY_PREFIX + "history:";
         }
         return prefix + deviceId;
+    }
+
+    private void markDirty(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return;
+        }
+        dirtyDevices.add(deviceId);
+        try {
+            if (stringRedisTemplate != null && shadowPersistenceEnabled()) {
+                stringRedisTemplate.opsForSet().add(dirtySetKey(), deviceId);
+                long ttlMs = shadowTtlMillis();
+                if (ttlMs > 0) {
+                    stringRedisTemplate.expire(dirtySetKey(), ttlMs, TimeUnit.MILLISECONDS);
+                }
+                return;
+            }
+            if (redisTemplate != null && shadowPersistenceEnabled()) {
+                redisTemplate.opsForSet().add(dirtySetKey(), deviceId);
+                long ttlMs = shadowTtlMillis();
+                if (ttlMs > 0) {
+                    redisTemplate.expire(dirtySetKey(), ttlMs, TimeUnit.MILLISECONDS);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("鏍囪褰卞瓙 dirty 璁惧澶辫触 deviceId={} err={}", deviceId, e.getMessage());
+        }
+    }
+
+    private Set<String> loadPersistedDirtyDevices() {
+        if (!shadowPersistenceEnabled()) {
+            return Collections.emptySet();
+        }
+        try {
+            if (stringRedisTemplate != null) {
+                Set<String> members = stringRedisTemplate.opsForSet().members(dirtySetKey());
+                return members != null ? members : Collections.emptySet();
+            }
+            if (redisTemplate != null) {
+                Set<Object> members = redisTemplate.opsForSet().members(dirtySetKey());
+                if (members == null || members.isEmpty()) {
+                    return Collections.emptySet();
+                }
+                Set<String> values = new java.util.LinkedHashSet<>();
+                for (Object member : members) {
+                    if (member != null) {
+                        values.add(String.valueOf(member));
+                    }
+                }
+                return values;
+            }
+        } catch (Exception e) {
+            log.warn("鍔犺浇褰卞瓙 dirty 璁惧闆嗗悎澶辫触 err={}", e.getMessage());
+        }
+        return Collections.emptySet();
+    }
+
+    private void removePersistedDirty(String deviceId) {
+        try {
+            if (stringRedisTemplate != null) {
+                stringRedisTemplate.opsForSet().remove(dirtySetKey(), deviceId);
+            }
+            if (redisTemplate != null) {
+                redisTemplate.opsForSet().remove(dirtySetKey(), deviceId);
+            }
+        } catch (Exception e) {
+            log.warn("绉婚櫎褰卞瓙 dirty 璁惧澶辫触 deviceId={} err={}", deviceId, e.getMessage());
+        }
+    }
+
+    private String dirtySetKey() {
+        ReportProperties.Shadow shadow = reportProperties.getShadow();
+        if (shadow == null || shadow.getKeyPrefix() == null || shadow.getKeyPrefix().isBlank()) {
+            return DEFAULT_DIRTY_SET_KEY;
+        }
+        return shadow.getKeyPrefix() + "dirty";
     }
 
     private DeviceShadow refreshLocalShadowIfVersionMismatch(String deviceId,

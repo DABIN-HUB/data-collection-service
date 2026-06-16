@@ -20,10 +20,16 @@ public class ProtocolSchemaService {
     private static final List<String> COMMON_DATA_TYPES = List.of(
             "INT", "FLOAT", "DOUBLE", "BOOLEAN", "STRING", "BYTE", "SHORT", "LONG", "UINT16", "UINT32");
 
+    private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
     private final Map<String, ProtocolSchema> schemas;
     private final Map<String, String> aliases;
 
     public ProtocolSchemaService() {
+        this(new ProtocolDescriptorRegistry());
+    }
+
+    public ProtocolSchemaService(ProtocolDescriptorRegistry protocolDescriptorRegistry) {
+        this.protocolDescriptorRegistry = protocolDescriptorRegistry;
         LinkedHashMap<String, ProtocolSchema> built = new LinkedHashMap<>();
         register(built, modbusTcp());
         register(built, modbusRtu());
@@ -44,10 +50,13 @@ public class ProtocolSchemaService {
         this.schemas = Collections.unmodifiableMap(built);
 
         LinkedHashMap<String, String> aliasMap = new LinkedHashMap<>();
-        built.values().forEach(schema -> {
-            aliasMap.put(normalize(schema.getProtocol()), schema.getProtocol());
-            schema.getAliases().forEach(alias -> aliasMap.put(normalize(alias), schema.getProtocol()));
-        });
+        for (String code : protocolDescriptorRegistry.allSupportedCodes()) {
+            String canonical = protocolDescriptorRegistry.canonicalProtocol(code);
+            if (canonical != null && built.containsKey(canonical)) {
+                aliasMap.put(normalize(code), canonical);
+            }
+        }
+        built.keySet().forEach(protocol -> aliasMap.putIfAbsent(normalize(protocol), protocol));
         this.aliases = Collections.unmodifiableMap(aliasMap);
     }
 

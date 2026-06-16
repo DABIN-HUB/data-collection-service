@@ -27,6 +27,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSocket> implements AutoCloseable {
 
+    private static final ScheduledExecutorService DEFAULT_HEARTBEAT_SCHEDULER =
+            Executors.newScheduledThreadPool(2, runnable -> {
+                Thread thread = new Thread(runnable, "websocket-heartbeat-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     private WebSocket webSocket;
     private HttpClient httpClient;
     private String wsUrl;
@@ -34,7 +41,6 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private BlockingQueue<byte[]> messageQueue;
     private CompletableFuture<WebSocket> wsFuture;
     private ScheduledExecutorService heartbeatScheduler;
-    private ScheduledExecutorService ownedHeartbeatScheduler;
     private ScheduledFuture<?> heartbeatTask;
     private Executor httpExecutor;
     private AtomicBoolean closing = new AtomicBoolean(false);
@@ -295,7 +301,6 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
                 webSocket = null;
                 wsFuture = null;
                 messageQueue.clear();
-                shutdownOwnedHeartbeatScheduler();
                 closing.set(false);
             }
         }
@@ -488,26 +493,13 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
             return heartbeatScheduler;
         }
-        if (ownedHeartbeatScheduler == null || ownedHeartbeatScheduler.isShutdown()) {
-            ownedHeartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                String id = deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
-                Thread thread = new Thread(r, "websocket-heartbeat-" + id);
-                thread.setDaemon(true);
-                return thread;
-            });
-        }
-        heartbeatScheduler = ownedHeartbeatScheduler;
+        heartbeatScheduler = DEFAULT_HEARTBEAT_SCHEDULER;
         return heartbeatScheduler;
     }
 
     private void shutdownOwnedHeartbeatScheduler() {
-        ScheduledExecutorService owned = ownedHeartbeatScheduler;
-        if (owned != null && !owned.isShutdown()) {
-            owned.shutdownNow();
-            if (heartbeatScheduler == owned) {
-                heartbeatScheduler = null;
-            }
-            ownedHeartbeatScheduler = null;
+        if (heartbeatScheduler != null && heartbeatScheduler.isShutdown()) {
+            heartbeatScheduler = null;
         }
     }
 
@@ -525,8 +517,6 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             disconnect();
         } catch (Exception e) {
             log.error("关闭WebSocket连接异常", e);
-        } finally {
-            shutdownOwnedHeartbeatScheduler();
         }
     }
 

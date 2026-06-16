@@ -95,7 +95,9 @@ public class ThreadPoolConfig {
         executor.setQueueCapacity(5000);
         executor.setKeepAliveSeconds(60);
         executor.setThreadNamePrefix("report-task-");
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
     }

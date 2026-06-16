@@ -115,7 +115,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected int doDeleteByPattern(String pattern) throws Exception {
         try {
-            Set<String> keys = redisTemplate.keys(buildRedisPattern(pattern));
+            Set<String> keys = scanKeys(buildRedisPattern(pattern));
             if (keys == null || keys.isEmpty()) {
                 return 0;
             }
@@ -193,7 +193,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     protected void doClear() throws Exception {
         try {
             String pattern = keyPrefix + "*";
-            Set<String> keys = redisTemplate.keys(pattern);
+            Set<String> keys = scanKeys(pattern);
             if (keys != null && !keys.isEmpty()) {
                 redisTemplate.delete(keys);
             }
@@ -207,7 +207,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     protected long doSize() throws Exception {
         try {
             String pattern = keyPrefix + "*";
-            Set<String> keys = redisTemplate.keys(pattern);
+            Set<String> keys = scanKeys(pattern);
             return keys != null ? keys.size() : 0;
         } catch (Exception e) {
             log.error("Redis获取缓存大小失败", e);
@@ -223,7 +223,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected Set<CacheKey> doKeys(String pattern) throws Exception {
         try {
-            Set<String> redisKeys = redisTemplate.keys(buildRedisPattern(pattern));
+            Set<String> redisKeys = scanKeys(buildRedisPattern(pattern));
             if (redisKeys == null || redisKeys.isEmpty()) {
                 return Collections.emptySet();
             }
@@ -519,6 +519,29 @@ public class RedisCacheManager extends AbstractCacheManager {
             return keyPrefix + "*";
         }
         return keyPrefix + pattern;
+    }
+
+    private Set<String> scanKeys(String pattern) {
+        if (pattern == null || pattern.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> keys = redisTemplate.execute((RedisCallback<Set<String>>) connection -> {
+            Set<String> scannedKeys = new LinkedHashSet<>();
+            ScanOptions options = ScanOptions.scanOptions()
+                    .match(pattern)
+                    .count(1000)
+                    .build();
+            try (Cursor<byte[]> cursor = connection.scan(options)) {
+                while (cursor.hasNext()) {
+                    byte[] next = cursor.next();
+                    if (next != null) {
+                        scannedKeys.add(new String(next));
+                    }
+                }
+            }
+            return scannedKeys;
+        });
+        return keys != null ? keys : Collections.emptySet();
     }
 
     /**

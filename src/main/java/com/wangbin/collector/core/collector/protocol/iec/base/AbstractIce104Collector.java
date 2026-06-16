@@ -43,19 +43,22 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     private ScheduledFuture<?> generalInterrogationTask;
 
     private static final AtomicInteger TIMEOUT_THREAD_COUNTER = new AtomicInteger(0);
+    private static final ScheduledExecutorService DEFAULT_PROTOCOL_SCHEDULER =
+            Executors.newScheduledThreadPool(2, r -> {
+                Thread thread = new Thread(r, "iec104-protocol-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
+                thread.setDaemon(true);
+                thread.setUncaughtExceptionHandler((t, e) ->
+                        log.warn("IEC104 protocol scheduler thread {} failed", t.getName(), e));
+                return thread;
+            });
     @Autowired(required = false)
     @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
-    private ScheduledExecutorService fallbackProtocolScheduler;
     private final long defaultTimeout = 5000;
 
     @PreDestroy
     protected void shutdownSchedulers() {
         cancelGeneralInterrogationTask();
-        if (fallbackProtocolScheduler != null) {
-            fallbackProtocolScheduler.shutdownNow();
-            fallbackProtocolScheduler = null;
-        }
     }
 
     protected void initIec104Config(DeviceInfo deviceInfo) {
@@ -401,16 +404,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         if (protocolScheduler != null) {
             return protocolScheduler;
         }
-        if (fallbackProtocolScheduler == null) {
-            fallbackProtocolScheduler = Executors.newScheduledThreadPool(1, r -> {
-                Thread thread = new Thread(r, "iec104-protocol-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
-                thread.setDaemon(true);
-                thread.setUncaughtExceptionHandler((t, e) ->
-                        log.warn("IEC104 protocol scheduler thread {} failed", t.getName(), e));
-                return thread;
-            });
-        }
-        return fallbackProtocolScheduler;
+        return DEFAULT_PROTOCOL_SCHEDULER;
     }
 
     private void cancelGeneralInterrogationTask() {

@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * 上报管理器：根据协议调度具体的上报处理器。
@@ -79,7 +80,27 @@ public class ReportManager {
         if (!reportProperties.isEnabled()) {
             return CompletableFuture.completedFuture(disabledResult(data, config));
         }
-        return CompletableFuture.supplyAsync(() -> report(data, config), reportExecutor);
+        CompletableFuture<ReportResult> future = new CompletableFuture<>();
+        try {
+            reportExecutor.execute(() -> {
+                try {
+                    future.complete(report(data, config));
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("report executor rejected task, targetId={}, pointCode={}",
+                    config != null ? config.getTargetId() : "unknown",
+                    data != null ? data.getPointCode() : "unknown",
+                    e);
+            future.complete(ReportResult.error(
+                    data != null ? data.getPointCode() : "unknown",
+                    "report executor overloaded: " + e.getMessage(),
+                    config != null ? config.getTargetId() : "unknown"
+            ));
+        }
+        return future;
     }
 
     public ReportResult report(ReportData data, ReportConfig config) {

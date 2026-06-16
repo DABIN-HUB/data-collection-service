@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -175,10 +176,16 @@ class ShadowManagerTest {
     @Test
     void reportedPersistenceUsesConfiguredTtl() {
         properties.getShadow().setTtlSeconds(60);
+        properties.getShadow().setCasEnabled(false);
         ShadowManager manager = new ShadowManager(properties);
         StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
         ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        @SuppressWarnings("unchecked")
+        SetOperations<String, String> setOperations = mock(SetOperations.class);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(1L, 1L));
         ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
         ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
         DataPoint point = createPoint("dev-ttl", "temperature", Map.of(
@@ -189,6 +196,32 @@ class ShadowManagerTest {
         manager.apply("dev-ttl", point, buildResult(25.0, QualityEnum.GOOD.getCode()));
 
         verify(valueOperations).set(eq("collector:shadow:dev-ttl"), anyString(), eq(60000L), eq(TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void applyAndClearDirtyShouldSynchronizePersistedDirtySet() {
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        @SuppressWarnings("unchecked")
+        SetOperations<String, String> setOperations = mock(SetOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(1L, 1L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+
+        DataPoint point = createPoint("dev-dirty", "pressure", Map.of(
+                "reportEnabled", true,
+                "reportField", "pressure"
+        ));
+
+        manager.apply("dev-dirty", point, buildResult(8.0, QualityEnum.GOOD.getCode()));
+        verify(setOperations).add("collector:shadow:dirty", "dev-dirty");
+
+        manager.clearDirty("dev-dirty");
+        verify(setOperations).remove("collector:shadow:dirty", "dev-dirty");
     }
 
     @Test

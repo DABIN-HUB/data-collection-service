@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.eclipse.paho.mqttv5.client.*;
 import org.eclipse.paho.mqttv5.client.persist.MemoryPersistence;
@@ -35,12 +36,30 @@ import java.util.regex.Pattern;
 public class MqttReportHandler extends AbstractReportHandler {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ScheduledExecutorService DEFAULT_MONITOR_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "mqtt-report-monitor-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private static final ExecutorService DEFAULT_PUBLISH_EXECUTOR =
+            Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors()), r -> {
+                Thread thread = new Thread(r, "mqtt-report-io-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     private MqttClientManager clientManager;
     private MessagePublisher messagePublisher;
     private SubscriptionManager subscriptionManager;
     private final Map<String, MqttConnectionConfig> connectionConfigs = new ConcurrentHashMap<>();
     private final AckManager ackManager = new AckManager();
+    @Autowired(required = false)
+    @Qualifier("monitorExecutor")
+    private ScheduledExecutorService monitorExecutor;
+    @Autowired(required = false)
+    @Qualifier("ioIntensiveExecutor")
+    private ExecutorService ioExecutor;
     @Autowired(required = false)
     private MqttDownlinkService downlinkService;
 
@@ -52,10 +71,17 @@ public class MqttReportHandler extends AbstractReportHandler {
     protected void doInit() throws Exception {
         log.info("初始化MQTT v5报告处理器...");
 
-        clientManager = new MqttClientManager(ackManager, downlinkService);
+        clientManager = new MqttClientManager(
+                ackManager,
+                downlinkService,
+                monitorExecutor != null ? monitorExecutor : DEFAULT_MONITOR_EXECUTOR
+        );
         clientManager.init();
 
-        messagePublisher = new MessagePublisher(clientManager);
+        messagePublisher = new MessagePublisher(
+                clientManager,
+                ioExecutor != null ? ioExecutor : DEFAULT_PUBLISH_EXECUTOR
+        );
         messagePublisher.init();
 
         subscriptionManager = new SubscriptionManager(clientManager);
@@ -1085,18 +1111,23 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final Map<String, Long> lastReconnectErrorLog = new ConcurrentHashMap<>();
         //每10秒打印一次错误
         private static final long ERROR_LOG_INTERVAL_MS = 10000L;
-        private ScheduledExecutorService monitorExecutor;
+        private final ScheduledExecutorService monitorExecutor;
+        private ScheduledFuture<?> monitorFuture;
         private final AckManager ackManager;
         private final MqttDownlinkService downlinkService;
 
-        public MqttClientManager(AckManager ackManager, MqttDownlinkService downlinkService) {
+        public MqttClientManager(AckManager ackManager,
+                                 MqttDownlinkService downlinkService,
+                                 ScheduledExecutorService monitorExecutor) {
             this.ackManager = ackManager;
             this.downlinkService = downlinkService;
+            this.monitorExecutor = monitorExecutor;
         }
 
         public void init() {
-            monitorExecutor = Executors.newSingleThreadScheduledExecutor();
-            monitorExecutor.scheduleAtFixedRate(this::monitorClients, 30, 30, TimeUnit.SECONDS);
+            if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
+                monitorFuture = monitorExecutor.scheduleAtFixedRate(this::monitorClients, 30, 30, TimeUnit.SECONDS);
+            }
             log.info("MQTT v5客户端管理器初始化完成");
         }
 
@@ -1185,16 +1216,9 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         public void destroy() {
             // 停止监控任务
-            if (monitorExecutor != null) {
-                monitorExecutor.shutdown();
-                try {
-                    if (!monitorExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        monitorExecutor.shutdownNow();
-                    }
-                } catch (InterruptedException e) {
-                    monitorExecutor.shutdownNow();
-                    Thread.currentThread().interrupt();
-                }
+            if (monitorFuture != null) {
+                monitorFuture.cancel(false);
+                monitorFuture = null;
             }
 
             // 关闭所有客户端
@@ -1524,11 +1548,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final AtomicLong successPublishCount = new AtomicLong(0);
         private final AtomicLong failurePublishCount = new AtomicLong(0);
 
-        public MessagePublisher(MqttClientManager clientManager) {
+        public MessagePublisher(MqttClientManager clientManager, ExecutorService publishExecutor) {
             this.clientManager = clientManager;
-            this.publishExecutor = Executors.newFixedThreadPool(
-                    Runtime.getRuntime().availableProcessors() * 2
-            );
+            this.publishExecutor = publishExecutor;
         }
 
         public void init() {
@@ -1642,19 +1664,6 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         public void destroy() {
-            // 关闭线程池
-            if (publishExecutor != null) {
-                publishExecutor.shutdown();
-                try {
-                    if (!publishExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                        publishExecutor.shutdownNow();
-                    }
-                } catch (InterruptedException e) {
-                    publishExecutor.shutdownNow();
-                    Thread.currentThread().interrupt();
-                }
-            }
-
             log.info("MQTT v5消息发布管理器销毁完成");
         }
 
