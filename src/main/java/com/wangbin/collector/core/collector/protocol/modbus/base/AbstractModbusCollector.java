@@ -309,9 +309,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
-    private void processWriteBatch(BatchKey key,
-                                   List<WriteEntry> entries,
-                                   Map<String, Boolean> results) {
+    private void processWriteBatch(BatchKey key,List<WriteEntry> entries,Map<String, Boolean> results) {
         int limit = key.registerType == RegisterType.COIL ? MAX_WRITE_COILS : MAX_WRITE_REGISTERS;
         List<WriteEntry> chunk = new ArrayList<>();
         int chunkStart = -1;
@@ -346,10 +344,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
-    private void flushWriteChunk(BatchKey key,
-                                 int startAddress,
-                                 List<WriteEntry> chunk,
-                                 Map<String, Boolean> results) {
+    private void flushWriteChunk(BatchKey key,int startAddress,List<WriteEntry> chunk,Map<String, Boolean> results) {
         if (chunk.isEmpty()) {
             return;
         }
