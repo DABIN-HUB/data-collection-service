@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.factory;
 
 import com.wangbin.collector.common.domain.enums.ProtocolType;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,7 +10,7 @@ class CollectorFactoryProtocolMappingTest {
 
     @Test
     void shouldSupportAllProtocolTypeEnumCodes() {
-        CollectorFactory factory = new CollectorFactory();
+        CollectorFactory factory = new CollectorFactory(new ProtocolDescriptorRegistry());
 
         for (ProtocolType protocolType : ProtocolType.values()) {
             assertTrue(

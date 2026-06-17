@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
 import com.alibaba.fastjson2.JSON;
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
@@ -21,7 +22,8 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * HTTP鏉╃偞甯撮柅鍌炲帳閸ｎ煉绱欐担璺ㄦ暏Java 11+ HttpClient閿?
@@ -29,7 +31,13 @@ import java.util.concurrent.ForkJoinPool;
 @Slf4j
 public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient> {
 
-    private static final Executor DEFAULT_HTTP_EXECUTOR = ForkJoinPool.commonPool();
+    private static final ExecutorService DEFAULT_HTTP_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()),
+            runnable -> {
+                Thread thread = new Thread(runnable, "http-connection-io-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     private HttpClient httpClient;
     private String baseUrl;
@@ -49,10 +57,16 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private void initialize() {
         this.baseUrl = buildBaseUrl();
         this.customHeaders = getCustomHeaders();
-        if (this.httpExecutor == null) {
-            this.httpExecutor = DEFAULT_HTTP_EXECUTOR;
-        }
+        this.httpExecutor = resolveHttpExecutor();
         this.httpClient = createHttpClient();
+    }
+
+    Executor resolveHttpExecutor() {
+        return ThreadPoolFallbacks.preferExecutor(
+                httpExecutor,
+                DEFAULT_HTTP_EXECUTOR,
+                "HttpConnectionAdapter",
+                "http-connection-io-shared");
     }
 
     private String buildBaseUrl() {

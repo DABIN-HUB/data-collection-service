@@ -302,17 +302,16 @@ public class ShadowManager {
         }
     }
 
-    public void markReported(String deviceId, long windowStart, long windowEnd) {
+    public void markReportedWindowCommitted(String deviceId, long windowStart, long windowEnd) {
         mutateReportedShadow(deviceId, shadow -> {
-            shadow.setLastReportAt(System.currentTimeMillis());
-            shadow.setLastWindow(windowStart, windowEnd);
+            shadow.markReportedWindowCommitted(System.currentTimeMillis(), windowStart, windowEnd);
             return shadow;
         });
         clearDirty(deviceId);
     }
 
-    public void markReportedValues(String deviceId,
-                                   Map<String, Object> properties) {
+    public void markReportedValuesChunk(String deviceId,
+                                        Map<String, Object> properties) {
         mutateReportedShadow(deviceId, shadow -> {
             shadow.markReportedValues(properties);
             return shadow;
@@ -590,6 +589,7 @@ public class ShadowManager {
         state.put("reported", toValueMap(shadow.snapshot()));
         state.put("desired", toValueMap(shadow.desiredSnapshot()));
         state.put("delta", toValueMap(shadow.deltaSnapshot()));
+        state.put("lastReported", new LinkedHashMap<>(shadow.snapshotLastReportedValues()));
         doc.put("state", state);
 
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -783,6 +783,7 @@ public class ShadowManager {
         Map<String, Object> metadata = toMap(document.get("metadata"));
         restoreValues(shadow, state.get("reported"), toMap(metadata.get("reported")), true);
         restoreValues(shadow, state.get("desired"), toMap(metadata.get("desired")), false);
+        shadow.restoreLastReportedValues(toMap(state.get("lastReported")));
         return shadow;
     }
 

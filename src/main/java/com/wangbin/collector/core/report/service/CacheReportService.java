@@ -1,6 +1,6 @@
-
 package com.wangbin.collector.core.report.service;
 
+import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
@@ -26,13 +26,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,14 +42,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ScheduledFuture;
-import java.time.Duration;
-import java.time.Instant;
 
 /**
- * 缓存上报服务：聚合快照/变化/事件并统一推送
+ * Aggregates telemetry changes into report snapshots and dispatches them.
  */
 @Slf4j
 @Service
@@ -56,6 +57,8 @@ import java.time.Instant;
 public class CacheReportService {
 
     private static final String SNAPSHOT_POINT_CODE = "snapshot";
+    private static final String FLUSH_LOCK_KEY_PREFIX = "collector:report:flush:";
+    private static final long FLUSH_LOCK_EXPIRE_MS = 30000L;
 
     private final ReportManager reportManager;
     private final ReportProperties reportProperties;
@@ -63,6 +66,8 @@ public class CacheReportService {
     private final ReportIdentityResolver identityResolver;
     private final ReportConfigProvider reportConfigProvider;
     private final GatewayRateLimiter gatewayRateLimiter;
+    @Nullable
+    private final DistributedLock distributedLock;
     @Qualifier("taskScheduler")
     private final TaskScheduler taskScheduler;
 
@@ -70,6 +75,7 @@ public class CacheReportService {
     private final ConcurrentMap<String, String> identityProductKeys = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
     private final ConcurrentMap<String, FlushTracker> flushTrackers = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, FlushSession> flushSessions = new ConcurrentHashMap<>();
     private ScheduledFuture<?> flushTask;
 
     @PostConstruct
@@ -114,7 +120,6 @@ public class CacheReportService {
         }
     }
 
-
     private String defaultProductKey() {
         ReportProperties.Mqtt mqtt = reportProperties.getMqtt();
         if (mqtt == null || mqtt.getGatewayProductKey() == null) {
@@ -144,7 +149,7 @@ public class CacheReportService {
             try {
                 flushDevice(deviceId);
             } catch (Exception e) {
-                log.error("刷新设备 {} 缓存数据失败", deviceId, e);
+                log.error("Flush dirty device failed: {}", deviceId, e);
             }
         }
     }
@@ -153,38 +158,45 @@ public class CacheReportService {
         if (!flushingDevices.add(deviceId)) {
             return;
         }
+
+        FlushSession session = tryOpenFlushSession(deviceId);
+        if (session == null) {
+            flushingDevices.remove(deviceId);
+            return;
+        }
+
         String gatewayDeviceId = identityGatewayMapping.get(deviceId);
         DeviceShadow shadow = shadowManager.getShadow(deviceId);
         if (gatewayDeviceId == null) {
-            log.warn("找不到云端设备 {} 对应的网关映射，跳过刷新", deviceId);
+            log.warn("Skip flush because gateway mapping is missing, device={}", deviceId);
             shadowManager.clearDirty(deviceId);
-            flushingDevices.remove(deviceId);
+            abortFlush(session);
             return;
         }
         if (shadow == null || shadow.isEmpty()) {
             shadowManager.clearDirty(deviceId);
-            flushingDevices.remove(deviceId);
+            abortFlush(session);
             return;
         }
 
         ReportData snapshot = buildSnapshot(shadow, gatewayDeviceId);
         if (!snapshot.hasProperties()) {
             shadowManager.clearDirty(deviceId);
-            flushingDevices.remove(deviceId);
+            abortFlush(session);
             return;
         }
 
         ReportConfig reportConfig = resolveReportConfig(deviceId);
         if (reportConfig == null || !reportConfig.validate()) {
-            log.warn("跳过设备 {}，上报配置无效", deviceId);
-            flushingDevices.remove(deviceId);
+            log.warn("Skip flush because report config is invalid, device={}", deviceId);
+            abortFlush(session);
             return;
         }
 
         List<ReportData> chunks = splitSnapshot(snapshot);
         if (chunks.isEmpty()) {
             shadowManager.clearDirty(deviceId);
-            flushingDevices.remove(deviceId);
+            abortFlush(session);
             return;
         }
 
@@ -193,11 +205,70 @@ public class CacheReportService {
                 deviceId,
                 now - reportProperties.getIntervalMs(),
                 now,
-                Math.max(0, reportProperties.getRetryTimes())
+                Math.max(0, reportProperties.getRetryTimes()),
+                Math.max(1, reportProperties.getMaxPendingChunksPerDevice())
         );
+        session.bind(tracker);
         flushTrackers.put(deviceId, tracker);
         for (ReportData chunk : chunks) {
-            dispatch(chunk, reportConfig, false, tracker);
+            dispatch(chunk, reportConfig, false, tracker, 0);
+        }
+    }
+
+    private @Nullable FlushSession tryOpenFlushSession(String deviceId) {
+        String lockKey = FLUSH_LOCK_KEY_PREFIX + deviceId;
+        DistributedLock.LockHandle lockHandle = null;
+        if (distributedLock != null) {
+            Optional<DistributedLock.LockHandle> acquired = distributedLock.tryLock(
+                    lockKey,
+                    FLUSH_LOCK_EXPIRE_MS,
+                    TimeUnit.MILLISECONDS
+            );
+            if (acquired.isEmpty()) {
+                log.debug("Skip flush because distributed lock is held, device={}", deviceId);
+                return null;
+            }
+            lockHandle = acquired.get();
+        }
+        FlushSession session = new FlushSession(deviceId, lockKey, lockHandle);
+        FlushSession previous = flushSessions.putIfAbsent(deviceId, session);
+        if (previous != null) {
+            if (lockHandle != null) {
+                lockHandle.unlock();
+            }
+            return null;
+        }
+        return session;
+    }
+
+    private void abortFlush(FlushSession session) {
+        closeFlushSession(session, false);
+    }
+
+    private void completeFlush(FlushTracker tracker) {
+        FlushSession session = flushSessions.get(tracker.deviceId);
+        if (!tracker.hasFailure()) {
+            shadowManager.markReportedWindowCommitted(tracker.deviceId, tracker.windowStart, tracker.windowEnd);
+        }
+        if (session != null) {
+            closeFlushSession(session, true);
+        } else {
+            flushTrackers.remove(tracker.deviceId);
+            flushingDevices.remove(tracker.deviceId);
+        }
+    }
+
+    private void closeFlushSession(FlushSession session, boolean clearTracker) {
+        FlushTracker tracker = session.tracker;
+        if (clearTracker && tracker != null) {
+            flushTrackers.remove(session.deviceId, tracker);
+        } else if (tracker != null && !tracker.hasOutstandingWork()) {
+            flushTrackers.remove(session.deviceId, tracker);
+        }
+        flushSessions.remove(session.deviceId, session);
+        flushingDevices.remove(session.deviceId);
+        if (session.lockHandle != null && !session.lockHandle.unlock()) {
+            log.debug("Distributed flush lock already released or expired, key={}", session.lockKey);
         }
     }
 
@@ -287,59 +358,80 @@ public class CacheReportService {
                           ReportConfig config,
                           boolean highPriority,
                           FlushTracker tracker) {
-        String chunkKey = tracker != null ? tracker.registerDispatch(data) : null;
+        dispatch(data, config, highPriority, tracker, 0);
+    }
+
+    private void dispatch(ReportData data,
+                          ReportConfig config,
+                          boolean highPriority,
+                          FlushTracker tracker,
+                          int attempt) {
+        String chunkKey = tracker != null ? tracker.tryRegisterDispatch(data) : null;
+        if (tracker != null && chunkKey == null) {
+            tracker.markFailure();
+            log.warn("Skip chunk dispatch due to pending limit, device={}, point={}",
+                    data.getDeviceId(), data.getPointCode());
+            completeIfIdle(tracker);
+            return;
+        }
         if (!gatewayRateLimiter.tryAcquire(highPriority)) {
             log.warn("Gateway rate limit dropped current report: {} -> {}", data.getPointCode(), config.getTargetId());
-            handleChunkResult(data, null, null, tracker, chunkKey, config, highPriority);
+            handleChunkResult(data, null, null, tracker, chunkKey, config, highPriority, attempt);
             return;
         }
 
         CompletableFuture<ReportResult> future = reportManager.reportAsync(data, config);
         future.whenComplete((result, throwable) ->
-                handleChunkResult(data, result, throwable, tracker, chunkKey, config, highPriority));
+                handleChunkResult(data, result, throwable, tracker, chunkKey, config, highPriority, attempt));
     }
 
-
-
-    private void handleChunkResult(ReportData data,ReportResult result,Throwable throwable,
-                                   FlushTracker tracker,String chunkKey,ReportConfig config,
-                                   boolean highPriority) {
+    private void handleChunkResult(ReportData data,
+                                   ReportResult result,
+                                   Throwable throwable,
+                                   FlushTracker tracker,
+                                   String chunkKey,
+                                   ReportConfig config,
+                                   boolean highPriority,
+                                   int attempt) {
         if (tracker == null) {
             return;
         }
 
         boolean success = throwable == null && result != null && result.isSuccess();
         boolean deferred = isDeferredResult(result);
+        boolean retryable = isRetryableResult(result, throwable);
         boolean scheduledRetry = false;
 
         if (throwable != null) {
             log.error("Send telemetry failed: {} -> {}", data.getPointCode(), config.getTargetId(), throwable);
         } else if (result != null && !result.isSuccess() && !deferred) {
-            log.warn("Report rejected: {} -> {} , err={}", data.getPointCode(),
-                    config.getTargetId(), result.getErrorMessage());
+            log.warn("Report rejected: {} -> {}, err={}",
+                    data.getPointCode(), config.getTargetId(), result.getErrorMessage());
         }
 
         if (deferred) {
             scheduledRetry = true;
-            scheduleDeferredRetry(data, config, highPriority, tracker);
+            scheduleDeferredRetry(data, config, highPriority, tracker, attempt);
         } else if (success) {
-            shadowManager.markReportedValues(data.getDeviceId(), data.getProperties());
-        } else if (chunkKey != null && tracker.shouldRetry(chunkKey)) {
+            shadowManager.markReportedValuesChunk(data.getDeviceId(), data.getProperties());
+        } else if (chunkKey != null && retryable && tracker.shouldRetry(chunkKey)) {
             scheduledRetry = true;
             log.warn("Chunk retry: device={}, key={}, attempt={} / {}",
                     tracker.deviceId, chunkKey, tracker.getAttemptCount(chunkKey), reportProperties.getRetryTimes());
-            dispatch(data, config, highPriority, tracker);
+            scheduleChunkRetry(data, config, highPriority, tracker, attempt + 1);
         } else {
             tracker.markFailure();
         }
 
         boolean allCompleted = tracker.markCompleted();
         if (!scheduledRetry && allCompleted) {
-            flushTrackers.remove(tracker.deviceId);
-            flushingDevices.remove(tracker.deviceId);
-            if (!tracker.hasFailure()) {
-                shadowManager.markReported(tracker.deviceId, tracker.windowStart, tracker.windowEnd);
-            }
+            completeFlush(tracker);
+        }
+    }
+
+    private void completeIfIdle(FlushTracker tracker) {
+        if (tracker != null && !tracker.hasOutstandingWork()) {
+            completeFlush(tracker);
         }
     }
 
@@ -360,12 +452,54 @@ public class CacheReportService {
     private void scheduleDeferredRetry(ReportData data,
                                        ReportConfig config,
                                        boolean highPriority,
-                                       FlushTracker tracker) {
-        long delayMillis = Math.max(2000L, reportProperties.getIntervalMs());
-        taskScheduler.schedule(() -> dispatch(data, config, highPriority, tracker),
+                                       FlushTracker tracker,
+                                       int attempt) {
+        long delayMillis = Math.max(2000L, computeRetryDelayMillis(attempt + 1));
+        taskScheduler.schedule(() -> dispatch(data, config, highPriority, tracker, attempt + 1),
                 Instant.now().plusMillis(delayMillis));
         log.debug("Deferred retry scheduled device={} point={} delay={}ms",
                 data.getDeviceId(), data.getPointCode(), delayMillis);
+    }
+
+    private void scheduleChunkRetry(ReportData data,
+                                    ReportConfig config,
+                                    boolean highPriority,
+                                    FlushTracker tracker,
+                                    int attempt) {
+        long delayMillis = computeRetryDelayMillis(attempt);
+        taskScheduler.schedule(() -> dispatch(data, config, highPriority, tracker, attempt),
+                Instant.now().plusMillis(delayMillis));
+    }
+
+    private boolean isRetryableResult(ReportResult result, Throwable throwable) {
+        if (throwable != null || result == null || isDeferredResult(result)) {
+            return true;
+        }
+        Map<String, Object> metadata = result.getMetadata();
+        if (metadata == null || metadata.isEmpty()) {
+            return false;
+        }
+        Object retryable = metadata.get("retryable");
+        if (retryable instanceof Boolean bool) {
+            return bool;
+        }
+        if (retryable instanceof String text) {
+            return Boolean.parseBoolean(text);
+        }
+        return false;
+    }
+
+    private long computeRetryDelayMillis(int attempt) {
+        long base = Math.max(100L, reportProperties.getRetryBackoffMs());
+        long max = Math.max(base, reportProperties.getMaxRetryBackoffMs());
+        int normalizedAttempt = Math.max(0, attempt);
+        long multiplier = 1L << Math.min(normalizedAttempt, 10);
+        long delay = Math.min(max, base * multiplier);
+        if (reportProperties.isRetryJitterEnabled() && delay > 1) {
+            long jitter = Math.max(1L, delay / 10L);
+            delay = Math.min(max, delay - jitter + ThreadLocalRandom.current().nextLong(jitter * 2L));
+        }
+        return delay;
     }
 
     private void dispatchEvent(ReportIdentity identity,
@@ -375,7 +509,7 @@ public class CacheReportService {
         String deviceId = identity.cloudDeviceId();
         ReportConfig reportConfig = resolveReportConfig(deviceId);
         if (reportConfig == null || !reportConfig.validate()) {
-            log.warn("跳过事件上报，设备 {} 配置无效", deviceId);
+            log.warn("Skip event report because config is invalid, device={}", deviceId);
             return;
         }
         ReportData eventData = new ReportData();
@@ -502,6 +636,25 @@ public class CacheReportService {
         return null;
     }
 
+    private static class FlushSession {
+        private final String deviceId;
+        private final String lockKey;
+        private final DistributedLock.LockHandle lockHandle;
+        private volatile FlushTracker tracker;
+
+        private FlushSession(String deviceId,
+                             String lockKey,
+                             @Nullable DistributedLock.LockHandle lockHandle) {
+            this.deviceId = deviceId;
+            this.lockKey = lockKey;
+            this.lockHandle = lockHandle;
+        }
+
+        private void bind(FlushTracker tracker) {
+            this.tracker = tracker;
+        }
+    }
+
     private static class FlushTracker {
         private final String deviceId;
         private final AtomicInteger inFlight = new AtomicInteger(0);
@@ -509,17 +662,27 @@ public class CacheReportService {
         private final long windowStart;
         private final long windowEnd;
         private final int maxRetries;
+        private final int maxPendingChunks;
         private final ConcurrentMap<String, Integer> attempts = new ConcurrentHashMap<>();
 
-        private FlushTracker(String deviceId, long windowStart, long windowEnd, int maxRetries) {
+        private FlushTracker(String deviceId, long windowStart, long windowEnd, int maxRetries, int maxPendingChunks) {
             this.deviceId = deviceId;
             this.windowStart = windowStart;
             this.windowEnd = windowEnd;
             this.maxRetries = Math.max(0, maxRetries);
+            this.maxPendingChunks = Math.max(1, maxPendingChunks);
         }
 
-        String registerDispatch(ReportData data) {
-            inFlight.incrementAndGet();
+        String tryRegisterDispatch(ReportData data) {
+            while (true) {
+                int current = inFlight.get();
+                if (current >= maxPendingChunks) {
+                    return null;
+                }
+                if (inFlight.compareAndSet(current, current + 1)) {
+                    break;
+                }
+            }
             String chunkKey = buildChunkKey(data);
             attempts.merge(chunkKey, 1, Integer::sum);
             return chunkKey;
@@ -553,6 +716,10 @@ public class CacheReportService {
 
         boolean markCompleted() {
             return inFlight.decrementAndGet() == 0;
+        }
+
+        boolean hasOutstandingWork() {
+            return inFlight.get() > 0;
         }
     }
 }

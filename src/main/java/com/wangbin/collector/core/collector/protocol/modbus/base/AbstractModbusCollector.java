@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.modbus.base;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.enums.DataType;
@@ -20,7 +21,8 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -31,6 +33,13 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
     private static final int MAX_WRITE_REGISTERS = 123;
     private static final int MAX_WRITE_COILS = 1968;
+    private static final ExecutorService DEFAULT_MODBUS_READ_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()),
+            runnable -> {
+                Thread thread = new Thread(runnable, "modbus-read-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     protected int timeout = 3000;
     /*protected int slaveId = 1;*/
@@ -434,8 +443,12 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         return resolveUnitId(point);
     }
 
-    private Executor resolveModbusReadExecutor() {
-        return modbusReadExecutor != null ? modbusReadExecutor : ForkJoinPool.commonPool();
+    protected Executor resolveModbusReadExecutor() {
+        return ThreadPoolFallbacks.preferExecutor(
+                modbusReadExecutor,
+                DEFAULT_MODBUS_READ_EXECUTOR,
+                "AbstractModbusCollector",
+                "modbus-read-shared");
     }
 
     protected abstract ModbusTransport getModbusTransport();

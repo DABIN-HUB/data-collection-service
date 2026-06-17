@@ -94,11 +94,15 @@ public class ReportManager {
                     config != null ? config.getTargetId() : "unknown",
                     data != null ? data.getPointCode() : "unknown",
                     e);
-            future.complete(ReportResult.error(
+            ReportResult rejected = ReportResult.error(
                     data != null ? data.getPointCode() : "unknown",
                     "report executor overloaded: " + e.getMessage(),
                     config != null ? config.getTargetId() : "unknown"
-            ));
+            );
+            rejected.addMetadata("rejected", true);
+            rejected.addMetadata("retryable", true);
+            rejected.addMetadata("reason", "executor_rejected");
+            future.complete(rejected);
         }
         return future;
     }

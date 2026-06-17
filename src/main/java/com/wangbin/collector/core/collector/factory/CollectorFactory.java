@@ -5,10 +5,10 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptor;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,12 +24,12 @@ public class CollectorFactory {
     @Autowired
     private AutowireCapableBeanFactory beanFactory;
 
-    @Autowired(required = false)
-    private ProtocolDescriptorRegistry protocolDescriptorRegistry = new ProtocolDescriptorRegistry();
+    private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
     private final Map<String, CollectorCreator> collectorCreators = new HashMap<>();
 
-    public CollectorFactory() {
+    public CollectorFactory(ProtocolDescriptorRegistry protocolDescriptorRegistry) {
+        this.protocolDescriptorRegistry = protocolDescriptorRegistry;
         registerCollectorCreators();
     }
 

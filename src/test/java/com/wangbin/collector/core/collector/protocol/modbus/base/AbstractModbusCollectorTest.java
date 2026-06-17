@@ -5,15 +5,19 @@ import com.wangbin.collector.common.enums.Parity;
 import com.wangbin.collector.core.collector.protocol.modbus.domain.RegisterType;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusUtils;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class AbstractModbusCollectorTest {
 
@@ -30,6 +34,17 @@ class AbstractModbusCollectorTest {
         assertEquals(Boolean.TRUE, values.get("p1"));
         assertEquals(Boolean.FALSE, values.get("p2"));
         assertEquals(List.of(new ReadCall(1, RegisterType.COIL, 0, 2)), transport.readCalls);
+    }
+
+    @Test
+    void abstractModbusCollectorShouldUseInjectedExecutorWhenPresent() {
+        RecordingTransport transport = new RecordingTransport();
+        TestModbusCollector collector = new TestModbusCollector(transport);
+        AtomicReference<Runnable> executed = new AtomicReference<>();
+        Executor injected = executed::set;
+        ReflectionTestUtils.setField(collector, "modbusReadExecutor", injected);
+
+        assertSame(injected, collector.resolveModbusReadExecutor());
     }
 
     @Test

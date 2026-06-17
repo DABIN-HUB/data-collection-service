@@ -48,6 +48,26 @@ public class ReportProperties {
     private int retryTimes = 3;
 
     /**
+     * flush chunk 首次退避毫秒
+     */
+    private long retryBackoffMs = 1000;
+
+    /**
+     * flush chunk 最大退避毫秒
+     */
+    private long maxRetryBackoffMs = 10000;
+
+    /**
+     * 是否启用轻微抖动，避免重试同时打满
+     */
+    private boolean retryJitterEnabled = true;
+
+    /**
+     * 单设备允许同时 pending 的 chunk 数上限
+     */
+    private int maxPendingChunksPerDevice = 32;
+
+    /**
      * 缓存队列最大长度
      */
     private int maxQueueSize = 5000;

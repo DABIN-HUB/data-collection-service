@@ -31,12 +31,14 @@ class DeviceBatchPlanner {
     List<DeviceBatchTask> plan(String deviceId,
                                List<DataPoint> points,
                                int timeSliceCount,
+                               long generation,
+                               long timeSliceRevision,
                                PerformanceMonitor performanceMonitor) {
         List<List<DataPoint>> batches = smartBatchGrouping(points, deviceId, performanceMonitor);
         List<DeviceBatchTask> tasks = new ArrayList<>(batches.size());
         for (int i = 0; i < batches.size(); i++) {
             int timeSliceIndex = calculateOptimalTimeSlice(deviceId, i, batches.size(), timeSliceCount);
-            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex));
+            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex, generation, timeSliceRevision));
         }
         log.debug("设备 {} 点位调度完成，批次数: {}", deviceId, tasks.size());
         return tasks;

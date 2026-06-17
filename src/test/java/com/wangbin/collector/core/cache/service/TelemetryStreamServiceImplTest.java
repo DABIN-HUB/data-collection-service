@@ -22,7 +22,7 @@ import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class TelemetryStreamServiceImplTest {
+public class TelemetryStreamServiceImplTest {
 
     private RedisTemplate<String, Object> redisTemplate;
     private RedisConnection connection;

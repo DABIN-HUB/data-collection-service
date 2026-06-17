@@ -109,6 +109,10 @@ public class DeviceShadow {
         return Collections.unmodifiableMap(new LinkedHashMap<>(pointInfos));
     }
 
+    public Map<String, Object> snapshotLastReportedValues() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(lastReportedValues));
+    }
+
     public PointInfo getPointInfo(String field) {
         return pointInfos.get(field);
     }
@@ -184,6 +188,13 @@ public class DeviceShadow {
         this.version.set(Math.max(0, version));
     }
 
+    public void markReportedWindowCommitted(long reportTimestamp, long start, long end) {
+        this.lastReportAt = reportTimestamp;
+        this.lastWindowStart = start;
+        this.lastWindowEnd = end;
+        touchReportedState();
+    }
+
     public void setLastWindow(long start, long end) {
         this.lastWindowStart = start;
         this.lastWindowEnd = end;
@@ -197,11 +208,41 @@ public class DeviceShadow {
         if (values == null) {
             return;
         }
-        values.forEach((field, value) -> {
+        boolean changed = false;
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            String field = entry.getKey();
+            Object value = entry.getValue();
             if (field != null) {
+                Object previous = lastReportedValues.put(field, value);
+                if (!valuesEqual(previous, value)) {
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            touchReportedState();
+        }
+    }
+
+    public void restoreLastReportedValues(Map<String, Object> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        values.forEach((field, value) -> {
+            if (field != null && !field.isBlank()) {
                 lastReportedValues.put(field, value);
             }
         });
+    }
+
+    public long latestValueTimestamp() {
+        long latestTimestamp = 0L;
+        for (ValueMeta meta : latest.values()) {
+            if (meta != null) {
+                latestTimestamp = Math.max(latestTimestamp, meta.getTimestamp());
+            }
+        }
+        return latestTimestamp;
     }
 
     public long getLastChangeTriggerAt(String field) {
@@ -268,6 +309,11 @@ public class DeviceShadow {
     }
 
     private void touch() {
+        updatedAt = System.currentTimeMillis();
+        version.incrementAndGet();
+    }
+
+    private void touchReportedState() {
         updatedAt = System.currentTimeMillis();
         version.incrementAndGet();
     }

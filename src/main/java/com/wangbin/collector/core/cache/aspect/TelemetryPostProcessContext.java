@@ -10,5 +10,6 @@ public record TelemetryPostProcessContext(String deviceId,
                                           DataPoint point,
                                           ProcessResult processResult,
                                           Object cacheValue,
-                                          long eventTs) {
+                                          long eventTs,
+                                          Long generation) {
 }

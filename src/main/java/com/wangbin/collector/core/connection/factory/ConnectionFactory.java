@@ -6,6 +6,7 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +22,7 @@ import java.util.concurrent.ScheduledExecutorService;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ConnectionFactory {
 
     @Autowired(required = false)
@@ -34,8 +36,7 @@ public class ConnectionFactory {
     @Autowired(required = false)
     private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
 
-    @Autowired(required = false)
-    private ProtocolDescriptorRegistry protocolDescriptorRegistry = new ProtocolDescriptorRegistry();
+    private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {

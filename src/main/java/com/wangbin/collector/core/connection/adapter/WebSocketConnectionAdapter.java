@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.connection.adapter;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
@@ -493,7 +494,11 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
             return heartbeatScheduler;
         }
-        heartbeatScheduler = DEFAULT_HEARTBEAT_SCHEDULER;
+        heartbeatScheduler = ThreadPoolFallbacks.preferScheduler(
+                heartbeatScheduler,
+                DEFAULT_HEARTBEAT_SCHEDULER,
+                "WebSocketConnectionAdapter",
+                "websocket-heartbeat-shared");
         return heartbeatScheduler;
     }
 

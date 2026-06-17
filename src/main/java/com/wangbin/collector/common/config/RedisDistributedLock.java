@@ -4,15 +4,17 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class RedisDistributedLock implements DistributedLock {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final DefaultRedisScript<Long> unlockScript;
-    private final ThreadLocal<Map<String, String>> lockHolder = ThreadLocal.withInitial(HashMap::new);
 
     public RedisDistributedLock(
             RedisTemplate<String, Object> redisTemplate,
@@ -22,7 +24,7 @@ public class RedisDistributedLock implements DistributedLock {
     }
 
     @Override
-    public boolean tryLock(String lockKey, long expireTime, TimeUnit timeUnit) {
+    public Optional<LockHandle> tryLock(String lockKey, long expireTime, TimeUnit timeUnit) {
         String lockValue = UUID.randomUUID().toString();
 
         Boolean success = redisTemplate.opsForValue().setIfAbsent(
@@ -32,44 +34,45 @@ public class RedisDistributedLock implements DistributedLock {
                 timeUnit
         );
 
-        if (Boolean.TRUE.equals(success)) {
-            Map<String, String> locks = lockHolder.get();
-            locks.put(lockKey, lockValue);
-            return true;
+        if (!Boolean.TRUE.equals(success)) {
+            return Optional.empty();
         }
-
-        return false;
-    }
-
-    @Override
-    public boolean unlock(String lockKey) {
-        Map<String, String> locks = lockHolder.get();
-        if (!locks.containsKey(lockKey)) {
-            return false;
-        }
-
-        String lockValue = locks.get(lockKey);
-
-        Long result = redisTemplate.execute(
-                unlockScript,
-                Collections.singletonList(lockKey),
-                lockValue
-        );
-
-        if (result != null && result > 0) {
-            locks.remove(lockKey);
-            if (locks.isEmpty()) {
-                lockHolder.remove();
-            }
-            return true;
-        }
-
-        return false;
+        return Optional.of(new RedisLockHandle(lockKey, lockValue));
     }
 
     @Override
     public boolean isLocked(String lockKey) {
         Boolean hasKey = redisTemplate.hasKey(lockKey);
         return Boolean.TRUE.equals(hasKey);
+    }
+
+    private final class RedisLockHandle implements LockHandle {
+
+        private final String lockKey;
+        private final String lockValue;
+        private final AtomicBoolean released = new AtomicBoolean(false);
+
+        private RedisLockHandle(String lockKey, String lockValue) {
+            this.lockKey = lockKey;
+            this.lockValue = lockValue;
+        }
+
+        @Override
+        public String lockKey() {
+            return lockKey;
+        }
+
+        @Override
+        public boolean unlock() {
+            if (!released.compareAndSet(false, true)) {
+                return false;
+            }
+            Long result = redisTemplate.execute(
+                    unlockScript,
+                    Collections.singletonList(lockKey),
+                    lockValue
+            );
+            return result != null && result > 0;
+        }
     }
 }

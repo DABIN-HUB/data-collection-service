@@ -3,6 +3,7 @@ package com.wangbin.collector.core.config.manager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +15,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -97,6 +99,18 @@ class ConfigManagerLocalDeviceTest {
 
         assertTrue(configManager.containsDevice("local-keep"));
         assertTrue(configManager.isLocalTemporaryDevice("local-keep"));
+    }
+
+    @Test
+    void shouldRemoveConnectionCacheWhenRemoteConnectionIsDeleted() {
+        assertTrue(configManager.updateDeviceConfig(device("remote-1")));
+        assertTrue(configManager.updateConnectionConfig("remote-1", connection("remote-1")));
+        when(configSyncService.loadConnectionConfig("remote-1")).thenReturn(null);
+
+        ReflectionTestUtils.invokeMethod(configManager, "handleConfigChange",
+                ConfigUpdateEvent.createConnectionUpdateEvent("remote-1"));
+
+        assertNull(configManager.getConnectionConfig("remote-1"));
     }
 
     private DeviceInfo device(String deviceId) {

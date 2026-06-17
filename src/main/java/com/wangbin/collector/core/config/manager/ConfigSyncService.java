@@ -4,9 +4,12 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.loader.ConfigLoader;
+import com.wangbin.collector.core.config.model.ConfigDiff;
+import com.wangbin.collector.core.config.model.ConfigSnapshot;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -14,9 +17,14 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -37,17 +45,21 @@ public class ConfigSyncService {
     private String serviceId;
 
     private final ConfigLoader configLoader;
+    private final Executor syncExecutor;
     private final AtomicBoolean syncing = new AtomicBoolean(false);
+    private final Object cacheLock = new Object();
 
-    private final List<Consumer<ConfigUpdateEvent>> configListeners = new ArrayList<>();
+    private final List<Consumer<ConfigUpdateEvent>> configListeners = new CopyOnWriteArrayList<>();
     private final Map<String, DeviceInfo> deviceConfigs = new ConcurrentHashMap<>();
     private final Map<String, List<DataPoint>> pointConfigs = new ConcurrentHashMap<>();
     private final Map<String, DeviceConnection> connectionConfigs = new ConcurrentHashMap<>();
 
     private volatile long lastSyncTime;
 
-    public ConfigSyncService(ConfigLoader configLoader) {
+    public ConfigSyncService(ConfigLoader configLoader,
+                             @Qualifier("ioIntensiveExecutor") Executor syncExecutor) {
         this.configLoader = configLoader;
+        this.syncExecutor = syncExecutor;
     }
 
     @PostConstruct
@@ -92,8 +104,24 @@ public class ConfigSyncService {
         }
         try {
             log.debug("开始执行配置同步");
-            notifyConfigUpdate("all", null);
-            log.info("配置同步完成");
+            ConfigSnapshot previousSnapshot = snapshotCurrentConfig();
+            ConfigSnapshot latestSnapshot = configLoader.loadSnapshot();
+            applySnapshot(latestSnapshot);
+
+            ConfigDiff diff = ConfigDiff.between(previousSnapshot, latestSnapshot);
+            lastSyncTime = System.currentTimeMillis();
+            if (!diff.hasChanges()) {
+                log.debug("配置同步完成，未检测到增量变更");
+                return;
+            }
+
+            publishIncrementalEvents(diff, previousSnapshot, latestSnapshot);
+            log.info("配置同步完成: added={}, removed={}, deviceChanged={}, pointChanged={}, connectionChanged={}",
+                    diff.addedDevices().size(),
+                    diff.removedDevices().size(),
+                    diff.changedDevices().size(),
+                    diff.changedPoints().size(),
+                    diff.changedConnections().size());
         } catch (Exception e) {
             log.error("配置定时同步失败", e);
         } finally {
@@ -102,12 +130,15 @@ public class ConfigSyncService {
     }
 
     public List<DeviceInfo> loadAllDevices() {
-        List<DeviceInfo> devices = configLoader.loadAllDevices();
-        deviceConfigs.clear();
-        for (DeviceInfo device : devices) {
-            if (device != null && device.getDeviceId() != null) {
+        List<DeviceInfo> devices = sanitizeDevices(configLoader.loadAllDevices());
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            Set<String> activeDeviceIds = new LinkedHashSet<>();
+            for (DeviceInfo device : devices) {
                 deviceConfigs.put(device.getDeviceId(), device);
+                activeDeviceIds.add(device.getDeviceId());
             }
+            pruneStaleDeviceState(activeDeviceIds);
         }
         log.info("成功加载 {} 个设备配置", devices.size());
         return devices;
@@ -115,44 +146,47 @@ public class ConfigSyncService {
 
     public DeviceInfo loadDevice(String deviceId) {
         DeviceInfo device = configLoader.loadDevice(deviceId);
-        if (device != null) {
-            deviceConfigs.put(deviceId, device);
-            log.debug("成功加载设备配置: {}", deviceId);
+        synchronized (cacheLock) {
+            if (device != null) {
+                deviceConfigs.put(deviceId, device);
+                log.debug("成功加载设备配置: {}", deviceId);
+            } else {
+                removeDeviceState(deviceId);
+            }
         }
         return device;
     }
 
     public List<DataPoint> loadDataPoints(String deviceId) {
-        List<DataPoint> points = configLoader.loadDataPoints(deviceId);
-        pointConfigs.put(deviceId, points);
+        List<DataPoint> points = sanitizePoints(configLoader.loadDataPoints(deviceId));
+        synchronized (cacheLock) {
+            pointConfigs.put(deviceId, points);
+        }
         log.debug("成功加载设备 {} 的数据点配置，共 {} 个点", deviceId, points.size());
         return points;
     }
 
     public DeviceConnection loadConnectionConfig(String deviceId) {
         DeviceConnection connection = configLoader.loadConnectionConfig(deviceId);
-        if (connection != null) {
-            connectionConfigs.put(deviceId, connection);
-            log.debug("成功加载连接配置: {}", deviceId);
-        } else {
-            connectionConfigs.remove(deviceId);
+        synchronized (cacheLock) {
+            if (connection != null) {
+                connectionConfigs.put(deviceId, connection);
+                log.debug("成功加载连接配置: {}", deviceId);
+            } else {
+                connectionConfigs.remove(deviceId);
+            }
         }
         return connection;
     }
 
     public void notifyConfigUpdate(String configType, String deviceId) {
-        log.info("开始同步配置类型: {}", configType);
-        ConfigUpdateEvent event = ConfigUpdateEvent.builder()
-                .configType(configType)
-                .deviceId(deviceId)
-                .updateTime(new Date())
-                .build();
-        notifyConfigListeners(event);
+        log.info("开始同步配置类型 {}", configType);
+        publishConfigEvent(createManualEvent(configType, deviceId));
         lastSyncTime = System.currentTimeMillis();
         log.info("配置类型 {} 同步完成", configType);
     }
 
-    private void notifyConfigListeners(ConfigUpdateEvent event) {
+    private void publishConfigEvent(ConfigUpdateEvent event) {
         if (configListeners.isEmpty()) {
             log.debug("没有配置监听器需要通知");
             return;
@@ -173,15 +207,15 @@ public class ConfigSyncService {
     }
 
     public Map<String, DeviceInfo> getDeviceConfigs() {
-        return Collections.unmodifiableMap(deviceConfigs);
+        return snapshotCurrentConfig().devices();
     }
 
     public Map<String, List<DataPoint>> getPointConfigs() {
-        return Collections.unmodifiableMap(pointConfigs);
+        return snapshotCurrentConfig().points();
     }
 
     public Map<String, DeviceConnection> getConnectionConfigs() {
-        return Collections.unmodifiableMap(connectionConfigs);
+        return snapshotCurrentConfig().connections();
     }
 
     public long getLastSyncTime() {
@@ -201,22 +235,170 @@ public class ConfigSyncService {
     }
 
     public void clearCache() {
-        deviceConfigs.clear();
-        pointConfigs.clear();
-        connectionConfigs.clear();
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            pointConfigs.clear();
+            connectionConfigs.clear();
+        }
         log.info("配置缓存已清空");
     }
 
     public void triggerManualSync() {
         log.info("手动触发配置同步");
-        Thread thread = new Thread(() -> {
-            try {
-                syncAllConfig();
-            } catch (Exception e) {
-                log.error("手动配置同步失败", e);
+        try {
+            syncExecutor.execute(this::safeSyncAllConfig);
+        } catch (RejectedExecutionException e) {
+            log.warn("手动配置同步任务提交失败，回退当前线程执行", e);
+            safeSyncAllConfig();
+        }
+    }
+
+    private void safeSyncAllConfig() {
+        try {
+            syncAllConfig();
+        } catch (Exception e) {
+            log.error("手动配置同步失败", e);
+        }
+    }
+
+    private void publishIncrementalEvents(ConfigDiff diff,
+                                          ConfigSnapshot previousSnapshot,
+                                          ConfigSnapshot latestSnapshot) {
+        for (String deviceId : diff.deviceEventIds()) {
+            boolean connectionChanged = diff.changedConnections().contains(deviceId);
+            publishConfigEvent(createDeviceEvent(deviceId, connectionChanged));
+        }
+
+        Set<String> connectionEvents = new LinkedHashSet<>(diff.changedConnections());
+        connectionEvents.removeAll(diff.removedDevices());
+        for (String deviceId : connectionEvents) {
+            publishConfigEvent(createConnectionEvent(deviceId));
+        }
+
+        Set<String> pointEvents = new LinkedHashSet<>(diff.changedPoints());
+        pointEvents.removeAll(diff.removedDevices());
+        for (String deviceId : pointEvents) {
+            int pointCountChange = latestSnapshot.points(deviceId).size() - previousSnapshot.points(deviceId).size();
+            publishConfigEvent(createPointsEvent(deviceId, pointCountChange));
+        }
+    }
+
+    private ConfigSnapshot snapshotCurrentConfig() {
+        synchronized (cacheLock) {
+            return new ConfigSnapshot(deviceConfigs, pointConfigs, connectionConfigs);
+        }
+    }
+
+    private void applySnapshot(ConfigSnapshot snapshot) {
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            deviceConfigs.putAll(snapshot.devices());
+            pointConfigs.clear();
+            pointConfigs.putAll(snapshot.points());
+            connectionConfigs.clear();
+            connectionConfigs.putAll(snapshot.connections());
+        }
+    }
+
+    private void pruneStaleDeviceState(Set<String> activeDeviceIds) {
+        List<String> stalePointDeviceIds = new ArrayList<>();
+        for (String deviceId : pointConfigs.keySet()) {
+            if (!activeDeviceIds.contains(deviceId)) {
+                stalePointDeviceIds.add(deviceId);
             }
-        }, "manual-sync-thread");
-        thread.setDaemon(true);
-        thread.start();
+        }
+        for (String deviceId : stalePointDeviceIds) {
+            pointConfigs.remove(deviceId);
+        }
+
+        List<String> staleConnectionDeviceIds = new ArrayList<>();
+        for (String deviceId : connectionConfigs.keySet()) {
+            if (!activeDeviceIds.contains(deviceId)) {
+                staleConnectionDeviceIds.add(deviceId);
+            }
+        }
+        for (String deviceId : staleConnectionDeviceIds) {
+            connectionConfigs.remove(deviceId);
+        }
+    }
+
+    private void removeDeviceState(String deviceId) {
+        if (!hasText(deviceId)) {
+            return;
+        }
+        deviceConfigs.remove(deviceId);
+        pointConfigs.remove(deviceId);
+        connectionConfigs.remove(deviceId);
+    }
+
+    private List<DeviceInfo> sanitizeDevices(List<DeviceInfo> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DeviceInfo> safeDevices = new ArrayList<>();
+        for (DeviceInfo device : devices) {
+            if (device != null && hasText(device.getDeviceId())) {
+                safeDevices.add(device);
+            }
+        }
+        return Collections.unmodifiableList(safeDevices);
+    }
+
+    private List<DataPoint> sanitizePoints(List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DataPoint> safePoints = new ArrayList<>();
+        for (DataPoint point : points) {
+            if (point != null) {
+                safePoints.add(point);
+            }
+        }
+        return Collections.unmodifiableList(safePoints);
+    }
+
+    private ConfigUpdateEvent createManualEvent(String configType, String deviceId) {
+        ConfigUpdateEvent event;
+        switch (configType) {
+            case "device" -> event = createDeviceEvent(deviceId, false);
+            case "points" -> event = createPointsEvent(deviceId, 0);
+            case "connection" -> event = createConnectionEvent(deviceId);
+            case "collection" -> event = ConfigUpdateEvent.createCollectionUpdateEvent(deviceId);
+            case "all" -> event = ConfigUpdateEvent.createAllUpdateEvent();
+            default -> event = ConfigUpdateEvent.builder()
+                    .configType(configType)
+                    .deviceId(deviceId)
+                    .createTime(new Date())
+                    .status("pending")
+                    .build();
+        }
+        event.setSource("manual");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createDeviceEvent(String deviceId, boolean connectionChanged) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createDeviceUpdateEvent(deviceId, connectionChanged);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createPointsEvent(String deviceId, int pointCountChange) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createPointsUpdateEvent(deviceId, pointCountChange);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createConnectionEvent(String deviceId) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createConnectionUpdateEvent(deviceId);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

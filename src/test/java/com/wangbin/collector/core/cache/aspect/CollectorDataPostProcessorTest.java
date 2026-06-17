@@ -6,6 +6,7 @@ import com.wangbin.collector.core.cache.config.TelemetryStreamProperties;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.service.TelemetryStreamService;
+import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.service.CacheReportService;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-class CollectorDataPostProcessorTest {
+public class CollectorDataPostProcessorTest {
 
     @Test
     void saveBatchAsyncShouldReportNormalizedResultWhenCollectorHasNoProcessResult() {
@@ -88,11 +89,59 @@ class CollectorDataPostProcessorTest {
         );
     }
 
+    @Test
+    void savePointAsyncShouldSkipStaleGenerationContext() {
+        MultiLevelCacheManager multiLevelCacheManager = mock(MultiLevelCacheManager.class);
+        CacheReportService cacheReportService = mock(CacheReportService.class);
+        TelemetryStreamService telemetryStreamService = mock(TelemetryStreamService.class);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        CollectorDataPostProcessor processor = createProcessor(
+                Runnable::run,
+                multiLevelCacheManager,
+                cacheReportService,
+                telemetryStreamService,
+                true,
+                guard
+        );
+
+        DataPoint point = createPoint("dev-3", "p3");
+        point.setCacheEnabled(1);
+        long generation = guard.activateNextGeneration("dev-3");
+        guard.clearDevice("dev-3");
+
+        guard.runWithContext("dev-3", generation, () -> processor.savePointAsync("dev-3", point, 88));
+
+        verify(multiLevelCacheManager, never()).put(any(CacheKey.class), any(), anyLong());
+        verify(telemetryStreamService, never()).append(eq("dev-3"), eq(point), any(ProcessResult.class));
+        verify(cacheReportService, never()).reportPoint(
+                eq("dev-3"),
+                eq(MessageConstant.MESSAGE_TYPE_PROPERTY_POST),
+                eq(point),
+                any(ProcessResult.class)
+        );
+    }
+
     private CollectorDataPostProcessor createProcessor(Executor executor,
                                                        MultiLevelCacheManager multiLevelCacheManager,
                                                        CacheReportService cacheReportService,
                                                        TelemetryStreamService telemetryStreamService,
                                                        boolean streamEnabled) {
+        return createProcessor(
+                executor,
+                multiLevelCacheManager,
+                cacheReportService,
+                telemetryStreamService,
+                streamEnabled,
+                new CollectionTaskGuard()
+        );
+    }
+
+    private CollectorDataPostProcessor createProcessor(Executor executor,
+                                                       MultiLevelCacheManager multiLevelCacheManager,
+                                                       CacheReportService cacheReportService,
+                                                       TelemetryStreamService telemetryStreamService,
+                                                       boolean streamEnabled,
+                                                       CollectionTaskGuard collectionTaskGuard) {
         TelemetryStreamProperties streamProperties = new TelemetryStreamProperties();
         streamProperties.setEnabled(streamEnabled);
         TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(List.of(
@@ -100,7 +149,7 @@ class CollectorDataPostProcessorTest {
                 new StreamTelemetryPostProcessStage(telemetryStreamService, streamProperties),
                 new ReportTelemetryPostProcessStage(cacheReportService)
         ));
-        return new CollectorDataPostProcessor(executor, pipeline);
+        return new CollectorDataPostProcessor(executor, pipeline, collectionTaskGuard);
     }
 
     private DataPoint createPoint(String deviceId, String pointId) {

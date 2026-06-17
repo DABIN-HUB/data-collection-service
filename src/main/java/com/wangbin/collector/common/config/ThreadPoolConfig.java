@@ -32,6 +32,7 @@ public class ThreadPoolConfig {
                 buildNamedThreadFactory("time-slice-scheduler", true)
         );
         executor.setRemoveOnCancelPolicy(true);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         return executor;
     }
 
@@ -45,7 +46,8 @@ public class ThreadPoolConfig {
                 cpuCores * 2,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(1000),
-                buildNamedThreadFactory("batch-dispatcher", true)
+                buildNamedThreadFactory("batch-dispatcher", true),
+                new ThreadPoolExecutor.AbortPolicy()
         );
         return executor;
     }
@@ -60,7 +62,8 @@ public class ThreadPoolConfig {
                 cpuCores * 8,
                 30L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(10000),
-                buildNamedThreadFactory("async-collector", true)
+                buildNamedThreadFactory("async-collector", true),
+                new ThreadPoolExecutor.AbortPolicy()
         );
         return executor;
     }
@@ -75,7 +78,8 @@ public class ThreadPoolConfig {
                 cpuCores * 2,
                 30L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(5000),
-                buildNamedThreadFactory("data-processor", true)
+                buildNamedThreadFactory("data-processor", true),
+                new ThreadPoolExecutor.AbortPolicy()
         );
         return executor;
     }
@@ -122,13 +126,13 @@ public class ThreadPoolConfig {
      */
     @Bean("monitorExecutor")
     public ScheduledExecutorService monitorExecutor() {
-        return Executors.newScheduledThreadPool(
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
                 2,
-                new ThreadFactoryBuilder()
-                        .setNameFormat("monitor-thread-%d")
-                        .setDaemon(true)
-                        .build()
+                buildNamedThreadFactory("monitor-thread", true)
         );
+        executor.setRemoveOnCancelPolicy(true);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        return executor;
     }
 
     /**

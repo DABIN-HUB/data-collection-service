@@ -2,6 +2,7 @@ package com.wangbin.collector.core.report.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.common.enums.QualityEnum;
@@ -71,16 +72,27 @@ public class MqttReportHandler extends AbstractReportHandler {
     protected void doInit() throws Exception {
         log.info("初始化MQTT v5报告处理器...");
 
+        ScheduledExecutorService effectiveMonitorExecutor = ThreadPoolFallbacks.preferScheduler(
+                monitorExecutor,
+                DEFAULT_MONITOR_EXECUTOR,
+                "MqttReportHandler",
+                "mqtt-report-monitor-shared");
+        ExecutorService effectivePublishExecutor = ThreadPoolFallbacks.preferExecutorService(
+                ioExecutor,
+                DEFAULT_PUBLISH_EXECUTOR,
+                "MqttReportHandler",
+                "mqtt-report-io-shared");
+
         clientManager = new MqttClientManager(
                 ackManager,
                 downlinkService,
-                monitorExecutor != null ? monitorExecutor : DEFAULT_MONITOR_EXECUTOR
+                effectiveMonitorExecutor
         );
         clientManager.init();
 
         messagePublisher = new MessagePublisher(
                 clientManager,
-                ioExecutor != null ? ioExecutor : DEFAULT_PUBLISH_EXECUTOR
+                effectivePublishExecutor
         );
         messagePublisher.init();
 

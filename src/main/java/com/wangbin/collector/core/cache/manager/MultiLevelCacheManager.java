@@ -271,11 +271,49 @@ public class MultiLevelCacheManager implements CacheManager {
             return Collections.emptyMap();
         }
 
+        if (!canUseRedisBulkRead()) {
+            return getAllIndividually(keys);
+        }
+
+        totalReads.addAndGet(keys.size());
         Map<CacheKey, T> result = new HashMap<>();
+        List<CacheKey> redisCandidates = new ArrayList<>();
+
         for (CacheKey key : keys) {
-            T value = get(key);
-            if (value != null) {
-                result.put(key, value);
+            try {
+                T localValue = localCacheManager.get(key);
+                if (localValue != null) {
+                    result.put(key, localValue);
+                    updateHitStatistics(localCacheManager.getCacheLevel());
+                } else {
+                    redisCandidates.add(key);
+                }
+            } catch (Exception e) {
+                log.warn("本地缓存批量读取失败，将回退到 Redis: key={}", key, e);
+                recordCacheException(e, key);
+                redisCandidates.add(key);
+            }
+        }
+
+        if (!redisCandidates.isEmpty()) {
+            try {
+                Map<CacheKey, T> redisValues = redisCacheManager.pipelineGetAll(redisCandidates, null);
+                for (CacheKey key : redisCandidates) {
+                    T value = redisValues.get(key);
+                    if (value != null) {
+                        result.put(key, value);
+                        updateHitStatistics(redisCacheManager.getCacheLevel());
+                        if (readThrough) {
+                            asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel());
+                        }
+                    } else {
+                        totalMisses.incrementAndGet();
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Redis 批量读取失败，将回退到逐个读取: count={}", redisCandidates.size(), e);
+                recordCacheException(e, null);
+                populateFromRedisIndividually(redisCandidates, result);
             }
         }
 
@@ -550,6 +588,42 @@ public class MultiLevelCacheManager implements CacheManager {
             case 1 -> level1Hits.incrementAndGet();
             case 2 -> level2Hits.incrementAndGet();
             default -> log.debug("未知的缓存层级命中: level={}", hitLevel);
+        }
+    }
+
+    private boolean canUseRedisBulkRead() {
+        return maxLevel >= redisCacheManager.getCacheLevel();
+    }
+
+    private <T> Map<CacheKey, T> getAllIndividually(List<CacheKey> keys) {
+        Map<CacheKey, T> result = new HashMap<>();
+        for (CacheKey key : keys) {
+            T value = get(key);
+            if (value != null) {
+                result.put(key, value);
+            }
+        }
+        return result;
+    }
+
+    private <T> void populateFromRedisIndividually(List<CacheKey> keys, Map<CacheKey, T> result) {
+        for (CacheKey key : keys) {
+            try {
+                T value = redisCacheManager.get(key);
+                if (value != null) {
+                    result.put(key, value);
+                    updateHitStatistics(redisCacheManager.getCacheLevel());
+                    if (readThrough) {
+                        asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel());
+                    }
+                } else {
+                    totalMisses.incrementAndGet();
+                }
+            } catch (Exception ex) {
+                totalMisses.incrementAndGet();
+                log.warn("Redis 单键补偿读取失败: key={}", key, ex);
+                recordCacheException(ex, key);
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.iec.base;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -401,10 +402,11 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     }
 
     private ScheduledExecutorService resolveProtocolScheduler() {
-        if (protocolScheduler != null) {
-            return protocolScheduler;
-        }
-        return DEFAULT_PROTOCOL_SCHEDULER;
+        return ThreadPoolFallbacks.preferScheduler(
+                protocolScheduler,
+                DEFAULT_PROTOCOL_SCHEDULER,
+                "AbstractIce104Collector",
+                "iec104-protocol-shared");
     }
 
     private void cancelGeneralInterrogationTask() {

@@ -3,6 +3,10 @@ package com.wangbin.collector.core.collector.scheduler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -13,17 +17,23 @@ class DeviceBatchTask {
     final String deviceId;
     final List<DataPoint> points;
     final int timeSliceIndex;
+    final long generation;
+    final long timeSliceRevision;
     long lastExecutionTime;
     private final AtomicInteger failureCount = new AtomicInteger(0);
+    private final AtomicBoolean cancelled = new AtomicBoolean(false);
+    private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
 
-    DeviceBatchTask(String deviceId, List<DataPoint> points, int timeSliceIndex) {
+    DeviceBatchTask(String deviceId, List<DataPoint> points, int timeSliceIndex, long generation, long timeSliceRevision) {
         this.deviceId = deviceId;
         this.points = points;
         this.timeSliceIndex = timeSliceIndex;
+        this.generation = generation;
+        this.timeSliceRevision = timeSliceRevision;
     }
 
     boolean shouldSkip() {
-        return failureCount.get() > 3;
+        return cancelled.get() || failureCount.get() > 3;
     }
 
     void recordFailure() {
@@ -32,5 +42,35 @@ class DeviceBatchTask {
 
     void recordSuccess() {
         failureCount.set(0);
+    }
+
+    void cancel() {
+        cancelled.set(true);
+        cancelInFlight();
+    }
+
+    boolean isCancelled() {
+        return cancelled.get();
+    }
+
+    void registerInFlight(Future<?> future) {
+        if (future != null) {
+            inFlightFutures.add(future);
+        }
+    }
+
+    void unregisterInFlight(Future<?> future) {
+        if (future != null) {
+            inFlightFutures.remove(future);
+        }
+    }
+
+    void cancelInFlight() {
+        for (Future<?> future : inFlightFutures) {
+            if (future != null && !future.isDone()) {
+                future.cancel(true);
+            }
+        }
+        inFlightFutures.clear();
     }
 }

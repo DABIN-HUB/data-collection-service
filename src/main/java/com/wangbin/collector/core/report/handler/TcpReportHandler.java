@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.report.handler;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.core.report.model.ReportConfig;
@@ -8,6 +9,8 @@ import com.wangbin.collector.core.report.model.ReportResult;
 import com.wangbin.collector.core.report.model.message.IoTMessage;
 import com.wangbin.collector.core.report.service.IoTProtocolService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -22,8 +25,17 @@ import java.util.concurrent.*;
 @Component
 public class TcpReportHandler extends AbstractReportHandler {
 
+    private static final ScheduledExecutorService DEFAULT_HEARTBEAT_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "tcp-report-heartbeat-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     private final Map<String, Socket> connectionPool = new ConcurrentHashMap<>();
     private final IoTProtocolService protocolService;
+    @Autowired(required = false)
+    @Qualifier("monitorExecutor")
     private ScheduledExecutorService heartbeatExecutor;
 
     public TcpReportHandler(IoTProtocolService protocolService) {
@@ -34,7 +46,11 @@ public class TcpReportHandler extends AbstractReportHandler {
     @Override
     protected void doInit() throws Exception {
         log.info("初始化TCP上报处理器...");
-        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
+        heartbeatExecutor = ThreadPoolFallbacks.preferScheduler(
+                heartbeatExecutor,
+                DEFAULT_HEARTBEAT_EXECUTOR,
+                "TcpReportHandler",
+                "tcp-report-heartbeat-shared");
         heartbeatExecutor.scheduleAtFixedRate(this::checkConnections,
                 30, 30, TimeUnit.SECONDS);
     }

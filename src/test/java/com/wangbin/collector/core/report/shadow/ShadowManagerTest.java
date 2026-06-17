@@ -29,7 +29,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class ShadowManagerTest {
+public class ShadowManagerTest {
 
     private ReportProperties properties;
 
@@ -53,12 +53,12 @@ class ShadowManagerTest {
         ProcessResult r1 = buildResult(10d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult first = manager.apply("dev-change", point, r1);
         assertFalse(first.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 10d));
+        manager.markReportedValuesChunk("dev-change", Map.of("phaseA", 10d));
 
         ProcessResult r2 = buildResult(13d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult second = manager.apply("dev-change", point, r2);
         assertTrue(second.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 13d));
+        manager.markReportedValuesChunk("dev-change", Map.of("phaseA", 13d));
 
         ProcessResult r3 = buildResult(16d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult third = manager.apply("dev-change", point, r3);
@@ -254,6 +254,28 @@ class ShadowManagerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void reportedStateShouldRestoreLastReportedValuesFromPersistedShadow() throws Exception {
+        ShadowManager manager = new ShadowManager(properties);
+        ObjectMapper objectMapper = new ObjectMapper();
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("collector:shadow:dev-reported")).thenReturn(objectMapper.writeValueAsString(
+                remoteReportedDocument("dev-reported", 2L, Map.of("temperature", 26.0), Map.of("temperature", 25.0))
+        ));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", objectMapper);
+
+        Map<String, Object> document = manager.getShadowDocument("dev-reported");
+        Map<String, Object> state = (Map<String, Object>) document.get("state");
+
+        assertEquals(Map.of("temperature", 26.0), state.get("reported"));
+        assertEquals(Map.of("temperature", 25.0), state.get("lastReported"));
+        assertEquals(25.0, manager.getShadow("dev-reported").getLastReportedValue("temperature"));
+    }
+
+    @Test
     void successfulDesiredUpdateWritesHistoryAudit() {
         ShadowManager manager = new ShadowManager(properties);
         StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
@@ -320,6 +342,26 @@ class ShadowManagerTest {
         metadata.put("reported", Map.of());
         metadata.put("desired", Map.of());
         doc.put("metadata", metadata);
+        return doc;
+    }
+
+    private Map<String, Object> remoteReportedDocument(String deviceId,
+                                                       long version,
+                                                       Map<String, Object> reported,
+                                                       Map<String, Object> lastReported) {
+        Map<String, Object> doc = remoteDocument(deviceId, version, Map.of());
+        Map<String, Object> state = (Map<String, Object>) doc.get("state");
+        state.put("reported", reported);
+        state.put("lastReported", lastReported);
+
+        Map<String, Object> metadata = (Map<String, Object>) doc.get("metadata");
+        metadata.put("reported", Map.of(
+                "temperature", Map.of(
+                        "timestamp", System.currentTimeMillis(),
+                        "updatedAt", System.currentTimeMillis(),
+                        "quality", "GOOD"
+                )
+        ));
         return doc;
     }
 }

@@ -1042,15 +1042,18 @@ public class ConfigManager {
 
         try {
             DeviceConnection connection = configSyncService.loadConnectionConfig(deviceId);
-            if (connection != null) {
-                lock.writeLock().lock();
-                try {
+            lock.writeLock().lock();
+            try {
+                if (connection != null) {
                     connectionCache.put(deviceId, connection);
-                    rebuildDeviceContext(deviceId);
                     log.info("连接配置重载成功: {}", deviceId);
-                } finally {
-                    lock.writeLock().unlock();
+                } else {
+                    connectionCache.remove(deviceId);
+                    log.info("连接配置已删除，已从缓存中移除: {}", deviceId);
                 }
+                rebuildDeviceContext(deviceId);
+            } finally {
+                lock.writeLock().unlock();
             }
         } catch (Exception e) {
             log.error("重新加载连接配置失败: {}", deviceId, e);

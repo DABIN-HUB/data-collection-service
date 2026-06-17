@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class CollectorDataPostProcessor {
     @Qualifier("cacheAsyncExecutor")
     private final Executor cacheAsyncExecutor;
     private final TelemetryPostProcessPipeline pipeline;
+    private final CollectionTaskGuard collectionTaskGuard;
 
     public void savePointAsync(String deviceId, DataPoint point, Object value) {
         submit(deviceId, point, () -> {
@@ -31,12 +33,16 @@ public class CollectorDataPostProcessor {
             if (processResult == null) {
                 return;
             }
+            if (!shouldProcess(deviceId)) {
+                return;
+            }
             pipeline.process(new TelemetryPostProcessContext(
                     deviceId,
                     point,
                     processResult,
                     value,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
+                    currentGeneration()
             ));
         });
     }
@@ -47,6 +53,9 @@ public class CollectorDataPostProcessor {
                                BaseCollector collector) {
         submit(deviceId, null, () -> {
             if (points == null || values == null || values.isEmpty()) {
+                return;
+            }
+            if (!shouldProcess(deviceId)) {
                 return;
             }
             for (DataPoint point : points) {
@@ -71,7 +80,8 @@ public class CollectorDataPostProcessor {
                         point,
                         processResult,
                         cacheValue,
-                        System.currentTimeMillis()
+                        System.currentTimeMillis(),
+                        currentGeneration()
                 ));
             }
             log.debug("async batch post-process success, device={}, points={}", deviceId, points.size());
@@ -114,5 +124,18 @@ public class CollectorDataPostProcessor {
                     point != null ? point.getPointId() : "batch",
                     e.getMessage());
         }
+    }
+
+    private boolean shouldProcess(String deviceId) {
+        CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
+        if (context == null) {
+            return true;
+        }
+        return collectionTaskGuard.isCurrent(deviceId, context.generation());
+    }
+
+    private Long currentGeneration() {
+        CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
+        return context != null ? context.generation() : null;
     }
 }
