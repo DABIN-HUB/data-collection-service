@@ -21,10 +21,12 @@ import org.springframework.stereotype.Component;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 @Component
@@ -32,6 +34,14 @@ public class ProtocolDescriptorRegistry {
 
     public static final List<String> COMMON_DATA_TYPES = List.of(
             "INT", "FLOAT", "DOUBLE", "BOOLEAN", "STRING", "BYTE", "SHORT", "LONG", "UINT16", "UINT32");
+    private static final Set<String> TOP_LEVEL_CONNECTION_FIELDS = new HashSet<>(List.of(
+            "connectionType", "host", "port", "url", "connectTimeout", "readTimeout", "writeTimeout",
+            "timeout", "heartbeatInterval", "heartbeatTimeout", "subscriptionInterval", "reconnectDelay",
+            "username", "password", "clientId", "productKey", "deviceSecret", "authToken",
+            "sslEnabled", "sslCertPath", "sslKeyPath", "keepAlive", "bufferSize",
+            "autoReconnect", "maxPendingMessages", "dispatchBatchSize", "dispatchFlushInterval",
+            "overflowStrategy", "securityPolicy", "authParams"
+    ));
 
     private final Map<String, ProtocolDescriptor> descriptors = new LinkedHashMap<>();
     private final Map<String, AliasDescriptor> aliases = new LinkedHashMap<>();
@@ -580,7 +590,12 @@ public class ProtocolDescriptorRegistry {
                 .options(options == null ? Collections.emptyList() : options)
                 .group(group)
                 .requiredWhen(requiredWhen)
+                .storage(resolveStorage(name))
                 .build();
+    }
+
+    private String resolveStorage(String name) {
+        return TOP_LEVEL_CONNECTION_FIELDS.contains(name) ? "topLevel" : "extJson";
     }
 
     private static void applyDefaultPort(DeviceConnection cfg, Integer defaultPort) {

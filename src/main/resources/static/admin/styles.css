@@ -404,6 +404,14 @@ label {
 .field-description {
   color: var(--muted);
   font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.group-description {
+  margin: -0.2rem 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .help-text {
@@ -500,6 +508,19 @@ td code {
 .status-bad {
   color: var(--red);
   font-weight: 700;
+}
+
+.status-warn {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.status-detail {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .toast {

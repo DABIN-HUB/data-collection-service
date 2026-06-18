@@ -85,4 +85,20 @@ public class ProtocolSchemaServiceTest {
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "authType".equals(field.getName())));
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "requestTimeoutMs".equals(field.getName())));
     }
+
+    @Test
+    void shouldExposeFieldStorageMetadata() {
+        ProtocolSchema modbus = service.getSchema("MODBUS_TCP").orElseThrow();
+        ProtocolFieldConfig host = modbus.getConnectionFields().stream()
+                .filter(field -> "host".equals(field.getName()))
+                .findFirst()
+                .orElseThrow();
+        ProtocolFieldConfig connectionString = modbus.getConnectionFields().stream()
+                .filter(field -> "plc4xConnectionString".equals(field.getName()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("topLevel", host.getStorage());
+        assertEquals("extJson", connectionString.getStorage());
+    }
 }

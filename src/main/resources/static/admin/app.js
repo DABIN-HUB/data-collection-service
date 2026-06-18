@@ -2,6 +2,7 @@ const state = {
   token: localStorage.getItem("collectorToken") || "",
   devices: [],
   protocols: [],
+  runtimeStatus: {},
   currentProtocol: null,
   currentLocalProtocol: null,
   localDeviceEditingId: null,
@@ -10,15 +11,6 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const API_BASE = resolveContextPath();
-
-const commonConnectionFields = new Set([
-  "connectionType", "host", "port", "url", "connectTimeout", "readTimeout", "writeTimeout",
-  "timeout", "heartbeatInterval", "heartbeatTimeout", "subscriptionInterval", "reconnectDelay",
-  "username", "password", "clientId", "productKey", "deviceSecret", "authToken",
-  "sslEnabled", "sslCertPath", "sslKeyPath", "keepAlive", "bufferSize",
-  "autoReconnect", "maxPendingMessages", "dispatchBatchSize", "dispatchFlushInterval",
-  "overflowStrategy", "securityPolicy", "authParams"
-]);
 
 const adaptiveDefaults = {
   baseCollectionInterval: 2000,
@@ -49,7 +41,7 @@ function bindEvents() {
   $("#syncConfigBtn").addEventListener("click", syncConfig);
   $("#protocolSelect").addEventListener("change", renderSelectedProtocol);
   $("#localProtocolSelect").addEventListener("change", renderLocalProtocolSelection);
-  $("#connectionDeviceSelect").addEventListener("change", loadDeviceDiff);
+  $("#connectionDeviceSelect").addEventListener("change", syncProtocolSelectionToDevice);
   $("#loadConnectionBtn").addEventListener("click", loadConnection);
   $("#saveConnectionBtn").addEventListener("click", saveConnection);
   $("#toggleRealtimeBtn").addEventListener("click", toggleRealtime);
@@ -146,9 +138,16 @@ async function loadOverview() {
 }
 
 async function loadDevices() {
-  const body = await callApi("/api/config/devices");
-  const payload = dataOf(body);
+  const [devicesBody, monitorBody, runningBody] = await Promise.allSettled([
+    callApi("/api/config/devices"),
+    callApi("/monitor/devices"),
+    callApi("/api/device/running")
+  ]);
+  const payload = devicesBody.status === "fulfilled" ? dataOf(devicesBody.value) : {};
+  const monitor = monitorBody.status === "fulfilled" ? dataOf(monitorBody.value) : {};
+  const running = runningBody.status === "fulfilled" ? dataOf(runningBody.value) : [];
   state.devices = payload.devices || [];
+  state.runtimeStatus = buildRuntimeStatusMap(monitor, Array.isArray(running) ? running : []);
   renderDevices();
   fillDeviceSelects();
 }
@@ -158,6 +157,8 @@ function renderDevices() {
     const id = device.id || device.deviceId;
     const address = [device.ipAddress, device.port].filter(Boolean).join(":") || "-";
     const local = isLocalDevice(device);
+    const runtime = getRuntimeStatus(id);
+    const status = resolveDeviceStatus(device, runtime);
     const source = local
       ? `<span class="badge badge-local">本地临时设备</span>`
       : `<span class="badge">远端/同步</span>`;
@@ -172,7 +173,7 @@ function renderDevices() {
         <td>${escapeHtml(device.protocolType || device.connectionType || "-")}</td>
         <td>${escapeHtml(address)}</td>
         <td>${device.collectionInterval ?? "-"} ms</td>
-        <td>${escapeHtml(device.status || "-")}</td>
+        <td>${renderDeviceStatus(status, runtime, device)}</td>
         <td>
           <div class="inline-actions">
             <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
@@ -205,6 +206,7 @@ function fillDeviceSelects() {
       select.value = previous;
     }
   });
+  syncProtocolSelectionToDevice(false);
 }
 
 function getProtocolSchema(protocolCode) {
@@ -259,6 +261,7 @@ function fieldDefaultValue(field) {
 function renderField(field, formId) {
   const required = field.required ? `<span class="field-required">*</span>` : "";
   const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
+  const note = fieldHelpText(field);
   const value = fieldDefaultValue(field);
   const inputName = escapeAttr(field.name);
   let control;
@@ -277,6 +280,7 @@ function renderField(field, formId) {
     <label data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
       ${escapeHtml(field.label || field.name)} ${required} ${hint}
       ${control}
+      ${note ? `<span class="field-description">${escapeHtml(note)}</span>` : ""}
       <span class="field-error hidden"></span>
     </label>`;
 }
@@ -301,6 +305,7 @@ function renderProtocolForm(containerSelector, protocol, formId) {
   container.innerHTML = Array.from(groups.entries()).map(([group, fields]) => `
     <section class="field-group" data-group="${escapeAttr(group)}">
       <h3>${escapeHtml(groupTitle(group))}</h3>
+      ${renderGroupDescription(protocol, group)}
       <div class="dynamic-form">
         ${fields.map((field) => renderField(field, formId)).join("")}
       </div>
@@ -449,7 +454,7 @@ function collectProtocolForm(containerSelector, protocol, deviceId) {
     if (parsed === "" || parsed === null || parsed === undefined) {
       return;
     }
-    if (commonConnectionFields.has(name)) {
+    if ((field.storage || "extJson") === "topLevel") {
       payload[name] = parsed;
     } else {
       payload.extJson[name] = parsed;
@@ -637,8 +642,9 @@ async function saveLocalDevice() {
   });
   toast("Local temporary device saved");
   closeLocalDeviceForm();
-  await Promise.all([loadDevices(), loadOverview()]);
+  await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
   if (payload.startAfterSave) {
+    await loadDevices();
     await showDeviceStatus(deviceId);
   }
 }
@@ -670,6 +676,7 @@ async function loadProtocols() {
     .join("");
   renderLocalProtocolSelection();
   renderSelectedProtocol();
+  syncProtocolSelectionToDevice(false);
 }
 
 function renderSelectedProtocol() {
@@ -691,6 +698,7 @@ async function loadConnection() {
     toast("Select a device first", true);
     return;
   }
+  syncProtocolSelectionToDevice(false);
   const body = await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`);
   const connection = dataOf(body).connection || {};
   fillProtocolForm("#connectionForm", state.currentProtocol, connection);
@@ -700,12 +708,18 @@ async function loadConnection() {
 
 async function saveConnection() {
   const deviceId = $("#connectionDeviceSelect").value;
-  const protocol = $("#protocolSelect").value;
+  const device = getDeviceById(deviceId);
+  const protocol = deviceProtocolCode(device);
   if (!deviceId || !protocol) {
     toast("Select both device and protocol", true);
     return;
   }
+  if ($("#protocolSelect").value !== protocol) {
+    $("#protocolSelect").value = protocol;
+    renderSelectedProtocol();
+  }
   const payload = collectProtocolForm("#connectionForm", state.currentProtocol, deviceId);
+  payload.connectionType = protocol;
   await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`, {
     method: "PUT",
     body: JSON.stringify(payload)
@@ -740,6 +754,7 @@ async function loadDeviceDiff() {
   if (!deviceId) {
     return;
   }
+  syncProtocolSelectionToDevice(false);
   const body = await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/diff`);
   $("#diffView").textContent = JSON.stringify(dataOf(body), null, 2);
 }
@@ -748,11 +763,13 @@ async function startDevice(deviceId) {
   const device = state.devices.find((item) => (item.id || item.deviceId) === deviceId);
   const action = isLocalDevice(device) ? "start-local" : "start";
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/${action}`, { method: "POST" });
+  await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
   toast(`已请求启动 ${deviceId}`);
 }
 
 async function stopDevice(deviceId) {
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/stop`, { method: "POST" });
+  await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
   toast(`已请求停止 ${deviceId}`);
 }
 
@@ -764,12 +781,14 @@ async function showDeviceStatus(deviceId) {
 
 async function showDiff(deviceId) {
   $("#connectionDeviceSelect").value = deviceId;
+  syncProtocolSelectionToDevice(false);
   await loadDeviceDiff();
   location.hash = "#protocols";
 }
 
 async function reloadDevices() {
   await callApi("/api/device/reload", { method: "POST" });
+  await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
   toast("已触发重载所有设备");
 }
 
@@ -1010,6 +1029,115 @@ function formatValue(value) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function getDeviceById(deviceId) {
+  return state.devices.find((item) => (item.id || item.deviceId) === deviceId) || null;
+}
+
+function deviceProtocolCode(device) {
+  return device?.protocolType || device?.connectionType || "";
+}
+
+function syncProtocolSelectionToDevice(loadDiff = true) {
+  const deviceId = $("#connectionDeviceSelect").value;
+  const device = getDeviceById(deviceId);
+  const protocol = deviceProtocolCode(device);
+  if (!protocol) {
+    return;
+  }
+  if ($("#protocolSelect").value !== protocol) {
+    $("#protocolSelect").value = protocol;
+    renderSelectedProtocol();
+  } else if (!state.currentProtocol || state.currentProtocol.protocol !== protocol) {
+    renderSelectedProtocol();
+  }
+  if (loadDiff) {
+    loadDeviceDiff().catch((error) => toast(error.message, true));
+  }
+}
+
+function buildRuntimeStatusMap(deviceMonitor, runningDevices) {
+  const map = {};
+  const connections = Array.isArray(deviceMonitor?.connections) ? deviceMonitor.connections : [];
+  connections.forEach((connection) => {
+    if (!connection?.deviceId) {
+      return;
+    }
+    map[connection.deviceId] = {
+      ...(map[connection.deviceId] || {}),
+      connected: connection.connected === true,
+      isRunning: connection.connected === true || connection.expectedOnly === true || connection.status === "CONNECTING",
+      status: connection.status || null,
+      snapshot: connection
+    };
+  });
+  runningDevices.forEach((deviceId) => {
+    map[deviceId] = {
+      ...(map[deviceId] || {}),
+      isRunning: true
+    };
+  });
+  return map;
+}
+
+function getRuntimeStatus(deviceId) {
+  return state.runtimeStatus[deviceId] || null;
+}
+
+function resolveDeviceStatus(device, runtime) {
+  if (runtime?.connected) {
+    return "ONLINE";
+  }
+  if (runtime?.isRunning) {
+    return "RUNNING";
+  }
+  return device?.status || "OFFLINE";
+}
+
+function renderDeviceStatus(status, runtime, device) {
+  const cssClass = status === "ONLINE"
+    ? "status-good"
+    : status === "RUNNING"
+      ? "status-warn"
+      : "status-bad";
+  const configStatus = device?.status || "-";
+  const detail = runtime?.connected
+    ? "runtime connected"
+    : runtime?.isRunning
+      ? "runtime started, waiting for connection"
+      : `config ${configStatus}`;
+  return `<div class="${cssClass}">${escapeHtml(status)}</div><small class="status-detail">${escapeHtml(detail)}</small>`;
+}
+
+function fieldHelpText(field) {
+  if (!field) {
+    return "";
+  }
+  if (field.description) {
+    return field.description;
+  }
+  if (field.required) {
+    return "Required field";
+  }
+  if (field.defaultValue !== null && field.defaultValue !== undefined && String(field.defaultValue) !== "") {
+    return `Optional. Default: ${field.defaultValue}`;
+  }
+  if (field.group === "advanced") {
+    return "Optional advanced override. Leave empty to use generated or backend defaults.";
+  }
+  return "Optional. Leave empty to use backend defaults when supported.";
+}
+
+function renderGroupDescription(protocol, group) {
+  if (group !== "advanced") {
+    return "";
+  }
+  const protocolCode = protocol?.protocol || "";
+  const description = protocolCode.startsWith("MODBUS")
+    ? "Advanced PLC4X overrides. Host, port and serial settings remain the normal source of truth."
+    : "Optional advanced overrides and compatibility aliases. Leave empty unless you need explicit tuning.";
+  return `<p class="group-description">${escapeHtml(description)}</p>`;
 }
 
 function cssEscape(value) {

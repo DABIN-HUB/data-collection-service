@@ -21,6 +21,7 @@ public class ProtocolFieldConfig {
     private String description;
     private String group;
     private String requiredWhen;
+    private String storage;
 
     @Builder.Default
     private List<String> options = Collections.emptyList();
