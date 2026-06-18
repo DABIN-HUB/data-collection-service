@@ -2,6 +2,7 @@ package com.wangbin.collector.core.connection.adapter;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import lombok.Setter;
 import org.openmuc.j60870.ClientConnectionBuilder;
 import org.openmuc.j60870.Connection;
 import org.openmuc.j60870.ConnectionEventListener;
@@ -14,14 +15,11 @@ import java.net.InetAddress;
 public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connection> {
 
     private Connection connection;
+    @Setter
     private ConnectionEventListener connectionEventListener;
 
     public Iec104ConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
-    }
-
-    public void setConnectionEventListener(ConnectionEventListener connectionEventListener) {
-        this.connectionEventListener = connectionEventListener;
     }
 
     @Override

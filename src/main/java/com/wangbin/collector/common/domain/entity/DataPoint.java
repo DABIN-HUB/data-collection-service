@@ -31,6 +31,11 @@ public class DataPoint {
     private Integer unitId;
 
     /**
+     * 协议级公共地址，用于 IEC104 等需要 Common Address 的协议。
+     */
+    private Integer commonAddress;
+
+    /**
      * 数据点全局唯一标识符（系统内部使用）
      */
     private String pointId;

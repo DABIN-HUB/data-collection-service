@@ -535,7 +535,11 @@ function defaultPointTemplate(deviceId) {
     pointChangeThreshold: adaptiveDefaults.pointChangeThreshold,
     additionalConfig: {
       reportEnabled: true,
-      reportField: "temperature"
+      reportField: "temperature",
+      writeAddress: "C_SE_NC_1:1",
+      writeCommonAddress: 1,
+      writeSelect: false,
+      writeQl: 0
     }
   };
 }

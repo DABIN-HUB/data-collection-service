@@ -1,10 +1,12 @@
 package com.wangbin.collector.core.collector.protocol.iec.domain;
 
 import com.beanit.iec61850bean.Fc;
+import lombok.Getter;
 
 /**
  * IEC61850 地址描述。
  */
+@Getter
 public class Iec61850Address {
 
     private final String objectReference;
@@ -15,18 +17,6 @@ public class Iec61850Address {
         this.objectReference = objectReference;
         this.functionalConstraint = functionalConstraint;
         this.original = original;
-    }
-
-    public String getObjectReference() {
-        return objectReference;
-    }
-
-    public Fc getFunctionalConstraint() {
-        return functionalConstraint;
-    }
-
-    public String getOriginal() {
-        return original;
     }
 
     public String getCacheKey() {
