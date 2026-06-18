@@ -10,6 +10,7 @@ import com.wangbin.collector.core.collector.protocol.base.ReadPlanCapable;
 import com.wangbin.collector.core.collector.protocol.base.ReadableCollector;
 import com.wangbin.collector.core.collector.protocol.base.SubscribableCollector;
 import com.wangbin.collector.core.collector.protocol.base.WritableCollector;
+import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -30,6 +31,9 @@ public class CollectionManager {
 
     @Autowired
     private CollectorFactory collectorFactory;
+
+    @Autowired
+    private ConnectionManager connectionManager;
 
     @Getter
     private final Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();
@@ -85,15 +89,37 @@ public class CollectionManager {
     public void unregisterDevice(String deviceId) throws CollectorException {
         synchronized (collectors) {
             ProtocolCollector collector = collectors.remove(deviceId);
+            Exception destroyFailure = null;
             if (collector != null) {
                 try {
                     collector.destroy();
                     log.info("设备注销成功: {}", deviceId);
                 } catch (Exception e) {
+                    destroyFailure = e;
                     log.error("设备注销失败: {}", deviceId, e);
-                    throw new CollectorException("设备注销失败", deviceId, null, e);
                 }
             }
+            cleanupConnection(deviceId);
+            if (destroyFailure != null) {
+                throw new CollectorException("设备注销失败", deviceId, null, destroyFailure);
+            }
+        }
+    }
+
+    /**
+     * Best-effort cleanup for failed startup paths where the collector or connection may be half-created.
+     */
+    public void cleanupDevice(String deviceId) {
+        synchronized (collectors) {
+            ProtocolCollector collector = collectors.remove(deviceId);
+            if (collector != null) {
+                try {
+                    collector.destroy();
+                } catch (Exception e) {
+                    log.warn("cleanup collector failed, device={}", deviceId, e);
+                }
+            }
+            cleanupConnection(deviceId);
         }
     }
 
@@ -306,5 +332,15 @@ public class CollectionManager {
         }
         collectors.clear();
         log.info("所有采集器已销毁");
+    }
+
+    private void cleanupConnection(String deviceId) {
+        try {
+            if (connectionManager != null) {
+                connectionManager.removeConnection(deviceId);
+            }
+        } catch (Exception e) {
+            log.warn("cleanup connection failed, device={}", deviceId, e);
+        }
     }
 }

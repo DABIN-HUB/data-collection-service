@@ -169,6 +169,7 @@ public class CollectorProperties {
         private int initialTimeSliceIntervalMs = 1000;
         private int dynamicAdjustIntervalMs = 30000;
         private long collectTimeoutMs = 500;
+        private long deviceStartTimeoutMs = 15000;
     }
     
     /**

@@ -11,6 +11,7 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const API_BASE = resolveContextPath();
+const HIDDEN_PROTOCOLS = new Set(["OPC_UA_PLC4X"]);
 
 const adaptiveDefaults = {
   baseCollectionInterval: 2000,
@@ -210,7 +211,8 @@ function fillDeviceSelects() {
 }
 
 function getProtocolSchema(protocolCode) {
-  return state.protocols.find((item) => item.protocol === protocolCode) || null;
+  const canonical = canonicalProtocolForUi(protocolCode);
+  return state.protocols.find((item) => item.protocol === canonical) || null;
 }
 
 function groupTitle(group) {
@@ -477,7 +479,9 @@ function openLocalDeviceForm(bundle = null) {
   const connection = bundle?.connection || {};
   const points = bundle?.points || [defaultPointTemplate(device.id || device.deviceId || "local-device")];
   const deviceId = device.id || device.deviceId || "";
-  const protocol = device.protocolType || connection.connectionType || $("#localProtocolSelect").value || "MODBUS_TCP";
+  const protocol = canonicalProtocolForUi(
+    device.protocolType || connection.connectionType || $("#localProtocolSelect").value || "MODBUS_TCP"
+  );
   const adaptive = resolveAdaptiveDefaults(device, points);
 
   $("#localEditorTitle").textContent = state.localDeviceEditingId ? "Edit local temporary device" : "Create local temporary device";
@@ -508,7 +512,8 @@ function closeLocalDeviceForm() {
 }
 
 function renderLocalProtocolSelection() {
-  const protocolCode = $("#localProtocolSelect").value || "MODBUS_TCP";
+  const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
+  $("#localProtocolSelect").value = protocolCode;
   state.currentLocalProtocol = getProtocolSchema(protocolCode);
   $("#localProtocolMeta").innerHTML = renderProtocolMeta(state.currentLocalProtocol);
   renderProtocolForm("#localConnectionForm", state.currentLocalProtocol, "localConnectionForm");
@@ -580,7 +585,7 @@ function formatLocalPointsJson() {
 
 function buildLocalDeviceRequest() {
   const deviceId = $("#localDeviceId").value.trim();
-  const protocol = $("#localProtocolSelect").value || "MODBUS_TCP";
+  const protocol = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
   const connection = collectProtocolForm("#localConnectionForm", state.currentLocalProtocol, deviceId);
   const rawPoints = JSON.parse($("#localPointsJson").value || "[]");
   const adaptive = readAdaptiveFormValues();
@@ -667,11 +672,12 @@ async function deleteLocalDevice(deviceId) {
 async function loadProtocols() {
   const body = await callApi("/api/protocols");
   state.protocols = dataOf(body) || [];
-  $("#protocolCount").textContent = `${state.protocols.length} protocols`;
-  $("#protocolSelect").innerHTML = state.protocols
+  const visibleProtocols = state.protocols.filter((protocol) => !HIDDEN_PROTOCOLS.has(protocol.protocol));
+  $("#protocolCount").textContent = `${visibleProtocols.length} protocols`;
+  $("#protocolSelect").innerHTML = visibleProtocols
     .map((protocol) => `<option value="${protocol.protocol}">${protocol.title} (${protocol.protocol})</option>`)
     .join("");
-  $("#localProtocolSelect").innerHTML = state.protocols
+  $("#localProtocolSelect").innerHTML = visibleProtocols
     .map((protocol) => `<option value="${protocol.protocol}">${protocol.title} (${protocol.protocol})</option>`)
     .join("");
   renderLocalProtocolSelection();
@@ -680,7 +686,8 @@ async function loadProtocols() {
 }
 
 function renderSelectedProtocol() {
-  const protocolCode = $("#protocolSelect").value;
+  const protocolCode = canonicalProtocolForUi($("#protocolSelect").value);
+  $("#protocolSelect").value = protocolCode;
   state.currentProtocol = getProtocolSchema(protocolCode);
   const protocol = state.currentProtocol;
   if (!protocol) {
@@ -1036,7 +1043,15 @@ function getDeviceById(deviceId) {
 }
 
 function deviceProtocolCode(device) {
-  return device?.protocolType || device?.connectionType || "";
+  return canonicalProtocolForUi(device?.protocolType || device?.connectionType || "");
+}
+
+function canonicalProtocolForUi(protocolCode) {
+  const normalized = String(protocolCode || "").trim().toUpperCase().replace(/-/g, "_");
+  if (normalized === "OPC_UA_PLC4X" || normalized === "OPCUA_PLC4X") {
+    return "OPC_UA";
+  }
+  return normalized;
 }
 
 function syncProtocolSelectionToDevice(loadDiff = true) {

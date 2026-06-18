@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -188,10 +190,37 @@ public class CollectionSchedulerTest {
         assertTrue(task.isCancelled());
     }
 
+    @Test
+    void collectionSchedulerShouldTimeoutBlockedConnectWithoutBlockingOtherStarts() {
+        collectorProperties.getScheduler().setDeviceStartTimeoutMs(100);
+        setupSingleDevice("dev-connect-timeout");
+        setupSingleDevice("dev-connect-ok");
+
+        doAnswer(invocation -> {
+            Thread.sleep(1000);
+            return null;
+        }).when(collectionManager).connectDevice("dev-connect-timeout");
+        doAnswer(invocation -> null).when(collectionManager).connectDevice("dev-connect-ok");
+
+        boolean timeoutResult = scheduler.startDevice("dev-connect-timeout");
+        boolean secondResult = scheduler.startDevice("dev-connect-ok");
+
+        assertFalse(timeoutResult);
+        assertTrue(secondResult);
+        verify(collectionManager).cleanupDevice("dev-connect-timeout");
+    }
+
     private void setupSingleDevice(String deviceId) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);
         deviceInfo.setProtocolType("MODBUS_TCP");
+
+        DeviceConnection connection = new DeviceConnection();
+        connection.setDeviceId(deviceId);
+        connection.setConnectionType("MODBUS_TCP");
+        connection.setHost("127.0.0.1");
+        connection.setPort(502);
+        connection.setConnectTimeout(50);
 
         DataPoint point = new DataPoint();
         point.setDeviceId(deviceId);
@@ -201,11 +230,13 @@ public class CollectionSchedulerTest {
         when(configManager.getDevice(deviceId)).thenReturn(deviceInfo);
         when(configManager.getDataPoints(deviceId)).thenReturn(List.of(point));
         when(configManager.getDataPointsAndAdaptiveConfig(deviceId)).thenReturn(List.of(point));
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection);
         when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
 
         doAnswer(invocation -> null).when(collectionManager).registerDevice(deviceInfo);
         doAnswer(invocation -> null).when(collectionManager).connectDevice(deviceId);
         doAnswer(invocation -> null).when(collectionManager).disconnectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).cleanupDevice(anyString());
         doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(eq(deviceId), anyList());
 
         when(deviceBatchPlanner.plan(eq(deviceId), anyList(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))

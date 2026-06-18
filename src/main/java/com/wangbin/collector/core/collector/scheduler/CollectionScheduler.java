@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -80,8 +82,15 @@ public class CollectionScheduler {
     private final Map<String, ScheduledFuture<?>> pendingConfigRestartTasks = new ConcurrentHashMap<>();
     private final Map<String, Set<Future<?>>> deviceInFlightCollectFutures = new ConcurrentHashMap<>();
     private final Map<String, Set<CompletableFuture<?>>> deviceInFlightProcessFutures = new ConcurrentHashMap<>();
+    private final Set<String> startingDevices = ConcurrentHashMap.newKeySet();
     private final PerformanceMonitor performanceMonitor = new PerformanceMonitor();
     private final ReentrantLock scheduleLock = new ReentrantLock();
+    private final AtomicInteger deviceStartThreadIndex = new AtomicInteger(0);
+    private final ExecutorService deviceStartExecutor = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "device-start-" + deviceStartThreadIndex.incrementAndGet());
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final AtomicInteger timeSliceCount = new AtomicInteger(2);
     private final AtomicInteger timeSliceInterval = new AtomicInteger(1000);
@@ -147,12 +156,14 @@ public class CollectionScheduler {
         shutdownExecutor("batchDispatcher", batchDispatcher);
         shutdownExecutor("asyncCollectorPool", asyncCollectorPool);
         shutdownExecutor("dataProcessorPool", dataProcessorPool);
+        shutdownExecutor("deviceStartExecutor", deviceStartExecutor);
         deviceScheduleInfo.clear();
         cancelTimeSliceScheduling();
         timeSliceTasks.clear();
         timeSliceScheduleFutures.clear();
         pendingConfigRestartTasks.values().forEach(future -> future.cancel(false));
         pendingConfigRestartTasks.clear();
+        startingDevices.clear();
     }
 
     private void startTimeSliceScheduling() {
@@ -325,18 +336,21 @@ public class CollectionScheduler {
     }
 
     public boolean startDevice(String deviceId) {
+        DeviceInfo deviceInfo;
+        List<DataPoint> dataPoints;
+        long generation;
         scheduleLock.lock();
         try {
             DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
-            if (scheduleInfo != null && scheduleInfo.isRunning()) {
+            if ((scheduleInfo != null && scheduleInfo.isRunning()) || startingDevices.contains(deviceId)) {
                 return false;
             }
 
-            DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+            deviceInfo = configManager.getDevice(deviceId);
             if (deviceInfo == null) {
                 return false;
             }
-            List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
+            dataPoints = configManager.getDataPoints(deviceId);
             if (dataPoints == null || dataPoints.isEmpty()) {
                 return false;
             }
@@ -347,28 +361,46 @@ public class CollectionScheduler {
                 }
             }
 
-            long generation = collectionTaskGuard.activateNextGeneration(deviceId);
-            try {
-                collectionManager.registerDevice(deviceInfo);
-            } catch (Exception e) {
-                log.debug("register device skipped, device={}", deviceId, e);
-            }
-            if (!connectDevice(deviceId)) {
-                collectionTaskGuard.clearDevice(deviceId);
-                return false;
-            }
-
-            scheduleDevicePoints(deviceId, generation, dataPoints);
-            collectionManager.rebuildReadPlans(deviceId, dataPoints);
-            deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
-            collectionStatistics.startCollection(deviceId, dataPoints.size());
-            collectionServiceHealthTracker.markDeviceStarted(deviceId);
-            return true;
+            generation = collectionTaskGuard.activateNextGeneration(deviceId);
+            startingDevices.add(deviceId);
         } catch (Exception e) {
             log.error("start device failed, device={}", deviceId, e);
             return false;
         } finally {
             scheduleLock.unlock();
+        }
+
+        try {
+            try {
+                collectionManager.registerDevice(deviceInfo);
+            } catch (Exception e) {
+                log.debug("register device skipped, device={}", deviceId, e);
+            }
+
+            long connectTimeoutMs = resolveDeviceStartTimeoutMs(deviceId);
+            if (!connectDevice(deviceId, connectTimeoutMs)) {
+                cleanupFailedStart(deviceId);
+                return false;
+            }
+
+            scheduleLock.lock();
+            try {
+                scheduleDevicePoints(deviceId, generation, dataPoints);
+                collectionManager.rebuildReadPlans(deviceId, dataPoints);
+                deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
+            } finally {
+                scheduleLock.unlock();
+            }
+
+            collectionStatistics.startCollection(deviceId, dataPoints.size());
+            collectionServiceHealthTracker.markDeviceStarted(deviceId);
+            return true;
+        } catch (Exception e) {
+            log.error("start device failed, device={}", deviceId, e);
+            cleanupFailedStart(deviceId);
+            return false;
+        } finally {
+            startingDevices.remove(deviceId);
         }
     }
 
@@ -390,11 +422,28 @@ public class CollectionScheduler {
         }
     }
 
-    private boolean connectDevice(String deviceId) {
+    private boolean connectDevice(String deviceId, long timeoutMs) {
+        Future<?> connectFuture = null;
         try {
-            collectionManager.connectDevice(deviceId);
-            configManager.getDataPointsAndAdaptiveConfig(deviceId);
+            connectFuture = deviceStartExecutor.submit(() -> {
+                collectionManager.connectDevice(deviceId);
+                configManager.getDataPointsAndAdaptiveConfig(deviceId);
+            });
+            connectFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
             return true;
+        } catch (TimeoutException e) {
+            if (connectFuture != null) {
+                connectFuture.cancel(true);
+            }
+            log.error("connect device timed out, device={}, timeoutMs={}", deviceId, timeoutMs);
+            return false;
+        } catch (InterruptedException e) {
+            if (connectFuture != null) {
+                connectFuture.cancel(true);
+            }
+            Thread.currentThread().interrupt();
+            log.error("connect device interrupted, device={}", deviceId, e);
+            return false;
         } catch (Exception e) {
             log.error("connect device failed, device={}", deviceId, e);
             return false;
@@ -612,6 +661,7 @@ public class CollectionScheduler {
         status.put("deviceId", deviceId);
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
         status.put("isRunning", info != null && info.isRunning());
+        status.put("isStarting", startingDevices.contains(deviceId));
         status.put("connected", collectionManager.isDeviceConnected(deviceId));
         status.put("statistics", collectionStatistics.getDeviceStatistics(deviceId));
         status.put("performance", performanceMonitor.getDevicePerformance(deviceId));
@@ -628,6 +678,51 @@ public class CollectionScheduler {
     public boolean isDeviceRunning(String deviceId) {
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
         return info != null && info.isRunning();
+    }
+
+    private long resolveDeviceStartTimeoutMs(String deviceId) {
+        long defaultTimeoutMs = Math.max(1000L, collectorProperties.getScheduler().getDeviceStartTimeoutMs());
+        DeviceConnection connection = configManager.getConnectionConfig(deviceId);
+        if (connection == null) {
+            return defaultTimeoutMs;
+        }
+
+        Long configuredTimeout = firstPositive(
+                toLong(connection.getConnectTimeout()),
+                toLong(connection.getInt("connectTimeoutMs", null)),
+                toLong(connection.getInt("connectTimeout", null)),
+                toLong(connection.getTimeout()));
+        if (configuredTimeout == null) {
+            return defaultTimeoutMs;
+        }
+        return Math.max(1000L, Math.min(configuredTimeout, defaultTimeoutMs));
+    }
+
+    private Long firstPositive(Long... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (Long candidate : candidates) {
+            if (candidate != null && candidate > 0) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private Long toLong(Integer value) {
+        return value == null ? null : value.longValue();
+    }
+
+    private void cleanupFailedStart(String deviceId) {
+        try {
+            collectionManager.cleanupDevice(deviceId);
+        } catch (Exception e) {
+            log.warn("cleanup failed after start error, device={}", deviceId, e);
+        } finally {
+            collectionTaskGuard.clearDevice(deviceId);
+            deviceScheduleInfo.remove(deviceId);
+        }
     }
 
     private boolean isBatchTaskActive(DeviceBatchTask batchTask) {
