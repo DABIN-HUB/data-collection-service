@@ -51,8 +51,8 @@ public class RemoteConfigLoader implements ConfigLoader {
 
     @Override
     public List<DeviceInfo> loadAllDevices() {
+        String url = runUrl + "/iot/collector/config/devices?serviceId=" + serviceId;
         try {
-            String url = runUrl + "/iot/collector/config/devices?serviceId=" + serviceId;
             ResponseEntity<ApiResponse<List<DeviceInfo>>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
@@ -62,7 +62,7 @@ public class RemoteConfigLoader implements ConfigLoader {
             }
             log.warn("load remote devices failed, status={}", response.getStatusCode());
         } catch (Exception e) {
-            log.error("load remote devices failed", e);
+            log.error("加载远程设备配置失败,不影响现有采集，url:{}", url);
         }
         return Collections.emptyList();
     }
