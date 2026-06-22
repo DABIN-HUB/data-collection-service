@@ -81,6 +81,13 @@ public class ProtocolSchemaServiceTest {
         assertTrue(ethernetIp.isWritable());
         assertFalse(ethernetIp.isSubscribable());
 
+        ProtocolSchema knx = service.getSchema("KNXNET_IP").orElseThrow();
+        assertTrue(knx.isImplemented());
+        assertTrue(knx.isWritable());
+        assertTrue(knx.isSubscribable());
+        assertTrue(knx.getConnectionFields().stream().anyMatch(field -> "groupAddressNumLevels".equals(field.getName())));
+        assertTrue(knx.getConnectionFields().stream().anyMatch(field -> "knxConnectionType".equals(field.getName())));
+
         ProtocolSchema opcUa = service.getSchema("OPC_UA").orElseThrow();
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "authType".equals(field.getName())));
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "requestTimeoutMs".equals(field.getName())));

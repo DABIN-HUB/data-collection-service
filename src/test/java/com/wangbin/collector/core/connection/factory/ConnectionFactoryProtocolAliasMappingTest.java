@@ -7,6 +7,7 @@ import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.KnxNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Plc4xModbusRtuConnectionAdapter;
@@ -115,6 +116,15 @@ class ConnectionFactoryProtocolAliasMappingTest {
         assertInstanceOf(AdsConnectionAdapter.class,
                 factory.createConnection(device("dev-ads", "AMS"), config));
         assertEquals(48898, config.getPort());
+    }
+
+    @Test
+    void shouldMapKnxAliasToKnxNetIpAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(KnxNetIpConnectionAdapter.class,
+                factory.createConnection(device("dev-knx", "KNX"), config));
+        assertEquals(3671, config.getPort());
     }
 
     @Test

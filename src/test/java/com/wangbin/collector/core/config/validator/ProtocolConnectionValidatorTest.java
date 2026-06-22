@@ -212,6 +212,42 @@ class ProtocolConnectionValidatorTest {
         assertDoesNotThrow(() -> validator.validate(device("dev-snmp", "SNMP"), connection));
     }
 
+    @Test
+    void shouldAcceptKnxNetIpWithHostOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptKnxNetIpWithRawConnectionStringOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "knxnet-ip://127.0.0.1"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRejectKnxNetIpWithInvalidGroupAddressLevels() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("groupAddressNumLevels", 0));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRejectKnxNetIpWithInvalidConnectionType() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("knxConnectionType", "TUNNEL"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

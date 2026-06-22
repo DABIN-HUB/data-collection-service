@@ -54,6 +54,7 @@ public class ConnectionFactory {
             case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "ADS" -> createAdsConnection(deviceInfo, cfg);
+            case "KNXNET_IP" -> createKnxNetIpConnection(deviceInfo, cfg);
             case "MODBUS_TCP" -> createModbusTcpConnection(deviceInfo, cfg);
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
@@ -157,6 +158,15 @@ public class ConnectionFactory {
         } catch (Exception e) {
             log.error("Create ADS connection failed: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create ADS connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createKnxNetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new KnxNetIpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create KNXnet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create KNXnet/IP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 

@@ -316,6 +316,20 @@ case "WEBSOCKET":
     fields.add(createFieldConfig("authParams", "object", "鎵╁睍璁よ瘉鍙傛暟", false, "{}", null));
     break;
 
+case "KNXNET_IP":
+    fields.add(createFieldConfig("host", "string", "Device host", false, "127.0.0.1", null));
+    fields.add(createFieldConfig("port", "number", "Port", false, "3671", null));
+    fields.add(createFieldConfig("groupAddressNumLevels", "number", "Group address levels", false, "3", null));
+    fields.add(createFieldConfig("knxConnectionType", "string", "KNX connection type", false, "LINK_LAYER", new String[]{"LINK_LAYER", "RAW", "BUSMONITOR"}));
+    fields.add(createFieldConfig("requestTimeout", "number", "PLC4X request timeout (ms)", false, "10000", null));
+    fields.add(createFieldConfig("maxFieldsPerRequest", "number", "Max fields per request", false, "30", null));
+    fields.add(createFieldConfig("knxprojFilePath", "string", "KNX project file path", false, "", null));
+    fields.add(createFieldConfig("knxprojPassword", "string", "KNX project password", false, "", null));
+    fields.add(createFieldConfig("plc4xConnectionString", "string", "PLC4X connection string", false, "", null));
+    fields.add(createFieldConfig("readTimeout", "number", "Read timeout (ms)", false, "10000", null));
+    fields.add(createFieldConfig("timeout", "number", "Protocol timeout (ms)", false, "10000", null));
+    break;
+
 case "CUSTOM_TCP":
     break;
 ```

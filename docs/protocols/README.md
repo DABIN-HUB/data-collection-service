@@ -5,6 +5,7 @@
 - [SIEMENS S7](./SIEMENS_S7.md)
 - [ETHERNET IP](./ETHERNET_IP.md)
 - [ADS](./ADS.md)
+- [KNXNET IP](./KNXNET_IP.md)
 - [OPC UA](./OPC_UA.md)
 - [OPC UA PLC4X](./OPC_UA_PLC4X.md)
 - [OPC DA](./OPC_DA.md)

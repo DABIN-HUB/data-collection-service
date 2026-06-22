@@ -32,6 +32,7 @@ public class ProtocolConnectionValidator {
             case "SIEMENS_S7" -> requireHost(deviceInfo, connection, protocol);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "ADS" -> validateAds(deviceInfo, connection);
+            case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
             case "SNMP" -> {
                 requireHost(deviceInfo, connection, protocol);
                 validateSnmp(deviceInfo, connection);
@@ -218,6 +219,40 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    private void validateKnxNetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        String connectionString = firstNonBlank(
+                connection.getStringConfig("plc4xConnectionString", null),
+                connection.getStringConfig("plc4x-connection-string", null));
+        if (isBlank(connectionString)
+                && !hasText(connection.getHost())
+                && !hasText(deviceInfo.getIpAddress())) {
+            fail(deviceInfo, "KNXNET_IP requires plc4xConnectionString, host, or device ipAddress");
+        }
+
+        Integer groupAddressNumLevels = firstNonNull(
+                connection.getIntConfig("groupAddressNumLevels", null),
+                connection.getIntConfig("group-address-num-levels", null));
+        if (groupAddressNumLevels != null
+                && groupAddressNumLevels != 1
+                && groupAddressNumLevels != 2
+                && groupAddressNumLevels != 3) {
+            fail(deviceInfo, "KNXNET_IP groupAddressNumLevels must be 1, 2, or 3");
+        }
+
+        String knxConnectionType = firstNonBlank(
+                connection.getStringConfig("knxConnectionType", null),
+                connection.getStringConfig("connection-type", null),
+                connection.getStringConfig("knxnetIpConnectionType", null));
+        if (hasText(knxConnectionType)) {
+            String normalized = knxConnectionType.trim().toUpperCase();
+            if (!("LINK_LAYER".equals(normalized)
+                    || "RAW".equals(normalized)
+                    || "BUSMONITOR".equals(normalized))) {
+                fail(deviceInfo, "KNXNET_IP knxConnectionType must be LINK_LAYER, RAW, or BUSMONITOR");
+            }
+        }
+    }
+
     private String resolveProtocol(DeviceInfo deviceInfo, DeviceConnection connection) {
         return firstNonBlank(
                 deviceInfo.getProtocolType(),
@@ -240,6 +275,7 @@ public class ProtocolConnectionValidator {
             case "S7" -> "SIEMENS_S7";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
+            case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
             case "OPCUA" -> "OPC_UA";
             case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
             case "IEC_104" -> "IEC104";
@@ -262,6 +298,18 @@ public class ProtocolConnectionValidator {
         }
         for (Integer value : values) {
             if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Integer firstNonNull(Integer... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Integer value : values) {
+            if (value != null) {
                 return value;
             }
         }

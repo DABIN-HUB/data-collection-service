@@ -1,0 +1,70 @@
+{
+  "overwrite": true,
+  "startAfterSave": false,
+  "device": {
+    "deviceId": "KNX_LAB_001",
+    "deviceName": "KNX Lab Gateway 001",
+    "deviceAlias": "KNX Room A",
+    "protocolType": "KNXNET_IP",
+    "connectionType": "KNXNET_IP",
+    "ipAddress": "192.168.10.20",
+    "port": 3671,
+    "collectionInterval": 2000,
+    "remark": "Minimal KNXnet/IP bring-up template"
+  },
+  "connection": {
+    "deviceId": "KNX_LAB_001",
+    "connectionType": "KNXNET_IP",
+    "host": "192.168.10.20",
+    "port": 3671,
+    "readTimeoutMs": 10000,
+    "timeout": 10000,
+    "extJson": {
+      "groupAddressNumLevels": 3,
+      "knxConnectionType": "LINK_LAYER",
+      "requestTimeout": 10000,
+      "maxFieldsPerRequest": 30
+    }
+  },
+  "points": [
+    {
+      "pointId": "knx_room_temp",
+      "pointCode": "roomTemp",
+      "pointName": "Room Temperature",
+      "deviceId": "KNX_LAB_001",
+      "address": "1/2/3:DPT9.001",
+      "dataType": "FLOAT",
+      "readWrite": "R",
+      "collectionMode": "POLLING",
+      "status": 1,
+      "baseCollectionInterval": 2000,
+      "cacheEnabled": 1
+    },
+    {
+      "pointId": "knx_room_light",
+      "pointCode": "roomLight",
+      "pointName": "Room Light Switch",
+      "deviceId": "KNX_LAB_001",
+      "address": "1/2/4:DPT1.001",
+      "dataType": "BOOLEAN",
+      "readWrite": "RW",
+      "collectionMode": "POLLING",
+      "status": 1,
+      "baseCollectionInterval": 2000,
+      "cacheEnabled": 1
+    },
+    {
+      "pointId": "knx_room_dimmer",
+      "pointCode": "roomDimmer",
+      "pointName": "Room Dimmer Percent",
+      "deviceId": "KNX_LAB_001",
+      "address": "1/2/5:DPT5.001",
+      "dataType": "INT",
+      "readWrite": "RW",
+      "collectionMode": "POLLING",
+      "status": 1,
+      "baseCollectionInterval": 2000,
+      "cacheEnabled": 1
+    }
+  ]
+}

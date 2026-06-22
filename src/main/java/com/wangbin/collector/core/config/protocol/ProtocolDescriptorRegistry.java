@@ -8,6 +8,7 @@ import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollec
 import com.wangbin.collector.core.collector.protocol.http.HttpCollector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
+import com.wangbin.collector.core.collector.protocol.knx.KnxNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
@@ -153,6 +154,23 @@ public class ProtocolDescriptorRegistry {
                         field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"))));
+        registerPrimary(descriptor("KNXNET_IP", "KNXnet/IP", "PLC4X-backed KNXnet/IP group address collector.",
+                List.of("KNX", "KNXNETIP", "KNXNET/IP", "KNX_NET_IP"), KnxNetIpCollector.class, "KNXNET_IP", 3671, ProtocolAddressingMode.SYMBOLIC,
+                true, true, true,
+                List.of("1/2/3:DPT1.001", "1/200:DPT9.001", "12345:DPT5.001"),
+                fields(
+                        field("host", "string", "Device host", false, "127.0.0.1", null, "connection"),
+                        field("port", "number", "Port", false, "3671", null, "connection"),
+                        field("groupAddressNumLevels", "number", "Group address levels", false, "3", null, "protocol"),
+                        field("knxConnectionType", "select", "KNX connection type", false, "LINK_LAYER",
+                                List.of("LINK_LAYER", "RAW", "BUSMONITOR"), "protocol"),
+                        field("requestTimeout", "number", "PLC4X request timeout (ms)", false, "10000", null, "advanced"),
+                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "30", null, "advanced"),
+                        field("knxprojFilePath", "string", "KNX project file path", false, "", null, "advanced"),
+                        field("knxprojPassword", "password", "KNX project password", false, "", null, "advanced"),
+                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "10000", null, "advanced"),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "10000", null, "advanced"))));
         registerPrimary(descriptor("OPC_DA", "OPC DA", "OPC DA access through local or bridge mode.",
                 List.of(), OpcDaCollector.class, "OPC_DA", null, ProtocolAddressingMode.SYMBOLIC,
                 true, true, true,

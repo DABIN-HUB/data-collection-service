@@ -42,6 +42,10 @@ class ProtocolBatchStrategy {
             Map.entry("LOGIX", new BatchLimits(64, 128, 128, 50)),
             Map.entry("ADS", new BatchLimits(64, 128, 128, 50)),
             Map.entry("AMS", new BatchLimits(64, 128, 128, 50)),
+            Map.entry("KNXNET_IP", new BatchLimits(30, 50, 50, 50)),
+            Map.entry("KNX", new BatchLimits(30, 50, 50, 50)),
+            Map.entry("KNXNETIP", new BatchLimits(30, 50, 50, 50)),
+            Map.entry("KNXNET/IP", new BatchLimits(30, 50, 50, 50)),
             Map.entry("OPC_UA_PLC4X", new BatchLimits(100, 200, 100, 50)),
             Map.entry("OPCUA_PLC4X", new BatchLimits(100, 200, 100, 50))
     );

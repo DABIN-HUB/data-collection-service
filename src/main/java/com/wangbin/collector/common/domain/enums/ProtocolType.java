@@ -12,6 +12,7 @@ public enum ProtocolType {
     SIEMENS_S7("SIEMENS_S7", "Siemens S7", 102),
     ETHERNET_IP("ETHERNET_IP", "EtherNet/IP", 44818),
     ADS("ADS", "Beckhoff ADS", 48898),
+    KNXNET_IP("KNXNET_IP", "KNXnet/IP", 3671),
 
     // OPC
     OPC_DA("OPC_DA", "OPC DA", null),
@@ -111,6 +112,7 @@ public enum ProtocolType {
         return switch (this) {
             case MODBUS_TCP, MODBUS_RTU, MODBUS_ASCII -> 3000;
             case SIEMENS_S7, ETHERNET_IP, ADS -> 5000;
+            case KNXNET_IP -> 10000;
             case OPC_UA, OPC_UA_PLC4X -> 10000;
             case SNMP_V1, SNMP_V2C, SNMP_V3 -> 5000;
             case MQTT, MQTT_SSL -> 10000;
