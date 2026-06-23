@@ -103,16 +103,68 @@
           </div>
           <div id="localProtocolMeta" class="meta-box"></div>
           <form id="localConnectionForm" class="dynamic-form"></form>
-          <div class="grid two local-json-grid">
-            <label>
-              点位配置 JSON 数组
-              <textarea id="localPointsJson" spellcheck="false"></textarea>
-            </label>
-          </div>
+          <section class="point-editor">
+            <div class="point-editor-head">
+              <div>
+                <strong>点位可视化配置</strong>
+                <p class="field-description">左侧维护点位列表，右侧编辑单个点位；高级 JSON 仅作为补充回退，不再作为主编辑入口。</p>
+              </div>
+              <div class="inline-actions">
+                <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
+                <button id="addLocalPointBtn" type="button">新增点位</button>
+                <button id="duplicateLocalPointBtn" type="button">复制当前点位</button>
+                <button id="deleteLocalPointBtn" type="button" class="danger">删除当前点位</button>
+              </div>
+            </div>
+            <div class="point-workspace">
+              <section class="point-list-panel">
+                <div class="point-list-meta">
+                  <strong id="localPointCount">0 个点位</strong>
+                  <span id="localPointSelectionMeta">未选择点位</span>
+                </div>
+                <div class="table-wrap compact point-table-wrap">
+                  <table class="point-table">
+                    <thead>
+                      <tr>
+                        <th>点位</th>
+                        <th>地址</th>
+                        <th>类型</th>
+                        <th>读写</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="localPointRows">
+                      <tr><td colspan="5">暂无点位</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              <section class="point-detail-panel">
+                <div id="localPointEmpty" class="empty-state hidden">
+                  <strong>暂无选中的点位</strong>
+                  <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                </div>
+                <div id="localPointDetail"></div>
+              </section>
+            </div>
+          </section>
+          <details class="point-json-panel">
+            <summary>高级 JSON 回退区</summary>
+            <p class="field-description">这里保留原始点位数组 JSON，适合批量粘贴或补充当前界面尚未可视化的字段。修改后需要点击“应用 JSON 到列表”。</p>
+            <div class="local-json-grid">
+              <label>
+                点位配置 JSON 数组
+                <textarea id="localPointsJson" spellcheck="false"></textarea>
+              </label>
+            </div>
+            <div class="inline-actions point-json-actions">
+              <button id="formatLocalPointsBtn" type="button">格式化点位 JSON</button>
+              <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
+            </div>
+          </details>
           <div class="inline-actions local-options">
             <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
             <label class="check-line"><input id="localStartAfterSave" type="checkbox"> 保存后立即本地启动</label>
-            <button id="formatLocalPointsBtn">格式化点位 JSON</button>
             <button id="saveLocalDeviceBtn" class="primary">保存本地临时设备</button>
           </div>
         </div>
@@ -281,5 +333,6 @@
   </div>
 
   <script src="./app.js"></script>
+  <script src="./local-point-editor.js"></script>
 </body>
 </html>

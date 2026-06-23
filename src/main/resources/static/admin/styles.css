@@ -338,6 +338,202 @@ label {
   background: rgba(255, 252, 240, 0.64);
 }
 
+.point-editor {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+}
+
+.point-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.point-editor-head strong {
+  color: var(--green);
+  font-size: 0.98rem;
+}
+
+.point-editor-head .field-description {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+}
+
+.point-editor-head input[type="search"] {
+  min-width: 16rem;
+}
+
+.point-workspace {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.95fr) minmax(0, 1.45fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.point-list-panel,
+.point-detail-panel,
+.point-json-panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 252, 240, 0.78);
+}
+
+.point-list-panel,
+.point-detail-panel {
+  padding: 0.95rem;
+}
+
+.point-list-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.point-table-wrap {
+  max-height: 44rem;
+}
+
+.point-table tr.is-selected td {
+  background: rgba(47, 111, 78, 0.1);
+}
+
+.point-table td:first-child {
+  min-width: 14rem;
+}
+
+.point-select-button {
+  display: grid;
+  gap: 0.22rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.point-select-button strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.point-select-button span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.point-detail-panel {
+  min-height: 34rem;
+}
+
+.point-detail-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.point-detail-panel textarea {
+  min-height: 5.6rem;
+}
+
+.point-section-note,
+.subtable-note {
+  margin: -0.25rem 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  min-height: 24rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed rgba(47, 111, 78, 0.28);
+  border-radius: 16px;
+  background: rgba(24, 52, 45, 0.04);
+}
+
+.empty-state strong {
+  color: var(--green);
+}
+
+.point-json-panel {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.point-json-panel summary {
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.point-json-panel[open] summary {
+  margin-bottom: 0.75rem;
+}
+
+.point-json-actions {
+  margin-top: 0.75rem;
+}
+
+.point-subtable table {
+  table-layout: fixed;
+}
+
+.point-subtable td input,
+.point-subtable td select,
+.point-subtable td textarea {
+  width: 100%;
+}
+
+.point-subtable td:last-child {
+  width: 7rem;
+}
+
+.readonly-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.readonly-card {
+  padding: 0.8rem 0.85rem;
+  border: 1px solid rgba(47, 111, 78, 0.16);
+  border-radius: 14px;
+  background: rgba(24, 52, 45, 0.05);
+}
+
+.readonly-card small {
+  display: block;
+  margin-bottom: 0.28rem;
+  color: var(--muted);
+}
+
+.readonly-card strong,
+.readonly-card code {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.protocol-point-note {
+  margin-top: -0.15rem;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
 .local-json-grid {
   margin-top: 0.9rem;
 }
@@ -561,7 +757,8 @@ td code {
 
   .hero,
   .panel-title,
-  .grid.two {
+  .grid.two,
+  .point-workspace {
     display: block;
   }
 
