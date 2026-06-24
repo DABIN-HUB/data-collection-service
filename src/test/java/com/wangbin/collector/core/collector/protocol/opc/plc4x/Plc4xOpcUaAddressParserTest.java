@@ -51,4 +51,18 @@ class Plc4xOpcUaAddressParserTest {
         assertEquals("ns=3;i=1001;BOOL", address.getPlc4xAddress());
         assertEquals("BOOL", address.getDataType());
     }
+
+    @Test
+    void shouldMapBinaryAliasesToByteString() {
+        DataPoint point = new DataPoint();
+        point.setPointId("p3");
+        point.setAddress("ns=2;s=Channel1.Device1.Payload");
+        point.setDataType("STRING");
+        point.setAdditionalConfig(new LinkedHashMap<>(Map.of("driverDataType", "BYTE_ARRAY")));
+
+        Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(point);
+
+        assertEquals("ns=2;s=Channel1.Device1.Payload;BYTESTRING", address.getPlc4xAddress());
+        assertEquals("BYTESTRING", address.getDataType());
+    }
 }

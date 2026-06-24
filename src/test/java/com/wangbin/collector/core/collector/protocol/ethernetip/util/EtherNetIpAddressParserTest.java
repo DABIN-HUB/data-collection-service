@@ -23,6 +23,14 @@ class EtherNetIpAddressParserTest {
     }
 
     @Test
+    void shouldMapPlatformWordTypeToUintWhenInferring() {
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("Tag1", "WORD", Map.of()));
+
+        assertEquals("Tag1:UINT", address.getPlc4xAddress());
+        assertEquals("UINT", address.getBasePlcType());
+    }
+
+    @Test
     void shouldKeepExplicitLogixTypeAndArraySize() {
         EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("Program:Main.TagA:REAL[4]", "FLOAT", Map.of()));
 
@@ -58,6 +66,14 @@ class EtherNetIpAddressParserTest {
 
         assertEquals("MainProgram.Tag1:DINT", address.getPlc4xAddress());
         assertEquals("DINT", address.getBasePlcType());
+    }
+
+    @Test
+    void shouldPreferDriverDataTypeOverPlatformType() {
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("MainProgram.Tag1", "FLOAT", Map.of("driverDataType", "WORD")));
+
+        assertEquals("MainProgram.Tag1:WORD", address.getPlc4xAddress());
+        assertEquals("WORD", address.getBasePlcType());
     }
 
     private DataPoint point(String address, String dataType, Map<String, Object> additionalConfig) {

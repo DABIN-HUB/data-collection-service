@@ -52,6 +52,16 @@ class S7AddressParserTest {
     }
 
     @Test
+    void shouldNormalizeDriverTypeAliasWhenInferringAddressType() {
+        DataPoint point = point("DB1.DBB0", "INT16", Map.of("driverDataType", "BYTE"));
+
+        S7Address address = S7AddressParser.parse(point);
+
+        assertEquals("DB1:0:USINT", address.getPlc4xAddress());
+        assertEquals("USINT", address.getPlcType());
+    }
+
+    @Test
     void shouldPreserveExplicitDbPlc4xAddress() {
         DataPoint point = point("%DB56.DBW20:INT", "INT16", Map.of());
 
@@ -90,4 +100,3 @@ class S7AddressParserTest {
         return point;
     }
 }
-

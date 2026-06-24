@@ -35,6 +35,10 @@ public class ProtocolDescriptorRegistry {
 
     public static final List<String> COMMON_DATA_TYPES = List.of(
             "INT", "FLOAT", "DOUBLE", "BOOLEAN", "STRING", "BYTE", "SHORT", "LONG", "UINT16", "UINT32");
+    public static final List<String> EXTENDED_DATA_TYPES = appendOptions(COMMON_DATA_TYPES,
+            "INT8", "UINT8", "INT16", "INT32", "FLOAT32", "FLOAT64", "INT64", "UINT64");
+    public static final List<String> MODBUS_DATA_TYPES = appendOptions(EXTENDED_DATA_TYPES,
+            "FLOAT32_SWAP", "FLOAT32_LITTLE", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE_SWAP");
     private static final Set<String> TOP_LEVEL_CONNECTION_FIELDS = new HashSet<>(List.of(
             "connectionType", "host", "port", "url", "connectTimeout", "readTimeout", "writeTimeout",
             "timeout", "heartbeatInterval", "heartbeatTimeout", "subscriptionInterval", "reconnectDelay",
@@ -478,8 +482,9 @@ public class ProtocolDescriptorRegistry {
         if (descriptor == null) {
             return null;
         }
+        String canonical = descriptor.code();
         return ProtocolSchema.builder()
-                .protocol(descriptor.code())
+                .protocol(canonical)
                 .title(descriptor.title())
                 .description(descriptor.description())
                 .implemented(descriptor.implemented())
@@ -487,9 +492,284 @@ public class ProtocolDescriptorRegistry {
                 .subscribable(descriptor.subscribable())
                 .aliases(descriptor.aliases())
                 .pointAddressHints(descriptor.pointAddressHints())
-                .dataTypes(COMMON_DATA_TYPES)
+                .dataTypes(resolveDataTypes(canonical))
+                .typeMode(resolveTypeMode(canonical))
+                .primaryTypeField(resolvePrimaryTypeField(canonical))
+                .platformDataTypeMode(resolvePlatformDataTypeMode(canonical))
+                .driverTypeEnabled(resolveDriverTypeEnabled(canonical))
+                .driverTypeLabel(resolveDriverTypeLabel(canonical))
+                .driverTypeField(resolveDriverTypeField(canonical))
+                .driverDataTypes(resolveDriverDataTypes(canonical))
+                .pointFields(resolvePointFields(canonical))
                 .connectionFields(descriptor.connectionFields())
                 .build();
+    }
+
+    private List<String> resolveDataTypes(String protocol) {
+        return switch (protocol) {
+            case "MODBUS_TCP", "MODBUS_RTU" -> MODBUS_DATA_TYPES;
+            default -> EXTENDED_DATA_TYPES;
+        };
+    }
+
+    private ProtocolTypeMode resolveTypeMode(String protocol) {
+        return switch (protocol) {
+            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
+            default -> ProtocolTypeMode.PLATFORM_ONLY;
+        };
+    }
+
+    private String resolvePrimaryTypeField(String protocol) {
+        return switch (resolveTypeMode(protocol)) {
+            case DRIVER_PRIMARY -> "additionalConfig.driverDataType";
+            case PROTOCOL_FIELD_PRIMARY -> "additionalConfig.dptId";
+            case PLATFORM_ONLY -> "dataType";
+        };
+    }
+
+    private PlatformDataTypeMode resolvePlatformDataTypeMode(String protocol) {
+        return switch (resolveTypeMode(protocol)) {
+            case DRIVER_PRIMARY, PROTOCOL_FIELD_PRIMARY -> PlatformDataTypeMode.DERIVED_EDITABLE;
+            case PLATFORM_ONLY -> PlatformDataTypeMode.REQUIRED;
+        };
+    }
+
+    private boolean resolveDriverTypeEnabled(String protocol) {
+        return switch (protocol) {
+            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
+            default -> false;
+        };
+    }
+
+    private String resolveDriverTypeLabel(String protocol) {
+        return switch (protocol) {
+            case "SIEMENS_S7" -> "S7 驱动类型";
+            case "ETHERNET_IP" -> "EIP 驱动类型";
+            case "ADS" -> "ADS 驱动类型";
+            case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA 驱动类型";
+            case "SNMP" -> "SNMP 原生类型";
+            default -> null;
+        };
+    }
+
+    private String resolveDriverTypeField(String protocol) {
+        return resolveDriverTypeEnabled(protocol) ? "additionalConfig.driverDataType" : null;
+    }
+
+    private List<String> resolveDriverDataTypes(String protocol) {
+        return switch (protocol) {
+            case "SIEMENS_S7" -> List.of(
+                    "BOOL", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT", "LINT", "ULINT",
+                    "REAL", "LREAL", "CHAR", "WCHAR", "STRING", "WSTRING",
+                    "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME");
+            case "ETHERNET_IP" -> List.of(
+                    "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD",
+                    "DINT", "UDINT", "DWORD", "LINT", "ULINT", "LWORD", "REAL", "LREAL", "STRING");
+            case "ADS" -> List.of(
+                    "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT",
+                    "LINT", "ULINT", "REAL", "LREAL", "STRING", "WSTRING");
+            case "OPC_UA", "OPC_UA_PLC4X" -> List.of(
+                    "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT",
+                    "LINT", "ULINT", "REAL", "LREAL", "CHAR", "WCHAR", "STRING",
+                    "TIME", "DATE", "DATE_AND_TIME");
+            case "SNMP" -> List.of(
+                    "AUTO", "INTEGER", "COUNTER32", "COUNTER64", "GAUGE32", "TIMETICKS",
+                    "OCTET_STRING", "STRING", "IP_ADDRESS", "OID", "NULL");
+            default -> Collections.emptyList();
+        };
+    }
+
+    private List<ProtocolFieldConfig> resolvePointFields(String protocol) {
+        return switch (protocol) {
+            case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
+            case "SIEMENS_S7" -> s7PointFields();
+            case "ETHERNET_IP" -> etherNetIpPointFields();
+            case "ADS" -> adsPointFields();
+            case "KNXNET_IP" -> knxPointFields();
+            case "OPC_UA", "OPC_UA_PLC4X" -> opcUaPointFields();
+            case "OPC_DA" -> opcDaPointFields();
+            case "MQTT" -> mqttPointFields();
+            case "IEC104" -> iec104PointFields();
+            case "COAP" -> coapPointFields();
+            default -> Collections.emptyList();
+        };
+    }
+
+    private List<ProtocolFieldConfig> modbusPointFields() {
+        return List.of(
+                pointField("additionalConfig.registerType", "select", "寄存器类型", false, "",
+                        List.of("HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"),
+                        "可选补充字段。当前大多数场景仍以 address 中的寄存器段为准。", null),
+                pointField("additionalConfig.byteOrder", "select", "字节序", false, "BIG_ENDIAN",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
+                        "点位级字节序补充字段。未填写时仍优先使用连接配置。", null),
+                pointField("additionalConfig.wordOrder", "select", "字序", false, "",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
+                        "用于多寄存器值的字序兼容说明；当前主要作为配置留档字段。", null),
+                pointField("additionalConfig.bitIndex", "number", "位偏移", false, "",
+                        Collections.emptyList(), "位值解析时可选的比特偏移。", null),
+                pointField("additionalConfig.functionCode", "number", "功能码", false, "",
+                        Collections.emptyList(), "保留的兼容字段，通常由寄存器类型自动推断。", null),
+                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
+                        Collections.emptyList(), "当 dataType 为 STRING 时可补充声明长度。", "dataType=STRING")
+        );
+    }
+
+    private List<ProtocolFieldConfig> s7PointFields() {
+        return List.of(
+                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
+                        Collections.emptyList(), "当 S7 驱动类型为 STRING/WSTRING 时用于声明长度。", "driverDataType=STRING/WSTRING")
+        );
+    }
+
+    private List<ProtocolFieldConfig> etherNetIpPointFields() {
+        return List.of(
+                pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
+                        Collections.emptyList(), "当地址表示数组标签时填写元素个数。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> adsPointFields() {
+        return List.of(
+                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
+                        Collections.emptyList(), "当 ADS 驱动类型为 STRING/WSTRING 时用于声明长度。", "driverDataType=STRING/WSTRING"),
+                pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
+                        Collections.emptyList(), "数组符号或直接地址的元素个数。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> knxPointFields() {
+        return List.of(
+                pointField("additionalConfig.dptId", "string", "DPT 编号", false, "",
+                        Collections.emptyList(), "KNX 组地址的数据点类型。比 dataType 更能决定协议实际解析方式。", null),
+                pointField("additionalConfig.dpt", "string", "DPT 别名", false, "",
+                        Collections.emptyList(), "兼容旧配置的 DPT 别名字段。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> opcUaPointFields() {
+        return List.of(
+                pointField("additionalConfig.nodeId", "string", "NodeId", false, "",
+                        Collections.emptyList(), "可显式填写 OPC UA NodeId；未填写时仍可直接使用 address。", null),
+                pointField("additionalConfig.namespace", "number", "命名空间", false, "",
+                        Collections.emptyList(), "按 namespace + identifier 组合构建 NodeId 时使用。", null),
+                pointField("additionalConfig.identifier", "string", "标识符", false, "",
+                        Collections.emptyList(), "与命名空间配合构建 NodeId。", null),
+                pointField("additionalConfig.identifierType", "select", "标识符类型", false, "STRING",
+                        List.of("STRING", "NUMERIC", "GUID", "OPAQUE"),
+                        "NodeId 标识符的编码方式。", null),
+                pointField("additionalConfig.samplingInterval", "number", "采样间隔(ms)", false, "",
+                        Collections.emptyList(), "订阅或监控时使用的采样间隔。", null),
+                pointField("additionalConfig.publishingInterval", "number", "发布间隔(ms)", false, "",
+                        Collections.emptyList(), "订阅推送周期。", null),
+                pointField("additionalConfig.queueSize", "number", "队列长度", false, "",
+                        Collections.emptyList(), "订阅缓存队列长度。", null),
+                pointField("additionalConfig.subscribe", "boolean", "启用订阅", false, "",
+                        List.of("true", "false"), "是否按订阅模式处理该点位。", null),
+                pointField("additionalConfig.monitor", "boolean", "启用监控", false, "",
+                        List.of("true", "false"), "兼容旧配置的监控开关字段。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> opcDaPointFields() {
+        return List.of(
+                pointField("additionalConfig.itemId", "string", "Item ID", false, "",
+                        Collections.emptyList(), "OPC DA 项目标识。未填写时默认使用 address。", null),
+                pointField("additionalConfig.itemPath", "string", "Item Path", false, "",
+                        Collections.emptyList(), "OPC DA 项目路径。", null),
+                pointField("additionalConfig.dataSource", "select", "数据源", false, "DEVICE",
+                        List.of("DEVICE", "CACHE"), "读取值来自设备侧还是缓存侧。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> mqttPointFields() {
+        return List.of(
+                pointField("additionalConfig.topic", "string", "订阅主题", false, "",
+                        Collections.emptyList(), "MQTT 订阅主题；未填写时默认跟随 address。", null),
+                pointField("additionalConfig.writeTopic", "string", "写入主题", false, "",
+                        Collections.emptyList(), "点位写入时发布的 MQTT 主题。", null),
+                pointField("additionalConfig.qos", "select", "QoS 等级", false, "",
+                        List.of("0", "1", "2"), "消息质量等级。", null),
+                pointField("additionalConfig.retain", "boolean", "保留消息", false, "",
+                        List.of("true", "false"), "写入或发布时是否使用 retain。", null),
+                pointField("additionalConfig.jsonPath", "string", "JSONPath", false, "",
+                        Collections.emptyList(), "从 JSON 负载中提取目标值的路径。", null),
+                pointField("additionalConfig.payloadEncoding", "select", "负载编码", false, "",
+                        List.of("JSON", "PLAIN_TEXT", "BASE64", "HEX"), "订阅负载的解码方式。", null),
+                pointField("additionalConfig.charset", "string", "字符集", false, "UTF-8",
+                        Collections.emptyList(), "文本类负载的字符集。", null),
+                pointField("additionalConfig.publishTemplate", "textarea", "发布模板", false, "",
+                        Collections.emptyList(), "写入点位时生成消息体的模板。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> iec104PointFields() {
+        return List.of(
+                pointField("additionalConfig.typeId", "number", "Type ID", false, "",
+                        Collections.emptyList(), "IEC104 信息体类型 ID。", null),
+                pointField("additionalConfig.iecTypeId", "number", "IEC 类型 ID", false, "",
+                        Collections.emptyList(), "兼容旧配置的 IEC104 类型字段。", null),
+                pointField("additionalConfig.writeAddress", "string", "写入地址", false, "",
+                        Collections.emptyList(), "控制命令场景的写入地址。", null),
+                pointField("additionalConfig.writeCommonAddress", "number", "写入公共地址", false, "",
+                        Collections.emptyList(), "控制命令场景的公共地址。", null),
+                pointField("additionalConfig.writeQl", "number", "写入品质描述", false, "",
+                        Collections.emptyList(), "控制命令场景的品质描述。", null),
+                pointField("additionalConfig.writeSelect", "boolean", "先选后控", false, "",
+                        List.of("true", "false"), "控制命令是否先执行 select。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> coapPointFields() {
+        return List.of(
+                pointField("additionalConfig.path", "string", "资源路径", false, "",
+                        Collections.emptyList(), "当 address 不直接写完整 URI 时，可单独填写 CoAP 资源路径。", null),
+                pointField("additionalConfig.method", "select", "请求方法", false, "GET",
+                        List.of("GET", "POST", "PUT", "DELETE"), "CoAP 读写该点位时使用的方法。", null),
+                pointField("additionalConfig.query", "string", "查询参数", false, "",
+                        Collections.emptyList(), "附加到 CoAP 资源路径后的 query。", null),
+                pointField("additionalConfig.mediaType", "select", "媒体类型", false, "TEXT",
+                        List.of("TEXT", "JSON", "CBOR", "OCTET"), "请求或响应的内容类型提示。", null),
+                pointField("additionalConfig.observe", "boolean", "启用 Observe", false, "",
+                        List.of("true", "false"), "是否通过 Observe 订阅该资源。", null),
+                pointField("additionalConfig.binary", "boolean", "二进制负载", false, "",
+                        List.of("true", "false"), "是否按二进制方式解析负载。", null)
+        );
+    }
+
+    private ProtocolFieldConfig pointField(String name,
+                                           String type,
+                                           String label,
+                                           boolean required,
+                                           String defaultValue,
+                                           List<String> options,
+                                           String description,
+                                           String requiredWhen) {
+        return ProtocolFieldConfig.builder()
+                .name(name)
+                .type(type)
+                .label(label)
+                .required(required)
+                .defaultValue(defaultValue)
+                .description(description)
+                .group("protocol")
+                .requiredWhen(requiredWhen)
+                .storage(resolvePointStorage(name))
+                .options(options == null ? Collections.emptyList() : options)
+                .build();
+    }
+
+    private String resolvePointStorage(String name) {
+        return name != null && name.startsWith("additionalConfig.") ? "extJson" : "topLevel";
+    }
+
+    private static List<String> appendOptions(List<String> base, String... values) {
+        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>(base);
+        if (values != null) {
+            merged.addAll(List.of(values));
+        }
+        return List.copyOf(merged);
     }
 
     private void registerPrimary(ProtocolDescriptor descriptor) {

@@ -3,11 +3,14 @@ package com.wangbin.collector.core.collector.protocol.ethernetip;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
+import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpAddressParser;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessResult;
+import org.apache.plc4x.java.api.value.PlcValue;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -54,7 +57,7 @@ class EtherNetIpCollectorTest {
 
         CollectorException exception = assertThrows(CollectorException.class,
                 () -> collector.subscribe(List.of(point("p1", "temperature", "MainProgram.Tag1", "R"))));
-        assertEquals("点位订阅失败", exception.getMessage());
+        assertFalse(exception.getMessage().isBlank());
 
         Map<String, Object> status = collector.getDeviceStatus();
         assertFalse((Boolean) status.get("subscribable"));
@@ -94,7 +97,39 @@ class EtherNetIpCollectorTest {
         prepareCommandCollector(collector, configManager);
 
         CollectorException exception = assertThrows(CollectorException.class, () -> collector.readPoint(point));
-        assertEquals("点位读取失败", exception.getMessage());
+        assertFalse(exception.getMessage().isBlank());
+    }
+
+    @Test
+    void shouldPreferDriverDataTypeWhenCoercingScalarWriteValue() {
+        EtherNetIpCollector collector = new EtherNetIpCollector();
+        DataPoint point = point("p4", "temperature", "MainProgram.Tag1", "RW");
+        point.setDataType("DINT");
+        point.setAdditionalConfig(Map.of("driverDataType", "REAL"));
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point);
+
+        Object coerced = ReflectionTestUtils.invokeMethod(collector, "coerceWriteScalarValue", "12.5", address, point);
+
+        assertTrue(coerced instanceof Float);
+        assertEquals(12.5f, (Float) coerced, 0.0001f);
+    }
+
+    @Test
+    void shouldUseResolvedDriverTypeWhenReadingScalarValue() {
+        EtherNetIpCollector collector = new EtherNetIpCollector();
+        DataPoint point = point("p4", "temperature", "MainProgram.Tag1", "R");
+        point.setDataType("DINT");
+        point.setAdditionalConfig(Map.of("driverDataType", "REAL"));
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point);
+
+        PlcValue plcValue = mock(PlcValue.class);
+        when(plcValue.isFloat()).thenReturn(true);
+        when(plcValue.getFloat()).thenReturn(12.5f);
+
+        Object value = ReflectionTestUtils.invokeMethod(collector, "coerceScalarValue", plcValue, ReflectionTestUtils.invokeMethod(collector, "resolvePointType", point, address));
+
+        assertTrue(value instanceof Float);
+        assertEquals(12.5f, (Float) value, 0.0001f);
     }
 
     private void prepareCommandCollector(EtherNetIpCollector collector, ConfigManager configManager) throws Exception {

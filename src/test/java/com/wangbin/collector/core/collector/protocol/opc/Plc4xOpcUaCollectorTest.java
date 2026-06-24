@@ -2,9 +2,11 @@ package com.wangbin.collector.core.collector.protocol.opc;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaAddress;
+import com.wangbin.collector.core.collector.protocol.opc.plc4x.util.Plc4xOpcUaAddressParser;
+import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessResult;
-import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import org.apache.plc4x.java.api.PlcConnection;
 import org.apache.plc4x.java.api.messages.PlcBrowseItem;
 import org.apache.plc4x.java.api.messages.PlcBrowseRequest;
@@ -34,6 +36,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -191,6 +194,38 @@ class Plc4xOpcUaCollectorTest {
 
         Map<String, Object> unsubscribeStatus = collector.getDeviceStatus();
         assertEquals(0, unsubscribeStatus.get("activeSubscriptions"));
+    }
+
+    @Test
+    void shouldPreferDriverDataTypeWhenCoercingWriteValue() {
+        Plc4xOpcUaCollector collector = new Plc4xOpcUaCollector();
+        DataPoint point = point("p2", "payload", "ns=2;s=Payload", "INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "BYTE_ARRAY"));
+        Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(point);
+
+        Object value = ReflectionTestUtils.invokeMethod(collector, "coerceWriteValue", "abc", address, point);
+
+        assertTrue(value instanceof byte[]);
+        assertArrayEquals("abc".getBytes(), (byte[]) value);
+    }
+
+    @Test
+    void shouldUseResolvedDriverTypeWhenExtractingValues() {
+        Plc4xOpcUaCollector collector = new Plc4xOpcUaCollector();
+        DataPoint point = point("p3", "temperature", "ns=2;s=Temp", "INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "REAL"));
+        Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(point);
+
+        PlcValue plcValue = mock(PlcValue.class);
+        when(plcValue.isNull()).thenReturn(false);
+        when(plcValue.isList()).thenReturn(false);
+        when(plcValue.isFloat()).thenReturn(true);
+        when(plcValue.getFloat()).thenReturn(9.5f);
+
+        Object value = ReflectionTestUtils.invokeMethod(collector, "extractValue", plcValue, point, address);
+
+        assertTrue(value instanceof Float);
+        assertEquals(9.5f, (Float) value, 0.0001f);
     }
 
     private void prepareConnectedCollector(Plc4xOpcUaCollector collector) throws Exception {

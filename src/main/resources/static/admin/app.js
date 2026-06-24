@@ -241,12 +241,56 @@ function renderProtocolMeta(protocol) {
     return "No protocol metadata";
   }
   const status = protocol.implemented ? "Implemented" : "Placeholder";
+  const aliases = (protocol.aliases || []).map(escapeHtml).join(", ") || "-";
+  const addressHints = (protocol.pointAddressHints || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-";
+  const dataTypes = (protocol.dataTypes || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-";
+  const driverDataTypes = (protocol.driverDataTypes || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-";
+  const pointFields = Array.isArray(protocol.pointFields) ? protocol.pointFields : [];
+  const typeModeLabel = {
+    PLATFORM_ONLY: "平台统一类型主导",
+    DRIVER_PRIMARY: "协议原生类型主导",
+    PROTOCOL_FIELD_PRIMARY: "协议专属字段主导"
+  }[protocol.typeMode] || (protocol.typeMode || "-");
+  const platformDataTypeModeLabel = {
+    REQUIRED: "必须显式填写",
+    DERIVED_EDITABLE: "可推导，且允许人工覆盖",
+    DERIVED_READONLY: "自动推导，只读展示",
+    ADVANCED: "高级区展示"
+  }[protocol.platformDataTypeMode] || (protocol.platformDataTypeMode || "-");
+  const driverTypeHtml = protocol.driverTypeEnabled
+    ? `
+      <p><code>driverTypeEnabled</code>：是。含义：当前协议除了统一 <code>dataType</code> 外，还支持单独选择协议原生类型。</p>
+      <p><code>driverTypeLabel</code>：${escapeHtml(protocol.driverTypeLabel || "-")}。含义：前端展示给用户看的协议原生类型字段名称。</p>
+      <p><code>driverTypeField</code>：<code>${escapeHtml(protocol.driverTypeField || "-")}</code>。含义：协议原生类型写回点位对象时使用的保存路径。</p>
+      <p><code>driverDataTypes</code>：${driverDataTypes}。含义：当前协议允许选择的原生类型候选值。</p>
+    `
+    : `
+      <p><code>driverTypeEnabled</code>：否。含义：当前协议没有单独的协议原生类型补充字段。</p>
+      <p><code>driverDataTypes</code>：-。含义：当前协议不需要额外的协议原生类型候选列表。</p>
+    `;
+  const pointFieldsHtml = pointFields.length
+    ? `
+      <p><code>pointFields</code>：协议专属点位扩展字段。含义：新增/编辑点位时，前端会把这些字段额外展示出来。</p>
+      <ul>${pointFields.map((field) => {
+        const label = field.label || field.name || "-";
+        const description = field.description || "协议扩展字段";
+        const storage = field.storage ? `；保存位置：${field.storage}` : "";
+        return `<li><code>${escapeHtml(field.name || "-")}</code> / ${escapeHtml(label)}：${escapeHtml(description + storage)}</li>`;
+      }).join("")}</ul>
+    `
+    : '<p><code>pointFields</code>：无。含义：当前协议没有额外的点位扩展字段。</p>';
   return `
     <strong>${escapeHtml(protocol.title)}</strong>
     <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
     <p>${escapeHtml(protocol.description || "")}</p>
-    <p>Aliases: ${(protocol.aliases || []).map(escapeHtml).join(", ") || "-"}</p>
-    <p>Address hints: ${(protocol.pointAddressHints || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-"}</p>
+    <p>Aliases: ${aliases}</p>
+    <p>Address hints: ${addressHints}</p>
+    <p><code>dataTypes</code>：${dataTypes}</p>
+    <p><code>typeMode</code>：${escapeHtml(typeModeLabel)}。含义：这个协议的主类型字段到底走平台统一类型、协议原生类型，还是协议专属字段。</p>
+    <p><code>primaryTypeField</code>：<code>${escapeHtml(protocol.primaryTypeField || "-")}</code>。含义：前端当前协议真正优先展示和编辑的主类型字段路径。</p>
+    <p><code>platformDataTypeMode</code>：${escapeHtml(platformDataTypeModeLabel)}。含义：当前协议里平台统一 <code>dataType</code> 在页面上的处理方式。</p>
+    ${driverTypeHtml}
+    ${pointFieldsHtml}
   `;
 }
 

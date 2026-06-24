@@ -4,7 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaAddress;
+import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaType;
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.util.Plc4xOpcUaAddressParser;
+import com.wangbin.collector.core.collector.protocol.opc.plc4x.util.Plc4xOpcUaTypeResolver;
 import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.api.messages.PlcBrowseItem;
@@ -460,38 +462,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             }
         }
 
-        String pointType = firstNonBlank(
-                point != null ? point.getDataType() : null,
-                address.getDataType());
-        if (pointType == null) {
-            return extractDefaultValue(plcValue);
-        }
-        String normalized = pointType.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "BOOLEAN", "BOOL" -> plcValue.isBoolean() ? plcValue.getBoolean() : toBoolean(plcValue.getObject());
-            case "STRING", "CHAR", "WCHAR" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
-            case "BYTE" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
-            case "SBYTE", "INT8", "SINT" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
-            case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "LONG", "INT32", "DINT" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "UINT32", "UDINT", "DWORD", "INT64", "LINT" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "UINT64", "ULINT", "LWORD" -> plcValue.isBigInteger()
-                    ? plcValue.getBigInteger()
-                    : BigInteger.valueOf(((Number) coerceNumber(plcValue.getObject())).longValue());
-            case "FLOAT", "FLOAT32", "REAL" ->
-                    plcValue.isFloat() ? plcValue.getFloat() : ((Number) coerceNumber(plcValue.getObject())).floatValue();
-            case "DOUBLE", "FLOAT64", "LREAL" ->
-                    plcValue.isDouble() ? plcValue.getDouble() : ((Number) coerceNumber(plcValue.getObject())).doubleValue();
-            case "TIME", "LTIME" -> plcValue.isDuration() ? plcValue.getDuration() : plcValue.getObject();
-            case "DATE", "LDATE" -> plcValue.isDate() ? plcValue.getDate() : plcValue.getObject();
-            case "DATETIME", "DATE_TIME", "DATE_AND_TIME", "LDATE_AND_TIME" ->
-                    plcValue.isDateTime() ? plcValue.getDateTime() : plcValue.getObject();
-            case "BYTESTRING", "BYTE_ARRAY", "BINARY" -> plcValue.getRaw();
-            default -> extractDefaultValue(plcValue);
-        };
+        Plc4xOpcUaType pointType = resolvePointType(point, address);
+        return pointType != null ? pointType.read(plcValue) : extractDefaultValue(plcValue);
     }
 
     private Object extractDefaultValue(PlcValue plcValue) {
@@ -535,57 +507,12 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         if (value == null) {
             return null;
         }
-        String pointType = firstNonBlank(point != null ? point.getDataType() : null, address.getDataType());
-        if (pointType == null) {
-            return value;
-        }
-        String normalized = pointType.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "BOOLEAN", "BOOL" -> toBoolean(value);
-            case "STRING", "CHAR", "WCHAR" -> value.toString();
-            case "BYTE", "SBYTE", "INT8", "SINT" -> ((Number) coerceNumber(value)).byteValue();
-            case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    ((Number) coerceNumber(value)).intValue();
-            case "LONG", "INT32", "DINT", "UINT32", "UDINT", "DWORD", "INT64", "LINT" ->
-                    ((Number) coerceNumber(value)).longValue();
-            case "UINT64", "ULINT", "LWORD" -> value instanceof BigInteger bigInteger
-                    ? bigInteger
-                    : BigInteger.valueOf(((Number) coerceNumber(value)).longValue());
-            case "FLOAT", "FLOAT32", "REAL" -> ((Number) coerceNumber(value)).floatValue();
-            case "DOUBLE", "FLOAT64", "LREAL" -> ((Number) coerceNumber(value)).doubleValue();
-            case "BYTESTRING", "BYTE_ARRAY", "BINARY" -> toBinary(value);
-            default -> value;
-        };
+        Plc4xOpcUaType pointType = resolvePointType(point, address);
+        return pointType != null ? pointType.write(value) : value;
     }
 
-    private byte[] toBinary(Object value) {
-        if (value instanceof byte[] bytes) {
-            return bytes;
-        }
-        return String.valueOf(value).getBytes(StandardCharsets.UTF_8);
-    }
-
-    private Number coerceNumber(Object value) {
-        if (value instanceof Number number) {
-            return number;
-        }
-        if (value instanceof PlcValue plcValue) {
-            return coerceNumber(plcValue.getObject());
-        }
-        if (value instanceof String text) {
-            return text.contains(".") ? Double.parseDouble(text) : Long.parseLong(text);
-        }
-        throw new IllegalArgumentException("Cannot convert PLC4X OPC UA value to number: " + value);
-    }
-
-    private boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
+    private Plc4xOpcUaType resolvePointType(DataPoint point, Plc4xOpcUaAddress address) {
+        return Plc4xOpcUaTypeResolver.INSTANCE.resolveOrNull(point, address);
     }
 
     private Object executeCommandRead(Map<String, Object> params) throws Exception {

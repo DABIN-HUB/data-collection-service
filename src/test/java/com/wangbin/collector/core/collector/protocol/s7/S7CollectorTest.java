@@ -2,12 +2,15 @@ package com.wangbin.collector.core.collector.protocol.s7;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
+import com.wangbin.collector.core.collector.protocol.s7.util.S7AddressParser;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.apache.plc4x.java.api.PlcConnection;
+import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionEvent;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionRequest;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionResponse;
@@ -65,6 +68,9 @@ class S7CollectorTest {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
 
+        DataPoint point = point("p1", "temperature", "DB1.DBW0", "R");
+        String fieldName = ReflectionTestUtils.invokeMethod(collector, "tagName", point);
+
         S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
         PlcConnection connection = mock(PlcConnection.class);
         PlcConnectionMetadata metadata = mock(PlcConnectionMetadata.class);
@@ -80,16 +86,15 @@ class S7CollectorTest {
         when(connection.subscriptionRequestBuilder()).thenReturn(builder);
         when(builder.build()).thenReturn(request);
         when(request.execute()).thenAnswer(invocation -> CompletableFuture.completedFuture(response));
-        when(response.getResponseCode("p1")).thenReturn(PlcResponseCode.OK);
-        when(response.getSubscriptionHandle("p1")).thenReturn(handle);
+        when(response.getResponseCode(fieldName)).thenReturn(PlcResponseCode.OK);
+        when(response.getSubscriptionHandle(fieldName)).thenReturn(handle);
 
         ArgumentCaptor<Consumer<PlcSubscriptionEvent>> eventCaptor = ArgumentCaptor.forClass(Consumer.class);
-        when(builder.addCyclicTagAddress(eq("p1"), anyString(), any(Duration.class), eventCaptor.capture()))
+        when(builder.addCyclicTagAddress(eq(fieldName), anyString(), any(Duration.class), eventCaptor.capture()))
                 .thenReturn(builder);
 
         ReflectionTestUtils.setField(collector, "connectionAdapter", connectionAdapter);
 
-        DataPoint point = point("p1", "temperature", "DB1.DBW0", "R");
         collector.subscribe(List.of(point));
 
         Map<String, Object> status = collector.getDeviceStatus();
@@ -98,8 +103,8 @@ class S7CollectorTest {
 
         PlcSubscriptionEvent event = mock(PlcSubscriptionEvent.class);
         PlcValue plcValue = mock(PlcValue.class);
-        when(event.getResponseCode("p1")).thenReturn(PlcResponseCode.OK);
-        when(event.getPlcValue("p1")).thenReturn(plcValue);
+        when(event.getResponseCode(fieldName)).thenReturn(PlcResponseCode.OK);
+        when(event.getPlcValue(fieldName)).thenReturn(plcValue);
         when(plcValue.isNull()).thenReturn(false);
         when(plcValue.isList()).thenReturn(false);
         when(plcValue.isInteger()).thenReturn(true);
@@ -111,6 +116,42 @@ class S7CollectorTest {
         assertNotNull(processResult);
         assertTrue(processResult.isSuccess());
         assertEquals(42.0, processResult.getFinalValue());
+    }
+
+    @Test
+    void shouldPreferDriverDataTypeWhenCoercingWriteValue() {
+        S7Collector collector = new S7Collector();
+        DataPoint point = point("p1", "temperature", "DB1.DBD0", "RW");
+        point.setDataType("INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "REAL"));
+        S7Address address = S7AddressParser.parse(point);
+
+        Object coerced = ReflectionTestUtils.invokeMethod(collector, "coerceWriteValue", "12.5", address, point);
+
+        assertTrue(coerced instanceof Float);
+        assertEquals(12.5f, (Float) coerced, 0.0001f);
+    }
+
+    @Test
+    void shouldUseResolvedPlcTypeWhenExtractingValues() {
+        S7Collector collector = new S7Collector();
+        DataPoint point = point("p1", "temperature", "DB1.DBD0", "R");
+        point.setDataType("INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "REAL"));
+        S7Address address = S7AddressParser.parse(point);
+
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue plcValue = mock(PlcValue.class);
+        when(response.getPlcValue("p1")).thenReturn(plcValue);
+        when(plcValue.isNull()).thenReturn(false);
+        when(plcValue.isList()).thenReturn(false);
+        when(plcValue.isFloat()).thenReturn(true);
+        when(plcValue.getFloat()).thenReturn(12.5f);
+
+        Object value = ReflectionTestUtils.invokeMethod(collector, "extractValue", response, "p1", point, address);
+
+        assertTrue(value instanceof Float);
+        assertEquals(12.5f, (Float) value, 0.0001f);
     }
 
     private void prepareCommandCollector(TestableS7Collector collector, ConfigManager configManager) throws Exception {

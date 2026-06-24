@@ -2,6 +2,7 @@ package com.wangbin.collector.core.collector.protocol.opc.plc4x.util;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaAddress;
+import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaType;
 
 import java.util.Collections;
 import java.util.Locale;
@@ -33,7 +34,7 @@ public final class Plc4xOpcUaAddressParser {
 
         String rawAddress = resolveAddress(point, config);
         String dataType = resolveDriverDataType(
-                firstPresent(config, "opcUaType", "opcType", "nodeType", "dataType"),
+                firstPresent(config, "driverDataType", "opcUaType", "opcType", "nodeType", "dataType"),
                 point.getDataType());
         double samplingInterval = parseDouble(
                 firstPresent(config, "samplingInterval", "publishingInterval"),
@@ -139,32 +140,8 @@ public final class Plc4xOpcUaAddressParser {
     }
 
     private static String resolveDriverDataType(Object preferredType, String fallbackType) {
-        String text = firstNonBlank(asString(preferredType), fallbackType);
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        String normalized = text.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "BOOLEAN", "BOOL" -> "BOOL";
-            case "BYTE" -> "BYTE";
-            case "SBYTE", "INT8", "SINT" -> "SINT";
-            case "SHORT", "INT", "INT16" -> "INT";
-            case "LONG", "INT32", "DINT" -> "DINT";
-            case "INT64", "LINT" -> "LINT";
-            case "UINT8", "USINT" -> "USINT";
-            case "UINT16", "UINT", "WORD" -> "UINT";
-            case "UINT32", "UDINT", "DWORD" -> "UDINT";
-            case "UINT64", "ULINT", "LWORD" -> "ULINT";
-            case "FLOAT", "FLOAT32", "REAL" -> "REAL";
-            case "DOUBLE", "FLOAT64", "LREAL" -> "LREAL";
-            case "TIME", "LTIME" -> "TIME";
-            case "DATE", "LDATE" -> "DATE";
-            case "DATETIME", "DATE_TIME", "DATE_AND_TIME", "LDATE_AND_TIME" -> "DATE_AND_TIME";
-            case "CHAR" -> "CHAR";
-            case "WCHAR" -> "WCHAR";
-            case "STRING" -> "STRING";
-            default -> null;
-        };
+        Plc4xOpcUaType type = Plc4xOpcUaType.fromDriverTextOrNull(firstNonBlank(asString(preferredType), fallbackType));
+        return type != null ? type.toTypeExpression() : null;
     }
 
     private static boolean resolveSubscription(DataPoint point, Map<String, Object> config) {

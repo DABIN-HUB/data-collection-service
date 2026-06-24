@@ -2,6 +2,7 @@ package com.wangbin.collector.core.collector.protocol.s7.util;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
+import com.wangbin.collector.core.collector.protocol.s7.domain.S7PlcType;
 
 import java.util.Collections;
 import java.util.Locale;
@@ -143,6 +144,7 @@ public final class S7AddressParser {
 
     private static String inferTypeExpression(String dataType, String shortCode, Map<String, Object> config) {
         String overrideType = firstNonBlank(
+                asString(config.get("driverDataType")),
                 asString(config.get("s7Type")),
                 asString(config.get("plc4xType")),
                 asString(config.get("plcType"))
@@ -161,35 +163,18 @@ public final class S7AddressParser {
             };
         }
 
-        return switch (normalizedDataType) {
-            case "BOOLEAN", "BOOL" -> "BOOL";
-            case "BYTE", "INT8", "SINT" -> "SINT";
-            case "UINT8", "USINT" -> "USINT";
-            case "CHAR" -> "CHAR";
-            case "SHORT", "INT", "INT16" -> "INT";
-            case "UINT16", "UINT", "WORD" -> "UINT";
-            case "LONG", "INT32", "DINT" -> "DINT";
-            case "UINT32", "UDINT", "DWORD" -> "UDINT";
-            case "INT64", "LINT" -> "LINT";
-            case "UINT64", "ULINT", "LWORD" -> "ULINT";
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" -> "REAL";
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" -> "LREAL";
-            case "STRING" -> "STRING(" + resolveStringLength(config, 254) + ")";
-            case "WSTRING" -> "WSTRING(" + resolveStringLength(config, 254) + ")";
-            case "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME", "WCHAR" -> normalizedDataType;
-            default -> throw new IllegalArgumentException("Unsupported S7 data type mapping: " + normalizedDataType);
-        };
+        return normalizeTypeExpression(normalizedDataType, config);
     }
 
     private static String normalizeTypeExpression(String typeExpression, Map<String, Object> config) {
-        String normalized = typeExpression.trim().toUpperCase(Locale.ROOT);
-        if ("STRING".equals(normalized)) {
+        S7PlcType plcType = S7PlcType.fromText(typeExpression);
+        if (plcType == S7PlcType.STRING) {
             return "STRING(" + resolveStringLength(config, 254) + ")";
         }
-        if ("WSTRING".equals(normalized)) {
+        if (plcType == S7PlcType.WSTRING) {
             return "WSTRING(" + resolveStringLength(config, 254) + ")";
         }
-        return normalized;
+        return plcType.toTypeExpression();
     }
 
     private static int resolveStringLength(Map<String, Object> config, int defaultValue) {
@@ -235,4 +220,3 @@ public final class S7AddressParser {
         return Integer.parseInt(arrayPart.trim());
     }
 }
-

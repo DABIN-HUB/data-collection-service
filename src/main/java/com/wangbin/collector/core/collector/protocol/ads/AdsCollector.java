@@ -3,7 +3,9 @@ package com.wangbin.collector.core.collector.protocol.ads;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
+import com.wangbin.collector.core.collector.protocol.ads.domain.AdsPlcType;
 import com.wangbin.collector.core.collector.protocol.ads.util.AdsAddressParser;
+import com.wangbin.collector.core.collector.protocol.ads.util.AdsPlcTypeResolver;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
@@ -422,86 +424,20 @@ public class AdsCollector extends ConnectionBackedCollector {
             }
         }
 
-        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
-                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
-                : address.getBasePlcType();
-        if (pointType == null) {
-            return plcValue.getObject();
-        }
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> plcValue.isBoolean() ? plcValue.getBoolean() : toBoolean(plcValue.getObject());
-            case "STRING", "WSTRING" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
-            case "BYTE", "INT8", "SINT" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
-            case "UINT8", "USINT" -> plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "LONG", "INT32", "DINT" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "UINT32", "UDINT", "DWORD" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "INT64", "LINT" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "UINT64", "ULINT", "LWORD" -> plcValue.isBigInteger()
-                    ? plcValue.getBigInteger()
-                    : BigInteger.valueOf(((Number) coerceNumber(plcValue.getObject())).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    plcValue.isFloat() ? plcValue.getFloat() : ((Number) coerceNumber(plcValue.getObject())).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    plcValue.isDouble() ? plcValue.getDouble() : ((Number) coerceNumber(plcValue.getObject())).doubleValue();
-            default -> plcValue.getObject();
-        };
+        AdsPlcType plcType = resolvePlcType(point, address);
+        return plcType != null ? plcType.read(plcValue) : plcValue.getObject();
     }
 
     private Object coerceWriteValue(Object value, AdsAddress address, DataPoint point) {
         if (value == null) {
             return null;
         }
-        String pointType = point != null && point.getDataType() != null && !point.getDataType().isBlank()
-                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
-                : address.getBasePlcType();
-        if (pointType == null) {
-            return value;
-        }
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> toBoolean(value);
-            case "STRING", "WSTRING" -> value.toString();
-            case "BYTE", "INT8", "SINT" -> ((Number) coerceNumber(value)).byteValue();
-            case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    ((Number) coerceNumber(value)).intValue();
-            case "LONG", "INT32", "DINT", "UINT32", "UDINT", "DWORD", "INT64", "LINT" ->
-                    ((Number) coerceNumber(value)).longValue();
-            case "UINT64", "ULINT", "LWORD" -> value instanceof BigInteger bigInteger
-                    ? bigInteger
-                    : BigInteger.valueOf(((Number) coerceNumber(value)).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    ((Number) coerceNumber(value)).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    ((Number) coerceNumber(value)).doubleValue();
-            default -> value;
-        };
+        AdsPlcType plcType = resolvePlcType(point, address);
+        return plcType != null ? plcType.write(value) : value;
     }
 
-    private Number coerceNumber(Object value) {
-        if (value instanceof Number number) {
-            return number;
-        }
-        if (value instanceof PlcValue plcValue) {
-            return coerceNumber(plcValue.getObject());
-        }
-        if (value instanceof String text) {
-            return text.contains(".") ? Double.parseDouble(text) : Long.parseLong(text);
-        }
-        throw new IllegalArgumentException("Cannot convert ADS value to number: " + value);
-    }
-
-    private boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
+    private AdsPlcType resolvePlcType(DataPoint point, AdsAddress address) {
+        return AdsPlcTypeResolver.INSTANCE.resolveOrNull(point, address);
     }
 
     private void ensureScalar(AdsAddress address, DataPoint point, String operation) {

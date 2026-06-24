@@ -2,11 +2,13 @@ package com.wangbin.collector.core.config.protocol;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ProtocolSchemaServiceTest {
@@ -29,7 +31,12 @@ public class ProtocolSchemaServiceTest {
             assertEquals(descriptor.implemented(), schema.isImplemented());
             assertEquals(descriptor.writable(), schema.isWritable());
             assertEquals(descriptor.subscribable(), schema.isSubscribable());
-            assertEquals(ProtocolDescriptorRegistry.COMMON_DATA_TYPES, schema.getDataTypes());
+            assertEquals(expectedDataTypes(descriptor.code()), schema.getDataTypes());
+            assertEquals(expectedTypeMode(descriptor.code()), schema.getTypeMode());
+            assertEquals(expectedPrimaryTypeField(descriptor.code()), schema.getPrimaryTypeField());
+            assertEquals(expectedPlatformDataTypeMode(descriptor.code()), schema.getPlatformDataTypeMode());
+            assertNotNull(schema.getPointFields());
+            assertNotNull(schema.getDriverDataTypes());
         }
     }
 
@@ -66,6 +73,9 @@ public class ProtocolSchemaServiceTest {
 
         assertFalse(customTcp.isImplemented());
         assertTrue(customTcp.getConnectionFields().isEmpty());
+        assertEquals(ProtocolTypeMode.PLATFORM_ONLY, customTcp.getTypeMode());
+        assertEquals("dataType", customTcp.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.REQUIRED, customTcp.getPlatformDataTypeMode());
     }
 
     @Test
@@ -74,23 +84,53 @@ public class ProtocolSchemaServiceTest {
         assertTrue(s7.isImplemented());
         assertTrue(s7.isWritable());
         assertTrue(s7.isSubscribable());
+        assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, s7.getTypeMode());
+        assertEquals("additionalConfig.driverDataType", s7.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, s7.getPlatformDataTypeMode());
+        assertTrue(s7.isDriverTypeEnabled());
+        assertEquals("S7 驱动类型", s7.getDriverTypeLabel());
+        assertEquals("additionalConfig.driverDataType", s7.getDriverTypeField());
+        assertTrue(s7.getDriverDataTypes().contains("BOOL"));
         assertTrue(s7.getConnectionFields().stream().anyMatch(field -> "rack".equals(field.getName())));
+        assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
 
         ProtocolSchema ethernetIp = service.getSchema("ETHERNET_IP").orElseThrow();
         assertTrue(ethernetIp.isImplemented());
         assertTrue(ethernetIp.isWritable());
         assertFalse(ethernetIp.isSubscribable());
+        assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, ethernetIp.getTypeMode());
+        assertEquals("additionalConfig.driverDataType", ethernetIp.getPrimaryTypeField());
+        assertTrue(ethernetIp.isDriverTypeEnabled());
+        assertTrue(ethernetIp.getDriverDataTypes().contains("REAL"));
 
         ProtocolSchema knx = service.getSchema("KNXNET_IP").orElseThrow();
         assertTrue(knx.isImplemented());
         assertTrue(knx.isWritable());
         assertTrue(knx.isSubscribable());
+        assertEquals(ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY, knx.getTypeMode());
+        assertEquals("additionalConfig.dptId", knx.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, knx.getPlatformDataTypeMode());
         assertTrue(knx.getConnectionFields().stream().anyMatch(field -> "groupAddressNumLevels".equals(field.getName())));
         assertTrue(knx.getConnectionFields().stream().anyMatch(field -> "knxConnectionType".equals(field.getName())));
+        assertTrue(knx.getPointFields().stream().anyMatch(field -> "additionalConfig.dptId".equals(field.getName())));
+
+        ProtocolSchema modbus = service.getSchema("MODBUS_TCP").orElseThrow();
+        assertEquals(ProtocolTypeMode.PLATFORM_ONLY, modbus.getTypeMode());
+        assertEquals("dataType", modbus.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.REQUIRED, modbus.getPlatformDataTypeMode());
+        assertFalse(modbus.isDriverTypeEnabled());
+        assertEquals(ProtocolDescriptorRegistry.MODBUS_DATA_TYPES, modbus.getDataTypes());
+        assertTrue(modbus.getPointFields().stream().anyMatch(field -> "additionalConfig.registerType".equals(field.getName())));
 
         ProtocolSchema opcUa = service.getSchema("OPC_UA").orElseThrow();
+        assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, opcUa.getTypeMode());
+        assertEquals("additionalConfig.driverDataType", opcUa.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, opcUa.getPlatformDataTypeMode());
+        assertTrue(opcUa.isDriverTypeEnabled());
+        assertEquals("additionalConfig.driverDataType", opcUa.getDriverTypeField());
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "authType".equals(field.getName())));
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "requestTimeoutMs".equals(field.getName())));
+        assertTrue(opcUa.getPointFields().stream().anyMatch(field -> "additionalConfig.nodeId".equals(field.getName())));
     }
 
     @Test
@@ -107,5 +147,35 @@ public class ProtocolSchemaServiceTest {
 
         assertEquals("topLevel", host.getStorage());
         assertEquals("extJson", connectionString.getStorage());
+    }
+
+    private List<String> expectedDataTypes(String protocol) {
+        return switch (protocol) {
+            case "MODBUS_TCP", "MODBUS_RTU" -> ProtocolDescriptorRegistry.MODBUS_DATA_TYPES;
+            default -> ProtocolDescriptorRegistry.EXTENDED_DATA_TYPES;
+        };
+    }
+
+    private ProtocolTypeMode expectedTypeMode(String protocol) {
+        return switch (protocol) {
+            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
+            default -> ProtocolTypeMode.PLATFORM_ONLY;
+        };
+    }
+
+    private String expectedPrimaryTypeField(String protocol) {
+        return switch (expectedTypeMode(protocol)) {
+            case DRIVER_PRIMARY -> "additionalConfig.driverDataType";
+            case PROTOCOL_FIELD_PRIMARY -> "additionalConfig.dptId";
+            case PLATFORM_ONLY -> "dataType";
+        };
+    }
+
+    private PlatformDataTypeMode expectedPlatformDataTypeMode(String protocol) {
+        return switch (expectedTypeMode(protocol)) {
+            case DRIVER_PRIMARY, PROTOCOL_FIELD_PRIMARY -> PlatformDataTypeMode.DERIVED_EDITABLE;
+            case PLATFORM_ONLY -> PlatformDataTypeMode.REQUIRED;
+        };
     }
 }

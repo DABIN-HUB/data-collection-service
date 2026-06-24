@@ -24,6 +24,22 @@ class AdsAddressParserTest {
     }
 
     @Test
+    void shouldMapPlatformByteTypeToSintForDirectAddress() {
+        AdsAddress address = AdsAddressParser.parse(point("0x4020/0x0", "BYTE", Map.of()));
+
+        assertEquals("0x4020/0x0:SINT", address.getPlc4xAddress());
+        assertEquals("SINT", address.getBasePlcType());
+    }
+
+    @Test
+    void shouldPreserveExplicitDriverByteTypeForDirectAddress() {
+        AdsAddress address = AdsAddressParser.parse(point("0x4020/0x0", "INT", Map.of("driverDataType", "BYTE")));
+
+        assertEquals("0x4020/0x0:BYTE", address.getPlc4xAddress());
+        assertEquals("BYTE", address.getBasePlcType());
+    }
+
+    @Test
     void shouldPreserveExplicitDirectArrayAddress() {
         AdsAddress address = AdsAddressParser.parse(point("0x4020/0x0:DINT[4]", "LONG", Map.of()));
 

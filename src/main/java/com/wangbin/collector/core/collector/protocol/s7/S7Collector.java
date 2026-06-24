@@ -4,7 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
+import com.wangbin.collector.core.collector.protocol.s7.domain.S7PlcType;
 import com.wangbin.collector.core.collector.protocol.s7.util.S7AddressParser;
+import com.wangbin.collector.core.collector.protocol.s7.util.S7PlcTypeResolver;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +22,7 @@ import org.apache.plc4x.java.api.types.PlcResponseCode;
 import org.apache.plc4x.java.api.value.PlcValue;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.math.BigInteger;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -29,8 +31,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
-import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -422,80 +422,20 @@ public class S7Collector extends ConnectionBackedCollector {
             }
         }
 
-        String pointType = point != null && point.getDataType() != null
-                ? point.getDataType().trim().toUpperCase()
-                : address.getBasePlcType();
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> plcValue.isBoolean() ? plcValue.getBoolean() : toBoolean(plcValue.getObject());
-            case "STRING", "WSTRING", "CHAR", "WCHAR" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
-            case "BYTE", "INT8", "SINT" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
-            case "UINT8", "USINT" -> plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "LONG", "INT32", "DINT" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "UINT32", "UDINT", "DWORD" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "INT64", "LINT" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "UINT64", "ULINT", "LWORD" -> plcValue.isBigInteger()
-                    ? plcValue.getBigInteger()
-                    : BigInteger.valueOf(((Number) coerceNumber(plcValue.getObject())).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    plcValue.isFloat() ? plcValue.getFloat() : ((Number) coerceNumber(plcValue.getObject())).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    plcValue.isDouble() ? plcValue.getDouble() : ((Number) coerceNumber(plcValue.getObject())).doubleValue();
-            default -> plcValue.getObject();
-        };
+        S7PlcType plcType = resolvePlcType(point, address);
+        return plcType.read(plcValue);
     }
 
     private Object coerceWriteValue(Object value, S7Address address, DataPoint point) {
         if (value == null) {
             return null;
         }
-        String pointType = point != null && point.getDataType() != null
-                ? point.getDataType().trim().toUpperCase()
-                : address.getBasePlcType();
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> toBoolean(value);
-            case "STRING", "WSTRING", "CHAR", "WCHAR" -> value.toString();
-            case "BYTE", "INT8", "SINT" -> ((Number) coerceNumber(value)).byteValue();
-            case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    ((Number) coerceNumber(value)).intValue();
-            case "LONG", "INT32", "DINT", "UINT32", "UDINT", "DWORD", "INT64", "LINT" ->
-                    ((Number) coerceNumber(value)).longValue();
-            case "UINT64", "ULINT", "LWORD" -> value instanceof BigInteger bigInteger
-                    ? bigInteger
-                    : BigInteger.valueOf(((Number) coerceNumber(value)).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    ((Number) coerceNumber(value)).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    ((Number) coerceNumber(value)).doubleValue();
-            default -> value;
-        };
+        S7PlcType plcType = resolvePlcType(point, address);
+        return plcType.write(value);
     }
 
-    private Number coerceNumber(Object value) {
-        if (value instanceof Number number) {
-            return number;
-        }
-        if (value instanceof PlcValue plcValue) {
-            return coerceNumber(plcValue.getObject());
-        }
-        if (value instanceof String text) {
-            return text.contains(".") ? Double.parseDouble(text) : Long.parseLong(text);
-        }
-        throw new IllegalArgumentException("Cannot convert S7 value to number: " + value);
-    }
-
-    private boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
+    private S7PlcType resolvePlcType(DataPoint point, S7Address address) {
+        return S7PlcTypeResolver.INSTANCE.resolveRequired(point, address, "S7 point type cannot be resolved");
     }
 
     private void ensureScalar(S7Address address, DataPoint point, String operation) {

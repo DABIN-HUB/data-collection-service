@@ -2,12 +2,15 @@ package com.wangbin.collector.core.collector.protocol.ads;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
+import com.wangbin.collector.core.collector.protocol.ads.util.AdsAddressParser;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.apache.plc4x.java.api.PlcConnection;
+import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionEvent;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionRequest;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionResponse;
@@ -111,6 +114,42 @@ class AdsCollectorTest {
         assertNotNull(processResult);
         assertTrue(processResult.isSuccess());
         assertEquals(42.0, processResult.getFinalValue());
+    }
+
+    @Test
+    void shouldPreferDriverDataTypeWhenCoercingWriteValue() {
+        AdsCollector collector = new AdsCollector();
+        DataPoint point = point("p1", "temperature", "0x4020/0x0", "RW");
+        point.setDataType("INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "LREAL"));
+        AdsAddress address = AdsAddressParser.parse(point);
+
+        Object coerced = ReflectionTestUtils.invokeMethod(collector, "coerceWriteValue", "12.5", address, point);
+
+        assertTrue(coerced instanceof Double);
+        assertEquals(12.5d, (Double) coerced, 0.0001d);
+    }
+
+    @Test
+    void shouldUseResolvedDriverTypeWhenExtractingValues() {
+        AdsCollector collector = new AdsCollector();
+        DataPoint point = point("p1", "temperature", "0x4020/0x0", "R");
+        point.setDataType("INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "LREAL"));
+        AdsAddress address = AdsAddressParser.parse(point);
+
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue plcValue = mock(PlcValue.class);
+        when(response.getPlcValue("p1")).thenReturn(plcValue);
+        when(plcValue.isNull()).thenReturn(false);
+        when(plcValue.isList()).thenReturn(false);
+        when(plcValue.isDouble()).thenReturn(true);
+        when(plcValue.getDouble()).thenReturn(12.5d);
+
+        Object value = ReflectionTestUtils.invokeMethod(collector, "extractValue", response, "p1", point, address);
+
+        assertTrue(value instanceof Double);
+        assertEquals(12.5d, (Double) value, 0.0001d);
     }
 
     private void prepareCommandCollector(AdsCollector collector, ConfigManager configManager) throws Exception {

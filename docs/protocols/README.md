@@ -1,4 +1,4 @@
-﻿# 协议文档索引
+# 协议文档索引
 
 - [MODBUS TCP](./MODBUS_TCP.md)
 - [MODBUS RTU](./MODBUS_RTU.md)
@@ -18,3 +18,4 @@
 - [WEBSOCKET](./WEBSOCKET.md)
 - [CUSTOM TCP](./CUSTOM_TCP.md)
 - [协议字段汇总](./FIELD_CONFIG_SUMMARY.md)
+- [点位类型与协议原生类型最终规则](../20-点位类型与协议原生类型最终规则.md)

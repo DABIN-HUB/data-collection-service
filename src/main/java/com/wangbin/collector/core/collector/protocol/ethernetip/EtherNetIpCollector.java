@@ -4,8 +4,10 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpPlcType;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
 import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpAddressParser;
+import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpPlcTypeResolver;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -151,7 +153,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     lastProcessResults.put(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
-                    log.error("处理 EtherNet/IP 数组点位数据失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    log.error("濠电姷鏁告慨鐑藉极閸涘﹥鍙忓ù鍏兼綑閸ㄥ倿鏌ｉ幘宕囧哺闁哄鐗楃换娑㈠箣閻愯尙鍔伴梺绋款儐閹告悂锝炲┑瀣亗閹兼番鍨昏ぐ搴繆?EtherNet/IP 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜滃ù鏍煏婵炵偓娅嗛柛濠傛健閺屻劑寮崒娑欑彧闂佺粯绻傞悥濂稿蓟濞戙垹鐒洪柛鎰典簼閸Ｑ囨⒑閹肩偛濡界紒璇插閸┾偓妞ゆ巻鍋撶紒鐘茬Ч瀹曟洟鏌嗗畵銉ユ处鐎靛ジ寮堕幋鐙呯串闂備胶绮崹鍏兼叏閵堝鐓曢柟瀵稿亼娴滄粓鏌熼弶鍨暢闁诡喖銈搁弻鏇㈠幢濡櫣顑傜紓浣介哺鐢顕ラ崟顓涘亾閿濆骸浜滈柛鐐差樀濮婃椽宕崟顐У闂佸憡鎸荤换鍫ョ嵁韫囨稑宸濋柡澶嬪灣缁卞爼姊洪崨濠冪闁诲繑鑹捐濠㈣埖鍔栭悡鐔煎箹濞ｎ剙鈧倕顭囬幇鐗堢厵闁告縿鍎遍崢鎾煙椤旀儳浠遍柡浣稿暣閸┾偓妞ゆ帒瀚烽弫瀣煏婢跺棙娅呯紒鈧€ｎ偁浜滈柟鍝勭Х閸忓瞼绱掓径搴㈢【妞ゎ亜鍟存俊鍫曞幢濡も偓椤洭姊? {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
                     recordException(e, point);
                     results.put(pointId, null);
                 }
@@ -164,9 +166,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("批量点位读取失败: {}", deviceInfo.getDeviceId(), e);
+            log.error("闂傚倸鍊搁崐鎼佸磹妞嬪海鐭嗗ù锝堟缁€濠傗攽閻樻彃浜為柣鎺旀櫕閹叉瓕绠涢弴鐕佹綗闂佺粯鍔曢顓犲姬閳ь剟姊洪幖鐐插妧闁搞儺鐓夌槐顒€鈹戦悩鍨毄闁稿绋戣灒濠电姴鍟伴々鍙夌節闂堟侗鍎忕痪鎯х秺閺岋綁骞嬮敐鍛呮捇鏌嶉柨瀣仸闁靛洤瀚伴獮鍥礈娴ｇ懓浠归梻渚€娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛铏规嫚閳ヨ櫕鐏堢紓鍌氱Т閿曘倝鎮鹃悜钘夐唶闁哄洢鍔嶉弲婊堟倵楠炲灝鍔氶柟鍐茬箻椤㈡瑩宕熼娑氬幗闂佺粯鏌ㄩ幗婊堟儗鐎ｎ偆绡€闁靛繆鍩楅鍡楀疾闂備焦瀵уú宥夊磻閹炬番浜滈柡鍥崝锔锯偓瑙勬礈閸犳牠銆佸Δ浣瑰闁惧繐澧ｉ妶鍡曠箚闁绘劦浜滈埀顒佺墵瀹曟繈骞嬮敃鈧壕? {}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
-            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(),
+            throw new CollectorException("批量读取失败", deviceInfo.getDeviceId(),
                     null, e);
         }
     }
@@ -181,8 +183,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         long startTime = System.currentTimeMillis();
         try {
             if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
-                throw new CollectorException("点位没有写入权限", deviceInfo.getDeviceId(),
-                        point.getPointId());
+                throw new CollectorException("点位不可写", deviceInfo.getDeviceId(), point.getPointId());
             }
 
             EtherNetIpTagAddress address = requireAddress(point);
@@ -198,7 +199,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("点位写入失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            log.error("闂傚倸鍊搁崐鎼佸磹閻戣姤鍤勯柛鎾茬閸ㄦ繃銇勯弽顐粶缂佲偓婢跺绠鹃柛鈩兩戠亸顓㈡煟閹烘垹浠涢柕鍥у楠炴帒顓奸崼婵嗗腐闂備線娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛娲传閸曨剚鎷遍梺鐑╂櫓閸ㄥ爼鎮伴鈧畷鍫曨敆婢跺娅嶉梻浣虹帛閿氶柛鐔风仢閳诲秹骞嬮敂瑙ｆ嫽婵炶揪绲介幉锟犲疮閻愮儤鐓熼柣鏃€娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
             recordException(e, point);
             throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
                     point.getPointId(), e);
@@ -237,7 +238,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     validateArrayPointConfiguration(point, address, "write");
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception e) {
-                    log.error("PLC4X EtherNet/IP 数组点位写入失败, pointId={}", point.getPointId(), e);
+                    log.error("PLC4X EtherNet/IP 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜滃ù鏍煏婵炵偓娅嗛柛濠傛健閺屻劑寮崒娑欑彧闂佺粯绻傞悥濂稿蓟濞戙垹鐒洪柛鎰典簼閸Ｑ囨⒑閹肩偛濡界紒璇插閸┾偓妞ゆ巻鍋撶紒鐘茬Ч瀹曟洟鏌嗗畵銉ユ处鐎靛ジ寮堕幋鐙呯串闂備胶绮崹鍏兼叏閵堝鐓曢柟瀵稿亼娴滄粓鏌熼弶鍨暢闁诡喖銈搁弻鏇㈠幢濡櫣顑傜紓浣介哺鐢顕ラ崟顓涘亾閿濆骸浜滈柛鐐差樀濮婃椽宕崟顒佹嫳闂佺儵鏅╅崹鍫曟偘椤曗偓瀹曞爼顢楁径瀣珝闂備胶绮敋闁哥喎鐏濋埢宥夊箣閿旇В鎷绘繛杈剧到閹诧繝宕悙鐑樼厽闁绘梹娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? pointId={}", point.getPointId(), e);
                     recordException(e, point);
                     results.put(point.getPointId(), false);
                 }
@@ -250,9 +251,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("批量点位写入失败: {}", deviceInfo.getDeviceId(), e);
+            log.error("闂傚倸鍊搁崐鎼佸磹妞嬪海鐭嗗ù锝堟缁€濠傗攽閻樻彃浜為柣鎺旀櫕閹叉瓕绠涢弴鐕佹綗闂佺粯鍔曢顓犲姬閳ь剟姊洪幖鐐插妧闁搞儺鐓夌槐顒€鈹戦悩鍨毄闁稿绋戣灒濠电姴鍟伴々鍙夌節闂堟侗鍎忕痪鎯х秺閺岋綁骞嬮敐鍛呮捇鏌嶉柨瀣仸闁靛洤瀚伴獮鍥礈娴ｇ懓浠归梻渚€娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛娲传閸曨剚鎷遍梺鐑╂櫓閸ㄥ爼鎮伴鈧畷鍫曨敆婢跺娅嶉梻浣虹帛閿氶柛鐔风仢閳诲秹骞嬮敂瑙ｆ嫽婵炶揪绲介幉锟犲疮閻愮儤鐓熼柣鏃€娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? {}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
-            throw new CollectorException("批量点位写入失败", deviceInfo.getDeviceId(),
+            throw new CollectorException("批量写入失败", deviceInfo.getDeviceId(),
                     null, e);
         }
     }
@@ -505,51 +506,25 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return coerceScalarValue(plcValue, resolvePointType(point, address));
     }
 
-    private Object coerceScalarValue(PlcValue plcValue, String pointType) {
+    private Object coerceScalarValue(PlcValue plcValue, EtherNetIpPlcType plcType) {
         if (plcValue == null) {
             return null;
         }
-        if (pointType == null) {
-            return plcValue.getObject();
-        }
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> plcValue.isBoolean() ? plcValue.getBoolean() : toBoolean(plcValue.getObject());
-            case "STRING", "CHAR", "WCHAR" -> plcValue.isString() ? plcValue.getString() : Objects.toString(plcValue.getObject(), null);
-            case "BYTE", "INT8", "SINT" -> plcValue.isByte() ? plcValue.getByte() : ((Number) coerceNumber(plcValue.getObject())).byteValue();
-            case "UINT8", "USINT" -> plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "LONG", "INT32", "DINT" ->
-                    plcValue.isInteger() ? plcValue.getInteger() : ((Number) coerceNumber(plcValue.getObject())).intValue();
-            case "UINT32", "UDINT", "DWORD" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "INT64", "LINT" ->
-                    plcValue.isLong() ? plcValue.getLong() : ((Number) coerceNumber(plcValue.getObject())).longValue();
-            case "UINT64", "ULINT", "LWORD" -> plcValue.isBigInteger()
-                    ? plcValue.getBigInteger()
-                    : BigInteger.valueOf(((Number) coerceNumber(plcValue.getObject())).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    plcValue.isFloat() ? plcValue.getFloat() : ((Number) coerceNumber(plcValue.getObject())).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    plcValue.isDouble() ? plcValue.getDouble() : ((Number) coerceNumber(plcValue.getObject())).doubleValue();
-            default -> plcValue.getObject();
-        };
+        return plcType != null ? plcType.read(plcValue) : plcValue.getObject();
     }
 
     private List<Object> extractArrayValue(PlcValue plcValue, DataPoint point, EtherNetIpTagAddress address) {
         List<Object> values = new ArrayList<>();
-        String pointType = resolvePointType(point, address);
+        EtherNetIpPlcType plcType = resolvePointType(point, address);
         int length = plcValue.getLength();
         for (int i = 0; i < length; i++) {
-            values.add(coerceScalarValue(plcValue.getIndex(i), pointType));
+            values.add(coerceScalarValue(plcValue.getIndex(i), plcType));
         }
         return values;
     }
 
-    private String resolvePointType(DataPoint point, EtherNetIpTagAddress address) {
-        return point != null && point.getDataType() != null && !point.getDataType().isBlank()
-                ? point.getDataType().trim().toUpperCase(Locale.ROOT)
-                : address.getBasePlcType();
+    private EtherNetIpPlcType resolvePointType(DataPoint point, EtherNetIpTagAddress address) {
+        return EtherNetIpPlcTypeResolver.INSTANCE.resolveOrNull(point, address);
     }
 
     private Object coerceWriteValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
@@ -563,27 +538,8 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         if (value == null) {
             return null;
         }
-        String pointType = resolvePointType(point, address);
-        if (pointType == null) {
-            return value;
-        }
-        return switch (pointType) {
-            case "BOOLEAN", "BOOL" -> toBoolean(value);
-            case "STRING", "CHAR", "WCHAR" -> value.toString();
-            case "BYTE", "INT8", "SINT" -> ((Number) coerceNumber(value)).byteValue();
-            case "UINT8", "USINT", "SHORT", "INT", "INT16", "UINT16", "UINT", "WORD" ->
-                    ((Number) coerceNumber(value)).intValue();
-            case "LONG", "INT32", "DINT", "UINT32", "UDINT", "DWORD", "INT64", "LINT" ->
-                    ((Number) coerceNumber(value)).longValue();
-            case "UINT64", "ULINT", "LWORD" -> value instanceof BigInteger bigInteger
-                    ? bigInteger
-                    : BigInteger.valueOf(((Number) coerceNumber(value)).longValue());
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" ->
-                    ((Number) coerceNumber(value)).floatValue();
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" ->
-                    ((Number) coerceNumber(value)).doubleValue();
-            default -> value;
-        };
+        EtherNetIpPlcType plcType = resolvePointType(point, address);
+        return plcType != null ? plcType.write(value) : value;
     }
 
     private List<Object> coerceWriteArrayValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
@@ -601,29 +557,6 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             coerced.add(coerceWriteScalarValue(sourceValue, address, point));
         }
         return coerced;
-    }
-
-    private Number coerceNumber(Object value) {
-        if (value instanceof Number number) {
-            return number;
-        }
-        if (value instanceof PlcValue plcValue) {
-            return coerceNumber(plcValue.getObject());
-        }
-        if (value instanceof String text) {
-            return text.contains(".") ? Double.parseDouble(text) : Long.parseLong(text);
-        }
-        throw new IllegalArgumentException("Cannot convert EtherNet/IP value to number: " + value);
-    }
-
-    private boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof Number number) {
-            return number.intValue() != 0;
-        }
-        return Boolean.parseBoolean(String.valueOf(value));
     }
 
     private List<Object> toObjectList(Object value) {

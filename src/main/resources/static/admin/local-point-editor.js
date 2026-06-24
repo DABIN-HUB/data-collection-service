@@ -215,7 +215,7 @@
       pointName: draft.pointName || pointCode,
       deviceId: draft.deviceId || deviceId,
       address,
-      dataType: draft.dataType || "FLOAT",
+      dataType: draft.dataType || defaultPointDataType(protocolCode),
       readWrite: draft.readWrite || "R",
       collectionMode: draft.collectionMode || (protocolCode === "MQTT" ? "SUBSCRIPTION" : "POLLING"),
       status: draft.status ?? 1,
@@ -235,7 +235,8 @@
       case "MQTT": return "sensor/temperature";
       case "OPC_UA": return "ns=2;s=Channel1.Device1.Tag1";
       case "IEC104": return "1";
-      case "KNX": return "1/0/1";
+      case "KNX":
+      case "KNXNET_IP": return "1/0/1";
       default: return "40001";
     }
   }
@@ -254,7 +255,7 @@
       pointName: hasValue(draft.pointName) ? String(draft.pointName).trim() : `点位 ${index + 1}`,
       deviceId: draft.deviceId || deviceId || "",
       address: hasValue(draft.address) ? String(draft.address).trim() : "",
-      dataType: draft.dataType || "FLOAT",
+      dataType: draft.dataType || defaultPointDataType(protocolCode),
       readWrite: draft.readWrite || "R",
       collectionMode: draft.collectionMode || (protocolCode === "MQTT" ? "SUBSCRIPTION" : "POLLING"),
       status: draft.status ?? 1,
@@ -347,7 +348,7 @@
           </button>
         </td>
         <td>${escapeHtml(resolvePointAddress(point) || "-")}</td>
-        <td>${escapeHtml(point.dataType || "-")}</td>
+        <td>${escapeHtml(resolvePointTypeSummary(point, canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP")))}</td>
         <td>${escapeHtml(point.readWrite || "-")}</td>
         <td>${escapeHtml(statusLabel(point.status))}</td>
       </tr>`).join("") : `<tr><td colspan="5">${search ? "没有匹配的点位" : "暂无点位"}</td></tr>`;
@@ -367,13 +368,14 @@
     }
     empty.classList.add("hidden");
     const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
+    const protocol = state.currentLocalProtocol || getProtocolSchema(protocolCode);
     const basicFields = [
       { path: "pointCode", label: "点位编码", control: "text", valueType: "string", required: true, placeholder: "temperature", listRefresh: true },
       { path: "pointName", label: "点位名称", control: "text", valueType: "string", required: true, placeholder: "温度", listRefresh: true },
       { path: "pointAlias", label: "点位别名", control: "text", valueType: "string" },
       { path: "address", label: "点位地址", control: "text", valueType: "string", required: true, placeholder: defaultPointAddress(protocolCode), listRefresh: true },
       { path: "groupId", label: "分组 ID", control: "text", valueType: "string" },
-      { path: "dataType", label: "数据类型", control: "select", valueType: "string", allowEmpty: false, options: DATA_TYPES.map((value) => ({ value, label: value })), listRefresh: true },
+      ...buildTypeEditorFields(protocolCode, protocol),
       { path: "readWrite", label: "读写权限", control: "select", valueType: "string", allowEmpty: false, options: READ_WRITE_OPTIONS, listRefresh: true },
       { path: "collectionMode", label: "采集模式", control: "select", valueType: "string", allowEmpty: false, options: COLLECTION_MODE_OPTIONS },
       { path: "status", label: "状态", control: "select", valueType: "integer", allowEmpty: false, options: STATUS_OPTIONS, listRefresh: true },
@@ -470,15 +472,17 @@
     const placeholder = field.placeholder ? ` placeholder="${escapeAttr(field.placeholder)}"` : "";
     const step = field.step !== undefined ? ` step="${escapeAttr(field.step)}"` : "";
     const min = field.min !== undefined ? ` min="${escapeAttr(field.min)}"` : "";
+    const disabled = field.disabled ? " disabled" : "";
+    const note = field.description ? `<span class="field-description">${escapeHtml(field.description)}</span>` : "";
     let control = "";
     if (field.control === "select") {
-      control = `<select${attrs}>${renderOptions(field.options || [], value, field.allowEmpty !== false)}</select>`;
+      control = `<select${attrs}${disabled}>${renderOptions(field.options || [], value, field.allowEmpty !== false)}</select>`;
     } else if (field.control === "textarea") {
-      control = `<textarea${attrs} rows="${field.rows || 3}"${placeholder}>${escapeHtml(actual)}</textarea>`;
+      control = `<textarea${attrs} rows="${field.rows || 3}"${placeholder}${disabled}>${escapeHtml(actual)}</textarea>`;
     } else {
-      control = `<input${attrs} type="${field.control === "number" ? "number" : "text"}" value="${escapeAttr(actual)}"${placeholder}${step}${min}>`;
+      control = `<input${attrs} type="${field.control === "number" ? "number" : "text"}" value="${escapeAttr(actual)}"${placeholder}${step}${min}${disabled}>`;
     }
-    return `<label${wide}>${escapeHtml(field.label)}${field.required ? ' <span class="field-required">*</span>' : ""}${control}</label>`;
+    return `<label${wide}>${escapeHtml(field.label)}${field.required ? ' <span class="field-required">*</span>' : ""}${control}${note}</label>`;
   }
 
   function renderOptions(options, value, allowEmpty = true) {
@@ -489,6 +493,213 @@
       items.push(`<option value="${escapeAttr(normalized.value)}" ${String(normalized.value) === current ? "selected" : ""}>${escapeHtml(normalized.label)}</option>`);
     });
     return items.join("");
+  }
+
+  function protocolSchema(protocolCode) {
+    return getProtocolSchema(protocolCode) || state.currentLocalProtocol || null;
+  }
+
+  function protocolDataTypes(protocolCode) {
+    const protocol = protocolSchema(protocolCode);
+    return Array.isArray(protocol?.dataTypes) && protocol.dataTypes.length ? protocol.dataTypes : DATA_TYPES;
+  }
+
+  function protocolTypeMode(protocol) {
+    return protocol?.typeMode || (protocol?.driverTypeEnabled ? "DRIVER_PRIMARY" : "PLATFORM_ONLY");
+  }
+
+  function protocolPrimaryTypeField(protocol) {
+    if (protocol?.primaryTypeField) {
+      return protocol.primaryTypeField;
+    }
+    if (protocol?.driverTypeEnabled && protocol?.driverTypeField) {
+      return protocol.driverTypeField;
+    }
+    return "dataType";
+  }
+
+  function protocolPlatformDataTypeMode(protocol) {
+    return protocol?.platformDataTypeMode || (protocolTypeMode(protocol) === "PLATFORM_ONLY" ? "REQUIRED" : "DERIVED_EDITABLE");
+  }
+
+  function protocolPrimaryTypeSchemaField(protocol) {
+    const path = protocolPrimaryTypeField(protocol);
+    return Array.isArray(protocol?.pointFields)
+      ? protocol.pointFields.find((field) => field.name === path) || null
+      : null;
+  }
+
+  function protocolPrimaryTypeLabel(protocol) {
+    if (protocolTypeMode(protocol) === "PLATFORM_ONLY") {
+      return "数据类型";
+    }
+    if (protocol?.driverTypeEnabled && protocolPrimaryTypeField(protocol) === protocol?.driverTypeField) {
+      return protocol.driverTypeLabel || "协议原生类型";
+    }
+    const schemaField = protocolPrimaryTypeSchemaField(protocol);
+    return schemaField?.label || protocolPrimaryTypeField(protocol);
+  }
+
+  function defaultPointDataType(protocolCode) {
+    const options = protocolDataTypes(protocolCode);
+    if (options.includes("FLOAT")) {
+      return "FLOAT";
+    }
+    if (options.includes("STRING")) {
+      return "STRING";
+    }
+    return options[0] || "FLOAT";
+  }
+
+  function buildPlatformDataTypeField(protocolCode, protocol) {
+    const platformMode = protocolPlatformDataTypeMode(protocol);
+    const description = {
+      REQUIRED: "当前协议要求显式填写 dataType。",
+      DERIVED_EDITABLE: "dataType 是平台统一类型，可依据主类型字段推导，也允许人工覆盖。",
+      DERIVED_READONLY: "dataType 由协议主类型自动推导，这里仅展示平台最终使用的统一类型。",
+      ADVANCED: "dataType 仍保留为平台统一类型，但默认不作为主展示字段。"
+    }[platformMode] || "dataType 是平台统一类型。";
+    return {
+      path: "dataType",
+      label: "数据类型",
+      control: "select",
+      valueType: "string",
+      allowEmpty: false,
+      options: protocolDataTypes(protocolCode).map((value) => ({ value, label: value })),
+      description,
+      listRefresh: true,
+      disabled: platformMode === "DERIVED_READONLY"
+    };
+  }
+
+  function buildPrimaryTypeField(protocolCode, protocol) {
+    const typeMode = protocolTypeMode(protocol);
+    if (typeMode === "PLATFORM_ONLY") {
+      return null;
+    }
+    const primaryPath = protocolPrimaryTypeField(protocol);
+    if (protocol?.driverTypeEnabled && primaryPath === protocol?.driverTypeField && Array.isArray(protocol.driverDataTypes) && protocol.driverDataTypes.length) {
+      return {
+        path: primaryPath,
+        label: protocol.driverTypeLabel || "协议原生类型",
+        control: "select",
+        valueType: "string",
+        allowEmpty: true,
+        options: protocol.driverDataTypes.map((value) => ({ value, label: value })),
+        description: `${protocol.driverTypeLabel || "协议原生类型"}是当前协议真正优先使用的驱动类型字段，写入 ${primaryPath}，不会替代平台统一的 dataType。`,
+        listRefresh: true
+      };
+    }
+    const schemaField = protocolPrimaryTypeSchemaField(protocol);
+    if (!schemaField) {
+      return null;
+    }
+    const config = schemaFieldToLocalField(schemaField);
+    return {
+      ...config,
+      description: `${config.description ? `${config.description} ` : ""}当前协议以该字段作为主类型字段。`,
+      listRefresh: true
+    };
+  }
+
+  function buildTypeEditorFields(protocolCode, protocol) {
+    const typeMode = protocolTypeMode(protocol);
+    const platformMode = protocolPlatformDataTypeMode(protocol);
+    const fields = [];
+    if (typeMode === "PLATFORM_ONLY") {
+      fields.push(buildPlatformDataTypeField(protocolCode, protocol));
+      return fields;
+    }
+    const primaryField = buildPrimaryTypeField(protocolCode, protocol);
+    if (primaryField) {
+      fields.push(primaryField);
+    }
+    if (platformMode !== "ADVANCED") {
+      fields.push(buildPlatformDataTypeField(protocolCode, protocol));
+    }
+    return fields;
+  }
+
+  function buildSchemaPointFields(protocol) {
+    if (!protocol) {
+      return [];
+    }
+    const primaryPath = protocolPrimaryTypeField(protocol);
+    const fields = [];
+    if (protocol.driverTypeEnabled && protocol.driverTypeField && protocol.driverTypeField !== primaryPath && Array.isArray(protocol.driverDataTypes) && protocol.driverDataTypes.length) {
+      fields.push({
+        path: protocol.driverTypeField,
+        label: protocol.driverTypeLabel || "协议原生类型",
+        control: "select",
+        valueType: "string",
+        allowEmpty: true,
+        options: protocol.driverDataTypes.map((value) => ({ value, label: value })),
+        description: `${protocol.driverTypeLabel || "协议原生类型"}用于保存当前协议的原生数据类型，写入 ${protocol.driverTypeField}，不会替代上方的 dataType。`,
+        listRefresh: true
+      });
+    }
+    (protocol.pointFields || []).forEach((field) => {
+      if (field.name !== primaryPath) {
+        fields.push(schemaFieldToLocalField(field));
+      }
+    });
+    return fields;
+  }
+
+  function schemaFieldToLocalField(field) {
+    const type = String(field?.type || "string").toLowerCase();
+    const control = type === "select" || type === "boolean"
+      ? "select"
+      : (type === "textarea" || type === "object" ? "textarea" : (type === "number" ? "number" : "text"));
+    const valueType = type === "boolean" ? "boolean" : (type === "number" ? "integer" : "string");
+    const options = type === "boolean"
+      ? (field.options && field.options.length ? field.options : ["true", "false"]).map((value) => ({
+          value,
+          label: String(value) === "true" ? "是" : (String(value) === "false" ? "否" : String(value))
+        }))
+      : (field.options || []).map((value) => ({ value, label: String(value) }));
+    return {
+      path: field.name,
+      label: field.label || field.name,
+      control,
+      valueType,
+      allowEmpty: !field.required,
+      required: field.required,
+      options,
+      description: schemaFieldDescription(field),
+      rows: control === "textarea" ? 4 : undefined,
+      fullWidth: control === "textarea",
+      listRefresh: field.name === "dataType" || field.name === "additionalConfig.driverDataType"
+    };
+  }
+
+  function schemaFieldDescription(field) {
+    const notes = [];
+    if (field?.description) {
+      notes.push(field.description);
+    }
+    if (field?.requiredWhen) {
+      notes.push(`条件必填：${field.requiredWhen}`);
+    }
+    if (field?.storage === "extJson") {
+      notes.push("保存位置：additionalConfig");
+    }
+    return notes.join(" ");
+  }
+
+  function resolvePointTypeSummary(point, protocolCode) {
+    const protocol = protocolSchema(protocolCode);
+    const typeMode = protocolTypeMode(protocol);
+    const primaryPath = protocolPrimaryTypeField(protocol);
+    const platformValue = point?.dataType;
+    const primaryValue = primaryPath === "dataType" ? platformValue : getPath(point, primaryPath);
+    if (typeMode === "PLATFORM_ONLY") {
+      return platformValue || "-";
+    }
+    if (hasValue(primaryValue) && hasValue(platformValue) && String(primaryValue) !== String(platformValue)) {
+      return `${primaryValue} / ${platformValue}`;
+    }
+    return primaryValue || platformValue || "-";
   }
 
   function renderReportBindings(point) {
@@ -543,19 +754,36 @@
 
   function renderProtocolSectionTitle(protocolCode) {
     if (protocolCode === "MODBUS_TCP" || protocolCode === "MODBUS_RTU") {
-      return "协议区（Modbus 当前多数项不直接生效，实际按 address、协议配置和字段类型转换）";
+      return "协议扩展（Modbus 的 dataType 会直接影响取值长度和解码）";
     }
-    return "协议区";
+    return "协议扩展";
   }
 
   function renderProtocolFields(protocolCode, point) {
-    const fields = PROTOCOL_FIELDS[protocolCode] || [];
-    const hints = state.currentLocalProtocol?.pointAddressHints || [];
-    const baseNote = hints.length ? `当前协议地址示例：${hints.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}` : "当前协议专属字段会写入 additionalConfig；未覆盖字段仍可在高级 JSON 回退区补充。";
-    const modbusNote = protocolCode === "MODBUS_TCP" || protocolCode === "MODBUS_RTU"
-      ? "当前 Modbus 运行时主要按 point.address 和连接级 byteOrder 处理，其余字段多为预留或兼容项。"
-      : "";
-    const note = modbusNote ? `${baseNote}<br>${modbusNote}` : baseNote;
+    const protocol = state.currentLocalProtocol || getProtocolSchema(protocolCode);
+    const schemaFields = buildSchemaPointFields(protocol);
+    const fields = schemaFields.length ? schemaFields : (PROTOCOL_FIELDS[protocolCode] || []);
+    const typeMode = protocolTypeMode(protocol);
+    const primaryPath = protocolPrimaryTypeField(protocol);
+    const primaryLabel = protocolPrimaryTypeLabel(protocol);
+    const hints = protocol?.pointAddressHints || [];
+    const notes = [];
+    if (hints.length) {
+      notes.push(`当前协议地址示例：${hints.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}`);
+    }
+    if (typeMode === "DRIVER_PRIMARY") {
+      notes.push(`当前协议以“${escapeHtml(primaryLabel)}”作为主类型字段，写入 <code>${escapeHtml(primaryPath)}</code>；上方 dataType 仍保留为平台统一类型。`);
+    } else if (typeMode === "PROTOCOL_FIELD_PRIMARY") {
+      notes.push(`当前协议以“${escapeHtml(primaryLabel)}”作为主类型字段，优先决定协议解析方式；上方 dataType 仍保留为平台统一类型。`);
+    }
+    if (protocolCode === "MODBUS_TCP" || protocolCode === "MODBUS_RTU") {
+      notes.push("Modbus 的 dataType 会直接决定读取长度和寄存器解码方式；下方协议扩展字段主要用于补充兼容配置。");
+    } else if (protocol?.pointFields?.length) {
+      notes.push("下方字段都是协议扩展配置，字段下方的中文备注会说明用途、条件和保存位置。主类型字段如果已经提升到基础信息区，这里不会重复展示。");
+    } else {
+      notes.push("当前协议没有额外的点位扩展字段。");
+    }
+    const note = notes.join("<br>");
     if (!fields.length) {
       return `<p class="protocol-point-note">${note}</p>`;
     }
@@ -1020,7 +1248,7 @@
   }
 
   function pointMatches(point, search) {
-    const text = [point.pointCode, point.pointName, point.pointAlias, point.address, point.dataType, point.readWrite, getPath(point, "additionalConfig.reportField"), getPath(point, "additionalConfig.topic"), getPath(point, "additionalConfig.nodeId")].filter(hasValue).join(" ").toLowerCase();
+    const text = [point.pointCode, point.pointName, point.pointAlias, point.address, point.dataType, point.readWrite, getPath(point, "additionalConfig.driverDataType"), getPath(point, "additionalConfig.dptId"), getPath(point, "additionalConfig.dpt"), getPath(point, "additionalConfig.reportField"), getPath(point, "additionalConfig.topic"), getPath(point, "additionalConfig.nodeId")].filter(hasValue).join(" ").toLowerCase();
     return text.includes(search);
   }
 

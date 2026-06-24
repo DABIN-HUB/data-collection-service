@@ -1,12 +1,12 @@
 package com.wangbin.collector.core.collector.protocol.ethernetip.util;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpPlcType;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
 
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,10 +14,6 @@ public final class EtherNetIpAddressParser {
 
     private static final Pattern LOGIX_TYPED_PATTERN = Pattern.compile("^(.+):([A-Z][A-Z0-9_]*)(?:\\[(\\d+)])?$");
     private static final Pattern EIP_SEGMENT_PATTERN = Pattern.compile("^%(.+?)(?::(\\d+))?(?::([A-Z][A-Z0-9_]*))?$");
-    private static final Set<String> SUPPORTED_TYPES = Set.of(
-            "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD",
-            "DINT", "UDINT", "DWORD", "LINT", "ULINT", "LWORD",
-            "REAL", "LREAL", "STRING");
 
     private EtherNetIpAddressParser() {
     }
@@ -46,13 +42,8 @@ public final class EtherNetIpAddressParser {
         }
         Map<String, Object> effectiveConfig = config != null ? config : Collections.emptyMap();
         String rawAddress = address.trim();
-        String explicitType = normalizeType(firstNonBlank(
-                asString(effectiveConfig.get("eipType")),
-                asString(effectiveConfig.get("logixType")),
-                asString(effectiveConfig.get("plc4xType")),
-                asString(effectiveConfig.get("plcType"))
-        ));
-        String inferredType = explicitType != null ? explicitType : inferType(dataType);
+        EtherNetIpPlcType explicitType = resolveExplicitType(effectiveConfig);
+        EtherNetIpPlcType inferredType = explicitType != null ? explicitType : inferType(dataType);
 
         if (rawAddress.startsWith("%")) {
             return parseEipAddress(rawAddress, inferredType);
@@ -60,7 +51,7 @@ public final class EtherNetIpAddressParser {
         return parseLogixAddress(rawAddress, inferredType);
     }
 
-    private static EtherNetIpTagAddress parseEipAddress(String rawAddress, String inferredType) {
+    private static EtherNetIpTagAddress parseEipAddress(String rawAddress, EtherNetIpPlcType inferredType) {
         Matcher matcher = EIP_SEGMENT_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
         if (!matcher.matches()) {
             throw new IllegalArgumentException("Unsupported EtherNet/IP symbolic address: " + rawAddress);
@@ -68,14 +59,14 @@ public final class EtherNetIpAddressParser {
 
         String tagPart = rawAddress.substring(1);
         String working = tagPart;
-        String explicitType = null;
+        EtherNetIpPlcType explicitType = null;
         Integer elementCount = null;
 
         int lastColon = working.lastIndexOf(':');
         if (lastColon >= 0) {
-            String tail = working.substring(lastColon + 1).trim().toUpperCase(Locale.ROOT);
-            if (SUPPORTED_TYPES.contains(tail)) {
-                explicitType = tail;
+            String tail = working.substring(lastColon + 1).trim();
+            explicitType = tryParseDriverType(tail);
+            if (explicitType != null) {
                 working = working.substring(0, lastColon);
             }
         }
@@ -89,76 +80,73 @@ public final class EtherNetIpAddressParser {
             }
         }
 
-        String finalType = explicitType != null ? explicitType : inferredType;
+        EtherNetIpPlcType finalType = explicitType != null ? explicitType : inferredType;
         int arraySize = elementCount != null ? Math.max(1, elementCount) : 1;
         StringBuilder plc4xAddress = new StringBuilder("%").append(working);
         if (finalType != null) {
-            plc4xAddress.append(':').append(arraySize).append(':').append(finalType);
+            plc4xAddress.append(':').append(arraySize).append(':').append(finalType.toTypeExpression());
         } else if (elementCount != null) {
             plc4xAddress.append(':').append(arraySize);
         }
 
-        return new EtherNetIpTagAddress(rawAddress, plc4xAddress.toString(), working, finalType, arraySize);
+        return new EtherNetIpTagAddress(rawAddress, plc4xAddress.toString(), working,
+                finalType != null ? finalType.toTypeExpression() : null, arraySize);
     }
 
-    private static EtherNetIpTagAddress parseLogixAddress(String rawAddress, String inferredType) {
+    private static EtherNetIpTagAddress parseLogixAddress(String rawAddress, EtherNetIpPlcType inferredType) {
         Matcher matcher = LOGIX_TYPED_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
         String tagName = rawAddress;
-        String explicitType = null;
+        EtherNetIpPlcType explicitType = null;
         int arraySize = 1;
 
         if (matcher.matches()) {
-            String candidateType = matcher.group(2).toUpperCase(Locale.ROOT);
-            if (SUPPORTED_TYPES.contains(candidateType)) {
+            explicitType = tryParseDriverType(matcher.group(2));
+            if (explicitType != null) {
                 int typeSeparator = rawAddress.lastIndexOf(':');
                 tagName = rawAddress.substring(0, typeSeparator);
-                explicitType = candidateType;
                 if (matcher.group(3) != null) {
                     arraySize = Math.max(1, Integer.parseInt(matcher.group(3)));
                 }
             }
         }
 
-        String finalType = explicitType != null ? explicitType : inferredType;
+        EtherNetIpPlcType finalType = explicitType != null ? explicitType : inferredType;
         String plc4xAddress = rawAddress;
         if (explicitType == null && finalType != null) {
-            plc4xAddress = tagName + ":" + finalType + (arraySize > 1 ? "[" + arraySize + "]" : "");
+            plc4xAddress = tagName + ":" + finalType.toTypeExpression() + (arraySize > 1 ? "[" + arraySize + "]" : "");
         }
 
-        return new EtherNetIpTagAddress(rawAddress, plc4xAddress, tagName, finalType, arraySize);
+        return new EtherNetIpTagAddress(rawAddress, plc4xAddress, tagName,
+                finalType != null ? finalType.toTypeExpression() : null, arraySize);
     }
 
-    private static String inferType(String dataType) {
+    private static EtherNetIpPlcType inferType(String dataType) {
         if (dataType == null || dataType.isBlank()) {
             return null;
         }
-        return switch (dataType.trim().toUpperCase(Locale.ROOT)) {
-            case "BOOLEAN", "BOOL" -> "BOOL";
-            case "BYTE" -> "BYTE";
-            case "INT8", "SINT" -> "SINT";
-            case "UINT8", "USINT" -> "USINT";
-            case "SHORT", "INT", "INT16" -> "INT";
-            case "UINT16", "UINT", "WORD" -> "UINT";
-            case "LONG", "INT32", "DINT" -> "DINT";
-            case "UINT32", "UDINT", "DWORD" -> "UDINT";
-            case "INT64", "LINT" -> "LINT";
-            case "UINT64", "ULINT", "LWORD" -> "ULINT";
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" -> "REAL";
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" -> "LREAL";
-            case "STRING" -> "STRING";
-            default -> throw new IllegalArgumentException("Unsupported EtherNet/IP data type mapping: " + dataType);
-        };
+        return EtherNetIpPlcType.fromPlatformDataType(dataType);
     }
 
-    private static String normalizeType(String type) {
-        if (type == null || type.isBlank()) {
+    private static EtherNetIpPlcType resolveExplicitType(Map<String, Object> config) {
+        String type = firstNonBlank(
+                asString(config.get("driverDataType")),
+                asString(config.get("eipType")),
+                asString(config.get("logixType")),
+                asString(config.get("plc4xType")),
+                asString(config.get("plcType"))
+        );
+        return type != null ? EtherNetIpPlcType.fromDriverText(type) : null;
+    }
+
+    private static EtherNetIpPlcType tryParseDriverType(String text) {
+        if (text == null || text.isBlank()) {
             return null;
         }
-        String normalized = type.trim().toUpperCase(Locale.ROOT);
-        if (!SUPPORTED_TYPES.contains(normalized)) {
-            throw new IllegalArgumentException("Unsupported EtherNet/IP PLC4X type: " + type);
+        try {
+            return EtherNetIpPlcType.fromDriverText(text);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
-        return normalized;
     }
 
     private static String firstNonBlank(String... values) {

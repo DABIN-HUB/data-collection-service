@@ -2,6 +2,7 @@ package com.wangbin.collector.core.collector.protocol.ads.util;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
+import com.wangbin.collector.core.collector.protocol.ads.domain.AdsPlcType;
 
 import java.util.Collections;
 import java.util.Locale;
@@ -60,7 +61,7 @@ public final class AdsAddressParser {
 
         Matcher directTypedMatcher = DIRECT_TYPED_PATTERN.matcher(rawAddress);
         if (directTypedMatcher.matches()) {
-            String plcType = normalizeTypeExpression(directTypedMatcher.group(5), effectiveConfig);
+            String plcType = normalizeTypeExpression(AdsPlcType.fromDriverText(directTypedMatcher.group(5)), effectiveConfig);
             Integer stringLength = resolveStringLengthIfNeeded(plcType);
             int arraySize = parseArraySize(directTypedMatcher.group(6), effectiveConfig);
             return new AdsAddress(rawAddress, normalizeDirectTypedAddress(directTypedMatcher, plcType, arraySize),
@@ -134,44 +135,28 @@ public final class AdsAddressParser {
 
     private static String inferTypeExpressionOrNull(String dataType, Map<String, Object> config) {
         String overrideType = firstNonBlank(
+                asString(config.get("driverDataType")),
                 asString(config.get("adsType")),
                 asString(config.get("plc4xType")),
                 asString(config.get("plcType"))
         );
         if (overrideType != null) {
-            return normalizeTypeExpression(overrideType, config);
+            return normalizeTypeExpression(AdsPlcType.fromDriverText(overrideType), config);
         }
         if (dataType == null || dataType.isBlank()) {
             return null;
         }
-        return switch (dataType.trim().toUpperCase(Locale.ROOT)) {
-            case "BOOLEAN", "BOOL" -> "BOOL";
-            case "BYTE", "INT8", "SINT" -> "SINT";
-            case "UINT8", "USINT" -> "USINT";
-            case "CHAR" -> "BYTE";
-            case "SHORT", "INT", "INT16" -> "INT";
-            case "UINT16", "UINT", "WORD" -> "UINT";
-            case "LONG", "INT32", "DINT" -> "DINT";
-            case "UINT32", "UDINT", "DWORD" -> "UDINT";
-            case "INT64", "LINT" -> "LINT";
-            case "UINT64", "ULINT", "LWORD" -> "ULINT";
-            case "FLOAT", "FLOAT32", "FLOAT32_SWAP", "FLOAT32_LITTLE", "REAL" -> "REAL";
-            case "FLOAT64", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE", "DOUBLE_SWAP", "LREAL" -> "LREAL";
-            case "STRING" -> "STRING(" + resolveStringLength(config, 80) + ")";
-            case "WSTRING" -> "WSTRING(" + resolveStringLength(config, 80) + ")";
-            default -> throw new IllegalArgumentException("Unsupported ADS data type mapping: " + dataType);
-        };
+        return normalizeTypeExpression(AdsPlcType.fromPlatformDataType(dataType), config);
     }
 
-    private static String normalizeTypeExpression(String typeExpression, Map<String, Object> config) {
-        String normalized = typeExpression.trim().toUpperCase(Locale.ROOT);
-        if ("STRING".equals(normalized)) {
+    private static String normalizeTypeExpression(AdsPlcType plcType, Map<String, Object> config) {
+        if (plcType == AdsPlcType.STRING) {
             return "STRING(" + resolveStringLength(config, 80) + ")";
         }
-        if ("WSTRING".equals(normalized)) {
+        if (plcType == AdsPlcType.WSTRING) {
             return "WSTRING(" + resolveStringLength(config, 80) + ")";
         }
-        return normalized;
+        return plcType.toTypeExpression();
     }
 
     private static Integer resolveStringLengthIfNeeded(String plcType) {
