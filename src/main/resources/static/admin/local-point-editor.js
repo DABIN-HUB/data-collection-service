@@ -447,7 +447,7 @@
           ${renderAlarmRules(point)}
         </section>
         <section class="field-group">
-          <h3>协议区</h3>
+          <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
           ${renderProtocolFields(protocolCode, point)}
         </section>
         <section class="field-group">
@@ -539,6 +539,13 @@
         </div>
         <div class="inline-actions point-json-actions"><button type="button" data-add-alarm-rule="true">新增告警规则</button></div>
       </div>`;
+  }
+
+  function renderProtocolSectionTitle(protocolCode) {
+    if (protocolCode === "MODBUS_TCP" || protocolCode === "MODBUS_RTU") {
+      return "协议区（Modbus 当前多数项不直接生效，实际按 address、协议配置和字段类型转换）";
+    }
+    return "协议区";
   }
 
   function renderProtocolFields(protocolCode, point) {

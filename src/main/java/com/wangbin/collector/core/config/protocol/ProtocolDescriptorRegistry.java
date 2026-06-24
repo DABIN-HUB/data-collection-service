@@ -101,6 +101,8 @@ public class ProtocolDescriptorRegistry {
                                 List.of("S7_300", "S7_400", "S7_1200", "S7_1500", "LOGO"), "protocol"),
                         field("pduSize", "number", "PDU size", false, "1024", null, "advanced"),
                         field("maxFieldsPerRequest", "number", "Max fields per request", false, "64", null, "advanced"),
+                        field("subscriptionEnabled", "select", "Enable subscription", false, "",
+                                List.of("true", "false"), "advanced"),
                         field("localTsap", "number", "Local TSAP", false, "", null, "advanced"),
                         field("remoteTsap", "number", "Remote TSAP", false, "", null, "advanced"),
                         field("localDeviceGroup", "select", "Local device group", false, "",

@@ -90,11 +90,9 @@ public final class S7AddressParser {
     }
 
     private static String canonicalizeTypedAddress(String addressPart, String typePart, String arrayPart) {
-        String normalizedAddress = addressPart.startsWith("%")
-                ? addressPart.substring(1)
-                : addressPart;
-        normalizedAddress = normalizedAddress.toUpperCase(Locale.ROOT);
-        if (!normalizedAddress.startsWith("DB")) {
+        boolean explicitPercent = addressPart.startsWith("%");
+        String normalizedAddress = addressPart.toUpperCase(Locale.ROOT);
+        if (!explicitPercent && !normalizedAddress.startsWith("DB")) {
             normalizedAddress = "%" + normalizedAddress;
         }
         StringBuilder builder = new StringBuilder(normalizedAddress)
@@ -237,3 +235,4 @@ public final class S7AddressParser {
         return Integer.parseInt(arrayPart.trim());
     }
 }
+

@@ -52,13 +52,23 @@ class S7AddressParserTest {
     }
 
     @Test
-    void shouldPreserveExplicitPlc4xAddress() {
+    void shouldPreserveExplicitDbPlc4xAddress() {
         DataPoint point = point("%DB56.DBW20:INT", "INT16", Map.of());
 
         S7Address address = S7AddressParser.parse(point);
 
-        assertEquals("DB56.DBW20:INT", address.getPlc4xAddress());
+        assertEquals("%DB56.DBW20:INT", address.getPlc4xAddress());
         assertEquals("INT", address.getPlcType());
+    }
+
+    @Test
+    void shouldPreserveExplicitDbBitPlc4xAddress() {
+        DataPoint point = point("%DB1.DBX0.0:BOOL", "BOOLEAN", Map.of());
+
+        S7Address address = S7AddressParser.parse(point);
+
+        assertEquals("%DB1.DBX0.0:BOOL", address.getPlc4xAddress());
+        assertEquals("BOOL", address.getPlcType());
     }
 
     @Test
@@ -80,3 +90,4 @@ class S7AddressParserTest {
         return point;
     }
 }
+

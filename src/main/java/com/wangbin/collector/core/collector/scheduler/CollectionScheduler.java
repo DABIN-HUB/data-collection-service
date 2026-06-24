@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 采集调度总控。
+ * Collection scheduler.
  */
 @Slf4j
 @Service
@@ -267,15 +267,16 @@ public class CollectionScheduler {
             batchTask.registerInFlight(collectFuture);
             registerCollectFuture(deviceId, collectFuture);
 
+            long collectTimeoutMs = resolveCollectTimeoutMs(deviceId);
             Map<String, Object> values;
             try {
                 values = collectFuture.get(
-                        collectorProperties.getScheduler().getCollectTimeoutMs(),
+                        collectTimeoutMs,
                         TimeUnit.MILLISECONDS
                 );
             } catch (TimeoutException e) {
                 collectFuture.cancel(true);
-                log.warn("batch collection timeout, device={}", deviceId);
+                log.warn("batch collection timeout, device={}, timeoutMs={}", deviceId, collectTimeoutMs);
                 return;
             } catch (InterruptedException e) {
                 collectFuture.cancel(true);
@@ -678,6 +679,26 @@ public class CollectionScheduler {
     public boolean isDeviceRunning(String deviceId) {
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
         return info != null && info.isRunning();
+    }
+
+    private long resolveCollectTimeoutMs(String deviceId) {
+        long defaultTimeoutMs = Math.max(100L, collectorProperties.getScheduler().getCollectTimeoutMs());
+        DeviceConnection connection = configManager.getConnectionConfig(deviceId);
+        if (connection == null) {
+            return defaultTimeoutMs;
+        }
+
+        Long configuredTimeout = firstPositive(
+                toLong(connection.getReadTimeout()),
+                toLong(connection.getInt("requestTimeoutMs", null)),
+                toLong(connection.getInt("requestTimeout", null)),
+                toLong(connection.getTimeout()));
+        if (configuredTimeout == null) {
+            return defaultTimeoutMs;
+        }
+
+        long bufferMs = Math.max(250L, Math.min(1000L, configuredTimeout / 10L));
+        return Math.max(defaultTimeoutMs, configuredTimeout + bufferMs);
     }
 
     private long resolveDeviceStartTimeoutMs(String deviceId) {

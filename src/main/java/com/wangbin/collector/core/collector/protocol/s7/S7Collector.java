@@ -358,6 +358,15 @@ public class S7Collector extends ConnectionBackedCollector {
                 }
                 results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
             }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.warn("PLC4X S7 batch read interrupted, deviceId={}, batchSize={}",
+                    deviceInfo.getDeviceId(), batch.size());
+            for (DataPoint point : batch) {
+                if (point != null && point.getPointId() != null) {
+                    results.put(point.getPointId(), null);
+                }
+            }
         } catch (Exception ex) {
             log.error("PLC4X S7 batch read failed, deviceId={}, batchSize={}", deviceInfo.getDeviceId(), batch.size(), ex);
             for (DataPoint point : batch) {
@@ -506,7 +515,12 @@ public class S7Collector extends ConnectionBackedCollector {
     }
 
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
-        return future.get(timeout, TimeUnit.MILLISECONDS);
+        try {
+            return future.get(timeout, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw ex;
+        }
     }
 
     private void ensureSubscriptionSupported() {
@@ -581,10 +595,26 @@ public class S7Collector extends ConnectionBackedCollector {
     }
 
     private String tagName(DataPoint point) {
-        return point.getPointId() != null && !point.getPointId().isBlank()
-                ? point.getPointId()
-                : cacheKey(point);
+        String baseName = firstNonBlank(
+                point != null ? point.getPointId() : null,
+                point != null ? point.getPointCode() : null,
+                point != null ? point.getPointName() : null,
+                point != null ? point.getAddress() : null,
+                point != null ? cacheKey(point) : null);
+        if (baseName == null) {
+            baseName = cacheKey(point);
+        }
+        String sanitized = baseName.replaceAll("[^A-Za-z0-9_]", "_")
+                .replaceAll("_+", "_");
+        if (sanitized.isBlank()) {
+            sanitized = "field";
+        }
+        if (!Character.isLetter(sanitized.charAt(0)) && sanitized.charAt(0) != '_') {
+            sanitized = "f_" + sanitized;
+        }
+        return sanitized + "_" + Integer.toHexString(cacheKey(point).hashCode());
     }
+
 
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
