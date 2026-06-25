@@ -7,6 +7,7 @@
 - Factory, connection factory, protocol validator, and schema metadata are all wired.
 - The current path supports cyclic subscription for configured scalar points.
 - `executeCommand` now exposes thin wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
+- Retrofit task list: `../21-S7改造清单.md`.
 
 ## Implementation Entry Points
 

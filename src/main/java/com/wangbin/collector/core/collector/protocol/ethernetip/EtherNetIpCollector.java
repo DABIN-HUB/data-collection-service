@@ -261,7 +261,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
                 .readRequestBuilder()
@@ -299,7 +299,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
@@ -327,14 +327,14 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     continue;
                 }
                 EtherNetIpTagAddress address = requireAddress(point);
-                builder.addTagAddress(tagName(point), address.getPlc4xAddress(),
+                builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(),
                         coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
 
             PlcWriteResponse response = await(builder.build().execute());
             for (DataPoint point : orderedPoints) {
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 results.put(point.getPointId(), response != null && response.getResponseCode(fieldName) == PlcResponseCode.OK);
             }
             return results;
@@ -369,7 +369,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             return;
         }
         for (DataPoint point : points) {
-            configuredAddresses.remove(cacheKey(point));
+            configuredAddresses.remove(resolvePointCacheKey(point));
         }
     }
 
@@ -427,7 +427,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.put(cacheKey(point), EtherNetIpAddressParser.parse(point));
+            configuredAddresses.put(resolvePointCacheKey(point), EtherNetIpAddressParser.parse(point));
         }
     }
 
@@ -435,7 +435,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
         }
-        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> EtherNetIpAddressParser.parse(point));
+        return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> EtherNetIpAddressParser.parse(point));
     }
 
     private UnsupportedOperationException unsupported(String operation) {
@@ -458,7 +458,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 if (point == null || point.getPointId() == null) {
                     continue;
                 }
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 if (response == null || response.getResponseCode(fieldName) != PlcResponseCode.OK) {
                     results.put(point.getPointId(), null);
                     continue;
@@ -482,7 +482,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 continue;
             }
             EtherNetIpTagAddress address = requireAddress(point);
-            builder.addTagAddress(tagName(point), address.getPlc4xAddress());
+            builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         return await(builder.build().execute());
     }
@@ -598,24 +598,6 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
-    private String cacheKey(DataPoint point) {
-        if (point.getPointId() != null && !point.getPointId().isBlank()) {
-            return point.getPointId();
-        }
-        if (point.getAddress() != null && !point.getAddress().isBlank()) {
-            return point.getAddress();
-        }
-        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
-            return point.getPointCode();
-        }
-        throw new IllegalArgumentException("Point cache key cannot be resolved");
-    }
-
-    private String tagName(DataPoint point) {
-        return point.getPointId() != null && !point.getPointId().isBlank()
-                ? point.getPointId()
-                : cacheKey(point);
-    }
 
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);

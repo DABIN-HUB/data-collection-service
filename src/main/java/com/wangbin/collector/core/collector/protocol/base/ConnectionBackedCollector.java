@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.base;
 
+import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +10,25 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public abstract class ConnectionBackedCollector extends BaseCollector {
+
+    protected String resolvePointCacheKey(DataPoint point) {
+        String cacheKey = firstNonBlank(
+                point != null ? point.getPointId() : null,
+                point != null ? point.getAddress() : null,
+                point != null ? point.getPointCode() : null
+        );
+        if (cacheKey == null) {
+            throw new IllegalArgumentException("Point cache key cannot be resolved");
+        }
+        return cacheKey;
+    }
+
+    protected String resolvePointTagName(DataPoint point) {
+        if (point != null && hasText(point.getPointId())) {
+            return point.getPointId();
+        }
+        return resolvePointCacheKey(point);
+    }
 
     protected <A extends ConnectionAdapter<?>> A createAndConnectAdapter(
             Class<A> adapterType,
@@ -76,5 +96,21 @@ public abstract class ConnectionBackedCollector extends BaseCollector {
         } catch (Exception e) {
             log.warn("Remove {} connection failed: {}", adapterName, deviceInfo.getDeviceId(), e);
         }
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

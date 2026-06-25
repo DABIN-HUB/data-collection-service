@@ -95,7 +95,7 @@ public class S7Collector extends ConnectionBackedCollector {
     protected Object doReadPoint(DataPoint point) throws Exception {
         S7Address address = requireAddress(point);
         ensureScalar(address, point, "read");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
                 .readRequestBuilder()
@@ -134,7 +134,7 @@ public class S7Collector extends ConnectionBackedCollector {
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         S7Address address = requireAddress(point);
         ensureScalar(address, point, "write");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
@@ -163,13 +163,13 @@ public class S7Collector extends ConnectionBackedCollector {
                 }
                 S7Address address = requireAddress(point);
                 ensureScalar(address, point, "write");
-                builder.addTagAddress(tagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
+                builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
 
             PlcWriteResponse response = await(builder.build().execute());
             for (DataPoint point : orderedPoints) {
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 results.put(point.getPointId(), response != null && response.getResponseCode(fieldName) == PlcResponseCode.OK);
             }
             return results;
@@ -209,17 +209,17 @@ public class S7Collector extends ConnectionBackedCollector {
             S7Address address = requireAddress(point);
             ensureScalar(address, point, "subscribe");
             builder.addCyclicTagAddress(
-                    tagName(point),
+                    resolvePointTagName(point),
                     address.getPlc4xAddress(),
                     resolveSubscriptionInterval(point),
-                    event -> handleSubscriptionEvent(point, tagName(point), address, event));
+                    event -> handleSubscriptionEvent(point, resolvePointTagName(point), address, event));
             orderedPoints.add(point);
         }
 
         PlcSubscriptionResponse response = await(builder.build().execute());
         int registered = 0;
         for (DataPoint point : orderedPoints) {
-            String fieldName = tagName(point);
+            String fieldName = resolvePointTagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
                 log.warn("PLC4X S7 subscription failed, deviceId={}, pointId={}, responseCode={}",
@@ -232,7 +232,7 @@ public class S7Collector extends ConnectionBackedCollector {
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
-            subscriptionHandles.put(cacheKey(point), handle);
+            subscriptionHandles.put(resolvePointCacheKey(point), handle);
             registered++;
         }
 
@@ -256,8 +256,8 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.remove(cacheKey(point));
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            configuredAddresses.remove(resolvePointCacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 handlesToRemove.add(handle);
             }
@@ -320,7 +320,7 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.put(cacheKey(point), S7AddressParser.parse(point));
+            configuredAddresses.put(resolvePointCacheKey(point), S7AddressParser.parse(point));
         }
     }
 
@@ -328,7 +328,7 @@ public class S7Collector extends ConnectionBackedCollector {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
         }
-        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> S7AddressParser.parse(point));
+        return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> S7AddressParser.parse(point));
     }
 
     private UnsupportedOperationException unsupported(String operation) {
@@ -351,7 +351,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 if (point == null || point.getPointId() == null) {
                     continue;
                 }
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 if (response == null || response.getResponseCode(fieldName) != PlcResponseCode.OK) {
                     results.put(point.getPointId(), null);
                     continue;
@@ -385,7 +385,7 @@ public class S7Collector extends ConnectionBackedCollector {
             }
             S7Address address = requireAddress(point);
             ensureScalar(address, point, "read");
-            builder.addTagAddress(tagName(point), address.getPlc4xAddress());
+            builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         return await(builder.build().execute());
     }
@@ -486,7 +486,7 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 existingHandles.add(handle);
             }
@@ -521,40 +521,9 @@ public class S7Collector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
-    private String cacheKey(DataPoint point) {
-        if (point.getPointId() != null && !point.getPointId().isBlank()) {
-            return point.getPointId();
-        }
-        if (point.getAddress() != null && !point.getAddress().isBlank()) {
-            return point.getAddress();
-        }
-        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
-            return point.getPointCode();
-        }
-        throw new IllegalArgumentException("Point cache key cannot be resolved");
-    }
-
     private String tagName(DataPoint point) {
-        String baseName = firstNonBlank(
-                point != null ? point.getPointId() : null,
-                point != null ? point.getPointCode() : null,
-                point != null ? point.getPointName() : null,
-                point != null ? point.getAddress() : null,
-                point != null ? cacheKey(point) : null);
-        if (baseName == null) {
-            baseName = cacheKey(point);
-        }
-        String sanitized = baseName.replaceAll("[^A-Za-z0-9_]", "_")
-                .replaceAll("_+", "_");
-        if (sanitized.isBlank()) {
-            sanitized = "field";
-        }
-        if (!Character.isLetter(sanitized.charAt(0)) && sanitized.charAt(0) != '_') {
-            sanitized = "f_" + sanitized;
-        }
-        return sanitized + "_" + Integer.toHexString(cacheKey(point).hashCode());
+        return resolvePointTagName(point);
     }
-
 
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);

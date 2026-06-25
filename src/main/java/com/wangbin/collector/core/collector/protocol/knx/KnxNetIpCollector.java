@@ -104,7 +104,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         ensureReadSupported();
         KnxAddress address = requireAddress(point);
         ensureTypedOrProjectConfigured(address, point, "read");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
                 .readRequestBuilder()
@@ -145,7 +145,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         ensureWriteSupported();
         KnxAddress address = requireAddress(point);
         ensureTypedOrProjectConfigured(address, point, "write");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
@@ -198,7 +198,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             }
             KnxAddress address = requireAddress(point);
             ensureTypedOrProjectConfigured(address, point, "subscribe");
-            String fieldName = tagName(point);
+            String fieldName = resolvePointTagName(point);
             builder.addEventTagAddress(fieldName, address.getPlc4xAddress(),
                     event -> handleSubscriptionEvent(point, fieldName, address, event));
             orderedPoints.add(point);
@@ -207,7 +207,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         PlcSubscriptionResponse response = await(builder.build().execute());
         int registered = 0;
         for (DataPoint point : orderedPoints) {
-            String fieldName = tagName(point);
+            String fieldName = resolvePointTagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
                 log.warn("PLC4X KNXnet/IP subscription failed, deviceId={}, pointId={}, responseCode={}",
@@ -220,7 +220,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
-            subscriptionHandles.put(cacheKey(point), handle);
+            subscriptionHandles.put(resolvePointCacheKey(point), handle);
             registered++;
         }
 
@@ -245,8 +245,8 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.remove(cacheKey(point));
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            configuredAddresses.remove(resolvePointCacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 handlesToRemove.add(handle);
             }
@@ -310,7 +310,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.put(cacheKey(point), KnxAddressParser.parse(point));
+            configuredAddresses.put(resolvePointCacheKey(point), KnxAddressParser.parse(point));
         }
     }
 
@@ -318,7 +318,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
         }
-        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> KnxAddressParser.parse(point));
+        return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> KnxAddressParser.parse(point));
     }
 
     private UnsupportedOperationException unsupported(String operation, String reason) {
@@ -337,7 +337,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 if (point == null || point.getPointId() == null) {
                     continue;
                 }
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 if (response == null || response.getResponseCode(fieldName) != PlcResponseCode.OK) {
                     results.put(point.getPointId(), null);
                     continue;
@@ -363,7 +363,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             }
             KnxAddress address = requireAddress(point);
             ensureTypedOrProjectConfigured(address, point, "read");
-            builder.addTagAddress(tagName(point), address.getPlc4xAddress());
+            builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         return await(builder.build().execute());
     }
@@ -380,13 +380,13 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 }
                 KnxAddress address = requireAddress(point);
                 ensureTypedOrProjectConfigured(address, point, "write");
-                builder.addTagAddress(tagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), point));
+                builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), point));
                 orderedPoints.add(point);
             }
 
             PlcWriteResponse response = await(builder.build().execute());
             for (DataPoint point : orderedPoints) {
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 results.put(point.getPointId(), response != null && response.getResponseCode(fieldName) == PlcResponseCode.OK);
             }
         } catch (Exception ex) {
@@ -593,7 +593,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 existingHandles.add(handle);
             }
@@ -617,24 +617,6 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
-    private String cacheKey(DataPoint point) {
-        if (point.getPointId() != null && !point.getPointId().isBlank()) {
-            return point.getPointId();
-        }
-        if (point.getAddress() != null && !point.getAddress().isBlank()) {
-            return point.getAddress();
-        }
-        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
-            return point.getPointCode();
-        }
-        throw new IllegalArgumentException("Point cache key cannot be resolved");
-    }
-
-    private String tagName(DataPoint point) {
-        return point.getPointId() != null && !point.getPointId().isBlank()
-                ? point.getPointId()
-                : cacheKey(point);
-    }
 
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);

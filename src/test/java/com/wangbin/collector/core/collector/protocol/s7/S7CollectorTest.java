@@ -119,6 +119,16 @@ class S7CollectorTest {
     }
 
     @Test
+    void shouldUsePointIdAsTagNameWithoutSanitizing() {
+        S7Collector collector = new S7Collector();
+        DataPoint point = point("point-01.test", "temperature", "DB1.DBW0", "R");
+
+        String fieldName = ReflectionTestUtils.invokeMethod(collector, "tagName", point);
+
+        assertEquals("point-01.test", fieldName);
+    }
+
+    @Test
     void shouldPreferDriverDataTypeWhenCoercingWriteValue() {
         S7Collector collector = new S7Collector();
         DataPoint point = point("p1", "temperature", "DB1.DBD0", "RW");

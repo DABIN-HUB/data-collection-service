@@ -118,7 +118,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     protected Object doReadPoint(DataPoint point) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
         ensureScalar(address, point, "read");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
                 .readRequestBuilder()
@@ -157,7 +157,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
         ensureScalar(address, point, "write");
-        String fieldName = tagName(point);
+        String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
@@ -186,13 +186,13 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 }
                 Plc4xOpcUaAddress address = requireAddress(point);
                 ensureScalar(address, point, "write");
-                builder.addTagAddress(tagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
+                builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
 
             PlcWriteResponse response = await(builder.build().execute());
             for (DataPoint point : orderedPoints) {
-                String fieldName = tagName(point);
+                String fieldName = resolvePointTagName(point);
                 results.put(point.getPointId(), response != null && response.getResponseCode(fieldName) == PlcResponseCode.OK);
             }
             return results;
@@ -232,17 +232,17 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             Plc4xOpcUaAddress address = requireAddress(point);
             ensureScalar(address, point, "subscribe");
             builder.addCyclicTagAddress(
-                    tagName(point),
+                    resolvePointTagName(point),
                     address.getPlc4xAddress(),
                     resolveSubscriptionInterval(point, address),
-                    event -> handleSubscriptionEvent(point, tagName(point), address, event));
+                    event -> handleSubscriptionEvent(point, resolvePointTagName(point), address, event));
             orderedPoints.add(point);
         }
 
         PlcSubscriptionResponse response = await(builder.build().execute());
         int registered = 0;
         for (DataPoint point : orderedPoints) {
-            String fieldName = tagName(point);
+            String fieldName = resolvePointTagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
                 log.warn("PLC4X OPC UA subscription failed, deviceId={}, pointId={}, responseCode={}",
@@ -255,7 +255,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
-            subscriptionHandles.put(cacheKey(point), handle);
+            subscriptionHandles.put(resolvePointCacheKey(point), handle);
             registered++;
         }
 
@@ -279,8 +279,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.remove(cacheKey(point));
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            configuredAddresses.remove(resolvePointCacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 handlesToRemove.add(handle);
             }
@@ -359,7 +359,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            configuredAddresses.put(cacheKey(point), Plc4xOpcUaAddressParser.parse(point));
+            configuredAddresses.put(resolvePointCacheKey(point), Plc4xOpcUaAddressParser.parse(point));
         }
     }
 
@@ -367,7 +367,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
         }
-        return configuredAddresses.computeIfAbsent(cacheKey(point), ignored -> Plc4xOpcUaAddressParser.parse(point));
+        return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> Plc4xOpcUaAddressParser.parse(point));
     }
 
     private void executeReadBatch(List<DataPoint> batch, Map<String, Object> results) {
@@ -377,7 +377,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 if (point == null || point.getPointId() == null) {
                     continue;
                 }
-                results.put(point.getPointId(), extractValue(response.getPlcValue(tagName(point)), point, requireAddress(point)));
+                results.put(point.getPointId(), extractValue(response.getPlcValue(resolvePointTagName(point)), point, requireAddress(point)));
             }
         } catch (Exception ex) {
             log.warn("PLC4X OPC UA batch read failed, falling back to point-by-point reads: {}", ex.getMessage());
@@ -403,14 +403,14 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             }
             Plc4xOpcUaAddress address = requireAddress(point);
             ensureScalar(address, point, "read");
-            builder.addTagAddress(tagName(point), address.getPlc4xAddress());
+            builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         PlcReadResponse response = await(builder.build().execute());
         for (DataPoint point : batch) {
             if (point == null) {
                 continue;
             }
-            ensureResponseOk(response, tagName(point), "read");
+            ensureResponseOk(response, resolvePointTagName(point), "read");
         }
         return response;
     }
@@ -701,7 +701,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey(point));
+            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
             if (handle != null) {
                 existingHandles.add(handle);
             }
@@ -782,22 +782,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return command.trim().toLowerCase(Locale.ROOT).replace('-', '_');
     }
 
-    private String tagName(DataPoint point) {
-        return point.getPointId();
-    }
-
-    private String cacheKey(DataPoint point) {
-        if (point.getPointId() != null && !point.getPointId().isBlank()) {
-            return point.getPointId();
-        }
-        if (point.getAddress() != null && !point.getAddress().isBlank()) {
-            return point.getAddress();
-        }
-        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
-            return point.getPointCode();
-        }
-        throw new IllegalArgumentException("Point cache key cannot be resolved");
-    }
 
     private String firstNonBlank(String... values) {
         if (values == null) {
