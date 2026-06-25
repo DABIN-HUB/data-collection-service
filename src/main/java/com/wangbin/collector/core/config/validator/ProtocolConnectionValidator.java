@@ -6,11 +6,21 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.ads.util.AmsNetIdParser;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
+import java.util.Set;
+
 /**
  * Validates protocol-specific connection requirements before adapters are built.
  */
 @Component
 public class ProtocolConnectionValidator {
+
+    private static final Set<String> S7_CONTROLLER_TYPES = Set.of(
+            "S7_300", "S7_400", "S7_1200", "S7_1500", "LOGO"
+    );
+    private static final Set<String> S7_DEVICE_GROUPS = Set.of(
+            "PG_OR_PC", "OS", "OTHERS"
+    );
 
     public void validate(DeviceInfo deviceInfo, DeviceConnection connection) {
         if (deviceInfo == null || isBlank(deviceInfo.getDeviceId())) {
@@ -29,7 +39,7 @@ public class ProtocolConnectionValidator {
         switch (canonicalize(protocol)) {
             case "HTTP", "MQTT", "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
-            case "SIEMENS_S7" -> requireHost(deviceInfo, connection, protocol);
+            case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
@@ -57,6 +67,53 @@ public class ProtocolConnectionValidator {
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    private void validateS7(DeviceInfo deviceInfo, DeviceConnection connection) {
+        String connectionString = firstNonBlank(
+                connection.getStringConfig("plc4xConnectionString", null),
+                connection.getStringConfig("plc4x-connection-string", null));
+        if (isBlank(connectionString)) {
+            requireHost(deviceInfo, connection, "SIEMENS_S7");
+        }
+
+        Integer port = firstNonNull(connection.getPort(), deviceInfo.getPort());
+        if (port != null && (port <= 0 || port > 65535)) {
+            fail(deviceInfo, "SIEMENS_S7 port must be between 1 and 65535");
+        }
+
+        validateNonNegative(deviceInfo,
+                firstNonNull(connection.getIntConfig("rack", null), connection.getIntConfig("remoteRack", null)),
+                "SIEMENS_S7 rack");
+        validateNonNegative(deviceInfo,
+                firstNonNull(connection.getIntConfig("slot", null), connection.getIntConfig("remoteSlot", null)),
+                "SIEMENS_S7 slot");
+        validatePositive(deviceInfo, connection.getIntConfig("pduSize", null), "SIEMENS_S7 pduSize");
+        validatePositive(deviceInfo, connection.getIntConfig("maxFieldsPerRequest", null),
+                "SIEMENS_S7 maxFieldsPerRequest");
+        validatePositive(deviceInfo, connection.getIntConfig("localTsap", null), "SIEMENS_S7 localTsap");
+        validatePositive(deviceInfo, connection.getIntConfig("remoteTsap", null), "SIEMENS_S7 remoteTsap");
+        validateNonNegative(deviceInfo, connection.getIntConfig("remoteRack2", null), "SIEMENS_S7 remoteRack2");
+        validateNonNegative(deviceInfo, connection.getIntConfig("remoteSlot2", null), "SIEMENS_S7 remoteSlot2");
+        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCaller", null), "SIEMENS_S7 maxAmqCaller");
+        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCallee", null), "SIEMENS_S7 maxAmqCallee");
+        validatePositive(deviceInfo, connection.getIntConfig("pingTime", null), "SIEMENS_S7 pingTime");
+        validatePositive(deviceInfo, connection.getIntConfig("retryTime", null), "SIEMENS_S7 retryTime");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "SIEMENS_S7 readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "SIEMENS_S7 timeout");
+
+        String controllerType = normalizeValue(firstNonBlank(
+                connection.getStringConfig("controllerType", null),
+                "S7_1200"));
+        if (!S7_CONTROLLER_TYPES.contains(controllerType)) {
+            fail(deviceInfo, "SIEMENS_S7 controllerType must be one of S7_300, S7_400, S7_1200, S7_1500, LOGO");
+        }
+
+        validateBooleanFlag(deviceInfo, connection.getProperty("subscriptionEnabled"),
+                "SIEMENS_S7 subscriptionEnabled");
+        validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
+        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
+        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
     }
 
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
@@ -333,6 +390,45 @@ public class ProtocolConnectionValidator {
             }
         }
         return null;
+    }
+
+    private void validatePositive(DeviceInfo deviceInfo, Integer value, String fieldName) {
+        if (value != null && value <= 0) {
+            fail(deviceInfo, fieldName + " must be greater than 0");
+        }
+    }
+
+    private void validateNonNegative(DeviceInfo deviceInfo, Integer value, String fieldName) {
+        if (value != null && value < 0) {
+            fail(deviceInfo, fieldName + " must be greater than or equal to 0");
+        }
+    }
+
+    private void validateBooleanFlag(DeviceInfo deviceInfo, Object value, String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Boolean) {
+            return;
+        }
+        String normalized = value.toString().trim().toLowerCase(Locale.ROOT);
+        if (!"true".equals(normalized) && !"false".equals(normalized)) {
+            fail(deviceInfo, fieldName + " must be true or false");
+        }
+    }
+
+    private void validateS7DeviceGroup(DeviceInfo deviceInfo, Object value, String fieldName) {
+        if (value == null || value.toString().isBlank()) {
+            return;
+        }
+        String normalized = normalizeValue(value.toString());
+        if (!S7_DEVICE_GROUPS.contains(normalized)) {
+            fail(deviceInfo, "SIEMENS_S7 " + fieldName + " must be PG_OR_PC, OS, or OTHERS");
+        }
+    }
+
+    private String normalizeValue(String value) {
+        return value == null ? "" : value.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
     private boolean hasText(String value) {

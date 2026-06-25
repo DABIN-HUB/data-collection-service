@@ -248,6 +248,44 @@ class ProtocolConnectionValidatorTest {
                 () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
     }
 
+
+    @Test
+    void shouldAcceptS7WithRawConnectionStringOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10?controller-type=S7_1500"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithInvalidControllerType() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("controllerType", "S7_200"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithNonPositiveBatchLimit() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("maxFieldsPerRequest", 0));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithInvalidSubscriptionFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("subscriptionEnabled", "yes"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

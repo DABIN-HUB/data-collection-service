@@ -52,21 +52,23 @@ public final class S7AddressParser {
 
         Matcher typedMatcher = TYPED_PATTERN.matcher(normalized);
         if (typedMatcher.matches()) {
-            String canonicalAddress = canonicalizeTypedAddress(typedMatcher.group(1), typedMatcher.group(2), typedMatcher.group(3));
+            int arraySize = resolveArraySize(typedMatcher.group(3), effectiveConfig);
+            String canonicalAddress = canonicalizeTypedAddress(typedMatcher.group(1), typedMatcher.group(2), arraySize);
             return new S7Address(
                     rawAddress,
                     canonicalAddress,
                     detectArea(canonicalAddress),
                     typedMatcher.group(2).toUpperCase(Locale.ROOT),
-                    parseArraySize(typedMatcher.group(3))
+                    arraySize
             );
         }
 
         Matcher dbTiaMatcher = DB_TIA_PATTERN.matcher(normalized);
         if (dbTiaMatcher.matches()) {
             String typeExpression = inferTypeExpression(dataType, dbTiaMatcher.group(2), effectiveConfig);
-            String canonicalAddress = buildDbCanonicalAddress(dbTiaMatcher.group(1), dbTiaMatcher.group(3), dbTiaMatcher.group(4), typeExpression);
-            return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, 1);
+            int arraySize = resolveArraySize(null, effectiveConfig);
+            String canonicalAddress = buildDbCanonicalAddress(dbTiaMatcher.group(1), dbTiaMatcher.group(3), dbTiaMatcher.group(4), typeExpression, arraySize);
+            return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, arraySize);
         }
 
         Matcher dbShortMatcher = DB_SHORT_PATTERN.matcher(normalized);
@@ -74,8 +76,9 @@ public final class S7AddressParser {
             String typeExpression = dbShortMatcher.group(3) != null
                     ? "BOOL"
                     : inferTypeExpression(dataType, null, effectiveConfig);
-            String canonicalAddress = buildDbCanonicalAddress(dbShortMatcher.group(1), dbShortMatcher.group(2), dbShortMatcher.group(3), typeExpression);
-            return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, 1);
+            int arraySize = resolveArraySize(null, effectiveConfig);
+            String canonicalAddress = buildDbCanonicalAddress(dbShortMatcher.group(1), dbShortMatcher.group(2), dbShortMatcher.group(3), typeExpression, arraySize);
+            return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, arraySize);
         }
 
         Matcher areaMatcher = AREA_TIA_PATTERN.matcher(normalized);
@@ -83,14 +86,15 @@ public final class S7AddressParser {
             String typeExpression = areaMatcher.group(4) != null
                     ? "BOOL"
                     : inferTypeExpression(dataType, areaMatcher.group(2), effectiveConfig);
-            String canonicalAddress = buildAreaCanonicalAddress(areaMatcher.group(1), areaMatcher.group(3), areaMatcher.group(4), typeExpression);
-            return new S7Address(rawAddress, canonicalAddress, detectArea(canonicalAddress), typeExpression, 1);
+            int arraySize = resolveArraySize(null, effectiveConfig);
+            String canonicalAddress = buildAreaCanonicalAddress(areaMatcher.group(1), areaMatcher.group(3), areaMatcher.group(4), typeExpression, arraySize);
+            return new S7Address(rawAddress, canonicalAddress, detectArea(canonicalAddress), typeExpression, arraySize);
         }
 
         throw new IllegalArgumentException("Unsupported S7 address format: " + rawAddress);
     }
 
-    private static String canonicalizeTypedAddress(String addressPart, String typePart, String arrayPart) {
+    private static String canonicalizeTypedAddress(String addressPart, String typePart, int arraySize) {
         boolean explicitPercent = addressPart.startsWith("%");
         String normalizedAddress = addressPart.toUpperCase(Locale.ROOT);
         if (!explicitPercent && !normalizedAddress.startsWith("DB")) {
@@ -99,30 +103,56 @@ public final class S7AddressParser {
         StringBuilder builder = new StringBuilder(normalizedAddress)
                 .append(':')
                 .append(typePart.toUpperCase(Locale.ROOT));
-        if (arrayPart != null && !arrayPart.isBlank()) {
-            builder.append('[').append(arrayPart.trim()).append(']');
-        }
+        appendArraySuffix(builder, arraySize);
         return builder.toString();
     }
 
-    private static String buildDbCanonicalAddress(String dbNumber, String byteOffset, String bitOffset, String typeExpression) {
+    private static String buildDbCanonicalAddress(String dbNumber, String byteOffset, String bitOffset, String typeExpression, int arraySize) {
+        StringBuilder builder;
         if ("BOOL".equalsIgnoreCase(typeExpression)) {
             if (bitOffset == null) {
                 throw new IllegalArgumentException("S7 boolean DB address requires a bit offset");
             }
-            return "DB" + dbNumber + ":" + byteOffset + "." + bitOffset + ":BOOL";
+            builder = new StringBuilder("DB")
+                    .append(dbNumber)
+                    .append(':')
+                    .append(byteOffset)
+                    .append('.')
+                    .append(bitOffset)
+                    .append(":BOOL");
+        } else {
+            builder = new StringBuilder("DB")
+                    .append(dbNumber)
+                    .append(':')
+                    .append(byteOffset)
+                    .append(':')
+                    .append(typeExpression);
         }
-        return "DB" + dbNumber + ":" + byteOffset + ":" + typeExpression;
+        appendArraySuffix(builder, arraySize);
+        return builder.toString();
     }
 
-    private static String buildAreaCanonicalAddress(String area, String byteOffset, String bitOffset, String typeExpression) {
+    private static String buildAreaCanonicalAddress(String area, String byteOffset, String bitOffset, String typeExpression, int arraySize) {
+        StringBuilder builder;
         if ("BOOL".equalsIgnoreCase(typeExpression)) {
             if (bitOffset == null) {
                 throw new IllegalArgumentException("S7 boolean address requires a bit offset");
             }
-            return "%" + area + byteOffset + "." + bitOffset + ":BOOL";
+            builder = new StringBuilder("%")
+                    .append(area)
+                    .append(byteOffset)
+                    .append('.')
+                    .append(bitOffset)
+                    .append(":BOOL");
+        } else {
+            builder = new StringBuilder("%")
+                    .append(area)
+                    .append(byteOffset)
+                    .append(':')
+                    .append(typeExpression);
         }
-        return "%" + area + byteOffset + ":" + typeExpression;
+        appendArraySuffix(builder, arraySize);
+        return builder.toString();
     }
 
     private static String detectArea(String normalized) {
@@ -213,10 +243,31 @@ public final class S7AddressParser {
         return value != null ? value.toString() : null;
     }
 
+    private static int resolveArraySize(String explicitArrayPart, Map<String, Object> config) {
+        if (explicitArrayPart != null && !explicitArrayPart.isBlank()) {
+            return parseArraySize(explicitArrayPart);
+        }
+        Object configured = firstPresent(config, "arraySize", "s7ArraySize");
+        if (configured == null) {
+            return 1;
+        }
+        return parseArraySize(String.valueOf(configured));
+    }
+
     private static int parseArraySize(String arrayPart) {
         if (arrayPart == null || arrayPart.isBlank()) {
             return 1;
         }
-        return Integer.parseInt(arrayPart.trim());
+        int arraySize = Integer.parseInt(arrayPart.trim());
+        if (arraySize <= 0) {
+            throw new IllegalArgumentException("S7 array size must be greater than 0");
+        }
+        return arraySize;
+    }
+
+    private static void appendArraySuffix(StringBuilder builder, int arraySize) {
+        if (arraySize > 1) {
+            builder.append('[').append(arraySize).append(']');
+        }
     }
 }

@@ -112,6 +112,26 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         if (hasText(remoteDeviceGroup)) {
             options.add("remote-device-group=" + remoteDeviceGroup);
         }
+        Integer remoteRack2 = config.getInt("remoteRack2", null);
+        if (remoteRack2 != null && remoteRack2 >= 0) {
+            options.add("remote-rack2=" + remoteRack2);
+        }
+        Integer remoteSlot2 = config.getInt("remoteSlot2", null);
+        if (remoteSlot2 != null && remoteSlot2 >= 0) {
+            options.add("remote-slot2=" + remoteSlot2);
+        }
+        String remoteDeviceGroup2 = normalizeDeviceGroup(config.getString("remoteDeviceGroup2", null));
+        if (hasText(remoteDeviceGroup2)) {
+            options.add("remote-device-group2=" + remoteDeviceGroup2);
+        }
+        Integer maxAmqCaller = config.getInt("maxAmqCaller", null);
+        if (maxAmqCaller != null && maxAmqCaller > 0) {
+            options.add("max-amq-caller=" + maxAmqCaller);
+        }
+        Integer maxAmqCallee = config.getInt("maxAmqCallee", null);
+        if (maxAmqCallee != null && maxAmqCallee > 0) {
+            options.add("max-amq-callee=" + maxAmqCallee);
+        }
 
         if (Boolean.TRUE.equals(config.getBool("ping", Boolean.FALSE))) {
             options.add("ping=true");

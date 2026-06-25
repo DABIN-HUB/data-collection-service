@@ -275,21 +275,15 @@
           </div>
           <div class="usage-note">
             <strong>使用示例</strong>
-            <p>先选择设备，再填写采集器支持的命令名和参数。不是所有协议都支持同一组命令；不支持的命令可能返回失败或空结果。</p>
-            <pre>{
-  "command": "readRaw",
-  "params": {
-    "address": "40001",
-    "dataType": "INT16"
-  }
+            <p id="commandHelpText">先选择设备，再填写采集器支持的命令名和参数。不是所有协议都支持同一组命令；不支持的命令可能返回失败或空结果。</p>
+            <pre id="commandExample">{
+  "command": "status",
+  "params": {}
 }</pre>
           </div>
           <textarea id="commandInput" spellcheck="false">{
-  "command": "readRaw",
-  "params": {
-    "address": "40001",
-    "dataType": "INT16"
-  }
+  "command": "status",
+  "params": {}
 }</textarea>
           <button id="executeCommandBtn" class="primary wide">执行命令</button>
           <pre id="controlView" class="json-view">等待执行结果</pre>

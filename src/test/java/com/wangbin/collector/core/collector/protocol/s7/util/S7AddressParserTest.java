@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class S7AddressParserTest {
 
@@ -59,6 +60,27 @@ class S7AddressParserTest {
 
         assertEquals("DB1:0:USINT", address.getPlc4xAddress());
         assertEquals("USINT", address.getPlcType());
+    }
+
+
+    @Test
+    void shouldApplyConfiguredArraySizeToUntypedAddress() {
+        DataPoint point = point("DB1.DBW0", "INT16", Map.of("arraySize", 4));
+
+        S7Address address = S7AddressParser.parse(point);
+
+        assertEquals("DB1:0:INT[4]", address.getPlc4xAddress());
+        assertEquals(4, address.getArraySize());
+    }
+
+    @Test
+    void shouldRejectNonPositiveConfiguredArraySize() {
+        DataPoint point = point("DB1.DBW0", "INT16", Map.of("arraySize", 0));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> S7AddressParser.parse(point));
+
+        assertEquals("S7 array size must be greater than 0", exception.getMessage());
     }
 
     @Test

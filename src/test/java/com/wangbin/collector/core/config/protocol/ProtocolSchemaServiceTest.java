@@ -88,11 +88,18 @@ public class ProtocolSchemaServiceTest {
         assertEquals("additionalConfig.driverDataType", s7.getPrimaryTypeField());
         assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, s7.getPlatformDataTypeMode());
         assertTrue(s7.isDriverTypeEnabled());
-        assertEquals("S7 驱动类型", s7.getDriverTypeLabel());
+        assertEquals("S7 driver type", s7.getDriverTypeLabel());
         assertEquals("additionalConfig.driverDataType", s7.getDriverTypeField());
         assertTrue(s7.getDriverDataTypes().contains("BOOL"));
         assertTrue(s7.getConnectionFields().stream().anyMatch(field -> "rack".equals(field.getName())));
+        ProtocolFieldConfig s7ControllerType = s7.getConnectionFields().stream()
+                .filter(field -> "controllerType".equals(field.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertNotNull(s7ControllerType.getDescription());
+        assertTrue(s7ControllerType.getDescription().contains("absolute addresses only"));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
+        assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
 
         ProtocolSchema ethernetIp = service.getSchema("ETHERNET_IP").orElseThrow();
         assertTrue(ethernetIp.isImplemented());

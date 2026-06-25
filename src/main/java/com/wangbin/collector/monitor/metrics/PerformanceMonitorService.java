@@ -6,11 +6,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 采集性能指标监控服务。
+ * 閲囬泦鎬ц兘鎸囨爣鐩戞帶鏈嶅姟銆?
  */
 @Service
 @RequiredArgsConstructor
@@ -49,6 +50,7 @@ public class PerformanceMonitorService {
                     .pointsPerSecond(pointsPerSecond)
                     .successRate(successRate)
                     .averageLatencyMs(averageLatency)
+                    .protocolMetrics(mapValue(stats, "protocolMetrics"))
                     .build());
         }
         return result;
@@ -68,4 +70,12 @@ public class PerformanceMonitorService {
         return 0L;
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapValue(Map<String, Object> stats, String key) {
+        Object value = stats.get(key);
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Collections.emptyMap();
+    }
 }

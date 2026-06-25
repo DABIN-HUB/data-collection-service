@@ -5,7 +5,8 @@
 - `SIEMENS_S7` is no longer a scaffold-only protocol entry.
 - The repository now contains a real PLC4X S7 connect/read/write path.
 - Factory, connection factory, protocol validator, and schema metadata are all wired.
-- The current path supports cyclic subscription for configured scalar points.
+- The current path supports cyclic subscription for configured points, including one-dimensional full-array points.
+- Polling reads now build S7-specific plans by DB / area / offset and attempt contiguous block reads before falling back to per-tag batch reads.
 - `executeCommand` now exposes thin wrappers for configured-point `read`, `write`, and `status` / `diagnostic`.
 - Retrofit task list: `../21-S7改造清单.md`.
 
@@ -43,6 +44,7 @@ The current implementation accepts both project-friendly shorthand and native PL
 - `STRING` and `WSTRING` can set length with:
   - `stringLength`
   - `s7StringLength`
+- One-dimensional arrays can be declared either inline with PLC4X syntax such as `DB1:0:INT[4]` or by setting `additionalConfig.arraySize` when the address itself is scalar-like.
 
 ## Connection Fields
 
@@ -77,7 +79,11 @@ fields.add(createFieldConfig("timeout", "number", "Protocol timeout (ms)", false
 - `S7Collector` uses PLC4X cyclic subscriptions and reuses the existing `ingestPushedValue(...)` processing path.
 - Subscription interval resolves from point adaptive interval first, then point base interval, then device collection interval.
 - Batched reads are chunked by `maxFieldsPerRequest`.
-- Array-style addresses are rejected for now; the current path targets scalar points first.
+- Eligible numeric polling plans use contiguous `BYTE[...]` block reads, then decode sub-values locally; parse or transport failures automatically fall back to the regular PLC4X multi-tag read path.
+- Bit-level `BOOL` points and `STRING` / `WSTRING` points stay on the regular tag-batch path for now instead of forcing risky block slicing semantics.
+- One-dimensional full-array read/write is supported for polling and cyclic subscription paths.
+- Array points are passed through as list payloads with `ProcessResult.metadata.arrayValue=true` and `arraySize`.
+- Array points still do not support `scalingFactor`, `offset`, `precision`, `min/max`, or `alarmEnabled`.
 
 ## Command Support
 

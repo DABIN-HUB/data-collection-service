@@ -6,7 +6,8 @@ const state = {
   currentProtocol: null,
   currentLocalProtocol: null,
   localDeviceEditingId: null,
-  realtimeTimer: null
+  realtimeTimer: null,
+  lastSuggestedCommandText: ""
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -18,6 +19,17 @@ const adaptiveDefaults = {
   minCollectionInterval: 100,
   maxCollectionInterval: 3600000,
   pointChangeThreshold: 1
+};
+
+const controlCommandPresets = {
+  DEFAULT: {
+    helpText: "Default example. Replace command and params with the collector-specific operation you need.",
+    payload: { command: "status", params: {} }
+  },
+  SIEMENS_S7: {
+    helpText: "S7 currently supports read/write plus diagnostic and connection_info. Use absolute addresses only, for example DB1.DBW0 / DB1:4:REAL / I0.0.",
+    payload: { command: "diagnostic", params: {} }
+  }
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -48,6 +60,7 @@ function bindEvents() {
   $("#toggleRealtimeBtn").addEventListener("click", toggleRealtime);
   $("#resetAdaptiveBtn").addEventListener("click", resetAdaptive);
   $("#writePointsBtn").addEventListener("click", writePoints);
+  $("#controlDeviceSelect").addEventListener("change", syncControlCommandExample);
   $("#executeCommandBtn").addEventListener("click", executeCommand);
   $("#loadShadowBtn").addEventListener("click", loadShadow);
   $("#saveDesiredBtn").addEventListener("click", saveDesired);
@@ -208,6 +221,7 @@ function fillDeviceSelects() {
     }
   });
   syncProtocolSelectionToDevice(false);
+  syncControlCommandExample();
 }
 
 function getProtocolSchema(protocolCode) {
@@ -731,6 +745,7 @@ async function loadProtocols() {
   renderLocalProtocolSelection();
   renderSelectedProtocol();
   syncProtocolSelectionToDevice(false);
+  syncControlCommandExample();
 }
 
 function renderSelectedProtocol() {
@@ -1092,6 +1107,28 @@ function getDeviceById(deviceId) {
 
 function deviceProtocolCode(device) {
   return canonicalProtocolForUi(device?.protocolType || device?.connectionType || "");
+}
+
+function syncControlCommandExample() {
+  const device = getDeviceById($("#controlDeviceSelect")?.value);
+  const protocol = deviceProtocolCode(device);
+  const preset = controlCommandPresets[protocol] || controlCommandPresets.DEFAULT;
+  const defaultExampleText = JSON.stringify(controlCommandPresets.DEFAULT.payload, null, 2);
+  const exampleText = JSON.stringify(preset.payload, null, 2);
+  const exampleNode = $("#commandExample");
+  const helpNode = $("#commandHelpText");
+  const input = $("#commandInput");
+
+  if (exampleNode) {
+    exampleNode.textContent = exampleText;
+  }
+  if (helpNode) {
+    helpNode.textContent = preset.helpText;
+  }
+  if (input && (!input.value.trim() || input.value === state.lastSuggestedCommandText || input.value === defaultExampleText)) {
+    input.value = exampleText;
+  }
+  state.lastSuggestedCommandText = exampleText;
 }
 
 function canonicalProtocolForUi(protocolCode) {

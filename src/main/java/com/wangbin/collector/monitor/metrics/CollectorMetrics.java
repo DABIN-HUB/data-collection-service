@@ -4,9 +4,11 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 
 /**
- * 采集器层面的聚合指标，描述单个设备或任务的运行健康状况。
+ * 閲囬泦鍣ㄥ眰闈㈢殑鑱氬悎鎸囨爣锛屾弿杩板崟涓澶囨垨浠诲姟鐨勮繍琛屽仴搴风姸鍐点€?
  */
 @Data
 @Builder
@@ -16,27 +18,33 @@ public class CollectorMetrics {
     private final String protocol;
 
     /**
-     * 最近一个统计周期内处理的数据点数量。
+     * 鏈€杩戜竴涓粺璁″懆鏈熷唴澶勭悊鐨勬暟鎹偣鏁伴噺銆?
      */
     private final long processedPoints;
 
     /**
-     * 每秒处理的数据点速率。
+     * 姣忕澶勭悊鐨勬暟鎹偣閫熺巼銆?
      */
     private final double pointsPerSecond;
 
     /**
-     * 采集成功率（0-100）。
+     * 閲囬泦鎴愬姛鐜囷紙0-100锛夈€?
      */
     private final double successRate;
 
     /**
-     * 平均采集延迟，单位毫秒。
+     * 骞冲潎閲囬泦寤惰繜锛屽崟浣嶆绉掋€?
      */
     private final double averageLatencyMs;
 
     /**
-     * 统计生成时间。
+     * 鍗忚鎴栭┍鍔ㄧ壒鏈夌殑闄勫姞鎸囨爣銆?
+     */
+    @Builder.Default
+    private final Map<String, Object> protocolMetrics = Collections.emptyMap();
+
+    /**
+     * 缁熻鐢熸垚鏃堕棿銆?
      */
     @Builder.Default
     private final long timestamp = Instant.now().toEpochMilli();
@@ -49,6 +57,7 @@ public class CollectorMetrics {
                 .pointsPerSecond(0.0)
                 .successRate(0.0)
                 .averageLatencyMs(0.0)
+                .protocolMetrics(Collections.emptyMap())
                 .build();
     }
 }

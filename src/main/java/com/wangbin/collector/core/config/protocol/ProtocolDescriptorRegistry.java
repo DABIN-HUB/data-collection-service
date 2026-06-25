@@ -95,31 +95,49 @@ public class ProtocolDescriptorRegistry {
         registerPrimary(descriptor("SIEMENS_S7", "Siemens S7", "PLC4X-backed Siemens S7 read/write collector.",
                 List.of("S7"), S7Collector.class, "SIEMENS_S7", 102, ProtocolAddressingMode.MIXED,
                 true, true, true,
-                List.of("DB1.DBW0", "DB1.DBD4", "DB1:4:REAL", "I0.0", "Q0.0", "M10.0"),
+                List.of("DB1.DBW0", "DB1.DBD4", "DB1:4:REAL", "I0.0", "Q0.0", "M10.0", "MODE", "ALM"),
                 fields(
-                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
-                        field("port", "number", "Port", false, "102", null, "connection"),
-                        field("rack", "number", "Rack", false, "0", null, "protocol"),
-                        field("slot", "number", "Slot", false, "1", null, "protocol"),
+                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
+                                "PLC IP address. Used together with port/rack/slot/controllerType when plc4xConnectionString is empty."),
+                        field("port", "number", "Port", false, "102", null, "connection",
+                                "S7 TCP port. Leave empty to use the default 102."),
+                        field("rack", "number", "Rack", false, "0", null, "protocol",
+                                "Remote rack used to build the generated PLC4X S7 connection string."),
+                        field("slot", "number", "Slot", false, "1", null, "protocol",
+                                "Remote slot used to build the generated PLC4X S7 connection string."),
                         field("controllerType", "select", "Controller type", false, "S7_1200",
-                                List.of("S7_300", "S7_400", "S7_1200", "S7_1500", "LOGO"), "protocol"),
-                        field("pduSize", "number", "PDU size", false, "1024", null, "advanced"),
-                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "64", null, "advanced"),
+                                List.of("S7_300", "S7_400", "S7_1200", "S7_1500", "LOGO"), "protocol",
+                                "Pick the real PLC family. For S7-1200/S7-1500 this collector reads absolute addresses only, so DB optimized block access must be disabled on the PLC side."),
+                        field("pduSize", "number", "PDU size", false, "1024", null, "advanced",
+                                "Optional PLC4X S7 tuning for negotiated PDU size. Leave empty unless you need compatibility tuning."),
+                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "64", null, "advanced",
+                                "Collector-side batch cap for one PLC4X read/write request. Reduce it when a PLC or gateway rejects large mixed batches."),
                         field("subscriptionEnabled", "select", "Enable subscription", false, "",
-                                List.of("true", "false"), "advanced"),
-                        field("localTsap", "number", "Local TSAP", false, "", null, "advanced"),
-                        field("remoteTsap", "number", "Remote TSAP", false, "", null, "advanced"),
+                                List.of("true", "false"), "advanced",
+                                "Current S7 collector supports cyclic subscription as well as MODE/SYS/USR/ALM event subscriptions when points are configured as subscription/event mode."),
+                        field("localTsap", "number", "Local TSAP", false, "", null, "advanced",
+                                "Optional PLC4X TSAP override for installations that require explicit PG/OP routing parameters."),
+                        field("remoteTsap", "number", "Remote TSAP", false, "", null, "advanced",
+                                "Optional PLC4X TSAP override for installations that require explicit PG/OP routing parameters."),
                         field("localDeviceGroup", "select", "Local device group", false, "",
-                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced"),
+                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced",
+                                "Optional PLC4X local device group override used with TSAP-based routing."),
                         field("remoteDeviceGroup", "select", "Remote device group", false, "",
-                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced"),
+                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced",
+                                "Optional PLC4X remote device group override used with TSAP-based routing."),
                         field("ping", "boolean", "Enable PLC4X ping", false, "false",
-                                List.of("true", "false"), "advanced"),
-                        field("pingTime", "number", "Ping interval (s)", false, "", null, "advanced"),
-                        field("retryTime", "number", "Retry time (s)", false, "", null, "advanced"),
-                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
-                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
-                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"))));
+                                List.of("true", "false"), "advanced",
+                                "Enable PLC4X driver ping/keepalive behavior when the remote route benefits from periodic reachability checks."),
+                        field("pingTime", "number", "Ping interval (s)", false, "", null, "advanced",
+                                "Ping interval in seconds when ping=true."),
+                        field("retryTime", "number", "Retry time (s)", false, "", null, "advanced",
+                                "PLC4X driver reconnect retry delay in seconds."),
+                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced",
+                                "Advanced override. When set, the generated host/port/rack/slot/controllerType fields are no longer the source of truth."),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
+                                "Collector read timeout for PLC4X request futures."),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
+                                "Fallback protocol timeout used when readTimeout is empty."))));
         registerPrimary(descriptor("ETHERNET_IP", "EtherNet/IP", "PLC4X-backed EtherNet/IP / Logix tag collector.",
                 List.of("EIP", "LOGIX", "AB_ETH"), EtherNetIpCollector.class, "ETHERNET_IP", 44818, ProtocolAddressingMode.SYMBOLIC,
                 true, true, false,
@@ -544,11 +562,11 @@ public class ProtocolDescriptorRegistry {
 
     private String resolveDriverTypeLabel(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7" -> "S7 驱动类型";
-            case "ETHERNET_IP" -> "EIP 驱动类型";
-            case "ADS" -> "ADS 驱动类型";
-            case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA 驱动类型";
-            case "SNMP" -> "SNMP 原生类型";
+            case "SIEMENS_S7" -> "S7 driver type";
+            case "ETHERNET_IP" -> "EIP driver type";
+            case "ADS" -> "ADS driver type";
+            case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA driver type";
+            case "SNMP" -> "SNMP value type";
             default -> null;
         };
     }
@@ -598,143 +616,150 @@ public class ProtocolDescriptorRegistry {
 
     private List<ProtocolFieldConfig> modbusPointFields() {
         return List.of(
-                pointField("additionalConfig.registerType", "select", "寄存器类型", false, "",
+                pointField("additionalConfig.registerType", "select", "Register type", false, "",
                         List.of("HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"),
-                        "可选补充字段。当前大多数场景仍以 address 中的寄存器段为准。", null),
-                pointField("additionalConfig.byteOrder", "select", "字节序", false, "BIG_ENDIAN",
+                        "Optional explicit Modbus register family. Usually inferred from the address format.", null),
+                pointField("additionalConfig.byteOrder", "select", "Byte order", false, "BIG_ENDIAN",
                         List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
-                        "点位级字节序补充字段。未填写时仍优先使用连接配置。", null),
-                pointField("additionalConfig.wordOrder", "select", "字序", false, "",
+                        "Byte order override for multi-byte numeric decoding.", null),
+                pointField("additionalConfig.wordOrder", "select", "Word order", false, "",
                         List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
-                        "用于多寄存器值的字序兼容说明；当前主要作为配置留档字段。", null),
-                pointField("additionalConfig.bitIndex", "number", "位偏移", false, "",
-                        Collections.emptyList(), "位值解析时可选的比特偏移。", null),
-                pointField("additionalConfig.functionCode", "number", "功能码", false, "",
-                        Collections.emptyList(), "保留的兼容字段，通常由寄存器类型自动推断。", null),
-                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
-                        Collections.emptyList(), "当 dataType 为 STRING 时可补充声明长度。", "dataType=STRING")
+                        "Word order override for 32-bit and 64-bit register values.", null),
+                pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
+                        Collections.emptyList(), "Bit position inside the selected register when a packed bit is addressed.", null),
+                pointField("additionalConfig.functionCode", "number", "Function code", false, "",
+                        Collections.emptyList(), "Compatibility override for specialized Modbus function-code routing.", null),
+                pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(), "Used when dataType=STRING to declare the payload length.", "dataType=STRING")
         );
     }
 
     private List<ProtocolFieldConfig> s7PointFields() {
         return List.of(
-                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
-                        Collections.emptyList(), "当 S7 驱动类型为 STRING/WSTRING 时用于声明长度。", "driverDataType=STRING/WSTRING")
+                pointField("additionalConfig.subscriptionMode", "select", "Subscription mode", false, "",
+                        List.of("CYCLIC", "MODE", "SYS", "USR", "ALM"),
+                        "Used when collectionMode=SUBSCRIPTION or EVENT. CYCLIC uses the point's absolute address. MODE/SYS/USR/ALM register S7 event subscriptions.", null),
+                pointField("additionalConfig.subscriptionAddress", "string", "Subscription address", false, "",
+                        Collections.emptyList(), "Optional PLC4X subscription address override. For MODE/SYS/USR/ALM it usually matches the mode token; leave empty to reuse the point address or selected mode.", null),
+                pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(), "Used when driverDataType=STRING or WSTRING to declare the PLC string length.", "driverDataType=STRING/WSTRING"),
+                pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(), "Optional one-dimensional array length when the address does not already include [n]. Only full-array read/write is supported.", null)
         );
     }
 
     private List<ProtocolFieldConfig> etherNetIpPointFields() {
         return List.of(
-                pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
-                        Collections.emptyList(), "当地址表示数组标签时填写元素个数。", null)
+                pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(), "Element count for array tags when the address or symbol refers to an array.", null)
         );
     }
 
     private List<ProtocolFieldConfig> adsPointFields() {
         return List.of(
-                pointField("additionalConfig.stringLength", "number", "字符串长度", false, "",
-                        Collections.emptyList(), "当 ADS 驱动类型为 STRING/WSTRING 时用于声明长度。", "driverDataType=STRING/WSTRING"),
-                pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
-                        Collections.emptyList(), "数组符号或直接地址的元素个数。", null)
+                pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(), "Used when driverDataType=STRING or WSTRING to declare the ADS string length.", "driverDataType=STRING/WSTRING"),
+                pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(), "Element count for ADS array symbols or direct array addresses.", null)
         );
     }
 
     private List<ProtocolFieldConfig> knxPointFields() {
         return List.of(
-                pointField("additionalConfig.dptId", "string", "DPT 编号", false, "",
-                        Collections.emptyList(), "KNX 组地址的数据点类型。比 dataType 更能决定协议实际解析方式。", null),
-                pointField("additionalConfig.dpt", "string", "DPT 别名", false, "",
-                        Collections.emptyList(), "兼容旧配置的 DPT 别名字段。", null)
+                pointField("additionalConfig.dptId", "string", "DPT id", false, "",
+                        Collections.emptyList(), "KNX datapoint type identifier. More precise than the platform dataType for wire-level decoding.", null),
+                pointField("additionalConfig.dpt", "string", "DPT alias", false, "",
+                        Collections.emptyList(), "Compatibility alias for older KNX DPT configurations.", null)
         );
     }
 
     private List<ProtocolFieldConfig> opcUaPointFields() {
         return List.of(
                 pointField("additionalConfig.nodeId", "string", "NodeId", false, "",
-                        Collections.emptyList(), "可显式填写 OPC UA NodeId；未填写时仍可直接使用 address。", null),
-                pointField("additionalConfig.namespace", "number", "命名空间", false, "",
-                        Collections.emptyList(), "按 namespace + identifier 组合构建 NodeId 时使用。", null),
-                pointField("additionalConfig.identifier", "string", "标识符", false, "",
-                        Collections.emptyList(), "与命名空间配合构建 NodeId。", null),
-                pointField("additionalConfig.identifierType", "select", "标识符类型", false, "STRING",
+                        Collections.emptyList(), "Explicit OPC UA NodeId. When empty, the collector can still use address directly.", null),
+                pointField("additionalConfig.namespace", "number", "Namespace", false, "",
+                        Collections.emptyList(), "Used together with identifier to build a NodeId.", null),
+                pointField("additionalConfig.identifier", "string", "Identifier", false, "",
+                        Collections.emptyList(), "Node identifier used together with namespace.", null),
+                pointField("additionalConfig.identifierType", "select", "Identifier type", false, "STRING",
                         List.of("STRING", "NUMERIC", "GUID", "OPAQUE"),
-                        "NodeId 标识符的编码方式。", null),
-                pointField("additionalConfig.samplingInterval", "number", "采样间隔(ms)", false, "",
-                        Collections.emptyList(), "订阅或监控时使用的采样间隔。", null),
-                pointField("additionalConfig.publishingInterval", "number", "发布间隔(ms)", false, "",
-                        Collections.emptyList(), "订阅推送周期。", null),
-                pointField("additionalConfig.queueSize", "number", "队列长度", false, "",
-                        Collections.emptyList(), "订阅缓存队列长度。", null),
-                pointField("additionalConfig.subscribe", "boolean", "启用订阅", false, "",
-                        List.of("true", "false"), "是否按订阅模式处理该点位。", null),
-                pointField("additionalConfig.monitor", "boolean", "启用监控", false, "",
-                        List.of("true", "false"), "兼容旧配置的监控开关字段。", null)
+                        "Encoding type for the OPC UA NodeId identifier.", null),
+                pointField("additionalConfig.samplingInterval", "number", "Sampling interval (ms)", false, "",
+                        Collections.emptyList(), "Sampling interval used for subscriptions or monitored items.", null),
+                pointField("additionalConfig.publishingInterval", "number", "Publishing interval (ms)", false, "",
+                        Collections.emptyList(), "Publishing interval used for subscriptions.", null),
+                pointField("additionalConfig.queueSize", "number", "Queue size", false, "",
+                        Collections.emptyList(), "Subscription queue size for buffered notifications.", null),
+                pointField("additionalConfig.subscribe", "boolean", "Subscribe", false, "",
+                        List.of("true", "false"), "Whether this point should use subscription mode.", null),
+                pointField("additionalConfig.monitor", "boolean", "Monitor alias", false, "",
+                        List.of("true", "false"), "Compatibility alias for older monitored-item configurations.", null)
         );
     }
 
     private List<ProtocolFieldConfig> opcDaPointFields() {
         return List.of(
                 pointField("additionalConfig.itemId", "string", "Item ID", false, "",
-                        Collections.emptyList(), "OPC DA 项目标识。未填写时默认使用 address。", null),
-                pointField("additionalConfig.itemPath", "string", "Item Path", false, "",
-                        Collections.emptyList(), "OPC DA 项目路径。", null),
-                pointField("additionalConfig.dataSource", "select", "数据源", false, "DEVICE",
-                        List.of("DEVICE", "CACHE"), "读取值来自设备侧还是缓存侧。", null)
+                        Collections.emptyList(), "OPC DA item identifier. When empty, address is used directly.", null),
+                pointField("additionalConfig.itemPath", "string", "Item path", false, "",
+                        Collections.emptyList(), "Optional OPC DA item path.", null),
+                pointField("additionalConfig.dataSource", "select", "Data source", false, "DEVICE",
+                        List.of("DEVICE", "CACHE"), "Whether reads should use device data or the OPC cache.", null)
         );
     }
 
     private List<ProtocolFieldConfig> mqttPointFields() {
         return List.of(
-                pointField("additionalConfig.topic", "string", "订阅主题", false, "",
-                        Collections.emptyList(), "MQTT 订阅主题；未填写时默认跟随 address。", null),
-                pointField("additionalConfig.writeTopic", "string", "写入主题", false, "",
-                        Collections.emptyList(), "点位写入时发布的 MQTT 主题。", null),
-                pointField("additionalConfig.qos", "select", "QoS 等级", false, "",
-                        List.of("0", "1", "2"), "消息质量等级。", null),
-                pointField("additionalConfig.retain", "boolean", "保留消息", false, "",
-                        List.of("true", "false"), "写入或发布时是否使用 retain。", null),
+                pointField("additionalConfig.topic", "string", "Topic", false, "",
+                        Collections.emptyList(), "MQTT subscribe topic. When empty, address is used as the topic.", null),
+                pointField("additionalConfig.writeTopic", "string", "Write topic", false, "",
+                        Collections.emptyList(), "MQTT topic used for point writes or command publishes.", null),
+                pointField("additionalConfig.qos", "select", "QoS", false, "",
+                        List.of("0", "1", "2"), "MQTT quality of service level.", null),
+                pointField("additionalConfig.retain", "boolean", "Retain", false, "",
+                        List.of("true", "false"), "Whether writes or publishes should use MQTT retain.", null),
                 pointField("additionalConfig.jsonPath", "string", "JSONPath", false, "",
-                        Collections.emptyList(), "从 JSON 负载中提取目标值的路径。", null),
-                pointField("additionalConfig.payloadEncoding", "select", "负载编码", false, "",
-                        List.of("JSON", "PLAIN_TEXT", "BASE64", "HEX"), "订阅负载的解码方式。", null),
-                pointField("additionalConfig.charset", "string", "字符集", false, "UTF-8",
-                        Collections.emptyList(), "文本类负载的字符集。", null),
-                pointField("additionalConfig.publishTemplate", "textarea", "发布模板", false, "",
-                        Collections.emptyList(), "写入点位时生成消息体的模板。", null)
+                        Collections.emptyList(), "Path used to extract the target value from a JSON payload.", null),
+                pointField("additionalConfig.payloadEncoding", "select", "Payload encoding", false, "",
+                        List.of("JSON", "PLAIN_TEXT", "BASE64", "HEX"), "Decoder used for subscribed payloads.", null),
+                pointField("additionalConfig.charset", "string", "Charset", false, "UTF-8",
+                        Collections.emptyList(), "Charset used for text payload decoding.", null),
+                pointField("additionalConfig.publishTemplate", "textarea", "Publish template", false, "",
+                        Collections.emptyList(), "Template used to build MQTT payloads for point writes.", null)
         );
     }
 
     private List<ProtocolFieldConfig> iec104PointFields() {
         return List.of(
                 pointField("additionalConfig.typeId", "number", "Type ID", false, "",
-                        Collections.emptyList(), "IEC104 信息体类型 ID。", null),
-                pointField("additionalConfig.iecTypeId", "number", "IEC 类型 ID", false, "",
-                        Collections.emptyList(), "兼容旧配置的 IEC104 类型字段。", null),
-                pointField("additionalConfig.writeAddress", "string", "写入地址", false, "",
-                        Collections.emptyList(), "控制命令场景的写入地址。", null),
-                pointField("additionalConfig.writeCommonAddress", "number", "写入公共地址", false, "",
-                        Collections.emptyList(), "控制命令场景的公共地址。", null),
-                pointField("additionalConfig.writeQl", "number", "写入品质描述", false, "",
-                        Collections.emptyList(), "控制命令场景的品质描述。", null),
-                pointField("additionalConfig.writeSelect", "boolean", "先选后控", false, "",
-                        List.of("true", "false"), "控制命令是否先执行 select。", null)
+                        Collections.emptyList(), "IEC104 information object type identifier.", null),
+                pointField("additionalConfig.iecTypeId", "number", "IEC type alias", false, "",
+                        Collections.emptyList(), "Compatibility alias for existing IEC104 type-id configuration.", null),
+                pointField("additionalConfig.writeAddress", "string", "Write address", false, "",
+                        Collections.emptyList(), "Target write address used for control commands.", null),
+                pointField("additionalConfig.writeCommonAddress", "number", "Write common address", false, "",
+                        Collections.emptyList(), "Common address used for control commands.", null),
+                pointField("additionalConfig.writeQl", "number", "Write quality", false, "",
+                        Collections.emptyList(), "Quality descriptor used for control commands.", null),
+                pointField("additionalConfig.writeSelect", "boolean", "Select before execute", false, "",
+                        List.of("true", "false"), "Whether control commands should use select-before-execute.", null)
         );
     }
 
     private List<ProtocolFieldConfig> coapPointFields() {
         return List.of(
-                pointField("additionalConfig.path", "string", "资源路径", false, "",
-                        Collections.emptyList(), "当 address 不直接写完整 URI 时，可单独填写 CoAP 资源路径。", null),
-                pointField("additionalConfig.method", "select", "请求方法", false, "GET",
-                        List.of("GET", "POST", "PUT", "DELETE"), "CoAP 读写该点位时使用的方法。", null),
-                pointField("additionalConfig.query", "string", "查询参数", false, "",
-                        Collections.emptyList(), "附加到 CoAP 资源路径后的 query。", null),
-                pointField("additionalConfig.mediaType", "select", "媒体类型", false, "TEXT",
-                        List.of("TEXT", "JSON", "CBOR", "OCTET"), "请求或响应的内容类型提示。", null),
-                pointField("additionalConfig.observe", "boolean", "启用 Observe", false, "",
-                        List.of("true", "false"), "是否通过 Observe 订阅该资源。", null),
-                pointField("additionalConfig.binary", "boolean", "二进制负载", false, "",
-                        List.of("true", "false"), "是否按二进制方式解析负载。", null)
+                pointField("additionalConfig.path", "string", "Path", false, "",
+                        Collections.emptyList(), "CoAP resource path when address is not a full URI.", null),
+                pointField("additionalConfig.method", "select", "Method", false, "GET",
+                        List.of("GET", "POST", "PUT", "DELETE"), "HTTP-like CoAP method used for the point.", null),
+                pointField("additionalConfig.query", "string", "Query", false, "",
+                        Collections.emptyList(), "Query string appended to the CoAP resource path.", null),
+                pointField("additionalConfig.mediaType", "select", "Media type", false, "TEXT",
+                        List.of("TEXT", "JSON", "CBOR", "OCTET"), "Payload media-type hint used for request/response decoding.", null),
+                pointField("additionalConfig.observe", "boolean", "Observe", false, "",
+                        List.of("true", "false"), "Whether this point should use CoAP Observe subscription mode.", null),
+                pointField("additionalConfig.binary", "boolean", "Binary payload", false, "",
+                        List.of("true", "false"), "Whether the payload should be treated as binary data.", null)
         );
     }
 
@@ -870,7 +895,18 @@ public class ProtocolDescriptorRegistry {
                                       String defaultValue,
                                       List<String> options,
                                       String group) {
-        return conditional(name, type, label, required, defaultValue, options, group, null);
+        return conditional(name, type, label, required, defaultValue, options, group, null, null);
+    }
+
+    private ProtocolFieldConfig field(String name,
+                                      String type,
+                                      String label,
+                                      boolean required,
+                                      String defaultValue,
+                                      List<String> options,
+                                      String group,
+                                      String description) {
+        return conditional(name, type, label, required, defaultValue, options, group, null, description);
     }
 
     private ProtocolFieldConfig conditional(String name,
@@ -881,19 +917,31 @@ public class ProtocolDescriptorRegistry {
                                             List<String> options,
                                             String group,
                                             String requiredWhen) {
+        return conditional(name, type, label, required, defaultValue, options, group, requiredWhen, null);
+    }
+
+    private ProtocolFieldConfig conditional(String name,
+                                            String type,
+                                            String label,
+                                            boolean required,
+                                            String defaultValue,
+                                            List<String> options,
+                                            String group,
+                                            String requiredWhen,
+                                            String description) {
         return ProtocolFieldConfig.builder()
                 .name(name)
                 .type(type)
                 .label(label)
                 .required(required)
                 .defaultValue(defaultValue)
+                .description(description)
                 .options(options == null ? Collections.emptyList() : options)
                 .group(group)
                 .requiredWhen(requiredWhen)
                 .storage(resolveStorage(name))
                 .build();
     }
-
     private String resolveStorage(String name) {
         return TOP_LEVEL_CONNECTION_FIELDS.contains(name) ? "topLevel" : "extJson";
     }
