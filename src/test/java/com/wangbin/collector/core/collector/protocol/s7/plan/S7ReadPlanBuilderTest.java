@@ -53,7 +53,7 @@ class S7ReadPlanBuilderTest {
         S7ReadPlan plan = plans.get(0);
         assertTrue(plan.canUseBlockRead());
         assertTrue(plan.isBlockOptimizable());
-        assertEquals("DB1:0:BYTE[8]", plan.getBlockReadAddress());
+        assertEquals("%DB1:0:BYTE[8]", plan.getBlockReadAddress());
         assertEquals(3, plan.getItems().size());
         assertEquals(0, plan.getItems().get(0).getByteOffset());
         assertEquals(2, plan.getItems().get(1).getByteOffset());

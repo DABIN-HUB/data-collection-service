@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 public class S7ReadPlanBuilder {
 
     private static final int DEFAULT_MAX_SEGMENT_SPAN_BYTES = 256;
-    private static final Pattern DB_PATTERN = Pattern.compile("^DB(\\d+):(\\d+)(?:\\.(\\d+))?:(.+)$");
+    private static final Pattern DB_PATTERN = Pattern.compile("^%?DB(\\d+):(\\d+)(?:\\.(\\d+))?:(.+)$");
     private static final Pattern AREA_PATTERN = Pattern.compile("^%([IQM])(\\d+)(?:\\.(\\d+))?:(.+)$");
 
     public List<S7ReadPlan> build(List<DataPoint> points, int maxFieldsPerRequest) {
@@ -168,7 +168,7 @@ public class S7ReadPlanBuilder {
             return null;
         }
         return switch (normalizeArea(area)) {
-            case "DB" -> dbNumber != null ? "DB" + dbNumber + ":" + startOffset + ":BYTE[" + byteSpan + "]" : null;
+            case "DB" -> dbNumber != null ? "%DB" + dbNumber + ":" + startOffset + ":BYTE[" + byteSpan + "]" : null;
             case "INPUT" -> "%I" + startOffset + ":BYTE[" + byteSpan + "]";
             case "OUTPUT" -> "%Q" + startOffset + ":BYTE[" + byteSpan + "]";
             case "MERKER" -> "%M" + startOffset + ":BYTE[" + byteSpan + "]";

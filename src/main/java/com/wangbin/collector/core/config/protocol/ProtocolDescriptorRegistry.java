@@ -95,7 +95,7 @@ public class ProtocolDescriptorRegistry {
         registerPrimary(descriptor("SIEMENS_S7", "Siemens S7", "PLC4X-backed Siemens S7 read/write collector.",
                 List.of("S7"), S7Collector.class, "SIEMENS_S7", 102, ProtocolAddressingMode.MIXED,
                 true, true, true,
-                List.of("DB1.DBW0", "DB1.DBD4", "DB1:4:REAL", "I0.0", "Q0.0", "M10.0", "MODE", "ALM"),
+                List.of("DB1.DBX0.0", "DB1.DBW0", "DB1.DBD4", "%DB1:4:REAL", "%DB1.DBX0.0:BOOL", "I0.0", "Q0.0", "M10.0"),
                 fields(
                         field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
                                 "PLC IP address. Used together with port/rack/slot/controllerType when plc4xConnectionString is empty."),

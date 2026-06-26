@@ -234,6 +234,7 @@
     switch (canonicalProtocolForUi(protocolCode)) {
       case "MQTT": return "sensor/temperature";
       case "OPC_UA": return "ns=2;s=Channel1.Device1.Tag1";
+      case "SIEMENS_S7": return "DB1.DBW0";
       case "IEC104": return "1";
       case "KNX":
       case "KNXNET_IP": return "1/0/1";
@@ -373,7 +374,7 @@
       { path: "pointCode", label: "点位编码", control: "text", valueType: "string", required: true, placeholder: "temperature", listRefresh: true },
       { path: "pointName", label: "点位名称", control: "text", valueType: "string", required: true, placeholder: "温度", listRefresh: true },
       { path: "pointAlias", label: "点位别名", control: "text", valueType: "string" },
-      { path: "address", label: "点位地址", control: "text", valueType: "string", required: true, placeholder: defaultPointAddress(protocolCode), listRefresh: true },
+      { path: "address", label: "点位地址", control: "text", valueType: "string", required: true, placeholder: defaultPointAddress(protocolCode), listRefresh: true, helpHtml: protocolCode === "SIEMENS_S7" ? s7AddressHelpTooltipHtml() : "", helpLabel: "S7 地址说明" },
       { path: "groupId", label: "分组 ID", control: "text", valueType: "string" },
       ...buildTypeEditorFields(protocolCode, protocol),
       { path: "readWrite", label: "读写权限", control: "select", valueType: "string", allowEmpty: false, options: READ_WRITE_OPTIONS, listRefresh: true },
@@ -463,6 +464,67 @@
     return fields.map((field) => renderFieldControl(field, point)).join("");
   }
 
+  function s7AddressHelpTooltipHtml() {
+    return `
+      <div class="field-help-card">
+        <p class="field-help-title">S7 点位地址速查</p>
+        <p>地址栏支持简写和完整 PLC4X 地址。简写会由后端自动补成 PLC4X 可用地址。</p>
+        <p class="field-help-subtitle">推荐写法</p>
+        <ul class="field-help-list">
+          <li><code>DB1.DBX0.0</code> -> <code>%DB1:0.0:BOOL</code></li>
+          <li><code>DB1.DBB2</code> -> 默认补成 <code>%DB1:2:BYTE</code>，也可配合 <code>S7 driver type=SINT</code></li>
+          <li><code>DB1.DBW0</code> -> 默认补成 <code>%DB1:0:INT</code>，也可配合 <code>S7 driver type=UINT</code></li>
+          <li><code>DB1.DBD4</code> + <code>S7 driver type=REAL</code> -> <code>%DB1:4:REAL</code></li>
+          <li><code>I0.0</code> / <code>Q0.0</code> / <code>M10.0</code> -> <code>%I0.0:BOOL</code> / <code>%Q0.0:BOOL</code> / <code>%M10.0:BOOL</code></li>
+        </ul>
+        <p class="field-help-subtitle">位地址：DBX / I / Q / M</p>
+        <ul class="field-help-list">
+          <li>只表示 <code>BOOL</code></li>
+          <li>取值范围：<code>true</code>（1）或 <code>false</code>（0）</li>
+          <li>示例：<code>DB1.DBX0.0</code>、<code>I0.0</code>、<code>Q0.0</code>、<code>M10.0</code></li>
+        </ul>
+        <p class="field-help-subtitle">1 字节：DBB / IB / QB / MB</p>
+        <ul class="field-help-list">
+          <li>常见类型：<code>BYTE</code>、<code>USINT</code>、<code>SINT</code>、<code>CHAR</code></li>
+          <li><code>BYTE/USINT</code> 范围：<code>0 ~ 255</code></li>
+          <li><code>SINT</code> 范围：<code>-128 ~ 127</code></li>
+          <li>简写不写类型时，默认按 <code>BYTE</code> 处理</li>
+        </ul>
+        <p class="field-help-subtitle">2 字节：DBW / IW / QW / MW</p>
+        <ul class="field-help-list">
+          <li>常见类型：<code>INT</code>、<code>UINT</code>、<code>WORD</code></li>
+          <li><code>INT</code> 范围：<code>-32768 ~ 32767</code></li>
+          <li><code>UINT/WORD</code> 范围：<code>0 ~ 65535</code></li>
+          <li>简写不写类型时，默认按 <code>INT</code> 处理</li>
+        </ul>
+        <p class="field-help-subtitle">4 字节：DBD / ID / QD / MD</p>
+        <ul class="field-help-list">
+          <li>常见类型：<code>DINT</code>、<code>UDINT</code>、<code>DWORD</code>、<code>REAL</code></li>
+          <li><code>DINT</code> 范围：<code>-2147483648 ~ 2147483647</code></li>
+          <li><code>UDINT/DWORD</code> 范围：<code>0 ~ 4294967295</code></li>
+          <li><code>REAL</code> 是 32 位浮点</li>
+          <li>简写不写类型时，默认按 <code>DINT</code> 处理</li>
+        </ul>
+        <p class="field-help-subtitle">建议直接写完整地址的场景</p>
+        <ul class="field-help-list">
+          <li>64 位类型：<code>LINT</code>、<code>ULINT</code>、<code>LREAL</code></li>
+          <li>字符串：<code>%DB1:20:STRING(16)</code>、<code>%DB1:60:WSTRING(8)</code></li>
+          <li>数组：<code>%DB1:40:INT[4]</code></li>
+          <li>如果地址宽度和目标类型不容易一眼看清，直接写完整 PLC4X 地址最稳妥</li>
+        </ul>
+        <p class="field-help-subtitle">重要说明</p>
+        <ul class="field-help-list">
+          <li><code>DBW</code>、<code>DBD</code> 只表示宽度，不唯一决定数据类型</li>
+          <li>最终 PLC4X 地址由“地址 + S7 driver type”共同决定</li>
+          <li><code>MODE</code>、<code>SYS</code>、<code>USR</code>、<code>ALM</code> 是订阅模式，不是普通点位地址</li>
+        </ul>
+      </div>`;
+  }
+
+  function renderFieldHelp(helpHtml, helpLabel) {
+    return `<span class="field-help"><button type="button" class="field-help-trigger" aria-label="${escapeAttr(helpLabel || "字段说明")}" title="${escapeAttr(helpLabel || "字段说明")}">?</button><span class="field-help-popover" role="tooltip">${helpHtml}</span></span>`;
+  }
+
   function renderFieldControl(field, point) {
     const value = getPath(point, field.path);
     const actual = value === undefined || value === null ? "" : String(value);
@@ -474,6 +536,9 @@
     const min = field.min !== undefined ? ` min="${escapeAttr(field.min)}"` : "";
     const disabled = field.disabled ? " disabled" : "";
     const note = field.description ? `<span class="field-description">${escapeHtml(field.description)}</span>` : "";
+    const help = field.helpHtml ? renderFieldHelp(field.helpHtml, field.helpLabel || `${field.label}说明`) : "";
+    const labelText = `<span class="field-label-text">${escapeHtml(field.label)}${field.required ? ' <span class="field-required">*</span>' : ""}</span>`;
+    const labelRow = help ? `<span class="field-label-row">${labelText}${help}</span>` : labelText;
     let control = "";
     if (field.control === "select") {
       control = `<select${attrs}${disabled}>${renderOptions(field.options || [], value, field.allowEmpty !== false)}</select>`;
@@ -482,7 +547,7 @@
     } else {
       control = `<input${attrs} type="${field.control === "number" ? "number" : "text"}" value="${escapeAttr(actual)}"${placeholder}${step}${min}${disabled}>`;
     }
-    return `<label${wide}>${escapeHtml(field.label)}${field.required ? ' <span class="field-required">*</span>' : ""}${control}${note}</label>`;
+    return `<label${wide}>${labelRow}${control}${note}</label>`;
   }
 
   function renderOptions(options, value, allowEmpty = true) {
@@ -770,6 +835,9 @@
     const notes = [];
     if (hints.length) {
       notes.push(`当前协议地址示例：${hints.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}`);
+    }
+    if (protocolCode === "SIEMENS_S7") {
+      notes.push("S7 地址栏支持简写，例如 DB1.DBX0.0、DB1.DBW0、DB1.DBD4，也支持完整 PLC4X 地址，例如 %DB1:0.0:BOOL、%DB1:4:REAL。MODE/SYS/USR/ALM 只用于订阅模式，不应填在普通点位地址里。");
     }
     if (typeMode === "DRIVER_PRIMARY") {
       notes.push(`当前协议以“${escapeHtml(primaryLabel)}”作为主类型字段，写入 <code>${escapeHtml(primaryPath)}</code>；上方 dataType 仍保留为平台统一类型。`);

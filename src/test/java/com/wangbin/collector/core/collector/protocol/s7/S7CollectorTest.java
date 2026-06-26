@@ -375,7 +375,7 @@ class S7CollectorTest {
 
         assertEquals(10.0, values.get("p1"));
         assertEquals(20.0, values.get("p2"));
-        assertEquals("DB1:0:BYTE[4]", collector.lastBlockReadAddress);
+        assertEquals("%DB1:0:BYTE[4]", collector.lastBlockReadAddress);
         assertEquals(1, collector.blockReadInvocationCount);
         assertEquals(0, collector.tagBatchInvocationCount);
     }

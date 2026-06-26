@@ -84,6 +84,9 @@ public class ProtocolSchemaServiceTest {
         assertTrue(s7.isImplemented());
         assertTrue(s7.isWritable());
         assertTrue(s7.isSubscribable());
+        assertTrue(s7.getPointAddressHints().contains("%DB1.DBX0.0:BOOL"));
+        assertFalse(s7.getPointAddressHints().contains("MODE"));
+        assertFalse(s7.getPointAddressHints().contains("ALM"));
         assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, s7.getTypeMode());
         assertEquals("additionalConfig.driverDataType", s7.getPrimaryTypeField());
         assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, s7.getPlatformDataTypeMode());

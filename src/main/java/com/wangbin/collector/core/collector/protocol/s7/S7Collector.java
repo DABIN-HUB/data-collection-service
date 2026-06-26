@@ -165,7 +165,7 @@ public class S7Collector extends ConnectionBackedCollector {
             recordException(e, point);
             log.error("PLC4X S7 array point read failed, deviceId={}, pointId={}",
                     deviceInfo.getDeviceId(), point != null ? point.getPointId() : null, e);
-            throw new CollectorException("点位读取失败", deviceInfo.getDeviceId(),
+            throw new CollectorException("Array point read failed", deviceInfo.getDeviceId(),
                     point != null ? point.getPointId() : null, e);
         }
     }
@@ -211,7 +211,7 @@ public class S7Collector extends ConnectionBackedCollector {
         long startTime = System.currentTimeMillis();
         try {
             if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
-                throw new CollectorException("点位不可写", deviceInfo.getDeviceId(), point.getPointId());
+                throw new CollectorException("Point is not writable", deviceInfo.getDeviceId(), point.getPointId());
             }
 
             S7Address address = requireAddress(point);
@@ -230,7 +230,7 @@ public class S7Collector extends ConnectionBackedCollector {
             recordException(e, point);
             log.error("PLC4X S7 array point write failed, deviceId={}, pointId={}",
                     deviceInfo.getDeviceId(), point != null ? point.getPointId() : null, e);
-            throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
+            throw new CollectorException("Array point write failed", deviceInfo.getDeviceId(),
                     point != null ? point.getPointId() : null, e);
         }
     }
@@ -285,7 +285,7 @@ public class S7Collector extends ConnectionBackedCollector {
             lastError = e.getMessage();
             recordException(e, null);
             log.error("PLC4X S7 batch array write failed, deviceId={}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("批量点位写入失败", deviceInfo.getDeviceId(), null, e);
+            throw new CollectorException("Batch array point write failed", deviceInfo.getDeviceId(), null, e);
         }
     }
 
@@ -747,7 +747,7 @@ public class S7Collector extends ConnectionBackedCollector {
             lastError = e.getMessage();
             recordException(e, null);
             log.error("PLC4X S7 batch array read failed, deviceId={}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(), null, e);
+            throw new CollectorException("Batch array point read failed", deviceInfo.getDeviceId(), null, e);
         }
     }
 
@@ -885,11 +885,12 @@ public class S7Collector extends ConnectionBackedCollector {
             return 0;
         }
         String plc4xAddress = address.getPlc4xAddress();
-        int colonIndex = plc4xAddress.indexOf(':');
+        String normalizedAddress = plc4xAddress.startsWith("%") ? plc4xAddress.substring(1) : plc4xAddress;
+        int colonIndex = normalizedAddress.indexOf(':');
         if (colonIndex <= 2) {
             throw new IllegalArgumentException("Invalid S7 DB address: " + plc4xAddress);
         }
-        return Integer.parseInt(plc4xAddress.substring(2, colonIndex));
+        return Integer.parseInt(normalizedAddress.substring(2, colonIndex));
     }
 
     private Integer resolveBlockReadStringLength(S7Address address) {
@@ -1667,7 +1668,7 @@ public class S7Collector extends ConnectionBackedCollector {
         }
 
         checks.add(check("symbolic-access", "INFO",
-                "Symbolic browse/import is not implemented in the current PLC4X S7 collector. Configure absolute addresses such as DB1.DBW0 / DB1:4:REAL / I0.0."));
+                "Symbolic browse/import is not implemented in the current PLC4X S7 collector. Configure absolute addresses such as DB1.DBW0 / %DB1:4:REAL / I0.0."));
 
         int subscriptionPointCount = intValue(pointSummary.get("subscriptionPointCount"));
         int eventPointCount = intValue(pointSummary.get("eventPointCount"));

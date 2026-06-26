@@ -29,8 +29,8 @@ The current implementation accepts both project-friendly shorthand and native PL
    - `Q0.0`
    - `M10.0`
 2. Native PLC4X style
-   - `DB1:0.0:BOOL`
-   - `DB1:4:REAL`
+   - `%DB1:0.0:BOOL`
+   - `%DB1:4:REAL`
    - `%DB56.DBW20:INT`
 
 ## Address Parsing Rules
@@ -44,7 +44,7 @@ The current implementation accepts both project-friendly shorthand and native PL
 - `STRING` and `WSTRING` can set length with:
   - `stringLength`
   - `s7StringLength`
-- One-dimensional arrays can be declared either inline with PLC4X syntax such as `DB1:0:INT[4]` or by setting `additionalConfig.arraySize` when the address itself is scalar-like.
+- One-dimensional arrays can be declared either inline with PLC4X syntax such as `%DB1:0:INT[4]` or by setting `additionalConfig.arraySize` when the address itself is scalar-like.
 
 ## Connection Fields
 

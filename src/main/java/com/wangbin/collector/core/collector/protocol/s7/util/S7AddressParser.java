@@ -97,7 +97,7 @@ public final class S7AddressParser {
     private static String canonicalizeTypedAddress(String addressPart, String typePart, int arraySize) {
         boolean explicitPercent = addressPart.startsWith("%");
         String normalizedAddress = addressPart.toUpperCase(Locale.ROOT);
-        if (!explicitPercent && !normalizedAddress.startsWith("DB")) {
+        if (!explicitPercent) {
             normalizedAddress = "%" + normalizedAddress;
         }
         StringBuilder builder = new StringBuilder(normalizedAddress)
@@ -113,7 +113,7 @@ public final class S7AddressParser {
             if (bitOffset == null) {
                 throw new IllegalArgumentException("S7 boolean DB address requires a bit offset");
             }
-            builder = new StringBuilder("DB")
+            builder = new StringBuilder("%DB")
                     .append(dbNumber)
                     .append(':')
                     .append(byteOffset)
@@ -121,7 +121,7 @@ public final class S7AddressParser {
                     .append(bitOffset)
                     .append(":BOOL");
         } else {
-            builder = new StringBuilder("DB")
+            builder = new StringBuilder("%DB")
                     .append(dbNumber)
                     .append(':')
                     .append(byteOffset)

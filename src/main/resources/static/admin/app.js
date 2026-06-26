@@ -27,7 +27,7 @@ const controlCommandPresets = {
     payload: { command: "status", params: {} }
   },
   SIEMENS_S7: {
-    helpText: "S7 currently supports read/write plus diagnostic and connection_info. Use absolute addresses only, for example DB1.DBW0 / DB1:4:REAL / I0.0.",
+    helpText: "S7 supports shorthand addresses like DB1.DBW0 and native PLC4X addresses like %DB1.DBX0.0:BOOL. MODE/SYS/USR/ALM are subscription modes, not normal point addresses.",
     payload: { command: "diagnostic", params: {} }
   }
 };
