@@ -40,6 +40,7 @@ public class ProtocolConnectionValidator {
             case "HTTP", "MQTT", "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
+            case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
@@ -114,6 +115,28 @@ public class ProtocolConnectionValidator {
         validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
         validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
         validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
+    }
+
+    private void validateMc(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "MITSUBISHI_MC");
+
+        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        if (port != null && (port <= 0 || port > 65535)) {
+            fail(deviceInfo, "MITSUBISHI_MC port must be between 1 and 65535");
+        }
+
+        validateMcRange(deviceInfo, connection.getIntConfig("networkNo", null), 0, 255, "networkNo");
+        validateMcRange(deviceInfo, connection.getIntConfig("pcNo", null), 0, 255, "pcNo");
+        validateMcRange(deviceInfo, connection.getIntConfig("ioNo", null), 0, 65535, "ioNo");
+        validateMcRange(deviceInfo, connection.getIntConfig("stationNo", null), 0, 255, "stationNo");
+        validatePositive(deviceInfo, connection.getIntConfig("monitoringTimer", null), "MITSUBISHI_MC monitoringTimer");
+        validatePositive(deviceInfo, connection.getIntConfig("maxRandomReadPoints", null), "MITSUBISHI_MC maxRandomReadPoints");
+        validatePositive(deviceInfo, connection.getIntConfig("maxRandomWritePoints", null), "MITSUBISHI_MC maxRandomWritePoints");
+        validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "MITSUBISHI_MC maxWordsPerRequest");
+        validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "MITSUBISHI_MC maxBitsPerRequest");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "MITSUBISHI_MC readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "MITSUBISHI_MC timeout");
+        validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
     }
 
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
@@ -330,6 +353,7 @@ public class ProtocolConnectionValidator {
             case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
+            case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
@@ -392,6 +416,29 @@ public class ProtocolConnectionValidator {
         return null;
     }
 
+    private void validateMcRange(DeviceInfo deviceInfo,
+                                 Integer value,
+                                 int min,
+                                 int max,
+                                 String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            fail(deviceInfo, "MITSUBISHI_MC " + fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateMcFrameType(DeviceInfo deviceInfo, String value) {
+        if (isBlank(value)) {
+            return;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("3E_BINARY", "3E_ASCII", "4E_BINARY").contains(normalized)) {
+            fail(deviceInfo, "MITSUBISHI_MC frameType must be one of 3E_BINARY, 3E_ASCII, 4E_BINARY");
+        }
+    }
+
     private void validatePositive(DeviceInfo deviceInfo, Integer value, String fieldName) {
         if (value != null && value <= 0) {
             fail(deviceInfo, fieldName + " must be greater than 0");
@@ -443,3 +490,4 @@ public class ProtocolConnectionValidator {
         throw CollectorException.configException(message, deviceInfo.getDeviceId(), null);
     }
 }
+

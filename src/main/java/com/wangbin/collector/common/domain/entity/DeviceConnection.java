@@ -19,7 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 设备连接信息
+ * 璁惧杩炴帴淇℃伅
  */
 @Data
 public class DeviceConnection {
@@ -50,7 +50,7 @@ public class DeviceConnection {
     private Integer timeout = 30000;
     private Integer heartbeatInterval = 30000;
     private Integer heartbeatTimeout = 90000;
-    private Integer subscriptionInterval = 1000; // 订阅间隔
+    private Integer subscriptionInterval = 1000; // 璁㈤槄闂撮殧
     private Integer maxFrameLength = 65535;
     private Integer reconnectDelay = 5000;
     private Integer maxReconnectTimes = 3;
@@ -62,7 +62,7 @@ public class DeviceConnection {
     private String productKey;
     private String deviceSecret;
     private String authToken;
-    //安全策略
+    //瀹夊叏绛栫暐
     private String securityPolicy;
     @JsonDeserialize(using = StringStringMapDeserializer.class)
     private Map<String, String> authParams;
@@ -234,7 +234,7 @@ public class DeviceConnection {
         return switch (normalizeConnectionType(connectionType)) {
             case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
             case "MODBUS_TCP" -> hasHostPort();
-            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "ETHERNET_IP", "ADS" ->
+            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS" ->
                     hasHost();
             case "KNXNET_IP" -> hasText(getStringConfig("plc4xConnectionString", null)) || hasHost();
             case "OPC_UA", "OPC_UA_PLC4X" -> hasText(url)
@@ -282,6 +282,7 @@ public class DeviceConnection {
             case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
+            case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
@@ -358,7 +359,7 @@ public class DeviceConnection {
     }
 
     /**
-     * 支持 JSON 对象或 JSON 字符串的 Map 反序列化
+     * 鏀寔 JSON 瀵硅薄鎴?JSON 瀛楃涓茬殑 Map 鍙嶅簭鍒楀寲
      */
     public static class StringObjectMapDeserializer extends JsonDeserializer<Map<String, Object>> {
         private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -410,3 +411,4 @@ public class DeviceConnection {
         }
     }
 }
+

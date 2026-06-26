@@ -18,7 +18,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 
 /**
- * 连接工厂
+ * 杩炴帴宸ュ巶
  */
 @Slf4j
 @Component
@@ -40,7 +40,7 @@ public class ConnectionFactory {
 
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
-            throw new IllegalArgumentException("设备信息无效");
+            throw new IllegalArgumentException("璁惧淇℃伅鏃犳晥");
         }
         DeviceConnection cfg = connectionConfig != null ? connectionConfig : new DeviceConnection();
         String connectionType = canonicalizeConnectionType(resolveConnectionType(deviceInfo, cfg), cfg);
@@ -52,6 +52,7 @@ public class ConnectionFactory {
             case "WEBSOCKET" -> createWebSocketConnection(deviceInfo, cfg);
             case "COAP" -> createCoapConnection(deviceInfo, cfg);
             case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
+            case "MITSUBISHI_MC" -> createMitsubishiMcConnection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "ADS" -> createAdsConnection(deviceInfo, cfg);
             case "KNXNET_IP" -> createKnxNetIpConnection(deviceInfo, cfg);
@@ -62,7 +63,7 @@ public class ConnectionFactory {
             case "IEC104" -> createIec104Connection(deviceInfo, cfg);
             case "IEC61850" -> createIec61850Connection(deviceInfo, cfg);
             default -> throw new CollectorException(
-                    String.format("不支持的连接类型: %s", connectionType),
+                    String.format("涓嶆敮鎸佺殑杩炴帴绫诲瀷: %s", connectionType),
                     deviceInfo.getDeviceId(), null
             );
         };
@@ -93,8 +94,8 @@ public class ConnectionFactory {
         try {
             return new TcpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建TCP连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建TCP连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓TCP杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓TCP杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -102,8 +103,8 @@ public class ConnectionFactory {
         try {
             return new HttpConnectionAdapter(deviceInfo, cfg, ioExecutor);
         } catch (Exception e) {
-            log.error("创建HTTP连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建HTTP连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓HTTP杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓HTTP杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -111,8 +112,8 @@ public class ConnectionFactory {
         try {
             return new MqttConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建MQTT连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建MQTT连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓MQTT杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓MQTT杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -120,8 +121,8 @@ public class ConnectionFactory {
         try {
             return new WebSocketConnectionAdapter(deviceInfo, cfg, ioExecutor, protocolScheduler);
         } catch (Exception e) {
-            log.error("创建WebSocket连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建WebSocket连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓WebSocket杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓WebSocket杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -129,8 +130,8 @@ public class ConnectionFactory {
         try {
             return new CoapConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建CoAP连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建CoAP连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓CoAP杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓CoAP杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -138,8 +139,17 @@ public class ConnectionFactory {
         try {
             return new S7ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建S7连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建S7连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓S7杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓S7杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createMitsubishiMcConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new MitsubishiMcConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create Mitsubishi MC connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create Mitsubishi MC connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -174,8 +184,8 @@ public class ConnectionFactory {
         try {
             return new Plc4xModbusTcpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建Modbus TCP连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建Modbus TCP连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓Modbus TCP杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓Modbus TCP杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -183,8 +193,8 @@ public class ConnectionFactory {
         try {
             return new Plc4xModbusRtuConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建Modbus RTU连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建Modbus RTU连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓Modbus RTU杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓Modbus RTU杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -192,8 +202,8 @@ public class ConnectionFactory {
         try {
             return new SnmpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建SNMP连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建SNMP连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓SNMP杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓SNMP杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -201,8 +211,8 @@ public class ConnectionFactory {
         try {
             return new OpcUaConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建OPC UA连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建OPC UA连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓OPC UA杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓OPC UA杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -219,8 +229,8 @@ public class ConnectionFactory {
         try {
             return new Iec104ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建IEC104连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建IEC104连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓IEC104杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓IEC104杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 
@@ -228,8 +238,9 @@ public class ConnectionFactory {
         try {
             return new Iec61850ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建IEC61850连接失败: {}", deviceInfo.getDeviceId(), e);
-            throw new CollectorException("创建IEC61850连接失败", deviceInfo.getDeviceId(), null);
+            log.error("鍒涘缓IEC61850杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("鍒涘缓IEC61850杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
     }
 }
+

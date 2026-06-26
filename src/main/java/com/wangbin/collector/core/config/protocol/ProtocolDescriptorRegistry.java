@@ -11,6 +11,7 @@ import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
 import com.wangbin.collector.core.collector.protocol.knx.KnxNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
+import com.wangbin.collector.core.collector.protocol.mc.McCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
@@ -138,6 +139,47 @@ public class ProtocolDescriptorRegistry {
                                 "Collector read timeout for PLC4X request futures."),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
                                 "Fallback protocol timeout used when readTimeout is empty."))));
+        registerPrimary(descriptor("MITSUBISHI_MC", "Mitsubishi MC",
+                "Self-owned Mitsubishi MC 3E Binary over TCP collector for polling read/write.",
+                List.of("MC", "MELSEC_MC"), McCollector.class, "MITSUBISHI_MC", 5000, ProtocolAddressingMode.MIXED,
+                true, true, false,
+                List.of("M0", "X1A", "Y2F", "D100", "D100[4]", "R200", "W300", "ZR1000"),
+                fields(
+                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
+                                "Mitsubishi PLC IP address for MC over TCP."),
+                        field("port", "number", "Port", false, "5000", null, "connection",
+                                "MC TCP port. Leave empty to use the default 5000."),
+                        field("networkNo", "number", "Network No", false, "0", null, "protocol",
+                                "3E frame network number, usually 0 for a directly connected CPU."),
+                        field("pcNo", "number", "PC No", false, "255", null, "protocol",
+                                "3E frame PC number. The common default is 255."),
+                        field("ioNo", "number", "I/O No", false, "1023", null, "protocol",
+                                "3E frame destination I/O number. The common Ethernet default is 1023."),
+                        field("stationNo", "number", "Station No", false, "0", null, "protocol",
+                                "3E frame destination station number."),
+                        field("monitoringTimer", "number", "Monitoring timer", false, "16", null, "advanced",
+                                "MC monitoring timer in protocol units used inside each 3E request frame."),
+                        field("frameType", "select", "Frame type", false, "3E_BINARY",
+                                List.of("3E_BINARY", "3E_ASCII", "4E_BINARY"), "advanced",
+                                "MC frame variant selector. The current stable path is 3E_BINARY. Other variants are reserved for staged rollout."),
+                        field("randomReadEnabled", "boolean", "Enable random read", false, "false",
+                                List.of("true", "false"), "advanced",
+                                "Enable MC random-read strategy for sparse scalar word points. Continuous blocks still prefer batch read."),
+                        field("maxRandomReadPoints", "number", "Max random-read points", false, "8", null, "advanced",
+                                "Upper bound for one random-read request. Requests beyond this size fall back to normal plan-based reads."),
+                        field("randomWriteEnabled", "boolean", "Enable random write", false, "false",
+                                List.of("true", "false"), "advanced",
+                                "Enable MC random-write strategy for sparse scalar word points. Continuous blocks still prefer batch writes."),
+                        field("maxRandomWritePoints", "number", "Max random-write points", false, "8", null, "advanced",
+                                "Upper bound for one random-write request. Requests beyond this size fall back to normal plan-based writes."),
+                        field("maxWordsPerRequest", "number", "Max words per request", false, "120", null, "advanced",
+                                "Collector-side guard rail for one word-unit batch request."),
+                        field("maxBitsPerRequest", "number", "Max bits per request", false, "256", null, "advanced",
+                                "Collector-side guard rail for one bit-unit batch request."),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
+                                "Socket read timeout used while waiting for one MC response frame."),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
+                                "Fallback timeout used when readTimeout is empty."))));
         registerPrimary(descriptor("ETHERNET_IP", "EtherNet/IP", "PLC4X-backed EtherNet/IP / Logix tag collector.",
                 List.of("EIP", "LOGIX", "AB_ETH"), EtherNetIpCollector.class, "ETHERNET_IP", 44818, ProtocolAddressingMode.SYMBOLIC,
                 true, true, false,
@@ -532,7 +574,7 @@ public class ProtocolDescriptorRegistry {
 
     private ProtocolTypeMode resolveTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };
@@ -555,7 +597,7 @@ public class ProtocolDescriptorRegistry {
 
     private boolean resolveDriverTypeEnabled(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
             default -> false;
         };
     }
@@ -563,6 +605,7 @@ public class ProtocolDescriptorRegistry {
     private String resolveDriverTypeLabel(String protocol) {
         return switch (protocol) {
             case "SIEMENS_S7" -> "S7 driver type";
+            case "MITSUBISHI_MC" -> "MC driver type";
             case "ETHERNET_IP" -> "EIP driver type";
             case "ADS" -> "ADS driver type";
             case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA driver type";
@@ -581,6 +624,8 @@ public class ProtocolDescriptorRegistry {
                     "BOOL", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT", "LINT", "ULINT",
                     "REAL", "LREAL", "CHAR", "WCHAR", "STRING", "WSTRING",
                     "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME");
+            case "MITSUBISHI_MC" -> List.of(
+                    "BOOL", "INT16", "UINT16", "INT32", "UINT32", "FLOAT32", "FLOAT64", "STRING");
             case "ETHERNET_IP" -> List.of(
                     "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD",
                     "DINT", "UDINT", "DWORD", "LINT", "ULINT", "LWORD", "REAL", "LREAL", "STRING");
@@ -602,6 +647,7 @@ public class ProtocolDescriptorRegistry {
         return switch (protocol) {
             case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
             case "SIEMENS_S7" -> s7PointFields();
+            case "MITSUBISHI_MC" -> mcPointFields();
             case "ETHERNET_IP" -> etherNetIpPointFields();
             case "ADS" -> adsPointFields();
             case "KNXNET_IP" -> knxPointFields();
@@ -648,6 +694,16 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    private List<ProtocolFieldConfig> mcPointFields() {
+        return List.of(
+                pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
+                        Collections.emptyList(), "Optional bit offset inside one word device. You can use either D100.3 syntax or address=D100 with additionalConfig.bitIndex=3. Only BOOL points are supported.", "dataType=BOOLEAN/driverDataType=BOOL"),
+                pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(), "Required when driverDataType=STRING. The value is the string character length, and the collector allocates the corresponding MC word span.", "driverDataType=STRING"),
+                pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(), "Optional one-dimensional array length when the address does not already include [n]. BOOL arrays use bit-unit batches, numeric arrays use word-unit batches.", null)
+        );
+    }
     private List<ProtocolFieldConfig> etherNetIpPointFields() {
         return List.of(
                 pointField("additionalConfig.arraySize", "number", "Array size", false, "",
@@ -966,3 +1022,4 @@ public class ProtocolDescriptorRegistry {
     private record AliasDescriptor(String primaryCode, Consumer<DeviceConnection> customizer) {
     }
 }
+

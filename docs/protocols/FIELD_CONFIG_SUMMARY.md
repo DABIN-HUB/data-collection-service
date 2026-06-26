@@ -330,6 +330,29 @@ case "KNXNET_IP":
     fields.add(createFieldConfig("timeout", "number", "Protocol timeout (ms)", false, "10000", null));
     break;
 
+case "MITSUBISHI_MC":
+    fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+    fields.add(createFieldConfig("port", "number", "端口", false, "5000", null));
+    fields.add(createFieldConfig("networkNo", "number", "网络号", false, "0", null));
+    fields.add(createFieldConfig("pcNo", "number", "PC号", false, "255", null));
+    fields.add(createFieldConfig("ioNo", "number", "目标I/O号", false, "1023", null));
+    fields.add(createFieldConfig("stationNo", "number", "站号", false, "0", null));
+    fields.add(createFieldConfig("monitoringTimer", "number", "监视定时器", false, "16", null));
+    fields.add(createFieldConfig("frameType", "string", "帧类型", false, "3E_BINARY", new String[]{"3E_BINARY", "3E_ASCII", "4E_BINARY"}));
+    fields.add(createFieldConfig("randomReadEnabled", "boolean", "启用随机读", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("maxRandomReadPoints", "number", "随机读最大点数", false, "8", null));
+    fields.add(createFieldConfig("randomWriteEnabled", "boolean", "启用随机写", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("maxRandomWritePoints", "number", "随机写最大点数", false, "8", null));
+    fields.add(createFieldConfig("maxWordsPerRequest", "number", "单次最大字数", false, "120", null));
+    fields.add(createFieldConfig("maxBitsPerRequest", "number", "单次最大位数", false, "256", null));
+    fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("additionalConfig.driverDataType", "string", "驱动原生类型", false, "INT16", new String[]{"BOOL", "INT16", "UINT16", "INT32", "UINT32", "FLOAT32", "FLOAT64", "STRING"}));
+    fields.add(createFieldConfig("additionalConfig.bitIndex", "number", "字内位偏移", false, "", null));
+    fields.add(createFieldConfig("additionalConfig.stringLength", "number", "字符串长度", false, "", null));
+    fields.add(createFieldConfig("additionalConfig.arraySize", "number", "数组长度", false, "", null));
+    break;
+
 case "CUSTOM_TCP":
     break;
 ```

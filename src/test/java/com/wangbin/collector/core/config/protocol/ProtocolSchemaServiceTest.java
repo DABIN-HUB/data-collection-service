@@ -104,6 +104,22 @@ public class ProtocolSchemaServiceTest {
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
 
+        ProtocolSchema mc = service.getSchema("MITSUBISHI_MC").orElseThrow();
+        assertTrue(mc.isImplemented());
+        assertTrue(mc.isWritable());
+        assertFalse(mc.isSubscribable());
+        assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, mc.getTypeMode());
+        assertEquals("additionalConfig.driverDataType", mc.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, mc.getPlatformDataTypeMode());
+        assertTrue(mc.isDriverTypeEnabled());
+        assertEquals("MC driver type", mc.getDriverTypeLabel());
+        assertEquals("additionalConfig.driverDataType", mc.getDriverTypeField());
+        assertTrue(mc.getDriverDataTypes().contains("FLOAT32"));
+        assertTrue(mc.getPointAddressHints().contains("D100[4]"));
+        assertTrue(mc.getConnectionFields().stream().anyMatch(field -> "networkNo".equals(field.getName())));
+        assertTrue(mc.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
+        assertTrue(mc.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
+
         ProtocolSchema ethernetIp = service.getSchema("ETHERNET_IP").orElseThrow();
         assertTrue(ethernetIp.isImplemented());
         assertTrue(ethernetIp.isWritable());
@@ -168,7 +184,7 @@ public class ProtocolSchemaServiceTest {
 
     private ProtocolTypeMode expectedTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };
@@ -189,3 +205,4 @@ public class ProtocolSchemaServiceTest {
         };
     }
 }
+
