@@ -846,6 +846,10 @@
     }
     if (protocolCode === "MODBUS_TCP" || protocolCode === "MODBUS_RTU") {
       notes.push("Modbus 的 dataType 会直接决定读取长度和寄存器解码方式；下方协议扩展字段主要用于补充兼容配置。");
+    } else if (protocolCode === "MITSUBISHI_MC") {
+      notes.push("MC 推荐优先使用 3E_BINARY；3E_ASCII 和 4E_BINARY 需要先做现场联机验证，再进入生产批量配置。");
+      notes.push("MC 的 STRING 点位必须补 additionalConfig.stringLength；像 D100.3 这样的位偏移地址只适用于 BOOL 点位。");
+      notes.push("randomRead/randomWrite 仅适合稀疏标量字点位；如果多个系统同时改同一字，页面虽然可配，但仍需要上层治理避免位覆盖。");
     } else if (protocol?.pointFields?.length) {
       notes.push("下方字段都是协议扩展配置，字段下方的中文备注会说明用途、条件和保存位置。主类型字段如果已经提升到基础信息区，这里不会重复展示。");
     } else {

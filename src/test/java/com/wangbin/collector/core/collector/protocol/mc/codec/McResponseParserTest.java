@@ -43,6 +43,23 @@ class McResponseParserTest {
         assertArrayEquals(payload, parsed);
     }
 
+    @Test
+    void shouldReject4eResponseWhenSerialMismatches() {
+        byte[] request = new byte[25];
+        request[0] = 0x54;
+        request[1] = 0x00;
+        request[2] = 0x34;
+        request[3] = 0x12;
+        byte[] response = response4e(0, new byte[]{0x12, 0x34});
+        response[2] = 0x35;
+        response[3] = 0x12;
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> McResponseParser.validate4eBinarySerial(request, response));
+
+        assertEquals("MC 4E response serial mismatch: request=0x1234, response=0x1235", exception.getMessage());
+    }
+
     private byte[] response(int endCode, byte[] payload) {
         byte[] safePayload = payload != null ? payload : new byte[0];
         int dataLength = 2 + safePayload.length;
@@ -78,6 +95,8 @@ class McResponseParserTest {
         byte[] frame = new byte[13 + dataLength];
         frame[0] = (byte) 0xD4;
         frame[1] = 0x00;
+        frame[2] = 0x34;
+        frame[3] = 0x12;
         frame[11] = (byte) (dataLength & 0xFF);
         frame[12] = (byte) ((dataLength >> 8) & 0xFF);
         frame[13] = (byte) (endCode & 0xFF);

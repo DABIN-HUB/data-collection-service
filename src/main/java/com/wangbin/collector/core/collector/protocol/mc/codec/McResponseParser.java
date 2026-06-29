@@ -45,6 +45,22 @@ public final class McResponseParser {
         validate4eBinaryResponse(response);
     }
 
+    public static void validate4eBinarySerial(byte[] request, byte[] response) {
+        if (request == null || request.length < 4) {
+            throw new IllegalArgumentException("MC 4E request is too short");
+        }
+        if (response == null || response.length < BINARY_4E_PAYLOAD_OFFSET) {
+            throw new IllegalArgumentException("MC 4E response is too short");
+        }
+        int requestSerial = readUInt16(request, 2);
+        int responseSerial = readUInt16(response, 2);
+        if (requestSerial != responseSerial) {
+            throw new IllegalArgumentException(String.format(
+                    "MC 4E response serial mismatch: request=0x%04X, response=0x%04X",
+                    requestSerial, responseSerial));
+        }
+    }
+
     public static int readEndCode(byte[] response) {
         if (response == null || response.length < PAYLOAD_OFFSET) {
             return -1;

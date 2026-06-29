@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -59,6 +60,7 @@ public class McCollector extends ConnectionBackedCollector {
     private final McFrameCodec defaultFrameCodec = new Mc3eBinaryFrameCodec();
     private final McFrameCodec asciiFrameCodec = new Mc3eAsciiFrameCodec();
     private final McFrameCodec binary4eFrameCodec = new Mc4eBinaryFrameCodec();
+    private final Map<String, ReentrantLock> wordWriteLocks = new ConcurrentHashMap<>();
 
     private MitsubishiMcConnectionAdapter connectionAdapter;
     private volatile List<McReadPlan> configuredReadPlans = Collections.emptyList();
@@ -120,6 +122,7 @@ public class McCollector extends ConnectionBackedCollector {
         configuredAddresses.clear();
         configuredReadPlans = Collections.emptyList();
         configuredReadPlanPointKeys = Collections.emptySet();
+        wordWriteLocks.clear();
         lastFallbackCount.set(0);
         lastMcEndCode = null;
         lastRequestUnitCount = null;
@@ -129,16 +132,14 @@ public class McCollector extends ConnectionBackedCollector {
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
-        if (isScalarPoint(point)) {
-            return super.readPoint(point);
-        }
 
         long startTime = System.currentTimeMillis();
         try {
             McAddress address = requireAddress(point);
-            validateArrayPointConfiguration(point, address, "read");
             Object rawValue = doReadPoint(point);
-            ProcessResult processResult = buildArrayProcessResult(point, address, rawValue, "array pass-through read");
+            ProcessResult processResult = address.isScalar()
+                    ? buildScalarProcessResult(point, address, rawValue)
+                    : buildArrayReadProcessResult(point, address, rawValue, "array pass-through read");
             lastProcessResults.put(point.getPointId(), processResult);
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
@@ -183,10 +184,7 @@ public class McCollector extends ConnectionBackedCollector {
                         continue;
                     }
                     if (address.isScalar()) {
-                        Object processedValue = convertData(point, rawValue);
-                        ProcessContext context = new ProcessContext();
-                        context.addAttribute("deviceId", deviceInfo.getDeviceId());
-                        ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+                        ProcessResult processResult = buildScalarProcessResult(point, address, rawValue);
                         lastProcessResults.put(pointId, processResult);
                         if (!processResult.isSuccess()) {
                             log.warn("MC data quality check failed {}.{}, reason: {}",
@@ -194,8 +192,7 @@ public class McCollector extends ConnectionBackedCollector {
                         }
                         results.put(pointId, processResult.getFinalValue());
                     } else {
-                        validateArrayPointConfiguration(point, address, "read");
-                        ProcessResult processResult = buildArrayProcessResult(point, address, rawValue,
+                        ProcessResult processResult = buildArrayReadProcessResult(point, address, rawValue,
                                 "array pass-through batch read");
                         lastProcessResults.put(pointId, processResult);
                         results.put(pointId, processResult.getFinalValue());
@@ -222,9 +219,6 @@ public class McCollector extends ConnectionBackedCollector {
 
     @Override
     public boolean writePoint(DataPoint point, Object value) throws CollectorException {
-        if (isScalarPoint(point)) {
-            return super.writePoint(point, value);
-        }
         checkConnection();
 
         long startTime = System.currentTimeMillis();
@@ -233,8 +227,13 @@ public class McCollector extends ConnectionBackedCollector {
                 throw new CollectorException("Point is not writable", deviceInfo.getDeviceId(), point.getPointId());
             }
             McAddress address = requireAddress(point);
-            validateArrayPointConfiguration(point, address, "write");
-            boolean result = doWritePoint(point, value);
+            ProcessResult processResult = buildWriteValidationResult(point, address, value);
+            if (!processResult.isSuccess()) {
+                throw new CollectorException("MC write quality check failed: " + processResult.getMessage(),
+                        deviceInfo.getDeviceId(), point.getPointId());
+            }
+            Object writeValue = normalizeWriteValue(point, address, value);
+            boolean result = doWritePoint(point, writeValue);
             totalWriteCount.incrementAndGet();
             totalWriteTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
@@ -253,31 +252,50 @@ public class McCollector extends ConnectionBackedCollector {
     @Override
     public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
         checkConnection();
-        if (!containsArrayPoint(points != null ? points.keySet() : null)) {
-            return super.writePoints(points);
-        }
 
+        long startTime = System.currentTimeMillis();
         Map<String, Boolean> results = new LinkedHashMap<>();
-        Map<DataPoint, Object> scalarPoints = new LinkedHashMap<>();
-        Map<DataPoint, Object> arrayPoints = new LinkedHashMap<>();
-        partitionPointValues(points, scalarPoints, arrayPoints);
-
-        if (!scalarPoints.isEmpty()) {
-            results.putAll(super.writePoints(scalarPoints));
-        }
-        for (Map.Entry<DataPoint, Object> entry : arrayPoints.entrySet()) {
-            DataPoint point = entry.getKey();
-            if (point == null) {
-                continue;
+        try {
+            Map<DataPoint, Object> normalizedValues = new LinkedHashMap<>();
+            if (points != null) {
+                for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+                    DataPoint point = entry.getKey();
+                    if (point == null || point.getPointId() == null) {
+                        continue;
+                    }
+                    try {
+                        if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
+                            results.put(point.getPointId(), false);
+                            continue;
+                        }
+                        McAddress address = requireAddress(point);
+                        ProcessResult processResult = buildWriteValidationResult(point, address, entry.getValue());
+                        if (!processResult.isSuccess()) {
+                            results.put(point.getPointId(), false);
+                            continue;
+                        }
+                        normalizedValues.put(point, normalizeWriteValue(point, address, entry.getValue()));
+                        results.put(point.getPointId(), true);
+                    } catch (Exception ex) {
+                        log.error("MC batch write preprocess failed, pointId={}", point.getPointId(), ex);
+                        recordException(ex, point);
+                        results.put(point.getPointId(), false);
+                    }
+                }
             }
-            try {
-                results.put(point.getPointId(), writePoint(point, entry.getValue()));
-            } catch (Exception ex) {
-                log.error("MC array point batch write failed, pointId={}", point.getPointId(), ex);
-                results.put(point.getPointId(), false);
+            if (!normalizedValues.isEmpty()) {
+                results.putAll(doWritePoints(normalizedValues));
             }
+            totalWriteCount.addAndGet(normalizedValues.size());
+            totalWriteTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+            return results;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            recordException(e, null);
+            throw new CollectorException("MC batch point write failed", deviceInfo.getDeviceId(), null, e);
         }
-        return results;
     }
 
     @Override
@@ -290,7 +308,7 @@ public class McCollector extends ConnectionBackedCollector {
         lastRequestUnitCount = address.getReadUnitCount();
         McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
         byte[] request = frameCodec.buildBatchRead(address, requireRuntimeConnectionConfig());
-        byte[] response = requireConnection().exchange(request, timeout);
+        byte[] response = exchange(frameCodec, request);
         lastMcEndCode = frameCodec.readEndCode(response);
         byte[] payload = frameCodec.normalizeReadPayload(address, frameCodec.parseReadPayload(response));
         return McByteCodec.decode(address, payload);
@@ -312,7 +330,7 @@ public class McCollector extends ConnectionBackedCollector {
         byte[] payload = McByteCodec.encode(address, value);
         McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
         byte[] request = frameCodec.buildBatchWrite(address, frameCodec.normalizeWritePayload(address, payload), requireRuntimeConnectionConfig());
-        byte[] response = requireConnection().exchange(request, timeout);
+        byte[] response = exchange(frameCodec, request);
         lastMcEndCode = frameCodec.readEndCode(response);
         frameCodec.ensureWriteSuccess(response);
         return true;
@@ -517,7 +535,7 @@ public class McCollector extends ConnectionBackedCollector {
             McRandomReadRequest requestModel = new McRandomReadRequest(addresses);
             byte[] request = frameCodec.buildRandomRead(requestModel, requireRuntimeConnectionConfig());
             lastRequestUnitCount = requestModel.getWordAddressCount();
-            byte[] response = requireConnection().exchange(request, timeout);
+            byte[] response = exchange(frameCodec, request);
             lastMcEndCode = frameCodec.readEndCode(response);
             byte[] payload = frameCodec.parseReadPayload(response);
             int offset = 0;
@@ -532,6 +550,9 @@ public class McCollector extends ConnectionBackedCollector {
                 log.debug("MC random read executed, deviceId={}, pointCount={}", deviceInfo.getDeviceId(), points.size());
             }
         } catch (Exception ex) {
+            if (shouldInvalidateConnection(ex)) {
+                throw new IllegalStateException("MC random read failed", ex);
+            }
             log.warn("MC random read failed, fallback to planned read, deviceId={}, error={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
             lastFallbackCount.incrementAndGet();
@@ -553,7 +574,7 @@ public class McCollector extends ConnectionBackedCollector {
             McRandomWriteRequest requestModel = new McRandomWriteRequest(items);
             byte[] request = frameCodec.buildRandomWrite(requestModel, requireRuntimeConnectionConfig());
             lastRequestUnitCount = requestModel.getWordItemCount();
-            byte[] response = requireConnection().exchange(request, timeout);
+            byte[] response = exchange(frameCodec, request);
             lastMcEndCode = frameCodec.readEndCode(response);
             frameCodec.ensureWriteSuccess(response);
             for (DataPoint point : points.keySet()) {
@@ -566,6 +587,9 @@ public class McCollector extends ConnectionBackedCollector {
             }
             return true;
         } catch (Exception ex) {
+            if (shouldInvalidateConnection(ex)) {
+                throw new IllegalStateException("MC random write failed", ex);
+            }
             log.warn("MC random write failed, fallback to planned write, deviceId={}, error={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
             lastFallbackCount.incrementAndGet();
@@ -705,7 +729,7 @@ public class McCollector extends ConnectionBackedCollector {
         }
         McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
         byte[] request = frameCodec.buildBatchRead(batchAddress, requireRuntimeConnectionConfig());
-        byte[] response = requireConnection().exchange(request, timeout);
+        byte[] response = exchange(frameCodec, request);
         lastMcEndCode = frameCodec.readEndCode(response);
         return frameCodec.normalizeReadPayload(batchAddress, frameCodec.parseReadPayload(response));
     }
@@ -757,7 +781,7 @@ public class McCollector extends ConnectionBackedCollector {
         byte[] request = frameCodec.buildBatchWrite(batchAddress,
                 frameCodec.normalizeWritePayload(batchAddress, payload),
                 requireRuntimeConnectionConfig());
-        byte[] response = requireConnection().exchange(request, timeout);
+        byte[] response = exchange(frameCodec, request);
         lastMcEndCode = frameCodec.readEndCode(response);
         frameCodec.ensureWriteSuccess(response);
     }
@@ -963,7 +987,9 @@ public class McCollector extends ConnectionBackedCollector {
                 continue;
             }
             try {
-                results.put(point.getPointId(), doWritePoint(point, valuesByPointKey.get(resolvePointCacheKey(point))));
+                Object value = valuesByPointKey.get(resolvePointCacheKey(point));
+                Object normalized = normalizeWriteValue(point, item.getAddress(), value);
+                results.put(point.getPointId(), doWritePoint(point, normalized));
                 fallbackCount++;
             } catch (Exception singleEx) {
                 log.error("MC fallback point write failed, deviceId={}, pointId={}",
@@ -976,14 +1002,7 @@ public class McCollector extends ConnectionBackedCollector {
 
     private Object readBitOffsetPoint(McAddress address) throws Exception {
         McAddress wordAddress = toWordContainerAddress(address);
-        validateRequestCapacity(wordAddress);
-        lastRequestUnitCount = wordAddress.getReadUnitCount();
-        McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
-        byte[] request = frameCodec.buildBatchRead(wordAddress, requireRuntimeConnectionConfig());
-        byte[] response = requireConnection().exchange(request, timeout);
-        lastMcEndCode = frameCodec.readEndCode(response);
-        byte[] payload = frameCodec.normalizeReadPayload(wordAddress, frameCodec.parseReadPayload(response));
-        Object rawWord = McByteCodec.decode(wordAddress, payload);
+        Object rawWord = readWordContainerValue(wordAddress);
         int wordValue = rawWord instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(rawWord));
         return ((wordValue >> address.getBitIndex()) & 0x01) == 1;
     }
@@ -992,25 +1011,19 @@ public class McCollector extends ConnectionBackedCollector {
         McAddress wordAddress = toWordContainerAddress(address);
         boolean targetBit = toBooleanValue(value);
         McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
+        ReentrantLock lock = wordWriteLocks.computeIfAbsent(wordLockKey(wordAddress), ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            Object rawWord = readWordContainerValue(wordAddress);
+            int wordValue = rawWord instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(rawWord));
 
-        byte[] readRequest = frameCodec.buildBatchRead(wordAddress, requireRuntimeConnectionConfig());
-        lastRequestUnitCount = wordAddress.getReadUnitCount();
-        byte[] readResponse = requireConnection().exchange(readRequest, timeout);
-        lastMcEndCode = frameCodec.readEndCode(readResponse);
-        byte[] readPayload = frameCodec.normalizeReadPayload(wordAddress, frameCodec.parseReadPayload(readResponse));
-        Object rawWord = McByteCodec.decode(wordAddress, readPayload);
-        int wordValue = rawWord instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(rawWord));
-
-        int bitMask = 1 << address.getBitIndex();
-        int updatedValue = targetBit ? (wordValue | bitMask) : (wordValue & ~bitMask);
-        byte[] writePayload = McByteCodec.encode(wordAddress, updatedValue & 0xFFFF);
-        byte[] writeRequest = frameCodec.buildBatchWrite(wordAddress,
-                frameCodec.normalizeWritePayload(wordAddress, writePayload),
-                requireRuntimeConnectionConfig());
-        byte[] writeResponse = requireConnection().exchange(writeRequest, timeout);
-        lastMcEndCode = frameCodec.readEndCode(writeResponse);
-        frameCodec.ensureWriteSuccess(writeResponse);
-        return true;
+            int bitMask = 1 << address.getBitIndex();
+            int updatedValue = targetBit ? (wordValue | bitMask) : (wordValue & ~bitMask);
+            writeWordContainerValue(wordAddress, updatedValue & 0xFFFF, frameCodec);
+            return true;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private McAddress toWordContainerAddress(McAddress address) {
@@ -1075,6 +1088,39 @@ public class McCollector extends ConnectionBackedCollector {
         return current != null ? current : requireConnectionConfig();
     }
 
+    protected Object readWordContainerValue(McAddress wordAddress) throws Exception {
+        validateRequestCapacity(wordAddress);
+        lastRequestUnitCount = wordAddress.getReadUnitCount();
+        McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
+        byte[] request = frameCodec.buildBatchRead(wordAddress, requireRuntimeConnectionConfig());
+        byte[] response = exchange(frameCodec, request);
+        lastMcEndCode = frameCodec.readEndCode(response);
+        byte[] payload = frameCodec.normalizeReadPayload(wordAddress, frameCodec.parseReadPayload(response));
+        return McByteCodec.decode(wordAddress, payload);
+    }
+
+    protected void writeWordContainerValue(McAddress wordAddress, int value, McFrameCodec frameCodec) throws Exception {
+        byte[] writePayload = McByteCodec.encode(wordAddress, value);
+        byte[] writeRequest = frameCodec.buildBatchWrite(wordAddress,
+                frameCodec.normalizeWritePayload(wordAddress, writePayload),
+                requireRuntimeConnectionConfig());
+        byte[] writeResponse = exchange(frameCodec, writeRequest);
+        lastMcEndCode = frameCodec.readEndCode(writeResponse);
+        frameCodec.ensureWriteSuccess(writeResponse);
+    }
+
+    private byte[] exchange(McFrameCodec frameCodec, byte[] request) throws Exception {
+        try {
+            byte[] response = requireConnection().exchange(request, timeout);
+            return frameCodec.validateResponse(request, response);
+        } catch (Exception ex) {
+            if (shouldInvalidateConnection(ex)) {
+                invalidateConnection(ex);
+            }
+            throw ex;
+        }
+    }
+
     private void validateRequestCapacity(McAddress address) {
         int units = address.getReadUnitCount();
         if (address.isBitDevice() && units > maxBitsPerRequest) {
@@ -1087,37 +1133,6 @@ public class McCollector extends ConnectionBackedCollector {
 
     private boolean isScalarPoint(DataPoint point) {
         return requireAddress(point).isScalar();
-    }
-
-    private boolean containsArrayPoint(Collection<DataPoint> points) {
-        if (points == null || points.isEmpty()) {
-            return false;
-        }
-        for (DataPoint point : points) {
-            if (point != null && !requireAddress(point).isScalar()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void partitionPointValues(Map<DataPoint, Object> source,
-                                      Map<DataPoint, Object> scalarPoints,
-                                      Map<DataPoint, Object> arrayPoints) {
-        if (source == null) {
-            return;
-        }
-        for (Map.Entry<DataPoint, Object> entry : source.entrySet()) {
-            DataPoint point = entry.getKey();
-            if (point == null) {
-                continue;
-            }
-            if (requireAddress(point).isScalar()) {
-                scalarPoints.put(point, entry.getValue());
-            } else {
-                arrayPoints.put(point, entry.getValue());
-            }
-        }
     }
 
     private void validateArrayPointConfiguration(DataPoint point, McAddress address, String operation) {
@@ -1138,6 +1153,59 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    private ProcessResult buildScalarProcessResult(DataPoint point,
+                                                   McAddress address,
+                                                   Object rawValue) {
+        Object processedValue = normalizeReadValue(point, address, rawValue);
+        ProcessContext context = new ProcessContext();
+        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+        if (!processResult.isSuccess()) {
+            log.warn("MC data quality check failed {}.{}, reason: {}",
+                    deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+        }
+        if (point != null && point.getAddress() != null) {
+            processResult.addMetadata("address", point.getAddress());
+        }
+        processResult.addMetadata("processingMode", address.getDriverType().isStringType()
+                ? "protocol_string_passthrough"
+                : "default_scalar_conversion");
+        return processResult;
+    }
+
+    private ProcessResult buildArrayReadProcessResult(DataPoint point,
+                                                      McAddress address,
+                                                      Object rawValue,
+                                                      String message) {
+        validateArrayPointConfiguration(point, address, "read");
+        return buildArrayProcessResult(point, address, rawValue, message);
+    }
+
+    private ProcessResult buildWriteValidationResult(DataPoint point,
+                                                     McAddress address,
+                                                     Object value) {
+        if (!address.isScalar()) {
+            validateArrayPointConfiguration(point, address, "write");
+        }
+        ProcessContext context = new ProcessContext();
+        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        return dataQualityProcessor.process(context, point, value);
+    }
+
+    private Object normalizeReadValue(DataPoint point, McAddress address, Object rawValue) {
+        if (address.getDriverType().isStringType()) {
+            return rawValue;
+        }
+        return convertData(point, rawValue);
+    }
+
+    private Object normalizeWriteValue(DataPoint point, McAddress address, Object value) {
+        if (address.getDriverType().isStringType() || !address.isScalar()) {
+            return value;
+        }
+        return convertDataForWrite(point, value);
+    }
+
     private ProcessResult buildArrayProcessResult(DataPoint point,
                                                   McAddress address,
                                                   Object rawValue,
@@ -1153,6 +1221,62 @@ public class McCollector extends ConnectionBackedCollector {
             processResult.addMetadata("address", point.getAddress());
         }
         return processResult;
+    }
+
+    private boolean shouldInvalidateConnection(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof CollectorException collectorException) {
+                return collectorException.getCause() != null && shouldInvalidateConnection(collectorException.getCause());
+            }
+            if (current instanceof java.net.SocketTimeoutException
+                    || current instanceof java.io.EOFException
+                    || current instanceof java.net.SocketException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && (message.contains("Unexpected MC")
+                    || message.contains("Unexpected Mitsubishi MC")
+                    || message.contains("response length mismatch")
+                    || message.contains("response is too short")
+                    || message.contains("socket closed")
+                    || message.contains("serial mismatch")
+                    || message.contains("receive failed")
+                    || message.contains("send failed")
+                    || message.contains("timed out"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void invalidateConnection(Throwable cause) {
+        if (!connected && connectionAdapter == null) {
+            return;
+        }
+        log.warn("Invalidate Mitsubishi MC connection after protocol/transport failure, deviceId={}, error={}",
+                deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                cause != null ? cause.getMessage() : null);
+        try {
+            MitsubishiMcConnectionAdapter adapter = connectionAdapter;
+            connectionAdapter = null;
+            if (adapter != null) {
+                adapter.disconnect();
+            }
+        } catch (Exception disconnectError) {
+            log.warn("Disconnect broken Mitsubishi MC adapter failed, deviceId={}",
+                    deviceInfo != null ? deviceInfo.getDeviceId() : null, disconnectError);
+        } finally {
+            removeManagedConnection("Mitsubishi MC");
+            connected = false;
+            connectionStatus = "DISCONNECTED";
+            lastError = cause != null ? cause.getMessage() : lastError;
+        }
+    }
+
+    private String wordLockKey(McAddress address) {
+        return deviceInfo.getDeviceId() + ":" + address.getDeviceCode().name() + ":" + address.getDeviceNumber();
     }
 
     private UnsupportedOperationException unsupported(String operation, String reason) {

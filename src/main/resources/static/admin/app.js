@@ -293,10 +293,12 @@ function renderProtocolMeta(protocol) {
       }).join("")}</ul>
     `
     : '<p><code>pointFields</code>：无。含义：当前协议没有额外的点位扩展字段。</p>';
+  const riskNoteHtml = renderProtocolRiskNote(protocol);
   return `
     <strong>${escapeHtml(protocol.title)}</strong>
     <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
     <p>${escapeHtml(protocol.description || "")}</p>
+    ${riskNoteHtml}
     <p>Aliases: ${aliases}</p>
     <p>Address hints: ${addressHints}</p>
     <p><code>dataTypes</code>：${dataTypes}</p>
@@ -305,6 +307,20 @@ function renderProtocolMeta(protocol) {
     <p><code>platformDataTypeMode</code>：${escapeHtml(platformDataTypeModeLabel)}。含义：当前协议里平台统一 <code>dataType</code> 在页面上的处理方式。</p>
     ${driverTypeHtml}
     ${pointFieldsHtml}
+  `;
+}
+
+function renderProtocolRiskNote(protocol) {
+  if (!protocol || protocol.code !== "MITSUBISHI_MC") {
+    return "";
+  }
+  return `
+    <div class="usage-note">
+      <strong>MC 生产边界</strong>
+      <p><code>3E_BINARY</code> 是当前推荐的稳定生产路径。<code>3E_ASCII</code>、<code>4E_BINARY</code> 仍应按分阶段方式上线，先做现场联机和真机报文回放验证，再放量。</p>
+      <p><code>randomReadEnabled</code> / <code>randomWriteEnabled</code> 只适合稀疏的标量字点位；连续地址块、批量字符串和数组点仍以常规批读批写链路为主，不应把随机读写当成通用加速开关。</p>
+      <p><code>driverDataType=STRING</code> 时必须补 <code>additionalConfig.stringLength</code>。像 <code>D100.3</code> 这样的位偏移写入，当前仅在单采集器进程内做同字串行保护；如果多个进程或外部系统同时改同一字，仍需要上层治理避免互相覆盖。</p>
+    </div>
   `;
 }
 

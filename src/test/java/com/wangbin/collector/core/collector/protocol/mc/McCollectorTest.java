@@ -1,7 +1,10 @@
 package com.wangbin.collector.core.collector.protocol.mc;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlan;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlanItem;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McWritePlan;
@@ -15,10 +18,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class McCollectorTest {
 
@@ -128,6 +139,39 @@ class McCollectorTest {
     }
 
     @Test
+    void shouldSerializeConcurrentBitOffsetWritesWithinSameWord() throws Exception {
+        DataPoint bit2 = point("p1", "D100.2", "boolean");
+        bit2.setReadWrite("RW");
+        DataPoint bit3 = point("p2", "D100.3", "boolean");
+        bit3.setReadWrite("RW");
+        collector.wordValues.put("D100", 0);
+        collector.blockFirstWordRead("D100");
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        try {
+            Future<Boolean> first = executor.submit(() -> collector.writePoint(bit2, true));
+            assertTrue(collector.awaitFirstWordRead("D100", 1, TimeUnit.SECONDS));
+            Future<Boolean> second = executor.submit(() -> {
+                secondStarted.countDown();
+                return collector.writePoint(bit3, true);
+            });
+
+            assertTrue(secondStarted.await(1, TimeUnit.SECONDS));
+            assertEquals(1, collector.concurrentReadCount.getOrDefault("D100", 0));
+            collector.releaseBlockedWordRead("D100");
+
+            assertEquals(true, first.get(5, TimeUnit.SECONDS));
+            assertEquals(true, second.get(5, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(0b1100, collector.wordValues.get("D100"));
+        assertEquals(2, collector.concurrentReadCount.getOrDefault("D100", 0));
+    }
+
+    @Test
     void shouldNotTreatMultiWordScalarAsRandomReadable() throws Exception {
         DataPoint point = point("p1", "D100", "LONG");
         Method method = McCollector.class.getDeclaredMethod("isRandomReadableAddress",
@@ -143,6 +187,14 @@ class McCollectorTest {
     private void prepareCollector(TestableMcCollector collector) throws Exception {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        DeviceConnection connection = new DeviceConnection();
+        connection.setTimeout(1000);
+        connection.setReadTimeout(1000);
+        connection.setExtJson(new LinkedHashMap<>(Map.of("frameType", "3E_BINARY")));
+        ConfigManager configManager = mock(ConfigManager.class);
+        when(configManager.getDeviceContext("dev-1"))
+                .thenReturn(DeviceContext.of(device(), connection, List.of()));
+        ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connected", true);
         ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
     }
@@ -178,11 +230,33 @@ class McCollectorTest {
         private final List<String> executedWriteSegments = new ArrayList<>();
         private final List<String> fallbackWritePointIds = new ArrayList<>();
         private final List<Object> fallbackWriteValues = new ArrayList<>();
-        private final Map<String, Integer> wordValues = new LinkedHashMap<>();
+        private final Map<String, Integer> wordValues = new ConcurrentHashMap<>();
+        private final Map<String, CountDownLatch> blockingReadEntered = new ConcurrentHashMap<>();
+        private final Map<String, CountDownLatch> blockingReadRelease = new ConcurrentHashMap<>();
+        private final Map<String, Integer> concurrentReadCount = new ConcurrentHashMap<>();
         private boolean failBatchWrite;
 
         private void primeReadValue(String pointId, Object value) {
             readValues.put(pointId, value);
+        }
+
+        private void blockFirstWordRead(String address) {
+            String normalized = address.toUpperCase();
+            blockingReadEntered.put(normalized, new CountDownLatch(1));
+            blockingReadRelease.put(normalized, new CountDownLatch(1));
+            concurrentReadCount.put(normalized, 0);
+        }
+
+        private boolean awaitFirstWordRead(String address, long timeout, TimeUnit unit) throws InterruptedException {
+            CountDownLatch entered = blockingReadEntered.get(address.toUpperCase());
+            return entered != null && entered.await(timeout, unit);
+        }
+
+        private void releaseBlockedWordRead(String address) {
+            CountDownLatch release = blockingReadRelease.get(address.toUpperCase());
+            if (release != null) {
+                release.countDown();
+            }
         }
 
         @Override
@@ -216,22 +290,9 @@ class McCollectorTest {
         }
 
         @Override
-        protected boolean doWritePoint(DataPoint point, Object value) {
+        protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
             if (point.getAddress() != null && point.getAddress().contains(".")) {
-                String[] parts = point.getAddress().split("\\.");
-                String baseAddress = parts[0].toUpperCase();
-                int bitIndex = Integer.parseInt(parts[1]);
-                int current = wordValues.getOrDefault(baseAddress, 0);
-                boolean targetBit = Boolean.TRUE.equals(value)
-                        || "true".equalsIgnoreCase(String.valueOf(value))
-                        || (value instanceof Number number && number.intValue() != 0);
-                if (targetBit) {
-                    current |= (1 << bitIndex);
-                } else {
-                    current &= ~(1 << bitIndex);
-                }
-                wordValues.put(baseAddress, current);
-                return true;
+                return super.doWritePoint(point, value);
             }
             fallbackWritePointIds.add(point.getPointId());
             fallbackWriteValues.add(value);
@@ -241,12 +302,33 @@ class McCollectorTest {
         @Override
         protected Object doReadPoint(DataPoint point) throws Exception {
             if (point.getAddress() != null && point.getAddress().contains(".")) {
-                String[] parts = point.getAddress().split("\\.");
-                int current = wordValues.getOrDefault(parts[0].toUpperCase(), 0);
-                int bitIndex = Integer.parseInt(parts[1]);
-                return ((current >> bitIndex) & 0x01) == 1;
+                return super.doReadPoint(point);
             }
             return super.doReadPoint(point);
+        }
+
+        @Override
+        protected Object readWordContainerValue(com.wangbin.collector.core.collector.protocol.mc.domain.McAddress wordAddress)
+                throws Exception {
+            String normalized = wordAddress.getCanonicalAddress().toUpperCase();
+            int readCount = concurrentReadCount.getOrDefault(normalized, 0) + 1;
+            concurrentReadCount.put(normalized, readCount);
+            CountDownLatch entered = blockingReadEntered.get(normalized);
+            CountDownLatch release = blockingReadRelease.get(normalized);
+            if (readCount == 1 && entered != null && release != null) {
+                entered.countDown();
+                if (!release.await(1, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out releasing blocked word read");
+                }
+            }
+            return wordValues.getOrDefault(normalized, 0);
+        }
+
+        @Override
+        protected void writeWordContainerValue(com.wangbin.collector.core.collector.protocol.mc.domain.McAddress wordAddress,
+                                               int value,
+                                               com.wangbin.collector.core.collector.protocol.mc.codec.McFrameCodec frameCodec) {
+            wordValues.put(wordAddress.getCanonicalAddress().toUpperCase(), value);
         }
     }
 }

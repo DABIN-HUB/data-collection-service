@@ -15,6 +15,10 @@ public interface McFrameCodec {
 
     byte[] buildRandomWrite(McRandomWriteRequest request, DeviceConnection config);
 
+    default byte[] validateResponse(byte[] request, byte[] response) {
+        return response;
+    }
+
     byte[] parseReadPayload(byte[] response);
 
     int rawReadPayloadLength(McAddress address);

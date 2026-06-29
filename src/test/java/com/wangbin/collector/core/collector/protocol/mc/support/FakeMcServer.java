@@ -30,6 +30,7 @@ public final class FakeMcServer implements AutoCloseable {
     private volatile Integer forcedEndCode;
     private volatile boolean forceLengthMismatch;
     private volatile boolean forceUnexpectedSubheader;
+    private volatile boolean force4eSerialMismatch;
     private volatile long responseDelayMs;
     private Thread acceptThread;
 
@@ -59,6 +60,10 @@ public final class FakeMcServer implements AutoCloseable {
 
     public void forceUnexpectedSubheader(boolean value) {
         this.forceUnexpectedSubheader = value;
+    }
+
+    public void force4eSerialMismatch(boolean value) {
+        this.force4eSerialMismatch = value;
     }
 
     public void setResponseDelayMs(long responseDelayMs) {
@@ -165,6 +170,7 @@ public final class FakeMcServer implements AutoCloseable {
 
     private RequestModel parse4eBinaryRequest(byte[] request) {
         RequestModel model = new RequestModel(FrameType.BINARY_4E);
+        model.serialNo = readUInt16(request, 2);
         model.command = readUInt16(request, 15);
         if (model.command == 0x0401 || model.command == 0x1401) {
             model.subcommand = readUInt16(request, 17);
@@ -210,7 +216,7 @@ public final class FakeMcServer implements AutoCloseable {
                         wordPayload), StandardCharsets.US_ASCII));
                 offset += 8;
             }
-            return buildResponse(model.frameType, payload.toString().getBytes(StandardCharsets.US_ASCII), forcedEndCode != null ? forcedEndCode : 0);
+            return buildResponse(model, payload.toString().getBytes(StandardCharsets.US_ASCII), forcedEndCode != null ? forcedEndCode : 0);
         }
 
         byte[] payload = new byte[model.unitCount * 2];
@@ -224,7 +230,7 @@ public final class FakeMcServer implements AutoCloseable {
             offset += 4;
             responseOffset += 2;
         }
-        return buildResponse(model.frameType, payload, forcedEndCode != null ? forcedEndCode : 0);
+        return buildResponse(model, payload, forcedEndCode != null ? forcedEndCode : 0);
     }
 
     private byte[] buildRandomWriteResponse(RequestModel model) {
@@ -252,7 +258,7 @@ public final class FakeMcServer implements AutoCloseable {
                 }
             }
         }
-        return buildResponse(model.frameType, new byte[0], forcedEndCode != null ? forcedEndCode : 0);
+        return buildResponse(model, new byte[0], forcedEndCode != null ? forcedEndCode : 0);
     }
 
     private byte[] buildWriteResponse(RequestModel model) {
@@ -271,7 +277,7 @@ public final class FakeMcServer implements AutoCloseable {
                 memoryModel.writeWords(model.deviceCode, model.deviceNumber, model.unitCount, wordPayload);
             }
         }
-        return buildResponse(model.frameType, new byte[0], forcedEndCode != null ? forcedEndCode : 0);
+        return buildResponse(model, new byte[0], forcedEndCode != null ? forcedEndCode : 0);
     }
 
     private byte[] buildReadResponse(RequestModel model, byte[] binaryPayload) {
@@ -285,14 +291,14 @@ public final class FakeMcServer implements AutoCloseable {
                     ? McAsciiCodecSupport.encodeWritePayload(address, binaryPayload)
                     : McAsciiCodecSupport.encodeWritePayload(address, binaryPayload);
         }
-        return buildResponse(model.frameType, payload, forcedEndCode != null ? forcedEndCode : 0);
+        return buildResponse(model, payload, forcedEndCode != null ? forcedEndCode : 0);
     }
 
-    private byte[] buildResponse(FrameType frameType, byte[] payload, int endCode) {
+    private byte[] buildResponse(RequestModel model, byte[] payload, int endCode) {
         byte[] safePayload = payload != null ? payload : new byte[0];
-        return switch (frameType) {
+        return switch (model.frameType) {
             case BINARY_3E -> build3eBinaryResponse(safePayload, endCode);
-            case BINARY_4E -> build4eBinaryResponse(safePayload, endCode);
+            case BINARY_4E -> build4eBinaryResponse(safePayload, endCode, model.serialNo);
             case ASCII_3E -> build3eAsciiResponse(safePayload, endCode);
         };
     }
@@ -311,12 +317,15 @@ public final class FakeMcServer implements AutoCloseable {
         return response;
     }
 
-    private byte[] build4eBinaryResponse(byte[] payload, int endCode) {
+    private byte[] build4eBinaryResponse(byte[] payload, int endCode, int serialNo) {
         int declaredLength = 2 + payload.length;
         int encodedLength = forceLengthMismatch ? declaredLength + 1 : declaredLength;
         byte[] response = new byte[HEADER_4E_BINARY + declaredLength];
         response[0] = forceUnexpectedSubheader ? (byte) 0x00 : (byte) 0xD4;
         response[1] = 0x00;
+        int effectiveSerial = force4eSerialMismatch ? ((serialNo + 1) & 0xFFFF) : serialNo;
+        response[2] = (byte) (effectiveSerial & 0xFF);
+        response[3] = (byte) ((effectiveSerial >> 8) & 0xFF);
         response[11] = (byte) (encodedLength & 0xFF);
         response[12] = (byte) ((encodedLength >> 8) & 0xFF);
         response[13] = (byte) (endCode & 0xFF);
@@ -476,6 +485,7 @@ public final class FakeMcServer implements AutoCloseable {
         private McDeviceCode deviceCode;
         private int deviceNumber;
         private int unitCount;
+        private int serialNo;
         private byte[] payload = new byte[0];
 
         private RequestModel(FrameType frameType) {

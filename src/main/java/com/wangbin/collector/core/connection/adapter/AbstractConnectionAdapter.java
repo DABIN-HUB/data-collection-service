@@ -136,10 +136,12 @@ public abstract class AbstractConnectionAdapter<C> implements ConnectionAdapter<
         }
         try {
             reconnecting = true;
-            status = ConnectionStatus.RECONNECTING;
-            if (isConnected()) {
+            boolean wasConnected = isConnected();
+            if (wasConnected) {
                 disconnect();
             }
+            status = ConnectionStatus.RECONNECTING;
+            metrics.setStatus(status);
             long delay = calculateReconnectDelay();
             log.info("Reconnect after {} ms: {}", delay, connectionId);
             Thread.sleep(delay);
