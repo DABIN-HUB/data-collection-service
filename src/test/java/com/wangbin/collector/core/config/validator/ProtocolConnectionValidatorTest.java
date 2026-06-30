@@ -248,6 +248,52 @@ class ProtocolConnectionValidatorTest {
                 () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
     }
 
+    @Test
+    void shouldRequireBacnetRemoteDeviceInstance() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRequireBacnetLocalBindPortWhenCovEnabled() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "covEnabled", true
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptBacnetBasicConnection() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptBacnetAlias() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "localBindPort", 47809,
+                "covEnabled", true
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet", "BACNET/IP"), connection));
+    }
+
 
     @Test
     void shouldAcceptS7WithRawConnectionStringOnly() {

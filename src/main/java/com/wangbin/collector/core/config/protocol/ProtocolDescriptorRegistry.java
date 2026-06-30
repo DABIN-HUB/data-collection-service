@@ -2,6 +2,7 @@ package com.wangbin.collector.core.config.protocol;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.ads.AdsCollector;
+import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
 import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
 import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
 import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollector;
@@ -139,6 +140,53 @@ public class ProtocolDescriptorRegistry {
                                 "Collector read timeout for PLC4X request futures."),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
                                 "Fallback protocol timeout used when readTimeout is empty."))));
+        registerPrimary(descriptor("BACNET_IP", "BACnet/IP", "BACnet/IP building automation protocol collector.",
+                List.of("BACNET", "BACNETIP", "BACNET/IP"), BacnetIpCollector.class, "BACNET_IP", 47808, ProtocolAddressingMode.MIXED,
+                false, true, true,
+                List.of("analogInput:1.presentValue", "binaryOutput:3.presentValue", "device:1001.objectName"),
+                fields(
+                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
+                                "BACnet/IP target device host or IP address."),
+                        field("port", "number", "Port", false, "47808", null, "connection",
+                                "BACnet/IP UDP port. Leave empty to use the default 47808."),
+                        field("localBindHost", "string", "Local bind host", false, "0.0.0.0", null, "connection",
+                                "Local UDP bind host used by the BACnet/IP client."),
+                        field("localBindPort", "number", "Local bind port", false, "", null, "connection",
+                                "Local UDP bind port. Required when enabling COV subscription paths."),
+                        field("remoteDeviceInstance", "number", "Remote device instance", true, "", null, "protocol",
+                                "Target BACnet device instance number."),
+                        field("localDeviceInstance", "number", "Local device instance", false, "4194302", null, "protocol",
+                                "Local BACnet client device instance used by the collector."),
+                        field("useWhoIsDiscovery", "boolean", "Use Who-Is discovery", false, "false",
+                                List.of("true", "false"), "protocol",
+                                "Whether the adapter should issue Who-Is / I-Am discovery before normal polling."),
+                        field("networkNumber", "number", "Network number", false, "", null, "protocol",
+                                "Optional routed BACnet network number."),
+                        field("macAddress", "string", "MAC address", false, "", null, "protocol",
+                                "Optional routed-device MAC address hint."),
+                        field("covEnabled", "boolean", "Enable COV subscription", false, "false",
+                                List.of("true", "false"), "subscription",
+                                "Whether COV subscription paths are enabled for this connection."),
+                        field("defaultCovLifetimeSeconds", "number", "Default COV lifetime (s)", false, "300", null, "subscription",
+                                "Default subscription lifetime used for COV renewals."),
+                        field("defaultCovIncrement", "number", "Default COV increment", false, "", null, "subscription",
+                                "Default COV increment threshold for analog objects."),
+                        field("resubscribeOnReconnect", "boolean", "Resubscribe on reconnect", false, "true",
+                                List.of("true", "false"), "subscription",
+                                "Whether active subscriptions should be restored after reconnect."),
+                        field("apduTimeout", "number", "APDU timeout (ms)", false, "5000", null, "advanced"),
+                        field("segmentTimeout", "number", "Segment timeout (ms)", false, "2000", null, "advanced"),
+                        field("retries", "number", "Retry count", false, "1", null, "advanced"),
+                        field("maxPropertiesPerRequest", "number", "Max properties per request", false, "32", null, "advanced"),
+                        field("readPropertyMultipleEnabled", "boolean", "Enable ReadPropertyMultiple", false, "true",
+                                List.of("true", "false"), "advanced"),
+                        field("writePropertyMultipleEnabled", "boolean", "Enable WritePropertyMultiple", false, "false",
+                                List.of("true", "false"), "advanced"),
+                        field("bbmdHost", "string", "BBMD host", false, "", null, "advanced"),
+                        field("bbmdPort", "number", "BBMD port", false, "", null, "advanced"),
+                        field("foreignDeviceTtlSeconds", "number", "Foreign device TTL (s)", false, "", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"))));
         registerPrimary(descriptor("MITSUBISHI_MC", "Mitsubishi MC",
                 "Self-owned Mitsubishi MC 3E Binary over TCP collector for polling read/write.",
                 List.of("MC", "MELSEC_MC"), McCollector.class, "MITSUBISHI_MC", 5000, ProtocolAddressingMode.MIXED,
@@ -574,7 +622,7 @@ public class ProtocolDescriptorRegistry {
 
     private ProtocolTypeMode resolveTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };
@@ -597,7 +645,7 @@ public class ProtocolDescriptorRegistry {
 
     private boolean resolveDriverTypeEnabled(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
             default -> false;
         };
     }
@@ -606,6 +654,7 @@ public class ProtocolDescriptorRegistry {
         return switch (protocol) {
             case "SIEMENS_S7" -> "S7 driver type";
             case "MITSUBISHI_MC" -> "MC driver type";
+            case "BACNET_IP" -> "BACnet driver type";
             case "ETHERNET_IP" -> "EIP driver type";
             case "ADS" -> "ADS driver type";
             case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA driver type";
@@ -626,6 +675,8 @@ public class ProtocolDescriptorRegistry {
                     "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME");
             case "MITSUBISHI_MC" -> List.of(
                     "BOOL", "INT16", "UINT16", "INT32", "UINT32", "FLOAT32", "FLOAT64", "STRING");
+            case "BACNET_IP" -> List.of(
+                    "AUTO", "BOOLEAN", "UNSIGNED", "SIGNED", "REAL", "DOUBLE", "ENUM", "STRING", "BIT_STRING");
             case "ETHERNET_IP" -> List.of(
                     "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD",
                     "DINT", "UDINT", "DWORD", "LINT", "ULINT", "LWORD", "REAL", "LREAL", "STRING");
@@ -648,6 +699,7 @@ public class ProtocolDescriptorRegistry {
             case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
             case "SIEMENS_S7" -> s7PointFields();
             case "MITSUBISHI_MC" -> mcPointFields();
+            case "BACNET_IP" -> bacnetPointFields();
             case "ETHERNET_IP" -> etherNetIpPointFields();
             case "ADS" -> adsPointFields();
             case "KNXNET_IP" -> knxPointFields();
@@ -702,6 +754,23 @@ public class ProtocolDescriptorRegistry {
                         Collections.emptyList(), "Required when driverDataType=STRING. The value is the string character length, and the collector allocates the corresponding MC word span.", "driverDataType=STRING"),
                 pointField("additionalConfig.arraySize", "number", "Array size", false, "",
                         Collections.emptyList(), "Optional one-dimensional array length when the address does not already include [n]. BOOL arrays use bit-unit batches, numeric arrays use word-unit batches.", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> bacnetPointFields() {
+        return List.of(
+                pointField("additionalConfig.driverDataType", "select", "BACnet driver type", false, "AUTO",
+                        resolveDriverDataTypes("BACNET_IP"),
+                        "BACnet native value-type hint used for decoding enums, bit strings, numeric values, and strings.", null),
+                pointField("additionalConfig.arrayIndex", "number", "Array index", false, "",
+                        Collections.emptyList(), "Optional BACnet property array index when the address does not already include [n].", null),
+                pointField("additionalConfig.writePriority", "number", "Write priority", false, "",
+                        Collections.emptyList(), "Optional BACnet write priority for commandable presentValue writes.", null),
+                pointField("additionalConfig.covMode", "select", "COV mode", false, "",
+                        List.of("OBJECT", "PROPERTY"),
+                        "Optional subscription mode used by SubscribeCOV or SubscribeCOVProperty flows.", null),
+                pointField("additionalConfig.covIncrement", "number", "COV increment", false, "",
+                        Collections.emptyList(), "Optional per-point COV increment override for analog objects.", null)
         );
     }
     private List<ProtocolFieldConfig> etherNetIpPointFields() {

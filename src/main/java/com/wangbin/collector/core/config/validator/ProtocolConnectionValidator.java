@@ -41,6 +41,7 @@ public class ProtocolConnectionValidator {
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
+            case "BACNET_IP" -> validateBacnetIp(deviceInfo, connection);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
@@ -137,6 +138,74 @@ public class ProtocolConnectionValidator {
         validatePositive(deviceInfo, connection.getReadTimeout(), "MITSUBISHI_MC readTimeout");
         validatePositive(deviceInfo, connection.getTimeout(), "MITSUBISHI_MC timeout");
         validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
+    }
+
+    private void validateBacnetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "BACNET_IP");
+
+        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        if (port != null && (port <= 0 || port > 65535)) {
+            fail(deviceInfo, "BACNET_IP port must be between 1 and 65535");
+        }
+
+        Integer remoteDeviceInstance = firstPositive(
+                connection.getIntConfig("remoteDeviceInstance", null),
+                connection.getIntConfig("deviceInstance", null));
+        if (remoteDeviceInstance == null) {
+            fail(deviceInfo, "BACNET_IP requires remoteDeviceInstance");
+        }
+
+        validatePositive(deviceInfo, connection.getIntConfig("localDeviceInstance", null),
+                "BACNET_IP localDeviceInstance");
+        validatePositive(deviceInfo, connection.getIntConfig("localBindPort", null),
+                "BACNET_IP localBindPort");
+        validateNonNegative(deviceInfo, connection.getIntConfig("networkNumber", null),
+                "BACNET_IP networkNumber");
+        validatePositive(deviceInfo, connection.getIntConfig("apduTimeout", null),
+                "BACNET_IP apduTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("segmentTimeout", null),
+                "BACNET_IP segmentTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("retries", null),
+                "BACNET_IP retries");
+        validatePositive(deviceInfo, connection.getIntConfig("maxPropertiesPerRequest", null),
+                "BACNET_IP maxPropertiesPerRequest");
+        validatePositive(deviceInfo, connection.getIntConfig("foreignDeviceTtlSeconds", null),
+                "BACNET_IP foreignDeviceTtlSeconds");
+        validatePositive(deviceInfo, connection.getIntConfig("defaultCovLifetimeSeconds", null),
+                "BACNET_IP defaultCovLifetimeSeconds");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "BACNET_IP readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "BACNET_IP timeout");
+
+        validateBooleanFlag(deviceInfo, connection.getProperty("useWhoIsDiscovery"),
+                "BACNET_IP useWhoIsDiscovery");
+        validateBooleanFlag(deviceInfo, connection.getProperty("covEnabled"),
+                "BACNET_IP covEnabled");
+        validateBooleanFlag(deviceInfo, connection.getProperty("readPropertyMultipleEnabled"),
+                "BACNET_IP readPropertyMultipleEnabled");
+        validateBooleanFlag(deviceInfo, connection.getProperty("writePropertyMultipleEnabled"),
+                "BACNET_IP writePropertyMultipleEnabled");
+        validateBooleanFlag(deviceInfo, connection.getProperty("resubscribeOnReconnect"),
+                "BACNET_IP resubscribeOnReconnect");
+
+        String bbmdHost = firstNonBlank(
+                connection.getStringConfig("bbmdHost", null),
+                connection.getStringConfig("bbmd-host", null));
+        if (hasText(bbmdHost)) {
+            Integer bbmdPort = connection.getIntConfig("bbmdPort", null);
+            if (bbmdPort == null || bbmdPort <= 0 || bbmdPort > 65535) {
+                fail(deviceInfo, "BACNET_IP bbmdHost requires valid bbmdPort");
+            }
+            Integer ttl = connection.getIntConfig("foreignDeviceTtlSeconds", null);
+            if (ttl == null || ttl <= 0) {
+                fail(deviceInfo, "BACNET_IP bbmdHost requires foreignDeviceTtlSeconds");
+            }
+        }
+
+        Boolean covEnabled = connection.getBoolConfig("covEnabled", false);
+        if (Boolean.TRUE.equals(covEnabled)
+                && connection.getIntConfig("localBindPort", null) == null) {
+            fail(deviceInfo, "BACNET_IP covEnabled=true requires localBindPort");
+        }
     }
 
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
@@ -354,6 +423,7 @@ public class ProtocolConnectionValidator {
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
             case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
+            case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";

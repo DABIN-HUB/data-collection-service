@@ -52,6 +52,7 @@ public class ConnectionFactory {
             case "WEBSOCKET" -> createWebSocketConnection(deviceInfo, cfg);
             case "COAP" -> createCoapConnection(deviceInfo, cfg);
             case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
+            case "BACNET_IP" -> createBacnetIpConnection(deviceInfo, cfg);
             case "MITSUBISHI_MC" -> createMitsubishiMcConnection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "ADS" -> createAdsConnection(deviceInfo, cfg);
@@ -141,6 +142,15 @@ public class ConnectionFactory {
         } catch (Exception e) {
             log.error("鍒涘缓S7杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("鍒涘缓S7杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createBacnetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new BacnetIpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create BACnet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create BACnet/IP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 

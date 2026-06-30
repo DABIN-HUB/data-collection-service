@@ -10,6 +10,7 @@ public enum ProtocolType {
     MODBUS_RTU("MODBUS_RTU", "Modbus RTU", null),
     MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII", null),
     SIEMENS_S7("SIEMENS_S7", "Siemens S7", 102),
+    BACNET_IP("BACNET_IP", "BACnet/IP", 47808),
     ETHERNET_IP("ETHERNET_IP", "EtherNet/IP", 44818),
     ADS("ADS", "Beckhoff ADS", 48898),
     KNXNET_IP("KNXNET_IP", "KNXnet/IP", 3671),
@@ -111,6 +112,7 @@ public enum ProtocolType {
     public int getDefaultTimeout() {
         return switch (this) {
             case MODBUS_TCP, MODBUS_RTU, MODBUS_ASCII -> 3000;
+            case BACNET_IP -> 5000;
             case SIEMENS_S7, ETHERNET_IP, ADS -> 5000;
             case KNXNET_IP -> 10000;
             case OPC_UA, OPC_UA_PLC4X -> 10000;

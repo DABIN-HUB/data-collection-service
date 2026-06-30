@@ -22,8 +22,7 @@ P0 只做“可工程化上线的基础 BACnet/IP 采集”：
 1. 单设备 `BACnet/IP` 连接与重连。
 2. 单点读：`ReadProperty`。
 3. 批量读：`ReadPropertyMultiple`，必要时回退到逐点读。
-4. 单点写：`WriteProperty`。
-5. 批量写：框架接口支持，但 P0 可以先按逐点串行写实现，保证行为正确。
+4. P0 不承诺写入，`WriteProperty` / `WritePropertyMultiple` 进入后续阶段。
 6. 支持常见对象：
    - `analogInput`
    - `analogOutput`
@@ -57,7 +56,7 @@ P1 再补：
 
 1. `SubscribeCOV` / `SubscribeCOVProperty` 订阅。
 2. `Who-Is / I-Am` 设备发现和诊断命令。
-3. `WritePropertyMultiple`。
+3. `WriteProperty` / `WritePropertyMultiple`。
 4. `BBMD / Foreign Device Registration`。
 5. 更完整的枚举、位串、日期时间、数组值转换。
 
@@ -528,7 +527,8 @@ P1 才建议正式承诺 `COV` 订阅。
 
 1. 假设备或模拟 server 的单点读集成测试。
 2. `ReadPropertyMultiple` 批量读集成测试。
-3. 单点 `WriteProperty` 集成测试。
+3. `ReadPropertyMultiple Reject -> ReadProperty fallback` 集成测试。
+4. 后续再补 `WriteProperty` 集成测试。
 4. 批量写逐点 fallback 集成测试。
 5. 连接断开后的 `reconnect()` 最小复现场景测试。
 6. `COV` 推送进入 `ingestPushedValue(...)` 的集成测试。
@@ -565,7 +565,7 @@ P1 才建议正式承诺 `COV` 订阅。
 2. 完成 `BacnetIpConnectionAdapter` 基础连接能力。
 3. 完成 `BacnetAddress` / `BacnetAddressParser` / `BacnetValueCodec`。
 4. 完成 `BacnetIpCollector` 的单点读写。
-5. 完成 `ReadPropertyMultiple` 批量读和读计划。
+5. 完成 `ReadPropertyMultiple` 批量读、失败回退和基础读计划。
 6. 接前端字段 schema。
 7. 补单元测试和模拟集成测试。
 8. 最后再补 `COV`、`Who-Is`、`BBMD` 等增强项。

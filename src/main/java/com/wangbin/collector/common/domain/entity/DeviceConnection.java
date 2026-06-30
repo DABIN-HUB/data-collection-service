@@ -234,7 +234,7 @@ public class DeviceConnection {
         return switch (normalizeConnectionType(connectionType)) {
             case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
             case "MODBUS_TCP" -> hasHostPort();
-            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "ETHERNET_IP", "ADS" ->
+            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS" ->
                     hasHost();
             case "KNXNET_IP" -> hasText(getStringConfig("plc4xConnectionString", null)) || hasHost();
             case "OPC_UA", "OPC_UA_PLC4X" -> hasText(url)
@@ -283,6 +283,7 @@ public class DeviceConnection {
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
             case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
+            case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";

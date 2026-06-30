@@ -353,6 +353,38 @@ case "MITSUBISHI_MC":
     fields.add(createFieldConfig("additionalConfig.arraySize", "number", "数组长度", false, "", null));
     break;
 
+case "BACNET_IP":
+    fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+    fields.add(createFieldConfig("port", "number", "UDP端口", false, "47808", null));
+    fields.add(createFieldConfig("localBindHost", "string", "本地绑定IP", false, "", null));
+    fields.add(createFieldConfig("localBindPort", "number", "本地绑定端口", false, "", null));
+    fields.add(createFieldConfig("remoteDeviceInstance", "number", "目标设备实例号", true, "", null));
+    fields.add(createFieldConfig("localDeviceInstance", "number", "本地客户端实例号", false, "", null));
+    fields.add(createFieldConfig("useWhoIsDiscovery", "boolean", "启用 Who-Is/I-Am 发现", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("networkNumber", "number", "BACnet 网络号", false, "", null));
+    fields.add(createFieldConfig("macAddress", "string", "远端 MAC 地址", false, "", null));
+    fields.add(createFieldConfig("covEnabled", "boolean", "启用 COV 订阅", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("defaultCovLifetimeSeconds", "number", "默认 COV 生命周期(s)", false, "300", null));
+    fields.add(createFieldConfig("defaultCovIncrement", "number", "默认 COV 增量阈值", false, "", null));
+    fields.add(createFieldConfig("resubscribeOnReconnect", "boolean", "重连后自动补订阅", false, "true", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("apduTimeout", "number", "APDU 超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("segmentTimeout", "number", "分段超时(ms)", false, "3000", null));
+    fields.add(createFieldConfig("retries", "number", "重试次数", false, "1", null));
+    fields.add(createFieldConfig("maxPropertiesPerRequest", "number", "单次最大属性数", false, "32", null));
+    fields.add(createFieldConfig("readPropertyMultipleEnabled", "boolean", "启用 RPM 聚合读", false, "true", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("writePropertyMultipleEnabled", "boolean", "启用 WPM 聚合写", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("bbmdHost", "string", "BBMD 地址", false, "", null));
+    fields.add(createFieldConfig("bbmdPort", "number", "BBMD 端口", false, "47808", null));
+    fields.add(createFieldConfig("foreignDeviceTtlSeconds", "number", "Foreign Device TTL(s)", false, "", null));
+    fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
+    fields.add(createFieldConfig("additionalConfig.driverDataType", "string", "驱动原生类型", false, "AUTO", new String[]{"AUTO", "BOOLEAN", "UNSIGNED", "SIGNED", "REAL", "DOUBLE", "ENUM", "STRING", "BIT_STRING"}));
+    fields.add(createFieldConfig("additionalConfig.arrayIndex", "number", "属性数组下标", false, "", null));
+    fields.add(createFieldConfig("additionalConfig.writePriority", "number", "写优先级", false, "", null));
+    fields.add(createFieldConfig("additionalConfig.covMode", "string", "COV 模式", false, "OBJECT", new String[]{"OBJECT", "PROPERTY"}));
+    fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位级 COV 增量阈值", false, "", null));
+    break;
+
 case "CUSTOM_TCP":
     break;
 ```

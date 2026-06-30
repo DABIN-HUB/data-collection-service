@@ -20,7 +20,8 @@ class ProtocolControllerTest {
         ApiResult<List<ProtocolSchema>> result = controller.listProtocols();
 
         assertEquals(200, result.getCode());
-        assertEquals(16, result.getData().size());
+        assertEquals(19, result.getData().size());
+        assertTrue(result.getData().stream().anyMatch(schema -> "BACNET_IP".equals(schema.getProtocol())));
         assertTrue(result.getData().stream().anyMatch(schema -> "SIEMENS_S7".equals(schema.getProtocol())));
         assertTrue(result.getData().stream().anyMatch(schema -> "ETHERNET_IP".equals(schema.getProtocol())));
         assertTrue(result.getData().stream().anyMatch(schema -> "ADS".equals(schema.getProtocol())));
@@ -34,6 +35,15 @@ class ProtocolControllerTest {
         assertEquals(200, result.getCode());
         assertTrue(result.getData().size() >= 10);
         assertTrue(result.getData().stream().anyMatch(field -> "clientId".equals(field.getName())));
+    }
+
+    @Test
+    void shouldReturnFieldsForBacnetAlias() {
+        ApiResult<List<ProtocolFieldConfig>> result = controller.getConnectionFields("BACNET/IP");
+
+        assertEquals(200, result.getCode());
+        assertTrue(result.getData().stream().anyMatch(field -> "remoteDeviceInstance".equals(field.getName())));
+        assertTrue(result.getData().stream().anyMatch(field -> "covEnabled".equals(field.getName())));
     }
 
     @Test

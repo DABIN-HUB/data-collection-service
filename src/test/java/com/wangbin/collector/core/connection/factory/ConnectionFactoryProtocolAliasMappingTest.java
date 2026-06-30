@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.KnxNetIpConnectionAdapter;
@@ -92,6 +93,16 @@ class ConnectionFactoryProtocolAliasMappingTest {
 
         assertInstanceOf(S7ConnectionAdapter.class, factory.createConnection(device("dev-s7", "S7"), config));
         assertEquals(102, config.getPort());
+    }
+
+    @Test
+    void shouldMapBacnetAliasToAdapterWithDefaultPort() {
+        DeviceConnection config = new DeviceConnection();
+        config.setExtJson(ext("remoteDeviceInstance", 1001));
+
+        assertInstanceOf(BacnetIpConnectionAdapter.class,
+                factory.createConnection(device("dev-bacnet", "BACNET/IP"), config));
+        assertEquals(47808, config.getPort());
     }
 
     @Test
