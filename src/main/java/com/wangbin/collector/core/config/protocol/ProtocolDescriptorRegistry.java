@@ -3,6 +3,8 @@ package com.wangbin.collector.core.config.protocol;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.ads.AdsCollector;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
+import com.wangbin.collector.core.collector.protocol.bacnet.BacnetMstpCollector;
+import com.wangbin.collector.core.collector.protocol.bacnet.BacnetScCollector;
 import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
 import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
 import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollector;
@@ -142,7 +144,7 @@ public class ProtocolDescriptorRegistry {
                                 "Fallback protocol timeout used when readTimeout is empty."))));
         registerPrimary(descriptor("BACNET_IP", "BACnet/IP", "BACnet/IP building automation protocol collector.",
                 List.of("BACNET", "BACNETIP", "BACNET/IP"), BacnetIpCollector.class, "BACNET_IP", 47808, ProtocolAddressingMode.MIXED,
-                false, true, true,
+                true, true, true,
                 List.of("analogInput:1.presentValue", "binaryOutput:3.presentValue", "device:1001.objectName"),
                 fields(
                         field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
@@ -187,6 +189,54 @@ public class ProtocolDescriptorRegistry {
                         field("foreignDeviceTtlSeconds", "number", "Foreign device TTL (s)", false, "", null, "advanced"),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"))));
+        registerPrimary(descriptor("BACNET_MSTP", "BACnet MS/TP",
+                "BACnet MS/TP collector over RS485 with token passing, CRC framing and serial transport.",
+                List.of("BACNETMSTP", "BACNET-MS/TP", "BACNET_MSTP"), BacnetMstpCollector.class, "BACNET_MSTP", null, ProtocolAddressingMode.MIXED,
+                true, true, true,
+                List.of("analogInput:1.presentValue", "device:1001.objectName", "128:42.512"),
+                fields(
+                        field("serialPort", "string", "Serial port", true, "COM1", null, "connection",
+                                "RS485 serial port used by BACnet MS/TP transport."),
+                        field("baudRate", "number", "Baud rate", false, "38400", null, "connection",
+                                "MS/TP serial baud rate. Common values are 9600, 19200, 38400 or 76800."),
+                        field("dataBits", "number", "Data bits", false, "8", null, "connection"),
+                        field("stopBits", "number", "Stop bits", false, "1", null, "connection"),
+                        field("parity", "select", "Parity", false, "none", List.of("none", "odd", "even"), "connection"),
+                        field("localMacAddress", "number", "Local MAC address", true, "1", null, "protocol",
+                                "Local BACnet MS/TP master MAC address on the token ring."),
+                        field("remoteMacAddress", "number", "Remote MAC address", true, "2", null, "protocol",
+                                "Target BACnet MS/TP remote MAC address used for confirmed requests."),
+                        field("remoteDeviceInstance", "number", "Remote device instance", true, "", null, "protocol",
+                                "Target BACnet device instance number."),
+                        field("remoteIsMaster", "boolean", "Remote is master", false, "true", List.of("true", "false"), "protocol"),
+                        field("maxMaster", "number", "Max master", false, "127", null, "advanced"),
+                        field("maxInfoFrames", "number", "Max info frames", false, "1", null, "advanced"),
+                        field("nextStationMac", "number", "Next station MAC", false, "", null, "advanced"),
+                        field("tokenClaimTimeoutMs", "number", "Token claim timeout (ms)", false, "1000", null, "advanced"),
+                        field("pollForMasterTimeoutMs", "number", "Poll-for-master timeout (ms)", false, "250", null, "advanced"),
+                        field("apduTimeout", "number", "APDU timeout (ms)", false, "5000", null, "advanced"),
+                        field("segmentTimeout", "number", "Segment timeout (ms)", false, "2000", null, "advanced"),
+                        field("retries", "number", "Retry count", false, "1", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"))));
+        registerPrimary(descriptor("BACNET_SC", "BACnet/SC",
+                "Experimental BACnet/SC collector over secure WebSocket transport.",
+                List.of("BACNETSC", "BACNET/SC", "BACNET-SC"), BacnetScCollector.class, "BACNET_SC", 443, ProtocolAddressingMode.MIXED,
+                true, true, true,
+                List.of("analogInput:1.presentValue", "device:1001.objectName", "128:42.512"),
+                fields(
+                        field("url", "string", "Secure WebSocket URL", false, "wss://127.0.0.1:443/bacnet/sc", null, "connection"),
+                        field("host", "string", "Host", false, "127.0.0.1", null, "connection"),
+                        field("port", "number", "Port", false, "443", null, "connection"),
+                        field("path", "string", "Path", false, "/bacnet/sc", null, "connection"),
+                        field("remoteDeviceInstance", "number", "Remote device instance", true, "", null, "protocol"),
+                        field("subprotocol", "string", "WebSocket subprotocol", false, "bacnet-sc", null, "protocol"),
+                        field("apduTimeout", "number", "APDU timeout (ms)", false, "5000", null, "advanced"),
+                        field("segmentTimeout", "number", "Segment timeout (ms)", false, "2000", null, "advanced"),
+                        field("retries", "number", "Retry count", false, "1", null, "advanced"),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced"),
+                        field("connectTimeout", "number", "Connect timeout (ms)", false, "5000", null, "advanced"))));
         registerPrimary(descriptor("MITSUBISHI_MC", "Mitsubishi MC",
                 "Self-owned Mitsubishi MC 3E Binary over TCP collector for polling read/write.",
                 List.of("MC", "MELSEC_MC"), McCollector.class, "MITSUBISHI_MC", 5000, ProtocolAddressingMode.MIXED,
@@ -622,7 +672,7 @@ public class ProtocolDescriptorRegistry {
 
     private ProtocolTypeMode resolveTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };
@@ -645,7 +695,7 @@ public class ProtocolDescriptorRegistry {
 
     private boolean resolveDriverTypeEnabled(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
             default -> false;
         };
     }
@@ -655,6 +705,8 @@ public class ProtocolDescriptorRegistry {
             case "SIEMENS_S7" -> "S7 driver type";
             case "MITSUBISHI_MC" -> "MC driver type";
             case "BACNET_IP" -> "BACnet driver type";
+            case "BACNET_MSTP" -> "BACnet MS/TP driver type";
+            case "BACNET_SC" -> "BACnet/SC driver type";
             case "ETHERNET_IP" -> "EIP driver type";
             case "ADS" -> "ADS driver type";
             case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA driver type";
@@ -675,7 +727,7 @@ public class ProtocolDescriptorRegistry {
                     "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME");
             case "MITSUBISHI_MC" -> List.of(
                     "BOOL", "INT16", "UINT16", "INT32", "UINT32", "FLOAT32", "FLOAT64", "STRING");
-            case "BACNET_IP" -> List.of(
+            case "BACNET_IP", "BACNET_MSTP", "BACNET_SC" -> List.of(
                     "AUTO", "BOOLEAN", "UNSIGNED", "SIGNED", "REAL", "DOUBLE", "ENUM", "STRING", "BIT_STRING");
             case "ETHERNET_IP" -> List.of(
                     "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD",
@@ -699,7 +751,7 @@ public class ProtocolDescriptorRegistry {
             case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
             case "SIEMENS_S7" -> s7PointFields();
             case "MITSUBISHI_MC" -> mcPointFields();
-            case "BACNET_IP" -> bacnetPointFields();
+            case "BACNET_IP", "BACNET_MSTP", "BACNET_SC" -> bacnetPointFields();
             case "ETHERNET_IP" -> etherNetIpPointFields();
             case "ADS" -> adsPointFields();
             case "KNXNET_IP" -> knxPointFields();

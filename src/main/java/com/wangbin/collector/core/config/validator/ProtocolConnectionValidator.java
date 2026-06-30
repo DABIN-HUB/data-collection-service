@@ -42,6 +42,8 @@ public class ProtocolConnectionValidator {
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
             case "BACNET_IP" -> validateBacnetIp(deviceInfo, connection);
+            case "BACNET_MSTP" -> validateBacnetMstp(deviceInfo, connection);
+            case "BACNET_SC" -> validateBacnetSc(deviceInfo, connection);
             case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
@@ -208,6 +210,91 @@ public class ProtocolConnectionValidator {
         }
     }
 
+
+    private void validateBacnetMstp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        String serialPort = firstNonBlank(
+                connection.getStringConfig("serialPort", null),
+                connection.getHost());
+        if (isBlank(serialPort)) {
+            fail(deviceInfo, "BACNET_MSTP requires serialPort");
+        }
+
+        Integer localMac = firstNonNull(
+                connection.getIntConfig("localMacAddress", null),
+                connection.getIntConfig("macAddress", null));
+        if (localMac == null || localMac < 0 || localMac > 254) {
+            fail(deviceInfo, "BACNET_MSTP localMacAddress/macAddress must be between 0 and 254");
+        }
+
+        Integer remoteMac = firstNonNull(
+                connection.getIntConfig("remoteMacAddress", null),
+                connection.getIntConfig("targetMacAddress", null));
+        if (remoteMac == null || remoteMac < 0 || remoteMac > 254) {
+            fail(deviceInfo, "BACNET_MSTP requires remoteMacAddress between 0 and 254");
+        }
+
+        Integer remoteDeviceInstance = connection.getIntConfig("remoteDeviceInstance", null);
+        if (remoteDeviceInstance == null || remoteDeviceInstance < 0) {
+            fail(deviceInfo, "BACNET_MSTP requires remoteDeviceInstance");
+        }
+
+        validatePositive(deviceInfo, connection.getIntConfig("baudRate", null), "BACNET_MSTP baudRate");
+        validatePositive(deviceInfo, connection.getIntConfig("apduTimeout", null), "BACNET_MSTP apduTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("segmentTimeout", null), "BACNET_MSTP segmentTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("retries", null), "BACNET_MSTP retries");
+        validatePositive(deviceInfo, connection.getIntConfig("maxInfoFrames", null), "BACNET_MSTP maxInfoFrames");
+        validatePositive(deviceInfo, connection.getIntConfig("tokenClaimTimeoutMs", null), "BACNET_MSTP tokenClaimTimeoutMs");
+        validatePositive(deviceInfo, connection.getIntConfig("replyTimeoutMs", null), "BACNET_MSTP replyTimeoutMs");
+        validatePositive(deviceInfo, connection.getIntConfig("pollForMasterTimeoutMs", null), "BACNET_MSTP pollForMasterTimeoutMs");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "BACNET_MSTP readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "BACNET_MSTP timeout");
+
+        Integer dataBits = connection.getIntConfig("dataBits", null);
+        if (dataBits != null && (dataBits < 5 || dataBits > 8)) {
+            fail(deviceInfo, "BACNET_MSTP dataBits must be between 5 and 8");
+        }
+        Integer stopBits = connection.getIntConfig("stopBits", null);
+        if (stopBits != null && stopBits != 1 && stopBits != 2) {
+            fail(deviceInfo, "BACNET_MSTP stopBits must be 1 or 2");
+        }
+        Integer maxMaster = connection.getIntConfig("maxMaster", null);
+        if (maxMaster != null && (maxMaster < 0 || maxMaster > 127)) {
+            fail(deviceInfo, "BACNET_MSTP maxMaster must be between 0 and 127");
+        }
+        Integer nextStationMac = connection.getIntConfig("nextStationMac", null);
+        if (nextStationMac != null && (nextStationMac < 0 || nextStationMac > 127)) {
+            fail(deviceInfo, "BACNET_MSTP nextStationMac must be between 0 and 127");
+        }
+        String parity = connection.getStringConfig("parity", null);
+        if (hasText(parity)) {
+            String normalized = parity.trim().toLowerCase(Locale.ROOT);
+            if (!("none".equals(normalized) || "odd".equals(normalized) || "even".equals(normalized))) {
+                fail(deviceInfo, "BACNET_MSTP parity must be none, odd, or even");
+            }
+        }
+        validateBooleanFlag(deviceInfo, connection.getProperty("remoteIsMaster"), "BACNET_MSTP remoteIsMaster");
+    }
+
+    private void validateBacnetSc(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireUrlOrHostPort(deviceInfo, connection, "BACNET_SC");
+
+        Integer remoteDeviceInstance = connection.getIntConfig("remoteDeviceInstance", null);
+        if (remoteDeviceInstance == null || remoteDeviceInstance < 0) {
+            fail(deviceInfo, "BACNET_SC requires remoteDeviceInstance");
+        }
+
+        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        if (port != null && (port <= 0 || port > 65535)) {
+            fail(deviceInfo, "BACNET_SC port must be between 1 and 65535");
+        }
+
+        validatePositive(deviceInfo, connection.getIntConfig("apduTimeout", null), "BACNET_SC apduTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("segmentTimeout", null), "BACNET_SC segmentTimeout");
+        validatePositive(deviceInfo, connection.getIntConfig("retries", null), "BACNET_SC retries");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "BACNET_SC readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "BACNET_SC timeout");
+        validatePositive(deviceInfo, connection.getConnectTimeout(), "BACNET_SC connectTimeout");
+    }
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
         String connectionString = connection.getStringConfig("plc4xConnectionString", null);
         if (!hasOpcUaEndpoint(deviceInfo, connection)
@@ -424,6 +511,8 @@ public class ProtocolConnectionValidator {
             case "S7" -> "SIEMENS_S7";
             case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
             case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
+            case "BACNETMSTP", "BACNET_MSTP", "BACNET_MS_TP", "BACNET-MSTP", "BACNET MSTP" -> "BACNET_MSTP";
+            case "BACNETSC", "BACNET_SC", "BACNET/SC", "BACNET-SC" -> "BACNET_SC";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";

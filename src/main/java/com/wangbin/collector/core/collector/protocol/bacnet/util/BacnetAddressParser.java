@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 public final class BacnetAddressParser {
 
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
-            "^([A-Za-z][A-Za-z0-9]*)\\s*:\\s*(\\d+)\\s*\\.\\s*([A-Za-z][A-Za-z0-9_]*|\\d+)(?:\\[(\\d+)])?$"
+            "^([A-Za-z][A-Za-z0-9_#-]*|\\d+)\\s*:\\s*(\\d+)\\s*\\.\\s*([A-Za-z][A-Za-z0-9_#-]*|\\d+)(?:\\[(\\d+)])?$"
     );
 
     private BacnetAddressParser() {

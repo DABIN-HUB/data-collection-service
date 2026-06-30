@@ -26,6 +26,20 @@ class BacnetAddressParserTest {
     }
 
     @Test
+    void shouldParsePrivateObjectAndPropertyIdentifiers() {
+        DataPoint point = point("128:42.512");
+
+        BacnetAddress address = BacnetAddressParser.parse(point);
+
+        assertEquals("objectType#128", address.getObjectType());
+        assertEquals(128, address.getObjectTypeId());
+        assertEquals(42, address.getInstanceNumber());
+        assertEquals("property#512", address.getPropertyIdentifier());
+        assertEquals(512, address.getPropertyIdentifierId());
+        assertEquals("objectType#128:42.property#512", address.getCanonicalAddress());
+    }
+
+    @Test
     void shouldParseArrayIndexFromAddress() {
         DataPoint point = point("device:1001.objectList[12]");
 

@@ -232,7 +232,7 @@ public class DeviceConnection {
             return false;
         }
         return switch (normalizeConnectionType(connectionType)) {
-            case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP" -> hasUrlOrHostPort();
+            case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP", "BACNET_SC" -> hasUrlOrHostPort();
             case "MODBUS_TCP" -> hasHostPort();
             case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS" ->
                     hasHost();
@@ -242,7 +242,7 @@ public class DeviceConnection {
                     || hasText(getStringConfig("endpoint", null))
                     || hasHost();
             case "OPC_DA" -> isOpcDaConnectionValid();
-            case "MODBUS_RTU", "CUSTOM_TCP", "CUSTOM_UDP" -> true;
+            case "MODBUS_RTU", "BACNET_MSTP", "CUSTOM_TCP", "CUSTOM_UDP" -> true;
             default -> true;
         };
     }
@@ -284,6 +284,8 @@ public class DeviceConnection {
             case "S7" -> "SIEMENS_S7";
             case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
             case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
+            case "BACNETMSTP", "BACNET_MSTP", "BACNET_MS_TP", "BACNET-MSTP", "BACNET MSTP" -> "BACNET_MSTP";
+            case "BACNETSC", "BACNET_SC", "BACNET/SC", "BACNET-SC" -> "BACNET_SC";
             case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
             case "AMS" -> "ADS";
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";

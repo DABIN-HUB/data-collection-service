@@ -8,10 +8,18 @@ import java.io.ByteArrayOutputStream;
 public final class BacnetReadPropertyCodec {
 
     public static final int BVLC_TYPE_IP = 0x81;
+    public static final int BVLC_RESULT = 0x00;
+    public static final int BVLC_FORWARDED_NPDU = 0x04;
+    public static final int BVLC_REGISTER_FOREIGN_DEVICE = 0x05;
+    public static final int BVLC_DISTRIBUTE_BROADCAST_TO_NETWORK = 0x09;
     public static final int BVLC_ORIGINAL_UNICAST_NPDU = 0x0A;
+    public static final int BVLC_ORIGINAL_BROADCAST_NPDU = 0x0B;
     public static final int BACNET_PROTOCOL_VERSION = 0x01;
     public static final int APDU_TYPE_CONFIRMED_REQUEST = 0x00;
+    public static final int APDU_TYPE_UNCONFIRMED_REQUEST = 0x01;
+    public static final int APDU_TYPE_SIMPLE_ACK = 0x02;
     public static final int APDU_TYPE_COMPLEX_ACK = 0x03;
+    public static final int APDU_TYPE_SEGMENT_ACK = 0x04;
     public static final int APDU_TYPE_ERROR = 0x05;
     public static final int APDU_TYPE_REJECT = 0x06;
     public static final int APDU_TYPE_ABORT = 0x07;

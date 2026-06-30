@@ -6,7 +6,11 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetObjectType;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
 import com.wangbin.collector.core.collector.protocol.bacnet.support.FakeBacnetIpServer;
+import com.wangbin.collector.core.collector.protocol.bacnet.support.FakeBbmdServer;
+import com.wangbin.collector.core.collector.protocol.bacnet.codec.SegmentedBacnetTestServer;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
@@ -14,6 +18,7 @@ import com.wangbin.collector.core.processor.DataQualityProcessor;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.net.InetSocketAddress;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,7 +38,7 @@ class BacnetIpCollectorIntegrationTest {
         try (FakeBacnetIpServer server = new FakeBacnetIpServer()) {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 12.5f);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
-            BacnetIpCollector collector = prepareCollector(server, List.of(point), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 1000);
 
             Object value = collector.readPoint(point);
 
@@ -46,12 +52,26 @@ class BacnetIpCollectorIntegrationTest {
         try (FakeBacnetIpServer server = new FakeBacnetIpServer()) {
             server.putString(BacnetObjectType.DEVICE, 1001, BacnetPropertyIdentifier.OBJECT_NAME, "AHU-01");
             DataPoint point = point("p1", "device:1001.objectName", "STRING");
-            BacnetIpCollector collector = prepareCollector(server, List.of(point), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 1000);
 
             Object value = collector.readPoint(point);
 
             assertEquals("AHU-01", value);
             assertEquals("AHU-01", collector.getLatestProcessResult("p1").getFinalValue());
+        }
+    }
+
+    @Test
+    void shouldReadPrivateObjectAndPropertyByDynamicAddress() throws Exception {
+        try (FakeBacnetIpServer server = new FakeBacnetIpServer()) {
+            server.putString(BacnetObjectType.fromId(128), 42, BacnetPropertyIdentifier.fromId(512), "PRIVATE-VALUE");
+            DataPoint point = point("p1", "128:42.512", "STRING");
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 1000);
+
+            Object value = collector.readPoint(point);
+
+            assertEquals("PRIVATE-VALUE", value);
+            assertEquals("PRIVATE-VALUE", collector.getLatestProcessResult("p1").getFinalValue());
         }
     }
 
@@ -62,7 +82,7 @@ class BacnetIpCollectorIntegrationTest {
             server.putBoolean(BacnetObjectType.BINARY_INPUT, 2, BacnetPropertyIdentifier.PRESENT_VALUE, true);
             DataPoint p1 = point("p1", "analogInput:1.presentValue", "FLOAT");
             DataPoint p2 = point("p2", "binaryInput:2.presentValue", "boolean");
-            BacnetIpCollector collector = prepareCollector(server, List.of(p1, p2), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(p1, p2), 1000);
             collector.rebuildReadPlans("dev-bacnet", List.of(p1, p2));
 
             Map<String, Object> values = collector.readPoints(List.of(p1, p2));
@@ -79,7 +99,7 @@ class BacnetIpCollectorIntegrationTest {
             server.putString(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.OBJECT_NAME, "AI-1");
             DataPoint p1 = point("p1", "analogInput:1.presentValue", "FLOAT");
             DataPoint p2 = point("p2", "analogInput:1.objectName", "STRING");
-            BacnetIpCollector collector = prepareCollector(server, List.of(p1, p2), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(p1, p2), 1000);
 
             Map<String, Object> values = collector.readPoints(List.of(p1, p2));
 
@@ -96,7 +116,7 @@ class BacnetIpCollectorIntegrationTest {
             server.forceReadPropertyMultipleRejectReason(9);
             DataPoint p1 = point("p1", "analogInput:1.presentValue", "FLOAT");
             DataPoint p2 = point("p2", "analogInput:1.objectName", "STRING");
-            BacnetIpCollector collector = prepareCollector(server, List.of(p1, p2), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(p1, p2), 1000);
 
             Map<String, Object> values = collector.readPoints(List.of(p1, p2));
 
@@ -106,12 +126,36 @@ class BacnetIpCollectorIntegrationTest {
     }
 
     @Test
+    void shouldReadSegmentedComplexAck() throws Exception {
+        try (SegmentedBacnetTestServer server = new SegmentedBacnetTestServer()) {
+            DeviceInfo deviceInfo = device();
+            DeviceConnection connection = connection("127.0.0.1", server.port(), 1000, false, Map.of("segmentTimeout", 500));
+            BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
+            adapter.connect();
+            try {
+                BacnetReadPropertyResponse response = adapter.readProperty(BacnetReadPropertyRequest.builder()
+                        .objectType(BacnetObjectType.DEVICE)
+                        .objectInstance(1001)
+                        .propertyIdentifier(BacnetPropertyIdentifier.OBJECT_NAME)
+                        .invokeId(1)
+                        .remoteDeviceInstance(1001)
+                        .build(), 1000);
+
+                assertEquals("SEGMENTED-AHU-01", response.getValue());
+                assertEquals(1L, adapter.getSegmentedResponseCount());
+            } finally {
+                adapter.disconnect();
+            }
+        }
+    }
+
+    @Test
     void shouldDisconnectAfterReadTimeout() throws Exception {
         try (FakeBacnetIpServer server = new FakeBacnetIpServer()) {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 8.5f);
             server.setResponseDelayMs(800);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
-            BacnetIpCollector collector = prepareCollector(server, List.of(point), 100);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 100);
 
             CollectorException exception = assertThrows(CollectorException.class, () -> collector.readPoint(point));
 
@@ -126,7 +170,7 @@ class BacnetIpCollectorIntegrationTest {
         try (FakeBacnetIpServer server = new FakeBacnetIpServer()) {
             server.forceRejectReason(9);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
-            BacnetIpCollector collector = prepareCollector(server, List.of(point), 1000);
+            BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 1000);
 
             CollectorException exception = assertThrows(CollectorException.class, () -> collector.readPoint(point));
 
@@ -142,7 +186,7 @@ class BacnetIpCollectorIntegrationTest {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 7.25f);
 
             DeviceInfo deviceInfo = device();
-            DeviceConnection connection = connection(server.port(), 1000, true);
+            DeviceConnection connection = connection("127.0.0.1", server.port(), 1000, true, Map.of());
             BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
 
             adapter.connect();
@@ -155,11 +199,69 @@ class BacnetIpCollectorIntegrationTest {
         }
     }
 
-    private BacnetIpCollector prepareCollector(FakeBacnetIpServer server,
+    @Test
+    void shouldRegisterForeignDeviceDiscoverThroughBbmdAndRenewLease() throws Exception {
+        try (FakeBacnetIpServer remoteDevice = new FakeBacnetIpServer();
+             FakeBbmdServer bbmdServer = new FakeBbmdServer(new InetSocketAddress("127.0.0.1", remoteDevice.port()),
+                     1001,
+                     480,
+                     4321)) {
+            remoteDevice.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 7.25f);
+
+            DeviceInfo deviceInfo = device();
+            DeviceConnection connection = connection("127.0.0.1",
+                    bbmdServer.port(),
+                    1000,
+                    true,
+                    Map.of(
+                            "bbmdHost", "127.0.0.1",
+                            "bbmdPort", bbmdServer.port(),
+                            "foreignDeviceTtlSeconds", 1,
+                            "segmentTimeout", 500
+                    ));
+            BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
+            adapter.connect();
+            try {
+                assertNotNull(adapter.getRemoteDevice());
+                assertEquals(remoteDevice.port(), adapter.getRemoteDevice().getSocketAddress().getPort());
+                assertEquals(true, adapter.isForeignDeviceRegistrationActive());
+                assertEquals(1L, adapter.getForeignDeviceRegistrationCount());
+                assertEquals(1L, bbmdServer.getForeignDeviceRegistrationCount());
+                assertEquals(1L, bbmdServer.getDistributeBroadcastCount());
+                assertEquals(1, bbmdServer.getLastForeignDeviceTtlSeconds());
+
+                BacnetReadPropertyResponse first = adapter.readProperty(BacnetReadPropertyRequest.builder()
+                        .objectType(BacnetObjectType.ANALOG_INPUT)
+                        .objectInstance(1)
+                        .propertyIdentifier(BacnetPropertyIdentifier.PRESENT_VALUE)
+                        .invokeId(1)
+                        .remoteDeviceInstance(1001)
+                        .build(), 1000);
+                assertEquals(7.25d, ((Number) first.getValue()).doubleValue(), 1.0E-6);
+
+                Thread.sleep(900);
+
+                BacnetReadPropertyResponse second = adapter.readProperty(BacnetReadPropertyRequest.builder()
+                        .objectType(BacnetObjectType.ANALOG_INPUT)
+                        .objectInstance(1)
+                        .propertyIdentifier(BacnetPropertyIdentifier.PRESENT_VALUE)
+                        .invokeId(2)
+                        .remoteDeviceInstance(1001)
+                        .build(), 1000);
+                assertEquals(7.25d, ((Number) second.getValue()).doubleValue(), 1.0E-6);
+                assertTrue(adapter.getForeignDeviceRenewCount() >= 1);
+                assertTrue(bbmdServer.getForeignDeviceRegistrationCount() >= 2);
+            } finally {
+                adapter.disconnect();
+            }
+        }
+    }
+
+    private BacnetIpCollector prepareCollector(int port,
                                                List<DataPoint> points,
                                                int readTimeoutMs) throws Exception {
         DeviceInfo deviceInfo = device();
-        DeviceConnection connection = connection(server.port(), readTimeoutMs, false);
+        DeviceConnection connection = connection("127.0.0.1", port, readTimeoutMs, false, Map.of());
         ConfigManager configManager = mock(ConfigManager.class);
         when(configManager.getDeviceContext("dev-bacnet")).thenReturn(DeviceContext.of(deviceInfo, connection, points));
         when(configManager.getDataPoints("dev-bacnet")).thenReturn(points);
@@ -190,13 +292,13 @@ class BacnetIpCollectorIntegrationTest {
         return deviceInfo;
     }
 
-    private DeviceConnection connection(int port, int readTimeoutMs) {
-        return connection(port, readTimeoutMs, false);
-    }
-
-    private DeviceConnection connection(int port, int readTimeoutMs, boolean useWhoIsDiscovery) {
+    private DeviceConnection connection(String host,
+                                        int port,
+                                        int readTimeoutMs,
+                                        boolean useWhoIsDiscovery,
+                                        Map<String, Object> extra) {
         DeviceConnection connection = new DeviceConnection();
-        connection.setHost("127.0.0.1");
+        connection.setHost(host);
         connection.setPort(port);
         connection.setConnectTimeout(1000);
         connection.setReadTimeout(readTimeoutMs);
@@ -207,6 +309,7 @@ class BacnetIpCollectorIntegrationTest {
         ext.put("localBindHost", "127.0.0.1");
         ext.put("localBindPort", 0);
         ext.put("useWhoIsDiscovery", useWhoIsDiscovery);
+        ext.putAll(extra);
         connection.setExtJson(ext);
         return connection;
     }

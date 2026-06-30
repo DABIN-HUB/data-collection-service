@@ -11,6 +11,8 @@ public enum ProtocolType {
     MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII", null),
     SIEMENS_S7("SIEMENS_S7", "Siemens S7", 102),
     BACNET_IP("BACNET_IP", "BACnet/IP", 47808),
+    BACNET_MSTP("BACNET_MSTP", "BACnet MS/TP", null),
+    BACNET_SC("BACNET_SC", "BACnet/SC", 443),
     ETHERNET_IP("ETHERNET_IP", "EtherNet/IP", 44818),
     ADS("ADS", "Beckhoff ADS", 48898),
     KNXNET_IP("KNXNET_IP", "KNXnet/IP", 3671),
@@ -95,24 +97,26 @@ public enum ProtocolType {
                 || this == HTTPS
                 || this == WEBSOCKET
                 || this == WEBSOCKET_SSL
-                || this == CUSTOM_TCP;
+                || this == CUSTOM_TCP
+                || this == BACNET_SC;
     }
 
     public boolean isSerialProtocol() {
-        return this == MODBUS_RTU || this == MODBUS_ASCII;
+        return this == MODBUS_RTU || this == MODBUS_ASCII || this == BACNET_MSTP;
     }
 
     public boolean needEncryption() {
         return this == HTTPS
                 || this == MQTT_SSL
                 || this == COAP_SSL
-                || this == WEBSOCKET_SSL;
+                || this == WEBSOCKET_SSL
+                || this == BACNET_SC;
     }
 
     public int getDefaultTimeout() {
         return switch (this) {
             case MODBUS_TCP, MODBUS_RTU, MODBUS_ASCII -> 3000;
-            case BACNET_IP -> 5000;
+            case BACNET_IP, BACNET_MSTP, BACNET_SC -> 5000;
             case SIEMENS_S7, ETHERNET_IP, ADS -> 5000;
             case KNXNET_IP -> 10000;
             case OPC_UA, OPC_UA_PLC4X -> 10000;

@@ -41,7 +41,9 @@ public final class BacnetReadPropertyResponseDecoder {
             throw new IllegalArgumentException("Unexpected BACnet BVLC type: 0x" + Integer.toHexString(bvlcType));
         }
         int function = Byte.toUnsignedInt(buffer.get());
-        if (function != BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU) {
+        if (function != BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU
+                && function != BacnetReadPropertyCodec.BVLC_ORIGINAL_BROADCAST_NPDU
+                && function != BacnetReadPropertyCodec.BVLC_FORWARDED_NPDU) {
             throw new IllegalArgumentException("Unsupported BACnet BVLC function: 0x" + Integer.toHexString(function));
         }
         int frameLength = Short.toUnsignedInt(buffer.getShort());
@@ -49,6 +51,10 @@ public final class BacnetReadPropertyResponseDecoder {
             throw new IllegalArgumentException("BACnet frame length mismatch: declared="
                     + frameLength + ", actual=" + actualFrameLength);
         }
+        if (function == BacnetReadPropertyCodec.BVLC_FORWARDED_NPDU) {
+            buffer.position(buffer.position() + 6);
+        }
+
         int npduVersion = Byte.toUnsignedInt(buffer.get());
         if (npduVersion != BacnetReadPropertyCodec.BACNET_PROTOCOL_VERSION) {
             throw new IllegalArgumentException("Unsupported BACnet NPDU version: " + npduVersion);

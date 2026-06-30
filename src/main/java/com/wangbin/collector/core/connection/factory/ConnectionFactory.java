@@ -53,6 +53,8 @@ public class ConnectionFactory {
             case "COAP" -> createCoapConnection(deviceInfo, cfg);
             case "SIEMENS_S7" -> createS7Connection(deviceInfo, cfg);
             case "BACNET_IP" -> createBacnetIpConnection(deviceInfo, cfg);
+            case "BACNET_MSTP" -> createBacnetMstpConnection(deviceInfo, cfg);
+            case "BACNET_SC" -> createBacnetScConnection(deviceInfo, cfg);
             case "MITSUBISHI_MC" -> createMitsubishiMcConnection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "ADS" -> createAdsConnection(deviceInfo, cfg);
@@ -147,10 +149,28 @@ public class ConnectionFactory {
 
     private ConnectionAdapter<?> createBacnetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
-            return new BacnetIpConnectionAdapter(deviceInfo, cfg);
+            return new BacnetIpConnectionAdapter(deviceInfo, cfg, protocolScheduler);
         } catch (Exception e) {
             log.error("Create BACnet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create BACnet/IP connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createBacnetMstpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new BacnetMstpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create BACnet MS/TP connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create BACnet MS/TP connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createBacnetScConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new BacnetScConnectionAdapter(deviceInfo, cfg, ioExecutor, protocolScheduler);
+        } catch (Exception e) {
+            log.error("Create BACnet/SC connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create BACnet/SC connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 

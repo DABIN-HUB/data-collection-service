@@ -1,6 +1,5 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.client;
 
-import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetBvlcCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetCovNotificationDecoder;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetReadPropertyCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetReadPropertyMultipleCodec;
@@ -16,15 +15,12 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleResponse;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
-import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteDevice;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.connection.adapter.BacnetScConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -38,13 +34,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 @Slf4j
-public class BacnetIpUdpClient implements AutoCloseable {
+public class BacnetScClient implements AutoCloseable {
 
-    private static final int MAX_FRAME_SIZE = 4096;
     private static final int RECEIVE_POLL_TIMEOUT_MS = 250;
 
-    private final DatagramSocket socket;
-    private final InetSocketAddress remoteAddress;
+    private final BacnetScConnectionAdapter connectionAdapter;
     private final BlockingQueue<byte[]> responseQueue = new LinkedBlockingQueue<>();
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicLong requestRetryCount = new AtomicLong(0);
@@ -56,17 +50,15 @@ public class BacnetIpUdpClient implements AutoCloseable {
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
 
-    public BacnetIpUdpClient(DatagramSocket socket, InetSocketAddress remoteAddress) throws Exception {
-        this.socket = socket;
-        this.remoteAddress = remoteAddress;
-        this.socket.setSoTimeout(RECEIVE_POLL_TIMEOUT_MS);
-        this.receiverThread = new Thread(this::receiveLoop, "bacnet-ip-udp-client-" + remoteAddress.getPort());
+    public BacnetScClient(BacnetScConnectionAdapter connectionAdapter) {
+        this.connectionAdapter = connectionAdapter;
+        this.receiverThread = new Thread(this::receiveLoop, "bacnet-sc-client-" + connectionAdapter.getDeviceId());
         this.receiverThread.setDaemon(true);
         this.receiverThread.start();
     }
 
-    public void setCovNotificationHandler(Consumer<BacnetCovNotification> covNotificationHandler) {
-        this.covNotificationHandler = covNotificationHandler;
+    public void setCovNotificationHandler(Consumer<BacnetCovNotification> handler) {
+        this.covNotificationHandler = handler;
     }
 
     public BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request,
@@ -74,7 +66,6 @@ public class BacnetIpUdpClient implements AutoCloseable {
                                                    long segmentTimeoutMs,
                                                    int retries) throws Exception {
         return exchange(BacnetReadPropertyCodec.encode(request),
-                remoteAddress,
                 timeoutMs,
                 segmentTimeoutMs,
                 retries,
@@ -86,17 +77,14 @@ public class BacnetIpUdpClient implements AutoCloseable {
                                                                    long segmentTimeoutMs,
                                                                    int retries) throws Exception {
         return exchange(BacnetReadPropertyMultipleCodec.encode(request),
-                remoteAddress,
                 timeoutMs,
                 segmentTimeoutMs,
                 retries,
                 frame -> BacnetReadPropertyMultipleResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
-    public void writeProperty(BacnetWritePropertyRequest request,
-                              long timeoutMs,
-                              int retries) throws Exception {
-        exchange(BacnetWritePropertyCodec.encode(request), remoteAddress, timeoutMs, timeoutMs, retries, frame -> {
+    public void writeProperty(BacnetWritePropertyRequest request, long timeoutMs, int retries) throws Exception {
+        exchange(BacnetWritePropertyCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
                     request.getInvokeId(),
                     BacnetWritePropertyCodec.SERVICE_CHOICE_WRITE_PROPERTY);
@@ -104,10 +92,8 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
-    public void subscribeCov(BacnetSubscribeCovRequest request,
-                             long timeoutMs,
-                             int retries) throws Exception {
-        exchange(BacnetSubscribeCovCodec.encode(request), remoteAddress, timeoutMs, timeoutMs, retries, frame -> {
+    public void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs, int retries) throws Exception {
+        exchange(BacnetSubscribeCovCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
                     request.getInvokeId(),
                     BacnetSubscribeCovCodec.SERVICE_CHOICE_SUBSCRIBE_COV);
@@ -115,10 +101,8 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
-    public void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request,
-                                     long timeoutMs,
-                                     int retries) throws Exception {
-        exchange(BacnetSubscribeCovPropertyCodec.encode(request), remoteAddress, timeoutMs, timeoutMs, retries, frame -> {
+    public void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs, int retries) throws Exception {
+        exchange(BacnetSubscribeCovPropertyCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
                     request.getInvokeId(),
                     BacnetSubscribeCovPropertyCodec.SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY);
@@ -126,47 +110,11 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
-    public void registerForeignDevice(InetSocketAddress bbmdAddress,
-                                      int ttlSeconds,
-                                      long timeoutMs,
-                                      int retries) throws Exception {
-        exchange(BacnetBvlcCodec.encodeRegisterForeignDevice(ttlSeconds),
-                bbmdAddress,
-                timeoutMs,
-                timeoutMs,
-                retries,
-                frame -> {
-                    BacnetBvlcCodec.verifyResult(frame, BacnetBvlcCodec.BVLC_RESULT_CODE_SUCCESSFUL_COMPLETION);
-                    return null;
-                });
-    }
-
-    public BacnetRemoteDevice probeRemoteDevice(int remoteDeviceInstance, int timeoutMs) {
-        return BacnetRemoteDevice.builder()
-                .deviceInstance(remoteDeviceInstance)
-                .socketAddress(remoteAddress)
-                .build();
-    }
-
-    public long getRequestRetryCount() {
-        return requestRetryCount.get();
-    }
-
-    public long getRequestTimeoutCount() {
-        return requestTimeoutCount.get();
-    }
-
-    public long getInvokeIdMismatchCount() {
-        return invokeIdMismatchCount.get();
-    }
-
-    public long getCovNotificationCount() {
-        return covNotificationCount.get();
-    }
-
-    public long getSegmentedResponseCount() {
-        return segmentedResponseCount.get();
-    }
+    public long getRequestRetryCount() { return requestRetryCount.get(); }
+    public long getRequestTimeoutCount() { return requestTimeoutCount.get(); }
+    public long getInvokeIdMismatchCount() { return invokeIdMismatchCount.get(); }
+    public long getCovNotificationCount() { return covNotificationCount.get(); }
+    public long getSegmentedResponseCount() { return segmentedResponseCount.get(); }
 
     @Override
     public void close() {
@@ -175,7 +123,6 @@ public class BacnetIpUdpClient implements AutoCloseable {
     }
 
     private <T> T exchange(byte[] requestFrame,
-                           InetSocketAddress targetAddress,
                            long timeoutMs,
                            long segmentTimeoutMs,
                            int retries,
@@ -187,9 +134,8 @@ public class BacnetIpUdpClient implements AutoCloseable {
 
         for (int attempt = 1; attempt <= attempts; attempt++) {
             responseQueue.clear();
-            send(requestFrame, targetAddress);
+            connectionAdapter.send(requestFrame);
             long deadline = System.currentTimeMillis() + resolvedTimeout;
-
             while (System.currentTimeMillis() <= deadline) {
                 long remaining = deadline - System.currentTimeMillis();
                 if (remaining <= 0) {
@@ -205,20 +151,17 @@ public class BacnetIpUdpClient implements AutoCloseable {
                     if (isInvokeIdMismatch(ex)) {
                         invokeIdMismatchCount.incrementAndGet();
                         lastFailure = ex;
-                        log.debug("Ignore stale BACnet response due to invokeId mismatch, remote={}:{}",
-                                targetAddress.getHostString(), targetAddress.getPort());
                         continue;
                     }
                     throw ex;
                 }
             }
-
-            lastFailure = new SocketTimeoutException("BACnet/IP receive timed out after " + resolvedTimeout + "ms");
+            lastFailure = new SocketTimeoutException("BACnet/SC receive timed out after " + resolvedTimeout + "ms");
             requestTimeoutCount.incrementAndGet();
             if (attempt < attempts) {
                 requestRetryCount.incrementAndGet();
-                log.debug("Retry BACnet/IP request after timeout, remote={}:{}, attempt={}/{}",
-                        targetAddress.getHostString(), targetAddress.getPort(), attempt + 1, attempts);
+                log.debug("Retry BACnet/SC request after timeout, deviceId={}, attempt={}/{}",
+                        connectionAdapter.getDeviceId(), attempt + 1, attempts);
             }
         }
         throw lastFailure;
@@ -238,80 +181,59 @@ public class BacnetIpUdpClient implements AutoCloseable {
 
     private byte[] collectSegmentedComplexAck(byte[] firstFrame, int segmentTimeoutMs) throws Exception {
         List<BacnetSegmentSupport.SegmentedComplexAckSegment> segments = new ArrayList<>();
-        BacnetSegmentSupport.SegmentedComplexAckSegment firstSegment =
-                BacnetSegmentSupport.decodeSegmentedComplexAck(firstFrame);
-        segments.add(firstSegment);
-        BacnetSegmentSupport.SegmentedComplexAckSegment current = firstSegment;
-        send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
+        BacnetSegmentSupport.SegmentedComplexAckSegment current = BacnetSegmentSupport.decodeSegmentedComplexAck(firstFrame);
+        segments.add(current);
+        connectionAdapter.send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
                 current.sequenceNumber(),
                 Math.max(1, current.proposedWindowSize())));
 
         while (current.moreFollows()) {
             byte[] nextFrame = responseQueue.poll(segmentTimeoutMs, TimeUnit.MILLISECONDS);
             if (nextFrame == null) {
-                throw new SocketTimeoutException("BACnet segmented response timed out after " + segmentTimeoutMs + "ms");
+                throw new SocketTimeoutException("BACnet/SC segmented response timed out after " + segmentTimeoutMs + "ms");
             }
             BacnetSegmentSupport.SegmentedComplexAckSegment nextSegment =
                     BacnetSegmentSupport.decodeSegmentedComplexAck(nextFrame);
             if (nextSegment.invokeId() != current.invokeId()) {
-                throw new IllegalStateException("BACnet segmented response invokeId mismatch: expected="
+                throw new IllegalStateException("BACnet/SC segmented invokeId mismatch: expected="
                         + current.invokeId() + ", actual=" + nextSegment.invokeId());
             }
             if (nextSegment.sequenceNumber() != ((current.sequenceNumber() + 1) & 0xFF)) {
-                throw new IllegalStateException("BACnet segmented response sequence mismatch: expected="
+                throw new IllegalStateException("BACnet/SC segmented sequence mismatch: expected="
                         + (((current.sequenceNumber() + 1) & 0xFF)) + ", actual=" + nextSegment.sequenceNumber());
             }
             segments.add(nextSegment);
             current = nextSegment;
-            send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
+            connectionAdapter.send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
                     current.sequenceNumber(),
                     Math.max(1, current.proposedWindowSize())));
         }
         return BacnetSegmentSupport.assembleComplexAckFrame(segments);
     }
 
-    private void send(byte[] frame) throws Exception {
-        send(frame, remoteAddress);
-    }
-
-    private void send(byte[] frame, InetSocketAddress targetAddress) throws Exception {
-        DatagramPacket packet = new DatagramPacket(frame, frame.length, targetAddress);
-        socket.send(packet);
-    }
-
     private void receiveLoop() {
         while (running.get()) {
-            DatagramPacket packet = new DatagramPacket(new byte[MAX_FRAME_SIZE], MAX_FRAME_SIZE);
             try {
-                socket.receive(packet);
-                byte[] data = new byte[packet.getLength()];
-                System.arraycopy(packet.getData(), packet.getOffset(), data, 0, packet.getLength());
-                dispatchIncoming(data);
-            } catch (SocketTimeoutException ignored) {
-                // Poll loop.
-            } catch (Exception ex) {
-                if (running.get() && !socket.isClosed()) {
-                    log.warn("BACnet/IP UDP receive loop stopped unexpectedly, remote={}:{}",
-                            remoteAddress.getHostString(), remoteAddress.getPort(), ex);
+                byte[] data = connectionAdapter.receive(RECEIVE_POLL_TIMEOUT_MS);
+                if (data == null || data.length == 0) {
+                    continue;
                 }
-                if (socket.isClosed()) {
-                    return;
+                dispatchIncoming(data);
+            } catch (Exception ex) {
+                if (running.get() && connectionAdapter.isConnected()) {
+                    log.warn("BACnet/SC receive loop stopped unexpectedly, deviceId={}",
+                            connectionAdapter.getDeviceId(), ex);
                 }
             }
         }
     }
 
     private void dispatchIncoming(byte[] frame) {
-        if (frame == null || frame.length == 0) {
-            return;
-        }
         if (BacnetCovNotificationDecoder.isUnconfirmedCovNotification(frame)) {
             handleCovNotification(frame);
             return;
         }
         if (isOtherUnconfirmedRequest(frame)) {
-            log.debug("Ignore unrelated BACnet unconfirmed frame, remote={}:{}",
-                    remoteAddress.getHostString(), remoteAddress.getPort());
             return;
         }
         responseQueue.offer(frame);
@@ -326,8 +248,7 @@ public class BacnetIpUdpClient implements AutoCloseable {
                 handler.accept(notification);
             }
         } catch (Exception ex) {
-            log.warn("Decode BACnet COV notification failed, remote={}:{}",
-                    remoteAddress.getHostString(), remoteAddress.getPort(), ex);
+            log.warn("Decode BACnet/SC COV notification failed, deviceId={}", connectionAdapter.getDeviceId(), ex);
         }
     }
 
@@ -340,54 +261,22 @@ public class BacnetIpUdpClient implements AutoCloseable {
             int bvlcType = Byte.toUnsignedInt(buffer.get());
             int function = Byte.toUnsignedInt(buffer.get());
             if (bvlcType != BacnetReadPropertyCodec.BVLC_TYPE_IP
-                    || (function != BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU
-                    && function != BacnetReadPropertyCodec.BVLC_ORIGINAL_BROADCAST_NPDU
-                    && function != BacnetReadPropertyCodec.BVLC_FORWARDED_NPDU)) {
+                    || function != BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU) {
                 return false;
             }
             int declaredLength = Short.toUnsignedInt(buffer.getShort());
             if (declaredLength != frame.length) {
                 return false;
             }
-            if (function == BacnetReadPropertyCodec.BVLC_FORWARDED_NPDU) {
-                buffer.position(buffer.position() + 6);
-            }
             if (Byte.toUnsignedInt(buffer.get()) != BacnetReadPropertyCodec.BACNET_PROTOCOL_VERSION) {
                 return false;
             }
-            int npduControl = Byte.toUnsignedInt(buffer.get());
-            skipNpduAddresses(buffer, npduControl);
+            buffer.get();
             int pduHeader = Byte.toUnsignedInt(buffer.get());
             int pduType = (pduHeader >> 4) & 0x0F;
             return pduType == BacnetReadPropertyCodec.APDU_TYPE_UNCONFIRMED_REQUEST;
         } catch (Exception ex) {
             return false;
-        }
-    }
-
-    private void skipNpduAddresses(ByteBuffer buffer, int control) {
-        boolean destinationSpecified = (control & 0x20) != 0;
-        boolean sourceSpecified = (control & 0x08) != 0;
-        boolean networkMessage = (control & 0x80) != 0;
-
-        if (destinationSpecified) {
-            buffer.getShort();
-            int len = Byte.toUnsignedInt(buffer.get());
-            buffer.position(buffer.position() + len);
-        }
-        if (sourceSpecified) {
-            buffer.getShort();
-            int len = Byte.toUnsignedInt(buffer.get());
-            buffer.position(buffer.position() + len);
-        }
-        if (destinationSpecified) {
-            buffer.get();
-        }
-        if (networkMessage) {
-            int messageType = Byte.toUnsignedInt(buffer.get());
-            if (messageType >= 80) {
-                buffer.getShort();
-            }
         }
     }
 

@@ -54,6 +54,23 @@ class BacnetReadPropertyCodecTest {
     }
 
     @Test
+    void shouldDecodePrivateObjectAndPropertyIdentifiers() {
+        byte[] frame = ackFrame(BacnetObjectType.fromId(128),
+                42,
+                BacnetPropertyIdentifier.fromId(512),
+                17,
+                characterStringAny("PRIVATE-VALUE"));
+
+        BacnetReadPropertyResponse response = BacnetReadPropertyResponseDecoder.decode(frame, 17);
+
+        assertEquals(128, response.getObjectType().getId());
+        assertEquals("objectType#128", response.getObjectType().getName());
+        assertEquals(512, response.getPropertyIdentifier().getId());
+        assertEquals("property#512", response.getPropertyIdentifier().getName());
+        assertEquals("PRIVATE-VALUE", response.getValue());
+    }
+
+    @Test
     void shouldDecodeBooleanComplexAck() {
         byte[] frame = booleanAck(true);
 
@@ -115,6 +132,10 @@ class BacnetReadPropertyCodecTest {
     }
 
     private byte[] characterStringAck(String value) {
+        return ackFrame(BacnetObjectType.DEVICE, 1001, BacnetPropertyIdentifier.OBJECT_NAME, 3, characterStringAny(value));
+    }
+
+    private byte[] characterStringAny(String value) {
         byte[] stringPayload = value.getBytes(StandardCharsets.US_ASCII);
         ByteArrayOutputStream any = new ByteArrayOutputStream();
         int length = stringPayload.length + 1;
@@ -122,7 +143,7 @@ class BacnetReadPropertyCodecTest {
         any.write(length);
         any.write(0);
         any.writeBytes(stringPayload);
-        return ackFrame(BacnetObjectType.DEVICE, 1001, BacnetPropertyIdentifier.OBJECT_NAME, 3, any.toByteArray());
+        return any.toByteArray();
     }
 
     private byte[] booleanAck(boolean value) {
@@ -195,12 +216,26 @@ class BacnetReadPropertyCodecTest {
         apdu.write((objectIdentifier >> 16) & 0xFF);
         apdu.write((objectIdentifier >> 8) & 0xFF);
         apdu.write(objectIdentifier & 0xFF);
-        apdu.write(0x19);
-        apdu.write(propertyIdentifier.getId());
+        int propertyLength = unsignedLength(propertyIdentifier.getId());
+        BacnetTagSupport.writeTag(apdu, 1, true, propertyLength);
+        BacnetTagSupport.writeUnsigned(apdu, propertyIdentifier.getId(), propertyLength);
         apdu.write(0x3E);
         apdu.writeBytes(anyPayload);
         apdu.write(0x3F);
         return wrap(apdu.toByteArray());
+    }
+
+    private int unsignedLength(int value) {
+        if (value <= 0xFF) {
+            return 1;
+        }
+        if (value <= 0xFFFF) {
+            return 2;
+        }
+        if (value <= 0xFFFFFF) {
+            return 3;
+        }
+        return 4;
     }
 
     private byte[] wrap(byte[] apdu) {
