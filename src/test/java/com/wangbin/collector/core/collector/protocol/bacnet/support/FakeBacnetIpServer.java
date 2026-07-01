@@ -63,8 +63,36 @@ public final class FakeBacnetIpServer implements AutoCloseable {
         values.put(key(objectType, instance, propertyIdentifier, null), new PropertyValue(ValueType.STRING, value, null));
     }
 
+    public void putString(BacnetObjectType objectType,
+                          int instance,
+                          BacnetPropertyIdentifier propertyIdentifier,
+                          Integer arrayIndex,
+                          String value) {
+        values.put(key(objectType, instance, propertyIdentifier, arrayIndex), new PropertyValue(ValueType.STRING, value, arrayIndex));
+    }
+
     public void putEnumerated(BacnetObjectType objectType, int instance, BacnetPropertyIdentifier propertyIdentifier, int value) {
         values.put(key(objectType, instance, propertyIdentifier, null), new PropertyValue(ValueType.ENUMERATED, value, null));
+    }
+
+    public void putUnsigned(BacnetObjectType objectType,
+                            int instance,
+                            BacnetPropertyIdentifier propertyIdentifier,
+                            Integer arrayIndex,
+                            int value) {
+        values.put(key(objectType, instance, propertyIdentifier, arrayIndex), new PropertyValue(ValueType.UNSIGNED, value, arrayIndex));
+    }
+
+    public void putObjectIdentifier(BacnetObjectType objectType,
+                                    int instance,
+                                    BacnetPropertyIdentifier propertyIdentifier,
+                                    Integer arrayIndex,
+                                    BacnetObjectType valueObjectType,
+                                    int valueInstance) {
+        values.put(key(objectType, instance, propertyIdentifier, arrayIndex),
+                new PropertyValue(ValueType.OBJECT_IDENTIFIER,
+                        Map.of("objectType", valueObjectType, "instance", valueInstance),
+                        arrayIndex));
     }
 
     public void setResponseDelayMs(long responseDelayMs) {
@@ -457,6 +485,13 @@ public final class FakeBacnetIpServer implements AutoCloseable {
             case BOOLEAN -> encodeBoolean((Boolean) propertyValue.value);
             case STRING -> encodeCharacterString((String) propertyValue.value);
             case ENUMERATED -> encodeEnumeratedValue((Integer) propertyValue.value);
+            case UNSIGNED -> encodeUnsignedValue((Integer) propertyValue.value);
+            case OBJECT_IDENTIFIER -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> objectId = (Map<String, Object>) propertyValue.value;
+                yield encodeApplicationObjectIdentifier((BacnetObjectType) objectId.get("objectType"),
+                        ((Number) objectId.get("instance")).intValue());
+            }
         };
     }
 
@@ -490,6 +525,14 @@ public final class FakeBacnetIpServer implements AutoCloseable {
         byte[] raw = encodeUnsigned(value);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         out.write((9 << 4) | (raw.length & 0x07));
+        out.writeBytes(raw);
+        return out.toByteArray();
+    }
+
+    private byte[] encodeUnsignedValue(int value) {
+        byte[] raw = encodeUnsigned(value);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write((2 << 4) | (raw.length & 0x07));
         out.writeBytes(raw);
         return out.toByteArray();
     }
@@ -583,7 +626,9 @@ public final class FakeBacnetIpServer implements AutoCloseable {
         REAL,
         BOOLEAN,
         STRING,
-        ENUMERATED
+        ENUMERATED,
+        UNSIGNED,
+        OBJECT_IDENTIFIER
     }
 
     private record PropertyValue(ValueType type, Object value, Integer arrayIndex) {

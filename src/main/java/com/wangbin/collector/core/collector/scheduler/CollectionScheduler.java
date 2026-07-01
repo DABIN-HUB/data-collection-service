@@ -4,6 +4,8 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
+import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -388,6 +390,7 @@ public class CollectionScheduler {
             try {
                 scheduleDevicePoints(deviceId, generation, dataPoints);
                 collectionManager.rebuildReadPlans(deviceId, dataPoints);
+                autoSubscribeIfSupported(deviceId, dataPoints);
                 deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
             } finally {
                 scheduleLock.unlock();
@@ -406,10 +409,15 @@ public class CollectionScheduler {
     }
 
     private void scheduleDevicePoints(String deviceId, long generation, List<DataPoint> points) {
+        List<DataPoint> scheduledPoints = points;
+        ProtocolCollector collector = collectionManager.getCollector(deviceId);
+        if (collector instanceof BacnetIpCollector bacnetCollector) {
+            scheduledPoints = bacnetCollector.filterPollingPoints(points);
+        }
         long revision = timeSliceRevision.get();
         List<DeviceBatchTask> batchTasks = deviceBatchPlanner.plan(
                 deviceId,
-                points,
+                scheduledPoints,
                 timeSliceCount.get(),
                 generation,
                 revision,
@@ -420,6 +428,22 @@ public class CollectionScheduler {
             if (tasks != null) {
                 tasks.add(batchTask);
             }
+        }
+    }
+
+    private void autoSubscribeIfSupported(String deviceId, List<DataPoint> points) {
+        ProtocolCollector collector = collectionManager.getCollector(deviceId);
+        if (!(collector instanceof BacnetIpCollector bacnetCollector)) {
+            return;
+        }
+        List<DataPoint> subscriptionPoints = bacnetCollector.filterAutoSubscriptionPoints(points);
+        if (subscriptionPoints.isEmpty()) {
+            return;
+        }
+        try {
+            collectionManager.subscribePoints(deviceId, subscriptionPoints);
+        } catch (Exception ex) {
+            log.warn("auto subscribe BACnet points failed, device={}, pointCount={}", deviceId, subscriptionPoints.size(), ex);
         }
     }
 

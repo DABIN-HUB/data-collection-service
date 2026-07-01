@@ -45,6 +45,17 @@ public class ShadowManager {
     };
     private static final String DEFAULT_SHADOW_KEY_PREFIX = "collector:shadow:";
     private static final String DEFAULT_DIRTY_SET_KEY = "collector:shadow:dirty";
+    private static final Set<String> STABLE_VALUE_METADATA_KEYS = Set.of(
+            "address",
+            "objectType",
+            "instanceNumber",
+            "propertyIdentifier",
+            "processingMode",
+            "bacnetValueType",
+            "bacnetComplexValue",
+            "bacnetValueMetadata",
+            "source"
+    );
     private static final String SHADOW_CAS_SCRIPT = """
             local current = redis.call('GET', KEYS[1])
             local expected = ARGV[1]
@@ -113,7 +124,14 @@ public class ShadowManager {
 
         if (field != null && point.isReportEnabled()) {
             QualityEnum qualityEnum = QualityEnum.fromCode(result.getQuality());
-            ValueMeta meta = new ValueMeta(result.getFinalValue(), System.currentTimeMillis(), qualityEnum.getText());
+            ValueMeta meta = new ValueMeta(
+                    result.getFinalValue(),
+                    System.currentTimeMillis(),
+                    qualityEnum.getText(),
+                    metadataToString(result.getMetadata(), "source"),
+                    System.currentTimeMillis(),
+                    stableValueMetadata(result)
+            );
             shadow.update(field, meta, point);
             changeTriggered = shouldTriggerChange(shadow, point, result, field);
         }
@@ -631,6 +649,9 @@ public class ShadowManager {
             if (meta.getSource() != null) {
                 metadata.put("source", meta.getSource());
             }
+            if (meta.getMetadata() != null && !meta.getMetadata().isEmpty()) {
+                metadata.put("valueMetadata", meta.getMetadata());
+            }
             values.put(field, metadata);
         });
         return values;
@@ -798,13 +819,34 @@ public class ShadowManager {
             long updatedAt = Optional.ofNullable(asLong(metaMap.get("updatedAt"))).orElse(timestamp);
             String quality = asString(metaMap.get("quality"));
             String source = asString(metaMap.get("source"));
-            ValueMeta meta = new ValueMeta(value, timestamp, quality, source, updatedAt);
+            ValueMeta meta = new ValueMeta(
+                    value,
+                    timestamp,
+                    quality,
+                    source,
+                    updatedAt,
+                    toMap(metaMap.get("valueMetadata"))
+            );
             if (reported) {
                 shadow.restoreReported(field, meta);
             } else {
                 shadow.restoreDesired(field, meta);
             }
         });
+    }
+
+    private Map<String, Object> stableValueMetadata(ProcessResult result) {
+        Map<String, Object> metadata = result != null ? result.getMetadata() : null;
+        if (metadata == null || metadata.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> stable = new LinkedHashMap<>();
+        metadata.forEach((key, value) -> {
+            if (key != null && STABLE_VALUE_METADATA_KEYS.contains(key) && value != null) {
+                stable.put(key, value);
+            }
+        });
+        return stable;
     }
 
     private void deletePersistedShadow(String deviceId) {

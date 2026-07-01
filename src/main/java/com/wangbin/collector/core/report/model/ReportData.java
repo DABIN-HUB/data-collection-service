@@ -35,12 +35,21 @@ public class ReportData {
     private final Map<String, Object> properties = new LinkedHashMap<>();
     private final Map<String, String> propertyQuality = new LinkedHashMap<>();
     private final Map<String, Long> propertyTs = new LinkedHashMap<>();
+    private final Map<String, Map<String, Object>> propertyMetadata = new LinkedHashMap<>();
 
     public void addMetadata(String key, Object v) {
         metadata.put(key, v);
     }
 
     public void addProperty(String field, Object fieldValue, long fieldTimestamp, String qualityText) {
+        addProperty(field, fieldValue, fieldTimestamp, qualityText, null);
+    }
+
+    public void addProperty(String field,
+                            Object fieldValue,
+                            long fieldTimestamp,
+                            String qualityText,
+                            Map<String, Object> metadata) {
         if (field == null || field.trim().isEmpty()) {
             return;
         }
@@ -52,6 +61,9 @@ public class ReportData {
         propertyTs.put(field, fieldTimestamp);
         if (qualityText != null) {
             propertyQuality.put(field, qualityText);
+        }
+        if (metadata != null && !metadata.isEmpty()) {
+            propertyMetadata.put(field, new LinkedHashMap<>(metadata));
         }
     }
 
@@ -106,6 +118,7 @@ public class ReportData {
         copy.setMethod(method);
         copy.setQuality(quality);
         copy.getMetadata().putAll(metadata);
+        propertyMetadata.forEach((field, value) -> copy.propertyMetadata.put(field, new LinkedHashMap<>(value)));
         return copy;
     }
 
@@ -119,6 +132,12 @@ public class ReportData {
 
     public Map<String, Long> getPropertyTs() {
         return Collections.unmodifiableMap(propertyTs);
+    }
+
+    public Map<String, Map<String, Object>> getPropertyMetadata() {
+        Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
+        propertyMetadata.forEach((field, value) -> copy.put(field, Collections.unmodifiableMap(value)));
+        return Collections.unmodifiableMap(copy);
     }
 
     public void applyChunkMetadata(String batchId, int chunkIndex, int chunkTotal) {
@@ -169,7 +188,11 @@ public class ReportData {
         }
 
         String field = Optional.ofNullable(point.getReportField()).orElse(reportData.getPointCode());
-        reportData.addProperty(field, value, valueTimestamp, qualityEnum.getText());
+        reportData.addProperty(field,
+                value,
+                valueTimestamp,
+                qualityEnum.getText(),
+                result != null ? extractStableValueMetadata(result) : Collections.emptyMap());
         return reportData;
     }
 
@@ -205,5 +228,29 @@ public class ReportData {
             return processResult.getFinalValue();
         }
         return cacheValue;
+    }
+
+    private static Map<String, Object> extractStableValueMetadata(ProcessResult result) {
+        if (result == null || result.getMetadata() == null || result.getMetadata().isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        copyIfPresent(result, metadata, "address");
+        copyIfPresent(result, metadata, "objectType");
+        copyIfPresent(result, metadata, "instanceNumber");
+        copyIfPresent(result, metadata, "propertyIdentifier");
+        copyIfPresent(result, metadata, "processingMode");
+        copyIfPresent(result, metadata, "bacnetValueType");
+        copyIfPresent(result, metadata, "bacnetComplexValue");
+        copyIfPresent(result, metadata, "bacnetValueMetadata");
+        copyIfPresent(result, metadata, "source");
+        return metadata;
+    }
+
+    private static void copyIfPresent(ProcessResult result, Map<String, Object> target, String key) {
+        Object value = result.getMetadata(key);
+        if (value != null) {
+            target.put(key, value);
+        }
     }
 }

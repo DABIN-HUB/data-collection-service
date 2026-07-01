@@ -45,6 +45,9 @@ public class JsonProtocolAdapter {
             if (!message.getPropertyTsMap().isEmpty()) {
                 jsonMap.put("propertyTs", message.getPropertyTsMap());
             }
+            if (!message.getPropertyMetadataMap().isEmpty()) {
+                jsonMap.put("propertyMetadata", message.getPropertyMetadataMap());
+            }
             if (!message.getMetadata().isEmpty()) {
                 jsonMap.put("metadata", message.getMetadata());
             }

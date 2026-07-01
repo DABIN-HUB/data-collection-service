@@ -12,6 +12,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteD
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
@@ -27,6 +28,7 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
     private BacnetScClient bacnetClient;
     private BacnetRemoteDevice remoteDevice;
     private volatile Consumer<BacnetCovNotification> covNotificationListener;
+    private volatile Runnable reconnectListener;
 
     public BacnetScConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null, null);
@@ -60,6 +62,7 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         statistics.put("implemented", true);
         statistics.put("transport", "WSS");
         statistics.put("message", "BACnet/SC experimental secure WebSocket tunnel connected");
+        notifyReconnectListener();
     }
 
     @Override
@@ -79,6 +82,11 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         if (bacnetClient != null) {
             bacnetClient.setCovNotificationHandler(listener);
         }
+    }
+
+    @Override
+    public void setReconnectListener(Runnable listener) {
+        this.reconnectListener = listener;
     }
 
     @Override
@@ -111,6 +119,14 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
     }
 
     @Override
+    public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
+        requireClient().writePropertyMultiple(request,
+                timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
+                resolveRequestRetries());
+        updateActivityTime();
+    }
+
+    @Override
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCov(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
@@ -123,6 +139,12 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         requireClient().subscribeCovProperty(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
                 resolveRequestRetries());
+        updateActivityTime();
+    }
+
+    @Override
+    public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+        requireClient().acknowledgeConfirmedCovNotification(invokeId);
         updateActivityTime();
     }
 
@@ -152,6 +174,18 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
             throw new IllegalStateException("BACnet/SC client is not initialized");
         }
         return bacnetClient;
+    }
+
+    private void notifyReconnectListener() {
+        Runnable listener = reconnectListener;
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.run();
+        } catch (Exception ex) {
+            log.warn("BACnet/SC reconnect listener failed, deviceId={}", getDeviceId(), ex);
+        }
     }
 
     private int resolveRemoteDeviceInstance() {

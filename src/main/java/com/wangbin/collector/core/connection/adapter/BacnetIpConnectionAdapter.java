@@ -16,6 +16,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteD
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.DatagramPacket;
@@ -42,6 +43,7 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
     private BacnetIpUdpClient client;
     private BacnetRemoteDevice remoteDevice;
     private volatile Consumer<BacnetCovNotification> covNotificationListener;
+    private volatile Runnable reconnectListener;
 
     private final ScheduledExecutorService protocolScheduler;
     private final AtomicLong foreignDeviceRegistrationCount = new AtomicLong(0);
@@ -151,6 +153,7 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
                 resolveRequestRetries(),
                 resolveApduTimeout(),
                 bbmdAddress != null ? bbmdAddress : "disabled");
+        notifyReconnectListener();
     }
 
     @Override
@@ -209,6 +212,11 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         }
     }
 
+    @Override
+    public void setReconnectListener(Runnable listener) {
+        this.reconnectListener = listener;
+    }
+
     public synchronized BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -239,6 +247,14 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         updateActivityTime();
     }
 
+    @Override
+    public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
+        ensureForeignDeviceLease();
+        BacnetIpUdpClient activeClient = requireClient();
+        activeClient.writePropertyMultiple(request, timeoutMs > 0 ? timeoutMs : resolveApduTimeout(), resolveRequestRetries());
+        updateActivityTime();
+    }
+
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -252,6 +268,14 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         activeClient.subscribeCovProperty(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
                 resolveRequestRetries());
+        updateActivityTime();
+    }
+
+    @Override
+    public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+        ensureForeignDeviceLease();
+        BacnetIpUdpClient activeClient = requireClient();
+        activeClient.acknowledgeConfirmedCovNotification(invokeId);
         updateActivityTime();
     }
 
@@ -363,6 +387,18 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         } catch (Exception ex) {
             foreignDeviceRenewFailureCount.incrementAndGet();
             throw ex;
+        }
+    }
+
+    private void notifyReconnectListener() {
+        Runnable listener = reconnectListener;
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.run();
+        } catch (Exception ex) {
+            log.warn("BACnet/IP reconnect listener failed, deviceId={}", getDeviceId(), ex);
         }
     }
 

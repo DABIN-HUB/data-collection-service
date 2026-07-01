@@ -4,9 +4,11 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -32,6 +35,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -105,7 +109,7 @@ public class CollectionSchedulerTest {
         ReflectionTestUtils.invokeMethod(scheduler, "processDeviceBatch", task);
 
         TimeUnit.MILLISECONDS.sleep(50);
-        assertFalse(Boolean.FALSE.equals(interrupted.get()));
+        assertTrue(task.isCancelled());
         verify(collectedDataProcessor, never()).process(eq("dev-timeout"), anyList(), eq(Map.of("p1", 1)), org.mockito.ArgumentMatchers.any());
     }
 
@@ -208,6 +212,73 @@ public class CollectionSchedulerTest {
         assertFalse(timeoutResult);
         assertTrue(secondResult);
         verify(collectionManager).cleanupDevice("dev-connect-timeout");
+    }
+
+    @Test
+    void collectionSchedulerShouldAutoSubscribeBacnetSubscriptionPointsAndSkipPollingPlan() {
+        String deviceId = "dev-bacnet";
+        DeviceInfo deviceInfo = new DeviceInfo();
+        deviceInfo.setDeviceId(deviceId);
+        deviceInfo.setProtocolType("BACNET_IP");
+        deviceInfo.setConnectionType("BACNET_IP");
+
+        DeviceConnection connection = new DeviceConnection();
+        connection.setDeviceId(deviceId);
+        connection.setConnectionType("BACNET_IP");
+        connection.setHost("127.0.0.1");
+        connection.setPort(47808);
+        connection.setConnectTimeout(50);
+        connection.setExtJson(Map.of("covEnabled", true));
+
+        DataPoint subscriptionPoint = new DataPoint();
+        subscriptionPoint.setDeviceId(deviceId);
+        subscriptionPoint.setPointId("p1");
+        subscriptionPoint.setPointCode("p1");
+        subscriptionPoint.setStatus(1);
+        subscriptionPoint.setCollectionMode("SUBSCRIPTION");
+
+        DataPoint pollingPoint = new DataPoint();
+        pollingPoint.setDeviceId(deviceId);
+        pollingPoint.setPointId("p2");
+        pollingPoint.setPointCode("p2");
+        pollingPoint.setStatus(1);
+        pollingPoint.setCollectionMode("POLLING");
+
+        BacnetIpCollector bacnetCollector = spy(new BacnetIpCollector());
+        bacnetCollector.init(deviceInfo);
+        ReflectionTestUtils.setField(bacnetCollector, "dataQualityProcessor", mock(com.wangbin.collector.core.processor.DataQualityProcessor.class));
+        ReflectionTestUtils.setField(bacnetCollector, "configManager", configManager);
+
+        when(configManager.getDevice(deviceId)).thenReturn(deviceInfo);
+        when(configManager.getDataPoints(deviceId)).thenReturn(List.of(subscriptionPoint, pollingPoint));
+        when(configManager.getDataPointsAndAdaptiveConfig(deviceId)).thenReturn(List.of(subscriptionPoint, pollingPoint));
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection);
+        when(configManager.getDeviceContext(deviceId))
+                .thenReturn(DeviceContext.of(deviceInfo, connection, List.of(subscriptionPoint, pollingPoint)));
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(collectionManager.getCollector(deviceId)).thenReturn(bacnetCollector);
+
+        doAnswer(invocation -> null).when(collectionManager).registerDevice(deviceInfo);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).disconnectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).cleanupDevice(anyString());
+        doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(eq(deviceId), anyList());
+        doAnswer(invocation -> null).when(collectionManager).subscribePoints(eq(deviceId), anyList());
+
+        when(deviceBatchPlanner.plan(eq(deviceId), anyList(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<DataPoint> points = invocation.getArgument(1);
+                    return List.of(new DeviceBatchTask(deviceId, points, 0, invocation.getArgument(3), invocation.getArgument(4)));
+                });
+
+        boolean started = scheduler.startDevice(deviceId);
+
+        assertTrue(started);
+        verify(collectionManager).subscribePoints(eq(deviceId), eq(List.of(subscriptionPoint)));
+        DeviceBatchTask task = firstScheduledTask(0);
+        assertEquals(1, task.points.size());
+        assertEquals("p2", task.points.get(0).getPointId());
     }
 
     private void setupSingleDevice(String deviceId) {

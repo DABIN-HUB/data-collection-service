@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetObjectType;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -108,7 +109,8 @@ public final class BacnetReadPropertyResponseDecoder {
         if (!next.contextSpecific() || !next.openingTag() || next.tagNumber() != 3) {
             throw new IllegalArgumentException("BACnet ReadPropertyAck missing value opening tag");
         }
-        PrimitiveValue primitiveValue = readAnyPrimitiveValue(buffer);
+        BacnetValue decodedValue = BacnetValueDecoder.readAnyValue(buffer);
+        decodedValue = BacnetValueDecoder.normalizeDecodedPropertyValue(propertyIdentifier, arrayIndex, decodedValue);
         BacnetTagReader.TagHeader closing = BacnetTagReader.readTag(buffer);
         if (!closing.contextSpecific() || !closing.closingTag() || closing.tagNumber() != 3) {
             throw new IllegalArgumentException("BACnet ReadPropertyAck missing value closing tag");
@@ -119,8 +121,9 @@ public final class BacnetReadPropertyResponseDecoder {
                 .objectInstance(objectInstance)
                 .propertyIdentifier(propertyIdentifier)
                 .arrayIndex(arrayIndex)
-                .value(primitiveValue.value())
-                .valueType(primitiveValue.type())
+                .value(decodedValue.getValue())
+                .valueType(decodedValue.getValueType())
+                .valueMetadata(decodedValue.getMetadata())
                 .invokeId(invokeId)
                 .build();
     }
@@ -128,54 +131,10 @@ public final class BacnetReadPropertyResponseDecoder {
     static PrimitiveValue readAnyPrimitiveValue(ByteBuffer buffer) {
         BacnetTagReader.TagHeader tag = BacnetTagReader.readTag(buffer);
         if (tag.contextSpecific() || tag.openingTag() || tag.closingTag()) {
-            throw new IllegalArgumentException("Only primitive BACnet ANY values are supported in first delivery");
+            throw new IllegalArgumentException("Only primitive BACnet ANY values are supported in primitive decoder");
         }
-        int type = tag.tagNumber();
-        return switch (type) {
-            case 0 -> new PrimitiveValue(null, "NULL");
-            case 1 -> new PrimitiveValue(tag.length() == 1, "BOOLEAN");
-            case 2 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readUnsigned(payload), "UNSIGNED_INTEGER");
-            }
-            case 3 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readSigned(payload), "SIGNED_INTEGER");
-            }
-            case 4 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN).getFloat(), "REAL");
-            }
-            case 5 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN).getDouble(), "DOUBLE");
-            }
-            case 7 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readCharacterString(payload), "CHARACTER_STRING");
-            }
-            case 8 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readBitString(payload), "BIT_STRING");
-            }
-            case 9 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readUnsigned(payload), "ENUMERATED");
-            }
-            case 12 -> {
-                byte[] payload = new byte[tag.length()];
-                buffer.get(payload);
-                yield new PrimitiveValue(readObjectIdentifier(payload), "OBJECT_IDENTIFIER");
-            }
-            default -> throw new IllegalArgumentException("Unsupported BACnet primitive type id: " + type);
-        };
+        BacnetValue value = BacnetValueDecoder.readPrimitiveValue(buffer, tag);
+        return new PrimitiveValue(value.getValue(), value.getValueType());
     }
 
     static IllegalStateException decodeError(ByteBuffer buffer) {
@@ -267,7 +226,7 @@ public final class BacnetReadPropertyResponseDecoder {
         return value;
     }
 
-    private static String readCharacterString(byte[] payload) {
+    static String readCharacterStringPayload(byte[] payload) {
         if (payload.length == 0) {
             return "";
         }
@@ -292,7 +251,7 @@ public final class BacnetReadPropertyResponseDecoder {
         return new String(bytes, charset);
     }
 
-    private static boolean[] readBitString(byte[] payload) {
+    static boolean[] readBitStringPayload(byte[] payload) {
         if (payload.length == 0) {
             return new boolean[0];
         }

@@ -1,6 +1,9 @@
 package com.wangbin.collector.core.report.service;
 
 import com.wangbin.collector.common.config.DistributedLock;
+import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -73,6 +76,54 @@ public class CacheReportServiceTest {
         assertEquals(2, ((Number) chunk2.getMetadata().get("chunkTotal")).intValue());
         assertNotNull(chunk2.getMetadata().get("batchId"));
         assertEquals(chunk1.getMetadata().get("batchId"), chunk2.getMetadata().get("batchId"));
+    }
+
+    @Test
+    void splitSnapshotShouldPreservePropertyMetadata() {
+        ReportProperties props = new ReportProperties();
+        props.setMaxPropertiesPerMessage(1);
+        props.setMaxPayloadBytes(1024);
+        CacheReportService service = new CacheReportService(null, props, null, null, null, null, null, null);
+
+        ReportData snapshot = new ReportData();
+        snapshot.setDeviceId("dev-test");
+        snapshot.setTimestamp(1000L);
+        snapshot.setPointCode("snapshot");
+        snapshot.addProperty("f1", List.of("analogInput:1"), 101L, "GOOD",
+                Map.of("bacnetComplexValue", true, "bacnetValueType", "OBJECT_LIST"));
+        snapshot.addProperty("f2", 2.0, 102L, "GOOD");
+
+        List<ReportData> chunks = service.splitSnapshot(snapshot);
+
+        assertEquals(Boolean.TRUE, chunks.get(0).getPropertyMetadata().get("f1").get("bacnetComplexValue"));
+        assertEquals("OBJECT_LIST", chunks.get(0).getPropertyMetadata().get("f1").get("bacnetValueType"));
+    }
+
+    @Test
+    void reportDataShouldPreserveBacnetPropertyMetadataIntoChunks() {
+        DataPoint point = new DataPoint();
+        point.setDeviceId("dev-bacnet-report");
+        point.setPointId("p1");
+        point.setPointCode("objectList");
+        point.setPointName("objectList");
+        point.setStatus(1);
+        point.setAdditionalConfig(new java.util.HashMap<>(Map.of("reportField", "objectList")));
+
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(List.of("analogInput:1", "analogOutput:2"));
+        result.setQuality(QualityEnum.GOOD.getCode());
+        result.addMetadata("source", "poll");
+        result.addMetadata("bacnetComplexValue", true);
+        result.addMetadata("bacnetValueType", "OBJECT_LIST");
+        result.addMetadata("bacnetValueMetadata", Map.of("semantic", "objectList", "count", 2));
+
+        ReportData data = ReportData.buildReportData("dev-bacnet-report", "thing.property.post", point, result);
+
+        assertNotNull(data);
+        assertEquals(List.of("analogInput:1", "analogOutput:2"), data.getProperties().get("objectList"));
+        assertEquals(Boolean.TRUE, data.getPropertyMetadata().get("objectList").get("bacnetComplexValue"));
+        assertEquals("OBJECT_LIST", data.getPropertyMetadata().get("objectList").get("bacnetValueType"));
     }
 
     @Test

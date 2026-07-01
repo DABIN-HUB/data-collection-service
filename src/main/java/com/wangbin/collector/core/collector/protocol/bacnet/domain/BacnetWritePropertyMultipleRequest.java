@@ -5,34 +5,32 @@ import lombok.Singular;
 import lombok.Value;
 
 import java.util.List;
-import java.util.Map;
 
 @Value
 @Builder
-public class BacnetReadPropertyMultipleResponse {
+public class BacnetWritePropertyMultipleRequest {
 
     @Singular
-    List<ReadAccessResult> results;
+    List<WriteAccessSpec> writeAccessSpecifications;
     int invokeId;
+    int remoteDeviceInstance;
 
     @Value
     @Builder
-    public static class ReadAccessResult {
+    public static class WriteAccessSpec {
         BacnetObjectType objectType;
         int objectInstance;
         @Singular
-        List<PropertyValueResult> propertyResults;
+        List<PropertyValueSpec> propertyValues;
     }
 
     @Value
     @Builder
-    public static class PropertyValueResult {
+    public static class PropertyValueSpec {
         BacnetPropertyIdentifier propertyIdentifier;
         Integer arrayIndex;
         Object value;
         String valueType;
-        Map<String, Object> valueMetadata;
-        boolean error;
-        String errorMessage;
+        Integer priority;
     }
 }

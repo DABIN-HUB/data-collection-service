@@ -116,6 +116,40 @@ public class ShadowManagerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void bacnetComplexValueMetadataShouldBePersistedInShadowMetadata() {
+        ShadowManager manager = new ShadowManager(properties);
+        DataPoint point = createPoint("dev-bacnet-shadow", "objectList", Map.of(
+                "reportEnabled", true,
+                "reportField", "objectList"
+        ));
+
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(List.of("analogInput:1", "analogOutput:2"));
+        result.setQuality(QualityEnum.GOOD.getCode());
+        result.addMetadata("source", "cov");
+        result.addMetadata("bacnetComplexValue", true);
+        result.addMetadata("bacnetValueType", "OBJECT_LIST");
+        result.addMetadata("bacnetValueMetadata", Map.of("semantic", "objectList", "count", 2));
+        result.addMetadata("covTimeRemaining", 55);
+
+        manager.apply("dev-bacnet-shadow", point, result);
+
+        Map<String, Object> document = manager.getShadowDocument("dev-bacnet-shadow");
+        Map<String, Object> metadata = (Map<String, Object>) document.get("metadata");
+        Map<String, Object> reported = (Map<String, Object>) metadata.get("reported");
+        Map<String, Object> fieldMeta = (Map<String, Object>) reported.get("objectList");
+        Map<String, Object> valueMetadata = (Map<String, Object>) fieldMeta.get("valueMetadata");
+
+        assertEquals("cov", fieldMeta.get("source"));
+        assertEquals(Boolean.TRUE, valueMetadata.get("bacnetComplexValue"));
+        assertEquals("OBJECT_LIST", valueMetadata.get("bacnetValueType"));
+        assertEquals(Map.of("semantic", "objectList", "count", 2), valueMetadata.get("bacnetValueMetadata"));
+        assertFalse(valueMetadata.containsKey("covTimeRemaining"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void desiredStateBuildsDeltaAndClearsWhenReportedMatches() {
         ShadowManager manager = new ShadowManager(properties);
         DataPoint point = createPoint("dev-shadow", "temperature", Map.of(

@@ -12,6 +12,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteD
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.transport.BacnetMstpTokenManager;
 import com.wangbin.collector.core.collector.protocol.bacnet.transport.BacnetSerialChannel;
 import com.wangbin.collector.core.collector.protocol.bacnet.transport.JSerialCommBacnetSerialChannel;
@@ -30,6 +31,7 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
     private BacnetMstpClient client;
     private BacnetRemoteDevice remoteDevice;
     private volatile Consumer<BacnetCovNotification> covNotificationListener;
+    private volatile Runnable reconnectListener;
 
     public BacnetMstpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
@@ -73,6 +75,7 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         statistics.put("message", "BACnet MS/TP serial adapter connected");
         log.info("BACnet MS/TP adapter connected, deviceId={}, serialPort={}, localMac={}, remoteMac={}, baudRate={}",
                 getDeviceId(), resolveSerialPort(), resolveLocalMacAddress(), remoteMacAddress, resolveBaudRate());
+        notifyReconnectListener();
     }
 
     @Override
@@ -126,6 +129,11 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
     }
 
     @Override
+    public void setReconnectListener(Runnable listener) {
+        this.reconnectListener = listener;
+    }
+
+    @Override
     public synchronized BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception {
         BacnetReadPropertyResponse response = requireClient().readProperty(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
@@ -155,6 +163,14 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
     }
 
     @Override
+    public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
+        requireClient().writePropertyMultiple(request,
+                timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
+                resolveRequestRetries());
+        updateActivityTime();
+    }
+
+    @Override
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCov(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
@@ -167,6 +183,12 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         requireClient().subscribeCovProperty(request,
                 timeoutMs > 0 ? timeoutMs : resolveApduTimeout(),
                 resolveRequestRetries());
+        updateActivityTime();
+    }
+
+    @Override
+    public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+        requireClient().acknowledgeConfirmedCovNotification(invokeId);
         updateActivityTime();
     }
 
@@ -337,5 +359,17 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
             throw new IllegalStateException("BACnet MS/TP client is not initialized");
         }
         return client;
+    }
+
+    private void notifyReconnectListener() {
+        Runnable listener = reconnectListener;
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.run();
+        } catch (Exception ex) {
+            log.warn("BACnet MS/TP reconnect listener failed, deviceId={}", getDeviceId(), ex);
+        }
     }
 }

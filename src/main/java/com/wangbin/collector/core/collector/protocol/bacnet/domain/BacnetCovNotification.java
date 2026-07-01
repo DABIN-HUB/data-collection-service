@@ -5,11 +5,14 @@ import lombok.Singular;
 import lombok.Value;
 
 import java.util.List;
+import java.util.Map;
 
 @Value
 @Builder
 public class BacnetCovNotification {
 
+    boolean confirmed;
+    Integer invokeId;
     int subscriberProcessIdentifier;
     int initiatingDeviceInstance;
     BacnetObjectType monitoredObjectType;
@@ -25,6 +28,7 @@ public class BacnetCovNotification {
         Integer arrayIndex;
         Object value;
         String valueType;
+        Map<String, Object> valueMetadata;
         Integer priority;
     }
 }

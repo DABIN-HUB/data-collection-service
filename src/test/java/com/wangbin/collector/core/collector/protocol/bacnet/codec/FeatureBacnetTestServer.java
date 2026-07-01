@@ -11,6 +11,9 @@ import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,18 +23,25 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public final class FeatureBacnetTestServer implements AutoCloseable {
 
+    private static final int APDU_TYPE_SIMPLE_ACK = 0x02;
+    private static final int APDU_TYPE_CONFIRMED_REQUEST = 0x00;
     private static final int SERVICE_CHOICE_WRITE_PROPERTY = 0x0F;
+    private static final int SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE = 0x10;
+    private static final int SERVICE_CHOICE_SUBSCRIBE_COV = 0x05;
     private static final int SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY = 0x1C;
+    private static final int SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION = 0x01;
     private static final int SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION = 0x02;
 
     private final DatagramSocket socket;
     private final Map<String, StoredValue> values = new ConcurrentHashMap<>();
     private final Map<Integer, Subscription> subscriptions = new ConcurrentHashMap<>();
     private final AtomicReference<RuntimeException> asyncFailure = new AtomicReference<>();
+    private final AtomicReference<Map<String, Object>> lastConfirmedCovAck = new AtomicReference<>();
     private final CountDownLatch started = new CountDownLatch(1);
 
     private volatile boolean running = true;
     private volatile int localDeviceInstance = 1001;
+    private volatile Integer writePropertyMultipleRejectReason;
     private Thread serverThread;
 
     public FeatureBacnetTestServer() throws Exception {
@@ -55,10 +65,58 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         values.put(key(objectType, instance, propertyIdentifier, null), new StoredValue(value, "CHARACTER_STRING", null));
     }
 
+    public void putObjectList(BacnetObjectType objectType,
+                              int instance,
+                              java.util.List<String> values) {
+        this.values.put(key(objectType, instance, BacnetPropertyIdentifier.OBJECT_LIST, null),
+                new StoredValue(new ArrayList<>(values), "OBJECT_LIST", null));
+    }
+
     public void publishReal(BacnetObjectType objectType, int instance, BacnetPropertyIdentifier propertyIdentifier, float value) throws Exception {
         StoredValue storedValue = new StoredValue(value, "REAL", null);
         values.put(key(objectType, instance, propertyIdentifier, null), storedValue);
         notifySubscribers(objectType, instance, propertyIdentifier, null, storedValue);
+    }
+
+    public Map<String, Object> lastConfirmedCovAck() {
+        Map<String, Object> ack = lastConfirmedCovAck.get();
+        return ack != null ? new LinkedHashMap<>(ack) : null;
+    }
+
+    public void forceWritePropertyMultipleRejectReason(Integer reason) {
+        this.writePropertyMultipleRejectReason = reason;
+    }
+
+    public Map<String, Object> lastSubscription(int processIdentifier) {
+        Subscription subscription = subscriptions.get(processIdentifier);
+        if (subscription == null) {
+            return null;
+        }
+        return toSubscriptionMap(subscription);
+    }
+
+    public Map<String, Object> latestSubscription() {
+        Subscription latest = null;
+        for (Subscription subscription : subscriptions.values()) {
+            if (latest == null || subscription.processIdentifier > latest.processIdentifier) {
+                latest = subscription;
+            }
+        }
+        return latest != null ? toSubscriptionMap(latest) : null;
+    }
+
+    private Map<String, Object> toSubscriptionMap(Subscription subscription) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("processIdentifier", subscription.processIdentifier);
+        result.put("objectType", subscription.objectType.getName());
+        result.put("instance", subscription.instance);
+        result.put("propertyIdentifier", subscription.propertyIdentifier.getName());
+        result.put("arrayIndex", subscription.arrayIndex);
+        result.put("issueConfirmedNotifications", subscription.issueConfirmedNotifications);
+        result.put("lifetime", subscription.lifetime);
+        result.put("covIncrement", subscription.covIncrement);
+        result.put("propertyLevel", subscription.propertyLevel);
+        return result;
     }
 
     private void awaitStart() throws Exception {
@@ -93,10 +151,16 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
 
     private byte[] handleRequest(byte[] frame, SocketAddress requester) {
         verifyNoAsyncFailure();
+        if (isConfirmedCovAck(frame)) {
+            recordConfirmedCovAck(frame, requester);
+            return null;
+        }
         RequestEnvelope request = parseRequest(frame);
         return switch (request.serviceChoice) {
             case BacnetReadPropertyCodec.SERVICE_CHOICE_READ_PROPERTY -> handleReadProperty(request.readRequest);
             case SERVICE_CHOICE_WRITE_PROPERTY -> handleWriteProperty(request.writeRequest);
+            case SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE -> handleWritePropertyMultiple(request.writeMultipleRequest);
+            case SERVICE_CHOICE_SUBSCRIBE_COV -> handleSubscribeCov(request.subscribeRequest, requester);
             case SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY -> handleSubscribeCovProperty(request.subscribeRequest, requester);
             default -> buildReject(request.invokeId, 9);
         };
@@ -117,8 +181,12 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             envelope.readRequest = parseReadRequest(payload, invokeId);
         } else if (serviceChoice == SERVICE_CHOICE_WRITE_PROPERTY) {
             envelope.writeRequest = parseWriteRequest(payload, invokeId);
+        } else if (serviceChoice == SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE) {
+            envelope.writeMultipleRequest = parseWritePropertyMultipleRequest(payload, invokeId);
+        } else if (serviceChoice == SERVICE_CHOICE_SUBSCRIBE_COV) {
+            envelope.subscribeRequest = parseSubscribeRequest(payload, invokeId, false);
         } else if (serviceChoice == SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY) {
-            envelope.subscribeRequest = parseSubscribeRequest(payload, invokeId);
+            envelope.subscribeRequest = parseSubscribeRequest(payload, invokeId, true);
         }
         return envelope;
     }
@@ -166,7 +234,77 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         }
         return new WriteRequest(readRequest, primitiveValue.value(), primitiveValue.type(), priority);
     }
-    private SubscribeRequest parseSubscribeRequest(ByteBuffer buffer, int invokeId) {
+
+    private WriteMultipleRequest parseWritePropertyMultipleRequest(ByteBuffer buffer, int invokeId) {
+        java.util.List<WriteRequest> writeRequests = new ArrayList<>();
+        while (buffer.hasRemaining()) {
+            BacnetTagReader.TagHeader objectOpen = BacnetTagReader.readTag(buffer);
+            if (!objectOpen.contextSpecific() || !objectOpen.openingTag() || objectOpen.tagNumber() != 0) {
+                throw new IllegalArgumentException("WritePropertyMultiple object opening tag is missing");
+            }
+            BacnetTagReader.TagHeader objectIdTag = BacnetTagReader.readTag(buffer);
+            if (objectIdTag.contextSpecific() || objectIdTag.tagNumber() != 12 || objectIdTag.length() != 4) {
+                throw new IllegalArgumentException("WritePropertyMultiple object identifier is invalid");
+            }
+            int rawObjectIdentifier = buffer.getInt();
+            BacnetObjectType objectType = BacnetObjectType.fromId((rawObjectIdentifier >>> 22) & 0x03FF);
+            int instance = rawObjectIdentifier & 0x3FFFFF;
+            BacnetTagReader.TagHeader objectClose = BacnetTagReader.readTag(buffer);
+            if (!objectClose.contextSpecific() || !objectClose.closingTag() || objectClose.tagNumber() != 0) {
+                throw new IllegalArgumentException("WritePropertyMultiple object closing tag is missing");
+            }
+
+            BacnetTagReader.TagHeader listOpen = BacnetTagReader.readTag(buffer);
+            if (!listOpen.contextSpecific() || !listOpen.openingTag() || listOpen.tagNumber() != 1) {
+                throw new IllegalArgumentException("WritePropertyMultiple listOfProperties opening tag is missing");
+            }
+            while (buffer.hasRemaining()) {
+                BacnetTagReader.TagHeader propertyOpen = BacnetTagReader.readTag(buffer);
+                if (propertyOpen.contextSpecific() && propertyOpen.closingTag() && propertyOpen.tagNumber() == 1) {
+                    break;
+                }
+                if (!propertyOpen.contextSpecific() || !propertyOpen.openingTag() || propertyOpen.tagNumber() != 0) {
+                    throw new IllegalArgumentException("WritePropertyMultiple property specification opening tag is missing");
+                }
+                BacnetTagReader.TagHeader propertyTag = BacnetTagReader.readTag(buffer);
+                BacnetReadPropertyResponseDecoder.requireContextTag(propertyTag, 0);
+                BacnetPropertyIdentifier propertyIdentifier = BacnetPropertyIdentifier.fromId(
+                        BacnetReadPropertyResponseDecoder.readUnsigned(buffer, propertyTag.length()));
+                Integer arrayIndex = null;
+                BacnetTagReader.TagHeader nextTag = BacnetTagReader.readTag(buffer);
+                if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 1) {
+                    arrayIndex = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
+                    nextTag = BacnetTagReader.readTag(buffer);
+                }
+                if (!nextTag.contextSpecific() || !nextTag.openingTag() || nextTag.tagNumber() != 2) {
+                    throw new IllegalArgumentException("WritePropertyMultiple property value opening tag is missing");
+                }
+                BacnetReadPropertyResponseDecoder.PrimitiveValue primitiveValue =
+                        BacnetReadPropertyResponseDecoder.readAnyPrimitiveValue(buffer);
+                BacnetTagReader.TagHeader valueClose = BacnetTagReader.readTag(buffer);
+                if (!valueClose.contextSpecific() || !valueClose.closingTag() || valueClose.tagNumber() != 2) {
+                    throw new IllegalArgumentException("WritePropertyMultiple property value closing tag is missing");
+                }
+                Integer priority = null;
+                if (buffer.hasRemaining()) {
+                    int possiblePriorityByte = Byte.toUnsignedInt(buffer.get(buffer.position()));
+                    if ((possiblePriorityByte & 0x08) != 0 && ((possiblePriorityByte >> 4) & 0x0F) == 3
+                            && (possiblePriorityByte & 0x07) < 5) {
+                        BacnetTagReader.TagHeader priorityTag = BacnetTagReader.readTag(buffer);
+                        priority = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, priorityTag.length());
+                    }
+                }
+                BacnetTagReader.TagHeader propertyClose = BacnetTagReader.readTag(buffer);
+                if (!propertyClose.contextSpecific() || !propertyClose.closingTag() || propertyClose.tagNumber() != 0) {
+                    throw new IllegalArgumentException("WritePropertyMultiple property specification closing tag is missing");
+                }
+                ReadRequest readRequest = new ReadRequest(invokeId, objectType, instance, propertyIdentifier, arrayIndex);
+                writeRequests.add(new WriteRequest(readRequest, primitiveValue.value(), primitiveValue.type(), priority));
+            }
+        }
+        return new WriteMultipleRequest(invokeId, writeRequests);
+    }
+    private SubscribeRequest parseSubscribeRequest(ByteBuffer buffer, int invokeId, boolean propertyLevel) {
         BacnetTagReader.TagHeader processTag = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(processTag, 0);
         int processIdentifier = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, processTag.length());
@@ -185,7 +323,30 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         BacnetTagReader.TagHeader nextTag = BacnetTagReader.readTag(buffer);
         if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 3) {
             lifetime = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
+            if (!propertyLevel && !buffer.hasRemaining()) {
+                return new SubscribeRequest(invokeId,
+                        processIdentifier,
+                        objectType,
+                        instance,
+                        BacnetPropertyIdentifier.PRESENT_VALUE,
+                        null,
+                        issueConfirmedNotifications,
+                        lifetime,
+                        null,
+                        false);
+            }
             nextTag = BacnetTagReader.readTag(buffer);
+        } else if (!propertyLevel) {
+            return new SubscribeRequest(invokeId,
+                    processIdentifier,
+                    objectType,
+                    instance,
+                    BacnetPropertyIdentifier.PRESENT_VALUE,
+                    null,
+                    issueConfirmedNotifications,
+                    lifetime,
+                    null,
+                    false);
         }
 
         if (!nextTag.contextSpecific() || !nextTag.openingTag() || nextTag.tagNumber() != 4) {
@@ -205,14 +366,6 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             throw new IllegalArgumentException("SubscribeCOVProperty property reference closing tag is missing");
         }
 
-        if (buffer.hasRemaining()) {
-            BacnetTagReader.TagHeader covIncrementTag = BacnetTagReader.readTag(buffer);
-            if (covIncrementTag.contextSpecific() && !covIncrementTag.openingTag() && !covIncrementTag.closingTag()
-                    && covIncrementTag.tagNumber() == 5) {
-                buffer.position(buffer.position() + covIncrementTag.length());
-            }
-        }
-
         return new SubscribeRequest(invokeId,
                 processIdentifier,
                 objectType,
@@ -220,7 +373,9 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                 propertyIdentifier,
                 arrayIndex,
                 issueConfirmedNotifications,
-                lifetime);
+                lifetime,
+                readCovIncrement(buffer),
+                true);
     }
 
     private byte[] handleReadProperty(ReadRequest request) {
@@ -238,7 +393,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             writeContextUnsigned(apdu, 2, request.arrayIndex);
         }
         BacnetTagSupport.writeContextOpeningTag(apdu, 3);
-        BacnetValueEncodingSupport.writeApplicationValue(apdu, storedValue.value, storedValue.valueType);
+        writeStoredValue(apdu, storedValue);
         BacnetTagSupport.writeContextClosingTag(apdu, 3);
         return wrapApdu(apdu.toByteArray());
     }
@@ -252,6 +407,39 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         return buildSimpleAck(request.readRequest.invokeId, SERVICE_CHOICE_WRITE_PROPERTY);
     }
 
+    private byte[] handleWritePropertyMultiple(WriteMultipleRequest request) {
+        if (writePropertyMultipleRejectReason != null) {
+            return buildReject(request.invokeId, writePropertyMultipleRejectReason);
+        }
+        for (WriteRequest item : request.writeRequests) {
+            values.put(key(item.readRequest.objectType,
+                    item.readRequest.instance,
+                    item.readRequest.propertyIdentifier,
+                    item.readRequest.arrayIndex),
+                    new StoredValue(item.value, item.valueType, item.priority));
+        }
+        return buildSimpleAck(request.invokeId, SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE);
+    }
+
+    private byte[] handleSubscribeCov(SubscribeRequest request, SocketAddress requester) {
+        if (request.lifetime != null && request.lifetime == 0) {
+            subscriptions.remove(request.processIdentifier);
+        } else {
+            subscriptions.put(request.processIdentifier, new Subscription((InetSocketAddress) requester,
+                    request.processIdentifier,
+                    request.objectType,
+                    request.instance,
+                    request.propertyIdentifier,
+                    request.arrayIndex,
+                    request.issueConfirmedNotifications,
+                    request.lifetime,
+                    request.covIncrement,
+                    request.propertyLevel,
+                    1));
+        }
+        return buildSimpleAck(request.invokeId, SERVICE_CHOICE_SUBSCRIBE_COV);
+    }
+
     private byte[] handleSubscribeCovProperty(SubscribeRequest request, SocketAddress requester) {
         if (request.lifetime != null && request.lifetime == 0) {
             subscriptions.remove(request.processIdentifier);
@@ -263,9 +451,32 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                     request.propertyIdentifier,
                     request.arrayIndex,
                     request.issueConfirmedNotifications,
-                    request.lifetime));
+                    request.lifetime,
+                    request.covIncrement,
+                    request.propertyLevel,
+                    1));
         }
         return buildSimpleAck(request.invokeId, SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY);
+    }
+
+    private Double readCovIncrement(ByteBuffer buffer) {
+        if (!buffer.hasRemaining()) {
+            return null;
+        }
+        int nextByte = Byte.toUnsignedInt(buffer.get(buffer.position()));
+        if ((nextByte & 0x08) == 0 || ((nextByte >> 4) & 0x0F) != 5) {
+            return null;
+        }
+        BacnetTagReader.TagHeader covIncrementTag = BacnetTagReader.readTag(buffer);
+        byte[] payload = new byte[covIncrementTag.length()];
+        buffer.get(payload);
+        if (payload.length == 4) {
+            return (double) ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN).getFloat();
+        }
+        if (payload.length == 8) {
+            return ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN).getDouble();
+        }
+        return null;
     }
 
     private void notifySubscribers(BacnetObjectType objectType,
@@ -275,9 +486,12 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                                    StoredValue storedValue) throws Exception {
         for (Subscription subscription : subscriptions.values()) {
             if (subscription.objectType != objectType
-                    || subscription.instance != instance
-                    || subscription.propertyIdentifier != propertyIdentifier
-                    || !Objects.equals(subscription.arrayIndex, arrayIndex)) {
+                    || subscription.instance != instance) {
+                continue;
+            }
+            if (subscription.propertyLevel
+                    && (subscription.propertyIdentifier != propertyIdentifier
+                    || !Objects.equals(subscription.arrayIndex, arrayIndex))) {
                 continue;
             }
             byte[] notification = buildCovNotification(subscription, storedValue);
@@ -288,8 +502,16 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
 
     private byte[] buildCovNotification(Subscription subscription, StoredValue storedValue) {
         ByteArrayOutputStream apdu = new ByteArrayOutputStream();
-        apdu.write(BacnetReadPropertyCodec.APDU_TYPE_UNCONFIRMED_REQUEST << 4);
-        apdu.write(SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION);
+        if (subscription.issueConfirmedNotifications) {
+            apdu.write(APDU_TYPE_CONFIRMED_REQUEST << 4);
+            apdu.write(0x05);
+            apdu.write(subscription.nextInvokeId & 0xFF);
+            apdu.write(SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION);
+            subscriptions.put(subscription.processIdentifier, subscription.withNextInvokeId((subscription.nextInvokeId + 1) & 0xFF));
+        } else {
+            apdu.write(BacnetReadPropertyCodec.APDU_TYPE_UNCONFIRMED_REQUEST << 4);
+            apdu.write(SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION);
+        }
         writeContextUnsigned(apdu, 0, subscription.processIdentifier);
         writeContextObjectIdentifier(apdu, 1, BacnetObjectType.DEVICE, localDeviceInstance);
         writeContextObjectIdentifier(apdu, 2, subscription.objectType, subscription.instance);
@@ -300,10 +522,60 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             writeContextUnsigned(apdu, 1, subscription.arrayIndex);
         }
         BacnetTagSupport.writeContextOpeningTag(apdu, 2);
-        BacnetValueEncodingSupport.writeApplicationValue(apdu, storedValue.value, storedValue.valueType);
+        writeStoredValue(apdu, storedValue);
         BacnetTagSupport.writeContextClosingTag(apdu, 2);
         BacnetTagSupport.writeContextClosingTag(apdu, 4);
         return wrapApdu(apdu.toByteArray());
+    }
+
+    private boolean isConfirmedCovAck(byte[] frame) {
+        if (frame == null || frame.length < 8) {
+            return false;
+        }
+        try {
+            ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
+            BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
+                    BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
+            ByteBuffer payload = header.payload();
+            if (header.pduType() != APDU_TYPE_SIMPLE_ACK || payload.remaining() < 2) {
+                return false;
+            }
+            payload.get();
+            int serviceChoice = Byte.toUnsignedInt(payload.get());
+            return serviceChoice == SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private void recordConfirmedCovAck(byte[] frame, SocketAddress requester) {
+        ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
+        BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
+                BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
+        ByteBuffer payload = header.payload();
+        int invokeId = Byte.toUnsignedInt(payload.get());
+        int serviceChoice = Byte.toUnsignedInt(payload.get());
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("invokeId", invokeId);
+        ack.put("serviceChoice", serviceChoice);
+        ack.put("requester", requester != null ? requester.toString() : null);
+        lastConfirmedCovAck.set(ack);
+    }
+
+    private void writeStoredValue(ByteArrayOutputStream apdu, StoredValue storedValue) {
+        if ("OBJECT_LIST".equals(storedValue.valueType) && storedValue.value instanceof java.util.List<?> objectIds) {
+            BacnetTagSupport.writeContextOpeningTag(apdu, 3);
+            for (Object item : objectIds) {
+                String text = String.valueOf(item);
+                String[] parts = text.split(":");
+                BacnetObjectType objectType = BacnetObjectType.fromToken(parts[0]);
+                int instance = Integer.parseInt(parts[1]);
+                BacnetTagSupport.writeObjectIdentifier(apdu, objectType.getId(), instance);
+            }
+            BacnetTagSupport.writeContextClosingTag(apdu, 3);
+            return;
+        }
+        BacnetValueEncodingSupport.writeApplicationValue(apdu, storedValue.value, storedValue.valueType);
     }
 
     private byte[] buildSimpleAck(int invokeId, int serviceChoice) {
@@ -394,7 +666,23 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                                 BacnetPropertyIdentifier propertyIdentifier,
                                 Integer arrayIndex,
                                 boolean issueConfirmedNotifications,
-                                Integer lifetime) {
+                                Integer lifetime,
+                                Double covIncrement,
+                                boolean propertyLevel,
+                                int nextInvokeId) {
+        private Subscription withNextInvokeId(int invokeId) {
+            return new Subscription(endpoint,
+                    processIdentifier,
+                    objectType,
+                    instance,
+                    propertyIdentifier,
+                    arrayIndex,
+                    issueConfirmedNotifications,
+                    lifetime,
+                    covIncrement,
+                    propertyLevel,
+                    invokeId);
+        }
     }
 
     private static final class RequestEnvelope {
@@ -402,6 +690,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         private final int serviceChoice;
         private ReadRequest readRequest;
         private WriteRequest writeRequest;
+        private WriteMultipleRequest writeMultipleRequest;
         private SubscribeRequest subscribeRequest;
 
         private RequestEnvelope(int invokeId, int serviceChoice) {
@@ -420,6 +709,9 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
     private record WriteRequest(ReadRequest readRequest, Object value, String valueType, Integer priority) {
     }
 
+    private record WriteMultipleRequest(int invokeId, java.util.List<WriteRequest> writeRequests) {
+    }
+
     private record SubscribeRequest(int invokeId,
                                     int processIdentifier,
                                     BacnetObjectType objectType,
@@ -427,6 +719,8 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                                     BacnetPropertyIdentifier propertyIdentifier,
                                     Integer arrayIndex,
                                     boolean issueConfirmedNotifications,
-                                    Integer lifetime) {
+                                    Integer lifetime,
+                                    Double covIncrement,
+                                    boolean propertyLevel) {
     }
 }

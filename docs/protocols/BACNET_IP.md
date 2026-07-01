@@ -354,32 +354,54 @@ P3 瀹屾垚鏍囧噯锛?
 
 ### A. 功能未完全实现
 
-- `[ ]` `WritePropertyMultiple`
-  - 当前情况：连接 schema 和 validator 已暴露 `writePropertyMultipleEnabled`，但运行时未落地，collector / adapter / client / codec 都没有批量写实现。
-  - 完成标记建议：补 `domain + codec + client + connection adapter + collector`，并补批量写成功、部分失败、逐点 fallback 或明确不支持策略测试。
+- `[x]` `WritePropertyMultiple`
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/domain/BacnetWritePropertyMultipleRequest.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetWritePropertyMultipleCodec.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`、`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetReadPropertyCodecTest.java`
+  - 说明：已补齐 `domain + codec + client + connection adapter + collector`，支持 `writePropertyMultipleEnabled=true` 时聚合写，失败后自动逐点回退 `WriteProperty`。
 
-- `[ ]` confirmed `COV Notification` 接收闭环
+- `[x]` confirmed `COV Notification` 接收闭环
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetCovNotificationDecoder.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetConfirmedCovNotificationCodec.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/client/BacnetIpUdpClient.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：已补齐 confirmed COV 解码、SimpleACK 确认和 collector 推送入链。
   - 当前情况：当前入站仅实现 unconfirmed `COV Notification` 解码；订阅请求虽然可携带 `issueConfirmedNotifications=true`，但服务端若真的回 confirmed COV，当前没有对应接收与确认处理。
   - 完成标记建议：补 confirmed COV APDU 解码、ACK/处理链路、超时/重发策略、模拟服务端测试。
 
-- `[ ]` `resubscribeOnReconnect` 重连后自动恢复订阅
+- `[x]` `resubscribeOnReconnect` 重连后自动恢复订阅
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`、`src/main/java/com/wangbin/collector/core/connection/adapter/BacnetIpConnectionAdapter.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：已补齐适配器重连回调、collector 自动补订阅与失败计数。
   - 当前情况：配置字段已暴露，但当前 `BacnetIpCollector` / 调度层未实现“连接失效后重连并恢复 COV 订阅”闭环。
   - 完成标记建议：补连接恢复后的订阅重建逻辑，并覆盖断线、重连、重复订阅去重、失败重试测试。
 
-- `[ ]` `defaultCovIncrement` 连接级默认增量阈值生效
-  - 当前情况：descriptor 已暴露 `defaultCovIncrement`，但运行时仅读取点位级 `covIncrement`，未回退到连接级默认值。
-  - 完成标记建议：在属性级 COV 订阅构造时支持连接级默认值，并补点位覆盖/连接默认值测试。
+- `[x]` `defaultCovIncrement` 连接级默认增量阈值生效
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：属性级 COV 订阅已支持点位 `covIncrement` 优先、连接级 `defaultCovIncrement` 回退。
 
-- `[ ]` `covEnabled` 配置到订阅行为的统一闭环
-  - 当前情况：`covEnabled` 目前主要体现在连接参数校验，调度与 collector 本身没有用这个开关统一决定是否启用 BACnet 订阅路径。
-  - 完成标记建议：明确该字段语义，是“允许订阅能力”还是“设备启动即自动订阅订阅点”，并把行为落到调度或 collector 层。
+- `[x]` `covEnabled` 配置到订阅行为的统一闭环
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`、`src/main/java/com/wangbin/collector/core/collector/scheduler/CollectionScheduler.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`、`src/test/java/com/wangbin/collector/core/collector/scheduler/CollectionSchedulerTest.java`
+  - 说明：`covEnabled` 已统一控制自动订阅、轮询绕过和推送点调度语义。
 
-- `[ ]` constructed / array / sequence / complex `ANY` 通用解码
+- `[x]` constructed / array / sequence / complex `ANY` 通用解码
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetValueDecoder.java`、`BacnetReadPropertyResponseDecoder.java`、`BacnetReadPropertyMultipleResponseDecoder.java`、`BacnetCovNotificationDecoder.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetReadPropertyCodecTest.java`
+  - 说明：已补齐 BACnet application primitive、constructed、array/sequence 统一解码路径，并覆盖 `objectList`、`priorityArray`、`statusFlags` 等典型复杂属性。
   - 当前情况：当前读值解码以 primitive 为主，支持 `NULL / BOOLEAN / UNSIGNED / SIGNED / REAL / DOUBLE / CHARACTER_STRING / BIT_STRING / ENUMERATED / OBJECT_IDENTIFIER`，支持 `arrayIndex` 定位，但不支持通用 constructed/sequence/复杂数组属性展开。
   - 直接影响：`priorityArray`、复杂对象属性、厂商扩展 constructed 值、嵌套 sequence 返回仍不能稳定接入。
   - 完成标记建议：补通用 tag walker、constructed value model、序列化策略，并补真实复杂属性模拟测试。
 
-- `[ ]` 复杂 BACnet 属性的结果建模策略
+- `[x]` 复杂 BACnet 属性的结果建模策略
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/domain/BacnetValue.java`、`BacnetValueKind.java`、`BacnetIpCollector.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：已定义统一 `BacnetValue`/`BacnetValueKind` 建模，并在 `ProcessResult.metadata` 中固化 `bacnetValueType`、`bacnetComplexValue`、`bacnetValueMetadata`，复杂值按统一 passthrough 模式进入缓存/告警/上报链。
   - 当前情况：当前 `ProcessResult` 路径对 scalar 友好，但对复杂数组/对象结果缺统一约束，尚未定义“原样透传 JSON / typed model / flattened map”的平台标准。
   - 完成标记建议：先定平台层结果模型，再补复杂属性读链路，避免后续接口反复变更。
 
@@ -393,46 +415,99 @@ P3 瀹屾垚鏍囧噯锛?
 
 ### B. 流程与框架接入待补充
 
-- `[ ]` 调度层自动订阅 BACnet 订阅点的策略
-  - 当前情况：轮询主链路已完整接入统一框架；但 `COV` 订阅目前需要显式调用 `subscribe/subscribePoints`，`CollectionScheduler.startDevice(...)` 不会自动识别并注册 BACnet 订阅点。
-  - 完成标记建议：定义 `collectionMode=SUBSCRIPTION/EVENT` 在 BACnet 上的含义，并在调度启动、停机、配置刷新时接入订阅/退订。
+- `[x]` 调度层自动订阅 BACnet 订阅点的策略
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/scheduler/CollectionScheduler.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/scheduler/CollectionSchedulerTest.java`
+  - 说明：调度器启动阶段已自动识别 `SUBSCRIPTION/EVENT` 点并调用订阅，同时从轮询计划剔除。
 
-- `[ ]` BACnet 推送链路与轮询链路的统一配置语义
-  - 当前情况：推送数据已通过 `TelemetryIngressService` 进入统一缓存/上报/实时流/历史链路，但“哪些点走轮询、哪些点走订阅、失败后是否回退轮询”仍缺统一规则。
-  - 完成标记建议：在协议文档、schema、调度策略中统一定义 BACnet 订阅点模型。
+- `[x]` BACnet 推送链路与轮询链路的统一配置语义
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`、`src/main/java/com/wangbin/collector/core/collector/scheduler/CollectionScheduler.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`、`src/test/java/com/wangbin/collector/core/collector/scheduler/CollectionSchedulerTest.java`
+  - 说明：已明确 `covEnabled + collectionMode=SUBSCRIPTION/EVENT` 的推送点模型，并统一到轮询绕过和调度编排。
 
-- `[ ]` BACnet 专项监控指标的系统化暴露
-  - 当前情况：collector status 已有 `rpmFallbackCount`、`covNotificationCount`、`segmentedResponseCount`、`foreignDeviceRenewFailureCount`、`invokeIdMismatchCount` 等统计，但还没系统纳入统一 monitor 指标面板和接口说明。
-  - 完成标记建议：补监控接口映射、文档、告警阈值建议和现场诊断口径。
+- `[x]` BACnet 专项监控指标的系统化暴露
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：已在 `getDeviceStatus()/protocolMetrics` 暴露 COV、重连、分段、Foreign Device、fallback 等 BACnet 专项指标。
 
 ### C. 架构优化与代码组织建议
 
-- `[ ]` 拆分 `BacnetIpCollector`
-  - 当前情况：当前类同时承担读写、订阅、命令执行、配置解析、结果封装、连接失效处理、诊断信息组织，职责过重。
-  - 建议方向：拆成 `read service`、`write service`、`subscription service`、`diagnostic service`、`value/result mapper`，collector 仅保留框架适配与编排。
+- `[x]` 拆分 `BacnetIpCollector`
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/service/BacnetValueMapper.java`、`BacnetSubscriptionService.java`、`BacnetDeviceSnapshotService.java`、`BacnetWriteRequestBuilder.java`
+  - 说明：已将复杂值映射、订阅构造与匹配、设备快照、写请求构造从 collector 中拆出，`BacnetIpCollector` 主类收敛为连接调度、读写编排和统一框架接入职责。
 
 - `[ ]` 拆分 BACnet 协议栈层次
   - 当前情况：已经有 `client / codec / domain / transport` 雏形，但还缺更清晰的 `session / service / model` 层次边界。
   - 建议方向：逐步把 `invokeId`、分段、ACK、confirmed/unconfirmed service、对象/属性模型从 collector 侧继续下沉。
 
-- `[ ]` 建立复杂类型独立解码层
-  - 当前情况：primitive 解码逻辑主要集中在 `BacnetReadPropertyResponseDecoder`，复杂值一旦扩展容易继续堆在现有 decoder 内。
-  - 建议方向：新增通用 value decoder / constructed decoder / vendor extension registry，避免 decoder 膨胀。
+- `[x]` 建立复杂类型独立解码层
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetValueDecoder.java`
+  - 说明：已建立独立 BACnet value decoder，`ReadProperty / ReadPropertyMultiple / COV` 统一复用，处理 primitive、constructed、array、sequence 和复杂 `ANY` 值。
 
-- `[ ]` 建立 BACnet 设备快照 / 对象目录 / 属性缓存服务
-  - 当前情况：当前仅有基础 `device_info`、`discover_objects` 命令，缺面向配置治理和点位辅助建模的独立服务层。
-  - 建议方向：补“设备快照、object list、常用属性缓存、差异对比、点表候选生成”能力，不要继续堆进 collector 主链路。
+- `[x]` 建立 BACnet 设备快照 / 对象目录 / 属性缓存服务
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/service/BacnetDeviceSnapshotService.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/domain/BacnetDeviceSnapshot.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorIntegrationTest.java`
+  - 说明：已抽出设备快照、对象目录和属性缓存服务，`device_info` / `discover_objects` 命令已切换到该服务。
 
-- `[ ]` 明确复杂值在缓存/上报/实时流中的标准表示
-  - 当前情况：如果后续补 constructed/array/sequence，当前缓存、影子、上报、stream 是否原样携带复杂对象尚未有统一规范。
-  - 建议方向：先定义跨模块 contract，再补解码实现，避免出现“能读但不能稳定缓存/上报”的半成品状态。
+- `[x]` 明确复杂值在缓存/上报/实时流中的标准表示
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/report/shadow/ShadowManager.java`、`src/main/java/com/wangbin/collector/core/report/model/ReportData.java`、`src/main/java/com/wangbin/collector/core/report/service/IoTProtocolService.java`、`src/main/java/com/wangbin/collector/core/report/adapter/JsonProtocolAdapter.java`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/report/shadow/ShadowManagerTest.java`、`src/test/java/com/wangbin/collector/core/report/service/CacheReportServiceTest.java`
+  - 说明：已统一复杂 BACnet 值通过 `ProcessResult.metadata` 固化为 `bacnetValueType`、`bacnetComplexValue`、`bacnetValueMetadata`，并贯通影子、上报、协议消息和实时流。
 
 ### D. 回归测试与交付验证待补充
 
-- `[ ]` `WritePropertyMultiple` 集成测试
-- `[ ]` confirmed `COV Notification` 集成测试
-- `[ ]` 断线重连 + 自动恢复订阅集成测试
-- `[ ]` 复杂数组 / sequence / `priorityArray` / `objectList` 解码测试
+- `[x]` `WritePropertyMultiple` 集成测试
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/FeatureBacnetTestServer.java`
+  - 测试入口：`mvn "-Dtest=BacnetReadPropertyCodecTest,BacnetIpCollectorFeatureTest,BacnetIpCollectorIntegrationTest" test`
+  - 说明：已覆盖 WPM 编码、聚合写成功、Reject 后逐点 fallback 与 BACnet 主链回归。
+- `[x]` confirmed `COV Notification` 集成测试
+  - 完成日期：`2026-06-30`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorIntegrationTest.java#shouldHandleConfirmedCovNotificationInIntegrationPath`
+  - 说明：已覆盖 confirmed COV 入站通知、collector 接收处理与 ACK 回包集成闭环。
+- `[x]` 断线重连 + 自动恢复订阅集成测试
+  - 完成日期：`2026-06-30`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorIntegrationTest.java#shouldRecoverConnectionAndResubscribeAfterTimeoutWhenCovEnabled`
+  - 说明：已覆盖读超时导致连接失效、自动恢复连接、恢复订阅并继续读取的集成路径。
+- `[x]` 复杂数组 / sequence / `priorityArray` / `objectList` 解码测试
+  - 完成日期：`2026-06-30`
+  - 代码入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/BacnetReadPropertyCodecTest.java`、`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
+  - 说明：已补 decoder 级和 collector 级回归，验证复杂属性读值、复杂值透传与元数据保留。
+
+### 本轮完成记录（2026-06-30）
+
+- `[x]` 第一批：复杂值解码与结果建模闭环
+  - 完成日期：`2026-06-30`
+  - 代码入口：`BacnetValueDecoder`、`BacnetIpCollector`、`BacnetReadPropertyResponseDecoder`、`BacnetReadPropertyMultipleResponseDecoder`、`BacnetCovNotificationDecoder`
+  - 测试入口：`mvn "-Dtest=BacnetReadPropertyCodecTest,BacnetIpCollectorFeatureTest,BacnetIpCollectorIntegrationTest" test`
+  - 说明：已完成从 BACnet 读值/COV 值解码到 `ProcessResult`、缓存/上报链的复杂值闭环，后续继续推进 COV 自动订阅/重连恢复和 `WritePropertyMultiple`。
+- `[x]` 第二批：COV 自动订阅、confirmed 通知与重连恢复闭环
+  - 完成日期：`2026-06-30`
+  - 代码入口：`BacnetIpCollector`、`CollectionScheduler`、`BacnetConnectionAdapter`、`BacnetIpConnectionAdapter`、`BacnetScConnectionAdapter`、`BacnetMstpConnectionAdapter`、`BacnetCovNotificationDecoder`、`BacnetConfirmedCovNotificationCodec`
+  - 测试入口：`mvn "-Dtest=BacnetIpCollectorFeatureTest,CollectionSchedulerTest" test`
+  - 说明：已完成 `covEnabled`/`defaultCovIncrement`/`resubscribeOnReconnect` 运行时闭环，confirmed COV ACK、自动订阅、轮询绕过与 BACnet 专项指标一并落地。
+- `[x]` 第三批：`WritePropertyMultiple` 批量写闭环
+  - 完成日期：`2026-06-30`
+  - 代码入口：`BacnetWritePropertyMultipleRequest`、`BacnetWritePropertyMultipleCodec`、`BacnetIpCollector`、`BacnetIpUdpClient`、`BacnetIpConnectionAdapter`、`BacnetScClient`、`BacnetMstpClient`
+  - 测试入口：`mvn "-Dtest=BacnetReadPropertyCodecTest,BacnetIpCollectorFeatureTest,BacnetIpCollectorIntegrationTest" test`
+  - 说明：已完成 BACnet 聚合写请求编码、三种传输适配、collector 写聚合策略与失败自动回退。
+- `[x]` 第四批：设备快照 / 对象目录 / 属性缓存服务
+  - 完成日期：`2026-06-30`
+  - 代码入口：`BacnetDeviceSnapshotService`、`BacnetDeviceSnapshot`、`BacnetIpCollector`
+  - 测试入口：`mvn "-Dtest=BacnetIpCollectorIntegrationTest#shouldBuildDeviceSnapshotThroughDeviceInfoAndDiscoverObjectsCommands" test`
+  - 说明：已将 `device_info`、`discover_objects`、属性缓存从 collector 内部流程中抽出为独立服务。
+- `[x]` 第五批：collector 架构拆分、复杂值链路标准化与 COV 集成回归补齐
+  - 完成日期：`2026-06-30`
+  - 代码入口：`BacnetValueMapper`、`BacnetSubscriptionService`、`ShadowManager`、`ReportData`、`IoTProtocolService`、`JsonProtocolAdapter`
+  - 测试入口：`mvn "-Dtest=BacnetIpCollectorIntegrationTest,BacnetIpCollectorFeatureTest,BacnetReadPropertyCodecTest,ShadowManagerTest,CacheReportServiceTest,TelemetryStreamServiceImplTest,CollectorDataPostProcessorTest" test`
+  - 说明：已完成 `BacnetIpCollector` 进一步拆分、复杂值在缓存/影子/上报/实时流中的统一表示，并补齐 confirmed COV 与断线恢复订阅集成测试。
 - `[ ]` 跨子网 `BBMD / Foreign Device` 长稳测试
 - `[ ]` 多设备并发、大点表、长时间运行稳定性测试
 - `[ ]` 多厂商兼容矩阵回归测试

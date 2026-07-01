@@ -6,14 +6,18 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleResponse;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BacnetReadPropertyCodecTest {
@@ -118,6 +122,30 @@ class BacnetReadPropertyCodecTest {
     }
 
     @Test
+    void shouldEncodeWritePropertyMultipleRequest() {
+        BacnetWritePropertyMultipleRequest request = BacnetWritePropertyMultipleRequest.builder()
+                .invokeId(13)
+                .remoteDeviceInstance(1001)
+                .writeAccessSpecification(BacnetWritePropertyMultipleRequest.WriteAccessSpec.builder()
+                        .objectType(BacnetObjectType.ANALOG_OUTPUT)
+                        .objectInstance(1)
+                        .propertyValue(BacnetWritePropertyMultipleRequest.PropertyValueSpec.builder()
+                                .propertyIdentifier(BacnetPropertyIdentifier.PRESENT_VALUE)
+                                .value(12.5d)
+                                .valueType("REAL")
+                                .priority(8)
+                                .build())
+                        .build())
+                .build();
+
+        byte[] frame = BacnetWritePropertyMultipleCodec.encode(request);
+
+        assertEquals(0x81, Byte.toUnsignedInt(frame[0]));
+        assertEquals(0x0A, Byte.toUnsignedInt(frame[1]));
+        assertEquals(0x10, Byte.toUnsignedInt(frame[9]));
+    }
+
+    @Test
     void shouldDecodeReadPropertyMultipleAck() {
         byte[] frame = readPropertyMultipleAck();
 
@@ -129,6 +157,56 @@ class BacnetReadPropertyCodecTest {
         assertEquals(2, response.getResults().get(0).getPropertyResults().size());
         assertEquals(12.5f, ((Number) response.getResults().get(0).getPropertyResults().get(0).getValue()).floatValue(), 1.0E-6f);
         assertEquals("AI-1", response.getResults().get(0).getPropertyResults().get(1).getValue());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDecodeObjectListConstructedAck() {
+        byte[] frame = objectListAck();
+
+        BacnetReadPropertyResponse response = BacnetReadPropertyResponseDecoder.decode(frame, 21);
+
+        assertEquals(BacnetPropertyIdentifier.OBJECT_LIST, response.getPropertyIdentifier());
+        assertEquals("OBJECT_LIST", response.getValueType());
+        List<Object> objects = assertInstanceOf(List.class, response.getValue());
+        assertEquals(2, objects.size());
+        assertEquals("analogInput:1", objects.get(0));
+        assertEquals("analogOutput:2", objects.get(1));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDecodeStatusFlagsAsStructuredMap() {
+        byte[] frame = statusFlagsAck(true, false, true, false);
+
+        BacnetReadPropertyResponse response = BacnetReadPropertyResponseDecoder.decode(frame, 22);
+
+        assertEquals(BacnetPropertyIdentifier.STATUS_FLAGS, response.getPropertyIdentifier());
+        assertEquals("STATUS_FLAGS", response.getValueType());
+        Map<String, Object> flags = assertInstanceOf(Map.class, response.getValue());
+        assertEquals(true, flags.get("inAlarm"));
+        assertEquals(false, flags.get("fault"));
+        assertEquals(true, flags.get("overridden"));
+        assertEquals(false, flags.get("outOfService"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldDecodePriorityArrayConstructedAck() {
+        byte[] frame = priorityArrayAck();
+
+        BacnetReadPropertyResponse response = BacnetReadPropertyResponseDecoder.decode(frame, 23);
+
+        assertEquals(BacnetPropertyIdentifier.PRIORITY_ARRAY, response.getPropertyIdentifier());
+        assertEquals("PRIORITY_ARRAY", response.getValueType());
+        List<Object> priorities = assertInstanceOf(List.class, response.getValue());
+        assertEquals(2, priorities.size());
+        Map<String, Object> first = assertInstanceOf(Map.class, priorities.get(0));
+        Map<String, Object> second = assertInstanceOf(Map.class, priorities.get(1));
+        assertEquals(1, first.get("priority"));
+        assertEquals(10L, first.get("value"));
+        assertEquals(2, second.get("priority"));
+        assertEquals("AUTO", second.get("value"));
     }
 
     private byte[] characterStringAck(String value) {
@@ -149,6 +227,46 @@ class BacnetReadPropertyCodecTest {
     private byte[] booleanAck(boolean value) {
         byte[] any = new byte[]{(byte) ((1 << 4) | (value ? 1 : 0))};
         return ackFrame(BacnetObjectType.BINARY_INPUT, 2, BacnetPropertyIdentifier.PRESENT_VALUE, 9, any);
+    }
+
+    private byte[] objectListAck() {
+        ByteArrayOutputStream any = new ByteArrayOutputStream();
+        any.write(0x3E);
+        BacnetTagSupport.writeObjectIdentifier(any, BacnetObjectType.ANALOG_INPUT.getId(), 1);
+        BacnetTagSupport.writeObjectIdentifier(any, BacnetObjectType.ANALOG_OUTPUT.getId(), 2);
+        any.write(0x3F);
+        return ackFrame(BacnetObjectType.DEVICE, 1001, BacnetPropertyIdentifier.OBJECT_LIST, 21, any.toByteArray());
+    }
+
+    private byte[] statusFlagsAck(boolean inAlarm, boolean fault, boolean overridden, boolean outOfService) {
+        byte bits = 0;
+        if (inAlarm) {
+            bits |= (byte) 0x80;
+        }
+        if (fault) {
+            bits |= (byte) 0x40;
+        }
+        if (overridden) {
+            bits |= (byte) 0x20;
+        }
+        if (outOfService) {
+            bits |= (byte) 0x10;
+        }
+        byte[] any = new byte[]{(byte) ((8 << 4) | 2), 4, bits};
+        return ackFrame(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.STATUS_FLAGS, 22, any);
+    }
+
+    private byte[] priorityArrayAck() {
+        ByteArrayOutputStream any = new ByteArrayOutputStream();
+        any.write(0x3E);
+        BacnetTagSupport.writeUnsignedInteger(any, 10);
+        byte[] text = "AUTO".getBytes(StandardCharsets.US_ASCII);
+        any.write((7 << 4) | 0x05);
+        any.write(text.length + 1);
+        any.write(0);
+        any.writeBytes(text);
+        any.write(0x3F);
+        return ackFrame(BacnetObjectType.ANALOG_OUTPUT, 4, BacnetPropertyIdentifier.PRIORITY_ARRAY, 23, any.toByteArray());
     }
 
     private byte[] rejectFrame(int invokeId, int reason) {

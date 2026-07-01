@@ -295,7 +295,11 @@ public class CacheReportService {
         } else {
             ReportData.applyPointInfo(data, SNAPSHOT_POINT_CODE, SNAPSHOT_POINT_CODE, "snapshot");
         }
-        latest.forEach((field, meta) -> data.addProperty(field, meta.getValue(), meta.getTimestamp(), meta.getQuality()));
+        latest.forEach((field, meta) -> data.addProperty(field,
+                meta.getValue(),
+                meta.getTimestamp(),
+                meta.getQuality(),
+                meta.getMetadata()));
         return data;
     }
 
@@ -316,7 +320,8 @@ public class CacheReportService {
                     chunk.addProperty(field,
                             snapshot.getProperties().get(field),
                             snapshot.getPropertyTs().getOrDefault(field, snapshot.getTimestamp()),
-                            snapshot.getPropertyQuality().get(field));
+                            snapshot.getPropertyQuality().get(field),
+                            snapshot.getPropertyMetadata().get(field));
                     index++;
                     added++;
                     if (maxBytes > 0 && chunk.estimatePayloadSize() >= maxBytes) {

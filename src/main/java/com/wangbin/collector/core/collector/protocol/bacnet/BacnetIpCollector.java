@@ -19,12 +19,18 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteDevice;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetDeviceSnapshot;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetDeviceSnapshotService;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSubscriptionService;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetValueMapper;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetWriteRequestBuilder;
 import com.wangbin.collector.core.collector.protocol.bacnet.util.BacnetAddressParser;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.BacnetConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
-import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,11 +39,13 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,13 +55,23 @@ import java.util.stream.Collectors;
 public class BacnetIpCollector extends ConnectionBackedCollector {
 
     private final Map<String, BacnetAddress> configuredAddresses = new ConcurrentHashMap<>();
-    private final Map<String, SubscriptionBinding> subscriptionBindings = new ConcurrentHashMap<>();
+    private final Map<String, BacnetSubscriptionService.SubscriptionBinding> subscriptionBindings = new ConcurrentHashMap<>();
     private final AtomicInteger invokeIdSequence = new AtomicInteger(1);
     private final AtomicInteger subscriberProcessSequence = new AtomicInteger(1000);
     private final AtomicLong readPropertyMultipleFallbackCount = new AtomicLong(0);
     private final AtomicLong covNotificationCount = new AtomicLong(0);
     private final AtomicLong subscriptionRequestCount = new AtomicLong(0);
     private final AtomicLong subscriptionCancelCount = new AtomicLong(0);
+    private final AtomicLong covResubscribeCount = new AtomicLong(0);
+    private final AtomicLong covResubscribeFailureCount = new AtomicLong(0);
+    private final AtomicLong covConfirmedNotificationCount = new AtomicLong(0);
+    private final AtomicLong covPollingBypassCount = new AtomicLong(0);
+    private final AtomicLong writePropertyMultipleCount = new AtomicLong(0);
+    private final AtomicLong writePropertyMultipleFallbackCount = new AtomicLong(0);
+    private final BacnetDeviceSnapshotService deviceSnapshotService = new BacnetDeviceSnapshotService();
+    private final BacnetWriteRequestBuilder writeRequestBuilder = new BacnetWriteRequestBuilder();
+    private final BacnetValueMapper valueMapper = new BacnetValueMapper();
+    private final BacnetSubscriptionService subscriptionService = new BacnetSubscriptionService();
 
     private BacnetConnectionAdapter connectionAdapter;
     private volatile int requestTimeoutMs = 5000;
@@ -73,6 +91,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         DeviceConnection desiredConfig = requireConnectionConfig();
         this.connectionAdapter = createBacnetConnectionAdapter(desiredConfig);
         this.connectionAdapter.setCovNotificationListener(this::handleCovNotification);
+        this.connectionAdapter.setReconnectListener(this::handleAdapterReconnect);
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
             currentConfig = desiredConfig;
@@ -80,6 +99,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         requestTimeoutMs = resolveRequestTimeout(currentConfig);
         configuredAddresses.clear();
         subscriptionBindings.clear();
+        deviceSnapshotService.clear();
         log.info("{} collector connected, deviceId={}, timeoutMs={}", protocolDisplayName(), deviceInfo.getDeviceId(), requestTimeoutMs);
     }
 
@@ -89,6 +109,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         connectionAdapter = null;
         subscriptionBindings.clear();
         configuredAddresses.clear();
+        deviceSnapshotService.clear();
         log.info("{} collector disconnected, deviceId={}", protocolDisplayName(), deviceInfo.getDeviceId());
     }
 
@@ -129,10 +150,24 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 return results;
             }
 
-            Map<String, Object> rawValues = doReadPoints(validPoints);
+            List<DataPoint> pollPoints = filterPollingPoints(validPoints);
+            Set<String> skippedPollingIds = new HashSet<>();
+            for (DataPoint point : validPoints) {
+                if (point != null && !pollPoints.contains(point)) {
+                    skippedPollingIds.add(point.getPointId());
+                }
+            }
+
+            Map<String, Object> rawValues = pollPoints.isEmpty() ? Collections.emptyMap() : doReadPoints(pollPoints);
             for (DataPoint point : validPoints) {
                 String pointId = point.getPointId();
                 if (pointId == null) {
+                    continue;
+                }
+                if (skippedPollingIds.contains(pointId)) {
+                    covPollingBypassCount.incrementAndGet();
+                    ProcessResult latest = lastProcessResults.get(pointId);
+                    results.put(pointId, latest != null ? latest.getFinalValue() : null);
                     continue;
                 }
                 try {
@@ -153,7 +188,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 }
             }
 
-            totalReadCount.addAndGet(validPoints.size());
+            totalReadCount.addAndGet(pollPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
             return results;
@@ -168,8 +203,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         BacnetAddress address = requireAddress(point);
-        BacnetReadPropertyResponse response = exchange(readPropertyRequest(address));
-        return response.getValue();
+        return exchange(readPropertyRequest(address));
     }
 
     @Override
@@ -217,17 +251,14 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         BacnetAddress address = requireAddress(point);
-        BacnetWritePropertyRequest request = BacnetWritePropertyRequest.builder()
-                .objectType(BacnetObjectType.fromId(address.getObjectTypeId()))
-                .objectInstance(address.getInstanceNumber())
-                .propertyIdentifier(BacnetPropertyIdentifier.fromId(address.getPropertyIdentifierId()))
-                .arrayIndex(address.getArrayIndex())
-                .value(value)
-                .valueType(resolveWriteValueType(point, address, null))
-                .priority(resolveWritePriority(point, null))
-                .invokeId(nextInvokeId())
-                .remoteDeviceInstance(requireRemoteDeviceInstance())
-                .build();
+        BacnetWritePropertyRequest request = writeRequestBuilder.buildSingle(
+                point,
+                address,
+                value,
+                resolveWriteValueType(point, address, null),
+                resolveWritePriority(point, null),
+                nextInvokeId(),
+                requireRemoteDeviceInstance());
         exchange(request);
         return true;
     }
@@ -237,6 +268,31 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         Map<String, Boolean> results = new LinkedHashMap<>();
         if (points == null || points.isEmpty()) {
             return results;
+        }
+        if (isWritePropertyMultipleEnabled() && points.size() > 1) {
+            try {
+                exchange(buildWritePropertyMultipleRequest(points));
+                writePropertyMultipleCount.incrementAndGet();
+                for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+                    DataPoint point = entry.getKey();
+                    if (point != null && point.getPointId() != null) {
+                        results.put(point.getPointId(), true);
+                    }
+                }
+                return results;
+            } catch (Exception ex) {
+                writePropertyMultipleFallbackCount.incrementAndGet();
+                log.warn("{} WritePropertyMultiple failed, fallback to WriteProperty, deviceId={}, pointCount={}, error={}",
+                        protocolDisplayName(),
+                        deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                        points.size(),
+                        ex.getMessage());
+                if ((connectionAdapter == null || !connectionAdapter.isConnected()) && !attemptConnectionRecovery()) {
+                    log.warn("{} connection recovery before WriteProperty fallback failed, deviceId={}",
+                            protocolDisplayName(),
+                            deviceInfo != null ? deviceInfo.getDeviceId() : null);
+                }
+            }
         }
         for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
             DataPoint point = entry.getKey();
@@ -267,7 +323,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 continue;
             }
             BacnetAddress address = requireAddress(point);
-            SubscriptionBinding binding = subscribePoint(point, address);
+            BacnetSubscriptionService.SubscriptionBinding binding = subscribePoint(point, address);
             subscriptionBindings.put(resolvePointCacheKey(point), binding);
             subscriptionRequestCount.incrementAndGet();
         }
@@ -282,7 +338,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            SubscriptionBinding binding = subscriptionBindings.remove(resolvePointCacheKey(point));
+            BacnetSubscriptionService.SubscriptionBinding binding = subscriptionBindings.remove(resolvePointCacheKey(point));
             if (binding == null) {
                 continue;
             }
@@ -315,6 +371,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         status.put("covNotificationCount", covNotificationCount.get());
         status.put("subscriptionRequestCount", subscriptionRequestCount.get());
         status.put("subscriptionCancelCount", subscriptionCancelCount.get());
+        status.put("covResubscribeCount", covResubscribeCount.get());
+        status.put("covResubscribeFailureCount", covResubscribeFailureCount.get());
+        status.put("covConfirmedNotificationCount", covConfirmedNotificationCount.get());
+        status.put("covPollingBypassCount", covPollingBypassCount.get());
+        status.put("writePropertyMultipleCount", writePropertyMultipleCount.get());
+        status.put("writePropertyMultipleFallbackCount", writePropertyMultipleFallbackCount.get());
         status.put("requestRetryCount", connectionAdapter != null ? connectionAdapter.getRequestRetryCount() : 0L);
         status.put("requestTimeoutCount", connectionAdapter != null ? connectionAdapter.getRequestTimeoutCount() : 0L);
         status.put("invokeIdMismatchCount", connectionAdapter != null ? connectionAdapter.getInvokeIdMismatchCount() : 0L);
@@ -340,6 +402,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 status.put("discoveredByWhoIs", remoteDevice.isDiscoveredByWhoIs());
             }
         }
+        status.put("protocolMetrics", buildProtocolMetrics());
         status.put("message", capabilityMessage());
         return status;
     }
@@ -409,11 +472,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
         try {
             BacnetAddress address = requireAddress(point);
-            Object processedValue = normalizeReadValue(point, address, rawValue);
-            ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", resolvedDeviceId);
-            ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-            enrichProcessResult(processResult, address, "cov");
+            ProcessResult processResult = buildProcessResult(point, address, rawValue, "cov", resolvedDeviceId);
             lastProcessResults.put(point.getPointId(), processResult);
             if (!processResult.isSuccess()) {
                 log.warn("{} pushed data quality check failed {}.{}, reason: {}", protocolDisplayName(),
@@ -443,46 +502,28 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                                                    BacnetAddress address,
                                                    Object rawValue,
                                                    String source) {
-        Object processedValue = normalizeReadValue(point, address, rawValue);
-        ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
-        ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+        return buildProcessResult(point, address, rawValue, source, deviceInfo.getDeviceId());
+    }
+
+    private ProcessResult buildProcessResult(DataPoint point,
+                                             BacnetAddress address,
+                                             Object rawValue,
+                                             String source,
+                                             String deviceId) {
+        ProcessResult processResult = valueMapper.map(
+                dataQualityProcessor,
+                point,
+                address,
+                rawValue,
+                source,
+                deviceId,
+                this::convertData
+        );
         if (!processResult.isSuccess()) {
             log.warn("{} data quality check failed {}.{}, reason: {}", protocolDisplayName(),
-                    deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+                    deviceId, point.getPointName(), processResult.getMessage());
         }
-        enrichProcessResult(processResult, address, source);
         return processResult;
-    }
-
-    private void enrichProcessResult(ProcessResult processResult, BacnetAddress address, String source) {
-        processResult.addMetadata("address", address.getCanonicalAddress());
-        processResult.addMetadata("objectType", address.getObjectType());
-        processResult.addMetadata("instanceNumber", address.getInstanceNumber());
-        processResult.addMetadata("propertyIdentifier", address.getPropertyIdentifier());
-        processResult.addMetadata("source", source);
-        processResult.addMetadata("processingMode", isStringLike(address, processResult.getRawValue())
-                ? "protocol_string_passthrough"
-                : "default_scalar_conversion");
-    }
-
-    private Object normalizeReadValue(DataPoint point, BacnetAddress address, Object rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-        if (isStringLike(address, rawValue) || rawValue instanceof boolean[] || rawValue instanceof String) {
-            return rawValue;
-        }
-        return convertData(point, rawValue);
-    }
-
-    private boolean isStringLike(BacnetAddress address, Object rawValue) {
-        if (rawValue instanceof String) {
-            return true;
-        }
-        String driverType = address.getDriverDataType();
-        return driverType != null && ("STRING".equalsIgnoreCase(driverType)
-                || "CHARACTER_STRING".equalsIgnoreCase(driverType));
     }
     private BacnetReadPropertyResponse exchange(BacnetReadPropertyRequest request) throws Exception {
         try {
@@ -509,6 +550,17 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     private void exchange(BacnetWritePropertyRequest request) throws Exception {
         try {
             requireConnection().writeProperty(request, requestTimeoutMs);
+        } catch (Exception ex) {
+            if (shouldInvalidateConnection(ex)) {
+                invalidateConnection(ex);
+            }
+            throw ex;
+        }
+    }
+
+    private void exchange(BacnetWritePropertyMultipleRequest request) throws Exception {
+        try {
+            requireConnection().writePropertyMultiple(request, requestTimeoutMs);
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
                 invalidateConnection(ex);
@@ -573,6 +625,24 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return !Boolean.FALSE.equals(runtimeConfig.getBoolConfig("readPropertyMultipleEnabled", true));
     }
 
+    private boolean isWritePropertyMultipleEnabled() {
+        DeviceConnection runtimeConfig = getCurrentConnectionConfig();
+        if (runtimeConfig == null) {
+            runtimeConfig = requireConnectionConfig();
+        }
+        return Boolean.TRUE.equals(runtimeConfig.getBoolConfig("writePropertyMultipleEnabled", false));
+    }
+
+    private BacnetWritePropertyMultipleRequest buildWritePropertyMultipleRequest(Map<DataPoint, Object> points) {
+        return writeRequestBuilder.buildMultiple(
+                points,
+                this::requireAddress,
+                (point, address) -> resolveWriteValueType(point, address, null),
+                point -> resolveWritePriority(point, null),
+                this::nextInvokeId,
+                requireRemoteDeviceInstance());
+    }
+
     private void readSequentially(List<BacnetReadPointPlan> pointPlans, Map<String, Object> values) throws Exception {
         for (BacnetReadPointPlan pointPlan : pointPlans) {
             values.put(pointPlan.getPoint().getPointId(), doReadPoint(pointPlan.getPoint()));
@@ -612,7 +682,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 throw new IllegalStateException("BACnet RPM property read failed for address="
                         + pointPlan.getAddress().getCanonicalAddress() + ", " + propertyResult.getErrorMessage());
             }
-            values.put(pointPlan.getPoint().getPointId(), propertyResult.getValue());
+            values.put(pointPlan.getPoint().getPointId(), BacnetValue.builder()
+                    .value(propertyResult.getValue())
+                    .valueType(propertyResult.getValueType())
+                    .kind(valueMapper.inferKind(propertyResult.getValue()))
+                    .metadata(propertyResult.getValueMetadata() != null ? propertyResult.getValueMetadata() : Collections.emptyMap())
+                    .build());
         }
     }
 
@@ -678,66 +753,30 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             lastError = cause != null ? cause.getMessage() : lastError;
         }
     }
-    private SubscriptionBinding subscribePoint(DataPoint point, BacnetAddress address) throws Exception {
-        int processIdentifier = nextSubscriberProcessIdentifier();
-        boolean propertyLevel = shouldUsePropertySubscription(point, address);
-        boolean issueConfirmedNotifications = resolveConfirmedNotifications(point);
-        Integer lifetimeSeconds = resolveCovLifetimeSeconds(point);
-        if (propertyLevel) {
-            BacnetSubscribeCovPropertyRequest request = BacnetSubscribeCovPropertyRequest.builder()
-                    .subscriberProcessIdentifier(processIdentifier)
-                    .objectType(BacnetObjectType.fromId(address.getObjectTypeId()))
-                    .objectInstance(address.getInstanceNumber())
-                    .propertyIdentifier(BacnetPropertyIdentifier.fromId(address.getPropertyIdentifierId()))
-                    .arrayIndex(address.getArrayIndex())
-                    .issueConfirmedNotifications(issueConfirmedNotifications)
-                    .lifetimeSeconds(lifetimeSeconds)
-                    .covIncrement(resolveCovIncrement(point))
-                    .invokeId(nextInvokeId())
-                    .remoteDeviceInstance(requireRemoteDeviceInstance())
-                    .build();
-            exchange(request);
-        } else {
-            BacnetSubscribeCovRequest request = BacnetSubscribeCovRequest.builder()
-                    .subscriberProcessIdentifier(processIdentifier)
-                    .objectType(BacnetObjectType.fromId(address.getObjectTypeId()))
-                    .objectInstance(address.getInstanceNumber())
-                    .issueConfirmedNotifications(issueConfirmedNotifications)
-                    .lifetimeSeconds(lifetimeSeconds)
-                    .invokeId(nextInvokeId())
-                    .remoteDeviceInstance(requireRemoteDeviceInstance())
-                    .build();
-            exchange(request);
-        }
-        return new SubscriptionBinding(processIdentifier, address, propertyLevel, issueConfirmedNotifications);
+    private BacnetSubscriptionService.SubscriptionBinding subscribePoint(DataPoint point, BacnetAddress address) throws Exception {
+        return subscriptionService.subscribe(
+                point,
+                address,
+                shouldUsePropertySubscription(point, address),
+                resolveConfirmedNotifications(point),
+                resolveCovLifetimeSeconds(point),
+                resolveCovIncrement(point),
+                this::nextSubscriberProcessIdentifier,
+                this::nextInvokeId,
+                requireRemoteDeviceInstance(),
+                this::exchange,
+                this::exchange
+        );
     }
 
-    private void unsubscribeBinding(SubscriptionBinding binding) throws Exception {
-        if (binding.propertyLevel) {
-            BacnetSubscribeCovPropertyRequest request = BacnetSubscribeCovPropertyRequest.builder()
-                    .subscriberProcessIdentifier(binding.processIdentifier)
-                    .objectType(BacnetObjectType.fromId(binding.address.getObjectTypeId()))
-                    .objectInstance(binding.address.getInstanceNumber())
-                    .propertyIdentifier(BacnetPropertyIdentifier.fromId(binding.address.getPropertyIdentifierId()))
-                    .arrayIndex(binding.address.getArrayIndex())
-                    .issueConfirmedNotifications(binding.issueConfirmedNotifications)
-                    .lifetimeSeconds(0)
-                    .invokeId(nextInvokeId())
-                    .remoteDeviceInstance(requireRemoteDeviceInstance())
-                    .build();
-            exchange(request);
-            return;
-        }
-        BacnetSubscribeCovRequest request = BacnetSubscribeCovRequest.builder()
-                .subscriberProcessIdentifier(binding.processIdentifier)
-                .objectType(BacnetObjectType.fromId(binding.address.getObjectTypeId()))
-                .objectInstance(binding.address.getInstanceNumber())
-                .issueConfirmedNotifications(binding.issueConfirmedNotifications)
-                .lifetimeSeconds(0)
-                .invokeId(nextInvokeId())
-                .remoteDeviceInstance(requireRemoteDeviceInstance())
-                .build();
-        exchange(request);
+    private void unsubscribeBinding(BacnetSubscriptionService.SubscriptionBinding binding) throws Exception {
+        subscriptionService.unsubscribe(
+                binding,
+                this::nextInvokeId,
+                requireRemoteDeviceInstance(),
+                this::exchange,
+                this::exchange
+        );
     }
 
     private void unsubscribeIfAlreadyBound(List<DataPoint> points) throws Exception {
@@ -755,11 +794,26 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     private void ensureNotificationListenerRegistered() {
         if (connectionAdapter != null) {
             connectionAdapter.setCovNotificationListener(this::handleCovNotification);
+            connectionAdapter.setReconnectListener(this::handleAdapterReconnect);
         }
+    }
+
+    @Override
+    protected void checkConnection() {
+        if (connected && connectionAdapter != null && connectionAdapter.isConnected()) {
+            return;
+        }
+        if (attemptConnectionRecovery()) {
+            return;
+        }
+        throw new IllegalStateException("设备未连接:" + (deviceInfo != null ? deviceInfo.getDeviceId() : null));
     }
 
     private void handleCovNotification(BacnetCovNotification notification) {
         covNotificationCount.incrementAndGet();
+        if (notification != null && notification.isConfirmed()) {
+            covConfirmedNotificationCount.incrementAndGet();
+        }
         if (notification == null || notification.getPropertyValues() == null || notification.getPropertyValues().isEmpty()) {
             return;
         }
@@ -793,24 +847,47 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                                         BacnetCovNotification.PropertyValue propertyValue,
                                         BacnetAddress address) {
         return notification.getMonitoredObjectType() != null
-                && notification.getMonitoredObjectType().getId() == address.getObjectTypeId()
-                && notification.getMonitoredObjectInstance() == address.getInstanceNumber()
                 && propertyValue.getPropertyIdentifier() != null
-                && propertyValue.getPropertyIdentifier().getId() == address.getPropertyIdentifierId()
-                && Objects.equals(propertyValue.getArrayIndex(), address.getArrayIndex());
+                && subscriptionService.matchesNotification(
+                notification.getMonitoredObjectType().getId(),
+                notification.getMonitoredObjectInstance(),
+                propertyValue.getPropertyIdentifier().getId(),
+                propertyValue.getArrayIndex(),
+                address
+        );
     }
 
     private boolean shouldUsePropertySubscription(DataPoint point, BacnetAddress address) {
-        Boolean pointEnabled = point.getAdditionalConfig("covPropertyEnabled", null);
-        if (pointEnabled != null) {
-            return pointEnabled;
-        }
-        DeviceConnection connection = currentOrRequiredConnectionConfig();
-        Boolean connectionEnabled = connection.getBoolConfig("covPropertyEnabled", null);
-        if (connectionEnabled != null) {
-            return connectionEnabled;
-        }
-        return address.getArrayIndex() != null || point.getAdditionalConfig("covIncrement", null) != null;
+        return subscriptionService.usePropertySubscription(
+                point,
+                address,
+                currentOrRequiredConnectionConfig().getBoolConfig("covPropertyEnabled", null)
+        );
+    }
+
+    private Map<String, Object> buildProtocolMetrics() {
+        Map<String, Object> protocolMetrics = new LinkedHashMap<>();
+        protocolMetrics.put("configuredPointCount", configuredAddresses.size());
+        protocolMetrics.put("activeSubscriptionCount", subscriptionBindings.size());
+        protocolMetrics.put("subscriptionRequestCount", subscriptionRequestCount.get());
+        protocolMetrics.put("subscriptionCancelCount", subscriptionCancelCount.get());
+        protocolMetrics.put("covNotificationCount", covNotificationCount.get());
+        protocolMetrics.put("covConfirmedNotificationCount", covConfirmedNotificationCount.get());
+        protocolMetrics.put("covResubscribeCount", covResubscribeCount.get());
+        protocolMetrics.put("covResubscribeFailureCount", covResubscribeFailureCount.get());
+        protocolMetrics.put("covPollingBypassCount", covPollingBypassCount.get());
+        protocolMetrics.put("readPropertyMultipleFallbackCount", readPropertyMultipleFallbackCount.get());
+        protocolMetrics.put("writePropertyMultipleCount", writePropertyMultipleCount.get());
+        protocolMetrics.put("writePropertyMultipleFallbackCount", writePropertyMultipleFallbackCount.get());
+        protocolMetrics.put("requestRetryCount", connectionAdapter != null ? connectionAdapter.getRequestRetryCount() : 0L);
+        protocolMetrics.put("requestTimeoutCount", connectionAdapter != null ? connectionAdapter.getRequestTimeoutCount() : 0L);
+        protocolMetrics.put("invokeIdMismatchCount", connectionAdapter != null ? connectionAdapter.getInvokeIdMismatchCount() : 0L);
+        protocolMetrics.put("segmentedResponseCount", connectionAdapter != null ? connectionAdapter.getSegmentedResponseCount() : 0L);
+        protocolMetrics.put("foreignDeviceRenewFailureCount", connectionAdapter != null ? connectionAdapter.getForeignDeviceRenewFailureCount() : 0L);
+        protocolMetrics.put("bbmdActive", connectionAdapter != null && connectionAdapter.isForeignDeviceRegistrationActive());
+        protocolMetrics.put("covEnabled", isCovEnabled());
+        protocolMetrics.put("resubscribeOnReconnect", shouldResubscribeOnReconnect());
+        return protocolMetrics;
     }
 
     private boolean resolveConfirmedNotifications(DataPoint point) {
@@ -836,12 +913,106 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     private Double resolveCovIncrement(DataPoint point) {
         Object value = point.getAdditionalConfig("covIncrement", null);
         if (value == null) {
+            DeviceConnection connection = currentOrRequiredConnectionConfig();
+            value = firstPresent(connection.getExtJson(), "defaultCovIncrement");
+            if (value == null) {
+                value = connection.getProperty("defaultCovIncrement");
+            }
+        }
+        if (value == null) {
             return null;
         }
         if (value instanceof Number number) {
             return number.doubleValue();
         }
         return Double.parseDouble(String.valueOf(value));
+    }
+
+    public boolean shouldAutoSubscribePoint(DataPoint point) {
+        if (point == null || !point.isEnabled()) {
+            return false;
+        }
+        if (!isCovEnabled()) {
+            return false;
+        }
+        String collectionMode = point.getCollectionMode();
+        if (collectionMode == null || collectionMode.isBlank()) {
+            return false;
+        }
+        String normalized = collectionMode.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return "SUBSCRIPTION".equals(normalized) || "EVENT".equals(normalized);
+    }
+
+    public List<DataPoint> filterAutoSubscriptionPoints(List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return points.stream().filter(this::shouldAutoSubscribePoint).collect(Collectors.toList());
+    }
+
+    public List<DataPoint> filterPollingPoints(List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (!isCovEnabled()) {
+            return new ArrayList<>(points);
+        }
+        return points.stream()
+                .filter(point -> point != null && !shouldAutoSubscribePoint(point))
+                .collect(Collectors.toList());
+    }
+
+    private boolean isCovEnabled() {
+        return Boolean.TRUE.equals(currentOrRequiredConnectionConfig().getBoolConfig("covEnabled", false));
+    }
+
+    private boolean shouldResubscribeOnReconnect() {
+        return !Boolean.FALSE.equals(currentOrRequiredConnectionConfig().getBoolConfig("resubscribeOnReconnect", true));
+    }
+
+    private synchronized boolean attemptConnectionRecovery() {
+        if (deviceInfo == null) {
+            return false;
+        }
+        try {
+            DeviceConnection desiredConfig = currentOrRequiredConnectionConfig();
+            BacnetConnectionAdapter newAdapter = createBacnetConnectionAdapter(desiredConfig);
+            newAdapter.setCovNotificationListener(this::handleCovNotification);
+            newAdapter.setReconnectListener(this::handleAdapterReconnect);
+            connectionAdapter = newAdapter;
+            requestTimeoutMs = resolveRequestTimeout(desiredConfig);
+            connected = true;
+            connectionStatus = "CONNECTED";
+            lastConnectTime = System.currentTimeMillis();
+            lastActivityTime = System.currentTimeMillis();
+            handleAdapterReconnect();
+            return true;
+        } catch (Exception ex) {
+            lastError = ex.getMessage();
+            recordException(ex, null);
+            return false;
+        }
+    }
+
+    private void handleAdapterReconnect() {
+        if (!shouldResubscribeOnReconnect() || subscribedPointMap.isEmpty() || !isCovEnabled()) {
+            return;
+        }
+        List<DataPoint> points = filterAutoSubscriptionPoints(new ArrayList<>(subscribedPointMap.values()));
+        if (points.isEmpty()) {
+            return;
+        }
+        try {
+            doSubscribe(points);
+            covResubscribeCount.incrementAndGet();
+        } catch (Exception ex) {
+            covResubscribeFailureCount.incrementAndGet();
+            log.warn("{} resubscribe on reconnect failed, deviceId={}, pointCount={}",
+                    protocolDisplayName(),
+                    deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                    points.size(),
+                    ex);
+        }
     }
     private String resolveWriteValueType(DataPoint point, BacnetAddress address, Map<String, Object> params) {
         if (params != null && params.containsKey("valueType") && params.get("valueType") != null) {
@@ -930,18 +1101,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     }
 
     private Map<String, Object> executeDeviceInfoCommand() {
-        Map<String, Object> info = new LinkedHashMap<>();
-        info.put("remoteDeviceInstance", requireRemoteDeviceInstance());
-        info.put("objectName", safeReadDeviceProperty(BacnetPropertyIdentifier.OBJECT_NAME, null));
-        info.put("description", safeReadDeviceProperty(BacnetPropertyIdentifier.DESCRIPTION, null));
-        info.put("modelName", safeReadDeviceProperty(BacnetPropertyIdentifier.MODEL_NAME, null));
-        info.put("vendorIdentifier", safeReadDeviceProperty(BacnetPropertyIdentifier.VENDOR_IDENTIFIER, null));
-        info.put("protocolVersion", safeReadDeviceProperty(BacnetPropertyIdentifier.PROTOCOL_VERSION, null));
-        info.put("protocolRevision", safeReadDeviceProperty(BacnetPropertyIdentifier.PROTOCOL_REVISION, null));
-        info.put("maxApduLengthAccepted", safeReadDeviceProperty(BacnetPropertyIdentifier.MAX_APDU_LENGTH_ACCEPTED, null));
-        info.put("segmentationSupported", safeReadDeviceProperty(BacnetPropertyIdentifier.SEGMENTATION_SUPPORTED, null));
-        info.put("objectCount", safeReadDeviceProperty(BacnetPropertyIdentifier.OBJECT_LIST, 0));
-        return info;
+        return captureDeviceSnapshot().getDeviceInfo();
     }
 
     private Map<String, Object> executeWhoIsCommand() {
@@ -956,17 +1116,8 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
-    private List<String> executeDiscoverObjectsCommand() throws Exception {
-        Object countValue = safeReadDeviceProperty(BacnetPropertyIdentifier.OBJECT_LIST, 0);
-        int count = countValue instanceof Number number ? number.intValue() : Integer.parseInt(String.valueOf(countValue));
-        List<String> objects = new ArrayList<>();
-        for (int index = 1; index <= count; index++) {
-            Object value = safeReadDeviceProperty(BacnetPropertyIdentifier.OBJECT_LIST, index);
-            if (value != null) {
-                objects.add(String.valueOf(value));
-            }
-        }
-        return objects;
+    private List<String> executeDiscoverObjectsCommand() {
+        return captureDeviceSnapshot().getObjectList();
     }
 
     private Object safeReadDeviceProperty(BacnetPropertyIdentifier propertyIdentifier, Integer arrayIndex) {
@@ -988,6 +1139,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                     ex.getMessage());
             return null;
         }
+    }
+
+    public Object safeReadDevicePropertyForSnapshot(BacnetPropertyIdentifier propertyIdentifier, Integer arrayIndex) {
+        return safeReadDeviceProperty(propertyIdentifier, arrayIndex);
+    }
+
+    public int requireRemoteDeviceInstanceForSnapshot() {
+        return requireRemoteDeviceInstance();
+    }
+
+    private BacnetDeviceSnapshot captureDeviceSnapshot() {
+        return deviceSnapshotService.capture(this);
     }
 
     private BacnetReadPropertyRequest readPropertyRequest(BacnetAddress address) {
@@ -1151,9 +1314,4 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return new UnsupportedOperationException(message);
     }
 
-    private record SubscriptionBinding(int processIdentifier,
-                                       BacnetAddress address,
-                                       boolean propertyLevel,
-                                       boolean issueConfirmedNotifications) {
-    }
 }

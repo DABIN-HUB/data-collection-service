@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.client;
 
+import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetConfirmedCovNotificationCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetCovNotificationDecoder;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetReadPropertyCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetReadPropertyMultipleCodec;
@@ -10,6 +11,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetSimpleAc
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetSubscribeCovCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetSubscribeCovPropertyCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetWritePropertyCodec;
+import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetWritePropertyMultipleCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetCovNotification;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleResponse;
@@ -18,6 +20,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import com.wangbin.collector.core.connection.adapter.BacnetScConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -92,6 +95,15 @@ public class BacnetScClient implements AutoCloseable {
         });
     }
 
+    public void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs, int retries) throws Exception {
+        exchange(BacnetWritePropertyMultipleCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
+            BacnetSimpleAckDecoder.verify(frame,
+                    request.getInvokeId(),
+                    BacnetWritePropertyMultipleCodec.SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE);
+            return null;
+        });
+    }
+
     public void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs, int retries) throws Exception {
         exchange(BacnetSubscribeCovCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
@@ -108,6 +120,10 @@ public class BacnetScClient implements AutoCloseable {
                     BacnetSubscribeCovPropertyCodec.SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY);
             return null;
         });
+    }
+
+    public void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+        connectionAdapter.send(BacnetConfirmedCovNotificationCodec.encodeAck(invokeId));
     }
 
     public long getRequestRetryCount() { return requestRetryCount.get(); }
@@ -229,7 +245,8 @@ public class BacnetScClient implements AutoCloseable {
     }
 
     private void dispatchIncoming(byte[] frame) {
-        if (BacnetCovNotificationDecoder.isUnconfirmedCovNotification(frame)) {
+        if (BacnetCovNotificationDecoder.isUnconfirmedCovNotification(frame)
+                || BacnetCovNotificationDecoder.isConfirmedCovNotification(frame)) {
             handleCovNotification(frame);
             return;
         }
@@ -242,6 +259,9 @@ public class BacnetScClient implements AutoCloseable {
     private void handleCovNotification(byte[] frame) {
         try {
             BacnetCovNotification notification = BacnetCovNotificationDecoder.decode(frame);
+            if (notification.isConfirmed() && notification.getInvokeId() != null) {
+                acknowledgeConfirmedCovNotification(notification.getInvokeId());
+            }
             covNotificationCount.incrementAndGet();
             Consumer<BacnetCovNotification> handler = covNotificationHandler;
             if (handler != null) {

@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetObjectType;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleResponse;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -102,14 +103,15 @@ public final class BacnetReadPropertyMultipleResponseDecoder {
                                 .arrayIndex(arrayIndex);
 
                 if (valueTag.contextSpecific() && valueTag.openingTag() && valueTag.tagNumber() == 4) {
-                    BacnetReadPropertyResponseDecoder.PrimitiveValue primitiveValue =
-                            BacnetReadPropertyResponseDecoder.readAnyPrimitiveValue(buffer);
+                    BacnetValue decodedValue = BacnetValueDecoder.readAnyValue(buffer);
+                    decodedValue = BacnetValueDecoder.normalizeDecodedPropertyValue(propertyIdentifier, arrayIndex, decodedValue);
                     BacnetTagReader.TagHeader closing = BacnetTagReader.readTag(buffer);
                     if (!closing.contextSpecific() || !closing.closingTag() || closing.tagNumber() != 4) {
                         throw new IllegalArgumentException("BACnet RPM Ack missing value closing tag 4");
                     }
-                    propertyResultBuilder.value(primitiveValue.value())
-                            .valueType(primitiveValue.type())
+                    propertyResultBuilder.value(decodedValue.getValue())
+                            .valueType(decodedValue.getValueType())
+                            .valueMetadata(decodedValue.getMetadata())
                             .error(false);
                 } else if (valueTag.contextSpecific() && valueTag.openingTag() && valueTag.tagNumber() == 5) {
                     String errorMessage = decodeErrorClassAndCode(buffer);

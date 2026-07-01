@@ -3,19 +3,41 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetCovNotification;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetObjectType;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public final class BacnetCovNotificationDecoder {
 
+    public static final int APDU_TYPE_CONFIRMED_REQUEST = 0x00;
     public static final int APDU_TYPE_UNCONFIRMED_REQUEST = 0x01;
+    public static final int SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION = 0x01;
     public static final int SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION = 0x02;
 
     private BacnetCovNotificationDecoder() {
     }
 
     public static boolean isUnconfirmedCovNotification(byte[] frame) {
+        return hasServiceChoice(frame, APDU_TYPE_UNCONFIRMED_REQUEST, SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION);
+    }
+
+    public static boolean isConfirmedCovNotification(byte[] frame) {
+        return hasServiceChoice(frame, APDU_TYPE_CONFIRMED_REQUEST, SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION);
+    }
+
+    public static BacnetCovNotification decode(byte[] frame) {
+        ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
+        BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
+                BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
+        return switch (header.pduType()) {
+            case APDU_TYPE_UNCONFIRMED_REQUEST -> decodeUnconfirmed(buffer);
+            case APDU_TYPE_CONFIRMED_REQUEST -> decodeConfirmed(buffer, header.pduHeader());
+            default -> throw new IllegalArgumentException("Unsupported BACnet APDU type for COV notification: " + header.pduType());
+        };
+    }
+
+    private static boolean hasServiceChoice(byte[] frame, int expectedPduType, int expectedServiceChoice) {
         if (frame == null || frame.length < 8) {
             return false;
         }
@@ -23,27 +45,51 @@ public final class BacnetCovNotificationDecoder {
             ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
             BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
                     BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
-            if (header.pduType() != APDU_TYPE_UNCONFIRMED_REQUEST) {
+            if (header.pduType() != expectedPduType) {
                 return false;
             }
-            return Byte.toUnsignedInt(buffer.get()) == SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION;
+            if (expectedPduType == APDU_TYPE_CONFIRMED_REQUEST) {
+                if (buffer.remaining() < 3) {
+                    return false;
+                }
+                buffer.get();
+                buffer.get();
+            }
+            return Byte.toUnsignedInt(buffer.get()) == expectedServiceChoice;
         } catch (Exception ex) {
             return false;
         }
     }
 
-    public static BacnetCovNotification decode(byte[] frame) {
-        ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
-        BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
-                BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
-        if (header.pduType() != APDU_TYPE_UNCONFIRMED_REQUEST) {
-            throw new IllegalArgumentException("Unsupported BACnet APDU type for COV notification: " + header.pduType());
-        }
+    private static BacnetCovNotification decodeUnconfirmed(ByteBuffer buffer) {
         int serviceChoice = Byte.toUnsignedInt(buffer.get());
         if (serviceChoice != SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION) {
             throw new IllegalArgumentException("Unsupported BACnet unconfirmed service choice: " + serviceChoice);
         }
+        return decodeNotificationBody(buffer, false, null);
+    }
 
+    private static BacnetCovNotification decodeConfirmed(ByteBuffer buffer, int pduHeader) {
+        boolean segmented = (pduHeader & 0x08) != 0;
+        boolean moreFollows = (pduHeader & 0x04) != 0;
+        if (segmented || moreFollows) {
+            throw new IllegalStateException("Segmented confirmed BACnet COV notification is not supported");
+        }
+        if (buffer.remaining() < 3) {
+            throw new IllegalArgumentException("BACnet confirmed COV notification header is truncated");
+        }
+        buffer.get();
+        int invokeId = Byte.toUnsignedInt(buffer.get());
+        int serviceChoice = Byte.toUnsignedInt(buffer.get());
+        if (serviceChoice != SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION) {
+            throw new IllegalArgumentException("Unsupported BACnet confirmed service choice: " + serviceChoice);
+        }
+        return decodeNotificationBody(buffer, true, invokeId);
+    }
+
+    private static BacnetCovNotification decodeNotificationBody(ByteBuffer buffer,
+                                                                boolean confirmed,
+                                                                Integer invokeId) {
         BacnetTagReader.TagHeader processTag = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(processTag, 0);
         int processIdentifier = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, processTag.length());
@@ -79,6 +125,8 @@ public final class BacnetCovNotificationDecoder {
         }
 
         BacnetCovNotification.BacnetCovNotificationBuilder builder = BacnetCovNotification.builder()
+                .confirmed(confirmed)
+                .invokeId(invokeId)
                 .subscriberProcessIdentifier(processIdentifier)
                 .initiatingDeviceInstance(initiatingDeviceInstance)
                 .monitoredObjectType(monitoredObjectType)
@@ -108,8 +156,8 @@ public final class BacnetCovNotificationDecoder {
             if (!valueOpen.contextSpecific() || !valueOpen.openingTag() || valueOpen.tagNumber() != 2) {
                 throw new IllegalArgumentException("BACnet COV property value missing opening tag 2");
             }
-            BacnetReadPropertyResponseDecoder.PrimitiveValue primitiveValue =
-                    BacnetReadPropertyResponseDecoder.readAnyPrimitiveValue(buffer);
+            BacnetValue decodedValue = BacnetValueDecoder.readAnyValue(buffer);
+            decodedValue = BacnetValueDecoder.normalizeDecodedPropertyValue(propertyIdentifier, arrayIndex, decodedValue);
             BacnetTagReader.TagHeader valueClose = BacnetTagReader.readTag(buffer);
             if (!valueClose.contextSpecific() || !valueClose.closingTag() || valueClose.tagNumber() != 2) {
                 throw new IllegalArgumentException("BACnet COV property value missing closing tag 2");
@@ -128,8 +176,9 @@ public final class BacnetCovNotificationDecoder {
             builder.propertyValue(BacnetCovNotification.PropertyValue.builder()
                     .propertyIdentifier(propertyIdentifier)
                     .arrayIndex(arrayIndex)
-                    .value(primitiveValue.value())
-                    .valueType(primitiveValue.type())
+                    .value(decodedValue.getValue())
+                    .valueType(decodedValue.getValueType())
+                    .valueMetadata(decodedValue.getMetadata())
                     .priority(priority)
                     .build());
         }

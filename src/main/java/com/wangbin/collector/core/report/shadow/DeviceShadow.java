@@ -298,7 +298,8 @@ public class DeviceShadow {
         }
         return !valuesEqual(previous.getValue(), current.getValue())
                 || !Objects.equals(previous.getQuality(), current.getQuality())
-                || !Objects.equals(previous.getSource(), current.getSource());
+                || !Objects.equals(previous.getSource(), current.getSource())
+                || !Objects.equals(previous.getMetadata(), current.getMetadata());
     }
 
     private boolean valuesEqual(Object left, Object right) {

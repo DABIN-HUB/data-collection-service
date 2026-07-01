@@ -9,6 +9,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteD
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 
 import java.util.function.Consumer;
 
@@ -23,11 +24,21 @@ public interface BacnetConnectionAdapter {
 
     void writeProperty(BacnetWritePropertyRequest request, long timeoutMs) throws Exception;
 
+    default void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
+        throw new UnsupportedOperationException("BACnet WritePropertyMultiple is not supported");
+    }
+
     void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception;
 
     void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs) throws Exception;
 
+    default void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+    }
+
     BacnetRemoteDevice getRemoteDevice();
+
+    default void setReconnectListener(Runnable listener) {
+    }
 
     boolean isConnected();
 

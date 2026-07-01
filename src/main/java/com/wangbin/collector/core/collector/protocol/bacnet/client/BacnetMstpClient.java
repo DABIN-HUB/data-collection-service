@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.client;
 
+import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetConfirmedCovNotificationCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetCovNotificationDecoder;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetMstpFrame;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetReadPropertyCodec;
@@ -12,6 +13,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetSubscrib
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetSubscribeCovPropertyCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetTransportFrameSupport;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetWritePropertyCodec;
+import com.wangbin.collector.core.collector.protocol.bacnet.codec.BacnetWritePropertyMultipleCodec;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetCovNotification;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyMultipleResponse;
@@ -20,6 +22,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.transport.BacnetMstpTokenManager;
 import lombok.extern.slf4j.Slf4j;
 
@@ -80,6 +83,16 @@ public class BacnetMstpClient implements AutoCloseable {
         });
     }
 
+    public void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs, int retries) throws Exception {
+        byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetWritePropertyMultipleCodec.encode(request));
+        exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
+            BacnetSimpleAckDecoder.verify(frame,
+                    request.getInvokeId(),
+                    BacnetWritePropertyMultipleCodec.SERVICE_CHOICE_WRITE_PROPERTY_MULTIPLE);
+            return null;
+        });
+    }
+
     public void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs, int retries) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetSubscribeCovCodec.encode(request));
         exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
@@ -98,6 +111,11 @@ public class BacnetMstpClient implements AutoCloseable {
                     BacnetSubscribeCovPropertyCodec.SERVICE_CHOICE_SUBSCRIBE_COV_PROPERTY);
             return null;
         });
+    }
+
+    public void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
+        byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetConfirmedCovNotificationCodec.encodeAck(invokeId));
+        tokenManager.sendUnconfirmed(remoteMacAddress, npdu, 1000);
     }
 
     public long getRequestRetryCount() { return requestRetryCount.get(); }
@@ -208,10 +226,14 @@ public class BacnetMstpClient implements AutoCloseable {
         }
         try {
             byte[] wrapped = BacnetTransportFrameSupport.wrapNpdu(frame.data());
-            if (!BacnetCovNotificationDecoder.isUnconfirmedCovNotification(wrapped)) {
+            if (!BacnetCovNotificationDecoder.isUnconfirmedCovNotification(wrapped)
+                    && !BacnetCovNotificationDecoder.isConfirmedCovNotification(wrapped)) {
                 return;
             }
             BacnetCovNotification notification = BacnetCovNotificationDecoder.decode(wrapped);
+            if (notification.isConfirmed() && notification.getInvokeId() != null) {
+                acknowledgeConfirmedCovNotification(notification.getInvokeId());
+            }
             covNotificationCount.incrementAndGet();
             Consumer<BacnetCovNotification> handler = covNotificationHandler;
             if (handler != null) {

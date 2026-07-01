@@ -3,6 +3,8 @@ package com.wangbin.collector.core.collector.protocol.bacnet.domain;
 import lombok.Builder;
 import lombok.Value;
 
+import java.util.Map;
+
 @Value
 @Builder
 public class BacnetReadPropertyResponse {
@@ -13,5 +15,6 @@ public class BacnetReadPropertyResponse {
     Integer arrayIndex;
     Object value;
     String valueType;
+    Map<String, Object> valueMetadata;
     int invokeId;
 }
