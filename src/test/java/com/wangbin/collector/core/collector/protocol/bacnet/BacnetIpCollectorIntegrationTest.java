@@ -24,6 +24,7 @@ import java.net.InetSocketAddress;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -285,6 +286,50 @@ class BacnetIpCollectorIntegrationTest {
                 assertTrue(bbmdServer.getForeignDeviceRegistrationCount() >= 2);
             } finally {
                 adapter.disconnect();
+            }
+        }
+    }
+
+    @Test
+    void shouldSustainForeignDeviceRenewalAcrossMultipleLeaseCycles() throws Exception {
+        try (FakeBacnetIpServer remoteDevice = new FakeBacnetIpServer();
+             FakeBbmdServer bbmdServer = new FakeBbmdServer(new InetSocketAddress("127.0.0.1", remoteDevice.port()),
+                     1001,
+                     480,
+                     4321)) {
+            var scheduler = Executors.newSingleThreadScheduledExecutor();
+            remoteDevice.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 9.5f);
+
+            DeviceInfo deviceInfo = device();
+            DeviceConnection connection = connection("127.0.0.1",
+                    bbmdServer.port(),
+                    1000,
+                    true,
+                    Map.of(
+                            "bbmdHost", "127.0.0.1",
+                            "bbmdPort", bbmdServer.port(),
+                            "foreignDeviceTtlSeconds", 1,
+                            "segmentTimeout", 500
+                    ));
+            BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection, scheduler);
+            adapter.connect();
+            try {
+                Thread.sleep(2600);
+                BacnetReadPropertyResponse response = adapter.readProperty(BacnetReadPropertyRequest.builder()
+                        .objectType(BacnetObjectType.ANALOG_INPUT)
+                        .objectInstance(1)
+                        .propertyIdentifier(BacnetPropertyIdentifier.PRESENT_VALUE)
+                        .invokeId(3)
+                        .remoteDeviceInstance(1001)
+                        .build(), 1000);
+
+                assertEquals(9.5d, ((Number) response.getValue()).doubleValue(), 1.0E-6);
+                assertTrue(adapter.getForeignDeviceRenewCount() >= 2);
+                assertTrue(bbmdServer.getForeignDeviceRegistrationCount() >= 3);
+                assertEquals(0L, adapter.getForeignDeviceRenewFailureCount());
+            } finally {
+                adapter.disconnect();
+                scheduler.shutdownNow();
             }
         }
     }

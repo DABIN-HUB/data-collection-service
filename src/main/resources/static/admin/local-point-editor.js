@@ -133,6 +133,7 @@
     state.localDeviceEditingId = bundle?.device?.id || bundle?.device?.deviceId || null;
     state.localPointSearch = "";
     $("#localDevicePanel").classList.remove("hidden");
+    document.querySelector(".local-editor-placeholder")?.classList.add("hidden");
     $("#localDevicePanel").scrollIntoView({ behavior: "smooth", block: "start" });
 
     const device = bundle?.device || {};
@@ -142,7 +143,7 @@
     const points = bundle?.points || [defaultPointTemplate(deviceId || "local-device", protocol, { pointCode: createUniqueCode([], "point"), pointName: "点位 1" })];
     const adaptive = resolveAdaptiveDefaults(device, points);
 
-    $("#localEditorTitle").textContent = state.localDeviceEditingId ? "Edit local temporary device" : "Create local temporary device";
+    $("#localEditorTitle").textContent = state.localDeviceEditingId ? "编辑本地临时设备" : "新增本地临时设备";
     $("#localDeviceId").value = deviceId;
     $("#localDeviceId").disabled = Boolean(state.localDeviceEditingId);
     $("#localDeviceName").value = device.deviceName || "";
@@ -174,6 +175,7 @@
     state.selectedLocalPointIndex = -1;
     state.localPointSearch = "";
     $("#localDevicePanel").classList.add("hidden");
+    document.querySelector(".local-editor-placeholder")?.classList.remove("hidden");
     $("#localDeviceId").disabled = false;
     $("#localPointSearch").value = "";
     $("#localPointRows").innerHTML = `<tr><td colspan="5">暂无点位</td></tr>`;

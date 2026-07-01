@@ -858,10 +858,11 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     }
 
     private boolean shouldUsePropertySubscription(DataPoint point, BacnetAddress address) {
+        DeviceConnection connectionConfig = safeCurrentConnectionConfig();
         return subscriptionService.usePropertySubscription(
                 point,
                 address,
-                currentOrRequiredConnectionConfig().getBoolConfig("covPropertyEnabled", null)
+                connectionConfig != null ? connectionConfig.getBoolConfig("covPropertyEnabled", null) : null
         );
     }
 
@@ -885,8 +886,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         protocolMetrics.put("segmentedResponseCount", connectionAdapter != null ? connectionAdapter.getSegmentedResponseCount() : 0L);
         protocolMetrics.put("foreignDeviceRenewFailureCount", connectionAdapter != null ? connectionAdapter.getForeignDeviceRenewFailureCount() : 0L);
         protocolMetrics.put("bbmdActive", connectionAdapter != null && connectionAdapter.isForeignDeviceRegistrationActive());
-        protocolMetrics.put("covEnabled", isCovEnabled());
-        protocolMetrics.put("resubscribeOnReconnect", shouldResubscribeOnReconnect());
+        DeviceConnection connectionConfig = safeCurrentConnectionConfig();
+        protocolMetrics.put("covEnabled", isCovEnabled(connectionConfig));
+        protocolMetrics.put("resubscribeOnReconnect", shouldResubscribeOnReconnect(connectionConfig));
         return protocolMetrics;
     }
 
@@ -963,11 +965,11 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     }
 
     private boolean isCovEnabled() {
-        return Boolean.TRUE.equals(currentOrRequiredConnectionConfig().getBoolConfig("covEnabled", false));
+        return isCovEnabled(safeCurrentConnectionConfig());
     }
 
     private boolean shouldResubscribeOnReconnect() {
-        return !Boolean.FALSE.equals(currentOrRequiredConnectionConfig().getBoolConfig("resubscribeOnReconnect", true));
+        return shouldResubscribeOnReconnect(safeCurrentConnectionConfig());
     }
 
     private synchronized boolean attemptConnectionRecovery() {
@@ -1203,6 +1205,26 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     private DeviceConnection currentOrRequiredConnectionConfig() {
         DeviceConnection runtimeConfig = getCurrentConnectionConfig();
         return runtimeConfig != null ? runtimeConfig : requireConnectionConfig();
+    }
+
+    private DeviceConnection safeCurrentConnectionConfig() {
+        DeviceConnection runtimeConfig = getCurrentConnectionConfig();
+        if (runtimeConfig != null) {
+            return runtimeConfig;
+        }
+        try {
+            return requireConnectionConfig();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean isCovEnabled(DeviceConnection connectionConfig) {
+        return connectionConfig != null && Boolean.TRUE.equals(connectionConfig.getBoolConfig("covEnabled", false));
+    }
+
+    private boolean shouldResubscribeOnReconnect(DeviceConnection connectionConfig) {
+        return connectionConfig == null || !Boolean.FALSE.equals(connectionConfig.getBoolConfig("resubscribeOnReconnect", true));
     }
 
     private int resolveRequestTimeout(DeviceConnection connection) {

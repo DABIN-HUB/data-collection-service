@@ -23,12 +23,11 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscri
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetClientSupport;
 import com.wangbin.collector.core.collector.protocol.bacnet.transport.BacnetMstpTokenManager;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -42,6 +41,8 @@ public class BacnetMstpClient implements AutoCloseable {
     private final AtomicLong invokeIdMismatchCount = new AtomicLong(0);
     private final AtomicLong covNotificationCount = new AtomicLong(0);
     private final AtomicLong segmentedResponseCount = new AtomicLong(0);
+    private final BacnetClientSupport clientSupport =
+            new BacnetClientSupport(invokeIdMismatchCount, covNotificationCount, segmentedResponseCount);
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
 
@@ -153,15 +154,15 @@ public class BacnetMstpClient implements AutoCloseable {
                         try {
                             return decoder.decode(wrapped);
                         } catch (Exception ex) {
-                            if (isInvokeIdMismatch(ex)) {
-                                invokeIdMismatchCount.incrementAndGet();
+                            if (clientSupport.isInvokeIdMismatch(ex)) {
+                                clientSupport.recordInvokeIdMismatch();
                                 lastFailure = ex;
                                 continue;
                             }
                             throw ex;
                         }
                     }
-                    segmentedResponseCount.incrementAndGet();
+                    clientSupport.recordSegmentedResponse();
                     byte[] assembled = collectSegmentedComplexAck(frame, resolvedSegmentTimeout);
                     return decoder.decode(assembled);
                 }
@@ -183,41 +184,21 @@ public class BacnetMstpClient implements AutoCloseable {
     }
 
     private byte[] collectSegmentedComplexAck(BacnetMstpFrame firstFrame, int segmentTimeoutMs) throws Exception {
-        List<BacnetSegmentSupport.SegmentedComplexAckSegment> segments = new ArrayList<>();
-        BacnetSegmentSupport.SegmentedComplexAckSegment current =
-                BacnetSegmentSupport.decodeSegmentedComplexAck(BacnetTransportFrameSupport.wrapNpdu(firstFrame.data()));
-        segments.add(current);
-        tokenManager.sendConversationFrame(remoteMacAddress,
-                BacnetTransportFrameSupport.unwrapBvlc(BacnetSegmentSupport.encodeSegmentAck(
-                        current.invokeId(),
-                        current.sequenceNumber(),
-                        Math.max(1, current.proposedWindowSize()))),
-                true);
-
-        while (current.moreFollows()) {
-            BacnetMstpFrame nextFrame = tokenManager.awaitConversationFrame(segmentTimeoutMs);
-            BacnetSegmentSupport.SegmentedComplexAckSegment nextSegment =
-                    BacnetSegmentSupport.decodeSegmentedComplexAck(BacnetTransportFrameSupport.wrapNpdu(nextFrame.data()));
-            if (nextSegment.invokeId() != current.invokeId()) {
-                throw new IllegalStateException("BACnet MS/TP segmented invokeId mismatch: expected="
-                        + current.invokeId() + ", actual=" + nextSegment.invokeId());
-            }
-            if (nextSegment.sequenceNumber() != ((current.sequenceNumber() + 1) & 0xFF)) {
-                throw new IllegalStateException("BACnet MS/TP segmented sequence mismatch: expected="
-                        + (((current.sequenceNumber() + 1) & 0xFF)) + ", actual=" + nextSegment.sequenceNumber());
-            }
-            segments.add(nextSegment);
-            current = nextSegment;
-            if (current.moreFollows()) {
-                tokenManager.sendConversationFrame(remoteMacAddress,
+        com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSegmentAssembler assembler =
+                new com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSegmentAssembler();
+        return assembler.collect(BacnetTransportFrameSupport.wrapNpdu(firstFrame.data()),
+                segmentTimeoutMs,
+                (timeout, unit) -> {
+                    BacnetMstpFrame nextFrame = tokenManager.awaitConversationFrame((int) unit.toMillis(timeout));
+                    return nextFrame != null ? BacnetTransportFrameSupport.wrapNpdu(nextFrame.data()) : null;
+                },
+                (invokeId, sequenceNumber, proposedWindowSize) -> tokenManager.sendConversationFrame(
+                        remoteMacAddress,
                         BacnetTransportFrameSupport.unwrapBvlc(BacnetSegmentSupport.encodeSegmentAck(
-                                current.invokeId(),
-                                current.sequenceNumber(),
-                                Math.max(1, current.proposedWindowSize()))),
-                        true);
-            }
-        }
-        return BacnetSegmentSupport.assembleComplexAckFrame(segments);
+                                invokeId,
+                                sequenceNumber,
+                                proposedWindowSize)),
+                        true));
     }
 
     private void handleIncomingFrame(BacnetMstpFrame frame) {
@@ -230,23 +211,20 @@ public class BacnetMstpClient implements AutoCloseable {
                     && !BacnetCovNotificationDecoder.isConfirmedCovNotification(wrapped)) {
                 return;
             }
-            BacnetCovNotification notification = BacnetCovNotificationDecoder.decode(wrapped);
-            if (notification.isConfirmed() && notification.getInvokeId() != null) {
-                acknowledgeConfirmedCovNotification(notification.getInvokeId());
-            }
-            covNotificationCount.incrementAndGet();
-            Consumer<BacnetCovNotification> handler = covNotificationHandler;
-            if (handler != null) {
-                handler.accept(notification);
-            }
+            clientSupport.handleCovNotification(
+                    wrapped,
+                    "remoteMac=" + remoteMacAddress,
+                    invokeId -> {
+                        try {
+                            acknowledgeConfirmedCovNotification(invokeId);
+                        } catch (Exception ex) {
+                            throw new IllegalStateException(ex);
+                        }
+                    },
+                    covNotificationHandler);
         } catch (Exception ex) {
             log.warn("Decode BACnet MS/TP COV notification failed, remoteMac={}", remoteMacAddress, ex);
         }
-    }
-
-    private boolean isInvokeIdMismatch(Exception ex) {
-        String message = ex.getMessage();
-        return message != null && message.contains("invokeId mismatch");
     }
 
     private int resolveTimeout(long timeoutMs) {

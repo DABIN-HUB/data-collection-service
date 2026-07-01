@@ -1,5 +1,5 @@
 const state = {
-  token: localStorage.getItem("collectorToken") || "",
+  token: localStorage.getItem("collectorToken") || "ops-token",
   devices: [],
   protocols: [],
   runtimeStatus: {},
@@ -7,7 +7,8 @@ const state = {
   currentLocalProtocol: null,
   localDeviceEditingId: null,
   realtimeTimer: null,
-  lastSuggestedCommandText: ""
+  lastSuggestedCommandText: "",
+  realtimeSearch: ""
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -35,6 +36,8 @@ const controlCommandPresets = {
 document.addEventListener("DOMContentLoaded", () => {
   $("#tokenInput").value = state.token;
   bindEvents();
+  bindConsoleShell();
+  startLiveClock();
   refreshAll();
 });
 
@@ -65,6 +68,101 @@ function bindEvents() {
   $("#loadShadowBtn").addEventListener("click", loadShadow);
   $("#saveDesiredBtn").addEventListener("click", saveDesired);
   $("#clearDesiredBtn").addEventListener("click", clearDesired);
+}
+
+function bindConsoleShell() {
+  document.querySelectorAll("[data-console-tab]").forEach((button) => {
+    button.addEventListener("click", () => activateConsoleTab(button.dataset.consoleTab));
+  });
+
+  const realtimeSelect = $("#realtimeDeviceSelect");
+  if (realtimeSelect) {
+    realtimeSelect.addEventListener("change", () => {
+      syncSelectedDeviceSummary();
+      loadRealtime().catch((error) => toast(error.message, true));
+    });
+  }
+
+  const pointSearch = $("#devicePointSearch");
+  if (pointSearch) {
+    pointSearch.addEventListener("input", (event) => {
+      state.realtimeSearch = String(event.target.value || "").trim().toLowerCase();
+      loadRealtime().catch((error) => toast(error.message, true));
+    });
+  }
+}
+
+function activateConsoleTab(tabName) {
+  document.querySelectorAll("[data-console-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.consoleTab === tabName);
+  });
+  document.querySelectorAll("[data-console-panel]").forEach((panel) => {
+    const active = panel.dataset.consolePanel === tabName;
+    panel.classList.toggle("hidden", !active);
+    panel.classList.toggle("console-module-active", active);
+  });
+}
+
+function startLiveClock() {
+  renderLiveClock();
+  window.setInterval(renderLiveClock, 1000);
+}
+
+function renderLiveClock() {
+  const target = $("#liveClock");
+  if (!target) {
+    return;
+  }
+  target.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+function localizeDeviceStatus(status) {
+  switch (String(status || "").toUpperCase()) {
+    case "ONLINE":
+      return "在线";
+    case "RUNNING":
+      return "启动中";
+    case "OFFLINE":
+      return "离线";
+    default:
+      return status || "未知";
+  }
+}
+
+function syncSelectedDeviceSummary(deviceId = $("#realtimeDeviceSelect")?.value) {
+  const device = deviceId ? getDeviceById(deviceId) : null;
+  const runtime = deviceId ? getRuntimeStatus(deviceId) : null;
+  const status = resolveDeviceStatus(device, runtime);
+  const address = [device?.ipAddress, device?.port].filter(Boolean).join(":") || device?.host || "-";
+  const dot = $("#selectedDeviceStatusDot");
+
+  $("#selectedDeviceName").textContent = device?.deviceName || deviceId || "暂无设备";
+  $("#selectedDeviceProtocol").textContent = device?.protocolType || device?.connectionType || "-";
+  $("#selectedDeviceAddress").textContent = address;
+  $("#selectedDeviceInterval").textContent = device?.collectionInterval !== undefined && device?.collectionInterval !== null
+    ? `${device.collectionInterval} ms`
+    : "-";
+  $("#selectedDeviceStatus").textContent = localizeDeviceStatus(status);
+
+  if (dot) {
+    const active = status === "ONLINE" || status === "RUNNING";
+    dot.classList.toggle("online", active);
+    dot.classList.toggle("offline", !active);
+  }
+}
+
+function matchesRealtimeSearch(point) {
+  const search = String(state.realtimeSearch || "").trim().toLowerCase();
+  if (!search) {
+    return true;
+  }
+  return [
+    point?.pointName,
+    point?.pointCode,
+    point?.address,
+    point?.registerAddress,
+    point?.pointId
+  ].some((value) => String(value || "").toLowerCase().includes(search));
 }
 
 async function refreshAll() {
@@ -138,16 +236,52 @@ async function loadOverview() {
   const healthData = health.status === "fulfilled" ? dataOf(health.value) : {};
   const cache = cacheBody.status === "fulfilled" ? dataOf(cacheBody.value) : {};
   const stats = summary.cacheStats || {};
+  const totalDevices = Number(stats.deviceCount ?? summary.deviceCount ?? (Array.isArray(state.devices) ? state.devices.length : 0) ?? 0);
+  const onlineDevices = Array.isArray(running) ? running.length : 0;
+  const offlineDevices = totalDevices > 0 ? Math.max(totalDevices - onlineDevices, 0) : "-";
+  const pointCount = Number(stats.pointCount ?? summary.pointCount ?? 0);
+  const connectionCount = Number(stats.connectionCount ?? summary.connectionCount ?? 0);
+  const successRate = percent(cache.totalHitRate);
+  const healthStatus = healthData.status || healthData.overallStatus || "UNKNOWN";
+  const latestSync = formatTs(summary.nextSyncTime);
 
   renderCards("#overviewCards", [
-    ["设备数", stats.deviceCount ?? "-"],
-    ["点位数", stats.pointCount ?? "-"],
-    ["连接配置", stats.connectionCount ?? "-"],
-    ["运行设备", Array.isArray(running) ? running.length : "-"],
-    ["缓存命中率", percent(cache.totalHitRate)],
-    ["健康状态", healthData.status || healthData.overallStatus || "-"],
-    ["同步监听", summary.listenerCount ?? "-"],
-    ["下次同步", formatTs(summary.nextSyncTime)]
+    {
+      label: "采集器总数",
+      value: totalDevices || "-",
+      meta: [["在线", onlineDevices || 0], ["离线", offlineDevices]],
+      tone: "blue"
+    },
+    {
+      label: "点位总数",
+      value: pointCount || "-",
+      meta: [["连接", connectionCount || 0], ["健康", healthStatus]],
+      tone: "green"
+    },
+    {
+      label: "实时数据点",
+      value: pointCount || "-",
+      subtext: latestSync === "-" ? "最近上报等待中" : `计划同步 ${latestSync}`,
+      tone: "teal"
+    },
+    {
+      label: "运行设备",
+      value: onlineDevices || "-",
+      meta: [["同步监听", summary.listenerCount ?? "-"], ["状态", healthStatus]],
+      tone: "orange"
+    },
+    {
+      label: "缓存命中率",
+      value: successRate,
+      subtext: `总访问 ${cache.totalAccess ?? "-"}`,
+      tone: "purple"
+    },
+    {
+      label: "配置健康度",
+      value: healthStatus,
+      subtext: latestSync === "-" ? "暂无同步时间" : `下次同步 ${latestSync}`,
+      tone: "green"
+    }
   ]);
 }
 
@@ -173,33 +307,43 @@ function renderDevices() {
     const local = isLocalDevice(device);
     const runtime = getRuntimeStatus(id);
     const status = resolveDeviceStatus(device, runtime);
-    const source = local
-      ? `<span class="badge badge-local">本地临时设备</span>`
-      : `<span class="badge">远端/同步</span>`;
+    const statusLabel = localizeDeviceStatus(status);
+    const sourceLabel = local ? "本地临时" : "远端同步";
     const editButtons = local
-      ? `<button onclick="editLocalDevice('${escapeAttr(id)}')">修改</button>
+      ? `<button onclick="editLocalDevice('${escapeAttr(id)}')">编辑</button>
          <button onclick="deleteLocalDevice('${escapeAttr(id)}')" class="danger">删除</button>`
       : "";
     return `
       <tr>
-        <td><strong>${escapeHtml(device.deviceName || id)}</strong><br><code>${escapeHtml(id)}</code></td>
-        <td>${source}</td>
-        <td>${escapeHtml(device.protocolType || device.connectionType || "-")}</td>
-        <td>${escapeHtml(address)}</td>
-        <td>${device.collectionInterval ?? "-"} ms</td>
-        <td>${renderDeviceStatus(status, runtime, device)}</td>
-        <td>
-          <div class="inline-actions">
-            <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
-            <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">停止</button>
-            <button onclick="showDeviceStatus('${escapeAttr(id)}')">状态</button>
-            <button onclick="showDiff('${escapeAttr(id)}')">diff</button>
-            ${editButtons}
+        <td class="device-card-cell">
+          <div class="device-card">
+            <div class="device-card-head">
+              <div>
+                <div class="device-card-title">
+                  <span class="device-status-dot ${status === "ONLINE" || status === "RUNNING" ? "online" : "offline"}"></span>
+                  <strong>${escapeHtml(device.deviceName || id)}</strong>
+                </div>
+                <div class="device-card-subtitle">${escapeHtml(id)} · ${escapeHtml(sourceLabel)}</div>
+              </div>
+              <span class="badge ${local ? "badge-local" : "badge-remote"}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <div class="device-card-meta">
+              <span>协议 ${escapeHtml(device.protocolType || device.connectionType || "-")}</span>
+              <span>地址 ${escapeHtml(address)}</span>
+              <span>周期 ${device.collectionInterval ?? "-"} ms</span>
+            </div>
+            <div class="inline-actions device-card-actions">
+              <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
+              <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">停止</button>
+              <button onclick="showDeviceStatus('${escapeAttr(id)}')">状态</button>
+              <button onclick="showDiff('${escapeAttr(id)}')">Diff</button>
+              ${editButtons}
+            </div>
           </div>
         </td>
       </tr>`;
   }).join("");
-  $("#deviceRows").innerHTML = rows || `<tr><td colspan="7">暂无设备配置</td></tr>`;
+  $("#deviceRows").innerHTML = rows || `<tr><td>暂无设备配置</td></tr>`;
 }
 
 function isLocalDevice(device) {
@@ -222,6 +366,10 @@ function fillDeviceSelects() {
   });
   syncProtocolSelectionToDevice(false);
   syncControlCommandExample();
+  syncSelectedDeviceSummary();
+  if (state.devices.length) {
+    loadRealtime().catch((error) => toast(error.message, true));
+  }
 }
 
 function getProtocolSchema(protocolCode) {
@@ -367,7 +515,7 @@ function renderProtocolForm(containerSelector, protocol, formId) {
     return;
   }
   if (!protocol || !Array.isArray(protocol.connectionFields) || !protocol.connectionFields.length) {
-    container.innerHTML = "<p>No configurable connection fields for this protocol.</p>";
+    container.innerHTML = "<p>当前协议没有额外的连接配置字段。</p>";
     return;
   }
   const groups = new Map();
@@ -751,7 +899,7 @@ async function loadProtocols() {
   const body = await callApi("/api/protocols");
   state.protocols = dataOf(body) || [];
   const visibleProtocols = state.protocols.filter((protocol) => !HIDDEN_PROTOCOLS.has(protocol.protocol));
-  $("#protocolCount").textContent = `${visibleProtocols.length} protocols`;
+  $("#protocolCount").textContent = `${visibleProtocols.length} 种协议`;
   $("#protocolSelect").innerHTML = visibleProtocols
     .map((protocol) => `<option value="${protocol.protocol}">${protocol.title} (${protocol.protocol})</option>`)
     .join("");
@@ -771,7 +919,7 @@ function renderSelectedProtocol() {
   const protocol = state.currentProtocol;
   if (!protocol) {
     $("#connectionForm").innerHTML = "";
-    $("#protocolMeta").textContent = "No protocol metadata";
+    $("#protocolMeta").textContent = "暂无协议元数据";
     return;
   }
   $("#protocolMeta").innerHTML = renderProtocolMeta(protocol);
@@ -892,32 +1040,46 @@ function toggleRealtime() {
   if (state.realtimeTimer) {
     clearInterval(state.realtimeTimer);
     state.realtimeTimer = null;
-    $("#toggleRealtimeBtn").textContent = "开始轮询";
+    $("#toggleRealtimeBtn").textContent = "自动刷新";
     return;
   }
-  loadRealtime();
-  state.realtimeTimer = setInterval(loadRealtime, 3000);
-  $("#toggleRealtimeBtn").textContent = "停止轮询";
+  loadRealtime().catch((error) => toast(error.message, true));
+  state.realtimeTimer = setInterval(() => {
+    loadRealtime().catch((error) => toast(error.message, true));
+  }, 3000);
+  $("#toggleRealtimeBtn").textContent = "停止刷新";
 }
 
 async function loadRealtime() {
   const deviceId = $("#realtimeDeviceSelect").value;
   if (!deviceId) {
+    $("#realtimeRows").innerHTML = `<tr><td colspan="9">暂无实时数据</td></tr>`;
+    syncSelectedDeviceSummary();
     return;
   }
+  syncSelectedDeviceSummary(deviceId);
   const body = await callApi(`/api/data/device/${encodeURIComponent(deviceId)}`);
   const values = body.data || {};
-  const rows = Object.values(values).map((point) => `
-    <tr>
-      <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
-      <td><code>${escapeHtml(point.pointCode || "-")}</code></td>
-      <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
-      <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(point.quality || "-")}</td>
-      <td>${escapeHtml(formatValue(point.rawValue))}</td>
-      <td>${point.processingTime ?? "-"} ms</td>
-    </tr>
-  `).join("");
-  $("#realtimeRows").innerHTML = rows || `<tr><td colspan="6">暂无实时数据</td></tr>`;
+  const rows = Object.values(values)
+    .filter((point) => matchesRealtimeSearch(point))
+    .map((point) => {
+      const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+      const address = point.address || point.registerAddress || point.pointAddress || "-";
+      const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
+      return `
+        <tr>
+          <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
+          <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
+          <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
+          <td>${escapeHtml(formatValue(address))}</td>
+          <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
+          <td>${escapeHtml(formatValue(scale))}</td>
+          <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
+          <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
+          <td>${point.processingTime ?? "-"} ms</td>
+        </tr>`;
+    }).join("");
+  $("#realtimeRows").innerHTML = rows || `<tr><td colspan="9">暂无匹配的实时数据</td></tr>`;
 }
 
 async function resetAdaptive() {
@@ -1034,14 +1196,10 @@ async function loadMonitor() {
   const errorData = errors.status === "fulfilled" ? dataOf(errors.value) : {};
 
   renderCards("#monitorCards", [
-    ["总访问", cacheData.totalAccess ?? "-"],
-    ["L1 命中率", percent(cacheData.level1HitRate)],
-    ["活跃连接", deviceData.activeConnections ?? "-"],
-    ["缺失连接", Array.isArray(deviceData.missingConnections) ? deviceData.missingConnections.length : "-"],
-    ["堆内存", bytes(systemData.heapUsed)],
-    ["线程数", systemData.threadCount ?? "-"],
-    ["系统 CPU", percent(systemData.systemCpuLoad)],
-    ["异常数", errorData.totalCount ?? errorData.totalErrors ?? "-"]
+    { label: "总访问", value: cacheData.totalAccess ?? "-", subtext: `L1 命中 ${percent(cacheData.level1HitRate)}` },
+    { label: "活跃连接", value: deviceData.activeConnections ?? "-", subtext: `缺失 ${Array.isArray(deviceData.missingConnections) ? deviceData.missingConnections.length : "-"}` },
+    { label: "堆内存", value: bytes(systemData.heapUsed), subtext: `线程 ${systemData.threadCount ?? "-"}` },
+    { label: "系统 CPU", value: percent(systemData.systemCpuLoad), subtext: `异常 ${errorData.totalCount ?? errorData.totalErrors ?? "-"}` }
   ]);
   $("#monitorView").textContent = JSON.stringify({
     cache: cacheData,
@@ -1053,12 +1211,23 @@ async function loadMonitor() {
 }
 
 function renderCards(selector, items) {
-  $(selector).innerHTML = items.map(([label, value]) => `
-    <div class="card">
-      <small>${escapeHtml(label)}</small>
-      <strong>${escapeHtml(String(value ?? "-"))}</strong>
-    </div>
-  `).join("");
+  $(selector).innerHTML = items.map((item) => {
+    const card = Array.isArray(item)
+      ? { label: item[0], value: item[1] }
+      : (item || { label: "-", value: "-" });
+    const meta = Array.isArray(card.meta) && card.meta.length
+      ? `<div class="card-meta">${card.meta.map(([label, value]) => `<span>${escapeHtml(String(label))}<b>${escapeHtml(String(value ?? "-"))}</b></span>`).join("")}</div>`
+      : "";
+    const subtext = card.subtext ? `<div class="card-subtext">${escapeHtml(String(card.subtext))}</div>` : "";
+    return `
+      <div class="card ${card.tone ? `tone-${escapeAttr(card.tone)}` : ""}">
+        <small>${escapeHtml(card.label ?? "-")}</small>
+        <strong>${escapeHtml(String(card.value ?? "-"))}</strong>
+        ${meta}
+        ${subtext}
+      </div>
+    `;
+  }).join("");
 }
 
 function downloadJson(fileName, data) {

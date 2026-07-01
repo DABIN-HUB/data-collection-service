@@ -22,13 +22,14 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscri
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
 import com.wangbin.collector.core.connection.adapter.BacnetScConnectionAdapter;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetClientSupport;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetRequestSession;
+import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSegmentAssembler;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +50,11 @@ public class BacnetScClient implements AutoCloseable {
     private final AtomicLong invokeIdMismatchCount = new AtomicLong(0);
     private final AtomicLong covNotificationCount = new AtomicLong(0);
     private final AtomicLong segmentedResponseCount = new AtomicLong(0);
+    private final BacnetClientSupport clientSupport =
+            new BacnetClientSupport(invokeIdMismatchCount, covNotificationCount, segmentedResponseCount);
+    private final BacnetRequestSession requestSession =
+            new BacnetRequestSession(requestRetryCount, requestTimeoutCount, clientSupport);
+    private final BacnetSegmentAssembler segmentAssembler = new BacnetSegmentAssembler();
     private final Thread receiverThread;
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
@@ -143,88 +149,45 @@ public class BacnetScClient implements AutoCloseable {
                            long segmentTimeoutMs,
                            int retries,
                            FrameDecoder<T> decoder) throws Exception {
-        int attempts = Math.max(0, retries) + 1;
-        int resolvedTimeout = resolveTimeout(timeoutMs);
-        int resolvedSegmentTimeout = resolveTimeout(segmentTimeoutMs > 0 ? segmentTimeoutMs : timeoutMs);
-        Exception lastFailure = null;
+        return requestSession.execute(new BacnetRequestSession.RequestExchange<>() {
+            @Override
+            public void beforeAttempt() {
+                responseQueue.clear();
+            }
 
-        for (int attempt = 1; attempt <= attempts; attempt++) {
-            responseQueue.clear();
-            connectionAdapter.send(requestFrame);
-            long deadline = System.currentTimeMillis() + resolvedTimeout;
-            while (System.currentTimeMillis() <= deadline) {
-                long remaining = deadline - System.currentTimeMillis();
-                if (remaining <= 0) {
-                    break;
-                }
-                byte[] response = awaitResponseFrame(remaining, resolvedSegmentTimeout);
+            @Override
+            public void sendRequest() throws Exception {
+                connectionAdapter.send(requestFrame);
+            }
+
+            @Override
+            public byte[] pollResponse(long timeout, TimeUnit unit, int resolvedSegmentTimeoutMs) throws Exception {
+                byte[] response = responseQueue.poll(timeout, unit);
                 if (response == null) {
-                    break;
+                    return null;
                 }
-                try {
-                    return decoder.decode(response);
-                } catch (Exception ex) {
-                    if (isInvokeIdMismatch(ex)) {
-                        invokeIdMismatchCount.incrementAndGet();
-                        lastFailure = ex;
-                        continue;
-                    }
-                    throw ex;
+                if (!clientSupport.isSegmentedComplexAck(response)) {
+                    return response;
                 }
+                clientSupport.recordSegmentedResponse();
+                return segmentAssembler.collect(response,
+                        resolvedSegmentTimeoutMs,
+                        (segmentPollTimeout, pollUnit) -> responseQueue.poll(segmentPollTimeout, pollUnit),
+                        (invokeId, sequenceNumber, proposedWindowSize) ->
+                                connectionAdapter.send(BacnetSegmentSupport.encodeSegmentAck(
+                                        invokeId, sequenceNumber, proposedWindowSize)));
             }
-            lastFailure = new SocketTimeoutException("BACnet/SC receive timed out after " + resolvedTimeout + "ms");
-            requestTimeoutCount.incrementAndGet();
-            if (attempt < attempts) {
-                requestRetryCount.incrementAndGet();
-                log.debug("Retry BACnet/SC request after timeout, deviceId={}, attempt={}/{}",
-                        connectionAdapter.getDeviceId(), attempt + 1, attempts);
-            }
-        }
-        throw lastFailure;
-    }
 
-    private byte[] awaitResponseFrame(long responseTimeoutMs, int segmentTimeoutMs) throws Exception {
-        byte[] response = responseQueue.poll(responseTimeoutMs, TimeUnit.MILLISECONDS);
-        if (response == null) {
-            return null;
-        }
-        if (!BacnetSegmentSupport.isSegmentedComplexAck(response)) {
-            return response;
-        }
-        segmentedResponseCount.incrementAndGet();
-        return collectSegmentedComplexAck(response, segmentTimeoutMs);
-    }
+            @Override
+            public T decode(byte[] response) throws Exception {
+                return decoder.decode(response);
+            }
 
-    private byte[] collectSegmentedComplexAck(byte[] firstFrame, int segmentTimeoutMs) throws Exception {
-        List<BacnetSegmentSupport.SegmentedComplexAckSegment> segments = new ArrayList<>();
-        BacnetSegmentSupport.SegmentedComplexAckSegment current = BacnetSegmentSupport.decodeSegmentedComplexAck(firstFrame);
-        segments.add(current);
-        connectionAdapter.send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
-                current.sequenceNumber(),
-                Math.max(1, current.proposedWindowSize())));
-
-        while (current.moreFollows()) {
-            byte[] nextFrame = responseQueue.poll(segmentTimeoutMs, TimeUnit.MILLISECONDS);
-            if (nextFrame == null) {
-                throw new SocketTimeoutException("BACnet/SC segmented response timed out after " + segmentTimeoutMs + "ms");
+            @Override
+            public String timeoutMessage(int resolvedTimeoutMs) {
+                return "BACnet/SC receive timed out after " + resolvedTimeoutMs + "ms";
             }
-            BacnetSegmentSupport.SegmentedComplexAckSegment nextSegment =
-                    BacnetSegmentSupport.decodeSegmentedComplexAck(nextFrame);
-            if (nextSegment.invokeId() != current.invokeId()) {
-                throw new IllegalStateException("BACnet/SC segmented invokeId mismatch: expected="
-                        + current.invokeId() + ", actual=" + nextSegment.invokeId());
-            }
-            if (nextSegment.sequenceNumber() != ((current.sequenceNumber() + 1) & 0xFF)) {
-                throw new IllegalStateException("BACnet/SC segmented sequence mismatch: expected="
-                        + (((current.sequenceNumber() + 1) & 0xFF)) + ", actual=" + nextSegment.sequenceNumber());
-            }
-            segments.add(nextSegment);
-            current = nextSegment;
-            connectionAdapter.send(BacnetSegmentSupport.encodeSegmentAck(current.invokeId(),
-                    current.sequenceNumber(),
-                    Math.max(1, current.proposedWindowSize())));
-        }
-        return BacnetSegmentSupport.assembleComplexAckFrame(segments);
+        }, timeoutMs, segmentTimeoutMs, retries, "BACnet/SC request deviceId=" + connectionAdapter.getDeviceId());
     }
 
     private void receiveLoop() {
@@ -257,19 +220,17 @@ public class BacnetScClient implements AutoCloseable {
     }
 
     private void handleCovNotification(byte[] frame) {
-        try {
-            BacnetCovNotification notification = BacnetCovNotificationDecoder.decode(frame);
-            if (notification.isConfirmed() && notification.getInvokeId() != null) {
-                acknowledgeConfirmedCovNotification(notification.getInvokeId());
-            }
-            covNotificationCount.incrementAndGet();
-            Consumer<BacnetCovNotification> handler = covNotificationHandler;
-            if (handler != null) {
-                handler.accept(notification);
-            }
-        } catch (Exception ex) {
-            log.warn("Decode BACnet/SC COV notification failed, deviceId={}", connectionAdapter.getDeviceId(), ex);
-        }
+        clientSupport.handleCovNotification(
+                frame,
+                "deviceId=" + connectionAdapter.getDeviceId(),
+                invokeId -> {
+                    try {
+                        acknowledgeConfirmedCovNotification(invokeId);
+                    } catch (Exception ex) {
+                        throw new IllegalStateException(ex);
+                    }
+                },
+                covNotificationHandler);
     }
 
     private boolean isOtherUnconfirmedRequest(byte[] frame) {
@@ -299,22 +260,6 @@ public class BacnetScClient implements AutoCloseable {
             return false;
         }
     }
-
-    private boolean isInvokeIdMismatch(Exception ex) {
-        String message = ex.getMessage();
-        return message != null && message.contains("invokeId mismatch");
-    }
-
-    private int resolveTimeout(long timeoutMs) {
-        if (timeoutMs <= 0) {
-            return 5000;
-        }
-        if (timeoutMs > Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
-        }
-        return (int) timeoutMs;
-    }
-
     @FunctionalInterface
     private interface FrameDecoder<T> {
         T decode(byte[] frame) throws Exception;

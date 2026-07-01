@@ -440,9 +440,11 @@ P3 瀹屾垚鏍囧噯锛?
   - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/service/BacnetValueMapper.java`、`BacnetSubscriptionService.java`、`BacnetDeviceSnapshotService.java`、`BacnetWriteRequestBuilder.java`
   - 说明：已将复杂值映射、订阅构造与匹配、设备快照、写请求构造从 collector 中拆出，`BacnetIpCollector` 主类收敛为连接调度、读写编排和统一框架接入职责。
 
-- `[ ]` 拆分 BACnet 协议栈层次
-  - 当前情况：已经有 `client / codec / domain / transport` 雏形，但还缺更清晰的 `session / service / model` 层次边界。
-  - 建议方向：逐步把 `invokeId`、分段、ACK、confirmed/unconfirmed service、对象/属性模型从 collector 侧继续下沉。
+- `[x]` 拆分 BACnet 协议栈层次
+  - 完成日期：`2026-07-01`
+  - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/service/BacnetRequestSession.java`、`BacnetSegmentAssembler.java`、`BacnetClientSupport.java`、`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/client/BacnetIpUdpClient.java`、`BacnetScClient.java`、`BacnetMstpClient.java`
+  - 测试入口：`mvn "-Dtest=BacnetIpCollectorFeatureTest,BacnetIpCollectorIntegrationTest,BacnetReadPropertyCodecTest,BacnetMstpConnectionAdapterTest,BacnetScCollectorTest" test`
+  - 说明：已把 `invokeId` 校验、confirmed request 会话、分段组装、COV 通知处理下沉到共享 `service/session` 层，`IP/SC/MS/TP` 三种 client 复用统一栈能力。
 
 - `[x]` 建立复杂类型独立解码层
   - 完成日期：`2026-06-30`
@@ -508,9 +510,31 @@ P3 瀹屾垚鏍囧噯锛?
   - 代码入口：`BacnetValueMapper`、`BacnetSubscriptionService`、`ShadowManager`、`ReportData`、`IoTProtocolService`、`JsonProtocolAdapter`
   - 测试入口：`mvn "-Dtest=BacnetIpCollectorIntegrationTest,BacnetIpCollectorFeatureTest,BacnetReadPropertyCodecTest,ShadowManagerTest,CacheReportServiceTest,TelemetryStreamServiceImplTest,CollectorDataPostProcessorTest" test`
   - 说明：已完成 `BacnetIpCollector` 进一步拆分、复杂值在缓存/影子/上报/实时流中的统一表示，并补齐 confirmed COV 与断线恢复订阅集成测试。
-- `[ ]` 跨子网 `BBMD / Foreign Device` 长稳测试
-- `[ ]` 多设备并发、大点表、长时间运行稳定性测试
-- `[ ]` 多厂商兼容矩阵回归测试
+- `[x]` 跨子网 `BBMD / Foreign Device` 长稳测试
+  - 完成日期：`2026-07-01`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorIntegrationTest.java#shouldSustainForeignDeviceRenewalAcrossMultipleLeaseCycles`
+  - 说明：已补多租期自动续租回归，验证 `Foreign Device Registration`、续租次数、续租失败计数和跨 BBMD 读点链路。
+- `[x]` 多设备并发、大点表、长时间运行稳定性测试
+  - 完成日期：`2026-07-01`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorScalabilityTest.java`
+  - 说明：已覆盖 180 点 `ReadPropertyMultiple` 大点表读取、3 设备并发读取，以及 120 轮持续轮询稳定性回归。
+- `[x]` 多厂商兼容矩阵回归测试
+  - 完成日期：`2026-07-01`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetCompatibilityMatrixTest.java`
+  - 说明：已建立基于 `FakeBacnetIpServer` 的厂商画像矩阵回归，覆盖不同 `vendorId/maxApdu` 与属性组合读取路径。
+
+- `[x]` `MS/TP` 多主站共享总线仿真回归
+  - 完成日期：`2026-07-01`
+  - 测试入口：`src/test/java/com/wangbin/collector/core/connection/adapter/BacnetMstpMultiMasterIntegrationTest.java`
+  - 说明：已补内存共享串口总线与双主站双远端设备回归，验证 token 传递、多主共线读点与远端主站响应路径。
+
+### 本轮完成记录（2026-07-01）
+
+- `[x]` 第六批：协议栈分层、长稳回归与兼容矩阵补齐
+  - 完成日期：`2026-07-01`
+  - 代码入口：`BacnetRequestSession`、`BacnetSegmentAssembler`、`BacnetClientSupport`、`BacnetIpUdpClient`、`BacnetScClient`、`BacnetMstpClient`、`InMemoryBacnetSerialBus`
+  - 测试入口：`mvn "-Dtest=BacnetIpCollectorIntegrationTest#shouldSustainForeignDeviceRenewalAcrossMultipleLeaseCycles,BacnetIpCollectorScalabilityTest,BacnetCompatibilityMatrixTest,BacnetMstpMultiMasterIntegrationTest" test`
+  - 说明：已补齐 BACnet `session/service` 共享层、`BBMD/Foreign Device` 多租期长稳测试、多设备并发与大点表稳定性测试、厂商画像矩阵回归，以及 `MS/TP` 多主站共享总线仿真。
 
 ### E. 完成记录模板
 
@@ -521,3 +545,89 @@ P3 瀹屾垚鏍囧噯锛?
   - 代码入口：`类 / 方法 / 文件`
   - 测试入口：`测试类 / 用例`
   - 说明：一句话说明完成范围与边界
+
+### F. 我们当前实现 vs `BACnet4J` 详细对照
+
+#### 对比前提
+
+1. 本节对比时间点为 `2026-07-01`。
+2. `BACnet4J` 结论主要基于其公开 README 与公开源码入口，不基于本项目内实际嵌入运行结果。
+3. 这两个东西不完全是同一类产品：
+   - 我们当前实现：是“BACnet 协议采集实现 + 调度/缓存/告警/上报/实时流”的完整采集服务能力。
+   - `BACnet4J`：首先是“通用 BACnet Java 协议栈 / SDK / 对象模型库”。
+4. 所以必须拆成两张表看：
+   - 协议栈深度谁更强
+   - 采集框架闭环谁更完整
+
+#### 1. 协议栈能力对照
+
+| 维度 | 我们当前实现 | `BACnet4J` | 结论 |
+| --- | --- | --- | --- |
+| 产品定位 | 面向采集服务的 BACnet client/collector 实现 | 通用 BACnet Java 协议栈与对象模型库 | 定位不同，不能只按“功能点个数”判断 |
+| BACnet/IP | 已实现，支持轮询、`ReadProperty`、`ReadPropertyMultiple`、`WriteProperty`、`WritePropertyMultiple`、COV、分段响应、`BBMD/Foreign Device` | README 明确是纯 Java BACnet 实现，支持 `IPv4` | 两边都具备，`BACnet4J` 更偏标准协议库 |
+| IPv6 | 当前未实现，文档中仍作为后续方向 | README 明确支持 `IPv6` | `BACnet4J` 更强 |
+| MS/TP | 已实现面向采集的 master 侧传输、token 管理、读写/COV/分段；已补共享总线多主站仿真 | README 明确支持 `MS/TP`，且 2.x 起网络层为支持 `MS/TP` 重写 | 协议成熟度上 `BACnet4J` 更强；我们当前更偏“够用采集版” |
+| BACnet/SC | 当前是实验性 secure WebSocket binary tunnel 接入，未完成标准 hub/node 会话模型 | 截至 `2026-07-01` 查到的公开 README/源码入口中未看到明确 `BACnet/SC` 说明，按“未公开确认”处理 | 我们有实验入口，但两边都不应视为已完成标准化交付 |
+| `Who-Is / I-Am` 与远端发现 | 已支持，且已补跨 BBMD 发现与远端信息快照链路 | README 6.2.0 明确提到远端设备缓存、手工加入 remote device、发现后扩展信息抓取 | `BACnet4J` 更成熟，远端设备缓存/发现工具链更完整 |
+| `BBMD / Foreign Device` | 已实现注册、续租、失败计数、跨子网测试 | README 3.2 起已支持 `BBMD`，6.1.0 又增强 `Foreign Device` 失败容忍与重试控制 | `BACnet4J` 更成熟；我们当前已把采集主路径打通 |
+| 分段报文 | 已支持 segmented `ComplexACK` 组装，`IP/SC/MS/TP` client 共用分段组装能力 | README 5.0.0 明确支持最多 `255 segments` 收发 | `BACnet4J` 更强、更成熟 |
+| `ReadPropertyMultiple` | 已实现，支持读计划聚合和失败回退 | README 未逐项枚举，但作为完整 BACnet 协议栈与 BTL certifiable 版本，合理推断核心标准服务能力完整 | 标准成熟度上倾向 `BACnet4J`；采集聚合策略上我们更贴近业务 |
+| `WritePropertyMultiple` | 已实现，支持聚合写和逐点 fallback | README 未逐项枚举，公开入口未单列说明 | 我们当前实现可直接用于采集服务；`BACnet4J` 公开资料层面这里不做绝对结论 |
+| COV | 已支持 `SubscribeCOV/SubscribeCOVProperty`、confirmed/unconfirmed notification、ACK、重连恢复订阅 | README 较早版本就明确有 `COV reporting`，`LocalDevice` 源码中也有 COV context/persistence 相关结构 | `BACnet4J` 更偏完整对象模型；我们当前更偏“订阅并消费通知” |
+| 复杂数组 / sequence / complex value 解码 | 已支持复杂值解码，并纳入统一 `BacnetValue` 模型与 `ProcessResult.metadata` | README 多次提到新增大量 structures/properties，并修复 `priority array` 等问题 | 协议覆盖面上 `BACnet4J` 大概率更广；我们当前已覆盖采集主场景 |
+| 本地设备 / 对象模型 | 当前以 remote collector 为主，不是通用 BACnet server 对象栈 | `LocalDevice`、`DeviceObject`、本地对象列表、事件处理、私有服务处理器都较完整 | `BACnet4J` 明显更强 |
+| 私有服务 / 私有对象扩展 | 当前以采集与标准服务为主，厂商私有扩展主要体现在值透传与兼容处理 | `LocalDevice` 源码中有 `PrivateTransferHandler`、`VendorServiceKey` 等扩展点 | `BACnet4J` 更强 |
+| 标准符合度与协议栈成熟度 | 当前已能打通采集必需链路，但仍保留 `BACnet/SC` 标准会话、真实 `MS/TP` 大现场验证等未完成项 | README 5.0.0 明确写到 `Fully BTL Certifiable` | 如果只比“BACnet 协议栈成熟度”，`BACnet4J` 更强 |
+
+#### 2. 采集框架能力对照
+
+| 维度 | 我们当前实现 | `BACnet4J` | 结论 |
+| --- | --- | --- | --- |
+| 设备调度 | 有统一调度器、时间片、批计划、并发执行 | 不属于其核心职责 | 我们更强 |
+| 多协议统一接入 | BACnet 只是统一采集框架里的一个协议 | 是单 BACnet 协议栈 | 我们更强 |
+| 点位配置治理 | 有设备/连接/点位配置、在线刷新与治理接口 | 不是其核心职责 | 我们更强 |
+| 采集后处理 | 统一 `ProcessResult`、数据质量、转换、复杂值标准化 | 主要提供协议对象与服务，不负责平台数据处理链 | 我们更强 |
+| 缓存 | 本地缓存、Redis 缓存、多级缓存 | 不属于其核心职责 | 我们更强 |
+| 告警/影子/上报 | 已打通影子聚合、告警、MQTT/HTTP/TCP 上报 | 不属于其核心职责 | 我们更强 |
+| 实时流 | 已打通 Redis Stream 实时流 | 不属于其核心职责 | 我们更强 |
+| 历史存储接入 | 可接 TDengine 等存储 | 不属于其核心职责 | 我们更强 |
+| 监控指标 | 已暴露 BACnet 专项指标与平台运行指标 | 更偏协议库内部能力，不是完整运维监控产品 | 我们更强 |
+| 开箱即用交付 | 当前仓库就是完整服务形态 | 需要二次封装为服务 | 我们更强 |
+
+#### 3. 架构层面的核心判断
+
+1. 如果比较“BACnet 协议库本身谁更成熟”，`BACnet4J` 明显更强。
+   - 原因：它是长期维护的通用 BACnet 栈，公开资料里明确支持 `IPv4/IPv6/MS/TP`、`BBMD`、更成熟的 `Foreign Device`、更高的标准符合度，以及本地对象模型与事件处理体系。
+
+2. 如果比较“工业采集服务闭环谁更完整”，当前工程明显更强。
+   - 原因：我们已经把 BACnet 能力嵌进了统一采集框架，打通了“调度 -> 采集 -> 处理 -> 缓存 -> 告警/上报 -> 实时流 -> 配置治理 -> 监控”整条业务链。
+
+3. 如果比较“二次开发成本”，两边优劣取决于目标。
+   - 目标是做一个更标准、更通用的 BACnet Java SDK：`BACnet4J` 更合适。
+   - 目标是交付一个可运营的工业采集服务：当前工程更合适。
+
+4. 如果比较“后续架构演进空间”，最优路线不一定是二选一。
+   - 一种务实路线是：继续保留当前采集框架外壳，但评估是否把更底层、标准化程度要求更高的 BACnet transport/session/service 能力逐步替换或对接成熟库。
+   - 这样可以同时保留我们已经做好的调度、缓存、告警、上报、实时流和配置治理能力。
+
+#### 4. 结论
+
+一句话结论：
+
+- 只看 BACnet 协议栈深度：`BACnet4J` 更强。
+- 只看采集平台闭环交付：我们当前实现更强。
+- 只看当前项目目标是否匹配：当前工程更贴合“工业采集服务”目标，`BACnet4J` 更像可借鉴或可承接底层协议栈能力的成熟库。
+
+#### 5. 对比依据
+
+1. `BACnet4J` README
+   - https://github.com/RadixIoT/BACnet4J
+   - 原始内容入口：
+     https://raw.githubusercontent.com/RadixIoT/BACnet4J/master/README.md
+2. `BACnet4J` `LocalDevice` 源码入口
+   - https://raw.githubusercontent.com/RadixIoT/BACnet4J/master/src/main/java/com/serotonin/bacnet4j/LocalDevice.java
+3. `BACnet4J` `IpNetwork` 源码入口
+   - https://raw.githubusercontent.com/RadixIoT/BACnet4J/master/src/main/java/com/serotonin/bacnet4j/npdu/ip/IpNetwork.java
+4. 我们当前工程代码入口
+   - `src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/**`
+   - `src/main/java/com/wangbin/collector/core/connection/adapter/Bacnet*ConnectionAdapter.java`

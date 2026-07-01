@@ -1,325 +1,443 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Collector Console</title>
+  <title>采集器管理控制台</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark"></span>
-        <div>
-          <strong>Collector</strong>
-          <small>Industrial Data Console</small>
+      <div class="sidebar-top">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div class="brand-copy">
+            <strong>采集器管理控制台</strong>
+            <small>Collector Admin Console</small>
+          </div>
         </div>
+
+        <nav class="section-nav">
+          <a href="#overview" class="is-active">概览</a>
+          <a href="#devices">设备管理</a>
+          <a href="#protocols">协议配置</a>
+          <a href="#realtime">实时数据</a>
+          <a href="#control">手动控制</a>
+          <a href="#shadow">设备影子</a>
+          <a href="#monitor">监控诊断</a>
+        </nav>
       </div>
-      <nav>
-        <a href="#overview">总览</a>
-        <a href="#devices">设备</a>
-        <a href="#protocols">协议配置</a>
-        <a href="#realtime">实时数据</a>
-        <a href="#control">手动反控</a>
-        <a href="#shadow">设备影子</a>
-        <a href="#monitor">监控</a>
-      </nav>
-      <div class="auth-card">
-        <label for="tokenInput">接口令牌 X-Collector-Token</label>
-        <input id="tokenInput" type="text" placeholder="dev 默认: ops-dev-token">
-        <p>页面静态资源免鉴权，接口请求仍需要令牌。</p>
-        <button id="saveTokenBtn">保存令牌</button>
+
+      <div class="sidebar-bottom">
+        <details class="token-drawer">
+          <summary>访问令牌</summary>
+          <div class="token-body">
+            <label for="tokenInput">X-Collector-Token</label>
+            <input id="tokenInput" type="text" placeholder="开发默认: ops-token">
+            <p>静态页面免鉴权，接口请求仍会携带这里保存的令牌。</p>
+            <button id="saveTokenBtn" type="button">保存令牌</button>
+          </div>
+        </details>
+        <button type="button" class="sidebar-ghost">收起菜单</button>
       </div>
     </aside>
 
     <main class="content">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">data-collection-service</p>
-          <h1>工业数据采集可视化控制台</h1>
-          <p>协议配置、采集控制、实时数据、设备影子和监控诊断统一入口。</p>
+      <header class="topbar">
+        <div class="topbar-site">
+          <span class="topbar-label">当前站点：</span>
+          <select class="site-select">
+            <option>南京江宁工厂</option>
+            <option>苏州测试站</option>
+            <option>默认采集站</option>
+          </select>
         </div>
-        <div class="hero-actions">
-          <button id="refreshAllBtn">刷新全部</button>
-          <button id="reloadDevicesBtn" class="danger">重载设备</button>
+
+        <div class="topbar-actions">
+          <span class="run-indicator"><i></i>运行中</span>
+          <span id="liveClock" class="clock">--:--:--</span>
+          <button type="button" class="icon-button" aria-label="通知"></button>
+          <button type="button" class="icon-button secondary" aria-label="帮助"></button>
+          <div class="user-pill">
+            <span class="avatar"></span>
+            <span>admin</span>
+          </div>
         </div>
       </header>
 
-      <section id="overview" class="panel">
-        <div class="panel-title">
-          <h2>运行总览</h2>
-          <span id="lastRefresh">等待刷新</span>
+      <section id="overview" class="overview-section">
+        <div class="section-heading">
+          <div>
+            <h1>工业采集控制台</h1>
+            <p>统一查看采集设备、协议配置、实时数据、设备影子和运行诊断。</p>
+          </div>
+          <div class="heading-actions">
+            <span id="lastRefresh" class="heading-note">等待刷新</span>
+            <button id="refreshAllBtn" type="button" class="primary">刷新全部</button>
+            <button id="reloadDevicesBtn" type="button">重载设备</button>
+          </div>
         </div>
-        <div id="overviewCards" class="cards"></div>
+        <div id="overviewCards" class="overview-cards"></div>
       </section>
 
-      <section id="devices" class="panel">
-        <div class="panel-title">
-          <h2>设备管理</h2>
-          <div class="inline-actions">
-            <button id="openLocalDeviceBtn" class="primary">新增本地临时设备</button>
-            <button id="exportConfigBtn">导出配置</button>
-            <button id="syncConfigBtn">触发同步</button>
-          </div>
-        </div>
-        <div id="localDevicePanel" class="local-editor hidden">
-          <div class="panel-title">
-            <div>
-              <h2 id="localEditorTitle">新增本地临时设备</h2>
-              <p class="help-text">仅写入当前采集服务内存，标记为 local，本地临时设备，不会写入远端配置源。</p>
-            </div>
-            <button id="cancelLocalDeviceBtn">收起</button>
-          </div>
-          <div class="form-grid">
-            <label>
-              设备 ID *
-              <input id="localDeviceId" type="text" placeholder="local-modbus-1">
-            </label>
-            <label>
-              设备名称 *
-              <input id="localDeviceName" type="text" placeholder="本地测试设备">
-            </label>
-            <label>
-              协议 *
-              <select id="localProtocolSelect"></select>
-            </label>
-            <label>
-              基础采集间隔 BaseCollectionInterval (ms)
-              <input id="localCollectionInterval" type="number" value="2000">
-            </label>
-            <label>
-              最小采集间隔 MinCollectionInterval (ms)
-              <input id="localMinCollectionInterval" type="number" value="100">
-            </label>
-            <label>
-              最大采集间隔 MaxCollectionInterval (ms)
-              <input id="localMaxCollectionInterval" type="number" value="3600000">
-            </label>
-            <label>
-              点位变化百分比 PointChangeThreshold (1=100%)
-              <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
-            </label>
-          </div>
-          <div id="localProtocolMeta" class="meta-box"></div>
-          <form id="localConnectionForm" class="dynamic-form"></form>
-          <section class="point-editor">
-            <div class="point-editor-head">
+      <section class="workspace-grid">
+        <div class="workspace-column workspace-left">
+          <section id="devices" class="panel device-panel">
+            <div class="panel-head">
               <div>
-                <strong>点位可视化配置</strong>
-                <p class="field-description">左侧维护点位列表，右侧编辑单个点位；高级 JSON 仅作为补充回退，不再作为主编辑入口。</p>
+                <div class="panel-tabs">
+                  <button type="button" class="is-active">设备树</button>
+                  <button type="button">收藏夹</button>
+                </div>
+                <h2>设备列表</h2>
               </div>
-              <div class="inline-actions">
-                <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
-                <button id="addLocalPointBtn" type="button">新增点位</button>
-                <button id="duplicateLocalPointBtn" type="button">复制当前点位</button>
-                <button id="deleteLocalPointBtn" type="button" class="danger">删除当前点位</button>
+              <div class="mini-actions">
+                <button type="button" class="icon-button small" aria-label="筛选"></button>
+                <button type="button" class="icon-button small plus" aria-label="新增"></button>
               </div>
             </div>
-            <div class="point-workspace">
-              <section class="point-list-panel">
-                <div class="point-list-meta">
-                  <strong id="localPointCount">0 个点位</strong>
-                  <span id="localPointSelectionMeta">未选择点位</span>
-                </div>
-                <div class="table-wrap compact point-table-wrap">
-                  <table class="point-table">
-                    <thead>
-                      <tr>
-                        <th>点位</th>
-                        <th>地址</th>
-                        <th>类型</th>
-                        <th>读写</th>
-                        <th>状态</th>
-                      </tr>
-                    </thead>
-                    <tbody id="localPointRows">
-                      <tr><td colspan="5">暂无点位</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-              <section class="point-detail-panel">
-                <div id="localPointEmpty" class="empty-state hidden">
-                  <strong>暂无选中的点位</strong>
-                  <span>先新增一个点位，或从左侧列表选择已有点位。</span>
-                </div>
-                <div id="localPointDetail"></div>
-              </section>
+
+            <div class="search-row">
+              <input type="search" placeholder="搜索设备 / 协议 / IP">
+            </div>
+
+            <div class="device-tree-shell">
+              <table class="device-tree-table">
+                <tbody id="deviceRows"></tbody>
+              </table>
             </div>
           </section>
-          <details class="point-json-panel">
-            <summary>高级 JSON 回退区</summary>
-            <p class="field-description">这里保留原始点位数组 JSON，适合批量粘贴或补充当前界面尚未可视化的字段。修改后需要点击“应用 JSON 到列表”。</p>
-            <div class="local-json-grid">
-              <label>
-                点位配置 JSON 数组
-                <textarea id="localPointsJson" spellcheck="false"></textarea>
-              </label>
+
+          <section class="panel local-device-panel">
+            <div class="panel-head">
+              <div>
+                <h2>本地临时设备编辑器</h2>
+                <p>只写入当前采集服务内存，不回写远端配置源。</p>
+              </div>
+              <div class="inline-actions">
+                <button id="openLocalDeviceBtn" type="button" class="primary">新建设备</button>
+                <button id="cancelLocalDeviceBtn" type="button">收起</button>
+              </div>
             </div>
-            <div class="inline-actions point-json-actions">
-              <button id="formatLocalPointsBtn" type="button">格式化点位 JSON</button>
-              <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
+
+            <div class="local-editor-placeholder">
+              <strong>临时设备编辑器已就绪</strong>
+              <p>点击“新建设备”后，可以在当前服务内快速搭建临时采集对象并保存测试。</p>
             </div>
-          </details>
-          <div class="inline-actions local-options">
-            <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
-            <label class="check-line"><input id="localStartAfterSave" type="checkbox"> 保存后立即本地启动</label>
-            <button id="saveLocalDeviceBtn" class="primary">保存本地临时设备</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>设备</th>
-                <th>来源</th>
-                <th>协议</th>
-                <th>地址</th>
-                <th>采集间隔</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="deviceRows"></tbody>
-          </table>
-        </div>
-      </section>
 
-      <section id="protocols" class="grid two">
-        <div class="panel">
-          <div class="panel-title">
-            <h2>协议字段</h2>
-            <span id="protocolCount">0 种协议</span>
-          </div>
-          <div class="form-grid">
-            <label>
-              协议
-              <select id="protocolSelect"></select>
-            </label>
-            <label>
-              设备
-              <select id="connectionDeviceSelect"></select>
-            </label>
-          </div>
-          <div id="protocolMeta" class="meta-box"></div>
-          <form id="connectionForm" class="dynamic-form"></form>
-          <div class="inline-actions">
-            <button id="loadConnectionBtn">读取连接配置</button>
-            <button id="saveConnectionBtn" class="primary">保存连接配置</button>
-          </div>
+            <div id="localDevicePanel" class="local-editor hidden">
+              <div class="local-editor-title">
+                <div>
+                  <span class="label-chip">配置编辑器</span>
+                  <h3 id="localEditorTitle">新增本地临时设备</h3>
+                </div>
+              </div>
+
+              <div class="form-grid compact-form-grid">
+                <label>
+                  设备 ID *
+                  <input id="localDeviceId" type="text" placeholder="local-modbus-1">
+                </label>
+                <label>
+                  设备名称 *
+                  <input id="localDeviceName" type="text" placeholder="本地测试设备">
+                </label>
+                <label>
+                  协议 *
+                  <select id="localProtocolSelect"></select>
+                </label>
+                <label>
+                  BaseCollectionInterval (ms)
+                  <input id="localCollectionInterval" type="number" value="2000">
+                </label>
+                <label>
+                  MinCollectionInterval (ms)
+                  <input id="localMinCollectionInterval" type="number" value="100">
+                </label>
+                <label>
+                  MaxCollectionInterval (ms)
+                  <input id="localMaxCollectionInterval" type="number" value="3600000">
+                </label>
+                <label>
+                  PointChangeThreshold
+                  <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
+                </label>
+              </div>
+
+              <div id="localProtocolMeta" class="meta-box"></div>
+              <form id="localConnectionForm" class="dynamic-form"></form>
+
+              <section class="point-editor">
+                <div class="point-editor-head">
+                  <div>
+                    <span class="label-chip">点位建模</span>
+                    <strong>本地点位列表</strong>
+                  </div>
+                  <div class="inline-actions">
+                    <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
+                    <button id="addLocalPointBtn" type="button">新增点位</button>
+                    <button id="duplicateLocalPointBtn" type="button">复制</button>
+                    <button id="deleteLocalPointBtn" type="button" class="danger">删除</button>
+                  </div>
+                </div>
+
+                <div class="point-workspace">
+                  <section class="point-list-panel">
+                    <div class="point-list-meta">
+                      <strong id="localPointCount">0 个点位</strong>
+                      <span id="localPointSelectionMeta">未选择点位</span>
+                    </div>
+                    <div class="table-wrap compact point-table-wrap">
+                      <table class="point-table">
+                        <thead>
+                          <tr>
+                            <th>点位</th>
+                            <th>地址</th>
+                            <th>类型</th>
+                            <th>读写</th>
+                            <th>状态</th>
+                          </tr>
+                        </thead>
+                        <tbody id="localPointRows">
+                          <tr><td colspan="5">暂无点位</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section class="point-detail-panel">
+                    <div id="localPointEmpty" class="empty-state hidden">
+                      <strong>暂无选中的点位</strong>
+                      <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                    </div>
+                    <div id="localPointDetail"></div>
+                  </section>
+                </div>
+              </section>
+
+              <details class="point-json-panel">
+                <summary>高级 JSON 回退区</summary>
+                <p class="field-description">保留原始点位数组 JSON，适合批量粘贴或补充界面暂未可视化的字段。</p>
+                <label>
+                  点位配置 JSON 数组
+                  <textarea id="localPointsJson" spellcheck="false"></textarea>
+                </label>
+                <div class="inline-actions point-json-actions">
+                  <button id="formatLocalPointsBtn" type="button">格式化 JSON</button>
+                  <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
+                </div>
+              </details>
+
+              <div class="inline-actions local-options">
+                <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
+                <label class="check-line"><input id="localStartAfterSave" type="checkbox"> 保存后立即本地启动</label>
+                <button id="saveLocalDeviceBtn" type="button" class="primary">保存并测试</button>
+              </div>
+            </div>
+          </section>
         </div>
 
-        <div class="panel">
-          <div class="panel-title">
-            <h2>配置差异</h2>
-            <span>本地 vs 远端</span>
-          </div>
-          <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
-        </div>
-      </section>
+        <div class="workspace-column workspace-center">
+          <section class="panel workbench-panel">
+            <div class="workbench-topbar">
+              <div class="device-summary">
+                <div class="summary-primary">
+                  <span id="selectedDeviceStatusDot" class="status-dot online"></span>
+                  <strong id="selectedDeviceName">请选择设备</strong>
+                  <span id="selectedDeviceStatus" class="summary-status">待连接</span>
+                </div>
+                <div class="summary-meta">
+                  <span>协议：<strong id="selectedDeviceProtocol">-</strong></span>
+                  <span>IP：<strong id="selectedDeviceAddress">-</strong></span>
+                  <span>采集周期：<strong id="selectedDeviceInterval">-</strong></span>
+                </div>
+              </div>
 
-      <section id="realtime" class="panel">
-        <div class="panel-title">
-          <h2>实时数据</h2>
-          <div class="inline-actions">
-            <select id="realtimeDeviceSelect"></select>
-            <button id="toggleRealtimeBtn" class="primary">开始轮询</button>
-            <button id="resetAdaptiveBtn">重置自适应</button>
-          </div>
-        </div>
-        <div class="table-wrap compact">
-          <table>
-            <thead>
-              <tr>
-                <th>点位</th>
-                <th>编码</th>
-                <th>值</th>
-                <th>质量</th>
-                <th>原始值</th>
-                <th>处理耗时</th>
-              </tr>
-            </thead>
-            <tbody id="realtimeRows"></tbody>
-          </table>
-        </div>
-      </section>
+              <div class="workbench-tabs">
+                <button type="button" class="is-active">点位配置</button>
+                <button type="button">协议设置</button>
+              </div>
+            </div>
 
-      <section id="control" class="grid two">
-        <div class="panel">
-          <div class="panel-title">
-            <h2>手动写点位</h2>
-            <select id="controlDeviceSelect"></select>
-          </div>
-          <div class="usage-note">
-            <strong>使用示例</strong>
-            <p>先选择设备，再把左侧 key 改成真实点位标识；支持 pointId、pointCode、pointName、pointAlias、reportField。被写入的点位必须配置为可写，否则后端会返回失败。</p>
-            <pre>{
-  "values": {
-    "temperatureSet": 25,
-    "switchEnable": true
-  }
-}</pre>
-          </div>
-          <textarea id="pointWriteInput" spellcheck="false">{
+            <div class="workbench-toolbar">
+              <div class="inline-actions">
+                <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
+                <button id="resetAdaptiveBtn" type="button">重置自适应</button>
+                <button id="exportConfigBtn" type="button">导出配置</button>
+                <button id="syncConfigBtn" type="button">触发同步</button>
+              </div>
+
+              <div class="inline-actions workbench-filters">
+                <select id="realtimeDeviceSelect"></select>
+                <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
+              </div>
+            </div>
+
+            <section id="realtime" class="console-module console-module-active">
+              <div class="table-wrap point-runtime-wrap">
+                <table class="runtime-table">
+                  <thead>
+                    <tr>
+                      <th>点位名称</th>
+                      <th>标识符</th>
+                      <th>数据类型</th>
+                      <th>寄存器地址</th>
+                      <th>读写</th>
+                      <th>缩放</th>
+                      <th>当前值</th>
+                      <th>质量</th>
+                      <th>处理耗时</th>
+                    </tr>
+                  </thead>
+                  <tbody id="realtimeRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <section class="panel action-deck">
+            <div class="panel-tabs action-tabs">
+              <button type="button" class="console-tab is-active" data-console-tab="control">手动控制</button>
+              <button type="button" class="console-tab" data-console-tab="shadow">设备影子</button>
+              <button type="button" class="console-tab" data-console-tab="note-alarm">事件告警</button>
+              <button type="button" class="console-tab" data-console-tab="note-log">通讯日志</button>
+            </div>
+
+            <section id="control" class="console-module console-module-active" data-console-panel="control">
+              <div class="console-panel-head">
+                <h2>手动控制</h2>
+                <select id="controlDeviceSelect"></select>
+              </div>
+
+              <div class="surface-grid two">
+                <div class="surface-card">
+                  <div class="surface-card-head">
+                    <h3>批量写点位</h3>
+                    <span class="surface-note">values payload</span>
+                  </div>
+                  <p class="usage-note">支持 pointId、pointCode、pointName、pointAlias、reportField 作为键。</p>
+                  <textarea id="pointWriteInput" spellcheck="false">{
   "values": {
     "temperatureSet": 25
   }
 }</textarea>
-          <button id="writePointsBtn" class="primary wide">批量写入点位</button>
-        </div>
-        <div class="panel">
-          <div class="panel-title">
-            <h2>执行命令</h2>
-            <span>CollectionManager.executeCommand</span>
-          </div>
-          <div class="usage-note">
-            <strong>使用示例</strong>
-            <p id="commandHelpText">先选择设备，再填写采集器支持的命令名和参数。不是所有协议都支持同一组命令；不支持的命令可能返回失败或空结果。</p>
-            <pre id="commandExample">{
+                  <button id="writePointsBtn" type="button" class="primary wide">批量写入点位</button>
+                </div>
+
+                <div class="surface-card">
+                  <div class="surface-card-head">
+                    <h3>执行命令</h3>
+                    <span class="surface-note">CollectionManager.executeCommand</span>
+                  </div>
+                  <p id="commandHelpText" class="usage-note">先选择设备，再填写采集器支持的命令名和参数。</p>
+                  <pre id="commandExample" class="json-view">{
   "command": "status",
   "params": {}
 }</pre>
-          </div>
-          <textarea id="commandInput" spellcheck="false">{
+                  <textarea id="commandInput" spellcheck="false">{
   "command": "status",
   "params": {}
 }</textarea>
-          <button id="executeCommandBtn" class="primary wide">执行命令</button>
-          <pre id="controlView" class="json-view">等待执行结果</pre>
-        </div>
-      </section>
+                  <button id="executeCommandBtn" type="button" class="primary wide">执行命令</button>
+                  <pre id="controlView" class="json-view">等待执行结果</pre>
+                </div>
+              </div>
+            </section>
 
-      <section id="shadow" class="grid two">
-        <div class="panel">
-          <div class="panel-title">
-            <h2>设备影子</h2>
-            <div class="inline-actions">
-              <select id="shadowDeviceSelect"></select>
-              <button id="loadShadowBtn">读取影子</button>
-            </div>
-          </div>
-          <pre id="shadowView" class="json-view">请选择设备读取影子</pre>
-        </div>
-        <div class="panel">
-          <div class="panel-title">
-            <h2>Desired 更新</h2>
-            <button id="clearDesiredBtn" class="danger">清理 desired</button>
-          </div>
-          <textarea id="desiredInput" spellcheck="false">{
+            <section id="shadow" class="console-module hidden" data-console-panel="shadow">
+              <div class="surface-grid two">
+                <div class="surface-card">
+                  <div class="surface-card-head">
+                    <h3>当前影子</h3>
+                    <div class="inline-actions">
+                      <select id="shadowDeviceSelect"></select>
+                      <button id="loadShadowBtn" type="button">读取影子</button>
+                    </div>
+                  </div>
+                  <pre id="shadowView" class="json-view">请选择设备读取影子</pre>
+                </div>
+
+                <div class="surface-card">
+                  <div class="surface-card-head">
+                    <h3>Desired 更新</h3>
+                    <button id="clearDesiredBtn" type="button" class="danger">清理 desired</button>
+                  </div>
+                  <textarea id="desiredInput" spellcheck="false">{
   "desired": {}
 }</textarea>
-          <button id="saveDesiredBtn" class="primary wide">提交 desired</button>
-        </div>
-      </section>
+                  <button id="saveDesiredBtn" type="button" class="primary wide">提交 desired</button>
+                </div>
+              </div>
+            </section>
 
-      <section id="monitor" class="panel">
-        <div class="panel-title">
-          <h2>监控诊断</h2>
-          <span>缓存、连接、线程池、异常</span>
+            <section class="console-module hidden note-panel" data-console-panel="note-alarm">
+              <div class="empty-state">
+                <strong>事件告警面板预留</strong>
+                <span>当前版本保留占位，后续可接入事件流或告警列表。</span>
+              </div>
+            </section>
+
+            <section class="console-module hidden note-panel" data-console-panel="note-log">
+              <div class="empty-state">
+                <strong>通讯日志面板预留</strong>
+                <span>当前版本保留占位，后续可接入链路日志和调试报文。</span>
+              </div>
+            </section>
+          </section>
         </div>
-        <div id="monitorCards" class="cards"></div>
-        <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+
+        <div class="workspace-column workspace-right">
+          <section id="protocols" class="panel protocol-panel">
+            <div class="panel-head">
+              <div>
+                <h2>协议设置</h2>
+                <p>协议字段、连接参数和配置差异统一收口在右侧。</p>
+              </div>
+              <span id="protocolCount" class="pill">0 种协议</span>
+            </div>
+
+            <div class="form-grid compact-form-grid">
+              <label>
+                协议
+                <select id="protocolSelect"></select>
+              </label>
+              <label>
+                设备
+                <select id="connectionDeviceSelect"></select>
+              </label>
+            </div>
+
+            <div id="protocolMeta" class="meta-box"></div>
+            <form id="connectionForm" class="dynamic-form"></form>
+
+            <div class="inline-actions">
+              <button id="loadConnectionBtn" type="button">读取连接配置</button>
+              <button id="saveConnectionBtn" type="button" class="primary">保存连接配置</button>
+            </div>
+
+            <div class="protocol-diff-block">
+              <div class="surface-card-head">
+                <h3>配置差异</h3>
+                <span class="surface-note">本地 vs 远端</span>
+              </div>
+              <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
+            </div>
+          </section>
+
+          <section id="monitor" class="panel monitor-panel">
+            <div class="panel-head">
+              <div>
+                <h2>监控诊断</h2>
+                <p>缓存、连接、线程池和异常指标聚合展示。</p>
+              </div>
+              <span class="pill subtle">系统侧观测</span>
+            </div>
+
+            <div id="monitorCards" class="cards monitor-cards"></div>
+            <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+          </section>
+        </div>
       </section>
 
       <div id="toast" class="toast"></div>

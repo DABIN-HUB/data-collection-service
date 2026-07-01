@@ -7,3 +7,6 @@ m2repo2
 m2
 *.iml
 .vscode/
+tmp
+.tmp
+.external
