@@ -56,6 +56,7 @@ public class ConnectionFactory {
             case "BACNET_MSTP" -> createBacnetMstpConnection(deviceInfo, cfg);
             case "BACNET_SC" -> createBacnetScConnection(deviceInfo, cfg);
             case "MITSUBISHI_MC" -> createMitsubishiMcConnection(deviceInfo, cfg);
+            case "OMRON_FINS" -> createOmronFinsConnection(deviceInfo, cfg);
             case "ETHERNET_IP" -> createEtherNetIpConnection(deviceInfo, cfg);
             case "ADS" -> createAdsConnection(deviceInfo, cfg);
             case "KNXNET_IP" -> createKnxNetIpConnection(deviceInfo, cfg);
@@ -183,6 +184,14 @@ public class ConnectionFactory {
         }
     }
 
+    private ConnectionAdapter<?> createOmronFinsConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new OmronFinsUdpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception e) {
+            log.error("Create OMRON FINS connection failed: {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("Create OMRON FINS connection failed", deviceInfo.getDeviceId(), null);
+        }
+    }
     private ConnectionAdapter<?> createEtherNetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new EtherNetIpConnectionAdapter(deviceInfo, cfg);

@@ -15,6 +15,7 @@ import com.wangbin.collector.core.collector.protocol.knx.KnxNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mc.McCollector;
+import com.wangbin.collector.core.collector.protocol.fins.OmronFinsCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
@@ -276,6 +277,47 @@ public class ProtocolDescriptorRegistry {
                                 "Collector-side guard rail for one bit-unit batch request."),
                         field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
                                 "Socket read timeout used while waiting for one MC response frame."),
+                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
+                                "Fallback timeout used when readTimeout is empty."))));
+        registerPrimary(descriptor("OMRON_FINS", "OMRON FINS",
+                "Self-owned OMRON FINS/UDP collector for polling read/write on common PLC memory areas.",
+                List.of("FINS", "OMRONFINS"), OmronFinsCollector.class, "OMRON_FINS", 9600, ProtocolAddressingMode.MIXED,
+                true, true, false,
+                List.of("DM:100", "DM:100.3", "CIO:0.1", "WR:20", "HR:50", "EM0:100", "DM:200#8"),
+                fields(
+                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
+                                "OMRON PLC IP address for FINS/UDP communication."),
+                        field("port", "number", "Port", false, "9600", null, "connection",
+                                "FINS/UDP destination port. Leave empty to use the default 9600."),
+                        field("plcNode", "number", "PLC node", true, "1", null, "protocol",
+                                "Destination node number on the PLC side."),
+                        field("localNode", "number", "Local node", true, "10", null, "protocol",
+                                "Source node number used by the collector host."),
+                        field("plcUnit", "number", "PLC unit", false, "0", null, "protocol",
+                                "Destination unit number. CPU unit commonly uses 0."),
+                        field("localUnit", "number", "Local unit", false, "0", null, "protocol",
+                                "Source unit number used in the FINS header."),
+                        field("plcNetwork", "number", "PLC network", false, "0", null, "protocol",
+                                "Destination network number. Direct Ethernet access commonly uses 0."),
+                        field("localNetwork", "number", "Local network", false, "0", null, "protocol",
+                                "Source network number used in the FINS header."),
+                        field("serviceIdSeed", "number", "Service ID seed", false, "1", null, "advanced",
+                                "Initial FINS SID value used for request sequencing."),
+                        field("batchReadEnabled", "boolean", "Enable batch read", false, "true",
+                                List.of("true", "false"), "advanced",
+                                "Enable protocol-level contiguous block read merging inside the collector."),
+                        field("maxWordsPerRequest", "number", "Max words per request", false, "120", null, "advanced",
+                                "Collector-side limit for one word-unit FINS read/write request."),
+                        field("maxBitsPerRequest", "number", "Max bits per request", false, "256", null, "advanced",
+                                "Collector-side limit for one bit-unit FINS read/write request."),
+                        field("byteOrder", "select", "Byte order", false, "BIG_ENDIAN",
+                                List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "advanced",
+                                "Default byte order used for multi-byte numeric decoding when the point does not override it."),
+                        field("wordOrder", "select", "Word order", false, "BIG_ENDIAN",
+                                List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "advanced",
+                                "Default word order used for 32-bit and 64-bit values when the point does not override it."),
+                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
+                                "UDP receive timeout while waiting for one FINS response."),
                         field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
                                 "Fallback timeout used when readTimeout is empty."))));
         registerPrimary(descriptor("ETHERNET_IP", "EtherNet/IP", "PLC4X-backed EtherNet/IP / Logix tag collector.",
@@ -751,6 +793,7 @@ public class ProtocolDescriptorRegistry {
             case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
             case "SIEMENS_S7" -> s7PointFields();
             case "MITSUBISHI_MC" -> mcPointFields();
+            case "OMRON_FINS" -> finsPointFields();
             case "BACNET_IP", "BACNET_MSTP", "BACNET_SC" -> bacnetPointFields();
             case "ETHERNET_IP" -> etherNetIpPointFields();
             case "ADS" -> adsPointFields();
@@ -809,6 +852,20 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    private List<ProtocolFieldConfig> finsPointFields() {
+        return List.of(
+                pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
+                        Collections.emptyList(), "Optional bit offset override. You can use either address=DM:100.3 or address=DM:100 with additionalConfig.bitIndex=3. Only BOOL points are supported.", "dataType=BOOLEAN"),
+                pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(), "Required when dataType=STRING and the address does not already use #length.", "dataType=STRING"),
+                pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(), "Optional one-dimensional array length for word-based numeric arrays. Bit arrays are not supported in P0.", null),
+                pointField("additionalConfig.byteOrder", "select", "Byte order", false, "",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "Optional per-point byte-order override for multi-byte numeric values.", null),
+                pointField("additionalConfig.wordOrder", "select", "Word order", false, "",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "Optional per-point word-order override for 32-bit and 64-bit values.", null)
+        );
+    }
     private List<ProtocolFieldConfig> bacnetPointFields() {
         return List.of(
                 pointField("additionalConfig.driverDataType", "select", "BACnet driver type", false, "AUTO",

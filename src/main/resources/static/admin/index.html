@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>采集器管理控制台</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./admin-redesign.css">
 </head>
 <body>
   <div class="shell">
@@ -19,13 +20,13 @@
         </div>
 
         <nav class="section-nav">
-          <a href="#overview" class="is-active">概览</a>
-          <a href="#devices">设备管理</a>
-          <a href="#protocols">协议配置</a>
-          <a href="#realtime">实时数据</a>
-          <a href="#control">手动控制</a>
-          <a href="#shadow">设备影子</a>
-          <a href="#monitor">监控诊断</a>
+          <a href="#overview" class="is-active" data-nav="overview"><span class="nav-glyph" aria-hidden="true">总</span><span>概览</span></a>
+          <a href="#devices" data-nav="devices"><span class="nav-glyph" aria-hidden="true">设</span><span>设备管理</span></a>
+          <a href="#protocols" data-nav="protocols"><span class="nav-glyph" aria-hidden="true">协</span><span>协议配置</span></a>
+          <a href="#realtime" data-nav="realtime"><span class="nav-glyph" aria-hidden="true">实</span><span>实时数据</span></a>
+          <a href="#control" data-nav="control"><span class="nav-glyph" aria-hidden="true">控</span><span>手动控制</span></a>
+          <a href="#shadow" data-nav="shadow"><span class="nav-glyph" aria-hidden="true">影</span><span>设备影子</span></a>
+          <a href="#monitor" data-nav="monitor"><span class="nav-glyph" aria-hidden="true">监</span><span>监控诊断</span></a>
         </nav>
       </div>
 
@@ -34,7 +35,7 @@
           <summary>访问令牌</summary>
           <div class="token-body">
             <label for="tokenInput">X-Collector-Token</label>
-            <input id="tokenInput" type="text" placeholder="开发默认: ops-token">
+            <input id="tokenInput" type="text" placeholder="开发默认值：ops-token">
             <p>静态页面免鉴权，接口请求仍会携带这里保存的令牌。</p>
             <button id="saveTokenBtn" type="button">保存令牌</button>
           </div>
@@ -110,19 +111,33 @@
           </section>
 
           <section class="panel local-device-panel">
-            <div class="panel-head">
-              <div>
+            <div class="panel-head local-device-head">
+              <div class="panel-head-main">
+                <span class="panel-kicker">临时建模</span>
                 <h2>本地临时设备编辑器</h2>
-                <p>只写入当前采集服务内存，不回写远端配置源。</p>
               </div>
-              <div class="inline-actions">
+              <div class="inline-actions local-device-actions">
+                <span class="field-help panel-help">
+                  <button type="button" class="field-help-trigger" aria-label="本地编辑器说明" title="本地编辑器说明">?</button>
+                  <span class="field-help-popover local-device-help" role="tooltip">
+                    <p class="field-help-title">本地临时设备编辑器</p>
+                    <p>只写入当前采集服务内存，不回写远端配置源。</p>
+                    <ul class="field-help-list">
+                      <li>适合协议联调、点位试配和临时验证</li>
+                      <li>保存后可以直接本地启动当前临时设备</li>
+                    </ul>
+                  </span>
+                </span>
                 <button id="openLocalDeviceBtn" type="button" class="primary">新建设备</button>
               </div>
             </div>
 
             <div class="local-editor-placeholder">
-              <strong>临时设备编辑器已就绪</strong>
-              <p>点击“新建设备”后，可以在当前服务内快速搭建临时采集对象并保存测试。</p>
+              <div class="placeholder-hero">
+                <strong>临时编辑器已就绪</strong>
+                <span class="placeholder-badge">内存态</span>
+              </div>
+              <p>点击右侧“新建设备”，快速创建临时采集对象并保存测试。</p>
             </div>
 
             <div id="localDevicePanel" class="local-editor hidden">
@@ -131,7 +146,8 @@
                   <span class="label-chip">配置编辑器</span>
                   <h3 id="localEditorTitle">新增本地临时设备</h3>
                   <p>在一个更紧凑的工作区里完成设备、连接和点位建模。</p>
-                </div>                <div class="local-editor-title-actions">
+                </div>
+                <div class="local-editor-title-actions">
                   <div class="local-editor-stats">
                     <div class="local-editor-stat">
                       <strong id="localEditorProtocolText">-</strong>
@@ -144,7 +160,8 @@
                   </div>
                   <button id="cancelLocalDeviceBtn" type="button">关闭</button>
                 </div>
-              </div>              <div class="local-editor-body">
+              </div>
+              <div class="local-editor-body">
                 <div class="local-setup-cluster">
                   <section class="local-section-card local-setup-card">
                     <div class="local-section-head">
@@ -273,7 +290,7 @@
 
         <div class="workspace-column workspace-center">
           <section class="panel workbench-panel">
-            <div class="workbench-topbar">
+            <div class="workbench-topbar workbench-topbar-compact">
               <div class="device-summary">
                 <div class="summary-primary">
                   <span id="selectedDeviceStatusDot" class="status-dot online"></span>
@@ -282,51 +299,167 @@
                 </div>
                 <div class="summary-meta">
                   <span>协议：<strong id="selectedDeviceProtocol">-</strong></span>
-                  <span>IP：<strong id="selectedDeviceAddress">-</strong></span>
+                  <span>地址：<strong id="selectedDeviceAddress">-</strong></span>
                   <span>采集周期：<strong id="selectedDeviceInterval">-</strong></span>
                 </div>
               </div>
 
               <div class="workbench-tabs">
-                <button type="button" class="is-active" data-workbench-tab="points">点位配置</button>
-                <button type="button" data-workbench-tab="protocol">协议设置</button>
+                <button type="button" class="is-active" data-workbench-tab="points">点位工作台</button>
+                <button type="button" data-workbench-tab="protocol">协议连接</button>
               </div>
             </div>
 
             <section class="workbench-stage console-module-active" data-workbench-panel="points">
-              <div class="workbench-toolbar">
-                <div class="inline-actions">
-                  <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
-                  <button id="resetAdaptiveBtn" type="button">重置自适应</button>
-                  <button id="exportConfigBtn" type="button">导出配置</button>
-                  <button id="syncConfigBtn" type="button">触发同步</button>
+              <div class="runtime-stage-shell">
+                <div class="stage-section-head">
+                  <div>
+                    <span class="panel-kicker">点位工作区</span>
+                    <h2>实时点位工作台</h2>
+                  </div>
+                  <span class="stage-note">固定预留 15 条显示空间</span>
                 </div>
 
-                <div class="inline-actions workbench-filters">
-                  <select id="realtimeDeviceSelect"></select>
-                  <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
+                <div class="workbench-toolbar workbench-toolbar-compact">
+                  <div class="inline-actions workbench-primary-actions">
+                    <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
+                    <button id="resetAdaptiveBtn" type="button">重置自适应</button>
+                    <button id="exportConfigBtn" type="button">导出配置</button>
+                    <button id="syncConfigBtn" type="button">触发同步</button>
+                  </div>
+
+                  <div class="inline-actions workbench-filters">
+                    <select id="realtimeDeviceSelect"></select>
+                    <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
+                  </div>
                 </div>
+
+                <section id="realtime" class="console-module console-module-active realtime-stage">
+                  <div class="table-wrap point-runtime-wrap">
+                    <table class="runtime-table realtime-table">
+                      <thead>
+                        <tr>
+                          <th>点位名称</th>
+                          <th>标识符</th>
+                          <th>数据类型</th>
+                          <th>寄存器地址</th>
+                          <th>读写</th>
+                          <th>缩放</th>
+                          <th>当前值</th>
+                          <th>质量</th>
+                          <th>处理耗时</th>
+                        </tr>
+                      </thead>
+                      <tbody id="realtimeRows"></tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
 
-              <section id="realtime" class="console-module console-module-active realtime-stage">
-                <div class="table-wrap point-runtime-wrap">
-                  <table class="runtime-table">
-                    <thead>
-                      <tr>
-                        <th>点位名称</th>
-                        <th>标识符</th>
-                        <th>数据类型</th>
-                        <th>寄存器地址</th>
-                        <th>读写</th>
-                        <th>缩放</th>
-                        <th>当前值</th>
-                        <th>质量</th>
-                        <th>处理耗时</th>
-                      </tr>
-                    </thead>
-                    <tbody id="realtimeRows"></tbody>
-                  </table>
+              <section class="action-deck workbench-lower-panel">
+                <div class="stage-section-head action-section-head">
+                  <div>
+                    <span class="panel-kicker">设备工具区</span>
+                    <h2>控制与诊断面板</h2>
+                  </div>
+                  <span class="stage-note">与上方点位区独立切换</span>
                 </div>
+
+                <div class="panel-tabs action-tabs">
+                  <button type="button" class="console-tab is-active" data-console-tab="control"><span class="tab-glyph" aria-hidden="true">控</span><span>手动控制</span></button>
+                  <button type="button" class="console-tab" data-console-tab="history"><span class="tab-glyph" aria-hidden="true">史</span><span>历史数据</span></button>
+                  <button type="button" class="console-tab" data-console-tab="shadow"><span class="tab-glyph" aria-hidden="true">影</span><span>设备影子</span></button>
+                  <button type="button" class="console-tab" data-console-tab="note-alarm"><span class="tab-glyph" aria-hidden="true">警</span><span>事件告警</span></button>
+                  <button type="button" class="console-tab" data-console-tab="note-log"><span class="tab-glyph" aria-hidden="true">志</span><span>通讯日志</span></button>
+                </div>
+
+                <section id="control" class="console-module console-module-active" data-console-panel="control">
+                  <div class="console-panel-head">
+                    <h2>手动控制</h2>
+                    <select id="controlDeviceSelect"></select>
+                  </div>
+
+                  <div class="surface-grid two">
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>批量写点位</h3>
+                        <span class="surface-note">values payload</span>
+                      </div>
+                      <p class="usage-note">支持 pointId、pointCode、pointName、pointAlias、reportField 作为键。</p>
+                      <textarea id="pointWriteInput" spellcheck="false">{
+  "values": {
+    "temperatureSet": 25
+  }
+}</textarea>
+                      <button id="writePointsBtn" type="button" class="primary wide">批量写入点位</button>
+                    </div>
+
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>执行命令</h3>
+                        <span class="surface-note">CollectionManager.executeCommand</span>
+                      </div>
+                      <p id="commandHelpText" class="usage-note">先选择设备，再填写采集器支持的命令名和参数。</p>
+                      <pre id="commandExample" class="json-view">{
+  "command": "status",
+  "params": {}
+}</pre>
+                      <textarea id="commandInput" spellcheck="false">{
+  "command": "status",
+  "params": {}
+}</textarea>
+                      <button id="executeCommandBtn" type="button" class="primary wide">执行命令</button>
+                      <pre id="controlView" class="json-view">等待执行结果</pre>
+                    </div>
+                  </div>
+                </section>
+
+                <section id="history" class="console-module hidden" data-console-panel="history">
+                  <div class="empty-state">
+                    <strong>历史数据面板待接入</strong>
+                    <span>下一步会接到点位级历史查询；当前先完成主工作台结构和右侧点位配置编辑链路。</span>
+                  </div>
+                </section>
+
+                <section id="shadow" class="console-module hidden" data-console-panel="shadow">
+                  <div class="surface-grid two">
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>当前影子</h3>
+                        <div class="inline-actions">
+                          <select id="shadowDeviceSelect"></select>
+                          <button id="loadShadowBtn" type="button">读取影子</button>
+                        </div>
+                      </div>
+                      <pre id="shadowView" class="json-view">请选择设备读取影子</pre>
+                    </div>
+
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>Desired 更新</h3>
+                        <button id="clearDesiredBtn" type="button" class="danger">清理 desired</button>
+                      </div>
+                      <textarea id="desiredInput" spellcheck="false">{
+  "desired": {}
+}</textarea>
+                      <button id="saveDesiredBtn" type="button" class="primary wide">提交 desired</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="console-module hidden note-panel" data-console-panel="note-alarm">
+                  <div class="empty-state">
+                    <strong>事件告警面板预留</strong>
+                    <span>当前版本保留占位，后续可接入事件流或告警列表。</span>
+                  </div>
+                </section>
+
+                <section class="console-module hidden note-panel" data-console-panel="note-log">
+                  <div class="empty-state">
+                    <strong>通讯日志面板预留</strong>
+                    <span>当前版本保留占位，后续可接入链路日志和调试报文。</span>
+                  </div>
+                </section>
               </section>
             </section>
 
@@ -372,167 +505,45 @@
               </div>
             </section>
           </section>
-
-          <section class="panel action-deck">
-            <div class="panel-tabs action-tabs">
-              <button type="button" class="console-tab is-active" data-console-tab="control">手动控制</button>
-              <button type="button" class="console-tab" data-console-tab="shadow">设备影子</button>
-              <button type="button" class="console-tab" data-console-tab="note-alarm">事件告警</button>
-              <button type="button" class="console-tab" data-console-tab="note-log">通讯日志</button>
-            </div>
-
-            <section id="control" class="console-module console-module-active" data-console-panel="control">
-              <div class="console-panel-head">
-                <h2>手动控制</h2>
-                <select id="controlDeviceSelect"></select>
-              </div>
-
-              <div class="surface-grid two">
-                <div class="surface-card">
-                  <div class="surface-card-head">
-                    <h3>批量写点位</h3>
-                    <span class="surface-note">values payload</span>
-                  </div>
-                  <p class="usage-note">支持 pointId、pointCode、pointName、pointAlias、reportField 作为键。</p>
-                  <textarea id="pointWriteInput" spellcheck="false">{
-  "values": {
-    "temperatureSet": 25
-  }
-}</textarea>
-                  <button id="writePointsBtn" type="button" class="primary wide">批量写入点位</button>
-                </div>
-
-                <div class="surface-card">
-                  <div class="surface-card-head">
-                    <h3>执行命令</h3>
-                    <span class="surface-note">CollectionManager.executeCommand</span>
-                  </div>
-                  <p id="commandHelpText" class="usage-note">先选择设备，再填写采集器支持的命令名和参数。</p>
-                  <pre id="commandExample" class="json-view">{
-  "command": "status",
-  "params": {}
-}</pre>
-                  <textarea id="commandInput" spellcheck="false">{
-  "command": "status",
-  "params": {}
-}</textarea>
-                  <button id="executeCommandBtn" type="button" class="primary wide">执行命令</button>
-                  <pre id="controlView" class="json-view">等待执行结果</pre>
-                </div>
-              </div>
-            </section>
-
-            <section id="shadow" class="console-module hidden" data-console-panel="shadow">
-              <div class="surface-grid two">
-                <div class="surface-card">
-                  <div class="surface-card-head">
-                    <h3>当前影子</h3>
-                    <div class="inline-actions">
-                      <select id="shadowDeviceSelect"></select>
-                      <button id="loadShadowBtn" type="button">读取影子</button>
-                    </div>
-                  </div>
-                  <pre id="shadowView" class="json-view">请选择设备读取影子</pre>
-                </div>
-
-                <div class="surface-card">
-                  <div class="surface-card-head">
-                    <h3>Desired 更新</h3>
-                    <button id="clearDesiredBtn" type="button" class="danger">清理 desired</button>
-                  </div>
-                  <textarea id="desiredInput" spellcheck="false">{
-  "desired": {}
-}</textarea>
-                  <button id="saveDesiredBtn" type="button" class="primary wide">提交 desired</button>
-                </div>
-              </div>
-            </section>
-
-            <section class="console-module hidden note-panel" data-console-panel="note-alarm">
-              <div class="empty-state">
-                <strong>事件告警面板预留</strong>
-                <span>当前版本保留占位，后续可接入事件流或告警列表。</span>
-              </div>
-            </section>
-
-            <section class="console-module hidden note-panel" data-console-panel="note-log">
-              <div class="empty-state">
-                <strong>通讯日志面板预留</strong>
-                <span>当前版本保留占位，后续可接入链路日志和调试报文。</span>
-              </div>
-            </section>
-          </section>
         </div>
 
         <div class="workspace-column workspace-right">
-          <section class="panel inspector-panel">
-            <div class="panel-head inspector-head">
-              <div>
-                <h2>点位详情</h2>
-                <p>从中间点位表选择一个点位，在右侧查看运行和配置摘要。</p>
+          <section class="panel inspector-panel point-config-panel">
+            <div class="panel-head inspector-head inspector-head-compact">
+              <div class="panel-head-main">
+                <span class="panel-kicker">点位配置</span>
+                <h2>右侧点位配置工作区</h2>
               </div>
+              <div class="inline-actions inspector-actions">
+                <span class="field-help panel-help">
+                  <button type="button" class="field-help-trigger" aria-label="点位配置说明" title="点位配置说明">?</button>
+                  <span class="field-help-popover inspector-help" role="tooltip">
+                    <p class="field-help-title">点位配置工作区</p>
+                    <p>先在中间点位表选择一条记录，右侧再直接编辑和保存。</p>
+                    <ul class="field-help-list">
+                      <li>“重新加载”会从当前设备重新获取点位配置</li>
+                      <li>表单区默认预留固定工作空间，内部支持滚动</li>
+                    </ul>
+                  </span>
+                </span>
+                <button id="reloadSelectedPointBtn" type="button">重新加载</button>
+                <button id="saveSelectedPointBtn" type="button" class="primary">保存点位</button>
+              </div>
+            </div>
+
+            <div class="inspector-status-row">
               <span id="inspectorPointTag" class="pill subtle">未选择点位</span>
+              <span id="pointConfigStateText" class="pill subtle">待选择</span>
             </div>
 
-            <div id="selectedPointEmpty" class="empty-state">
-              <strong>暂无选中的点位</strong>
-              <span>先在中间点位表里选择一个点位，这里会展示名称、地址、质量、缩放和运行值。</span>
-            </div>
-
-            <div id="selectedPointPanel" class="inspector-body hidden">
-              <div class="inspector-highlight">
-                <div class="inspector-title-row">
-                  <strong id="inspectorPointName">-</strong>
-                  <span id="inspectorPointQualityBadge" class="badge badge-remote">-</span>
-                </div>
-                <div class="inspector-meta-row">
-                  <span id="inspectorPointCodeText">-</span>
-                  <span id="inspectorPointUnitText">-</span>
-                  <span id="inspectorPointProcessText">-</span>
-                </div>
+            <div class="point-config-stage">
+              <div id="selectedPointEmpty" class="empty-state">
+                <strong>暂无选中的点位</strong>
+                <span>先在中间点位表里选择一个点位，这里会切换成可编辑的点位配置工作区。</span>
               </div>
 
-              <div class="inspector-grid">
-                <label>
-                  标识符
-                  <input id="inspectorPointCode" type="text" readonly>
-                </label>
-                <label>
-                  数据类型
-                  <input id="inspectorPointType" type="text" readonly>
-                </label>
-                <label>
-                  寄存器地址
-                  <input id="inspectorPointAddress" type="text" readonly>
-                </label>
-                <label>
-                  读写
-                  <input id="inspectorPointAccess" type="text" readonly>
-                </label>
-                <label>
-                  缩放
-                  <input id="inspectorPointScale" type="text" readonly>
-                </label>
-                <label>
-                  当前值
-                  <input id="inspectorPointValue" type="text" readonly>
-                </label>
-                <label>
-                  原始值
-                  <input id="inspectorPointRawValue" type="text" readonly>
-                </label>
-                <label>
-                  质量
-                  <input id="inspectorPointQuality" type="text" readonly>
-                </label>
-                <label>
-                  单位
-                  <input id="inspectorPointUnit" type="text" readonly>
-                </label>
-                <label>
-                  处理耗时
-                  <input id="inspectorPointProcessingTime" type="text" readonly>
-                </label>
+              <div id="selectedPointPanel" class="inspector-body hidden">
+                <div id="pointConfigWorkspace" class="point-config-workspace"></div>
               </div>
             </div>
           </section>
@@ -563,5 +574,6 @@
 
   <script src="./app.js"></script>
   <script src="./local-point-editor.js"></script>
+  <script src="./point-config-editor.js"></script>
 </body>
 </html>

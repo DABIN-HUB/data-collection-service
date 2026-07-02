@@ -249,6 +249,31 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
+    void shouldRequireFinsPlcAndLocalNode() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-fins", "OMRON_FINS"), connection));
+    }
+
+    @Test
+    void shouldAcceptFinsWithRequiredFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setPort(9600);
+        connection.setExtJson(ext(
+                "plcNode", 1,
+                "localNode", 10,
+                "batchReadEnabled", true,
+                "maxWordsPerRequest", 120,
+                "maxBitsPerRequest", 256
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-fins", "OMRON_FINS"), connection));
+    }
+
+    @Test
     void shouldRequireBacnetRemoteDeviceInstance() {
         DeviceConnection connection = new DeviceConnection();
         connection.setHost("127.0.0.1");

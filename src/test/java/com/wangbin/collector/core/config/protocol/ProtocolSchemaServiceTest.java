@@ -120,8 +120,22 @@ public class ProtocolSchemaServiceTest {
         assertTrue(mc.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
         assertTrue(mc.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
 
+        ProtocolSchema fins = service.getSchema("OMRON_FINS").orElseThrow();
+        assertTrue(fins.isImplemented());
+        assertTrue(fins.isWritable());
+        assertFalse(fins.isSubscribable());
+        assertEquals(ProtocolTypeMode.PLATFORM_ONLY, fins.getTypeMode());
+        assertEquals("dataType", fins.getPrimaryTypeField());
+        assertEquals(PlatformDataTypeMode.REQUIRED, fins.getPlatformDataTypeMode());
+        assertFalse(fins.isDriverTypeEnabled());
+        assertTrue(fins.getPointAddressHints().contains("DM:100"));
+        assertTrue(fins.getConnectionFields().stream().anyMatch(field -> "plcNode".equals(field.getName())));
+        assertTrue(fins.getConnectionFields().stream().anyMatch(field -> "batchReadEnabled".equals(field.getName())));
+        assertTrue(fins.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
+        assertTrue(fins.getPointFields().stream().anyMatch(field -> "additionalConfig.byteOrder".equals(field.getName())));
+
         ProtocolSchema bacnet = service.getSchema("BACNET_IP").orElseThrow();
-        assertFalse(bacnet.isImplemented());
+        assertTrue(bacnet.isImplemented());
         assertTrue(bacnet.isWritable());
         assertTrue(bacnet.isSubscribable());
         assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, bacnet.getTypeMode());
@@ -199,7 +213,7 @@ public class ProtocolSchemaServiceTest {
 
     private ProtocolTypeMode expectedTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };

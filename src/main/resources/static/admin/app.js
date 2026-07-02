@@ -1,4 +1,4 @@
-﻿const state = {
+const state = {
   token: localStorage.getItem("collectorToken") || "ops-token",
   devices: [],
   protocols: [],

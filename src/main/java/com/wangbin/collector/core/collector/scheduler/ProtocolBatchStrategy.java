@@ -46,6 +46,8 @@ class ProtocolBatchStrategy {
             Map.entry("KNX", new BatchLimits(30, 50, 50, 50)),
             Map.entry("KNXNETIP", new BatchLimits(30, 50, 50, 50)),
             Map.entry("KNXNET/IP", new BatchLimits(30, 50, 50, 50)),
+            Map.entry("OMRON_FINS", new BatchLimits(64, 120, 120, 50)),
+            Map.entry("FINS", new BatchLimits(64, 120, 120, 50)),
             Map.entry("OPC_UA_PLC4X", new BatchLimits(100, 200, 100, 50)),
             Map.entry("OPCUA_PLC4X", new BatchLimits(100, 200, 100, 50))
     );

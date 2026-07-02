@@ -267,6 +267,7 @@
       case "MQTT": return "sensor/temperature";
       case "OPC_UA": return "ns=2;s=Channel1.Device1.Tag1";
       case "SIEMENS_S7": return "DB1.DBW0";
+      case "OMRON_FINS": return "DM:100";
       case "IEC104": return "1";
       case "KNX":
       case "KNXNET_IP": return "1/0/1";
@@ -897,6 +898,10 @@
       notes.push("MC 推荐优先使用 3E_BINARY；3E_ASCII 和 4E_BINARY 需要先做现场联机验证，再进入生产批量配置。");
       notes.push("MC 的 STRING 点位必须补 additionalConfig.stringLength；像 D100.3 这样的位偏移地址只适用于 BOOL 点位。");
       notes.push("randomRead/randomWrite 仅适合稀疏标量字点位；如果多个系统同时改同一字，页面虽然可配，但仍需要上层治理避免位覆盖。");
+    } else if (protocolCode === "OMRON_FINS") {
+      notes.push("FINS 第一版仅支持 FINS/UDP；FINS/TCP 还不在当前交付范围内。");
+      notes.push("推荐地址格式为 DM:100、DM:100.3、CIO:0.1、WR:20；bit 地址只适用于 BOOL 点位，STRING 需要 #length 或 additionalConfig.stringLength。");
+      notes.push("批量读会自动合并连续地址块；如果现场 PLC 或网关对大块请求敏感，可下调 maxWordsPerRequest/maxBitsPerRequest 或关闭 batchReadEnabled。");
     } else if (protocol?.pointFields?.length) {
       notes.push("下方字段都是协议扩展配置，字段下方的中文备注会说明用途、条件和保存位置。主类型字段如果已经提升到基础信息区，这里不会重复展示。");
     } else {

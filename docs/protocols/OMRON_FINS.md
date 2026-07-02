@@ -655,3 +655,266 @@ EM0:100#4
 2. 和当前框架匹配度高
 3. 可以较快形成真实可交付协议
 4. 后续再扩展 `FINS/TCP` 也不会推翻第一版架构
+## 17. 结合当前框架的落地结论
+
+结合当前仓库现状，`OMRON_FINS` 的第一版应按“自研轮询型 PLC 协议”方式接入，而不是走 PLC4X 适配层。
+
+### 17.1 协议接入方式结论
+
+第一版采用：
+
+1. `FINS/UDP` 自研 collector
+2. 复用现有 `ConnectionBackedCollector` 框架
+3. 复用现有 `CollectionScheduler -> CollectionManager -> BaseCollector/自定义Collector -> CollectorDataCacheAspect` 主链路
+4. 不改变现有缓存、上报、Redis Stream、历史存储链路
+
+对应代码接入点：
+
+1. `ProtocolDescriptorRegistry`
+2. `ProtocolSchemaService`
+3. `ProtocolConnectionValidator`
+4. `ConnectionFactory`
+5. `DeviceConnection.isValid()`
+6. `ProtocolBatchStrategy`
+7. `static/admin/app.js`
+8. `static/admin/local-point-editor.js`
+
+### 17.2 collector 设计结论
+
+推荐实现方式：
+
+1. 新增 `OmronFinsCollector extends ConnectionBackedCollector`
+2. 新增 `OmronFinsUdpConnectionAdapter`
+3. 新增 `fins/domain`、`fins/util`、`fins/codec`、`fins/service` 包
+4. 第一版先实现轮询读写，不实现订阅
+
+原因：
+
+1. 该路径与当前 `MITSUBISHI_MC` 接入方式最接近
+2. 可以直接接住调度器的批读计划重建能力
+3. 协议失败时可以局部降级，不影响缓存和后处理切面
+
+### 17.3 类型模型结论
+
+`OMRON_FINS` 最终类型模型确定为：
+
+1. `typeMode = PLATFORM_ONLY`
+2. `primaryTypeField = dataType`
+3. `platformDataTypeMode = REQUIRED`
+4. `driverTypeEnabled = false`
+
+这意味着：
+
+1. 页面主类型字段直接使用平台统一 `dataType`
+2. 不再为 FINS 单独暴露类似 `driverDataType` 的主类型字段
+3. 协议内部通过地址和 `additionalConfig` 决定字节序、字序、字符串长度、bit 偏移等细节
+
+推荐第一版支持的数据类型：
+
+1. `BOOLEAN`
+2. `INT16`
+3. `UINT16`
+4. `INT32`
+5. `UINT32`
+6. `FLOAT`
+7. `DOUBLE`
+8. `STRING`
+
+兼容平台常见别名：
+
+1. `BOOL`
+2. `INT`
+3. `SHORT`
+4. `LONG`
+5. `WORD`
+6. `DWORD`
+7. `REAL`
+8. `FLOAT32`
+9. `FLOAT64`
+
+### 17.4 地址语法结论
+
+第一版统一地址语法确定为：
+
+`<AREA>:<WORD>[.<BIT>][#<LENGTH>]`
+
+示例：
+
+1. `DM:100`
+2. `DM:100.3`
+3. `CIO:0.1`
+4. `WR:20`
+5. `HR:50`
+6. `AR:10`
+7. `EM0:100`
+8. `DM:200#8`
+
+规则：
+
+1. `.<BIT>` 仅用于 bit 点位或字内 bit 偏移
+2. `#<LENGTH>` 第一版主要用于 `STRING`，表示字符长度或逻辑长度提示
+3. `STRING` 也允许通过 `additionalConfig.stringLength` 指定长度
+4. 最终以 collector 解析结果为准，前端仅做辅助校验
+
+### 17.5 连接模型结论
+
+第一版仅支持 `FINS/UDP`，连接字段建议固定为：
+
+1. `host`
+2. `port`，默认 `9600`
+3. `plcNode`
+4. `localNode`
+5. `plcUnit`，默认 `0`
+6. `localUnit`，默认 `0`
+7. `plcNetwork`，默认 `0`
+8. `localNetwork`，默认 `0`
+9. `serviceIdSeed`，默认 `1`
+10. `readTimeout`
+11. `timeout`
+12. `maxWordsPerRequest`
+13. `maxBitsPerRequest`
+14. `batchReadEnabled`
+15. `byteOrder`
+16. `wordOrder`
+
+说明：
+
+1. 第一版不支持 `FINS/TCP`
+2. 第一版不实现文件传输、程序区操作、复杂命令
+3. 第一版优先覆盖 `DM/CIO/WR/HR/AR/EM` 常见内存区
+
+### 17.6 批量读取结论
+
+与当前调度框架结合后，推荐采用两层批量：
+
+1. 调度层继续由 `CollectionScheduler` 切批
+2. 协议层在 `OmronFinsCollector` 内按“内存区 + 连续地址 + 读单位”再做一次合并
+
+第一版实现策略：
+
+1. 同内存区、同单位类型、连续地址的点位合并读
+2. bit 区和 word 区分开建计划
+3. 超过 `maxWordsPerRequest/maxBitsPerRequest` 时切段
+4. 任一批次失败时可回退到单点读，避免整批点位全部丢失
+
+### 17.7 数据处理结论
+
+由于当前 `BaseCollector.convertData(...)` 对 `BOOLEAN/STRING` 和协议原始字节流不总是适合，`FINS` collector 需要自己先完成协议值规范化，再交给 `DataQualityProcessor`。
+
+也就是说：
+
+1. 协议层先把字节流解码成最终 Java 值
+2. 再按点位 `dataType` 做必要的缩放前规范化
+3. 然后调用 `dataQualityProcessor.process(...)`
+4. 最终仍输出统一 `ProcessResult`
+
+### 17.8 前端融合结论
+
+前端无需新增一套独立页面，只需要接住 schema：
+
+1. 后端新增 `OMRON_FINS` descriptor
+2. 页面自动通过 schema 渲染连接字段和点位扩展字段
+3. 额外补地址示例、风险提示和默认地址示例
+4. 本地点位编辑器补 `DM:100` 默认地址和 FINS 专属备注
+
+### 17.9 测试结论
+
+第一批必须补的测试：
+
+1. 地址解析测试
+2. FINS 帧编解码测试
+3. 数据类型解码测试
+4. schema 暴露测试
+5. 连接校验测试
+
+第二批再补：
+
+1. 批量计划测试
+2. mock UDP server 集成测试
+3. collector 读写联调测试
+4. 失败回退测试
+
+## 18. 按当前仓库整理后的分批实施方案
+
+### 18.1 第一批：协议接入骨架
+
+目标：先把协议完整挂到当前框架上，具备可配置、可建连、可单读写、可基础批读的能力。
+
+本批包含：
+
+1. `ProtocolDescriptorRegistry` 增加 `OMRON_FINS`
+2. `ProtocolConnectionValidator` 增加 FINS 连接校验
+3. `ConnectionFactory` 增加 `OmronFinsUdpConnectionAdapter`
+4. `DeviceConnection` 增加 `OMRON_FINS` 合法性与别名识别
+5. `ProtocolBatchStrategy` 增加默认批量限制
+6. 前端 schema 风险提示和默认地址示例
+7. `FINS` 地址解析模型
+8. `FINS/UDP` 基础收发适配器
+9. FINS 读写帧编解码
+10. `OmronFinsCollector` 骨架
+11. 最小单点读写与基础批量读
+
+### 18.2 第二批：协议级批读增强
+
+目标：把批读做成稳定可交付能力。
+
+本批包含：
+
+1. 连续块读计划优化
+2. bit/word 混合拆分
+3. 批次失败单点回退
+4. 统计指标补齐
+5. 读计划缓存与重建联动完善
+
+### 18.3 第三批：批量写与冲突控制
+
+目标：补齐可写场景。
+
+本批包含：
+
+1. 连续块写
+2. bit 写字级读改写保护
+3. 同字写串行锁
+4. 批量写失败回退
+
+### 18.4 第四批：联调与扩展
+
+目标：进入现场可用阶段。
+
+本批包含：
+
+1. mock UDP server 联调
+2. 真机报文回放验证
+3. 真机联调
+4. 评估是否扩展 `FINS/TCP`
+
+## 19. 当前实施状态
+
+当前状态定义：
+
+1. `DESIGN_READY`：设计已收敛，可开始编码
+2. `CODING_IN_PROGRESS`：第一批代码开发中
+3. `INTEGRATION_PENDING`：等待联调或补测试
+4. `DELIVERY_READY`：协议达到交付标准
+
+当前状态：`CODING_IN_PROGRESS`
+
+当前已经明确的实现边界：
+
+1. 仅做 `FINS/UDP`
+2. 仅覆盖常见内存区
+3. 不改现有主链路
+4. 优先保证 schema、校验、建连、单点读写、基础批读打通
+
+## 20. 实施记录
+
+### 2026-07-02
+
+已确认的落地结论：
+
+1. `OMRON_FINS` 按自研 PLC 协议接入，不走 PLC4X
+2. 与现有框架的主融合点是 `ProtocolDescriptorRegistry`、`ProtocolConnectionValidator`、`ConnectionFactory`、`ConnectionBackedCollector`
+3. 类型模型采用 `PLATFORM_ONLY`
+4. 地址语法采用 `<AREA>:<WORD>[.<BIT>][#<LENGTH>]`
+5. 第一批先做 schema、校验、UDP adapter、地址解析、帧编解码、collector 骨架和最小测试
+6. 后续批次再补批量写、失败回退、联调验证和 `FINS/TCP` 评估

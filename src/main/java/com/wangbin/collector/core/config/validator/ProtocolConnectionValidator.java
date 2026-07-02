@@ -41,6 +41,7 @@ public class ProtocolConnectionValidator {
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
+            case "OMRON_FINS" -> validateOmronFins(deviceInfo, connection);
             case "BACNET_IP" -> validateBacnetIp(deviceInfo, connection);
             case "BACNET_MSTP" -> validateBacnetMstp(deviceInfo, connection);
             case "BACNET_SC" -> validateBacnetSc(deviceInfo, connection);
@@ -142,6 +143,35 @@ public class ProtocolConnectionValidator {
         validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
     }
 
+    private void validateOmronFins(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "OMRON_FINS");
+
+        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        if (port != null && (port <= 0 || port > 65535)) {
+            fail(deviceInfo, "OMRON_FINS port must be between 1 and 65535");
+        }
+        if (connection.getIntConfig("plcNode", null) == null) {
+            fail(deviceInfo, "OMRON_FINS requires plcNode");
+        }
+        if (connection.getIntConfig("localNode", null) == null) {
+            fail(deviceInfo, "OMRON_FINS requires localNode");
+        }
+
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNetwork", null), 0, 255, "plcNetwork");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNode", null), 0, 255, "plcNode");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcUnit", null), 0, 255, "plcUnit");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNetwork", null), 0, 255, "localNetwork");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNode", null), 0, 255, "localNode");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localUnit", null), 0, 255, "localUnit");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("serviceIdSeed", null), 0, 255, "serviceIdSeed");
+        validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "OMRON_FINS maxWordsPerRequest");
+        validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "OMRON_FINS maxBitsPerRequest");
+        validatePositive(deviceInfo, connection.getReadTimeout(), "OMRON_FINS readTimeout");
+        validatePositive(deviceInfo, connection.getTimeout(), "OMRON_FINS timeout");
+        validateBooleanFlag(deviceInfo, connection.getProperty("batchReadEnabled"), "OMRON_FINS batchReadEnabled");
+        validateFinsOrder(deviceInfo, connection.getStringConfig("byteOrder", null), "byteOrder");
+        validateFinsOrder(deviceInfo, connection.getStringConfig("wordOrder", null), "wordOrder");
+    }
     private void validateBacnetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "BACNET_IP");
 
@@ -510,6 +540,7 @@ public class ProtocolConnectionValidator {
             case "MODBUS_ASCII" -> "MODBUS_RTU";
             case "S7" -> "SIEMENS_S7";
             case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
+            case "FINS", "OMRONFINS" -> "OMRON_FINS";
             case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
             case "BACNETMSTP", "BACNET_MSTP", "BACNET_MS_TP", "BACNET-MSTP", "BACNET MSTP" -> "BACNET_MSTP";
             case "BACNETSC", "BACNET_SC", "BACNET/SC", "BACNET-SC" -> "BACNET_SC";
@@ -588,6 +619,28 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    private void validateOmronFinsRange(DeviceInfo deviceInfo,
+                                        Integer value,
+                                        int min,
+                                        int max,
+                                        String fieldName) {
+        if (value == null) {
+            return;
+        }
+        if (value < min || value > max) {
+            fail(deviceInfo, "OMRON_FINS " + fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateFinsOrder(DeviceInfo deviceInfo, String value, String fieldName) {
+        if (isBlank(value)) {
+            return;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("BIG_ENDIAN", "LITTLE_ENDIAN", "BIG", "LITTLE", "BE", "LE").contains(normalized)) {
+            fail(deviceInfo, "OMRON_FINS " + fieldName + " must be BIG_ENDIAN or LITTLE_ENDIAN");
+        }
+    }
     private void validateMcFrameType(DeviceInfo deviceInfo, String value) {
         if (isBlank(value)) {
             return;
