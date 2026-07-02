@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.cache.config;
 
+import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -25,7 +26,10 @@ public class CacheAsyncConfig {
         executor.setKeepAliveSeconds(60);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
+                "cacheAsyncExecutor",
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        ));
         executor.initialize();
         return executor;
     }

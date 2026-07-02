@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * 采集器配置类
+ * 閲囬泦鍣ㄩ厤缃被
  */
 @Data
 @Component
@@ -15,56 +15,55 @@ import java.util.Map;
 public class CollectorProperties {
 
     /**
-     * SNMP配置
+     * SNMP閰嶇疆
      */
     private SnmpConfig snmp = new SnmpConfig();
 
     /**
-     * OPC UA配置
+     * OPC UA閰嶇疆
      */
     private OpcUaConfig opcUa = new OpcUaConfig();
 
     /**
-     * MQTT配置
+     * MQTT閰嶇疆
      */
     private MqttConfig mqtt = new MqttConfig();
 
     /**
-     * Modbus配置
+     * Modbus閰嶇疆
      */
     private ModbusConfig modbus = new ModbusConfig();
 
     /**
-     * CoAP配置
+     * CoAP閰嶇疆
      */
     private CoapConfig coap = new CoapConfig();
 
     /**
-     * IEC104配置
+     * IEC104閰嶇疆
      */
     private Iec104Config iec104 = new Iec104Config();
 
     /**
-     * IEC61850配置
+     * IEC61850閰嶇疆
      */
     private Iec61850Config iec61850 = new Iec61850Config();
 
     /**
-     * 通用配置
+     * 閫氱敤閰嶇疆
      */
     private CommonConfig common = new CommonConfig();
     
     /**
-     * 调度器配置
-     */
+     * 璋冨害鍣ㄩ厤缃?     */
     private SchedulerConfig scheduler = new SchedulerConfig();
     
     /**
-     * 自适应采集配置
+     * 鑷€傚簲閲囬泦閰嶇疆
      */
     private AdaptiveCollectionConfig adaptiveCollection = new AdaptiveCollectionConfig();
 
-    // =============== 配置类定义 ===============
+    // =============== 閰嶇疆绫诲畾涔?===============
 
     @Data
     public static class SnmpConfig {
@@ -158,7 +157,7 @@ public class CollectorProperties {
     }
     
     /**
-     * 调度器配置类
+     * 璋冨害鍣ㄩ厤缃被
      */
     @Data
     public static class SchedulerConfig {
@@ -170,14 +169,18 @@ public class CollectorProperties {
         private int dynamicAdjustIntervalMs = 30000;
         private long collectTimeoutMs = 500;
         private long deviceStartTimeoutMs = 15000;
+        private int deviceStartExecutorSize = 4;
+        private int reconnectExecutorSize = 4;
+        private long reconnectBaseDelayMs = 1000;
+        private long reconnectMaxDelayMs = 30000;
     }
     
     /**
-     * 自适应采集配置类
-     */
+     * 鑷€傚簲閲囬泦閰嶇疆绫?     */
     @Data
     public static class AdaptiveCollectionConfig {
         private boolean enabled = true;
         private long adjustWindowMs = 60000;
     }
 }
+

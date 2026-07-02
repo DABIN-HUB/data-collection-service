@@ -25,6 +25,12 @@ const adaptiveDefaults = {
   pointChangeThreshold: 1
 };
 
+const designLab = window.__collectorDesignLab || null;
+const previewMode = Boolean(designLab && typeof designLab.isPreviewMode === "function" && designLab.isPreviewMode());
+const previewData = previewMode && typeof designLab.previewDataset === "function"
+  ? designLab.previewDataset()
+  : null;
+
 const controlCommandPresets = {
   DEFAULT: {
     helpText: "Default example. Replace command and params with the collector-specific operation you need.",
@@ -41,6 +47,10 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   bindConsoleShell();
   startLiveClock();
+  if (previewMode) {
+    hydratePreviewMode();
+    return;
+  }
   refreshAll();
 });
 
@@ -299,6 +309,10 @@ function matchesRealtimeSearch(point) {
 }
 
 async function refreshAll() {
+  if (previewMode) {
+    hydratePreviewMode();
+    return;
+  }
   try {
     await Promise.all([
       loadProtocols(),
@@ -313,6 +327,9 @@ async function refreshAll() {
 }
 
 async function callApi(path, options = {}) {
+  if (previewMode) {
+    return previewApi(path, options);
+  }
   const headers = new Headers(options.headers || {});
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
@@ -354,6 +371,302 @@ function resolveContextPath() {
 
 function dataOf(body) {
   return body && Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body;
+}
+
+function previewApi(path, options = {}) {
+  const normalizedPath = String(path || "");
+  const method = String(options.method || "GET").toUpperCase();
+  const devices = previewData?.devices || [];
+  const deviceMap = new Map(devices.map((item) => [item.id || item.deviceId, item]));
+  const pointsMap = previewData?.pointConfigs || {};
+  const runtimeMap = previewData?.runtimeValues || {};
+
+  if (normalizedPath === "/api/protocols") {
+    return Promise.resolve({
+      status: "success",
+      data: [
+        {
+          protocol: "MODBUS_TCP",
+          title: "Modbus TCP",
+          description: "适用于锅炉、电表、泵站等以寄存器为中心的设备采集。",
+          implemented: true,
+          aliases: ["MODBUS-TCP"],
+          pointAddressHints: ["40001", "30001"],
+          dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
+          driverTypeEnabled: false,
+          connectionFields: [
+            { name: "host", label: "Host", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 502 }
+          ]
+        },
+        {
+          protocol: "MODBUS_RTU",
+          title: "Modbus RTU",
+          description: "适用于串口泵站、仪表和传统 PLC 设备。",
+          implemented: true,
+          aliases: ["MODBUS-RTU"],
+          pointAddressHints: ["30001", "40001"],
+          dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE"],
+          driverTypeEnabled: false,
+          connectionFields: [
+            { name: "host", label: "COM", type: "text", storage: "topLevel", required: true, group: "connection", defaultValue: "COM3" },
+            { name: "port", label: "Baud", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 9600 }
+          ]
+        },
+        {
+          protocol: "OPC_UA",
+          title: "OPC UA",
+          description: "适用于工艺站、混配站和产线 PLC 的结构化节点采集。",
+          implemented: true,
+          aliases: ["OPCUA"],
+          pointAddressHints: ["ns=2;s=Tank.Level"],
+          dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
+          driverTypeEnabled: false,
+          connectionFields: [
+            { name: "host", label: "Endpoint", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 4840 }
+          ]
+        },
+        {
+          protocol: "MQTT",
+          title: "MQTT",
+          description: "适用于网关、边缘盒子和主题订阅采集场景。",
+          implemented: true,
+          aliases: ["MQTT"],
+          pointAddressHints: ["topic/path"],
+          dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
+          driverTypeEnabled: false,
+          connectionFields: [
+            { name: "host", label: "Broker", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 1883 }
+          ]
+        }
+      ]
+    });
+  }
+
+  if (normalizedPath === "/api/config/summary") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        deviceCount: devices.length,
+        pointCount: Object.values(pointsMap).reduce((sum, items) => sum + items.length, 0),
+        connectionCount: devices.length,
+        listenerCount: 3,
+        nextSyncTime: "2026-07-02T13:12:43+08:00",
+        cacheStats: {
+          deviceCount: devices.length,
+          pointCount: Object.values(pointsMap).reduce((sum, items) => sum + items.length, 0),
+          connectionCount: devices.length
+        }
+      }
+    });
+  }
+
+  if (normalizedPath === "/api/device/running") {
+    return Promise.resolve({
+      status: "success",
+      data: devices.filter((item) => ["ONLINE", "RUNNING"].includes(item.status)).map((item) => item.id || item.deviceId)
+    });
+  }
+
+  if (normalizedPath === "/api/config/devices") {
+    return Promise.resolve({ status: "success", data: { devices } });
+  }
+
+  if (normalizedPath === "/monitor/devices") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        activeConnections: 3,
+        missingConnections: ["water-pump-02"],
+        connections: devices.map((device) => ({
+          deviceId: device.id || device.deviceId,
+          connected: device.status === "ONLINE",
+          expectedOnly: device.status === "RUNNING",
+          status: device.status
+        }))
+      }
+    });
+  }
+
+  if (normalizedPath === "/monitor/cache") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        totalHitRate: 0.932,
+        totalAccess: 18241,
+        level1HitRate: 0.971
+      }
+    });
+  }
+
+  if (normalizedPath === "/monitor/performance") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        avgLatencyMs: 12.4,
+        batchTimeoutRate: 0.001
+      }
+    });
+  }
+
+  if (normalizedPath === "/monitor/system") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        heapUsed: 512 * 1024 * 1024,
+        threadCount: 68,
+        systemCpuLoad: 0.31
+      }
+    });
+  }
+
+  if (normalizedPath === "/monitor/errors") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        totalCount: 7,
+        totalErrors: 7
+      }
+    });
+  }
+
+  if (normalizedPath === "/health") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        status: "DOWN",
+        overallStatus: "DOWN"
+      }
+    });
+  }
+
+  const deviceDataMatch = normalizedPath.match(/^\/api\/data\/device\/([^/]+)$/);
+  if (deviceDataMatch) {
+    const deviceId = decodeURIComponent(deviceDataMatch[1]);
+    return Promise.resolve({
+      status: "success",
+      data: runtimeMap[deviceId] || {}
+    });
+  }
+
+  const pointConfigMatch = normalizedPath.match(/^\/api\/config\/device\/([^/]+)\/points$/);
+  if (pointConfigMatch) {
+    const deviceId = decodeURIComponent(pointConfigMatch[1]);
+    if (method === "PUT" && options.body) {
+      try {
+        const parsed = JSON.parse(options.body);
+        if (Array.isArray(parsed)) {
+          previewData.pointConfigs[deviceId] = parsed;
+        }
+      } catch (error) {
+        // ignore preview save parse errors
+      }
+      return Promise.resolve({ status: "success", data: { updated: true } });
+    }
+    return Promise.resolve({
+      status: "success",
+      data: {
+        points: (pointsMap[deviceId] || []).map((item) => JSON.parse(JSON.stringify(item)))
+      }
+    });
+  }
+
+  const connectionMatch = normalizedPath.match(/^\/api\/config\/device\/([^/]+)\/connection$/);
+  if (connectionMatch) {
+    const deviceId = decodeURIComponent(connectionMatch[1]);
+    const device = deviceMap.get(deviceId);
+    return Promise.resolve({
+      status: "success",
+      data: {
+        connection: {
+          deviceId,
+          connectionType: device?.protocolType || "",
+          host: device?.ipAddress || device?.host || "",
+          port: device?.port || "",
+          extJson: {}
+        }
+      }
+    });
+  }
+
+  const diffMatch = normalizedPath.match(/^\/api\/config\/device\/([^/]+)\/diff$/);
+  if (diffMatch) {
+    const deviceId = decodeURIComponent(diffMatch[1]);
+    return Promise.resolve({
+      status: "success",
+      data: {
+        deviceId,
+        status: "preview",
+        localChanged: ["collectionInterval", "points[2].alarmRule"],
+        remoteChanged: []
+      }
+    });
+  }
+
+  const shadowMatch = normalizedPath.match(/^\/api\/shadow\/([^/]+)(\/desired)?$/);
+  if (shadowMatch) {
+    const deviceId = decodeURIComponent(shadowMatch[1]);
+    const desired = Boolean(shadowMatch[2]);
+    return Promise.resolve({
+      status: "success",
+      data: desired
+        ? { deviceId, desired: { targetMode: "AUTO", targetLoad: 0.76 } }
+        : {
+            deviceId,
+            reported: {
+              status: deviceMap.get(deviceId)?.status || "UNKNOWN",
+              updatedAt: "2026-07-02 13:12:43",
+              points: Object.keys(runtimeMap[deviceId] || {}).slice(0, 4)
+            }
+          }
+    });
+  }
+
+  if (
+    normalizedPath === "/api/config/export"
+    || normalizedPath === "/api/config/sync"
+    || normalizedPath === "/api/device/reload"
+    || /\/api\/device\/.+\/(start|start-local|stop)$/.test(normalizedPath)
+    || /\/api\/data\/device\/.+\/reset-adaptive$/.test(normalizedPath)
+    || /\/api\/control\/device\/.+\/(points|command)$/.test(normalizedPath)
+  ) {
+    return Promise.resolve({ status: "success", data: { ok: true, preview: true } });
+  }
+
+  if (/^\/api\/device\/.+\/status$/.test(normalizedPath)) {
+    const deviceId = decodeURIComponent(normalizedPath.split("/")[3] || "");
+    return Promise.resolve({
+      status: "success",
+      data: {
+        deviceId,
+        status: deviceMap.get(deviceId)?.status || "OFFLINE",
+        lastHeartbeat: "2026-07-02 13:12:43",
+        queueDepth: 2
+      }
+    });
+  }
+
+  return Promise.resolve({ status: "success", data: {} });
+}
+
+function hydratePreviewMode() {
+  if (!previewData) {
+    return;
+  }
+  loadProtocols()
+    .then(() => Promise.all([loadDevices(), loadOverview(), loadMonitor()]))
+    .then(() => {
+      activateWorkbenchTab("points");
+      activateConsoleTab("note-log");
+      const defaultDevice = previewData.devices[0]?.id || previewData.devices[0]?.deviceId || "";
+      if (defaultDevice) {
+        selectDevice(defaultDevice);
+      }
+      toast("预览模式已加载 5 套可切换样式", false);
+    })
+    .catch((error) => toast(error.message, true));
 }
 
 async function loadOverview() {
@@ -1446,6 +1759,10 @@ function renderCards(selector, items) {
 }
 
 function downloadJson(fileName, data) {
+  if (previewMode) {
+    toast(`预览模式：已模拟导出 ${fileName}`);
+    return;
+  }
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

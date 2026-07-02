@@ -12,6 +12,7 @@ import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
+import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -29,13 +30,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
@@ -65,7 +68,13 @@ public class CollectionScheduler {
     private CollectionServiceHealthTracker collectionServiceHealthTracker;
 
     @Autowired
+    private SystemResourceMonitorService systemResourceMonitorService;
+
+    @Autowired
     private DeviceBatchPlanner deviceBatchPlanner;
+
+    @Autowired
+    private ProtocolBatchStrategy protocolBatchStrategy;
 
     @Autowired
     private CollectedDataProcessor collectedDataProcessor;
@@ -88,11 +97,16 @@ public class CollectionScheduler {
     private final PerformanceMonitor performanceMonitor = new PerformanceMonitor();
     private final ReentrantLock scheduleLock = new ReentrantLock();
     private final AtomicInteger deviceStartThreadIndex = new AtomicInteger(0);
-    private final ExecutorService deviceStartExecutor = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "device-start-" + deviceStartThreadIndex.incrementAndGet());
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final AtomicInteger reconnectThreadIndex = new AtomicInteger(0);
+    private final ThreadPoolExecutor deviceStartExecutor;
+    private final ThreadPoolExecutor reconnectExecutor;
+    private final Map<String, ReconnectState> reconnectStates = new ConcurrentHashMap<>();
+    private final AtomicLong batchDispatchRejectedCount = new AtomicLong(0);
+    private final AtomicLong collectRejectedCount = new AtomicLong(0);
+    private final AtomicLong processRejectedCount = new AtomicLong(0);
+    private final AtomicLong reconnectAttemptCount = new AtomicLong(0);
+    private final AtomicLong reconnectSuccessCount = new AtomicLong(0);
+    private final AtomicLong reconnectFailureCount = new AtomicLong(0);
 
     private final AtomicInteger timeSliceCount = new AtomicInteger(2);
     private final AtomicInteger timeSliceInterval = new AtomicInteger(1000);
@@ -109,6 +123,19 @@ public class CollectionScheduler {
         this.batchDispatcher = batchDispatcher;
         this.asyncCollectorPool = asyncCollectorPool;
         this.dataProcessorPool = dataProcessorPool;
+        int availableProcessors = Math.max(2, Runtime.getRuntime().availableProcessors());
+        this.deviceStartExecutor = buildAuxiliaryExecutor(
+                "device-start-",
+                deviceStartThreadIndex,
+                availableProcessors,
+                256
+        );
+        this.reconnectExecutor = buildAuxiliaryExecutor(
+                "device-reconnect-",
+                reconnectThreadIndex,
+                Math.max(2, availableProcessors / 2),
+                512
+        );
     }
 
     public PerformanceStatsSnapshot getPerformanceSnapshot() {
@@ -119,11 +146,20 @@ public class CollectionScheduler {
                 .overloadedSlices(performanceMonitor.getOverloadedSlicesSnapshot())
                 .slowestDevices(performanceMonitor.getSlowestDevicesSnapshot())
                 .deviceStats(performanceMonitor.getAllDevicePerformance())
+                .processCpuLoad(resolveProcessCpuLoad())
+                .batchDispatchRejectedCount(batchDispatchRejectedCount.get())
+                .collectRejectedCount(collectRejectedCount.get())
+                .processRejectedCount(processRejectedCount.get())
+                .reconnectAttemptCount(reconnectAttemptCount.get())
+                .reconnectSuccessCount(reconnectSuccessCount.get())
+                .reconnectFailureCount(reconnectFailureCount.get())
+                .reconnectingDevices(getReconnectingDeviceCount())
                 .build();
     }
 
     @PostConstruct
     public void init() {
+        configureAuxiliaryExecutors();
         int normalizedSliceCount = Math.max(1, Math.min(
                 collectorProperties.getScheduler().getInitialTimeSliceCount(),
                 collectorProperties.getScheduler().getMaxTimeSliceCount()
@@ -159,6 +195,7 @@ public class CollectionScheduler {
         shutdownExecutor("asyncCollectorPool", asyncCollectorPool);
         shutdownExecutor("dataProcessorPool", dataProcessorPool);
         shutdownExecutor("deviceStartExecutor", deviceStartExecutor);
+        shutdownExecutor("reconnectExecutor", reconnectExecutor);
         deviceScheduleInfo.clear();
         cancelTimeSliceScheduling();
         timeSliceTasks.clear();
@@ -166,6 +203,7 @@ public class CollectionScheduler {
         pendingConfigRestartTasks.values().forEach(future -> future.cancel(false));
         pendingConfigRestartTasks.clear();
         startingDevices.clear();
+        reconnectStates.clear();
     }
 
     private void startTimeSliceScheduling() {
@@ -216,14 +254,10 @@ public class CollectionScheduler {
                 if (task.shouldSkip() || !isBatchTaskActive(task) || task.timeSliceRevision != revision) {
                     continue;
                 }
-                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                    try {
-                        processDeviceBatch(task);
-                    } catch (Exception e) {
-                        log.error("device batch execute failed, device={}", task.deviceId, e);
-                    }
-                }, batchDispatcher);
-                futures.add(future);
+                CompletableFuture<Void> future = submitBatchDispatchTask(task);
+                if (future != null) {
+                    futures.add(future);
+                }
             }
 
             if (!futures.isEmpty()) {
@@ -255,17 +289,16 @@ public class CollectionScheduler {
                 return;
             }
 
-            if (!collectionManager.isDeviceConnected(deviceId) && !reconnectDevice(deviceId)) {
-                log.warn("device reconnect failed before batch collection, device={}", deviceId);
+            if (!collectionManager.isDeviceConnected(deviceId)) {
+                scheduleReconnectIfNeeded(deviceId, generation);
+                log.debug("device disconnected, skip batch until async reconnect completes, device={}", deviceId);
                 return;
             }
 
-            Future<Map<String, Object>> collectFuture = asyncCollectorPool.submit(() ->
-                    collectionTaskGuard.callWithContext(
-                            deviceId,
-                            generation,
-                            () -> collectionManager.readPoints(deviceId, points)
-                    ));
+            Future<Map<String, Object>> collectFuture = submitCollectTask(deviceId, generation, points);
+            if (collectFuture == null) {
+                return;
+            }
             batchTask.registerInFlight(collectFuture);
             registerCollectFuture(deviceId, collectFuture);
 
@@ -294,14 +327,10 @@ public class CollectionScheduler {
                 return;
             }
 
-            CompletableFuture<Void> processFuture = CompletableFuture.runAsync(
-                    () -> collectionTaskGuard.runWithContext(
-                            deviceId,
-                            generation,
-                            () -> processCollectedData(deviceId, generation, points, values)
-                    ),
-                    dataProcessorPool
-            );
+            CompletableFuture<Void> processFuture = submitProcessTask(deviceId, generation, points, values);
+            if (processFuture == null) {
+                return;
+            }
             batchTask.registerInFlight(processFuture);
             registerProcessFuture(deviceId, processFuture);
             processFuture.whenComplete((ignored, throwable) -> {
@@ -365,6 +394,7 @@ public class CollectionScheduler {
             }
 
             generation = collectionTaskGuard.activateNextGeneration(deviceId);
+            reconnectStates.remove(deviceId);
             startingDevices.add(deviceId);
         } catch (Exception e) {
             log.error("start device failed, device={}", deviceId, e);
@@ -385,6 +415,7 @@ public class CollectionScheduler {
                 cleanupFailedStart(deviceId);
                 return false;
             }
+            initializeBatchSizing(deviceId, deviceInfo);
 
             scheduleLock.lock();
             try {
@@ -456,6 +487,9 @@ public class CollectionScheduler {
             });
             connectFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
             return true;
+        } catch (RejectedExecutionException e) {
+            log.error("connect device rejected, device={}, queueSize={}", deviceId, deviceStartExecutor.getQueue().size(), e);
+            return false;
         } catch (TimeoutException e) {
             if (connectFuture != null) {
                 connectFuture.cancel(true);
@@ -475,14 +509,94 @@ public class CollectionScheduler {
         }
     }
 
-    private boolean reconnectDevice(String deviceId) {
-        try {
-            collectionManager.reconnectDevice(deviceId);
-            return true;
-        } catch (Exception e) {
-            log.error("reconnect device failed, device={}", deviceId, e);
-            return false;
+    private void scheduleReconnectIfNeeded(String deviceId, long generation) {
+        if (!collectionTaskGuard.isCurrent(deviceId, generation)) {
+            return;
         }
+        ReconnectState state = reconnectStates.computeIfAbsent(deviceId, ignored -> new ReconnectState());
+        long now = System.currentTimeMillis();
+        if (now < state.nextRetryAt.get()) {
+            return;
+        }
+        if (!state.reconnecting.compareAndSet(false, true)) {
+            return;
+        }
+        reconnectAttemptCount.incrementAndGet();
+        state.lastAttemptAt.set(now);
+        try {
+            reconnectExecutor.execute(() -> executeReconnect(deviceId, generation, state));
+        } catch (RejectedExecutionException e) {
+            state.reconnecting.set(false);
+            reconnectFailureCount.incrementAndGet();
+            long delayMs = scheduleNextReconnectRetry(state);
+            log.warn("reconnect task rejected, device={}, retryAfterMs={}, queueSize={}",
+                    deviceId,
+                    delayMs,
+                    reconnectExecutor.getQueue().size(),
+                    e);
+        }
+    }
+
+    private void executeReconnect(String deviceId, long generation, ReconnectState state) {
+        long startTime = System.currentTimeMillis();
+        boolean success = false;
+        try {
+            if (!isReconnectEligible(deviceId, generation)) {
+                return;
+            }
+            collectionManager.reconnectDevice(deviceId);
+            if (!isReconnectEligible(deviceId, generation)) {
+                try {
+                    collectionManager.disconnectDevice(deviceId);
+                } catch (Exception e) {
+                    log.warn("disconnect after stale reconnect failed, device={}", deviceId, e);
+                }
+                return;
+            }
+            success = true;
+            reconnectSuccessCount.incrementAndGet();
+            state.consecutiveFailures.set(0);
+            state.nextRetryAt.set(0L);
+        } catch (Exception e) {
+            reconnectFailureCount.incrementAndGet();
+            long delayMs = scheduleNextReconnectRetry(state);
+            log.warn("async reconnect failed, device={}, retryAfterMs={}", deviceId, delayMs, e);
+        } finally {
+            state.lastDurationMs.set(System.currentTimeMillis() - startTime);
+            state.reconnecting.set(false);
+            if (success) {
+                state.lastSuccessAt.set(System.currentTimeMillis());
+            }
+        }
+    }
+
+    private boolean isReconnectEligible(String deviceId, long generation) {
+        DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
+        return scheduleInfo != null
+                && scheduleInfo.isRunning()
+                && scheduleInfo.getGeneration() == generation
+                && collectionTaskGuard.isCurrent(deviceId, generation)
+                && !startingDevices.contains(deviceId);
+    }
+
+    private long scheduleNextReconnectRetry(ReconnectState state) {
+        int failureCount = Math.max(1, state.consecutiveFailures.incrementAndGet());
+        long delayMs = computeReconnectDelayMs(failureCount);
+        state.nextRetryAt.set(System.currentTimeMillis() + delayMs);
+        return delayMs;
+    }
+
+    private long computeReconnectDelayMs(int failureCount) {
+        long baseDelayMs = Math.max(100L, collectorProperties.getScheduler().getReconnectBaseDelayMs());
+        long maxDelayMs = Math.max(baseDelayMs, collectorProperties.getScheduler().getReconnectMaxDelayMs());
+        long delayMs = baseDelayMs;
+        for (int i = 1; i < failureCount; i++) {
+            if (delayMs >= maxDelayMs) {
+                break;
+            }
+            delayMs = Math.min(maxDelayMs, delayMs * 2);
+        }
+        return delayMs;
     }
 
     public boolean stopDevice(String deviceId) {
@@ -505,6 +619,7 @@ public class CollectionScheduler {
             }
             deviceScheduleInfo.remove(deviceId);
             collectionTaskGuard.clearDevice(deviceId);
+            reconnectStates.remove(deviceId);
             collectionStatistics.stopCollection(deviceId);
             collectionServiceHealthTracker.markDeviceStopped(deviceId);
             return true;
@@ -557,6 +672,72 @@ public class CollectionScheduler {
             return;
         }
         collectedDataProcessor.process(deviceId, points, values, performanceMonitor);
+    }
+
+    private CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task) {
+        try {
+            return CompletableFuture.runAsync(() -> {
+                try {
+                    processDeviceBatch(task);
+                } catch (Exception e) {
+                    log.error("device batch execute failed, device={}", task.deviceId, e);
+                }
+            }, batchDispatcher);
+        } catch (RejectedExecutionException e) {
+            batchDispatchRejectedCount.incrementAndGet();
+            task.recordFailure();
+            log.warn("batch dispatch rejected, device={}, slice={}, queueSize={}",
+                    task.deviceId,
+                    task.timeSliceIndex,
+                    executorQueueSize(batchDispatcher),
+                    e);
+            return null;
+        }
+    }
+
+    private Future<Map<String, Object>> submitCollectTask(String deviceId,
+                                                          long generation,
+                                                          List<DataPoint> points) {
+        try {
+            return asyncCollectorPool.submit(() ->
+                    collectionTaskGuard.callWithContext(
+                            deviceId,
+                            generation,
+                            () -> collectionManager.readPoints(deviceId, points)
+                    ));
+        } catch (RejectedExecutionException e) {
+            collectRejectedCount.incrementAndGet();
+            log.warn("collect task rejected, device={}, pointCount={}, queueSize={}",
+                    deviceId,
+                    points != null ? points.size() : 0,
+                    asyncCollectorPool.getQueue().size(),
+                    e);
+            return null;
+        }
+    }
+
+    private CompletableFuture<Void> submitProcessTask(String deviceId,
+                                                      long generation,
+                                                      List<DataPoint> points,
+                                                      Map<String, Object> values) {
+        try {
+            return CompletableFuture.runAsync(
+                    () -> collectionTaskGuard.runWithContext(
+                            deviceId,
+                            generation,
+                            () -> processCollectedData(deviceId, generation, points, values)
+                    ),
+                    dataProcessorPool
+            );
+        } catch (RejectedExecutionException e) {
+            processRejectedCount.incrementAndGet();
+            log.warn("process task rejected, device={}, pointCount={}, queueSize={}",
+                    deviceId,
+                    points != null ? points.size() : 0,
+                    dataProcessorPool.getQueue().size(),
+                    e);
+            return null;
+        }
     }
 
     private void updateOptimalBatchSize(String deviceId, int newSize) {
@@ -661,9 +842,87 @@ public class CollectionScheduler {
     }
 
     private double getSystemCpuLoad() {
+        double processCpuLoad = resolveProcessCpuLoad();
+        if (processCpuLoad >= 0D) {
+            return Math.min(1.0, processCpuLoad / 100.0);
+        }
         int activeThreads = asyncCollectorPool.getActiveCount() + dataProcessorPool.getActiveCount();
         int maxThreads = asyncCollectorPool.getMaximumPoolSize() + dataProcessorPool.getMaximumPoolSize();
         return maxThreads <= 0 ? 0D : Math.min(1.0, (double) activeThreads / maxThreads);
+    }
+
+    private double resolveProcessCpuLoad() {
+        if (systemResourceMonitorService == null) {
+            return -1D;
+        }
+        try {
+            return systemResourceMonitorService.getResources().getProcessCpuLoad();
+        } catch (Exception e) {
+            log.debug("read process cpu load failed", e);
+            return -1D;
+        }
+    }
+
+    private int getReconnectingDeviceCount() {
+        int count = 0;
+        for (ReconnectState state : reconnectStates.values()) {
+            if (state != null && state.reconnecting.get()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int executorQueueSize(ExecutorService executor) {
+        if (executor instanceof ThreadPoolExecutor threadPoolExecutor) {
+            return threadPoolExecutor.getQueue().size();
+        }
+        return -1;
+    }
+
+    private ThreadPoolExecutor buildAuxiliaryExecutor(String threadNamePrefix,
+                                                      AtomicInteger threadIndex,
+                                                      int poolSize,
+                                                      int queueCapacity) {
+        return new ThreadPoolExecutor(
+                poolSize,
+                poolSize,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(queueCapacity),
+                runnable -> {
+                    Thread thread = new Thread(runnable, threadNamePrefix + threadIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
+    private void configureAuxiliaryExecutors() {
+        CollectorProperties.SchedulerConfig schedulerConfig = collectorProperties.getScheduler();
+        resizeAuxiliaryExecutor(deviceStartExecutor, Math.max(1, schedulerConfig.getDeviceStartExecutorSize()));
+        resizeAuxiliaryExecutor(reconnectExecutor, Math.max(1, schedulerConfig.getReconnectExecutorSize()));
+    }
+
+    private void resizeAuxiliaryExecutor(ThreadPoolExecutor executor, int targetSize) {
+        if (executor == null || targetSize <= 0) {
+            return;
+        }
+        if (targetSize > executor.getMaximumPoolSize()) {
+            executor.setMaximumPoolSize(targetSize);
+            executor.setCorePoolSize(targetSize);
+            return;
+        }
+        executor.setCorePoolSize(targetSize);
+        executor.setMaximumPoolSize(targetSize);
+    }
+
+    private void initializeBatchSizing(String deviceId, DeviceInfo deviceInfo) {
+        String protocol = deviceInfo != null ? deviceInfo.getProtocolType() : null;
+        int defaultBatchSize = protocolBatchStrategy.defaultBatchSize(protocol);
+        int maxBatchSize = protocolBatchStrategy.maxBatchSize(protocol);
+        performanceMonitor.initializeDeviceBatchSize(deviceId, defaultBatchSize, maxBatchSize);
     }
 
     private void shutdownExecutor(String name, ExecutorService executor) {
@@ -685,9 +944,12 @@ public class CollectionScheduler {
         Map<String, Object> status = new HashMap<>();
         status.put("deviceId", deviceId);
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
+        ReconnectState reconnectState = reconnectStates.get(deviceId);
         status.put("isRunning", info != null && info.isRunning());
         status.put("isStarting", startingDevices.contains(deviceId));
         status.put("connected", collectionManager.isDeviceConnected(deviceId));
+        status.put("reconnecting", reconnectState != null && reconnectState.reconnecting.get());
+        status.put("reconnectNextRetryAt", reconnectState != null ? reconnectState.nextRetryAt.get() : 0L);
         status.put("statistics", collectionStatistics.getDeviceStatistics(deviceId));
         status.put("performance", performanceMonitor.getDevicePerformance(deviceId));
         return status;
@@ -767,6 +1029,7 @@ public class CollectionScheduler {
         } finally {
             collectionTaskGuard.clearDevice(deviceId);
             deviceScheduleInfo.remove(deviceId);
+            reconnectStates.remove(deviceId);
         }
     }
 
@@ -849,6 +1112,15 @@ public class CollectionScheduler {
         futures.clear();
     }
 
+    private static final class ReconnectState {
+        private final AtomicBoolean reconnecting = new AtomicBoolean(false);
+        private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+        private final AtomicLong nextRetryAt = new AtomicLong(0);
+        private final AtomicLong lastAttemptAt = new AtomicLong(0);
+        private final AtomicLong lastSuccessAt = new AtomicLong(0);
+        private final AtomicLong lastDurationMs = new AtomicLong(0);
+    }
+
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         String deviceId = event.getDeviceId();
@@ -873,3 +1145,10 @@ public class CollectionScheduler {
         }
     }
 }
+
+
+
+
+
+
+

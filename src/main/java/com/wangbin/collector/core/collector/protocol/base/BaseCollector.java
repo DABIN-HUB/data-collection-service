@@ -58,12 +58,12 @@ public abstract class BaseCollector implements ProtocolCollector,
     @Autowired(required = false)
     protected TelemetryIngressService telemetryIngressService;
 
-    protected boolean connected = false;
-    protected String connectionStatus = "DISCONNECTED";
-    protected String lastError;
-    protected long lastConnectTime;
-    protected long lastDisconnectTime;
-    protected long lastActivityTime;
+    protected volatile boolean connected = false;
+    protected volatile String connectionStatus = "DISCONNECTED";
+    protected volatile String lastError;
+    protected volatile long lastConnectTime;
+    protected volatile long lastDisconnectTime;
+    protected volatile long lastActivityTime;
 
     // 统计信息
     protected AtomicLong totalReadCount = new AtomicLong(0);

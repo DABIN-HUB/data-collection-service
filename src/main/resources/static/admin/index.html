@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>采集器管理控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=20260702c">
-  <link rel="stylesheet" href="./admin-redesign.css?v=20260702c">
+  <link rel="stylesheet" href="./styles.css?v=20260702e">
+  <link rel="stylesheet" href="./admin-redesign.css?v=20260702e">
+  <link rel="stylesheet" href="./design-lab.css?v=20260702c">
 </head>
-<body>
+<body class="theme-anchor">
   <div class="shell">
     <aside class="sidebar">
       <div class="sidebar-top">
@@ -66,6 +67,20 @@
           </div>
         </div>
       </header>
+
+      <section id="designLabBar" class="design-lab-bar hidden" aria-label="Theme Lab">
+        <div class="design-lab-copy">
+          <span class="design-lab-kicker">Theme Lab</span>
+          <strong>Five visual directions for this console</strong>
+          <p>Preview mode uses local mock data and keeps the current information architecture intact.</p>
+        </div>
+        <div id="designLabThemes" class="design-lab-themes" role="group" aria-label="Theme options"></div>
+        <div class="design-lab-current">
+          <span class="design-lab-meta-label">Current</span>
+          <strong id="designLabCurrentName">-</strong>
+          <p id="designLabCurrentNote">-</p>
+        </div>
+      </section>
 
       <section id="overview" class="overview-section">
         <div class="section-heading">
@@ -572,8 +587,9 @@
     </main>
   </div>
 
-  <script src="./app.js"></script>
-  <script src="./local-point-editor.js"></script>
-  <script src="./point-config-editor.js"></script>
+  <script src="./design-lab.js?v=20260702c"></script>
+  <script src="./app.js?v=20260702e"></script>
+  <script src="./local-point-editor.js?v=20260702e"></script>
+  <script src="./point-config-editor.js?v=20260702e"></script>
 </body>
 </html>

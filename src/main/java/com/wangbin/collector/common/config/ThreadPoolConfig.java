@@ -6,7 +6,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
-import java.util.concurrent.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class ThreadPoolConfig {
@@ -21,9 +28,6 @@ public class ThreadPoolConfig {
                 .build();
     }
 
-    /**
-     * 时间片调度线程池（调度器核心任务）
-     */
     @Bean(name = "timeSliceScheduler", destroyMethod = "shutdown")
     public ScheduledExecutorService timeSliceScheduler() {
         int poolSize = Math.max(2, cpuCores / 4);
@@ -32,65 +36,49 @@ public class ThreadPoolConfig {
                 buildNamedThreadFactory("time-slice-scheduler", true)
         );
         executor.setRemoveOnCancelPolicy(true);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
+                "timeSliceScheduler",
+                new ThreadPoolExecutor.AbortPolicy()
+        ));
         return executor;
     }
 
-    /**
-     * 批量任务分发线程池
-     */
     @Bean(name = "batchDispatcherExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor batchDispatcherExecutor() {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        return new ThreadPoolExecutor(
                 cpuCores,
                 cpuCores * 2,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(1000),
                 buildNamedThreadFactory("batch-dispatcher", true),
-                new ThreadPoolExecutor.AbortPolicy()
+                new ObservedRejectedExecutionHandler("batchDispatcherExecutor", new ThreadPoolExecutor.AbortPolicy())
         );
-        return executor;
     }
 
-    /**
-     * 异步采集线程池（IO密集型）
-     */
     @Bean(name = "asyncCollectorExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor asyncCollectorExecutor() {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        return new ThreadPoolExecutor(
                 cpuCores * 4,
                 cpuCores * 8,
                 30L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(10000),
                 buildNamedThreadFactory("async-collector", true),
-                new ThreadPoolExecutor.AbortPolicy()
+                new ObservedRejectedExecutionHandler("asyncCollectorExecutor", new ThreadPoolExecutor.AbortPolicy())
         );
-        return executor;
     }
 
-    /**
-     * 数据处理线程池（CPU密集型）
-     */
     @Bean(name = "dataProcessorExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor dataProcessorExecutor() {
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        return new ThreadPoolExecutor(
                 cpuCores,
                 cpuCores * 2,
                 30L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(5000),
                 buildNamedThreadFactory("data-processor", true),
-                new ThreadPoolExecutor.AbortPolicy()
+                new ObservedRejectedExecutionHandler("dataProcessorExecutor", new ThreadPoolExecutor.AbortPolicy())
         );
-        return executor;
     }
 
-    
-
-    
-
-    /**
-     * 数据上报线程池
-     */
     @Bean("reportExecutor")
     public Executor reportExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -101,16 +89,14 @@ public class ThreadPoolConfig {
         executor.setThreadNamePrefix("report-task-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
+                "reportExecutor",
+                new ThreadPoolExecutor.AbortPolicy()
+        ));
         executor.initialize();
         return executor;
     }
 
-    
-
-    /**
-     * 定时任务线程池
-     */
     @Bean("taskScheduler")
     public ThreadPoolTaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
@@ -118,12 +104,13 @@ public class ThreadPoolConfig {
         scheduler.setThreadNamePrefix("scheduled-task-");
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
         scheduler.setAwaitTerminationSeconds(30);
+        scheduler.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
+                "taskScheduler",
+                new ThreadPoolExecutor.AbortPolicy()
+        ));
         return scheduler;
     }
 
-    /**
-     * 监控线程池
-     */
     @Bean("monitorExecutor")
     public ScheduledExecutorService monitorExecutor() {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
@@ -131,13 +118,13 @@ public class ThreadPoolConfig {
                 buildNamedThreadFactory("monitor-thread", true)
         );
         executor.setRemoveOnCancelPolicy(true);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
+                "monitorExecutor",
+                new ThreadPoolExecutor.AbortPolicy()
+        ));
         return executor;
     }
 
-    /**
-     * 通用IO密集型任务线程池
-     */
     @Bean("ioIntensiveExecutor")
     public ExecutorService ioIntensiveExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors() * 2;
@@ -151,13 +138,10 @@ public class ThreadPoolConfig {
                 new ThreadFactoryBuilder()
                         .setNameFormat("io-task-%d")
                         .build(),
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                new ObservedRejectedExecutionHandler("ioIntensiveExecutor", new ThreadPoolExecutor.CallerRunsPolicy())
         );
     }
 
-    /**
-     * 通用CPU密集型任务线程池
-     */
     @Bean("cpuIntensiveExecutor")
     public ExecutorService cpuIntensiveExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors();
@@ -170,7 +154,7 @@ public class ThreadPoolConfig {
                 new ThreadFactoryBuilder()
                         .setNameFormat("cpu-task-%d")
                         .build(),
-                new ThreadPoolExecutor.AbortPolicy()
+                new ObservedRejectedExecutionHandler("cpuIntensiveExecutor", new ThreadPoolExecutor.AbortPolicy())
         );
     }
 }

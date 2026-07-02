@@ -1,9 +1,5 @@
 package com.wangbin.collector.core.collector.scheduler;
 
-/**
- * 设备调度信息
- */
-
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collections;
@@ -15,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 性能监控器
+ * Scheduler performance monitor.
  */
 @Slf4j
 public class PerformanceMonitor {
@@ -25,24 +21,26 @@ public class PerformanceMonitor {
     private final AtomicLong totalFailedBatches = new AtomicLong(0);
     private final Map<Integer, Long> timeSliceExecutionTimes = new ConcurrentHashMap<>();
 
-    // 系统资源监控
     private final AtomicLong peakMemoryUsage = new AtomicLong(0);
     private final AtomicLong cpuUsage = new AtomicLong(0);
 
-    // 瓶颈分析
-    private final Map<String, Long> slowestDevices = new ConcurrentHashMap<>(); // 最慢的设备列表
-    private final Map<Integer, Long> overloadedSlices = new ConcurrentHashMap<>(); // 过载的时间片
+    private final Map<String, Long> slowestDevices = new ConcurrentHashMap<>();
+    private final Map<Integer, Long> overloadedSlices = new ConcurrentHashMap<>();
     private final AtomicBoolean recentTimeSliceTimeout = new AtomicBoolean(false);
 
-    // 统计周期
-    private static final long STATISTICS_CYCLE = 60000; // 60秒统计周期
     private long lastStatisticsTime = System.currentTimeMillis();
 
-    void recordTimeSliceExecution(int sliceIndex, long executionTime, AtomicInteger TIME_SLICE_INTERVAL) {
-        timeSliceExecutionTimes.put(sliceIndex, executionTime);
+    void initializeDeviceBatchSize(String deviceId, int initialBatchSize, int maxBatchSize) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return;
+        }
+        devicePerformance.computeIfAbsent(deviceId, DevicePerformance::new)
+                .initializeBatchWindow(initialBatchSize, maxBatchSize);
+    }
 
-        // 检查时间片是否过载（执行时间超过时间片间隔）
-        if (executionTime > TIME_SLICE_INTERVAL.get()) {
+    void recordTimeSliceExecution(int sliceIndex, long executionTime, AtomicInteger timeSliceInterval) {
+        timeSliceExecutionTimes.put(sliceIndex, executionTime);
+        if (executionTime > timeSliceInterval.get()) {
             overloadedSlices.put(sliceIndex, executionTime);
             recentTimeSliceTimeout.set(true);
         }
@@ -53,11 +51,10 @@ public class PerformanceMonitor {
         totalSuccessfulBatches.incrementAndGet();
 
         DevicePerformance perf = devicePerformance.computeIfAbsent(
-                deviceId, k -> new DevicePerformance(deviceId)
+                deviceId, DevicePerformance::new
         );
         perf.recordSuccess(pointCount, executionTime);
 
-        // 记录最慢设备（执行时间超过200ms）
         if (executionTime > 200) {
             slowestDevices.put(deviceId, executionTime);
         }
@@ -67,7 +64,7 @@ public class PerformanceMonitor {
         totalFailedBatches.incrementAndGet();
 
         DevicePerformance perf = devicePerformance.computeIfAbsent(
-                deviceId, k -> new DevicePerformance(deviceId)
+                deviceId, DevicePerformance::new
         );
         perf.recordFailure();
     }
@@ -86,7 +83,7 @@ public class PerformanceMonitor {
         }
     }
 
-    void logStatistics(AtomicInteger TIME_SLICE_INTERVAL) {
+    void logStatistics(AtomicInteger timeSliceInterval) {
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - lastStatisticsTime;
         lastStatisticsTime = currentTime;
@@ -99,88 +96,68 @@ public class PerformanceMonitor {
         double batchSuccessRate = successfulBatches + failedBatches > 0 ?
                 successfulBatches * 100.0 / (successfulBatches + failedBatches) : 0;
 
-        log.info("性能统计 - 处理点总数：{}, 平均每秒点数: {}/秒, 成功率: {}%, 活跃设备: {}",
+        log.info("performance stats - points={}, pointsPerSecond={}, batchSuccessRate={}%, activeDevices={}",
                 totalPoints,
                 String.format("%.2f", pointsPerSecond),
                 String.format("%.2f", batchSuccessRate),
-                devicePerformance.size()
-        );
+                devicePerformance.size());
 
-        // 输出时间片执行情况
-        StringBuilder sliceInfo = new StringBuilder("时间片执行时间: ");
+        StringBuilder sliceInfo = new StringBuilder("time-slice execution: ");
         for (Map.Entry<Integer, Long> entry : timeSliceExecutionTimes.entrySet()) {
             sliceInfo.append(String.format("[%d:%dms]", entry.getKey(), entry.getValue()));
-            if (entry.getValue() > TIME_SLICE_INTERVAL.get()) {
+            if (entry.getValue() > timeSliceInterval.get()) {
                 sliceInfo.append("(OVERLOAD)");
             }
             sliceInfo.append(", ");
         }
         if (!timeSliceExecutionTimes.isEmpty()) {
-            sliceInfo.setLength(sliceInfo.length() - 2); // 移除最后一个逗号和空格
+            sliceInfo.setLength(sliceInfo.length() - 2);
         }
         log.debug(sliceInfo.toString());
 
-        // 输出瓶颈分析
         analyzeBottlenecks();
-
-        // 输出设备健康状态
         reportDeviceHealth();
     }
 
-    /**
-     * 瓶颈分析
-     */
     private void analyzeBottlenecks() {
-        // 1. 检查慢设备
         if (!slowestDevices.isEmpty()) {
-            // 按执行时间排序，取前5个最慢设备
             List<Map.Entry<String, Long>> sortedSlowest = slowestDevices.entrySet().stream()
                     .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                     .limit(5)
                     .toList();
 
-            StringBuilder slowDeviceInfo = new StringBuilder("慢速设备（执行时间>200ms）: ");
+            StringBuilder slowDeviceInfo = new StringBuilder("slow devices (>200ms): ");
             for (Map.Entry<String, Long> entry : sortedSlowest) {
                 slowDeviceInfo.append(String.format("%s:%dms, ", entry.getKey(), entry.getValue()));
             }
             slowDeviceInfo.setLength(slowDeviceInfo.length() - 2);
             log.warn(slowDeviceInfo.toString());
-
-            // 清空慢速设备列表，准备下一轮统计
             slowestDevices.clear();
         }
 
-        // 2. 检查过载时间片
         if (!overloadedSlices.isEmpty()) {
-            StringBuilder overloadInfo = new StringBuilder("过载时间片（执行时间>片间隔）: ");
+            StringBuilder overloadInfo = new StringBuilder("overloaded time slices: ");
             for (Map.Entry<Integer, Long> entry : overloadedSlices.entrySet()) {
                 overloadInfo.append(String.format("%d:%dms, ", entry.getKey(), entry.getValue()));
             }
             overloadInfo.setLength(overloadInfo.length() - 2);
             log.warn(overloadInfo.toString());
-
-            // 清空过载时间片列表
             overloadedSlices.clear();
         }
 
-        // 3. 检查系统资源
         Runtime runtime = Runtime.getRuntime();
         long currentMemory = runtime.totalMemory() - runtime.freeMemory();
         if (currentMemory > peakMemoryUsage.get()) {
             peakMemoryUsage.set(currentMemory);
         }
 
-        log.debug("系统资源: 当前内存占用={}MB, 峰值内存={}MB, 可用处理器数={}",
+        log.debug("system resources: heapUsed={}MB, peakHeap={}MB, processors={}",
                 currentMemory / (1024 * 1024),
                 peakMemoryUsage.get() / (1024 * 1024),
                 Runtime.getRuntime().availableProcessors());
     }
 
-    /**
-     * 设备健康报告
-     */
     private void reportDeviceHealth() {
-        // 统计不同健康状态的设备数量
         long healthyDevices = 0;
         long warningDevices = 0;
         long criticalDevices = 0;
@@ -197,9 +174,8 @@ public class PerformanceMonitor {
                 criticalDevices++;
             }
 
-            // 记录高风险设备
             if ("HIGH".equals(risk) || healthScore < 50) {
-                log.warn("设备 {} 健康度低: 健康分={}%, 故障风险={}, 连续失败={}次",
+                log.warn("device {} health degraded: score={}%, risk={}, consecutiveFailures={}",
                         perf.deviceId,
                         String.format("%.1f", healthScore),
                         risk,
@@ -207,7 +183,7 @@ public class PerformanceMonitor {
             }
         }
 
-        log.info("设备健康统计: 健康={}, 警告={}, 危险={}", healthyDevices, warningDevices, criticalDevices);
+        log.info("device health summary: healthy={}, warning={}, critical={}", healthyDevices, warningDevices, criticalDevices);
     }
 
     Map<String, Object> getDevicePerformance(String deviceId) {
