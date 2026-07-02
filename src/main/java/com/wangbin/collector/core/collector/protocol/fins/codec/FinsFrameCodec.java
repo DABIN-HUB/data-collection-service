@@ -36,20 +36,19 @@ public final class FinsFrameCodec {
                                            int sid,
                                            FinsAddress address,
                                            byte[] payload) {
-        byte[] header = buildHeader(config, sid);
-        byte[] frame = new byte[HEADER_LENGTH + 8 + payload.length];
-        System.arraycopy(header, 0, frame, 0, HEADER_LENGTH);
-        frame[10] = (byte) COMMAND_MEMORY_AREA;
-        frame[11] = (byte) SUBCOMMAND_MEMORY_WRITE;
-        frame[12] = (byte) address.getMemoryArea().code(address.isBitUnit());
-        frame[13] = (byte) ((address.getWordAddress() >> 8) & 0xFF);
-        frame[14] = (byte) (address.getWordAddress() & 0xFF);
-        frame[15] = (byte) (address.getBitOffset() != null ? address.getBitOffset() : 0);
-        int unitCount = address.readUnitCount();
-        frame[16] = (byte) ((unitCount >> 8) & 0xFF);
-        frame[17] = (byte) (unitCount & 0xFF);
-        System.arraycopy(payload, 0, frame, 18, payload.length);
-        return frame;
+        return buildMemoryWriteRequest(config, sid, address.getMemoryArea(), address.getWordAddress(),
+                address.getBitOffset() != null ? address.getBitOffset() : 0,
+                address.readUnitCount(), address.isBitUnit(), payload);
+    }
+
+    public static byte[] buildBatchWriteRequest(FinsConnectionConfig config,
+                                                int sid,
+                                                FinsMemoryArea memoryArea,
+                                                int startWord,
+                                                int unitCount,
+                                                boolean bitUnit,
+                                                byte[] payload) {
+        return buildMemoryWriteRequest(config, sid, memoryArea, startWord, 0, unitCount, bitUnit, payload);
     }
 
     public static FinsResponse parseReadResponse(byte[] frame, int expectedSid) {
@@ -99,6 +98,29 @@ public final class FinsFrameCodec {
         frame[15] = (byte) (bitOffset & 0xFF);
         frame[16] = (byte) ((unitCount >> 8) & 0xFF);
         frame[17] = (byte) (unitCount & 0xFF);
+        return frame;
+    }
+
+    private static byte[] buildMemoryWriteRequest(FinsConnectionConfig config,
+                                                  int sid,
+                                                  FinsMemoryArea memoryArea,
+                                                  int startWord,
+                                                  int bitOffset,
+                                                  int unitCount,
+                                                  boolean bitUnit,
+                                                  byte[] payload) {
+        byte[] header = buildHeader(config, sid);
+        byte[] frame = new byte[HEADER_LENGTH + 8 + payload.length];
+        System.arraycopy(header, 0, frame, 0, HEADER_LENGTH);
+        frame[10] = (byte) COMMAND_MEMORY_AREA;
+        frame[11] = (byte) SUBCOMMAND_MEMORY_WRITE;
+        frame[12] = (byte) memoryArea.code(bitUnit);
+        frame[13] = (byte) ((startWord >> 8) & 0xFF);
+        frame[14] = (byte) (startWord & 0xFF);
+        frame[15] = (byte) (bitOffset & 0xFF);
+        frame[16] = (byte) ((unitCount >> 8) & 0xFF);
+        frame[17] = (byte) (unitCount & 0xFF);
+        System.arraycopy(payload, 0, frame, 18, payload.length);
         return frame;
     }
 

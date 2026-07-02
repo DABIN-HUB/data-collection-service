@@ -918,3 +918,51 @@ EM0:100#4
 4. 地址语法采用 `<AREA>:<WORD>[.<BIT>][#<LENGTH>]`
 5. 第一批先做 schema、校验、UDP adapter、地址解析、帧编解码、collector 骨架和最小测试
 6. 后续批次再补批量写、失败回退、联调验证和 `FINS/TCP` 评估
+
+### 2026-07-02 第二次实现（本轮继续）
+
+已完成：
+1. `OmronFinsCollector` 补齐协议专项指标字段与状态输出，当前已暴露 `requestCount`、`requestSuccessCount`、`requestErrorCount`、`requestTimeoutCount`、`requestRetryCount`、`batchReadCount`、`batchWriteCount`、`batchFallbackCount`、`mergedPointCount`、`singlePointFallbackCount`、`lastFinsEndCode`、`lastRequestUnitCount`。
+2. 批读失败后的单点回退链路已补齐统计：批次失败计入 `batchFallbackCount`，回退单点请求计入 `requestRetryCount` 与 `singlePointFallbackCount`。
+3. 单点读、单点写、批量读请求都会刷新 `lastFinsEndCode` / `lastRequestUnitCount`，连接建立与断开时会统一重置协议专项指标。
+4. 新增 `OmronFinsCollectorIntegrationTest`，内置 `FakeFinsUdpServer`，覆盖：
+   - 单点字读写
+   - bit 点写入与回读
+   - 批读失败后单点回退
+   - 回退场景下协议指标断言
+5. 已完成一轮定向验证，当前通过的测试包括：
+   - `ProtocolSchemaServiceTest`
+   - `ProtocolConnectionValidatorTest`
+   - `FinsAddressParserTest`
+   - `FinsFrameCodecTest`
+   - `FinsDataCodecTest`
+   - `OmronFinsCollectorIntegrationTest`
+
+当前剩余：
+1. 连续块批量写
+2. 同字 bit 写保护/串行化
+3. 真实 PLC 联调与报文回放验证
+4. `FINS/TCP` 是否需要扩展的单独评估
+### 2026-07-02 第三次实现（连续块批写与同字 bit 写保护）
+已完成：
+1. 新增 `FinsWritePlanBuilder` / `FinsWritePlan` / `FinsWritePlanItem`，对非 bit、连续且无重叠的 word 地址段生成批量写计划。
+2. `OmronFinsCollector.writePoints(...)` 现在会优先把连续 word 点合并成单次 `MEMORY AREA WRITE`，批量写失败时自动回退到单点写，并累计 `batchFallbackCount`、`requestRetryCount`、`singlePointFallbackCount`。
+3. 同字 bit 写改为“读整字 -> 改 bit -> 写整字”的受保护路径，新增 word 级 `ReentrantLock`，避免同一字上的 bit 写互相覆盖。
+4. 当一次 `writePoints(...)` 里多个 bit 点落在同一个 word 上时，collector 会合并成一次受保护整字写；如果同一批次里同时出现 bit 点和覆盖同 word 的 word 点，则该部分退回顺序单点写，避免语义冲突。
+5. `FinsFrameCodec` 已补齐批量写报文构造，当前批写走真实 FINS 帧，而不是循环单点伪批量。
+6. 新增写链路集成测试覆盖：
+   - 连续 word 批量写成功
+   - 同字 bit 合并写成功
+   - 连续 word 批量写失败后回退单点写
+7. 本轮完成后，以下定向测试通过：
+   - `ProtocolSchemaServiceTest`
+   - `ProtocolConnectionValidatorTest`
+   - `FinsAddressParserTest`
+   - `FinsFrameCodecTest`
+   - `FinsDataCodecTest`
+   - `OmronFinsCollectorIntegrationTest`
+
+当前剩余：
+1. 真实 PLC 联调与报文回放验证
+2. 极端写冲突场景的补充压测
+3. `FINS/TCP` 是否需要扩展的单独评估
