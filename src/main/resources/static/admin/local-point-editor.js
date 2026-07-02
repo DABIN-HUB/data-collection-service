@@ -99,6 +99,7 @@
     intercept("#saveLocalDeviceBtn", "click", saveLocalDevice);
     intercept("#localProtocolSelect", "change", renderLocalProtocolSelection);
     intercept("#formatLocalPointsBtn", "click", formatLocalPointsJson);
+    bind("#localEditorBackdrop", "click", closeLocalDeviceForm);
 
     bind("#applyLocalPointsJsonBtn", "click", applyLocalPointsJson);
     bind("#addLocalPointBtn", "click", addLocalPoint);
@@ -112,6 +113,7 @@
     bind("#localPointDetail", "input", handleLocalPointDetailInput);
     bind("#localPointDetail", "change", handleLocalPointDetailInput);
     bind("#localPointDetail", "click", handleLocalPointDetailClick);
+    document.addEventListener("keydown", handleLocalEditorKeydown);
   }
 
   function bind(selector, eventName, handler, useCapture = false) {
@@ -133,8 +135,9 @@
     state.localDeviceEditingId = bundle?.device?.id || bundle?.device?.deviceId || null;
     state.localPointSearch = "";
     $("#localDevicePanel").classList.remove("hidden");
+    $("#localEditorBackdrop")?.classList.remove("hidden");
+    document.body.classList.add("modal-active");
     document.querySelector(".local-editor-placeholder")?.classList.add("hidden");
-    $("#localDevicePanel").scrollIntoView({ behavior: "smooth", block: "start" });
 
     const device = bundle?.device || {};
     const connection = bundle?.connection || {};
@@ -174,24 +177,51 @@
     state.localPoints = [];
     state.selectedLocalPointIndex = -1;
     state.localPointSearch = "";
+    state.currentLocalProtocol = null;
     $("#localDevicePanel").classList.add("hidden");
+    $("#localEditorBackdrop")?.classList.add("hidden");
+    document.body.classList.remove("modal-active");
     document.querySelector(".local-editor-placeholder")?.classList.remove("hidden");
     $("#localDeviceId").disabled = false;
     $("#localPointSearch").value = "";
     $("#localPointRows").innerHTML = `<tr><td colspan="5">暂无点位</td></tr>`;
     $("#localPointDetail").innerHTML = "";
     $("#localPointEmpty").classList.remove("hidden");
+    refreshLocalEditorSummary();
+  }
+
+  function refreshLocalEditorSummary() {
+    const protocolCode = canonicalProtocolForUi($("#localProtocolSelect")?.value || "");
+    const protocolLabel = state.currentLocalProtocol?.title || protocolCode || "-";
+    const pointCount = Array.isArray(state.localPoints) ? state.localPoints.length : 0;
+    if ($("#localEditorProtocolText")) {
+      $("#localEditorProtocolText").textContent = protocolLabel;
+    }
+    if ($("#localEditorPointCount")) {
+      $("#localEditorPointCount").textContent = String(pointCount);
+    }
+  }
+
+  function handleLocalEditorKeydown(event) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    const panel = $("#localDevicePanel");
+    if (panel && !panel.classList.contains("hidden")) {
+      closeLocalDeviceForm();
+    }
   }
 
   function renderLocalProtocolSelection() {
     const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
     $("#localProtocolSelect").value = protocolCode;
     state.currentLocalProtocol = getProtocolSchema(protocolCode);
-    $("#localProtocolMeta").innerHTML = renderProtocolMeta(state.currentLocalProtocol);
+    updateProtocolMetaHelp("#localProtocolMetaHelp", state.currentLocalProtocol, `${state.currentLocalProtocol?.title || protocolCode} 协议说明`);
     renderProtocolForm("#localConnectionForm", state.currentLocalProtocol, "localConnectionForm");
     renderLocalPointList();
     renderLocalPointDetail();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function defaultPointTemplate(deviceId, protocolCode, seed = {}) {
@@ -320,6 +350,7 @@
     renderLocalPointList();
     renderLocalPointDetail();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function renderLocalPointList() {
@@ -432,33 +463,47 @@
     ].filter((item) => hasValue(item[1]));
     target.innerHTML = `
       <div class="point-detail-stack">
-        <section class="field-group">
-          <h3>基础信息</h3>
-          <p class="point-section-note">上方设备级 Base / Min / Max CollectionInterval 与 PointChangeThreshold 会在保存时统一回写到全部点位。</p>
-          <div class="form-grid">${renderFields(basicFields, point)}</div>
+        <section class="point-detail-hero">
+          <div>
+            <span class="label-chip">当前点位</span>
+            <strong>${escapeHtml(displayPointName(point, state.selectedLocalPointIndex))}</strong>
+            <p>${escapeHtml(point.pointCode || "-")} · ${escapeHtml(resolvePointAddress(point) || "未设置地址")}</p>
+          </div>
+          <div class="point-detail-hero-meta">
+            <span class="pill subtle">${escapeHtml(resolvePointTypeSummary(point, protocolCode))}</span>
+            <span class="pill subtle">${escapeHtml(point.readWrite || "-")}</span>
+            <span class="pill subtle">${escapeHtml(statusLabel(point.status))}</span>
+          </div>
         </section>
-        <section class="field-group">
-          <h3>数据处理</h3>
-          <div class="form-grid">${renderFields(dataFields, point)}</div>
-        </section>
-        <section class="field-group">
-          <h3>上报 / 缓存</h3>
-          <div class="form-grid">${renderFields(reportFields, point)}</div>
-          ${renderReportBindings(point)}
-        </section>
-        <section class="field-group">
-          <h3>告警规则</h3>
-          <div class="form-grid">${renderFields(alarmFields, point)}</div>
-          ${renderAlarmRules(point)}
-        </section>
-        <section class="field-group">
-          <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
-          ${renderProtocolFields(protocolCode, point)}
-        </section>
-        <section class="field-group">
-          <h3>只读项</h3>
-          ${readonlyItems.length ? `<div class="readonly-grid">${readonlyItems.map(([label, value]) => renderReadonly(label, value)).join("")}</div>` : `<p class="field-description">当前点位没有额外只读运行态信息。</p>`}
-        </section>
+        <div class="point-detail-grid">
+          <section class="field-group">
+            <h3>基础信息</h3>
+            <p class="point-section-note">设备级 Base / Min / Max CollectionInterval 与 PointChangeThreshold 会在保存时统一回写到全部点位。</p>
+            <div class="form-grid">${renderFields(basicFields, point)}</div>
+          </section>
+          <section class="field-group">
+            <h3>数据处理</h3>
+            <div class="form-grid">${renderFields(dataFields, point)}</div>
+          </section>
+          <section class="field-group">
+            <h3>上报 / 缓存</h3>
+            <div class="form-grid">${renderFields(reportFields, point)}</div>
+            ${renderReportBindings(point)}
+          </section>
+          <section class="field-group">
+            <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
+            ${renderProtocolFields(protocolCode, point)}
+          </section>
+          <section class="field-group field-group-wide">
+            <h3>告警规则</h3>
+            <div class="form-grid">${renderFields(alarmFields, point)}</div>
+            ${renderAlarmRules(point)}
+          </section>
+          <section class="field-group field-group-wide">
+            <h3>只读信息</h3>
+            ${readonlyItems.length ? `<div class="readonly-grid">${readonlyItems.map(([label, value]) => renderReadonly(label, value)).join("")}</div>` : `<p class="field-description">当前点位没有额外只读运行态信息。</p>`}
+          </section>
+        </div>
       </div>`;
   }
 

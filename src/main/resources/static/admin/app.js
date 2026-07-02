@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   token: localStorage.getItem("collectorToken") || "ops-token",
   devices: [],
   protocols: [],
@@ -8,7 +8,10 @@ const state = {
   localDeviceEditingId: null,
   realtimeTimer: null,
   lastSuggestedCommandText: "",
-  realtimeSearch: ""
+  realtimeSearch: "",
+  realtimePoints: [],
+  selectedRealtimePointKey: null,
+  activeWorkbenchTab: "points"
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -74,11 +77,15 @@ function bindConsoleShell() {
   document.querySelectorAll("[data-console-tab]").forEach((button) => {
     button.addEventListener("click", () => activateConsoleTab(button.dataset.consoleTab));
   });
+  document.querySelectorAll("[data-workbench-tab]").forEach((button) => {
+    button.addEventListener("click", () => activateWorkbenchTab(button.dataset.workbenchTab));
+  });
 
   const realtimeSelect = $("#realtimeDeviceSelect");
   if (realtimeSelect) {
     realtimeSelect.addEventListener("change", () => {
       syncSelectedDeviceSummary();
+      renderDevices();
       loadRealtime().catch((error) => toast(error.message, true));
     });
   }
@@ -88,6 +95,17 @@ function bindConsoleShell() {
     pointSearch.addEventListener("input", (event) => {
       state.realtimeSearch = String(event.target.value || "").trim().toLowerCase();
       loadRealtime().catch((error) => toast(error.message, true));
+    });
+  }
+
+  const realtimeRows = $("#realtimeRows");
+  if (realtimeRows) {
+    realtimeRows.addEventListener("click", (event) => {
+      const row = event.target.closest("tr[data-point-key]");
+      if (!row) {
+        return;
+      }
+      selectRealtimePoint(row.dataset.pointKey);
     });
   }
 }
@@ -101,6 +119,121 @@ function activateConsoleTab(tabName) {
     panel.classList.toggle("hidden", !active);
     panel.classList.toggle("console-module-active", active);
   });
+}
+
+function activateWorkbenchTab(tabName) {
+  state.activeWorkbenchTab = tabName || "points";
+  document.querySelectorAll("[data-workbench-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.workbenchTab === state.activeWorkbenchTab);
+  });
+  document.querySelectorAll("[data-workbench-panel]").forEach((panel) => {
+    const active = panel.dataset.workbenchPanel === state.activeWorkbenchTab;
+    panel.classList.toggle("hidden", !active);
+    panel.classList.toggle("console-module-active", active);
+  });
+}
+
+function selectedDeviceId() {
+  return $("#realtimeDeviceSelect")?.value || $("#connectionDeviceSelect")?.value || "";
+}
+
+function selectDevice(deviceId) {
+  if (!deviceId) {
+    return;
+  }
+  ["#connectionDeviceSelect", "#realtimeDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
+    const select = $(selector);
+    if (!select) {
+      return;
+    }
+    const option = Array.from(select.options).find((item) => item.value === deviceId);
+    if (option) {
+      select.value = deviceId;
+    }
+  });
+  syncProtocolSelectionToDevice(false);
+  syncControlCommandExample();
+  syncSelectedDeviceSummary(deviceId);
+  renderDevices();
+  activateWorkbenchTab("points");
+  loadRealtime().catch((error) => toast(error.message, true));
+}
+
+function realtimePointKey(point, index = 0) {
+  return String(point?.pointId || point?.pointCode || point?.pointName || point?.address || `point-${index}`);
+}
+
+function setInspectorField(selector, value) {
+  const target = $(selector);
+  if (!target) {
+    return;
+  }
+  target.value = value;
+}
+
+function clearSelectedPointInspector() {
+  state.selectedRealtimePointKey = null;
+  state.realtimePoints = [];
+  $("#selectedPointEmpty")?.classList.remove("hidden");
+  $("#selectedPointPanel")?.classList.add("hidden");
+  const tag = $("#inspectorPointTag");
+  if (tag) {
+    tag.textContent = "未选择点位";
+  }
+  document.querySelectorAll("#realtimeRows tr[data-point-key]").forEach((row) => row.classList.remove("is-selected"));
+}
+
+function renderSelectedPointInspector() {
+  const point = state.realtimePoints.find((item) => item.__pointKey === state.selectedRealtimePointKey) || null;
+  if (!point) {
+    $("#selectedPointEmpty")?.classList.remove("hidden");
+    $("#selectedPointPanel")?.classList.add("hidden");
+    const tag = $("#inspectorPointTag");
+    if (tag) {
+      tag.textContent = "未选择点位";
+    }
+    return;
+  }
+
+  const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+  const address = point.address || point.registerAddress || point.pointAddress || "-";
+  const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
+  const pointCode = point.pointCode || point.pointId || "-";
+  const unit = point.unit || point.sourceUnit || "-";
+  const processText = `${point.processingTime ?? "-"} ms`;
+
+  $("#selectedPointEmpty")?.classList.add("hidden");
+  $("#selectedPointPanel")?.classList.remove("hidden");
+  $("#inspectorPointTag").textContent = point.pointName || pointCode;
+  $("#inspectorPointName").textContent = point.pointName || point.pointId || "-";
+  $("#inspectorPointCodeText").textContent = pointCode;
+  $("#inspectorPointUnitText").textContent = unit;
+  $("#inspectorPointProcessText").textContent = processText;
+
+  const badge = $("#inspectorPointQualityBadge");
+  if (badge) {
+    badge.textContent = qualityText;
+    badge.className = `badge ${point.qualityAcceptable === false ? "badge-alert" : "badge-remote"}`;
+  }
+
+  setInspectorField("#inspectorPointCode", pointCode);
+  setInspectorField("#inspectorPointType", point.dataType || point.driverDataType || point.type || "-");
+  setInspectorField("#inspectorPointAddress", formatValue(address));
+  setInspectorField("#inspectorPointAccess", point.readWrite || point.accessMode || "R");
+  setInspectorField("#inspectorPointScale", formatValue(scale));
+  setInspectorField("#inspectorPointValue", formatValue(point.value));
+  setInspectorField("#inspectorPointRawValue", formatValue(point.rawValue));
+  setInspectorField("#inspectorPointQuality", qualityText);
+  setInspectorField("#inspectorPointUnit", unit);
+  setInspectorField("#inspectorPointProcessingTime", processText);
+}
+
+function selectRealtimePoint(pointKey) {
+  state.selectedRealtimePointKey = String(pointKey || "");
+  document.querySelectorAll("#realtimeRows tr[data-point-key]").forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset.pointKey === state.selectedRealtimePointKey);
+  });
+  renderSelectedPointInspector();
 }
 
 function startLiveClock() {
@@ -119,7 +252,7 @@ function renderLiveClock() {
 function localizeDeviceStatus(status) {
   switch (String(status || "").toUpperCase()) {
     case "ONLINE":
-      return "在线";
+      return "鍦ㄧ嚎";
     case "RUNNING":
       return "启动中";
     case "OFFLINE":
@@ -197,7 +330,7 @@ async function callApi(path, options = {}) {
     throw apiError(body.message || "请求失败", body, response.status);
   }
   if (typeof body.code === "number" && body.code !== 200) {
-    throw apiError(body.message || `业务错误 ${body.code}`, body, response.status);
+    throw apiError(body.message || `涓氬姟閿欒 ${body.code}`, body, response.status);
   }
   return body;
 }
@@ -255,7 +388,7 @@ async function loadOverview() {
     {
       label: "点位总数",
       value: pointCount || "-",
-      meta: [["连接", connectionCount || 0], ["健康", healthStatus]],
+      meta: [["杩炴帴", connectionCount || 0], ["鍋ュ悍", healthStatus]],
       tone: "green"
     },
     {
@@ -301,6 +434,7 @@ async function loadDevices() {
 }
 
 function renderDevices() {
+  const currentDeviceId = selectedDeviceId();
   const rows = state.devices.map((device) => {
     const id = device.id || device.deviceId;
     const address = [device.ipAddress, device.port].filter(Boolean).join(":") || "-";
@@ -309,6 +443,7 @@ function renderDevices() {
     const status = resolveDeviceStatus(device, runtime);
     const statusLabel = localizeDeviceStatus(status);
     const sourceLabel = local ? "本地临时" : "远端同步";
+    const selected = currentDeviceId === id;
     const editButtons = local
       ? `<button onclick="editLocalDevice('${escapeAttr(id)}')">编辑</button>
          <button onclick="deleteLocalDevice('${escapeAttr(id)}')" class="danger">删除</button>`
@@ -316,26 +451,28 @@ function renderDevices() {
     return `
       <tr>
         <td class="device-card-cell">
-          <div class="device-card">
-            <div class="device-card-head">
-              <div>
-                <div class="device-card-title">
-                  <span class="device-status-dot ${status === "ONLINE" || status === "RUNNING" ? "online" : "offline"}"></span>
-                  <strong>${escapeHtml(device.deviceName || id)}</strong>
+          <div class="device-card ${selected ? "is-active" : ""}">
+            <button type="button" class="device-card-selector" onclick="selectDevice('${escapeAttr(id)}')">
+              <div class="device-card-head">
+                <div>
+                  <div class="device-card-title">
+                    <span class="device-status-dot ${status === "ONLINE" || status === "RUNNING" ? "online" : "offline"}"></span>
+                    <strong>${escapeHtml(device.deviceName || id)}</strong>
+                  </div>
+                  <div class="device-card-subtitle">${escapeHtml(id)} 路 ${escapeHtml(sourceLabel)}</div>
                 </div>
-                <div class="device-card-subtitle">${escapeHtml(id)} · ${escapeHtml(sourceLabel)}</div>
+                <span class="badge ${local ? "badge-local" : "badge-remote"}">${escapeHtml(statusLabel)}</span>
               </div>
-              <span class="badge ${local ? "badge-local" : "badge-remote"}">${escapeHtml(statusLabel)}</span>
-            </div>
-            <div class="device-card-meta">
-              <span>协议 ${escapeHtml(device.protocolType || device.connectionType || "-")}</span>
-              <span>地址 ${escapeHtml(address)}</span>
-              <span>周期 ${device.collectionInterval ?? "-"} ms</span>
-            </div>
+              <div class="device-card-meta">
+                <span>鍗忚 ${escapeHtml(device.protocolType || device.connectionType || "-")}</span>
+                <span>鍦板潃 ${escapeHtml(address)}</span>
+                <span>周期 ${device.collectionInterval ?? "-"} ms</span>
+              </div>
+            </button>
             <div class="inline-actions device-card-actions">
               <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
-              <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">停止</button>
-              <button onclick="showDeviceStatus('${escapeAttr(id)}')">状态</button>
+              <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">鍋滄</button>
+              <button onclick="showDeviceStatus('${escapeAttr(id)}')">鐘舵€?/button>
               <button onclick="showDiff('${escapeAttr(id)}')">Diff</button>
               ${editButtons}
             </div>
@@ -363,12 +500,18 @@ function fillDeviceSelects() {
     if (previous) {
       select.value = previous;
     }
+    if (!select.value && select.options.length) {
+      select.selectedIndex = 0;
+    }
   });
   syncProtocolSelectionToDevice(false);
   syncControlCommandExample();
   syncSelectedDeviceSummary();
+  renderDevices();
   if (state.devices.length) {
     loadRealtime().catch((error) => toast(error.message, true));
+  } else {
+    clearSelectedPointInspector();
   }
 }
 
@@ -398,9 +541,26 @@ function groupTitle(group) {
   }
 }
 
+function renderProtocolMetaTrigger(protocol, triggerLabel = "协议说明") {
+  return `
+    <span class="field-help protocol-meta-trigger">
+      <button type="button" class="field-help-trigger protocol-help-trigger" aria-label="${escapeAttr(triggerLabel)}" title="${escapeAttr(triggerLabel)}">?</button>
+      <span class="field-help-popover protocol-help-popover" role="tooltip">${renderProtocolMeta(protocol)}</span>
+    </span>
+  `;
+}
+
+function updateProtocolMetaHelp(targetSelector, protocol, triggerLabel = "协议说明") {
+  const target = $(targetSelector);
+  if (!target) {
+    return;
+  }
+  target.innerHTML = renderProtocolMetaTrigger(protocol, triggerLabel);
+}
+
 function renderProtocolMeta(protocol) {
   if (!protocol) {
-    return "No protocol metadata";
+    return "<p>暂无协议说明</p>";
   }
   const status = protocol.implemented ? "Implemented" : "Placeholder";
   const aliases = (protocol.aliases || []).map(escapeHtml).join(", ") || "-";
@@ -482,26 +642,62 @@ function fieldDefaultValue(field) {
   return field.type === "object" ? "{}" : "";
 }
 
+function fieldTokenText(field) {
+  return `${field?.name || ""} ${field?.label || ""} ${field?.description || ""}`.toLowerCase();
+}
+
+function fieldLayoutClass(field) {
+  const tokens = fieldTokenText(field);
+  const isLongField = Boolean(field?.fullWidth)
+    || field?.type === "object"
+    || field?.type === "textarea"
+    || /(json|template|payload|header|body|certificate|private\s*key|public\s*key|truststore|keystore|nodeid|topic|path|url|uri|endpoint|script|query|string\s*pattern|publish|subscribe)/.test(tokens);
+  if (isLongField) {
+    return "field-span-2 field-control-lg";
+  }
+  const isShortField = field?.type === "boolean"
+    || field?.type === "select"
+    || field?.type === "number"
+    || /(port|qos|retry|retries|timeout|interval|namespace|unitid|slaveid|rack|slot|baud|databits|stopbits|parity|mode|type|retain|tls|ssl|enabled|enable|max|min|size|pool|version|method)/.test(tokens);
+  return isShortField ? "field-control-sm" : "field-control-md";
+}
+
+function renderFieldOption(option, currentValue) {
+  const value = option && typeof option === "object" ? option.value : option;
+  const label = option && typeof option === "object" ? option.label ?? option.value : option;
+  return `<option value="${escapeAttr(value ?? "")}" ${String(value ?? "") === String(currentValue ?? "") ? "selected" : ""}>${escapeHtml(label ?? "")}</option>`;
+}
+
 function renderField(field, formId) {
   const required = field.required ? `<span class="field-required">*</span>` : "";
   const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
   const note = fieldHelpText(field);
   const value = fieldDefaultValue(field);
   const inputName = escapeAttr(field.name);
+  const labelClass = fieldLayoutClass(field);
+  const placeholder = field.placeholder !== null && field.placeholder !== undefined && field.placeholder !== ""
+    ? ` placeholder="${escapeAttr(field.placeholder)}"`
+    : "";
+  const step = field.step !== null && field.step !== undefined && field.step !== ""
+    ? ` step="${escapeAttr(field.step)}"`
+    : field.type === "number"
+      ? ' step="any"'
+      : "";
+  const min = field.min !== null && field.min !== undefined && field.min !== "" ? ` min="${escapeAttr(field.min)}"` : "";
+  const max = field.max !== null && field.max !== undefined && field.max !== "" ? ` max="${escapeAttr(field.max)}"` : "";
   let control;
   if (field.type === "select" || field.type === "boolean") {
     const options = field.options && field.options.length ? field.options : ["true", "false"];
-    control = `<select name="${inputName}" data-form-id="${escapeAttr(formId)}">${options.map((option) =>
-      `<option value="${escapeAttr(option)}" ${String(option) === String(value) ? "selected" : ""}>${escapeHtml(option)}</option>`
-    ).join("")}</select>`;
-  } else if (field.type === "object") {
-    control = `<textarea name="${inputName}" data-form-id="${escapeAttr(formId)}" rows="4">${escapeHtml(value || "{}")}</textarea>`;
+    control = `<select name="${inputName}" data-form-id="${escapeAttr(formId)}">${options.map((option) => renderFieldOption(option, value)).join("")}</select>`;
+  } else if (field.type === "object" || field.type === "textarea") {
+    const rows = Number(field.rows) > 0 ? Math.max(3, Number(field.rows)) : 4;
+    control = `<textarea name="${inputName}" data-form-id="${escapeAttr(formId)}" rows="${rows}"${placeholder}>${escapeHtml(value || (field.type === "object" ? "{}" : ""))}</textarea>`;
   } else {
     const inputType = field.type === "password" ? "password" : field.type === "number" ? "number" : "text";
-    control = `<input name="${inputName}" data-form-id="${escapeAttr(formId)}" type="${inputType}" value="${escapeAttr(value)}">`;
+    control = `<input name="${inputName}" data-form-id="${escapeAttr(formId)}" type="${inputType}" value="${escapeAttr(value)}"${placeholder}${step}${min}${max}>`;
   }
   return `
-    <label data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
+    <label class="${labelClass}" data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
       ${escapeHtml(field.label || field.name)} ${required} ${hint}
       ${control}
       ${note ? `<span class="field-description">${escapeHtml(note)}</span>` : ""}
@@ -737,14 +933,14 @@ function renderLocalProtocolSelection() {
   const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
   $("#localProtocolSelect").value = protocolCode;
   state.currentLocalProtocol = getProtocolSchema(protocolCode);
-  $("#localProtocolMeta").innerHTML = renderProtocolMeta(state.currentLocalProtocol);
+  updateProtocolMetaHelp("#localProtocolMetaHelp", state.currentLocalProtocol, `${state.currentLocalProtocol?.title || protocolCode} 协议说明`);
   renderProtocolForm("#localConnectionForm", state.currentLocalProtocol, "localConnectionForm");
 }
 
 function defaultPointTemplate(deviceId) {
   return {
     pointCode: "temperature",
-    pointName: "温度",
+    pointName: "娓╁害",
     deviceId,
     address: "40001",
     dataType: "FLOAT",
@@ -917,12 +1113,11 @@ function renderSelectedProtocol() {
   $("#protocolSelect").value = protocolCode;
   state.currentProtocol = getProtocolSchema(protocolCode);
   const protocol = state.currentProtocol;
+  updateProtocolMetaHelp("#protocolMetaHelp", protocol, `${protocol?.title || protocolCode || "协议"} 协议说明`);
   if (!protocol) {
     $("#connectionForm").innerHTML = "";
-    $("#protocolMeta").textContent = "暂无协议元数据";
     return;
   }
-  $("#protocolMeta").innerHTML = renderProtocolMeta(protocol);
   renderProtocolForm("#connectionForm", protocol, "connectionForm");
 }
 
@@ -998,13 +1193,13 @@ async function startDevice(deviceId) {
   const action = isLocalDevice(device) ? "start-local" : "start";
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/${action}`, { method: "POST" });
   await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
-  toast(`已请求启动 ${deviceId}`);
+  toast(`宸茶姹傚惎鍔?${deviceId}`);
 }
 
 async function stopDevice(deviceId) {
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/stop`, { method: "POST" });
   await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
-  toast(`已请求停止 ${deviceId}`);
+  toast(`宸茶姹傚仠姝?${deviceId}`);
 }
 
 async function showDeviceStatus(deviceId) {
@@ -1014,8 +1209,10 @@ async function showDeviceStatus(deviceId) {
 }
 
 async function showDiff(deviceId) {
+  selectDevice(deviceId);
   $("#connectionDeviceSelect").value = deviceId;
   syncProtocolSelectionToDevice(false);
+  activateWorkbenchTab("protocol");
   await loadDeviceDiff();
   location.hash = "#protocols";
 }
@@ -1040,14 +1237,14 @@ function toggleRealtime() {
   if (state.realtimeTimer) {
     clearInterval(state.realtimeTimer);
     state.realtimeTimer = null;
-    $("#toggleRealtimeBtn").textContent = "自动刷新";
+    $("#toggleRealtimeBtn").textContent = "鑷姩鍒锋柊";
     return;
   }
   loadRealtime().catch((error) => toast(error.message, true));
   state.realtimeTimer = setInterval(() => {
     loadRealtime().catch((error) => toast(error.message, true));
   }, 3000);
-  $("#toggleRealtimeBtn").textContent = "停止刷新";
+  $("#toggleRealtimeBtn").textContent = "鍋滄鍒锋柊";
 }
 
 async function loadRealtime() {
@@ -1055,31 +1252,49 @@ async function loadRealtime() {
   if (!deviceId) {
     $("#realtimeRows").innerHTML = `<tr><td colspan="9">暂无实时数据</td></tr>`;
     syncSelectedDeviceSummary();
+    clearSelectedPointInspector();
     return;
   }
   syncSelectedDeviceSummary(deviceId);
   const body = await callApi(`/api/data/device/${encodeURIComponent(deviceId)}`);
   const values = body.data || {};
-  const rows = Object.values(values)
+  const points = Object.values(values)
     .filter((point) => matchesRealtimeSearch(point))
-    .map((point) => {
-      const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
-      const address = point.address || point.registerAddress || point.pointAddress || "-";
-      const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
-      return `
-        <tr>
-          <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
-          <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
-          <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
-          <td>${escapeHtml(formatValue(address))}</td>
-          <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
-          <td>${escapeHtml(formatValue(scale))}</td>
-          <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
-          <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
-          <td>${point.processingTime ?? "-"} ms</td>
-        </tr>`;
-    }).join("");
+    .map((point, index) => ({
+      ...point,
+      __pointKey: realtimePointKey(point, index)
+    }));
+
+  state.realtimePoints = points;
+  if (!points.length) {
+    state.selectedRealtimePointKey = null;
+  } else if (!points.some((point) => point.__pointKey === state.selectedRealtimePointKey)) {
+    state.selectedRealtimePointKey = points[0].__pointKey;
+  }
+
+  const rows = points.map((point) => {
+    const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+    const address = point.address || point.registerAddress || point.pointAddress || "-";
+    const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
+    return `
+      <tr data-point-key="${escapeAttr(point.__pointKey)}" class="${point.__pointKey === state.selectedRealtimePointKey ? "is-selected" : ""}">
+        <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
+        <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
+        <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
+        <td>${escapeHtml(formatValue(address))}</td>
+        <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
+        <td>${escapeHtml(formatValue(scale))}</td>
+        <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
+        <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
+        <td>${point.processingTime ?? "-"} ms</td>
+      </tr>`;
+  }).join("");
   $("#realtimeRows").innerHTML = rows || `<tr><td colspan="9">暂无匹配的实时数据</td></tr>`;
+  if (points.length) {
+    renderSelectedPointInspector();
+  } else {
+    clearSelectedPointInspector();
+  }
 }
 
 async function resetAdaptive() {
@@ -1133,7 +1348,7 @@ async function executeCommand() {
 function showControlError(error) {
   const result = {
     success: false,
-    message: error.message || "操作失败"
+    message: error.message || "鎿嶄綔澶辫触"
   };
   if (error.httpStatus) {
     result.httpStatus = error.httpStatus;
@@ -1460,3 +1675,6 @@ window.showDeviceStatus = (deviceId) => tableActions.showDeviceStatus(deviceId).
 window.showDiff = (deviceId) => tableActions.showDiff(deviceId).catch((error) => toast(error.message, true));
 window.editLocalDevice = (deviceId) => tableActions.editLocalDevice(deviceId).catch((error) => toast(error.message, true));
 window.deleteLocalDevice = (deviceId) => tableActions.deleteLocalDevice(deviceId).catch((error) => toast(error.message, true));
+window.selectDevice = (deviceId) => selectDevice(deviceId);
+
+

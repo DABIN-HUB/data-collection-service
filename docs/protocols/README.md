@@ -31,5 +31,6 @@
 ## 3. 规划文档
 
 - [BACnet/IP 接入方案](../25-BACnet_IP接入方案.md)
+- [OMRON FINS 第一版协议设计草案](./OMRON_FINS.md)
 - [协议字段汇总](./FIELD_CONFIG_SUMMARY.md)
 - [点位类型与协议原生类型最终规则](../20-点位类型与协议原生类型最终规则.md)

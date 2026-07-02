@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -117,7 +117,6 @@
               </div>
               <div class="inline-actions">
                 <button id="openLocalDeviceBtn" type="button" class="primary">新建设备</button>
-                <button id="cancelLocalDeviceBtn" type="button">收起</button>
               </div>
             </div>
 
@@ -131,103 +130,137 @@
                 <div>
                   <span class="label-chip">配置编辑器</span>
                   <h3 id="localEditorTitle">新增本地临时设备</h3>
-                </div>
-              </div>
-
-              <div class="form-grid compact-form-grid">
-                <label>
-                  设备 ID *
-                  <input id="localDeviceId" type="text" placeholder="local-modbus-1">
-                </label>
-                <label>
-                  设备名称 *
-                  <input id="localDeviceName" type="text" placeholder="本地测试设备">
-                </label>
-                <label>
-                  协议 *
-                  <select id="localProtocolSelect"></select>
-                </label>
-                <label>
-                  BaseCollectionInterval (ms)
-                  <input id="localCollectionInterval" type="number" value="2000">
-                </label>
-                <label>
-                  MinCollectionInterval (ms)
-                  <input id="localMinCollectionInterval" type="number" value="100">
-                </label>
-                <label>
-                  MaxCollectionInterval (ms)
-                  <input id="localMaxCollectionInterval" type="number" value="3600000">
-                </label>
-                <label>
-                  PointChangeThreshold
-                  <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
-                </label>
-              </div>
-
-              <div id="localProtocolMeta" class="meta-box"></div>
-              <form id="localConnectionForm" class="dynamic-form"></form>
-
-              <section class="point-editor">
-                <div class="point-editor-head">
-                  <div>
-                    <span class="label-chip">点位建模</span>
-                    <strong>本地点位列表</strong>
-                  </div>
-                  <div class="inline-actions">
-                    <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
-                    <button id="addLocalPointBtn" type="button">新增点位</button>
-                    <button id="duplicateLocalPointBtn" type="button">复制</button>
-                    <button id="deleteLocalPointBtn" type="button" class="danger">删除</button>
-                  </div>
-                </div>
-
-                <div class="point-workspace">
-                  <section class="point-list-panel">
-                    <div class="point-list-meta">
-                      <strong id="localPointCount">0 个点位</strong>
-                      <span id="localPointSelectionMeta">未选择点位</span>
+                  <p>在一个更紧凑的工作区里完成设备、连接和点位建模。</p>
+                </div>                <div class="local-editor-title-actions">
+                  <div class="local-editor-stats">
+                    <div class="local-editor-stat">
+                      <strong id="localEditorProtocolText">-</strong>
+                      <span>当前协议</span>
                     </div>
-                    <div class="table-wrap compact point-table-wrap">
-                      <table class="point-table">
-                        <thead>
-                          <tr>
-                            <th>点位</th>
-                            <th>地址</th>
-                            <th>类型</th>
-                            <th>读写</th>
-                            <th>状态</th>
-                          </tr>
-                        </thead>
-                        <tbody id="localPointRows">
-                          <tr><td colspan="5">暂无点位</td></tr>
-                        </tbody>
-                      </table>
+                    <div class="local-editor-stat">
+                      <strong id="localEditorPointCount">0</strong>
+                      <span>点位数</span>
+                    </div>
+                  </div>
+                  <button id="cancelLocalDeviceBtn" type="button">关闭</button>
+                </div>
+              </div>              <div class="local-editor-body">
+                <div class="local-setup-cluster">
+                  <section class="local-section-card local-setup-card">
+                    <div class="local-section-head">
+                      <div>
+                        <span class="label-chip">设备基础</span>
+                        <h3>设备与调度参数</h3>
+                      </div>
+                      <p>设备标识、协议和采集节奏集中放在这里，减少来回滚动。</p>
+                    </div>
+
+                    <div class="form-grid compact-form-grid">
+                      <label>
+                        设备 ID *
+                        <input id="localDeviceId" type="text" placeholder="local-modbus-1">
+                      </label>
+                      <label>
+                        设备名称 *
+                        <input id="localDeviceName" type="text" placeholder="本地测试设备">
+                      </label>
+                      <label>
+                        <span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span>
+                        <select id="localProtocolSelect"></select>
+                      </label>
+                      <label>
+                        BaseCollectionInterval (ms)
+                        <input id="localCollectionInterval" type="number" value="2000">
+                      </label>
+                      <label>
+                        MinCollectionInterval (ms)
+                        <input id="localMinCollectionInterval" type="number" value="100">
+                      </label>
+                      <label>
+                        MaxCollectionInterval (ms)
+                        <input id="localMaxCollectionInterval" type="number" value="3600000">
+                      </label>
+                      <label>
+                        PointChangeThreshold
+                        <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
+                      </label>
                     </div>
                   </section>
 
-                  <section class="point-detail-panel">
-                    <div id="localPointEmpty" class="empty-state hidden">
-                      <strong>暂无选中的点位</strong>
-                      <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                  <section class="local-section-card local-connection-card">
+                    <div class="local-section-head">
+                      <div>
+                        <span class="label-chip">连接参数</span>
+                        <h3>协议对应字段</h3>
+                      </div>
+                      <p>切换协议后，这里会自动刷新到对应的连接参数表单。</p>
                     </div>
-                    <div id="localPointDetail"></div>
+
+                    <form id="localConnectionForm" class="dynamic-form"></form>
                   </section>
                 </div>
-              </section>
 
-              <details class="point-json-panel">
-                <summary>高级 JSON 回退区</summary>
-                <p class="field-description">保留原始点位数组 JSON，适合批量粘贴或补充界面暂未可视化的字段。</p>
-                <label>
-                  点位配置 JSON 数组
-                  <textarea id="localPointsJson" spellcheck="false"></textarea>
-                </label>
-                <div class="inline-actions point-json-actions">
-                  <button id="formatLocalPointsBtn" type="button">格式化 JSON</button>
-                  <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
-                </div>
-              </details>
+                <section class="point-editor local-section-card">
+                  <div class="point-editor-head">
+                    <div>
+                      <span class="label-chip">点位建模</span>
+                      <strong>本地点位列表</strong>
+                    </div>
+                    <div class="inline-actions">
+                      <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
+                      <button id="addLocalPointBtn" type="button">新增点位</button>
+                      <button id="duplicateLocalPointBtn" type="button">复制</button>
+                      <button id="deleteLocalPointBtn" type="button" class="danger">删除</button>
+                    </div>
+                  </div>
+
+                  <div class="point-workspace">
+                    <section class="point-list-panel">
+                      <div class="point-list-meta">
+                        <strong id="localPointCount">0 个点位</strong>
+                        <span id="localPointSelectionMeta">未选择点位</span>
+                      </div>
+                      <div class="table-wrap compact point-table-wrap">
+                        <table class="point-table">
+                          <thead>
+                            <tr>
+                              <th>点位</th>
+                              <th>地址</th>
+                              <th>类型</th>
+                              <th>读写</th>
+                              <th>状态</th>
+                            </tr>
+                          </thead>
+                          <tbody id="localPointRows">
+                            <tr><td colspan="5">暂无点位</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <section class="point-detail-panel">
+                      <div id="localPointEmpty" class="empty-state hidden">
+                        <strong>暂无选中的点位</strong>
+                        <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                      </div>
+                      <div id="localPointDetail"></div>
+                    </section>
+                  </div>
+                </section>
+
+                <details class="point-json-panel local-section-card">
+                  <summary>高级 JSON 回退区</summary>
+                  <p class="field-description">保留原始点位数组 JSON，适合批量粘贴或补充界面暂未可视化的字段。</p>
+                  <label>
+                    点位配置 JSON 数组
+                    <textarea id="localPointsJson" spellcheck="false"></textarea>
+                  </label>
+                  <div class="inline-actions point-json-actions">
+                    <button id="formatLocalPointsBtn" type="button">格式化 JSON</button>
+                    <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
+                  </div>
+                </details>
+              </div>
 
               <div class="inline-actions local-options">
                 <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
@@ -255,43 +288,87 @@
               </div>
 
               <div class="workbench-tabs">
-                <button type="button" class="is-active">点位配置</button>
-                <button type="button">协议设置</button>
+                <button type="button" class="is-active" data-workbench-tab="points">点位配置</button>
+                <button type="button" data-workbench-tab="protocol">协议设置</button>
               </div>
             </div>
 
-            <div class="workbench-toolbar">
-              <div class="inline-actions">
-                <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
-                <button id="resetAdaptiveBtn" type="button">重置自适应</button>
-                <button id="exportConfigBtn" type="button">导出配置</button>
-                <button id="syncConfigBtn" type="button">触发同步</button>
+            <section class="workbench-stage console-module-active" data-workbench-panel="points">
+              <div class="workbench-toolbar">
+                <div class="inline-actions">
+                  <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
+                  <button id="resetAdaptiveBtn" type="button">重置自适应</button>
+                  <button id="exportConfigBtn" type="button">导出配置</button>
+                  <button id="syncConfigBtn" type="button">触发同步</button>
+                </div>
+
+                <div class="inline-actions workbench-filters">
+                  <select id="realtimeDeviceSelect"></select>
+                  <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
+                </div>
               </div>
 
-              <div class="inline-actions workbench-filters">
-                <select id="realtimeDeviceSelect"></select>
-                <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
-              </div>
-            </div>
+              <section id="realtime" class="console-module console-module-active realtime-stage">
+                <div class="table-wrap point-runtime-wrap">
+                  <table class="runtime-table">
+                    <thead>
+                      <tr>
+                        <th>点位名称</th>
+                        <th>标识符</th>
+                        <th>数据类型</th>
+                        <th>寄存器地址</th>
+                        <th>读写</th>
+                        <th>缩放</th>
+                        <th>当前值</th>
+                        <th>质量</th>
+                        <th>处理耗时</th>
+                      </tr>
+                    </thead>
+                    <tbody id="realtimeRows"></tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
 
-            <section id="realtime" class="console-module console-module-active">
-              <div class="table-wrap point-runtime-wrap">
-                <table class="runtime-table">
-                  <thead>
-                    <tr>
-                      <th>点位名称</th>
-                      <th>标识符</th>
-                      <th>数据类型</th>
-                      <th>寄存器地址</th>
-                      <th>读写</th>
-                      <th>缩放</th>
-                      <th>当前值</th>
-                      <th>质量</th>
-                      <th>处理耗时</th>
-                    </tr>
-                  </thead>
-                  <tbody id="realtimeRows"></tbody>
-                </table>
+            <section id="protocols" class="workbench-stage hidden protocol-workbench" data-workbench-panel="protocol">
+              <div class="protocol-workbench-head">
+                <div>
+                  <h2>协议与连接设置</h2>
+                  <p>协议选择、连接参数和配置差异在这里统一处理。</p>
+                </div>
+                <span id="protocolCount" class="pill">0 种协议</span>
+              </div>
+
+              <div class="protocol-compact-shell">
+                <div class="protocol-config-column">
+                  <div class="form-grid compact-form-grid protocol-select-grid">
+                    <label>
+                      协议
+                      <select id="protocolSelect"></select>
+                    </label>
+                    <label>
+                      设备
+                      <select id="connectionDeviceSelect"></select>
+                    </label>
+                  </div>
+
+                  <form id="connectionForm" class="dynamic-form"></form>
+
+                  <div class="inline-actions protocol-actions">
+                    <button id="loadConnectionBtn" type="button">读取连接配置</button>
+                    <button id="saveConnectionBtn" type="button" class="primary">保存连接配置</button>
+                  </div>
+                </div>
+
+                <aside class="protocol-diff-column">
+                  <div class="protocol-diff-block">
+                    <div class="surface-card-head">
+                      <h3>配置差异</h3>
+                      <span class="surface-note">本地 vs 远端</span>
+                    </div>
+                    <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
+                  </div>
+                </aside>
               </div>
             </section>
           </section>
@@ -388,57 +465,97 @@
         </div>
 
         <div class="workspace-column workspace-right">
-          <section id="protocols" class="panel protocol-panel">
-            <div class="panel-head">
+          <section class="panel inspector-panel">
+            <div class="panel-head inspector-head">
               <div>
-                <h2>协议设置</h2>
-                <p>协议字段、连接参数和配置差异统一收口在右侧。</p>
+                <h2>点位详情</h2>
+                <p>从中间点位表选择一个点位，在右侧查看运行和配置摘要。</p>
               </div>
-              <span id="protocolCount" class="pill">0 种协议</span>
+              <span id="inspectorPointTag" class="pill subtle">未选择点位</span>
             </div>
 
-            <div class="form-grid compact-form-grid">
-              <label>
-                协议
-                <select id="protocolSelect"></select>
-              </label>
-              <label>
-                设备
-                <select id="connectionDeviceSelect"></select>
-              </label>
+            <div id="selectedPointEmpty" class="empty-state">
+              <strong>暂无选中的点位</strong>
+              <span>先在中间点位表里选择一个点位，这里会展示名称、地址、质量、缩放和运行值。</span>
             </div>
 
-            <div id="protocolMeta" class="meta-box"></div>
-            <form id="connectionForm" class="dynamic-form"></form>
-
-            <div class="inline-actions">
-              <button id="loadConnectionBtn" type="button">读取连接配置</button>
-              <button id="saveConnectionBtn" type="button" class="primary">保存连接配置</button>
-            </div>
-
-            <div class="protocol-diff-block">
-              <div class="surface-card-head">
-                <h3>配置差异</h3>
-                <span class="surface-note">本地 vs 远端</span>
+            <div id="selectedPointPanel" class="inspector-body hidden">
+              <div class="inspector-highlight">
+                <div class="inspector-title-row">
+                  <strong id="inspectorPointName">-</strong>
+                  <span id="inspectorPointQualityBadge" class="badge badge-remote">-</span>
+                </div>
+                <div class="inspector-meta-row">
+                  <span id="inspectorPointCodeText">-</span>
+                  <span id="inspectorPointUnitText">-</span>
+                  <span id="inspectorPointProcessText">-</span>
+                </div>
               </div>
-              <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
+
+              <div class="inspector-grid">
+                <label>
+                  标识符
+                  <input id="inspectorPointCode" type="text" readonly>
+                </label>
+                <label>
+                  数据类型
+                  <input id="inspectorPointType" type="text" readonly>
+                </label>
+                <label>
+                  寄存器地址
+                  <input id="inspectorPointAddress" type="text" readonly>
+                </label>
+                <label>
+                  读写
+                  <input id="inspectorPointAccess" type="text" readonly>
+                </label>
+                <label>
+                  缩放
+                  <input id="inspectorPointScale" type="text" readonly>
+                </label>
+                <label>
+                  当前值
+                  <input id="inspectorPointValue" type="text" readonly>
+                </label>
+                <label>
+                  原始值
+                  <input id="inspectorPointRawValue" type="text" readonly>
+                </label>
+                <label>
+                  质量
+                  <input id="inspectorPointQuality" type="text" readonly>
+                </label>
+                <label>
+                  单位
+                  <input id="inspectorPointUnit" type="text" readonly>
+                </label>
+                <label>
+                  处理耗时
+                  <input id="inspectorPointProcessingTime" type="text" readonly>
+                </label>
+              </div>
             </div>
           </section>
 
-          <section id="monitor" class="panel monitor-panel">
+          <section id="monitor" class="panel monitor-panel monitor-panel-compact">
             <div class="panel-head">
               <div>
                 <h2>监控诊断</h2>
-                <p>缓存、连接、线程池和异常指标聚合展示。</p>
+                <p>首页只展示摘要，详细 JSON 收到折叠区。</p>
               </div>
               <span class="pill subtle">系统侧观测</span>
             </div>
 
             <div id="monitorCards" class="cards monitor-cards"></div>
-            <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+            <details class="monitor-details">
+              <summary>查看原始诊断 JSON</summary>
+              <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+            </details>
           </section>
         </div>
       </section>
+
+      <div id="localEditorBackdrop" class="modal-backdrop hidden"></div>
 
       <div id="toast" class="toast"></div>
     </main>
