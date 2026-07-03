@@ -389,6 +389,18 @@ textarea {
   height: 2rem;
 }
 
+.mini-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .icon-button.small.plus::after {
   top: 0.92rem;
   left: 0.6rem;
@@ -748,6 +760,10 @@ textarea {
 .local-editor {
   display: grid;
   gap: 1rem;
+}
+
+.local-device-panel.hidden {
+  display: none !important;
 }
 
 .local-editor-title {

@@ -86,6 +86,8 @@
     state.selectedLocalPointIndex = -1;
     state.localPointSearch = "";
 
+    enhanceLocalDeviceEntry();
+
     window.openLocalDeviceForm = openLocalDeviceForm;
     window.closeLocalDeviceForm = closeLocalDeviceForm;
     window.renderLocalProtocolSelection = renderLocalProtocolSelection;
@@ -123,6 +125,52 @@
     }
   }
 
+  function enhanceLocalDeviceEntry() {
+    const workspace = document.querySelector(".local-device-panel");
+    const legacyOpenButton = $("#openLocalDeviceBtn");
+    const inlineOpenButton = $("#openLocalDeviceInlineBtn");
+    const devicePanelHead = document.querySelector("#devices .panel-head");
+    const miniActions = devicePanelHead?.querySelector(".mini-actions");
+    const plusButton = inlineOpenButton || miniActions?.querySelector(".icon-button.small.plus");
+
+    if (workspace) {
+      workspace.classList.add("hidden");
+    }
+
+    if (legacyOpenButton) {
+      legacyOpenButton.closest(".panel-head")?.classList.add("hidden");
+      legacyOpenButton.closest(".inline-actions")?.classList.add("hidden");
+    }
+
+    document.querySelector(".local-editor-placeholder")?.classList.add("hidden");
+
+    if (miniActions && !miniActions.querySelector(".local-device-inline-help")) {
+      const help = document.createElement("span");
+      help.className = "field-help panel-help local-device-inline-help";
+      help.innerHTML = `
+        <button type="button" class="field-help-trigger" aria-label="本地临时设备说明" title="本地临时设备说明">?</button>
+        <span class="field-help-popover local-device-help" role="tooltip">
+          <p class="field-help-title">本地临时设备编辑器</p>
+          <p>仅写入当前采集服务内存，不回写远端配置源。</p>
+          <ul class="field-help-list">
+            <li>适合协议联调、点位试配和临时验证</li>
+            <li>保存后可以直接本地启动当前临时设备</li>
+          </ul>
+        </span>`;
+      miniActions.insertBefore(help, plusButton || null);
+    }
+
+    if (plusButton && !plusButton.dataset.localDeviceBound) {
+      plusButton.dataset.localDeviceBound = "true";
+      plusButton.setAttribute("aria-label", "新增本地临时设备");
+      plusButton.setAttribute("title", "新增本地临时设备");
+      plusButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        openLocalDeviceForm();
+      });
+    }
+  }
+
   function intercept(selector, eventName, handler) {
     bind(selector, eventName, (event) => {
       event.preventDefault();
@@ -134,10 +182,10 @@
   function openLocalDeviceForm(bundle = null) {
     state.localDeviceEditingId = bundle?.device?.id || bundle?.device?.deviceId || null;
     state.localPointSearch = "";
+    document.querySelector(".local-device-panel")?.classList.remove("hidden");
     $("#localDevicePanel").classList.remove("hidden");
     $("#localEditorBackdrop")?.classList.remove("hidden");
     document.body.classList.add("modal-active");
-    document.querySelector(".local-editor-placeholder")?.classList.add("hidden");
 
     const device = bundle?.device || {};
     const connection = bundle?.connection || {};
@@ -179,9 +227,9 @@
     state.localPointSearch = "";
     state.currentLocalProtocol = null;
     $("#localDevicePanel").classList.add("hidden");
+    document.querySelector(".local-device-panel")?.classList.add("hidden");
     $("#localEditorBackdrop")?.classList.add("hidden");
     document.body.classList.remove("modal-active");
-    document.querySelector(".local-editor-placeholder")?.classList.remove("hidden");
     $("#localDeviceId").disabled = false;
     $("#localPointSearch").value = "";
     $("#localPointRows").innerHTML = `<tr><td colspan="5">暂无点位</td></tr>`;

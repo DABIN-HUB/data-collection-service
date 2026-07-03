@@ -101,7 +101,7 @@
         <div class="workspace-column workspace-left">
           <section id="devices" class="panel device-panel">
             <div class="panel-head">
-              <div>
+              <div class="panel-head-main">
                 <div class="panel-tabs">
                   <button type="button" class="is-active">设备树</button>
                   <button type="button">收藏夹</button>
@@ -125,8 +125,8 @@
             </div>
           </section>
 
-          <section class="panel local-device-panel">
-            <div class="panel-head local-device-head">
+          <section id="localDeviceWorkspace" class="panel local-device-panel hidden">
+            <div class="panel-head local-device-head hidden">
               <div class="panel-head-main">
                 <span class="panel-kicker">临时建模</span>
                 <h2>本地临时设备编辑器</h2>
@@ -147,7 +147,7 @@
               </div>
             </div>
 
-            <div class="local-editor-placeholder">
+            <div class="local-editor-placeholder hidden">
               <div class="placeholder-hero">
                 <strong>临时编辑器已就绪</strong>
                 <span class="placeholder-badge">内存态</span>
