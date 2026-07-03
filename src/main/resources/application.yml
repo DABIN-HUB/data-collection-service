@@ -121,10 +121,12 @@ logging:
 # 采集tdengine配置
 telemetry:
   tdengine:
-    enabled: false
+    enabled: true
     database: wangbin_collector
     super-table: wangbin_super
     sub-table-prefix: d_
+    alarm-super-table: alarm_super
+    alarm-sub-table-prefix: d_alarm_
     auto-create: true
     keep-days: 30
     query-default-limit: 500

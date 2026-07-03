@@ -7,6 +7,7 @@ import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.storage.service.HistoryDataService;
+import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -35,6 +36,9 @@ public class DataController {
     
     @Autowired(required = false)
     private HistoryDataService historyDataService;
+
+    @Autowired(required = false)
+    private AlarmHistoryService alarmHistoryService;
 
     /**
      * 查询指定设备的指定数据点的实时值
@@ -293,6 +297,46 @@ public class DataController {
             log.error("查询历史数据失败, deviceId={}, pointId={}", deviceId, pointId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    @GetMapping("/history/device/{deviceId}/alarms")
+    public Map<String, Object> getAlarmHistory(@PathVariable String deviceId,
+                                               @RequestParam(required = false) String pointId,
+                                               @RequestParam(required = false) String pointCode,
+                                               @RequestParam(required = false) String level,
+                                               @RequestParam(required = false) String ruleId,
+                                               @RequestParam(required = false) Long startTs,
+                                               @RequestParam(required = false) Long endTs,
+                                               @RequestParam(required = false) Integer limit) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (alarmHistoryService == null || !alarmHistoryService.isEnabled()) {
+                result.put("status", "disabled");
+                result.put("message", "TDengine alarm history storage disabled");
+                result.put("deviceId", deviceId);
+                return result;
+            }
+            List<Map<String, Object>> rows = alarmHistoryService.queryAlarmHistory(
+                    deviceId, pointId, pointCode, level, ruleId, startTs, endTs, limit);
+            result.put("status", "success");
+            result.put("deviceId", deviceId);
+            result.put("pointId", pointId);
+            result.put("pointCode", pointCode);
+            result.put("level", level);
+            result.put("ruleId", ruleId);
+            result.put("count", rows.size());
+            result.put("data", rows);
+            result.put("startTs", startTs);
+            result.put("endTs", endTs);
+            result.put("timestamp", System.currentTimeMillis());
+            return result;
+        } catch (Exception e) {
+            log.error("query alarm history failed, deviceId={}, pointId={}, pointCode={}, level={}, ruleId={}",
+                    deviceId, pointId, pointCode, level, ruleId, e);
+            result.put("status", "error");
+            result.put("message", "query failed: " + e.getMessage());
             return result;
         }
     }

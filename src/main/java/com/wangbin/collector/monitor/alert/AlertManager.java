@@ -1,7 +1,9 @@
 package com.wangbin.collector.monitor.alert;
 
 import com.wangbin.collector.core.report.service.CacheReportService;
+import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -16,6 +18,10 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class AlertManager {
 
     private final CacheReportService cacheReportService;
+
+    @Autowired(required = false)
+    private AlarmHistoryService alarmHistoryService;
+
     private final Map<String, AlertRule> rules = new ConcurrentHashMap<>();
     private final Queue<AlertNotification> recentAlerts = new ConcurrentLinkedQueue<>();
     private final int maxHistorySize = 1000;
@@ -50,6 +56,7 @@ public class AlertManager {
                 notification.getPointCode() != null ? notification.getPointCode() : notification.getPointId(),
                 notification.getLevel(),
                 notification.getMessage());
+        saveAlarmHistory(notification);
         cacheReportService.reportAlert(notification);
     }
 
@@ -75,6 +82,18 @@ public class AlertManager {
                         .timestamp(System.currentTimeMillis())
                         .build());
             }
+        }
+    }
+
+    private void saveAlarmHistory(AlertNotification notification) {
+        if (alarmHistoryService == null) {
+            return;
+        }
+        try {
+            alarmHistoryService.saveAsync(notification);
+        } catch (Exception e) {
+            log.error("submit alarm history write failed, device={}, point={}",
+                    notification.getDeviceId(), notification.getPointId(), e);
         }
     }
 

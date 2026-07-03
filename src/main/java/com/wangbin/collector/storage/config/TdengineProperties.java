@@ -30,6 +30,16 @@ public class TdengineProperties {
     private String subTablePrefix = "d_";
 
     /**
+     * Alarm super table name.
+     */
+    private String alarmSuperTable = "alarm_super";
+
+    /**
+     * Alarm child table prefix.
+     */
+    private String alarmSubTablePrefix = "d_alarm_";
+
+    /**
      * Keep days for DB retention.
      */
     private int keepDays = 30;

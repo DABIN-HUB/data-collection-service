@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wangbin.collector.storage.repository.AlarmRepository">
+
+    <update id="createStable">
+        CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
+            ts TIMESTAMP,
+            event_ts BIGINT,
+            device_name NCHAR(256),
+            point_id NCHAR(128),
+            point_code NCHAR(128),
+            rule_id NCHAR(128),
+            rule_name NCHAR(256),
+            alarm_level NCHAR(64),
+            event_type NCHAR(64),
+            message NCHAR(1024),
+            value_text NCHAR(1024),
+            value_double DOUBLE,
+            value_long BIGINT,
+            value_bool BOOL,
+            unit NCHAR(64),
+            payload_json NCHAR(4096)
+        ) TAGS (
+            device_id NCHAR(128)
+        )
+    </update>
+
+    <update id="createChildTable">
+        CREATE TABLE IF NOT EXISTS ${database}.${subTable}
+        USING ${database}.${superTable}
+        TAGS (#{deviceTag})
+    </update>
+
+    <insert id="insertAlarm">
+        INSERT INTO ${database}.${subTable}
+        (ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json)
+        VALUES
+        (#{eventTs},#{eventTs},#{deviceName},#{pointId},#{pointCode},#{ruleId},#{ruleName},#{alarmLevel},#{eventType},#{message},#{valueText},#{valueDouble},#{valueLong},#{valueBool},#{unit},#{payloadJson})
+    </insert>
+
+    <select id="queryAlarmHistory" resultType="java.util.Map">
+        SELECT
+            ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
+        FROM ${database}.${subTable}
+        WHERE 1 = 1
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="pointCode != null and pointCode != ''">
+            AND point_code = #{pointCode}
+        </if>
+        <if test="alarmLevel != null and alarmLevel != ''">
+            AND alarm_level = #{alarmLevel}
+        </if>
+        <if test="ruleId != null and ruleId != ''">
+            AND rule_id = #{ruleId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND ts &lt;= #{endTs}
+        </if>
+        ORDER BY ts DESC
+        LIMIT #{limit}
+    </select>
+</mapper>
