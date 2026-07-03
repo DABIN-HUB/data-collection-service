@@ -14,6 +14,7 @@ import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 
 import lombok.Getter;
@@ -182,6 +183,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             ProcessContext context = new ProcessContext();
             context.addAttribute("deviceId", deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+            enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
 
             if (!processResult.isSuccess()) {
@@ -248,6 +250,7 @@ public abstract class BaseCollector implements ProtocolCollector,
                     ProcessContext context = new ProcessContext();
                     context.addAttribute("deviceId", deviceInfo.getDeviceId());
                     ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+                    enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
 
                     if (!processResult.isSuccess()) {
@@ -782,6 +785,7 @@ public abstract class BaseCollector implements ProtocolCollector,
         if ((resolvedDeviceId == null || resolvedDeviceId.isBlank()) && deviceInfo != null) {
             resolvedDeviceId = deviceInfo.getDeviceId();
         }
+        long collectTime = System.currentTimeMillis();
 
         try {
             Object processedValue = convertData(point, rawValue);
@@ -789,6 +793,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             ProcessContext context = new ProcessContext();
             context.addAttribute("deviceId", resolvedDeviceId);
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+            enrichTelemetryMetadata(processResult, rawValue, processedValue, collectTime, "PUSH");
             lastProcessResults.put(point.getPointId(), processResult);
 
             if (!processResult.isSuccess()) {
@@ -809,12 +814,36 @@ public abstract class BaseCollector implements ProtocolCollector,
             ProcessResult error = ProcessResult.error(rawValue,
                     "pushed telemetry process failed: " + e.getMessage(),
                     DataQuality.PROCESS_ERROR);
+            enrichTelemetryMetadata(error, rawValue, null, collectTime, "PUSH");
             lastProcessResults.put(point.getPointId(), error);
             if (telemetryIngressService != null) {
                 telemetryIngressService.append(resolvedDeviceId, point, error);
             }
             return error;
         }
+    }
+
+    protected void enrichTelemetryMetadata(ProcessResult result,
+                                           Object rawValue,
+                                           Object processedValue,
+                                           long collectTime,
+                                           String source) {
+        if (result == null) {
+            return;
+        }
+        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.RAW_VALUE, rawValue);
+        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.PROCESSED_VALUE, processedValue);
+        if (collectTime > 0) {
+            putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.COLLECT_TIME, collectTime);
+        }
+        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.SOURCE, source);
+    }
+
+    private void putProcessMetadataIfAbsent(ProcessResult result, String key, Object value) {
+        if (result.getMetadata() == null || key == null || value == null) {
+            return;
+        }
+        result.getMetadata().putIfAbsent(key, value);
     }
 
     /**

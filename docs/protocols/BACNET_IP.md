@@ -1,111 +1,167 @@
 # BACNET_IP
 
-## 褰撳墠鐘舵€?
-`BACNET_IP` 宸插畬鎴愭鏋舵帴鍏ワ紝骞朵笖宸茬粡涓嶆槸绌哄３鍗忚銆?
-褰撳墠宸茬粡钀藉湴锛?
-- `ProtocolType`銆佸崗璁埆鍚嶅綊涓€鍖栥€乨escriptor銆乧ollector factory銆乧onnection factory銆乿alidator 宸叉帴鍏ャ€?- 鎺у埗鍙板墠绔彲閫氳繃 `/api/protocols/BACNET_IP` 鍜?`/api/protocols/BACNET_IP/fields` 鑾峰彇 BACnet/IP 閰嶇疆瀛楁銆?- 宸插畬鎴愮湡瀹?`UDP` 杩炴帴閫傞厤鍣紝涓嶅啀鏄崰浣嶅璞°€?- 宸插畬鎴愮湡瀹炶閾捐矾锛?  - `ReadProperty`
-  - `ReadPropertyMultiple`
-  - 鍗曠偣璇?`readPoint`
-  - 鎵归噺璇?`readPoints`
-  - `ReadPropertyMultiple` 澶辫触鑷姩鍥為€€閫愮偣 `ReadProperty`
-- 宸插畬鎴愬熀纭€ primitive 绫诲瀷鏀寔锛?  - `REAL`
-  - `DOUBLE`
-  - `BOOLEAN`
-  - `STRING`
-  - `ENUMERATED`
-  - `UNSIGNED / SIGNED`
-- 宸插畬鎴?`useWhoIsDiscovery=true` 鏃剁殑杩炴帴闃舵 `Who-Is / I-Am` 鍙戠幇銆?- 宸插畬鎴愬亣璁惧闆嗘垚娴嬭瘯锛屼笉鍐嶅彧鏈?schema/楠ㄦ灦绾ф祴璇曘€?
-褰撳墠浠嶆湭瀹屾垚锛?
+# 当前状态
+
+`BACNET_IP` 已完成框架接入，并且已经不是空壳协议。
+
+当前已经落地：
+
+- `ProtocolType`、协议别名归一化、`Descriptor`、`CollectorFactory`、`ConnectionFactory`、`Validator` 已接入。
+- 控制台前端可通过 `/api/protocols/BACNET_IP` 和 `/api/protocols/BACNET_IP/fields` 获取 BACnet/IP 配置字段。
+- 已完成真实 `UDP` 连接适配器，不再是占位对象。
+- 已完成真实读链路：
+    - `ReadProperty`
+    - `ReadPropertyMultiple`
+    - 单点读 `readPoint`
+    - 批量读 `readPoints`
+    - `ReadPropertyMultiple` 失败自动回退逐点 `ReadProperty`
+- 已完成基础 primitive 类型支持：
+    - `REAL`
+    - `DOUBLE`
+    - `BOOLEAN`
+    - `STRING`
+    - `ENUMERATED`
+    - `UNSIGNED / SIGNED`
+- 已完成 `useWhoIsDiscovery=true` 时的连接阶段 `Who-Is / I-Am` 发现。
+- 已完成假设备集成测试，不再只有 schema/框架级测试。
+
+当前仍未完成：
+
 - `WriteProperty`
 - `WritePropertyMultiple`
 - `SubscribeCOV / SubscribeCOVProperty`
 - `executeCommand`
 - `BBMD / Foreign Device Registration`
-- 鍒嗘鎶ユ枃
-- constructed / array / sequence 绫诲瀷鐨勯€氱敤 `ANY` 瑙ｇ爜
+- 分段报文
+- constructed / array / sequence 类型的通用 `ANY` 解码
 
-褰撳墠瀵瑰浜や粯鍙ｅ緞锛?
-- `BACnet/IP P0` 宸插彲鐢ㄤ簬 `UDP` 杞鍨?`ReadProperty / ReadPropertyMultiple` 閲囬泦銆?- 涓嶅缓璁幇鍦烘壙璇哄啓鍏ャ€乣COV`銆乣BBMD`銆佽法瀛愮綉鑷姩鍙戠幇銆佸鏉傛暟缁?瀵硅薄灞炴€с€?
-## 宸插畬鎴愯兘鍔?
-### 1. 鐪熷疄杩炴帴
+当前对外交付口径：
 
-- `BacnetIpConnectionAdapter` 宸插畬鎴愮湡瀹?`UDP socket` 寤鸿繛銆?- 褰撳墠鐢熸晥鐨勮繛鎺ュ瓧娈碉細
-  - `host`
-  - `port`
-  - `localBindHost`
-  - `localBindPort`
-  - `remoteDeviceInstance`
-  - `useWhoIsDiscovery`
-  - `readTimeout`
-  - `timeout`
-- `useWhoIsDiscovery=true` 鏃讹紝杩炴帴闃舵浼氬厛鍙?`Who-Is`锛岃姹傛敹鍒扮洰鏍?`remoteDeviceInstance` 鐨?`I-Am` 鍚庢墠璁や负鍙戠幇鎴愬姛銆?
-### 2. 鐪熷疄璇婚摼璺?
-- `BacnetIpCollector` 宸叉帴鍏ワ細
-  - `readPoint`
-  - `readPoints`
-- 褰撳墠宸叉敮鎸侊細
-  - `Confirmed ReadProperty`
-  - `Confirmed ReadPropertyMultiple`
-  - `ComplexACK(ReadPropertyAck)`
-  - `ComplexACK(ReadPropertyMultipleAck)`
-- `ReadPropertyMultiple` 褰撳墠鎸夆€滃悓瀵硅薄澶氬睘鎬у悎骞?+ `maxPropertiesPerRequest` 鍒囧垎鈥濇墽琛屻€?- `ReadPropertyMultiple` 琚澶囨嫆缁濇垨澶辫触鏃讹紝浼氳嚜鍔ㄥ洖閫€鍒伴€愮偣 `ReadProperty`锛岄伩鍏嶆暣鎵圭偣浣嶄笉鍙敤銆?- 瓒呮椂銆乻ocket 寮傚父銆佸崗璁ご寮傚父浼氳Е鍙戣繛鎺ュけ鏁堝垽瀹氾紝collector 鐘舵€佷細鎵撴垚 `DISCONNECTED`銆?
-### 3. 鏁版嵁澶勭悊杈圭晫
+- `BACnet/IP P0` 已可用于 `UDP` 轮询型 `ReadProperty / ReadPropertyMultiple` 采集。
+- 不建议现场承诺写入、`COV`、`BBMD`、跨子网自动发现、复杂数组/对象属性。
 
-- BACnet 瀛楃涓插睘鎬т笉浼氬啀璇蛋鏁板€艰浆鎹€?- 褰撳墠宸插浠ヤ笅绫诲瀷鍋氬畨鍏ㄥ鐞嗭細
-  - 鏁板€煎瀷璧?`convertData(...)`
-  - `STRING` 閫忎紶
-  - `BOOLEAN` 杩斿洖甯冨皵
-  - `ENUMERATED` 杩斿洖鏁存暟
-- 缁撴灉浠嶇粺涓€杩涘叆锛?  - `ProcessResult`
-  - `DataQualityProcessor`
-  - `lastProcessResults`
+---
 
-## 鏈畬鎴愬姛鑳芥竻鍗?
-### 楂樹紭鍏堢骇
+# 已完成能力
+
+## 1. 真实连接
+
+- `BacnetIpConnectionAdapter` 已完成真实 `UDP socket` 建连。
+- 当前生效的连接字段：
+    - `host`
+    - `port`
+    - `localBindHost`
+    - `localBindPort`
+    - `remoteDeviceInstance`
+    - `useWhoIsDiscovery`
+    - `readTimeout`
+    - `timeout`
+- `useWhoIsDiscovery=true` 时，连接阶段会先发 `Who-Is`，要求收到目标 `remoteDeviceInstance` 的 `I-Am` 后才认为发现成功。
+
+## 2. 真实读链路
+
+- `BacnetIpCollector` 已接入：
+    - `readPoint`
+    - `readPoints`
+- 当前已支持：
+    - `Confirmed ReadProperty`
+    - `Confirmed ReadPropertyMultiple`
+    - `ComplexACK(ReadPropertyAck)`
+    - `ComplexACK(ReadPropertyMultipleAck)`
+- `ReadPropertyMultiple` 当前按“同对象多属性合并 + `maxPropertiesPerRequest` 切分”执行。
+- `ReadPropertyMultiple` 被设备拒绝或失败时，会自动回退到逐点 `ReadProperty`，避免整批点位不可用。
+- 超时、socket 异常、协议头异常会触发连接失效判定，collector 状态会打成 `DISCONNECTED`。
+
+## 3. 数据处理边界
+
+- BACnet 字符串属性不会再误走数值转换。
+- 当前已对以下类型做安全处理：
+    - 数值型走 `convertData(...)`
+    - `STRING` 透传
+    - `BOOLEAN` 返回布尔
+    - `ENUMERATED` 返回整数
+- 结果仍统一进入：
+    - `ProcessResult`
+    - `DataQualityProcessor`
+    - `lastProcessResults`
+
+---
+
+# 未完成功能清单
+
+## 高优先级
 
 1. `WriteProperty`
-   - 鍓嶇瀛楁閲屽凡鏈?`writePriority` 绛夐鐣欙紝浣嗗簳灞傛湭鍏戠幇銆?   - 涓嶅缓璁幇鍦烘壙璇哄彲鎺у啓鍥炪€?2. `executeCommand`
-   - 杩樻湭瀹炵幇 `who_is / read_property / read_property_multiple / discover_objects / diagnostic` 杩欑被璇婃柇鍛戒护鍏ュ彛銆?
-### 涓紭鍏堢骇
+    - 前端字段里已有 `writePriority` 等预留，但底层未兑现。
+    - 不建议现场承诺可控写回。
+2. `executeCommand`
+    - 还未实现 `who_is / read_property / read_property_multiple / discover_objects / diagnostic` 这类诊断命令入口。
+
+## 中优先级
 
 3. `SubscribeCOV / SubscribeCOVProperty`
-   - 褰撳墠 `covEnabled` 鍙槸 schema 鍜?validator 宸叉帴鍏ャ€?   - 杩樻病鏈夌湡瀹炶闃呫€侀€氱煡鎺ユ敹銆佹柇绾胯ˉ璁㈤槄銆?4. constructed / array / sequence 绫诲瀷瑙ｇ爜
-   - 褰撳墠鍙敮鎸?primitive `ANY`銆?   - 鍍?`objectList`銆乣priorityArray`銆佸鏉傚璞″睘鎬ц繕涓嶈兘鎵胯銆?5. `ReadPropertyMultiple` 璇昏鍒掍紭鍖?   - 褰撳墠宸插仛鍚屽璞¤仛鍚堛€佹壒閲忓垏鍒嗐€佸け璐ュ洖閫€銆?   - 杩樻病鏈夊仛鏇村己鐨勮法瀵硅薄鑱氬悎鍜屽姩鎬佹€ц兘浼樺寲銆?
-### 浣庝紭鍏堢骇浣嗛珮鐜板満椋庨櫓
+    - 当前 `covEnabled` 只是 schema 和 validator 已接入。
+    - 还没有真正订阅、通知接收、断线补订阅。
+4. constructed / array / sequence 类型解码
+    - 当前只支持 primitive `ANY`。
+    - 像 `objectList`、`priorityArray`、复杂对象属性还不能承诺。
+5. `ReadPropertyMultiple` 读计划优化
+    - 当前已做同对象聚合、批量切分、失败回退。
+    - 还没有做更强的跨对象聚合和动态性能优化。
+
+## 低优先级但高现场风险
 
 6. `BBMD / Foreign Device Registration`
-   - 瀛楁宸查鐣欙細
-     - `bbmdHost`
-     - `bbmdPort`
-     - `foreignDeviceTtlSeconds`
-   - 浠ｇ爜鏈疄鐜帮紝涓嶅缓璁幇鍦烘壙璇鸿法瀛愮綉 BACnet/IP銆?7. 鍒嗘鎶ユ枃
-   - 褰撳墠 `ComplexACK` 浠呮敮鎸侀潪鍒嗘銆?   - 澶у璞°€佸ぇ鏁扮粍銆佸ぇ鍝嶅簲鍦烘櫙鍙兘澶辫触銆?8. 鏇村畬鏁寸殑鍙戠幇鑳藉姏
-   - 褰撳墠 `Who-Is / I-Am` 鍙仛浜嗏€滄寜鐩爣瀹炰緥鍙峰彂鐜板崟璁惧鈥濄€?   - 杩樻病鏈夊叏缃戞壂鎻忋€佸璞℃灇涓俱€佸彂鐜扮紦瀛樻不鐞嗐€?
-## 褰撳墠鍙氦浠樿寖鍥?
-鍙互浜や粯锛?
+    - 字段已预留：
+        - `bbmdHost`
+        - `bbmdPort`
+        - `foreignDeviceTtlSeconds`
+    - 代码未实现，不建议现场承诺跨子网 BACnet/IP。
+7. 分段报文
+    - 当前 `ComplexACK` 仅支持非分段。
+    - 大对象、大数组、大响应场景可能失败。
+8. 更完整的发现能力
+    - 当前 `Who-Is / I-Am` 只做了“按目标实例号发现单设备”。
+    - 还没有全网扫描、对象枚举、发现缓存管理。
+
+---
+
+# 当前可交付范围
+
+**可以交付：**
+
 - `BACnet/IP UDP`
-- 鎸囧畾 `host:port + remoteDeviceInstance`
-- 鍙€?`Who-Is / I-Am` 鍙戠幇
+- 指定 `host:port + remoteDeviceInstance`
+- 可选 `Who-Is / I-Am` 发现
 - `ReadProperty`
 - `ReadPropertyMultiple`
-- 鍗曠偣璇?- 鎵归噺璇?- `ReadPropertyMultiple` 澶辫触鑷姩鍥為€€
-- 鍩虹 primitive 鍊肩被鍨嬭鍙?
-闇€瀹炴満楠岃瘉鍚庡啀瀵瑰璇寸ǔ锛?
-- 涓嶅悓鍘傚晢璁惧鐨?`I-Am` 鍏煎鎬?- `objectName / presentValue / units / reliability` 绛夎法鍘傚晢灞炴€у樊寮?- 楂橀杞涓嬬殑鍝嶅簲鏃堕棿鍜屼涪鍖呭蹇嶅害
-- 鍗曚釜璁惧瀵?`ReadPropertyMultiple` 鐨勫吋瀹圭▼搴﹀拰鍗曟姤鏂囧睘鎬ф暟涓婇檺
+- 单点读
+- 批量读
+- `ReadPropertyMultiple` 失败自动回退
+- 基础 primitive 值类型读取
 
-涓嶅缓璁幇鍦烘壙璇猴細
+**需实机验证后再对外说稳：**
+
+- 不同厂商设备的 `I-Am` 兼容性
+- `objectName / presentValue / units / reliability` 等跨厂商属性差异
+- 高频轮询下的响应时间和丢包容忍度
+- 单个设备对 `ReadPropertyMultiple` 的兼容程度和单报文属性数上限
+
+**不建议现场承诺：**
 
 - `WriteProperty`
 - `WritePropertyMultiple`
 - `COV`
 - `BBMD`
 - `Foreign Device`
-- 璺ㄧ綉娈佃嚜鍔ㄥ彂鐜?- 澶嶆潅鏁扮粍 / sequence / proprietary object
+- 跨网段自动发现
+- 复杂数组 / sequence / proprietary object
 
-## 鏀寔鐨勫湴鍧€鏍煎紡
+---
 
-褰撳墠瑙ｆ瀽鍣ㄦ敮鎸侊細
+# 支持的地址格式
+
+当前解析器支持：
 
 1. `analogInput:1.presentValue`
 2. `analogValue:12.presentValue`
@@ -113,88 +169,106 @@
 4. `device:1001.objectName`
 5. `analogInput:7.priorityArray[5]`
 
-瑙勫垯锛?
-- 鏍囧噯鏍煎紡锛歚<objectType>:<instance>.<property>[<index>]`
+**规则：**
+
+- 标准格式：`<objectType>:<instance>.<property>[<index>]`
 - `instance >= 0`
-- `[index]` 鍙€?- 鑻ュ湴鍧€涓湭鍐?`[index]`锛屽彲鐢?`additionalConfig.arrayIndex` 鎻愪緵
-- `driverDataType` 鍙敱浠ヤ笅瀛楁鎻愮ず锛?  - `additionalConfig.driverDataType`
-  - `additionalConfig.bacnetType`
-  - `additionalConfig.propertyType`
+- `[index]` 可选
+- 若地址中未写 `[index]`，可用 `additionalConfig.arrayIndex` 提供
+- `driverDataType` 可由以下字段提示：
+    - `additionalConfig.driverDataType`
+    - `additionalConfig.bacnetType`
+    - `additionalConfig.propertyType`
 
-## 杩炴帴瀛楁
+---
+
+# 连接字段
 
 ```java
-fields.add(createFieldConfig("host", "string", "璁惧IP", true, "127.0.0.1", null));
-fields.add(createFieldConfig("port", "number", "UDP绔彛", false, "47808", null));
-fields.add(createFieldConfig("localBindHost", "string", "鏈湴缁戝畾IP", false, "", null));
-fields.add(createFieldConfig("localBindPort", "number", "鏈湴缁戝畾绔彛", false, "", null));
-fields.add(createFieldConfig("remoteDeviceInstance", "number", "鐩爣璁惧瀹炰緥鍙?, true, "", null));
-fields.add(createFieldConfig("localDeviceInstance", "number", "鏈湴瀹㈡埛绔疄渚嬪彿", false, "", null));
-fields.add(createFieldConfig("useWhoIsDiscovery", "boolean", "鍚敤 Who-Is/I-Am 鍙戠幇", false, "false", new String[]{"true", "false"}));
-fields.add(createFieldConfig("networkNumber", "number", "BACnet 缃戠粶鍙?, false, "", null));
-fields.add(createFieldConfig("macAddress", "string", "杩滅 MAC 鍦板潃", false, "", null));
-fields.add(createFieldConfig("covEnabled", "boolean", "鍚敤 COV 璁㈤槄", false, "false", new String[]{"true", "false"}));
-fields.add(createFieldConfig("defaultCovLifetimeSeconds", "number", "榛樿 COV 鐢熷懡鍛ㄦ湡(s)", false, "300", null));
-fields.add(createFieldConfig("defaultCovIncrement", "number", "榛樿 COV 澧為噺闃堝€?, false, "", null));
-fields.add(createFieldConfig("resubscribeOnReconnect", "boolean", "閲嶈繛鍚庤嚜鍔ㄨˉ璁㈤槄", false, "true", new String[]{"true", "false"}));
-fields.add(createFieldConfig("apduTimeout", "number", "APDU 瓒呮椂(ms)", false, "5000", null));
-fields.add(createFieldConfig("segmentTimeout", "number", "鍒嗘瓒呮椂(ms)", false, "3000", null));
-fields.add(createFieldConfig("retries", "number", "閲嶈瘯娆℃暟", false, "1", null));
-fields.add(createFieldConfig("maxPropertiesPerRequest", "number", "鍗曟鏈€澶у睘鎬ф暟", false, "32", null));
-fields.add(createFieldConfig("readPropertyMultipleEnabled", "boolean", "鍚敤 ReadPropertyMultiple", false, "true", new String[]{"true", "false"}));
-fields.add(createFieldConfig("writePropertyMultipleEnabled", "boolean", "鍚敤 WritePropertyMultiple", false, "false", new String[]{"true", "false"}));
-fields.add(createFieldConfig("bbmdHost", "string", "BBMD 鍦板潃", false, "", null));
-fields.add(createFieldConfig("bbmdPort", "number", "BBMD 绔彛", false, "47808", null));
+fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
+fields.add(createFieldConfig("port", "number", "UDP端口", false, "47808", null));
+fields.add(createFieldConfig("localBindHost", "string", "本地绑定IP", false, "", null));
+fields.add(createFieldConfig("localBindPort", "number", "本地绑定端口", false, "", null));
+fields.add(createFieldConfig("remoteDeviceInstance", "number", "目标设备实例号", true, "", null));
+fields.add(createFieldConfig("localDeviceInstance", "number", "本地客户端实例号", false, "", null));
+fields.add(createFieldConfig("useWhoIsDiscovery", "boolean", "启用 Who-Is/I-Am 发现", false, "false", new String[]{"true", "false"}));
+fields.add(createFieldConfig("networkNumber", "number", "BACnet 网络号", false, "", null));
+fields.add(createFieldConfig("macAddress", "string", "远端 MAC 地址", false, "", null));
+fields.add(createFieldConfig("covEnabled", "boolean", "启用 COV 订阅", false, "false", new String[]{"true", "false"}));
+fields.add(createFieldConfig("defaultCovLifetimeSeconds", "number", "默认 COV 生命周期(s)", false, "300", null));
+fields.add(createFieldConfig("defaultCovIncrement", "number", "默认 COV 增量阈值", false, "", null));
+fields.add(createFieldConfig("resubscribeOnReconnect", "boolean", "重连后自动补订阅", false, "true", new String[]{"true", "false"}));
+fields.add(createFieldConfig("apduTimeout", "number", "APDU 超时(ms)", false, "5000", null));
+fields.add(createFieldConfig("segmentTimeout", "number", "分段超时(ms)", false, "3000", null));
+fields.add(createFieldConfig("retries", "number", "重试次数", false, "1", null));
+fields.add(createFieldConfig("maxPropertiesPerRequest", "number", "单次最大属性数", false, "32", null));
+fields.add(createFieldConfig("readPropertyMultipleEnabled", "boolean", "启用 ReadPropertyMultiple", false, "true", new String[]{"true", "false"}));
+fields.add(createFieldConfig("writePropertyMultipleEnabled", "boolean", "启用 WritePropertyMultiple", false, "false", new String[]{"true", "false"}));
+fields.add(createFieldConfig("bbmdHost", "string", "BBMD 地址", false, "", null));
+fields.add(createFieldConfig("bbmdPort", "number", "BBMD 端口", false, "47808", null));
 fields.add(createFieldConfig("foreignDeviceTtlSeconds", "number", "Foreign Device TTL(s)", false, "", null));
-fields.add(createFieldConfig("readTimeout", "number", "璇诲彇瓒呮椂(ms)", false, "5000", null));
-fields.add(createFieldConfig("timeout", "number", "鍗忚瓒呮椂(ms)", false, "5000", null));
+fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "5000", null));
+fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "5000", null));
 ```
 
-璇存槑锛?
-- 杩欎簺瀛楁骞朵笉浠ｈ〃褰撳墠閮藉凡缁忓疄鐜般€?- 褰撳墠鐪熸宸茬敓鏁堢殑閲嶇偣瀛楁鏄細
-  - `host`
-  - `port`
-  - `localBindHost`
-  - `localBindPort`
-  - `remoteDeviceInstance`
-  - `useWhoIsDiscovery`
-  - `maxPropertiesPerRequest`
-  - `readPropertyMultipleEnabled`
-  - `readTimeout`
-  - `timeout`
+**说明：**
 
-## 鐐逛綅 AdditionalConfig
+- 这些字段并不代表当前都已实现。
+- 当前真正已生效的重点字段是：
+    - `host`
+    - `port`
+    - `localBindHost`
+    - `localBindPort`
+    - `remoteDeviceInstance`
+    - `useWhoIsDiscovery`
+    - `maxPropertiesPerRequest`
+    - `readPropertyMultipleEnabled`
+    - `readTimeout`
+    - `timeout`
+
+---
+
+# 点位 AdditionalConfig
 
 ```java
-fields.add(createFieldConfig("additionalConfig.driverDataType", "string", "椹卞姩鍘熺敓绫诲瀷", false, "AUTO",
+fields.add(createFieldConfig("additionalConfig.driverDataType", "string", "驱动原始类型", false, "AUTO",
         new String[]{"AUTO", "BOOLEAN", "UNSIGNED", "SIGNED", "REAL", "DOUBLE", "ENUM", "STRING", "BIT_STRING"}));
-fields.add(createFieldConfig("additionalConfig.arrayIndex", "number", "灞炴€ф暟缁勪笅鏍?, false, "", null));
-fields.add(createFieldConfig("additionalConfig.writePriority", "number", "鍐欎紭鍏堢骇", false, "", null));
-fields.add(createFieldConfig("additionalConfig.covMode", "string", "COV 妯″紡", false, "OBJECT",
+fields.add(createFieldConfig("additionalConfig.arrayIndex", "number", "属性数组下标", false, "", null));
+fields.add(createFieldConfig("additionalConfig.writePriority", "number", "写优先级", false, "", null));
+fields.add(createFieldConfig("additionalConfig.covMode", "string", "COV 模式", false, "OBJECT",
         new String[]{"OBJECT", "PROPERTY"}));
-fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "鐐逛綅绾?COV 澧為噺闃堝€?, false, "", null));
+fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位级 COV 增量阈值", false, "", null));
 ```
 
-褰撳墠鐪熸宸茬敓鏁堢殑鏄細
+当前真正已生效的是：
 
 - `additionalConfig.driverDataType`
 - `additionalConfig.arrayIndex`
 
-## 娴嬭瘯瑕嗙洊
+---
 
-褰撳墠浠撳簱宸茶鐩栵細
+# 测试覆盖
 
-- 鍗忚 alias 鍜?validator 妫€鏌?- 鍗忚 schema 鏆撮湶
-- collector 鐘舵€佽緭鍑?- 鍦板潃瑙ｆ瀽
-- `ReadProperty` 缂栬В鐮?- `ReadPropertyMultiple` 缂栬В鐮?- 鍋囪澶?`UDP` 闆嗘垚娴嬭瘯
-  - `ReadProperty REAL`
-  - `ReadProperty STRING`
-  - `ReadPropertyMultiple` 鎴愬姛鎵归噺璇?  - `ReadPropertyMultiple Reject -> ReadProperty fallback`
-  - `Reject`
-  - 瓒呮椂鏂摼
-  - `Who-Is / I-Am` 鍙戠幇
+当前仓库已覆盖：
 
-## 浠ｇ爜鍏ュ彛
+- 协议 alias 和 validator 检查
+- 协议 schema 暴露
+- collector 状态输出
+- 地址解析
+- `ReadProperty` 编解码
+- `ReadPropertyMultiple` 编解码
+- 假设备 `UDP` 集成测试
+    - `ReadProperty REAL`
+    - `ReadProperty STRING`
+    - `ReadPropertyMultiple` 成功批量读
+    - `ReadPropertyMultiple Reject -> ReadProperty fallback`
+    - `Reject`
+    - 超时断链
+    - `Who-Is / I-Am` 发现
+
+---
+
+# 代码入口
 
 - `src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`
 - `src/main/java/com/wangbin/collector/core/connection/adapter/BacnetIpConnectionAdapter.java`
@@ -202,95 +276,197 @@ fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "鐐逛�
 - `src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/util/BacnetAddressParser.java`
 - `src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/*`
 - `src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/*`
-- 鎬讳綋鏂规锛歚../25-BACnet_IP鎺ュ叆鏂规.md`
+- 总体方案：`../25-BACnet_IP接入方案.md`
 
-## BACnet 瀹炵幇琛ラ綈璺嚎鍥?
-涓嬮潰鐨勮矾绾垮浘鎸?`P1 / P2 / P3` 鍒囧垎锛岀洰鏍囨槸鎶婂綋鍓?`BACnet/IP P0` 浠庘€滄渶灏忓彲鐢ㄨ疆璇㈣鈥濋€愭琛ラ綈鍒扳€滃彲鐜板満浜や粯鐨?BACnet 鎺ュ叆鑳藉姏鈥濄€?
-### P1锛氬悓缃戞鍙氦浠樿兘鍔涜ˉ榻?
-鐩爣锛?
-1. 鎶婂綋鍓嶅彧鏀寔 `ReadProperty / ReadPropertyMultiple` 鐨勫疄鐜帮紝琛ュ埌鈥滃悓缃戞鍙銆佸彲鍐欍€佸彲璁㈤槄銆佸彲璇婃柇鈥濄€?2. 璁╁綋鍓?schema 閲屽凡缁忔毚闇茬殑鍏抽敭瀛楁锛屽拰杩愯鏃惰兘鍔涘榻愶紝閬垮厤鍓嶇鍙厤浣嗗簳灞備笉鐢熸晥銆?
-寤鸿鑼冨洿锛?
+---
+
+# BACnet 实现补齐路线图
+
+下面的路线图按 `P1 / P2 / P3` 切分，目标是把当前 `BACnet/IP P0` 从“最小可用轮询读”逐步补齐到“可现场交付的 BACnet 接入能力”。
+
+## P1：同网段可交付能力补齐
+
+**目标：**
+
+1. 把当前只支持 `ReadProperty / ReadPropertyMultiple` 的实现，补到“同网段可读、可写、可订阅、可诊断”。
+2. 让当前 schema 里已经暴露的关键字段，和运行时能力对齐，避免前端可配但底层不生效。
+
+**建议范围：**
+
 1. `WriteProperty`
-2. 鍙€?`WritePropertyMultiple`
+2. 可选 `WritePropertyMultiple`
 3. `SubscribeCOV / SubscribeCOVProperty`
-4. 鍩虹璇婃柇鍛戒护
-5. 閰嶇疆瀛楁鏀跺彛
+4. 基础诊断命令
+5. 配置字段收口
 
-鍏蜂綋鏀归€犵偣锛?
-1. 鍐欏叆閾捐矾
-   - 鍦?`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java` 瀹炵幇 `doWritePoint(...)`銆乣doWritePoints(...)`銆?   - 鍦?`src/main/java/com/wangbin/collector/core/connection/adapter/BacnetIpConnectionAdapter.java` 鏂板 `writeProperty(...)`锛屽悗缁嫢鍚敤鑱氬悎鍐欙紝鍐嶆柊澧?`writePropertyMultiple(...)`銆?   - 鍦?`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/domain/` 鏂板锛歚BacnetWritePropertyRequest`銆乣BacnetWritePropertyResponse`锛涘闇€鑱氬悎鍐欙紝鍐嶈ˉ `BacnetWritePropertyMultipleRequest`銆?   - 鍦?`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/` 鏂板锛歚BacnetWritePropertyCodec`锛涘闇€鑱氬悎鍐欙紝鍐嶈ˉ `BacnetWritePropertyMultipleCodec`锛屽苟瑙?ACK 褰㈠紡琛ュ厖缁熶竴鍝嶅簲瑙ｇ爜銆?   - 鍐欏叆鏃舵帴閫氱偣浣嶆墿灞曞瓧娈碉細`additionalConfig.writePriority`锛涘繀瑕佹椂鎶?`ENUM / BOOLEAN / REAL / UNSIGNED / SIGNED / STRING` 鐨勫弽鍚戠紪鐮佸仛瀹屾暣銆?   - 缁熶竴娌跨敤 `BaseCollector.writePoint/writePoints` 鐨勮川閲忔牎楠屼笌鍙嶅悜杞崲閾捐矾锛屼笉鍗曠嫭鍒嗗弶鍐欏叆娴佺▼銆?
-2. 璁㈤槄閾捐矾
-   - 鍦?`BacnetIpCollector.java` 瀹炵幇 `doSubscribe(...)`銆乣doUnsubscribe(...)`銆?   - 鍦?`BacnetIpConnectionAdapter.java` 琛ヤ竴涓寔缁帴鏀舵帹閫佹姤鏂囩殑鐩戝惉涓庡垎鍙戞満鍒讹紝涓嶅啀鍙仛鈥滃彂璇锋眰鍚庨樆濉炵瓑鍝嶅簲鈥濄€?   - 鍦?`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/codec/` 鏂板锛歚BacnetSubscribeCovCodec`銆乣BacnetSubscribeCovPropertyCodec`銆乣BacnetCovNotificationDecoder`銆?   - 鏀跺埌鎺ㄩ€佸€煎悗锛岀粺涓€璧?`BaseCollector.ingestPushedValue(...)`锛屼笉瑕佺粫杩囩幇鏈夌紦瀛樸€佷笂鎶ャ€佸疄鏃舵祦閾捐矾銆?   - 灏嗕互涓嬭繛鎺ュ瓧娈电湡姝ｆ帴鍏ヨ繍琛屾椂锛歚covEnabled`銆乣defaultCovLifetimeSeconds`銆乣defaultCovIncrement`銆乣resubscribeOnReconnect`銆乣localBindPort`銆?   - 灏嗕互涓嬬偣浣嶆墿灞曞瓧娈电湡姝ｆ帴鍏ヨ繍琛屾椂锛歚additionalConfig.covMode`銆乣additionalConfig.covIncrement`銆?
-3. 鍩虹璇婃柇鍛戒护
-   - 鍦?`BacnetIpCollector.java` 瀹炵幇 `doExecuteCommand(...)`锛屽厛琛ユ渶瀹炵敤鐨勪竴缁勫懡浠わ細`who_is`銆乣read_property`銆乣read_property_multiple`銆乣device_info`銆乣discover_objects`銆?   - 涓婂眰鍏ュ彛宸茬粡瀛樺湪锛屽彲鐩存帴娌跨敤锛歚src/main/java/com/wangbin/collector/core/collector/manager/CollectionManager.java`銆乣src/main/java/com/wangbin/collector/api/controller/ControlController.java`銆?   - 鐩爣涓嶆槸鍋氬叏鍔熻兘璋冭瘯鍙帮紝鑰屾槸鍏堝叿澶団€滅幇鍦烘帓闅滀笉蹇呮敼浠ｇ爜鈥濈殑鏈€灏忚兘鍔涖€?
-4. 閰嶇疆瀛楁鏀跺彛
-   - 鍦?`src/main/java/com/wangbin/collector/core/config/protocol/ProtocolDescriptorRegistry.java` 鏍囨竻鍝簺瀛楁宸茬敓鏁堛€佸摢浜涘瓧娈典粛鏄鐣欍€?   - 鍦?`src/main/java/com/wangbin/collector/core/config/validator/ProtocolConnectionValidator.java` 澧炲姞鈥滃姛鑳藉紑鍚嵆瑕佹眰閰嶅瀛楁榻愬叏鈥濈殑鏍￠獙锛屼緥濡傦細`covEnabled=true` 鏃舵牎楠屾湰鍦扮洃鍚弬鏁帮紝`writePropertyMultipleEnabled=true` 鏃舵牎楠岃澶囩鍏煎绛栫暐涓庢壒閲忓ぇ灏忋€?   - 濡傛灉鏌愪簺瀛楁鍦?P1 浠嶄笉鎵撶畻鏀寔锛屽簲鍦ㄥ崗璁枃妗ｅ拰 schema 鎻忚堪閲屾槑纭啓鎴?`reserved / not active yet`銆?
-5. P1 寤鸿鏂板娴嬭瘯
-   - `WriteProperty` 闆嗘垚娴嬭瘯
-   - `SubscribeCOV` 鎺ㄩ€佹帴鏀舵祴璇?   - 閲嶈繛鍚庤嚜鍔ㄨˉ璁㈤槄娴嬭瘯
-   - `executeCommand` 鍛戒护闆嗘垚娴嬭瘯
-   - 鍐欏叆澶辫触銆佹嫆缁濄€佽秴鏃躲€佸彇娑堣闃呯殑寮傚父璺緞娴嬭瘯
+**具体改造点：**
 
-P1 瀹屾垚鏍囧噯锛?
-1. 鍚岀綉娈?BACnet/IP 璁惧鍙ǔ瀹氬畬鎴愯銆佸啓銆丆OV 璁㈤槄銆?2. 鏂囨。銆乻chema銆乿alidator銆佽繍琛屾椂鐢熸晥瀛楁淇濇寔涓€鑷淬€?3. 鐜板満鏈€甯歌鐨勨€滄敼鍊笺€佽闃呫€佽瘖鏂€濅笉鍐嶄緷璧栦复鏃舵敼浠ｇ爜銆?
-### P2锛氱綉缁滃吋瀹规€т笌澶嶆潅瀵硅薄鑳藉姏琛ラ綈
+1. **写入链路**
+    - 在 `BacnetIpCollector.java` 实现 `doWritePoint(...)`、`doWritePoints(...)`。
+    - 在 `BacnetIpConnectionAdapter.java` 新增 `writeProperty(...)`，后续若启用聚合写，再新增 `writePropertyMultiple(...)`。
+    - 在 `domain/` 新增 `BacnetWritePropertyRequest`、`BacnetWritePropertyResponse`；如需聚合写，再补 `BacnetWritePropertyMultipleRequest`。
+    - 在 `codec/` 新增 `BacnetWritePropertyCodec`；如需聚合写，再补 `BacnetWritePropertyMultipleCodec`，并视 ACK 形式补充统一响应解码。
+    - 写入时接通点位扩展字段：`additionalConfig.writePriority`；必要时将 `ENUM / BOOLEAN / REAL / UNSIGNED / SIGNED / STRING` 的反向编码做完整。
+    - 统一沿用 `BaseCollector.writePoint/writePoints` 的质量校验与反向转换链路，不单独分叉写入流程。
 
-鐩爣锛?
-1. 瑙ｅ喅璺ㄥ瓙缃戙€佸鏉傚睘鎬с€佸ぇ鎶ユ枃銆佸巶鍟嗗樊寮傚鑷寸殑鐜板満鍏煎鎬ч棶棰樸€?2. 鎶娾€滆兘鎺ュ皯閲忕畝鍗曠偣浣嶁€濇彁鍗囧埌鈥滆兘鎺ユゼ鎺ч」鐩噷鐨勫吀鍨嬪鏉傚璞♀€濄€?
-寤鸿鑼冨洿锛?
+2. **订阅链路**
+    - 在 `BacnetIpCollector.java` 实现 `doSubscribe(...)`、`doUnsubscribe(...)`。
+    - 在 `BacnetIpConnectionAdapter.java` 补一个持续接收推送报文的监听与分发机制，不再只做“发请求后阻塞等响应”。
+    - 在 `codec/` 新增 `BacnetSubscribeCovCodec`、`BacnetSubscribeCovPropertyCodec`、`BacnetCovNotificationDecoder`。
+    - 收到推送值后，统一走 `BaseCollector.ingestPushedValue(...)`，不要绕过现有缓存、上报、实时流链路。
+    - 将以下连接字段真正接入运行时：`covEnabled`、`defaultCovLifetimeSeconds`、`defaultCovIncrement`、`resubscribeOnReconnect`、`localBindPort`。
+    - 将以下点位扩展字段真正接入运行时：`additionalConfig.covMode`、`additionalConfig.covIncrement`。
+
+3. **基础诊断命令**
+    - 在 `BacnetIpCollector.java` 实现 `doExecuteCommand(...)`，先补最实用的一组命令：`who_is`、`read_property`、`read_property_multiple`、`device_info`、`discover_objects`。
+    - 上层入口已存在，可直接沿用：`CollectionManager.java`、`ControlController.java`。
+    - 目标不是做全功能调试台，而是先具备“现场排障不必改代码”的最小能力。
+
+4. **配置字段收口**
+    - 在 `ProtocolDescriptorRegistry.java` 标清哪些字段已生效、哪些字段仍是预留。
+    - 在 `ProtocolConnectionValidator.java` 增加“功能开启即要求配套字段齐全”的校验，例如：`covEnabled=true` 时校验本地监听参数，`writePropertyMultipleEnabled=true` 时校验设备端兼容策略与批量大小。
+    - 如果某些字段在 P1 仍不打算支持，应在协议文档和 schema 描述里明确写成 `reserved / not active yet`。
+
+5. **P1 建议新增测试**
+    - `WriteProperty` 集成测试
+    - `SubscribeCOV` 推送接收测试
+    - 重连后自动补订阅测试
+    - `executeCommand` 命令集成测试
+    - 写入失败、拒绝、超时、取消订阅的异常路径测试
+
+**P1 完成标准：**
+
+1. 同网段 BACnet/IP 设备可稳定完成读、写、COV 订阅。
+2. 文档、schema、validator、运行时生效字段保持一致。
+3. 现场最常见的“改值、订阅、诊断”不再依赖临时改代码。
+
+---
+
+## P2：网络兼容性与复杂对象能力补齐
+
+**目标：**
+
+1. 解决跨子网、复杂属性、大报文、厂商差异导致的现场兼容性问题。
+2. 把“能接少量简单点位”提升到“能接楼控项目里的典型复杂对象”。
+
+**建议范围：**
+
 1. `BBMD / Foreign Device Registration`
-2. 璺敱涓庤法瀛愮綉鍙戠幇
-3. 鍒嗘鎶ユ枃
-4. constructed / array / sequence 瑙ｇ爜
-5. 绉佹湁瀵硅薄 / 绉佹湁灞炴€ц闂?
-鍏蜂綋鏀归€犵偣锛?
-1. 璺ㄥ瓙缃戜笌璺敱
-   - 鍦?`BacnetIpConnectionAdapter.java` 鎺ュ叆锛歚bbmdHost`銆乣bbmdPort`銆乣foreignDeviceTtlSeconds`銆乣networkNumber`銆乣macAddress`銆?   - 鏂板 BBMD/FD 娉ㄥ唽銆佺画绉熴€佸け鏁堥噸璇曢€昏緫銆?   - `Who-Is / I-Am` 涓嶅啀鍙仛鈥滄寜瀹炰緥鍙锋壘鍗曡澶団€濓紝琛ュ箍鎾彂鐜般€佹寚瀹?network 鑼冨洿鍙戠幇銆佽矾鐢辩浉鍏宠瘖鏂懡浠ゃ€?
-2. 瓒呮椂銆侀噸璇曘€佷細璇濆弬鏁?   - 鍦?`BacnetIpUdpClient.java` 鍜?`BacnetIpConnectionAdapter.java` 鐪熸鎺ュ叆锛歚apduTimeout`銆乣segmentTimeout`銆乣retries`銆?   - 褰撳墠 `invokeId` 鍙槸绠€鍗曡嚜澧烇紝P2 搴旇ˉ鏇寸ǔ鍋ョ殑璇锋眰涓婁笅鏂囩鐞嗭紝閬垮厤骞跺彂銆侀噸璇曘€佽繜鍒板搷搴旂浉浜掓薄鏌撱€?
-3. 鍒嗘鍝嶅簲鏀寔
-   - 鍦?`BacnetReadPropertyResponseDecoder.java`銆乣BacnetReadPropertyMultipleResponseDecoder.java` 琛ュ垎娈?`ComplexACK` 閲嶇粍銆?   - `BacnetIpUdpClient.java` 闇€瑕佷粠鈥滀竴鍙戜竴鏀垛€濆崌绾т负鈥滃悓涓€璇锋眰涓婁笅鏂囦笅鐨勫娈垫敹鍖呬笌缁勮鈥濄€?   - 娌℃湁杩欎竴姝ワ紝澶у璞°€侀暱灞炴€у垪琛ㄣ€佸鏉傚璞¤鍙栦粛浼氬ぇ閲忓け璐ャ€?
-4. 澶嶆潅绫诲瀷瑙ｇ爜
-   - 褰撳墠 `ANY` 鍙敮鎸?primitive锛孭2 搴斿湪 `codec/` 涓嬭ˉ閫氱敤鍊兼ā鍨嬪拰閫掑綊瑙ｇ爜鍣ㄣ€?   - 寤鸿鏂板锛歚BacnetAnyValue`銆乣BacnetConstructedValue`銆乣BacnetArrayValue`銆乣BacnetSequenceValue`銆?   - 鍏堜紭鍏堟墦閫氳繖浜涚幇鍦洪珮棰戝睘鎬э細`objectList`銆乣priorityArray`銆乣stateText`銆乣statusFlags`銆乣reliability`銆乣units`銆?   - 闇€瑕佸悓姝ヨ瘎浼?`ProcessResult` 閲屽浣曟壙杞界粨鏋勫寲鍊硷紱鑻ユ渶缁堜粛鎸夋爣閲忎笂鎶ワ紝搴旀彁渚涘彲閫夋墎骞冲寲绛栫暐銆?
-5. 绉佹湁瀵硅薄 / 绉佹湁灞炴€?   - 褰撳墠 `BacnetObjectType.java`銆乣BacnetPropertyIdentifier.java` 瀵规湭鐭?id 浼氱洿鎺ユ姤閿欍€?   - P2 搴斿厑璁糕€滄爣鍑嗘灇涓句紭鍏堬紝鏈煡鏁板€奸€忎紶鈥濓紝鍚﹀垯鍘傚晢绉佹湁瀵硅薄寰堥毦鎺ャ€?   - `BacnetAddressParser.java` 涔熻鎵╁睍鍦板潃璇硶锛岃嚦灏戞敮鎸佹暟鍊煎瀷瀵硅薄绫诲瀷鍜屽睘鎬?id锛岃€屼笉鍙緷璧栧綋鍓嶅唴缃灇涓惧悕銆?
-6. P2 寤鸿鏂板娴嬭瘯
-   - BBMD / Foreign Device 娉ㄥ唽涓庣画绉熸祴璇?   - 鍒嗘 `ReadProperty` / `ReadPropertyMultiple` 闆嗘垚娴嬭瘯
-   - `priorityArray`銆乣objectList`銆乣stateText` 瑙ｇ爜娴嬭瘯
-   - 绉佹湁瀵硅薄 / 绉佹湁灞炴€у湴鍧€瑙ｆ瀽涓庤鍙栨祴璇?   - 璺ㄥ瓙缃戝彂鐜颁笌璺敱璇婃柇娴嬭瘯
+2. 路由与跨子网发现
+3. 分段报文
+4. constructed / array / sequence 解码
+5. 私有对象 / 私有属性访问
 
-P2 瀹屾垚鏍囧噯锛?
-1. BACnet/IP 涓嶅啀灞€闄愪簬鍚屽瓙缃戠畝鍗曡鐐广€?2. 瀵瑰吀鍨嬫ゼ鎺ч」鐩腑鐨勫鏉傚睘鎬у拰澶у搷搴斿叿澶囩ǔ瀹氬吋瀹规€с€?3. 鍘傚晢绉佹湁鐐硅〃涓嶅啀鍥犱负鏋氫妇琛ㄧ己澶辫€岀洿鎺ヤ笉鍙帴鍏ャ€?
-### P3锛氬钩鍙扮骇 BACnet 鑳藉姏寤鸿
+**具体改造点：**
 
-鐩爣锛?
-1. 浠庘€滃崗璁┍鍔ㄢ€濆崌绾у埌鈥滃钩鍙扮骇 BACnet 瀛愮郴缁熲€濄€?2. 瑙ｅ喅澶ц妯¤澶囨帴鍏ャ€佸璞″缓妯°€佸巻鍙插璞°€佸憡璀︿笌浜掓搷浣滈獙璇侀棶棰樸€?
-寤鸿鑼冨洿锛?
-1. 浼犺緭灞傛墿灞?2. 瀵硅薄鍙戠幇涓庡缓妯?3. 鍘嗗彶涓庝簨浠惰兘鍔?4. 浜掓搷浣滀笌瑙傛祴浣撶郴
+1. **跨子网与路由**
+    - 在 `BacnetIpConnectionAdapter.java` 接入：`bbmdHost`、`bbmdPort`、`foreignDeviceTtlSeconds`、`networkNumber`、`macAddress`。
+    - 新增 BBMD/FD 注册、续租、失效重试逻辑。
+    - `Who-Is / I-Am` 不再只做“按实例号找单设备”，补广播发现、指定 network 范围发现、路由相关诊断命令。
 
-鍏蜂綋鏀归€犵偣锛?
-1. 浼犺緭灞傛墿灞?   - 璇勪及鏄惁缁х画瀹屽叏鑷爺锛岃繕鏄紩鍏ユ垚鐔熷簱鎵挎帴鏇村鏉?transport銆?   - 鑻ョ户缁嚜鐮旓紝寤鸿鎶?`protocol/bacnet` 鍐嶆媶灞傦細`transport/`銆乣session/`銆乣service/`銆乣model/`銆?   - P3 鍙瘎浼版敮鎸侊細`IPv6`銆乣MS/TP`銆乣BACnet/SC`銆?   - 杩欎竴闃舵涓嶅缓璁户缁妸鎵€鏈夊崗璁涔夐兘鍫嗗湪 `BacnetIpCollector` 涓€涓被閲屻€?
-2. 瀵硅薄鍙戠幇涓庡缓妯?   - 鏂板鈥滆澶囧揩鐓?/ 瀵硅薄鐩綍 / 灞炴€х紦瀛樷€濊兘鍔涖€?   - 閫氳繃鍛戒护鎴栧悗鍙颁换鍔″缓绔嬶細device 鍩烘湰淇℃伅銆乷bject list銆佸父鐢ㄥ睘鎬у揩鐓с€?   - 渚夸簬鍓嶇鐐逛綅杈呭姪閰嶇疆銆佸樊寮傛瘮瀵广€佽澶囧贰妫€鍜岃嚜鍔ㄧ敓鎴愬€欓€夌偣琛ㄣ€?   - 鐩稿叧鑳藉姏寤鸿娌夊埌鍗曠嫭鏈嶅姟锛岃€屼笉鏄户缁杩?collector 涓昏閾捐矾銆?
-3. 鍘嗗彶涓庝簨浠惰兘鍔?   - 琛?`ReadRange`銆乣TrendLog`銆佷簨浠?鍛婅瀵硅薄璇诲彇銆?   - 璇勪及鏄惁闇€瑕侊細alarm acknowledge銆乪vent enrollment / notification class 鐩稿叧璇婃柇銆乼ime sync / schedule 鐩稿叧鍛戒护銆?   - 杩欎竴闃舵鎵嶉€傚悎鎶?BACnet 浠庘€滈噰闆嗗崗璁€濇墿灞曟垚鈥滄ゼ鎺х郴缁熸帴鍏ュ崗璁€濄€?
-4. 瑙傛祴涓庝簰鎿嶄綔
-   - 鍦ㄧ洃鎺ч噷鏂板 BACnet 涓撻」鎸囨爣锛歚rpmFallbackCount`銆乣covNotificationCount`銆乣covResubscribeFailureCount`銆乣segmentedResponseCount`銆乣bbmdRenewFailureCount`銆乣invokeIdMismatchCount`銆?   - 鏋勫缓鍘傚晢鍏煎鐭╅樀锛岃嚦灏戣鐩栵細Siemens銆丣ohnson Controls銆丠oneywell銆乀rane銆丏elta銆佸浗浜у父瑙佹ゼ鎺х綉鍏炽€?   - 鑻ュ悗缁瀵瑰鎵胯鈥滃ぇ瑙勬ā BACnet 浜や粯鈥濓紝搴斿紩鍏ユ洿鎺ヨ繎 BTL 鍦烘櫙鐨勫洖褰掓祴璇曢泦銆?
-5. P3 寤鸿鏂板娴嬭瘯
-   - 澶氳澶囧苟鍙戜笌澶х偣琛ㄥ帇娴?   - 澶嶆潅瀵硅薄鍏ㄩ噺鎵弿鍥炲綊
-   - 鍘嗗彶瀵硅薄 / TrendLog 璇诲彇娴嬭瘯
-   - 澶氬巶鍟嗕簰鎿嶄綔娴嬭瘯
-   - 闀跨ǔ娴嬭瘯锛氶噸杩炪€佺画绉熴€佸箍鎾鏆淬€佸垎娈垫姤鏂囥€佽繜鍒板搷搴?
-P3 瀹屾垚鏍囧噯锛?
-1. BACnet 鑳藉姏涓嶅啀鍙槸鈥滃崗璁彃浠垛€濓紝鑰屾槸鐙珛鍙紨杩涚殑瀛愮郴缁熴€?2. 鏀寔澶ц妯￠」鐩殑鍙戠幇銆佸缓妯°€侀噰闆嗐€佸啓鍏ャ€佽闃呫€佽瘖鏂拰瑙傛祴銆?3. 鑳藉鏇寸ǔ濡ュ湴瀵瑰鎵胯鈥淏ACnet 鐜板満浜や粯鑳藉姏鈥濄€?
-### 闃舵鎺掑簭寤鸿
+2. **超时、重试、会话参数**
+    - 在 `BacnetIpUdpClient.java` 和 `BacnetIpConnectionAdapter.java` 真正接入：`apduTimeout`、`segmentTimeout`、`retries`。
+    - 当前 `invokeId` 只是简单自增，P2 应补更稳健的请求上下文管理，避免并发、重试、迟到响应相互污染。
 
-寤鸿涓ユ牸鎸変笅闈㈤『搴忔帹杩涳細
+3. **分段响应支持**
+    - 在 `BacnetReadPropertyResponseDecoder.java`、`BacnetReadPropertyMultipleResponseDecoder.java` 补分段 `ComplexACK` 重组。
+    - `BacnetIpUdpClient.java` 需要从“一发一收”升级为“同一请求上下文下的多段收包与组装”。
+    - 没有这一步，大对象、长属性列表、复杂对象读取仍会大量失败。
 
-1. `P1`锛氬厛琛ュ啓鍏ャ€丆OV銆佽瘖鏂€佸瓧娈垫敹鍙ｏ紝鎶婂悓缃戞鐜板満鏈€甯歌闇€姹傛墦閫氥€?2. `P2`锛氬啀琛?BBMD銆佸垎娈点€佸鏉傚睘鎬с€佺鏈夊璞★紝瑙ｅ喅鍏煎鎬у拰璺ㄧ綉娈甸棶棰樸€?3. `P3`锛氭渶鍚庡啀鍋?BACnet/SC銆丮S/TP銆乀rendLog銆佸璞″缓妯°€佸吋瀹圭煩闃电瓑骞冲彴绾у缓璁俱€?
-濡傛灉璧勬簮鏈夐檺锛屾渶灏忛棴鐜簲鑷冲皯瀹屾垚锛?
+4. **复杂类型解码**
+    - 当前 `ANY` 只支持 primitive，P2 应在 `codec/` 下补通用值模型和递归解码器。
+    - 建议新增：`BacnetAnyValue`、`BacnetConstructedValue`、`BacnetArrayValue`、`BacnetSequenceValue`。
+    - 先优先打通这些现场高频属性：`objectList`、`priorityArray`、`stateText`、`statusFlags`、`reliability`、`units`。
+    - 需要同步评估 `ProcessResult` 里如何承载结构化值；若最终仍按标量上报，应提供可选的打平策略。
+
+5. **私有对象 / 私有属性**
+    - 当前 `BacnetObjectType.java`、`BacnetPropertyIdentifier.java` 对未知 id 会直接报错。
+    - P2 应允许“标准枚举优先，未知数值透传”，否则厂商私有对象很难接。
+    - `BacnetAddressParser.java` 也要扩展地址语法，至少支持数值型对象类型和属性 id，而不仅依赖当前内置枚举名。
+
+6. **P2 建议新增测试**
+    - BBMD / Foreign Device 注册与续租测试
+    - 分段 `ReadProperty` / `ReadPropertyMultiple` 集成测试
+    - `priorityArray`、`objectList`、`stateText` 解码测试
+    - 私有对象 / 私有属性地址解析与读取测试
+    - 跨子网发现与路由诊断测试
+
+**P2 完成标准：**
+
+1. BACnet/IP 不再局限于同子网简单读点。
+2. 对典型楼控项目中的复杂属性和大响应具备稳定兼容性。
+3. 厂商私有点表不再因为枚举表缺失而直接不可接入。
+
+---
+
+## P3：平台级 BACnet 能力建设
+
+**目标：**
+
+1. 从“协议驱动”升级到“平台级 BACnet 子系统”。
+2. 解决大规模设备接入、对象建模、历史对象、告警与互操作验证问题。
+
+**建议范围：**
+
+1. 传输层扩展
+2. 对象发现与建模
+3. 历史与事件能力
+4. 互操作与观测体系
+
+**具体改造点：**
+
+1. **传输层扩展**
+    - 评估是否继续完全自研，还是引入成熟库承接更复杂 transport。
+    - 若继续自研，建议把 `protocol/bacnet` 再拆层：`transport/`、`session/`、`service/`、`model/`。
+    - P3 可评估支持：`IPv6`、`MS/TP`、`BACnet/SC`。
+    - 这一阶段不建议继续把所有协议语义都堆在 `BacnetIpCollector` 一个类里。
+
+2. **对象发现与建模**
+    - 新增“设备快照 / 对象目录 / 属性缓存”能力。
+    - 通过命令或后台任务建立：device 基本信息、object list、常用属性快照。
+    - 便于前端点位辅助配置、差异比对、设备巡检和自动生成候选点表。
+    - 相关能力建议沉到单独服务，而不是继续塞进 collector 主读链路。
+
+3. **历史与事件能力**
+    - 补 `ReadRange`、`TrendLog`、事件/告警对象读取。
+    - 评估是否需要：alarm acknowledge、event enrollment / notification class 相关诊断、time sync / schedule 相关命令。
+    - 这一阶段才适合把 BACnet 从“采集协议”扩展成“楼控系统接入协议”。
+
+4. **观测与互操作**
+    - 在监控里新增 BACnet 专项指标：`rpmFallbackCount`、`covNotificationCount`、`covResubscribeFailureCount`、`segmentedResponseCount`、`bbmdRenewFailureCount`、`invokeIdMismatchCount`。
+    - 构建厂商兼容矩阵，至少覆盖：Siemens、Johnson Controls、Honeywell、Trane、Delta、国产常见楼控网关。
+    - 若后续要对外承诺“大规模 BACnet 交付”，应引入更接近 BTL 场景的回归测试集。
+
+5. **P3 建议新增测试**
+    - 多设备并发与大点表压测
+    - 复杂对象全量扫描回归
+    - 历史对象 / TrendLog 读取测试
+    - 多厂商互操作测试
+    - 长稳测试：重连、续租、广播风暴、分段报文、迟到响应
+
+**P3 完成标准：**
+
+1. BACnet 能力不再只是“协议插件”，而是独立可演进的子系统。
+2. 支持大规模项目的发现、建模、采集、写入、订阅、诊断和观测。
+3. 能够更稳妥地对外承诺“BACnet 现场交付能力”。
+
+---
+
+## 阶段排序建议
+
+建议严格按下面顺序推进：
+
+1. `P1`：先补写入、COV、诊断、字段收口，把同网段现场最常见需求打通。
+2. `P2`：再补 BBMD、分段、复杂属性、私有对象，解决兼容性和跨网段问题。
+3. `P3`：最后再做 BACnet/SC、MS/TP、TrendLog、对象建模、兼容矩阵等平台级建设。
+
+如果资源有限，最小闭环应至少完成：
+
 1. `WriteProperty`
 2. `SubscribeCOV`
 3. `BBMD / Foreign Device`
-4. 鍒嗘鍝嶅簲鏀寔
-5. `priorityArray / objectList` 杩欑被澶嶆潅灞炴€цВ鐮?
-## 当前进展补充（2026-06-30）
+4. 分段响应支持
+5. `priorityArray / objectList` 这类复杂属性解码
 
 ### 已落地：BACnet MS/TP 传输层
 

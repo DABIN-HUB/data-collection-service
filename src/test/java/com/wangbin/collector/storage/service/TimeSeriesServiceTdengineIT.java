@@ -1,10 +1,11 @@
 package com.wangbin.collector.storage.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
-import com.wangbin.collector.storage.repository.AlarmRepository;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import org.junit.jupiter.api.Test;
@@ -47,26 +48,17 @@ class TimeSeriesServiceTdengineIT {
     private DeviceRepository deviceRepository;
 
     @Autowired
-    private AlarmRepository alarmRepository;
-
-    @Autowired
     private TdengineProperties properties;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void appendShouldPersistAndQueryFromRealTdengine() {
-        TdengineSchemaInitializer schemaInitializer = new TdengineSchemaInitializer(
-                dataRepository,
-                alarmRepository,
-                properties
-        );
+    void appendShouldPersistAndQueryFromRealTdengine() throws Exception {
         TimeSeriesService service = new TimeSeriesService(
                 dataRepository,
                 deviceRepository,
                 properties,
-                objectMapper,
-                schemaInitializer
+                objectMapper
         );
 
         long eventTs = System.currentTimeMillis();
@@ -77,9 +69,14 @@ class TimeSeriesServiceTdengineIT {
         point.setPointId("point-" + suffix);
         point.setPointCode("temp_code_" + suffix);
         point.setPointName("TDengine Integration Point");
+        point.setAddress("40001");
+        point.setDataType("FLOAT");
+        point.setUnit("C");
+        point.setUnitId(1);
 
-        ProcessResult result = ProcessResult.success(12.34, 12.34, "tdengine integration");
-        result.addMetadata("source", "TimeSeriesServiceTdengineIT");
+        ProcessResult result = ProcessResult.success(1234, 12.34, "tdengine integration");
+        result.addMetadata(ProcessResultMetadataKeys.RAW_BYTES, "04 D2");
+        result.addMetadata(ProcessResultMetadataKeys.SOURCE, "TimeSeriesServiceTdengineIT");
 
         service.append(deviceId, "MODBUS_TCP", point, result, eventTs);
 
@@ -100,7 +97,23 @@ class TimeSeriesServiceTdengineIT {
         assertThat(valueOf(row, "pointCode", "point_code")).isEqualTo(point.getPointCode());
         assertThat(valueOf(row, "pointName", "point_name")).isEqualTo(point.getPointName());
         assertThat(valueOf(row, "valueText", "value_text")).isEqualTo("12.34");
+        assertThat(valueOf(row, "unit")).isEqualTo("C");
         assertThat(String.valueOf(valueOf(row, "success"))).isEqualTo("true");
+
+        Map<String, Object> raw = readMap(String.valueOf(valueOf(row, "rawJson", "raw_json")));
+        assertThat(raw.get("address")).isEqualTo("40001");
+        assertThat(raw.get("rawValue")).isEqualTo(1234);
+        assertThat(raw.get("rawBytes")).isEqualTo("04 D2");
+        assertThat(raw.get("protocol")).isEqualTo("MODBUS_TCP");
+
+        Map<String, Object> processed = readMap(String.valueOf(valueOf(row, "processedJson", "processed_json")));
+        assertThat(processed.get("value")).isEqualTo(12.34);
+        assertThat(processed.get("quality")).isEqualTo("GOOD");
+    }
+
+    private Map<String, Object> readMap(String json) throws Exception {
+        return objectMapper.readValue(json, new TypeReference<>() {
+        });
     }
 
     private static Object valueOf(Map<String, Object> row, String... keys) {

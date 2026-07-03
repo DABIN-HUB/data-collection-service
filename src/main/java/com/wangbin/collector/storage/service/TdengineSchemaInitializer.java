@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TdengineSchemaInitializer implements ApplicationRunner {
 
     private static final String ALARM_EVENT_TYPE_COLUMN = "alarm_event_type";
+    private static final String TELEMETRY_UNIT_COLUMN = "unit";
 
     private final DataRepository dataRepository;
     private final AlarmRepository alarmRepository;
@@ -52,6 +53,7 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
                 () -> dataRepository.createStable(database, superTable),
                 "telemetry"
         );
+        ensureTelemetryUnitColumn(database, superTable);
     }
 
     public void ensureAlarmSuperTable() {
@@ -115,6 +117,15 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
             readyFlag.set(true);
             log.info("TDengine {} stable initialized: {}.{}", schemaName, database, superTable);
         }
+    }
+
+    private void ensureTelemetryUnitColumn(String database, String superTable) {
+        if (columnExists(database, superTable, TELEMETRY_UNIT_COLUMN)) {
+            return;
+        }
+        dataRepository.addTelemetryUnitColumn(database, superTable);
+        log.info("TDengine telemetry stable upgraded with column {}: {}.{}",
+                TELEMETRY_UNIT_COLUMN, database, superTable);
     }
 
     private void ensureAlarmEventTypeColumn(String database, String superTable) {

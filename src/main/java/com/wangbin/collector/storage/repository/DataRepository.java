@@ -19,6 +19,9 @@ public interface DataRepository {
                      @Param("tableName") String tableName,
                      @Param("columnName") String columnName);
 
+    void addTelemetryUnitColumn(@Param("database") String database,
+                                @Param("superTable") String superTable);
+
     void insertTelemetry(@Param("database") String database,
                          @Param("subTable") String subTable,
                          @Param("eventTs") long eventTs,
@@ -26,9 +29,7 @@ public interface DataRepository {
                          @Param("pointCode") String pointCode,
                          @Param("pointName") String pointName,
                          @Param("valueText") String valueText,
-                         @Param("valueDouble") Double valueDouble,
-                         @Param("valueLong") Long valueLong,
-                         @Param("valueBool") Boolean valueBool,
+                         @Param("unit") String unit,
                          @Param("quality") Integer quality,
                          @Param("success") Boolean success,
                          @Param("message") String message,

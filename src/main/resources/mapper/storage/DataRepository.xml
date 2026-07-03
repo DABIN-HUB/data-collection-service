@@ -17,9 +17,7 @@
             point_code NCHAR(128),
             point_name NCHAR(256),
             value_text NCHAR(1024),
-            value_double DOUBLE,
-            value_long BIGINT,
-            value_bool BOOL,
+            unit NCHAR(64),
             quality INT,
             success BOOL,
             message NCHAR(1024),
@@ -47,16 +45,20 @@
           AND col_name = #{columnName}
     </select>
 
+    <update id="addTelemetryUnitColumn">
+        ALTER STABLE ${database}.${superTable} ADD COLUMN unit NCHAR(64)
+    </update>
+
     <insert id="insertTelemetry">
         INSERT INTO ${database}.${subTable}
-        (ts,event_ts,point_id,point_code,point_name,value_text,value_double,value_long,value_bool,quality,success,message,raw_json,processed_json,metadata_json)
+        (ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
         VALUES
-        (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{valueDouble},#{valueLong},#{valueBool},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+        (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
     </insert>
 
     <select id="queryPointHistory" resultType="java.util.Map">
         SELECT
-            ts,event_ts,point_id,point_code,point_name,value_text,value_double,value_long,value_bool,quality,success,message,raw_json,processed_json,metadata_json
+            ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json
         FROM ${database}.${subTable}
         WHERE 1 = 1
         <if test="pointId != null and pointId != ''">

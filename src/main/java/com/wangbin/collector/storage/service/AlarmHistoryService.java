@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.monitor.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
+import com.wangbin.collector.storage.repository.DataRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -16,29 +17,33 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class AlarmHistoryService {
 
+    private static final String ALARM_EVENT_TYPE_COLUMN = "alarm_event_type";
+
     private final AlarmRepository alarmRepository;
+    private final DataRepository dataRepository;
     private final TdengineProperties properties;
     private final ObjectMapper objectMapper;
     private final Executor executor;
-    private final TdengineSchemaInitializer schemaInitializer;
+    private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
     public AlarmHistoryService(AlarmRepository alarmRepository,
+                               DataRepository dataRepository,
                                TdengineProperties properties,
                                ObjectMapper objectMapper,
-                               @Qualifier("cacheAsyncExecutor") Executor executor,
-                               TdengineSchemaInitializer schemaInitializer) {
+                               @Qualifier("cacheAsyncExecutor") Executor executor) {
         this.alarmRepository = alarmRepository;
+        this.dataRepository = dataRepository;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.executor = executor;
-        this.schemaInitializer = schemaInitializer;
     }
 
     public void saveAsync(AlertNotification notification) {
@@ -140,7 +145,30 @@ public class AlarmHistoryService {
     }
 
     private void ensureSchema() {
-        schemaInitializer.ensureAlarmSuperTable();
+        if (schemaReady.get() || !properties.isAutoCreate()) {
+            return;
+        }
+        synchronized (schemaReady) {
+            if (schemaReady.get()) {
+                return;
+            }
+            String database = sanitizeIdentifier(properties.getDatabase());
+            String superTable = sanitizeIdentifier(properties.getAlarmSuperTable());
+            dataRepository.createDatabase(database, properties.getKeepDays());
+            alarmRepository.createStable(database, superTable);
+            ensureAlarmEventTypeColumn(database, superTable);
+            schemaReady.set(true);
+        }
+    }
+
+    private void ensureAlarmEventTypeColumn(String database, String superTable) {
+        Long count = dataRepository.countColumn(database, superTable, ALARM_EVENT_TYPE_COLUMN);
+        if (count != null && count > 0) {
+            return;
+        }
+        alarmRepository.addAlarmEventTypeColumn(database, superTable);
+        log.info("TDengine alarm stable upgraded with column {}: {}.{}",
+                ALARM_EVENT_TYPE_COLUMN, database, superTable);
     }
 
     private void ensureSubTable(String database,

@@ -458,9 +458,21 @@
   function sanitizePointConfigForSave(point) {
     const next = cloneJson(point) || {};
     delete next.__configKey;
-    next.additionalConfig = isPlainObject(next.additionalConfig) ? next.additionalConfig : {};
+    next.additionalConfig = isPlainObject(next.additionalConfig)
+        ? next.additionalConfig
+        : {};
     if (!hasValue(next.alarmRule)) {
       next.alarmRule = "";
+    } else if (typeof next.alarmRule !== "string") {
+      next.alarmRule = JSON.stringify(next.alarmRule);
+    } else {
+      try {
+        next.alarmRule = JSON.stringify(JSON.parse(next.alarmRule));
+      } catch (error) {
+        throw new Error(
+            `点位 ${next.pointName || next.pointCode || ""} 的 alarmRule JSON 格式错误`
+        );
+      }
     }
     return next;
   }

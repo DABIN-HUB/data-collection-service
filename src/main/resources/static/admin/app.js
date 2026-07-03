@@ -262,7 +262,7 @@ function renderLiveClock() {
 function localizeDeviceStatus(status) {
   switch (String(status || "").toUpperCase()) {
     case "ONLINE":
-      return "鍦ㄧ嚎";
+      return "在线";
     case "RUNNING":
       return "启动中";
     case "OFFLINE":
@@ -347,7 +347,7 @@ async function callApi(path, options = {}) {
     throw apiError(body.message || "请求失败", body, response.status);
   }
   if (typeof body.code === "number" && body.code !== 200) {
-    throw apiError(body.message || `涓氬姟閿欒 ${body.code}`, body, response.status);
+    throw apiError(body.message || `业务错误码 ${body.code}`, body, response.status);
   }
   return body;
 }
@@ -701,7 +701,7 @@ async function loadOverview() {
     {
       label: "点位总数",
       value: pointCount || "-",
-      meta: [["杩炴帴", connectionCount || 0], ["鍋ュ悍", healthStatus]],
+      meta: [["连接", connectionCount || 0], ["健康", healthStatus]],
       tone: "green"
     },
     {
@@ -772,20 +772,20 @@ function renderDevices() {
                     <span class="device-status-dot ${status === "ONLINE" || status === "RUNNING" ? "online" : "offline"}"></span>
                     <strong>${escapeHtml(device.deviceName || id)}</strong>
                   </div>
-                  <div class="device-card-subtitle">${escapeHtml(id)} 路 ${escapeHtml(sourceLabel)}</div>
+                  <div class="device-card-subtitle">${escapeHtml(id)} · ${escapeHtml(sourceLabel)}</div>
                 </div>
                 <span class="badge ${local ? "badge-local" : "badge-remote"}">${escapeHtml(statusLabel)}</span>
               </div>
               <div class="device-card-meta">
-                <span>鍗忚 ${escapeHtml(device.protocolType || device.connectionType || "-")}</span>
-                <span>鍦板潃 ${escapeHtml(address)}</span>
+                <span>协议 ${escapeHtml(device.protocolType || device.connectionType || "-")}</span>
+                <span>地址 ${escapeHtml(address)}</span>
                 <span>周期 ${device.collectionInterval ?? "-"} ms</span>
               </div>
             </button>
             <div class="inline-actions device-card-actions">
               <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
-              <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">鍋滄</button>
-              <button onclick="showDeviceStatus('${escapeAttr(id)}')">鐘舵€?/button>
+              <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">停止</button>
+              <button onclick="showDeviceStatus('${escapeAttr(id)}')">状态</button>
               <button onclick="showDiff('${escapeAttr(id)}')">Diff</button>
               ${editButtons}
             </div>
@@ -1253,7 +1253,7 @@ function renderLocalProtocolSelection() {
 function defaultPointTemplate(deviceId) {
   return {
     pointCode: "temperature",
-    pointName: "娓╁害",
+    pointName: "温度",
     deviceId,
     address: "40001",
     dataType: "FLOAT",
@@ -1506,13 +1506,13 @@ async function startDevice(deviceId) {
   const action = isLocalDevice(device) ? "start-local" : "start";
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/${action}`, { method: "POST" });
   await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
-  toast(`宸茶姹傚惎鍔?${deviceId}`);
+  toast(`已请求启动设备 ${deviceId}`);
 }
 
 async function stopDevice(deviceId) {
   await callApi(`/api/device/${encodeURIComponent(deviceId)}/stop`, { method: "POST" });
   await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
-  toast(`宸茶姹傚仠姝?${deviceId}`);
+  toast(`已请求停止设备 ${deviceId}`);
 }
 
 async function showDeviceStatus(deviceId) {
@@ -1550,14 +1550,14 @@ function toggleRealtime() {
   if (state.realtimeTimer) {
     clearInterval(state.realtimeTimer);
     state.realtimeTimer = null;
-    $("#toggleRealtimeBtn").textContent = "鑷姩鍒锋柊";
+    $("#toggleRealtimeBtn").textContent = "自动刷新";
     return;
   }
   loadRealtime().catch((error) => toast(error.message, true));
   state.realtimeTimer = setInterval(() => {
     loadRealtime().catch((error) => toast(error.message, true));
   }, 3000);
-  $("#toggleRealtimeBtn").textContent = "鍋滄鍒锋柊";
+  $("#toggleRealtimeBtn").textContent = "停止自动刷新";
 }
 
 async function loadRealtime() {
@@ -1661,7 +1661,7 @@ async function executeCommand() {
 function showControlError(error) {
   const result = {
     success: false,
-    message: error.message || "鎿嶄綔澶辫触"
+    message: error.message || "操作失败"
   };
   if (error.httpStatus) {
     result.httpStatus = error.httpStatus;

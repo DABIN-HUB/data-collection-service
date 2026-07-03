@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.monitor.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
+import com.wangbin.collector.storage.repository.DataRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -22,7 +23,7 @@ import static org.mockito.Mockito.when;
 class AlarmHistoryServiceTest {
 
     private final AlarmRepository alarmRepository = mock(AlarmRepository.class);
-    private final TdengineSchemaInitializer schemaInitializer = mock(TdengineSchemaInitializer.class);
+    private final DataRepository dataRepository = mock(DataRepository.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Executor directExecutor = Runnable::run;
 
@@ -30,12 +31,13 @@ class AlarmHistoryServiceTest {
     void saveAsyncShouldEnsureSchemaAndInsertAlarmWhenEnabled() {
         TdengineProperties properties = new TdengineProperties();
         properties.setEnabled(true);
+        when(dataRepository.countColumn("wangbin_collector", "alarm_super", "alarm_event_type")).thenReturn(1L);
         AlarmHistoryService service = new AlarmHistoryService(
                 alarmRepository,
+                dataRepository,
                 properties,
                 objectMapper,
-                directExecutor,
-                schemaInitializer
+                directExecutor
         );
 
         AlertNotification notification = AlertNotification.builder()
@@ -55,7 +57,8 @@ class AlarmHistoryServiceTest {
 
         service.saveAsync(notification);
 
-        verify(schemaInitializer).ensureAlarmSuperTable();
+        verify(dataRepository).createDatabase("wangbin_collector", 30);
+        verify(alarmRepository).createStable("wangbin_collector", "alarm_super");
         verify(alarmRepository).createChildTable("wangbin_collector", "d_alarm_dev_1", "alarm_super", "Dev-1");
         verify(alarmRepository).insertAlarm(
                 eq("wangbin_collector"),
@@ -84,10 +87,10 @@ class AlarmHistoryServiceTest {
         properties.setEnabled(false);
         AlarmHistoryService service = new AlarmHistoryService(
                 alarmRepository,
+                dataRepository,
                 properties,
                 objectMapper,
-                directExecutor,
-                schemaInitializer
+                directExecutor
         );
 
         service.saveAsync(AlertNotification.builder()
@@ -96,7 +99,7 @@ class AlarmHistoryServiceTest {
                 .timestamp(1234L)
                 .build());
 
-        verifyNoInteractions(schemaInitializer);
+        verifyNoInteractions(dataRepository);
         verifyNoInteractions(alarmRepository);
     }
 
@@ -104,6 +107,7 @@ class AlarmHistoryServiceTest {
     void queryAlarmHistoryShouldExposeCompatibilityKeys() {
         TdengineProperties properties = new TdengineProperties();
         properties.setEnabled(true);
+        when(dataRepository.countColumn("wangbin_collector", "alarm_super", "alarm_event_type")).thenReturn(1L);
         Map<String, Object> row = new HashMap<>();
         row.put("alarm_event_type", "QUALITY");
         when(alarmRepository.queryAlarmHistory(
@@ -120,16 +124,17 @@ class AlarmHistoryServiceTest {
 
         AlarmHistoryService service = new AlarmHistoryService(
                 alarmRepository,
+                dataRepository,
                 properties,
                 objectMapper,
-                directExecutor,
-                schemaInitializer
+                directExecutor
         );
 
         List<Map<String, Object>> rows = service.queryAlarmHistory(
                 "Dev-1", "p1", "temperature", "WARNING", "r1", 1000L, 2000L, 10);
 
-        verify(schemaInitializer).ensureAlarmSuperTable();
+        verify(dataRepository).createDatabase("wangbin_collector", 30);
+        verify(alarmRepository).createStable("wangbin_collector", "alarm_super");
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).get("alarm_event_type")).isEqualTo("QUALITY");
         assertThat(rows.get(0).get("eventType")).isEqualTo("QUALITY");

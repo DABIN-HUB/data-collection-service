@@ -2,6 +2,10 @@
   port: 9090
   servlet:
     context-path: /collector
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
   shutdown: graceful
   compression:
     enabled: true
@@ -86,13 +90,19 @@ mybatis:
   type-aliases-package: com.wangbin.collector.common.domain.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 logging:
   level:
     com.wangbin.collector: INFO
     org.springframework: INFO
     org.springframework.web: INFO
+    org.mybatis: ERROR
+    org.mybatis.spring: ERROR
+    com.baomidou.mybatisplus: ERROR
+    com.zaxxer.hikari: WARN
+    # 你的 Mapper 包路径，改成项目实际路径
+    com.wangbin.collector.mapper: ERROR
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

@@ -53,17 +53,12 @@ class AlarmHistoryServiceTdengineIT {
 
     @Test
     void saveShouldPersistAndQueryFromRealTdengine() {
-        TdengineSchemaInitializer schemaInitializer = new TdengineSchemaInitializer(
-                dataRepository,
-                alarmRepository,
-                properties
-        );
         AlarmHistoryService service = new AlarmHistoryService(
                 alarmRepository,
+                dataRepository,
                 properties,
                 objectMapper,
-                directExecutor,
-                schemaInitializer
+                directExecutor
         );
 
         long eventTs = System.currentTimeMillis();

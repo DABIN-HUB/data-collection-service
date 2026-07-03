@@ -20,6 +20,7 @@ class TdengineSchemaInitializerTest {
         TdengineProperties properties = createProperties();
         when(dataRepository.countStable("wangbin_collector", "wangbin_super")).thenReturn(0L);
         when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(0L);
+        when(dataRepository.countColumn("wangbin_collector", "wangbin_super", "unit")).thenReturn(1L);
         when(dataRepository.countColumn("wangbin_collector", "alarm_super", "alarm_event_type")).thenReturn(1L);
 
         TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
@@ -29,14 +30,16 @@ class TdengineSchemaInitializerTest {
         verify(dataRepository).createDatabase("wangbin_collector", 30);
         verify(dataRepository).createStable("wangbin_collector", "wangbin_super");
         verify(alarmRepository).createStable("wangbin_collector", "alarm_super");
+        verify(dataRepository, never()).addTelemetryUnitColumn("wangbin_collector", "wangbin_super");
         verify(alarmRepository, never()).addAlarmEventTypeColumn("wangbin_collector", "alarm_super");
     }
 
     @Test
-    void runShouldSkipExistingStableCreationButUpgradeAlarmSchema() throws Exception {
+    void runShouldSkipExistingStableCreationButUpgradeSchemas() throws Exception {
         TdengineProperties properties = createProperties();
         when(dataRepository.countStable("wangbin_collector", "wangbin_super")).thenReturn(1L);
         when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(1L);
+        when(dataRepository.countColumn("wangbin_collector", "wangbin_super", "unit")).thenReturn(0L);
         when(dataRepository.countColumn("wangbin_collector", "alarm_super", "alarm_event_type")).thenReturn(0L);
 
         TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
@@ -46,6 +49,7 @@ class TdengineSchemaInitializerTest {
         verify(dataRepository).createDatabase("wangbin_collector", 30);
         verify(dataRepository, never()).createStable("wangbin_collector", "wangbin_super");
         verify(alarmRepository, never()).createStable("wangbin_collector", "alarm_super");
+        verify(dataRepository).addTelemetryUnitColumn("wangbin_collector", "wangbin_super");
         verify(alarmRepository).addAlarmEventTypeColumn("wangbin_collector", "alarm_super");
     }
 
