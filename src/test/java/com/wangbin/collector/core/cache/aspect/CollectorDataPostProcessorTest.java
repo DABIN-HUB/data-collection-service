@@ -90,13 +90,32 @@ public class CollectorDataPostProcessorTest {
     }
 
     @Test
-    void savePointAsyncShouldSkipStaleGenerationContext() {
+    void savePointAsyncShouldDropQueuedTaskWhenGenerationBecomesStale() {
+        class QueuingExecutor implements Executor {
+            private Runnable pending;
+
+            @Override
+            public void execute(Runnable command) {
+                pending = command;
+            }
+
+            void runPending() {
+                if (pending == null) {
+                    return;
+                }
+                Runnable task = pending;
+                pending = null;
+                task.run();
+            }
+        }
+
         MultiLevelCacheManager multiLevelCacheManager = mock(MultiLevelCacheManager.class);
         CacheReportService cacheReportService = mock(CacheReportService.class);
         TelemetryStreamService telemetryStreamService = mock(TelemetryStreamService.class);
         CollectionTaskGuard guard = new CollectionTaskGuard();
+        QueuingExecutor executor = new QueuingExecutor();
         CollectorDataPostProcessor processor = createProcessor(
-                Runnable::run,
+                executor,
                 multiLevelCacheManager,
                 cacheReportService,
                 telemetryStreamService,
@@ -107,9 +126,10 @@ public class CollectorDataPostProcessorTest {
         DataPoint point = createPoint("dev-3", "p3");
         point.setCacheEnabled(1);
         long generation = guard.activateNextGeneration("dev-3");
-        guard.clearDevice("dev-3");
 
         guard.runWithContext("dev-3", generation, () -> processor.savePointAsync("dev-3", point, 88));
+        guard.clearDevice("dev-3");
+        executor.runPending();
 
         verify(multiLevelCacheManager, never()).put(any(CacheKey.class), any(), anyLong());
         verify(telemetryStreamService, never()).append(eq("dev-3"), eq(point), any(ProcessResult.class));

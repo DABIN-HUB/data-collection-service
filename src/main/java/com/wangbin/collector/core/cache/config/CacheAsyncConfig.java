@@ -28,7 +28,7 @@ public class CacheAsyncConfig {
         executor.setAwaitTerminationSeconds(30);
         executor.setRejectedExecutionHandler(new ObservedRejectedExecutionHandler(
                 "cacheAsyncExecutor",
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                new ThreadPoolExecutor.AbortPolicy()
         ));
         executor.initialize();
         return executor;

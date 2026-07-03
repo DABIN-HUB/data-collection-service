@@ -415,8 +415,16 @@ public class CacheReportService {
         }
 
         if (deferred) {
-            scheduledRetry = true;
-            scheduleDeferredRetry(data, config, highPriority, tracker, attempt);
+            if (chunkKey != null && tracker.shouldRetry(chunkKey)) {
+                scheduledRetry = true;
+                log.warn("Deferred report retry: device={}, key={}, attempt={} / {}",
+                        tracker.deviceId, chunkKey, tracker.getAttemptCount(chunkKey), reportProperties.getRetryTimes());
+                scheduleDeferredRetry(data, config, highPriority, tracker, attempt);
+            } else {
+                tracker.markFailure();
+                log.warn("Deferred report retry exhausted: device={}, key={}, maxRetries={}",
+                        tracker.deviceId, chunkKey, reportProperties.getRetryTimes());
+            }
         } else if (success) {
             shadowManager.markReportedValuesChunk(data.getDeviceId(), data.getProperties());
         } else if (chunkKey != null && retryable && tracker.shouldRetry(chunkKey)) {

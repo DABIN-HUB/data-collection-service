@@ -21,7 +21,10 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
 /**
@@ -56,6 +59,12 @@ public class ConnectionManager {
     @Qualifier("monitorExecutor")
     private ScheduledExecutorService monitorExecutor;
 
+    @Autowired(required = false)
+    @Qualifier("heartbeatExecutor")
+    private ExecutorService heartbeatExecutor;
+
+    private final Set<String> heartbeatInProgress = ConcurrentHashMap.newKeySet();
+
     @PostConstruct
     public void init() {
         log.info("连接管理器初始化完成");
@@ -65,6 +74,7 @@ public class ConnectionManager {
     public void destroy() {
         log.info("开始关闭所有连接...");
         closeAllConnections();
+        heartbeatInProgress.clear();
         log.info("所有连接已关闭");
     }
 
@@ -347,12 +357,51 @@ public class ConnectionManager {
                 continue;
             }
 
-            if (monitorExecutor != null) {
-                monitorExecutor.submit(() -> handleHeartbeat(connection));
-            } else {
-                handleHeartbeat(connection);
-            }
+            submitHeartbeat(connection);
+
         }
+    }
+
+    private void submitHeartbeat(ConnectionAdapter connection) {
+        if (connection == null) {
+            return;
+        }
+        String deviceId = connection.getDeviceId();
+        if (deviceId == null || deviceId.isBlank()) {
+            handleHeartbeat(connection);
+            return;
+        }
+        if (!heartbeatInProgress.add(deviceId)) {
+            log.debug("skip duplicated heartbeat task: {}", deviceId);
+            return;
+        }
+        if (heartbeatExecutor == null) {
+            try {
+                handleHeartbeat(connection);
+            } finally {
+                heartbeatInProgress.remove(deviceId);
+            }
+            return;
+        }
+        try {
+            heartbeatExecutor.submit(() -> {
+                try {
+                    handleHeartbeat(connection);
+                } finally {
+                    heartbeatInProgress.remove(deviceId);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            heartbeatInProgress.remove(deviceId);
+            log.warn("heartbeat task rejected: device={}, queueSize={}", deviceId, heartbeatQueueSize(), e);
+        }
+    }
+
+    private int heartbeatQueueSize() {
+        if (heartbeatExecutor instanceof ThreadPoolExecutor executor) {
+            return executor.getQueue().size();
+        }
+        return -1;
     }
 
     private void handleHeartbeat(ConnectionAdapter connection) {

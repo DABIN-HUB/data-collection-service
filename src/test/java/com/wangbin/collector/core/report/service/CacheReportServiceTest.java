@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -144,6 +145,30 @@ public class CacheReportServiceTest {
         ReflectionTestUtils.invokeMethod(service, "dispatch", data, config, false, tracker, 0);
 
         verify(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+        verify(shadowManager, never()).markReportedValuesChunk(any(), any());
+    }
+
+    @Test
+    void cacheReportServiceShouldCapDeferredRetries() {
+        ReportProperties props = baseProps();
+        ReportManager reportManager = mock(ReportManager.class);
+        ShadowManager shadowManager = mock(ShadowManager.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        ReportData data = chunk("dev-deferred", "f1");
+        ReportConfig config = validConfig();
+        ReportResult deferred = ReportResult.error(data.getPointCode(), "offline", config.getTargetId());
+        deferred.addMetadata("deferred", true);
+
+        when(reportManager.reportAsync(any(), any())).thenReturn(CompletableFuture.completedFuture(deferred));
+
+        CacheReportService service = createService(reportManager, props, shadowManager, taskScheduler);
+        Object tracker = createTracker("dev-deferred", 8);
+
+        ReflectionTestUtils.invokeMethod(service, "dispatch", data, config, false, tracker, 0);
+        ReflectionTestUtils.invokeMethod(service, "dispatch", data, config, false, tracker, 1);
+        ReflectionTestUtils.invokeMethod(service, "dispatch", data, config, false, tracker, 2);
+
+        verify(taskScheduler, times(props.getRetryTimes())).schedule(any(Runnable.class), any(Instant.class));
         verify(shadowManager, never()).markReportedValuesChunk(any(), any());
     }
 

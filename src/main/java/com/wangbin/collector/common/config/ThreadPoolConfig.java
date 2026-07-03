@@ -125,6 +125,18 @@ public class ThreadPoolConfig {
         return executor;
     }
 
+    @Bean(name = "heartbeatExecutor", destroyMethod = "shutdown")
+    public ExecutorService heartbeatExecutor() {
+        return new ThreadPoolExecutor(
+                2,
+                2,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(256),
+                buildNamedThreadFactory("heartbeat-worker", true),
+                new ObservedRejectedExecutionHandler("heartbeatExecutor", new ThreadPoolExecutor.AbortPolicy())
+        );
+    }
+
     @Bean("ioIntensiveExecutor")
     public ExecutorService ioIntensiveExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors() * 2;

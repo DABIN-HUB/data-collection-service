@@ -28,12 +28,13 @@ public class CollectorDataPostProcessor {
     private final CollectionTaskGuard collectionTaskGuard;
 
     public void savePointAsync(String deviceId, DataPoint point, Object value) {
-        submit(deviceId, point, () -> {
+        Long generation = captureGeneration(deviceId);
+        submit(deviceId, point, generation, () -> {
             ProcessResult processResult = toProcessResult(value);
             if (processResult == null) {
                 return;
             }
-            if (!shouldProcess(deviceId)) {
+            if (!shouldProcess(deviceId, generation)) {
                 return;
             }
             pipeline.process(new TelemetryPostProcessContext(
@@ -42,7 +43,7 @@ public class CollectorDataPostProcessor {
                     processResult,
                     value,
                     System.currentTimeMillis(),
-                    currentGeneration()
+                    generation
             ));
         });
     }
@@ -51,14 +52,18 @@ public class CollectorDataPostProcessor {
                                List<DataPoint> points,
                                Map<String, Object> values,
                                BaseCollector collector) {
-        submit(deviceId, null, () -> {
+        Long generation = captureGeneration(deviceId);
+        submit(deviceId, null, generation, () -> {
             if (points == null || values == null || values.isEmpty()) {
                 return;
             }
-            if (!shouldProcess(deviceId)) {
+            if (!shouldProcess(deviceId, generation)) {
                 return;
             }
             for (DataPoint point : points) {
+                if (!shouldProcess(deviceId, generation)) {
+                    return;
+                }
                 if (point == null) {
                     continue;
                 }
@@ -81,7 +86,7 @@ public class CollectorDataPostProcessor {
                         processResult,
                         cacheValue,
                         System.currentTimeMillis(),
-                        currentGeneration()
+                        generation
                 ));
             }
             log.debug("async batch post-process success, device={}, points={}", deviceId, points.size());
@@ -103,12 +108,15 @@ public class CollectorDataPostProcessor {
         return fallback;
     }
 
-    private void submit(String deviceId, DataPoint point, Runnable task) {
+    private void submit(String deviceId, DataPoint point, Long generation, Runnable task) {
         if (deviceId == null || deviceId.isBlank() || task == null) {
             return;
         }
         try {
             cacheAsyncExecutor.execute(() -> {
+                if (!shouldProcess(deviceId, generation)) {
+                    return;
+                }
                 try {
                     task.run();
                 } catch (Exception e) {
@@ -126,16 +134,22 @@ public class CollectorDataPostProcessor {
         }
     }
 
-    private boolean shouldProcess(String deviceId) {
-        CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
-        if (context == null) {
+    private boolean shouldProcess(String deviceId, Long generation) {
+        if (generation == null) {
             return true;
         }
-        return collectionTaskGuard.isCurrent(deviceId, context.generation());
+        return collectionTaskGuard.isCurrent(deviceId, generation);
     }
 
-    private Long currentGeneration() {
+    private Long captureGeneration(String deviceId) {
         CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
-        return context != null ? context.generation() : null;
+        if (context == null) {
+            return null;
+        }
+        if (deviceId != null && !deviceId.equals(context.deviceId())) {
+            return null;
+        }
+        return context.generation();
     }
 }
+

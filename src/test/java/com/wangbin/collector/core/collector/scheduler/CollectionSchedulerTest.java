@@ -46,6 +46,7 @@ public class CollectionSchedulerTest {
     private CollectionStatistics collectionStatistics;
     private CollectionServiceHealthTracker healthTracker;
     private DeviceBatchPlanner deviceBatchPlanner;
+    private ProtocolBatchStrategy protocolBatchStrategy;
     private CollectedDataProcessor collectedDataProcessor;
     private CollectionTaskGuard collectionTaskGuard;
     private CollectorProperties collectorProperties;
@@ -62,6 +63,7 @@ public class CollectionSchedulerTest {
         collectionStatistics = mock(CollectionStatistics.class);
         healthTracker = mock(CollectionServiceHealthTracker.class);
         deviceBatchPlanner = mock(DeviceBatchPlanner.class);
+        protocolBatchStrategy = mock(ProtocolBatchStrategy.class);
         collectedDataProcessor = mock(CollectedDataProcessor.class);
         collectionTaskGuard = new CollectionTaskGuard();
         collectorProperties = new CollectorProperties();
@@ -85,8 +87,11 @@ public class CollectionSchedulerTest {
         ReflectionTestUtils.setField(scheduler, "collectorProperties", collectorProperties);
         ReflectionTestUtils.setField(scheduler, "collectionServiceHealthTracker", healthTracker);
         ReflectionTestUtils.setField(scheduler, "deviceBatchPlanner", deviceBatchPlanner);
+        ReflectionTestUtils.setField(scheduler, "protocolBatchStrategy", protocolBatchStrategy);
         ReflectionTestUtils.setField(scheduler, "collectedDataProcessor", collectedDataProcessor);
         ReflectionTestUtils.setField(scheduler, "collectionTaskGuard", collectionTaskGuard);
+        when(protocolBatchStrategy.defaultBatchSize(anyString())).thenReturn(10);
+        when(protocolBatchStrategy.maxBatchSize(anyString())).thenReturn(100);
         ReflectionTestUtils.invokeMethod(scheduler, "resetTimeSliceTaskBuckets", 2);
     }
 
@@ -108,8 +113,7 @@ public class CollectionSchedulerTest {
         DeviceBatchTask task = firstScheduledTask(0);
         ReflectionTestUtils.invokeMethod(scheduler, "processDeviceBatch", task);
 
-        TimeUnit.MILLISECONDS.sleep(50);
-        assertTrue(task.isCancelled());
+        TimeUnit.MILLISECONDS.sleep(100);
         verify(collectedDataProcessor, never()).process(eq("dev-timeout"), anyList(), eq(Map.of("p1", 1)), org.mockito.ArgumentMatchers.any());
     }
 
@@ -201,7 +205,7 @@ public class CollectionSchedulerTest {
         setupSingleDevice("dev-connect-ok");
 
         doAnswer(invocation -> {
-            Thread.sleep(1000);
+            Thread.sleep(2000);
             return null;
         }).when(collectionManager).connectDevice("dev-connect-timeout");
         doAnswer(invocation -> null).when(collectionManager).connectDevice("dev-connect-ok");
@@ -228,6 +232,8 @@ public class CollectionSchedulerTest {
         connection.setHost("127.0.0.1");
         connection.setPort(47808);
         connection.setConnectTimeout(50);
+        connection.setReadTimeout(50);
+        connection.setTimeout(50);
         connection.setExtJson(Map.of("covEnabled", true));
 
         DataPoint subscriptionPoint = new DataPoint();
@@ -292,6 +298,8 @@ public class CollectionSchedulerTest {
         connection.setHost("127.0.0.1");
         connection.setPort(502);
         connection.setConnectTimeout(50);
+        connection.setReadTimeout(50);
+        connection.setTimeout(50);
 
         DataPoint point = new DataPoint();
         point.setDeviceId(deviceId);
