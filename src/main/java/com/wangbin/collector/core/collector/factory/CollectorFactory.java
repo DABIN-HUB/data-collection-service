@@ -5,37 +5,32 @@ import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptor;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.stereotype.Component;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * 采集器工厂：根据协议类型创建对应的采集器实现。
+ * Creates protocol collectors by protocol type.
  */
 @Slf4j
 @Component
 public class CollectorFactory {
 
-    @Autowired
-    private AutowireCapableBeanFactory beanFactory;
-
+    private final AutowireCapableBeanFactory beanFactory;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
-
     private final Map<String, CollectorCreator> collectorCreators = new HashMap<>();
 
-    public CollectorFactory(ProtocolDescriptorRegistry protocolDescriptorRegistry) {
+    public CollectorFactory(AutowireCapableBeanFactory beanFactory,
+                            ProtocolDescriptorRegistry protocolDescriptorRegistry) {
+        this.beanFactory = beanFactory;
         this.protocolDescriptorRegistry = protocolDescriptorRegistry;
         registerCollectorCreators();
     }
 
-    /**
-     * 创建采集器并完成初始化。
-     */
     public ProtocolCollector createCollector(DeviceInfo deviceInfo) throws CollectorException {
         String protocolType = deviceInfo.getProtocolType();
         if (protocolType == null || protocolType.isEmpty()) {
@@ -64,31 +59,19 @@ public class CollectorFactory {
         }
     }
 
-    /**
-     * 注册协议与采集器创建器映射。
-     */
     public void registerCollector(String protocolType, CollectorCreator creator) {
         collectorCreators.put(normalize(protocolType), creator);
         log.info("Collector registered, protocolType={}", protocolType);
     }
 
-    /**
-     * 获取当前支持的所有协议类型。
-     */
     public String[] getSupportedProtocols() {
         return collectorCreators.keySet().toArray(new String[0]);
     }
 
-    /**
-     * 判断是否支持某个协议。
-     */
     public boolean supportsProtocol(String protocolType) {
         return collectorCreators.containsKey(normalize(protocolType));
     }
 
-    /**
-     * 注册内置采集器。
-     */
     private void registerCollectorCreators() {
         collectorCreators.clear();
         for (ProtocolDescriptor descriptor : protocolDescriptorRegistry.primaryDescriptors()) {
@@ -105,9 +88,6 @@ public class CollectorFactory {
         return protocolType == null ? "" : protocolType.trim().toUpperCase(Locale.ROOT).replace("-", "_");
     }
 
-    /**
-     * 使用 Spring BeanFactory 创建实例，保证 AOP 生效。
-     */
     public void registerCollector(String protocolType, Class<? extends ProtocolCollector> collectorClass) {
         registerCollector(protocolType, deviceInfo -> instantiateCollector(protocolType, collectorClass));
     }

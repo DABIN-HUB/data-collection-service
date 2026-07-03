@@ -10,7 +10,7 @@ class CollectorFactoryProtocolMappingTest {
 
     @Test
     void shouldSupportAllProtocolTypeEnumCodes() {
-        CollectorFactory factory = new CollectorFactory(new ProtocolDescriptorRegistry());
+        CollectorFactory factory = new CollectorFactory(null, new ProtocolDescriptorRegistry());
 
         for (ProtocolType protocolType : ProtocolType.values()) {
             assertTrue(

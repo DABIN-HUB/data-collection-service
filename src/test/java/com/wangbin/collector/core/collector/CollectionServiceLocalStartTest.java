@@ -5,7 +5,6 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,12 +22,13 @@ class CollectionServiceLocalStartTest {
 
     @BeforeEach
     void setUp() {
-        collectionService = new CollectionService();
         collectionScheduler = mock(CollectionScheduler.class);
         configManager = mock(ConfigManager.class);
-        ReflectionTestUtils.setField(collectionService, "collectionScheduler", collectionScheduler);
-        ReflectionTestUtils.setField(collectionService, "collectionStatistics", mock(CollectionStatistics.class));
-        ReflectionTestUtils.setField(collectionService, "configManager", configManager);
+        collectionService = new CollectionService(
+                collectionScheduler,
+                mock(CollectionStatistics.class),
+                configManager
+        );
     }
 
     @Test

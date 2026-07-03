@@ -3,28 +3,27 @@ package com.wangbin.collector.core.cache.aspect;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * 采集数据缓存切面。
- * 在原有缓存和上报链路上，新增一条 Redis Stream 实时写入分支。
+ * Captures collector read results and delegates telemetry post-processing asynchronously.
  */
 @Slf4j
 @Aspect
 @Component
+@RequiredArgsConstructor
 public class CollectorDataCacheAspect {
 
-    @Autowired
-    private CollectorDataPostProcessor dataPostProcessor;
+    private final CollectorDataPostProcessor dataPostProcessor;
 
     @Pointcut("execution(* com.wangbin.collector.core.collector.protocol.base.ReadableCollector.readPoint(..))")
     public void readPointPointcut() {
