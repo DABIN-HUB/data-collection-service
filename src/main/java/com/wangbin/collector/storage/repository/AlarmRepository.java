@@ -12,6 +12,9 @@ public interface AlarmRepository {
     void createStable(@Param("database") String database,
                       @Param("superTable") String superTable);
 
+    void addAlarmEventTypeColumn(@Param("database") String database,
+                                 @Param("superTable") String superTable);
+
     void createChildTable(@Param("database") String database,
                           @Param("subTable") String subTable,
                           @Param("superTable") String superTable,

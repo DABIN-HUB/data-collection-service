@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.monitor.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
-import com.wangbin.collector.storage.repository.DataRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -17,7 +16,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -25,23 +23,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AlarmHistoryService {
 
     private final AlarmRepository alarmRepository;
-    private final DataRepository dataRepository;
     private final TdengineProperties properties;
     private final ObjectMapper objectMapper;
     private final Executor executor;
-    private final AtomicBoolean schemaReady = new AtomicBoolean(false);
+    private final TdengineSchemaInitializer schemaInitializer;
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
     public AlarmHistoryService(AlarmRepository alarmRepository,
-                               DataRepository dataRepository,
                                TdengineProperties properties,
                                ObjectMapper objectMapper,
-                               @Qualifier("cacheAsyncExecutor") Executor executor) {
+                               @Qualifier("cacheAsyncExecutor") Executor executor,
+                               TdengineSchemaInitializer schemaInitializer) {
         this.alarmRepository = alarmRepository;
-        this.dataRepository = dataRepository;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.executor = executor;
+        this.schemaInitializer = schemaInitializer;
     }
 
     public void saveAsync(AlertNotification notification) {
@@ -116,7 +113,7 @@ public class AlarmHistoryService {
         ensureSchema();
         int resolvedLimit = limit == null || limit <= 0 ? properties.getQueryDefaultLimit() : limit;
         int guardedLimit = Math.max(1, Math.min(resolvedLimit, properties.getQueryMaxLimit()));
-        return alarmRepository.queryAlarmHistory(
+        List<Map<String, Object>> rows = alarmRepository.queryAlarmHistory(
                 sanitizeIdentifier(properties.getDatabase()),
                 resolveSubTableName(deviceId),
                 blankToNull(pointId),
@@ -127,6 +124,8 @@ public class AlarmHistoryService {
                 endTs,
                 guardedLimit
         );
+        rows.forEach(this::addCompatibilityKeys);
+        return rows;
     }
 
     public boolean isEnabled() {
@@ -141,19 +140,7 @@ public class AlarmHistoryService {
     }
 
     private void ensureSchema() {
-        if (schemaReady.get() || !properties.isAutoCreate()) {
-            return;
-        }
-        synchronized (schemaReady) {
-            if (schemaReady.get()) {
-                return;
-            }
-            String database = sanitizeIdentifier(properties.getDatabase());
-            String superTable = sanitizeIdentifier(properties.getAlarmSuperTable());
-            dataRepository.createDatabase(database, properties.getKeepDays());
-            alarmRepository.createStable(database, superTable);
-            schemaReady.set(true);
-        }
+        schemaInitializer.ensureAlarmSuperTable();
     }
 
     private void ensureSubTable(String database,
@@ -171,6 +158,15 @@ public class AlarmHistoryService {
             ensuredTables.put(subTable, true);
             log.info("TDengine alarm child table ready: {}", subTable);
         }
+    }
+
+    private void addCompatibilityKeys(Map<String, Object> row) {
+        if (row == null || !row.containsKey("alarm_event_type")) {
+            return;
+        }
+        Object value = row.get("alarm_event_type");
+        row.putIfAbsent("eventType", value);
+        row.putIfAbsent("event_type", value);
     }
 
     private String resolveSubTableName(String deviceId) {

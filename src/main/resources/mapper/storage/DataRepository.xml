@@ -32,6 +32,21 @@
         )
     </update>
 
+    <select id="countStable" resultType="java.lang.Long">
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.ins_stables
+        WHERE db_name = #{database}
+          AND stable_name = #{stableName}
+    </select>
+
+    <select id="countColumn" resultType="java.lang.Long">
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.ins_columns
+        WHERE db_name = #{database}
+          AND table_name = #{tableName}
+          AND col_name = #{columnName}
+    </select>
+
     <insert id="insertTelemetry">
         INSERT INTO ${database}.${subTable}
         (ts,event_ts,point_id,point_code,point_name,value_text,value_double,value_long,value_bool,quality,success,message,raw_json,processed_json,metadata_json)

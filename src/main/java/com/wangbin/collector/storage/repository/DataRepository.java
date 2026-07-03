@@ -13,6 +13,12 @@ public interface DataRepository {
 
     void createStable(@Param("database") String database, @Param("superTable") String superTable);
 
+    Long countStable(@Param("database") String database, @Param("stableName") String stableName);
+
+    Long countColumn(@Param("database") String database,
+                     @Param("tableName") String tableName,
+                     @Param("columnName") String columnName);
+
     void insertTelemetry(@Param("database") String database,
                          @Param("subTable") String subTable,
                          @Param("eventTs") long eventTs,

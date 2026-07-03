@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -27,7 +26,7 @@ public class TimeSeriesService {
     private final DeviceRepository deviceRepository;
     private final TdengineProperties properties;
     private final ObjectMapper objectMapper;
-    private final AtomicBoolean schemaReady = new AtomicBoolean(false);
+    private final TdengineSchemaInitializer schemaInitializer;
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
     public void append(String deviceId,
@@ -86,19 +85,7 @@ public class TimeSeriesService {
     }
 
     private void ensureSchema() {
-        if (schemaReady.get() || !properties.isAutoCreate()) {
-            return;
-        }
-        synchronized (schemaReady) {
-            if (schemaReady.get()) {
-                return;
-            }
-            String database = sanitizeIdentifier(properties.getDatabase());
-            String superTable = sanitizeIdentifier(properties.getSuperTable());
-            dataRepository.createDatabase(database, properties.getKeepDays());
-            dataRepository.createStable(database, superTable);
-            schemaReady.set(true);
-        }
+        schemaInitializer.ensureTelemetrySuperTable();
     }
 
     private void ensureSubTable(String database,

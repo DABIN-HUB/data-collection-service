@@ -12,7 +12,7 @@
             rule_id NCHAR(128),
             rule_name NCHAR(256),
             alarm_level NCHAR(64),
-            event_type NCHAR(64),
+            alarm_event_type NCHAR(64),
             message NCHAR(1024),
             value_text NCHAR(1024),
             value_double DOUBLE,
@@ -25,6 +25,10 @@
         )
     </update>
 
+    <update id="addAlarmEventTypeColumn">
+        ALTER STABLE ${database}.${superTable} ADD COLUMN alarm_event_type NCHAR(64)
+    </update>
+
     <update id="createChildTable">
         CREATE TABLE IF NOT EXISTS ${database}.${subTable}
         USING ${database}.${superTable}
@@ -33,14 +37,14 @@
 
     <insert id="insertAlarm">
         INSERT INTO ${database}.${subTable}
-        (ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json)
+        (ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json)
         VALUES
         (#{eventTs},#{eventTs},#{deviceName},#{pointId},#{pointCode},#{ruleId},#{ruleName},#{alarmLevel},#{eventType},#{message},#{valueText},#{valueDouble},#{valueLong},#{valueBool},#{unit},#{payloadJson})
     </insert>
 
     <select id="queryAlarmHistory" resultType="java.util.Map">
         SELECT
-            ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
+            ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
         FROM ${database}.${subTable}
         WHERE 1 = 1
         <if test="pointId != null and pointId != ''">
