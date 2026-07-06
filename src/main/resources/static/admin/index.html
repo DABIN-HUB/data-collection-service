@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>采集器管理控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=20260702e">
-  <link rel="stylesheet" href="./admin-redesign.css?v=20260702e">
+  <link rel="stylesheet" href="./styles.css?v=20260706-p0b">
+  <link rel="stylesheet" href="./admin-redesign.css?v=20260706-p0b">
   <link rel="stylesheet" href="./design-lab.css?v=20260702c">
 </head>
 <body class="theme-anchor">
@@ -102,21 +102,19 @@
           <section id="devices" class="panel device-panel">
             <div class="panel-head">
               <div class="panel-head-main">
-                <div class="panel-tabs">
-                  <button type="button" class="is-active">设备树</button>
-                  <button type="button">收藏夹</button>
-                </div>
+                <span class="panel-kicker">主工作流</span>
                 <h2>设备列表</h2>
               </div>
               <div class="mini-actions">
-                <button type="button" class="icon-button small" aria-label="筛选"></button>
                 <button type="button" class="icon-button small plus" aria-label="新增"></button>
               </div>
             </div>
 
             <div class="search-row">
-              <input type="search" placeholder="搜索设备 / 协议 / IP">
+              <input id="deviceSearchInput" type="search" placeholder="搜索设备 / 协议 / IP">
+              <span id="deviceSearchMeta" class="search-meta">等待加载</span>
             </div>
+            <div id="deviceListState" class="panel-state hidden" role="status"></div>
 
             <div class="device-tree-shell">
               <table class="device-tree-table">
@@ -332,7 +330,7 @@
                     <span class="panel-kicker">点位工作区</span>
                     <h2>实时点位工作台</h2>
                   </div>
-                  <span class="stage-note">固定预留 15 条显示空间</span>
+                  <span id="realtimeStageNote" class="stage-note">选择设备后查看当前点位快照</span>
                 </div>
 
                 <div class="workbench-toolbar workbench-toolbar-compact">
@@ -350,6 +348,7 @@
                 </div>
 
                 <section id="realtime" class="console-module console-module-active realtime-stage">
+                  <div id="realtimeState" class="panel-state hidden" role="status"></div>
                   <div class="table-wrap point-runtime-wrap">
                     <table class="runtime-table realtime-table">
                       <thead>
@@ -377,15 +376,15 @@
                     <span class="panel-kicker">设备工具区</span>
                     <h2>控制与诊断面板</h2>
                   </div>
-                  <span class="stage-note">与上方点位区独立切换</span>
+                  <span class="stage-note">收敛为主操作流，降低切换成本</span>
                 </div>
 
                 <div class="panel-tabs action-tabs">
                   <button type="button" class="console-tab is-active" data-console-tab="control"><span class="tab-glyph" aria-hidden="true">控</span><span>手动控制</span></button>
-                  <button type="button" class="console-tab" data-console-tab="history"><span class="tab-glyph" aria-hidden="true">史</span><span>历史数据</span></button>
                   <button type="button" class="console-tab" data-console-tab="shadow"><span class="tab-glyph" aria-hidden="true">影</span><span>设备影子</span></button>
-                  <button type="button" class="console-tab" data-console-tab="note-alarm"><span class="tab-glyph" aria-hidden="true">警</span><span>事件告警</span></button>
-                  <button type="button" class="console-tab" data-console-tab="note-log"><span class="tab-glyph" aria-hidden="true">志</span><span>通讯日志</span></button>
+                </div>
+                <div class="capability-note">
+                  历史数据、事件告警、通讯日志暂不放入主工作流，待后端接口补齐后再恢复。
                 </div>
 
                 <section id="control" class="console-module console-module-active" data-console-panel="control">
@@ -437,6 +436,7 @@
                 </section>
 
                 <section id="shadow" class="console-module hidden" data-console-panel="shadow">
+                  <div id="shadowState" class="panel-state hidden" role="status"></div>
                   <div class="surface-grid two">
                     <div class="surface-card">
                       <div class="surface-card-head">
@@ -500,6 +500,7 @@
                     </label>
                   </div>
 
+                  <div id="protocolFormState" class="panel-state hidden" role="status"></div>
                   <form id="connectionForm" class="dynamic-form"></form>
 
                   <div class="inline-actions protocol-actions">
@@ -514,6 +515,7 @@
                       <h3>配置差异</h3>
                       <span class="surface-note">本地 vs 远端</span>
                     </div>
+                    <div id="protocolDiffState" class="panel-state hidden" role="status"></div>
                     <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
                   </div>
                 </aside>
@@ -523,6 +525,24 @@
         </div>
 
         <div class="workspace-column workspace-right">
+          <section id="monitor" class="panel monitor-panel monitor-panel-compact monitor-summary-panel">
+            <div class="panel-head monitor-summary-head">
+              <div class="panel-head-main">
+                <span class="panel-kicker">状态摘要</span>
+                <h2>运行监控</h2>
+                <p>先看四个关键指标，原始诊断 JSON 继续收在折叠区。</p>
+              </div>
+              <span class="pill subtle">系统侧观测</span>
+            </div>
+
+            <div id="monitorState" class="panel-state hidden" role="status"></div>
+            <div id="monitorCards" class="cards monitor-cards monitor-cards-compact"></div>
+            <details class="monitor-details">
+              <summary>查看原始诊断 JSON</summary>
+              <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+            </details>
+          </section>
+
           <section class="panel inspector-panel point-config-panel">
             <div class="panel-head inspector-head inspector-head-compact">
               <div class="panel-head-main">
@@ -561,22 +581,6 @@
               </div>
             </div>
           </section>
-
-          <section id="monitor" class="panel monitor-panel monitor-panel-compact">
-            <div class="panel-head">
-              <div>
-                <h2>监控诊断</h2>
-                <p>首页只展示摘要，详细 JSON 收到折叠区。</p>
-              </div>
-              <span class="pill subtle">系统侧观测</span>
-            </div>
-
-            <div id="monitorCards" class="cards monitor-cards"></div>
-            <details class="monitor-details">
-              <summary>查看原始诊断 JSON</summary>
-              <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
-            </details>
-          </section>
         </div>
       </section>
 
@@ -587,7 +591,7 @@
   </div>
 
   <script src="./design-lab.js?v=20260702c"></script>
-  <script src="./app.js?v=20260702e"></script>
+  <script src="./app.js?v=20260706-p0a"></script>
   <script src="./local-point-editor.js?v=20260702e"></script>
   <script src="./point-config-editor.js?v=20260702e"></script>
 </body>

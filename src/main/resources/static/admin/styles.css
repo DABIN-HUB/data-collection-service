@@ -623,12 +623,79 @@ textarea {
   gap: 1rem;
 }
 
+.workspace-right {
+  align-content: start;
+  gap: 1.1rem;
+}
+
 .search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   margin: 0.85rem 0 0.9rem;
 }
 
+.search-row input[type="search"],
+.search-row input[type="text"] {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.search-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.panel-state {
+  margin-top: 0.7rem;
+  padding: 0.72rem 0.88rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7faff;
+  color: #4f6178;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.panel-state.hidden {
+  display: none;
+}
+
+.panel-state-info {
+  border-color: rgba(35, 118, 234, 0.18);
+  background: #f3f8ff;
+  color: #2a5f9f;
+}
+
+.panel-state-muted {
+  border-color: rgba(110, 127, 147, 0.16);
+  background: #f8fafc;
+  color: #66768a;
+}
+
+.panel-state-warning {
+  border-color: rgba(203, 134, 39, 0.22);
+  background: #fff8ef;
+  color: #9a5f10;
+}
+
+.panel-state-error {
+  border-color: rgba(175, 67, 67, 0.22);
+  background: #fff2f2;
+  color: #a04343;
+}
+
+.panel-state-success {
+  border-color: rgba(51, 148, 93, 0.2);
+  background: #eefaf2;
+  color: #26714a;
+}
+
 .device-tree-shell {
-  max-height: 920px;
+  min-height: 24rem;
+  max-height: min(72vh, 58rem);
   overflow: auto;
 }
 
@@ -962,7 +1029,9 @@ tbody tr:hover td {
 }
 
 .point-runtime-wrap {
-  max-height: 780px;
+  min-height: 24rem;
+  max-height: min(64vh, 44rem);
+  overflow: auto;
 }
 
 .action-deck {
@@ -973,6 +1042,23 @@ tbody tr:hover td {
 .action-tabs {
   border-bottom: 1px solid var(--line);
   padding-bottom: 0.2rem;
+}
+
+.capability-note {
+  padding: 0.78rem 0.9rem;
+  border: 1px dashed rgba(102, 126, 156, 0.3);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfcff 0%, #f5f8fd 100%);
+  color: #5f7288;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+#toggleRealtimeBtn.is-active {
+  border-color: rgba(35, 118, 234, 0.18);
+  background: linear-gradient(135deg, #2376ea, #145ebf);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(35, 118, 234, 0.18);
 }
 
 .console-module {
@@ -1033,6 +1119,48 @@ pre {
 
 .monitor-cards .card strong {
   font-size: 1.4rem;
+}
+
+.monitor-summary-panel {
+  gap: 0.85rem;
+}
+
+.monitor-summary-head {
+  align-items: flex-start;
+}
+
+.monitor-summary-head .panel-head-main {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.monitor-summary-panel .panel-head p {
+  max-width: 24rem;
+}
+
+.monitor-cards-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.monitor-cards-compact .card {
+  min-height: 84px;
+  padding: 0.78rem 0.88rem;
+}
+
+.monitor-cards-compact .card small {
+  font-size: 0.72rem;
+}
+
+.monitor-cards-compact .card strong {
+  font-size: 1.16rem;
+}
+
+.monitor-cards-compact .card .card-subtext {
+  margin-top: 0.45rem;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
 }
 
 .point-detail-stack {
@@ -1893,7 +2021,9 @@ body.modal-active {
 }
 
 .point-runtime-wrap {
-  max-height: 640px;
+  min-height: 22rem;
+  max-height: min(56vh, 38rem);
+  overflow: auto;
 }
 
 .realtime-table tbody tr {
@@ -2013,7 +2143,7 @@ body.modal-active {
 
 .monitor-panel-compact {
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
 }
 
 .monitor-panel-compact .monitor-cards {

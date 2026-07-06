@@ -145,6 +145,11 @@ body {
   gap: var(--pd-shell-gap);
 }
 
+.workspace-right {
+  align-content: start;
+  gap: 1.15rem;
+}
+
 .panel,
 .surface-card {
   border-radius: 22px;
@@ -181,8 +186,8 @@ body {
 }
 
 .device-tree-shell {
-  min-height: 35rem;
-  max-height: 35rem;
+  min-height: 24rem;
+  max-height: min(68vh, 44rem);
   padding-right: 0.2rem;
   border-top: 1px solid rgba(216, 226, 238, 0.82);
 }
@@ -292,8 +297,9 @@ body {
 }
 
 .point-runtime-wrap {
-  min-height: 35.4rem;
-  max-height: 35.4rem;
+  min-height: 24rem;
+  max-height: min(62vh, 40rem);
+  overflow: auto;
   border-radius: 18px;
   border-color: rgba(210, 222, 236, 0.98);
   background: #fff;
@@ -311,7 +317,7 @@ body {
 
 .action-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.6rem;
   border: 0;
   padding: 0;
@@ -405,14 +411,15 @@ body {
 }
 
 .point-config-stage {
-  min-height: 46.5rem;
-  max-height: 46.5rem;
-  overflow: hidden;
+  min-height: 26rem;
+  max-height: min(72vh, 44rem);
+  overflow: auto;
 }
 
 .point-config-stage > .empty-state,
 .point-config-stage > .inspector-body {
-  height: 100%;
+  min-height: 100%;
+  height: auto;
 }
 
 .inspector-body {
@@ -437,6 +444,66 @@ body {
   right: 1.58rem;
   width: 0.82rem;
   height: 0.82rem;
+}
+
+.monitor-summary-panel {
+  gap: 0.82rem;
+}
+
+.monitor-summary-head {
+  align-items: flex-start;
+}
+
+.monitor-summary-head .panel-head-main {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.monitor-summary-panel .panel-kicker {
+  width: max-content;
+}
+
+.monitor-summary-panel .panel-head p {
+  max-width: 23rem;
+}
+
+.monitor-cards-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.monitor-cards-compact .card {
+  min-height: 80px;
+  padding: 0.76rem 0.82rem;
+}
+
+.monitor-cards-compact .card strong {
+  font-size: 1.08rem;
+}
+
+.monitor-cards-compact .card small {
+  font-size: 0.7rem;
+}
+
+.monitor-cards-compact .card .card-subtext {
+  margin-top: 0.42rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.monitor-cards-compact .card::before {
+  width: 2.1rem;
+  height: 2.1rem;
+  top: 0.72rem;
+  right: 0.72rem;
+  border-radius: 0.72rem;
+}
+
+.monitor-cards-compact .card::after {
+  top: 1.22rem;
+  right: 1.28rem;
+  width: 0.7rem;
+  height: 0.7rem;
 }
 
 body.theme-anchor {
@@ -554,7 +621,7 @@ body.theme-anchor .empty-state span {
   }
 
   .action-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -572,8 +639,8 @@ body.theme-anchor .empty-state span {
   }
 
   .point-config-stage {
-    min-height: 32rem;
-    max-height: 32rem;
+    min-height: 24rem;
+    max-height: none;
   }
 }
 

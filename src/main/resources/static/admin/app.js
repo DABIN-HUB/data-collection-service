@@ -6,9 +6,17 @@ const state = {
   currentProtocol: null,
   currentLocalProtocol: null,
   localDeviceEditingId: null,
+  deviceSearch: "",
+  selectedDeviceId: "",
   realtimeTimer: null,
+  realtimeAutoRefreshEnabled: false,
+  realtimeLoading: false,
+  realtimeQueued: false,
+  realtimeSearchTimer: null,
+  realtimeRequestSeq: 0,
   lastSuggestedCommandText: "",
   realtimeSearch: "",
+  realtimeRawPoints: [],
   realtimePoints: [],
   selectedRealtimePointKey: null,
   activeWorkbenchTab: "points"
@@ -70,13 +78,11 @@ function bindEvents() {
   $("#syncConfigBtn").addEventListener("click", syncConfig);
   $("#protocolSelect").addEventListener("change", renderSelectedProtocol);
   $("#localProtocolSelect").addEventListener("change", renderLocalProtocolSelection);
-  $("#connectionDeviceSelect").addEventListener("change", syncProtocolSelectionToDevice);
   $("#loadConnectionBtn").addEventListener("click", loadConnection);
   $("#saveConnectionBtn").addEventListener("click", saveConnection);
   $("#toggleRealtimeBtn").addEventListener("click", toggleRealtime);
   $("#resetAdaptiveBtn").addEventListener("click", resetAdaptive);
   $("#writePointsBtn").addEventListener("click", writePoints);
-  $("#controlDeviceSelect").addEventListener("change", syncControlCommandExample);
   $("#executeCommandBtn").addEventListener("click", executeCommand);
   $("#loadShadowBtn").addEventListener("click", loadShadow);
   $("#saveDesiredBtn").addEventListener("click", saveDesired);
@@ -90,13 +96,26 @@ function bindConsoleShell() {
   document.querySelectorAll("[data-workbench-tab]").forEach((button) => {
     button.addEventListener("click", () => activateWorkbenchTab(button.dataset.workbenchTab));
   });
+  updateRealtimeToggleButton();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  const realtimeSelect = $("#realtimeDeviceSelect");
-  if (realtimeSelect) {
-    realtimeSelect.addEventListener("change", () => {
-      syncSelectedDeviceSummary();
+  ["#realtimeDeviceSelect", "#connectionDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
+    const select = $(selector);
+    if (!select) {
+      return;
+    }
+    select.addEventListener("change", (event) => {
+      const deviceId = String(event.target.value || "");
+      const activatePoints = selector === "#realtimeDeviceSelect";
+      syncDeviceContext(deviceId, { activatePoints, loadRealtime: true }).catch((error) => toast(error.message, true));
+    });
+  });
+
+  const deviceSearchInput = $("#deviceSearchInput");
+  if (deviceSearchInput) {
+    deviceSearchInput.addEventListener("input", (event) => {
+      state.deviceSearch = String(event.target.value || "").trim().toLowerCase();
       renderDevices();
-      loadRealtime().catch((error) => toast(error.message, true));
     });
   }
 
@@ -104,7 +123,13 @@ function bindConsoleShell() {
   if (pointSearch) {
     pointSearch.addEventListener("input", (event) => {
       state.realtimeSearch = String(event.target.value || "").trim().toLowerCase();
-      loadRealtime().catch((error) => toast(error.message, true));
+      if (state.realtimeSearchTimer) {
+        clearTimeout(state.realtimeSearchTimer);
+      }
+      state.realtimeSearchTimer = window.setTimeout(() => {
+        state.realtimeSearchTimer = null;
+        renderRealtimeTable();
+      }, 120);
     });
   }
 
@@ -143,30 +168,85 @@ function activateWorkbenchTab(tabName) {
   });
 }
 
+function currentDeviceSelection() {
+  return state.selectedDeviceId
+    || $("#realtimeDeviceSelect")?.value
+    || $("#connectionDeviceSelect")?.value
+    || $("#controlDeviceSelect")?.value
+    || $("#shadowDeviceSelect")?.value
+    || "";
+}
+
+function resolveAvailableDeviceId(deviceId = "") {
+  const deviceIds = state.devices
+    .map((device) => device.id || device.deviceId)
+    .filter(Boolean);
+  if (!deviceIds.length) {
+    return "";
+  }
+  if (deviceId && deviceIds.includes(deviceId)) {
+    return deviceId;
+  }
+  const current = currentDeviceSelection();
+  if (current && deviceIds.includes(current)) {
+    return current;
+  }
+  return deviceIds[0];
+}
+
+function syncDeviceSelectValues(deviceId) {
+  ["#connectionDeviceSelect", "#realtimeDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
+    const select = $(selector);
+    if (!select) {
+      return;
+    }
+    const exists = Array.from(select.options).some((item) => item.value === deviceId);
+    if (exists) {
+      select.value = deviceId;
+    } else if (!deviceId && select.options.length) {
+      select.selectedIndex = 0;
+    } else {
+      select.value = "";
+    }
+  });
+}
+
+function syncDeviceContext(deviceId, { activatePoints = false, loadRealtime: shouldLoadRealtime = false } = {}) {
+  const resolvedDeviceId = resolveAvailableDeviceId(deviceId);
+  state.selectedDeviceId = resolvedDeviceId;
+  syncDeviceSelectValues(resolvedDeviceId);
+  syncProtocolSelectionToDevice(false);
+  syncControlCommandExample();
+  syncSelectedDeviceSummary(resolvedDeviceId);
+  renderDevices();
+  syncRealtimeTimer();
+
+  if (!resolvedDeviceId) {
+    state.realtimeRawPoints = [];
+    state.realtimePoints = [];
+    clearSelectedPointInspector();
+    renderRealtimeTable();
+    return Promise.resolve("");
+  }
+
+  if (activatePoints) {
+    activateWorkbenchTab("points");
+  }
+  if (shouldLoadRealtime) {
+    return loadRealtime().then(() => resolvedDeviceId);
+  }
+  return Promise.resolve(resolvedDeviceId);
+}
+
 function selectedDeviceId() {
-  return $("#realtimeDeviceSelect")?.value || $("#connectionDeviceSelect")?.value || "";
+  return currentDeviceSelection();
 }
 
 function selectDevice(deviceId) {
   if (!deviceId) {
     return;
   }
-  ["#connectionDeviceSelect", "#realtimeDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
-    const select = $(selector);
-    if (!select) {
-      return;
-    }
-    const option = Array.from(select.options).find((item) => item.value === deviceId);
-    if (option) {
-      select.value = deviceId;
-    }
-  });
-  syncProtocolSelectionToDevice(false);
-  syncControlCommandExample();
-  syncSelectedDeviceSummary(deviceId);
-  renderDevices();
-  activateWorkbenchTab("points");
-  loadRealtime().catch((error) => toast(error.message, true));
+  syncDeviceContext(deviceId, { activatePoints: true, loadRealtime: true }).catch((error) => toast(error.message, true));
 }
 
 function realtimePointKey(point, index = 0) {
@@ -272,7 +352,7 @@ function localizeDeviceStatus(status) {
   }
 }
 
-function syncSelectedDeviceSummary(deviceId = $("#realtimeDeviceSelect")?.value) {
+function syncSelectedDeviceSummary(deviceId = selectedDeviceId()) {
   const device = deviceId ? getDeviceById(deviceId) : null;
   const runtime = deviceId ? getRuntimeStatus(deviceId) : null;
   const status = resolveDeviceStatus(device, runtime);
@@ -294,6 +374,75 @@ function syncSelectedDeviceSummary(deviceId = $("#realtimeDeviceSelect")?.value)
   }
 }
 
+function matchesDeviceSearch(device) {
+  const search = String(state.deviceSearch || "").trim().toLowerCase();
+  if (!search) {
+    return true;
+  }
+  return [
+    device?.deviceName,
+    device?.id,
+    device?.deviceId,
+    device?.protocolType,
+    device?.connectionType,
+    device?.ipAddress,
+    device?.host,
+    device?.port
+  ].some((value) => String(value || "").toLowerCase().includes(search));
+}
+
+function updateDeviceSearchMeta(filteredCount, totalCount) {
+  const target = $("#deviceSearchMeta");
+  if (!target) {
+    return;
+  }
+  if (!totalCount) {
+    target.textContent = "暂无设备";
+    return;
+  }
+  target.textContent = state.deviceSearch
+    ? `命中 ${filteredCount}/${totalCount}`
+    : `共 ${totalCount} 台设备`;
+}
+
+function setPanelState(selector, message, tone = "info") {
+  const target = $(selector);
+  if (!target) {
+    return;
+  }
+  if (!message) {
+    target.textContent = "";
+    target.className = "panel-state hidden";
+    return;
+  }
+  target.textContent = message;
+  target.className = `panel-state panel-state-${tone}`;
+}
+
+function setDeviceListState(message, tone = "info") {
+  setPanelState("#deviceListState", message, tone);
+}
+
+function setRealtimeState(message, tone = "info") {
+  setPanelState("#realtimeState", message, tone);
+}
+
+function setProtocolFormState(message, tone = "info") {
+  setPanelState("#protocolFormState", message, tone);
+}
+
+function setProtocolDiffState(message, tone = "info") {
+  setPanelState("#protocolDiffState", message, tone);
+}
+
+function setShadowState(message, tone = "info") {
+  setPanelState("#shadowState", message, tone);
+}
+
+function setMonitorState(message, tone = "info") {
+  setPanelState("#monitorState", message, tone);
+}
+
 function matchesRealtimeSearch(point) {
   const search = String(state.realtimeSearch || "").trim().toLowerCase();
   if (!search) {
@@ -308,21 +457,142 @@ function matchesRealtimeSearch(point) {
   ].some((value) => String(value || "").toLowerCase().includes(search));
 }
 
+function updateRealtimeToggleButton() {
+  const target = $("#toggleRealtimeBtn");
+  if (!target) {
+    return;
+  }
+  target.textContent = state.realtimeAutoRefreshEnabled ? "停止自动刷新" : "自动刷新";
+  target.classList.toggle("is-active", state.realtimeAutoRefreshEnabled);
+}
+
+function syncRealtimeTimer() {
+  if (state.realtimeTimer) {
+    clearInterval(state.realtimeTimer);
+    state.realtimeTimer = null;
+  }
+  if (!state.realtimeAutoRefreshEnabled || document.hidden || !selectedDeviceId()) {
+    updateRealtimeToggleButton();
+    return;
+  }
+  state.realtimeTimer = window.setInterval(() => {
+    requestRealtimeRefresh();
+  }, 3000);
+  updateRealtimeToggleButton();
+}
+
+function handleVisibilityChange() {
+  syncRealtimeTimer();
+  if (!document.hidden && state.realtimeAutoRefreshEnabled) {
+    requestRealtimeRefresh();
+  }
+}
+
+function requestRealtimeRefresh() {
+  if (!selectedDeviceId()) {
+    return;
+  }
+  if (state.realtimeLoading) {
+    state.realtimeQueued = true;
+    return;
+  }
+  loadRealtime().catch((error) => toast(error.message, true));
+}
+
+function renderRealtimeTable() {
+  const deviceId = selectedDeviceId();
+  const rowsTarget = $("#realtimeRows");
+  const stageNote = $("#realtimeStageNote");
+  if (!rowsTarget) {
+    return;
+  }
+  if (!deviceId) {
+    rowsTarget.innerHTML = `<tr><td colspan="9">请选择设备后查看实时数据</td></tr>`;
+    setRealtimeState("请选择设备后查看实时数据", "muted");
+    if (stageNote) {
+      stageNote.textContent = "选择设备后查看当前点位快照";
+    }
+    clearSelectedPointInspector();
+    syncSelectedDeviceSummary("");
+    return;
+  }
+
+  syncSelectedDeviceSummary(deviceId);
+  const points = state.realtimeRawPoints
+    .filter((point) => matchesRealtimeSearch(point))
+    .map((point, index) => ({
+      ...point,
+      __pointKey: realtimePointKey(point, index)
+    }));
+
+  state.realtimePoints = points;
+  if (!points.length) {
+    state.selectedRealtimePointKey = null;
+  } else if (!points.some((point) => point.__pointKey === state.selectedRealtimePointKey)) {
+    state.selectedRealtimePointKey = points[0].__pointKey;
+  }
+
+  if (stageNote) {
+    stageNote.textContent = state.realtimeRawPoints.length
+      ? `当前设备 ${points.length}/${state.realtimeRawPoints.length} 个点位可见`
+      : "当前设备暂无实时点位";
+  }
+
+  const rows = points.map((point) => {
+    const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+    const address = point.address || point.registerAddress || point.pointAddress || "-";
+    const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
+    return `
+      <tr data-point-key="${escapeAttr(point.__pointKey)}" class="${point.__pointKey === state.selectedRealtimePointKey ? "is-selected" : ""}">
+        <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
+        <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
+        <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
+        <td>${escapeHtml(formatValue(address))}</td>
+        <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
+        <td>${escapeHtml(formatValue(scale))}</td>
+        <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
+        <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
+        <td>${point.processingTime ?? "-"} ms</td>
+      </tr>`;
+  }).join("");
+
+  if (!state.realtimeRawPoints.length) {
+    rowsTarget.innerHTML = `<tr><td colspan="9">当前设备暂无实时数据</td></tr>`;
+    setRealtimeState("当前设备暂无实时数据", "muted");
+    clearSelectedPointInspector();
+    return;
+  }
+
+  rowsTarget.innerHTML = rows || `<tr><td colspan="9">没有匹配的点位</td></tr>`;
+  if (!points.length) {
+    setRealtimeState("没有匹配当前筛选条件的点位", "warning");
+    clearSelectedPointInspector();
+    return;
+  }
+
+  setRealtimeState("");
+  renderSelectedPointInspector();
+}
+
 async function refreshAll() {
   if (previewMode) {
     hydratePreviewMode();
     return;
   }
-  try {
-    await Promise.all([
-      loadProtocols(),
-      loadDevices(),
-      loadOverview(),
-      loadMonitor()
-    ]);
+  const results = await Promise.allSettled([
+    loadProtocols(),
+    loadDevices(),
+    loadOverview(),
+    loadMonitor()
+  ]);
+  if (results.some((item) => item.status === "fulfilled")) {
     $("#lastRefresh").textContent = new Date().toLocaleString();
-  } catch (error) {
-    toast(error.message, true);
+  }
+  const failures = results.filter((item) => item.status === "rejected");
+  if (failures.length === results.length) {
+    toast(failures[0].reason?.message || "刷新失败", true);
+  } else if (failures.length) {
+    toast(`部分模块刷新失败（${failures.length}/${results.length}）`, true);
   }
 }
 
@@ -659,7 +929,7 @@ function hydratePreviewMode() {
     .then(() => Promise.all([loadDevices(), loadOverview(), loadMonitor()]))
     .then(() => {
       activateWorkbenchTab("points");
-      activateConsoleTab("note-log");
+      activateConsoleTab("control");
       const defaultDevice = previewData.devices[0]?.id || previewData.devices[0]?.deviceId || "";
       if (defaultDevice) {
         selectDevice(defaultDevice);
@@ -732,23 +1002,47 @@ async function loadOverview() {
 }
 
 async function loadDevices() {
+  setDeviceListState("正在加载设备列表...", "info");
   const [devicesBody, monitorBody, runningBody] = await Promise.allSettled([
     callApi("/api/config/devices"),
     callApi("/monitor/devices"),
     callApi("/api/device/running")
   ]);
-  const payload = devicesBody.status === "fulfilled" ? dataOf(devicesBody.value) : {};
   const monitor = monitorBody.status === "fulfilled" ? dataOf(monitorBody.value) : {};
   const running = runningBody.status === "fulfilled" ? dataOf(runningBody.value) : [];
-  state.devices = payload.devices || [];
   state.runtimeStatus = buildRuntimeStatusMap(monitor, Array.isArray(running) ? running : []);
+
+  if (devicesBody.status !== "fulfilled") {
+    state.devices = [];
+    renderDevices();
+    setDeviceListState(devicesBody.reason?.message || "设备列表加载失败", "error");
+    throw devicesBody.reason;
+  }
+
+  const payload = dataOf(devicesBody.value) || {};
+  state.devices = Array.isArray(payload.devices) ? payload.devices : [];
   renderDevices();
   fillDeviceSelects();
 }
 
 function renderDevices() {
   const currentDeviceId = selectedDeviceId();
-  const rows = state.devices.map((device) => {
+  const filteredDevices = state.devices.filter((device) => matchesDeviceSearch(device));
+  updateDeviceSearchMeta(filteredDevices.length, state.devices.length);
+
+  if (!state.devices.length) {
+    $("#deviceRows").innerHTML = `<tr><td>暂无设备配置</td></tr>`;
+    setDeviceListState("当前还没有设备配置", "muted");
+    return;
+  }
+  if (!filteredDevices.length) {
+    $("#deviceRows").innerHTML = `<tr><td>没有匹配的设备</td></tr>`;
+    setDeviceListState("没有匹配当前搜索条件的设备", "warning");
+    return;
+  }
+
+  setDeviceListState("");
+  const rows = filteredDevices.map((device) => {
     const id = device.id || device.deviceId;
     const address = [device.ipAddress, device.port].filter(Boolean).join(":") || "-";
     const local = isLocalDevice(device);
@@ -793,7 +1087,7 @@ function renderDevices() {
         </td>
       </tr>`;
   }).join("");
-  $("#deviceRows").innerHTML = rows || `<tr><td>暂无设备配置</td></tr>`;
+  $("#deviceRows").innerHTML = rows;
 }
 
 function isLocalDevice(device) {
@@ -806,26 +1100,29 @@ function fillDeviceSelects() {
     const source = isLocalDevice(device) ? "local" : "sync";
     return `<option value="${escapeAttr(id)}">${escapeHtml(device.deviceName || id)} (${escapeHtml(id)} / ${source})</option>`;
   }).join("");
+
   ["#connectionDeviceSelect", "#realtimeDeviceSelect", "#controlDeviceSelect", "#shadowDeviceSelect"].forEach((selector) => {
     const select = $(selector);
-    const previous = select.value;
+    if (!select) {
+      return;
+    }
     select.innerHTML = options;
-    if (previous) {
-      select.value = previous;
-    }
-    if (!select.value && select.options.length) {
-      select.selectedIndex = 0;
-    }
   });
-  syncProtocolSelectionToDevice(false);
-  syncControlCommandExample();
-  syncSelectedDeviceSummary();
-  renderDevices();
-  if (state.devices.length) {
-    loadRealtime().catch((error) => toast(error.message, true));
-  } else {
-    clearSelectedPointInspector();
+
+  const resolvedDeviceId = resolveAvailableDeviceId(state.selectedDeviceId);
+  if (!resolvedDeviceId) {
+    state.selectedDeviceId = "";
+    syncDeviceSelectValues("");
+    syncSelectedDeviceSummary("");
+    state.realtimeRawPoints = [];
+    renderDevices();
+    renderRealtimeTable();
+    syncRealtimeTimer();
+    return;
   }
+
+  syncDeviceContext(resolvedDeviceId, { loadRealtime: false });
+  requestRealtimeRefresh();
 }
 
 function getProtocolSchema(protocolCode) {
@@ -1405,6 +1702,7 @@ async function deleteLocalDevice(deviceId) {
 }
 
 async function loadProtocols() {
+  setProtocolFormState("正在加载协议定义...", "info");
   const body = await callApi("/api/protocols");
   state.protocols = dataOf(body) || [];
   const visibleProtocols = state.protocols.filter((protocol) => !HIDDEN_PROTOCOLS.has(protocol.protocol));
@@ -1419,6 +1717,10 @@ async function loadProtocols() {
   renderSelectedProtocol();
   syncProtocolSelectionToDevice(false);
   syncControlCommandExample();
+  setProtocolFormState(visibleProtocols.length ? "" : "当前没有可编辑的协议定义", visibleProtocols.length ? "info" : "warning");
+  if (!selectedDeviceId()) {
+    setProtocolDiffState("选择设备后查看连接配置差异", "muted");
+  }
 }
 
 function renderSelectedProtocol() {
@@ -1429,21 +1731,26 @@ function renderSelectedProtocol() {
   updateProtocolMetaHelp("#protocolMetaHelp", protocol, `${protocol?.title || protocolCode || "协议"} 协议说明`);
   if (!protocol) {
     $("#connectionForm").innerHTML = "";
+    setProtocolFormState("请选择可用协议后再编辑连接参数", "warning");
     return;
   }
+  setProtocolFormState("");
   renderProtocolForm("#connectionForm", protocol, "connectionForm");
 }
 
 async function loadConnection() {
   const deviceId = $("#connectionDeviceSelect").value;
   if (!deviceId) {
+    setProtocolFormState("请先选择设备，再读取连接配置", "warning");
     toast("Select a device first", true);
     return;
   }
   syncProtocolSelectionToDevice(false);
+  setProtocolFormState("正在读取连接配置...", "info");
   const body = await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`);
   const connection = dataOf(body).connection || {};
   fillProtocolForm("#connectionForm", state.currentProtocol, connection);
+  setProtocolFormState("");
   await loadDeviceDiff();
   toast("Connection config loaded");
 }
@@ -1453,6 +1760,7 @@ async function saveConnection() {
   const device = getDeviceById(deviceId);
   const protocol = deviceProtocolCode(device);
   if (!deviceId || !protocol) {
+    setProtocolFormState("请选择设备并确认协议类型", "warning");
     toast("Select both device and protocol", true);
     return;
   }
@@ -1460,12 +1768,15 @@ async function saveConnection() {
     $("#protocolSelect").value = protocol;
     renderSelectedProtocol();
   }
+  setProtocolFormState("正在保存连接配置...", "info");
   const payload = collectProtocolForm("#connectionForm", state.currentProtocol, deviceId);
   payload.connectionType = protocol;
   await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/connection`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });
+  setProtocolFormState("连接配置已保存", "success");
+  await loadDeviceDiff();
   toast("Connection config saved");
 }
 
@@ -1494,11 +1805,15 @@ function positiveNumber(value) {
 async function loadDeviceDiff() {
   const deviceId = $("#connectionDeviceSelect").value;
   if (!deviceId) {
+    $("#diffView").textContent = "请选择设备查看 diff";
+    setProtocolDiffState("选择设备后查看连接配置差异", "muted");
     return;
   }
   syncProtocolSelectionToDevice(false);
+  setProtocolDiffState("正在比对本地与远端配置...", "info");
   const body = await callApi(`/api/config/device/${encodeURIComponent(deviceId)}/diff`);
   $("#diffView").textContent = JSON.stringify(dataOf(body), null, 2);
+  setProtocolDiffState("");
 }
 
 async function startDevice(deviceId) {
@@ -1547,76 +1862,66 @@ async function syncConfig() {
 }
 
 function toggleRealtime() {
-  if (state.realtimeTimer) {
-    clearInterval(state.realtimeTimer);
-    state.realtimeTimer = null;
-    $("#toggleRealtimeBtn").textContent = "自动刷新";
-    return;
+  state.realtimeAutoRefreshEnabled = !state.realtimeAutoRefreshEnabled;
+  syncRealtimeTimer();
+  if (state.realtimeAutoRefreshEnabled) {
+    requestRealtimeRefresh();
   }
-  loadRealtime().catch((error) => toast(error.message, true));
-  state.realtimeTimer = setInterval(() => {
-    loadRealtime().catch((error) => toast(error.message, true));
-  }, 3000);
-  $("#toggleRealtimeBtn").textContent = "停止自动刷新";
 }
 
 async function loadRealtime() {
-  const deviceId = $("#realtimeDeviceSelect").value;
+  const deviceId = selectedDeviceId();
   if (!deviceId) {
-    $("#realtimeRows").innerHTML = `<tr><td colspan="9">暂无实时数据</td></tr>`;
-    syncSelectedDeviceSummary();
-    clearSelectedPointInspector();
+    state.realtimeRawPoints = [];
+    state.realtimePoints = [];
+    renderRealtimeTable();
     return;
   }
+
+  const requestSeq = ++state.realtimeRequestSeq;
+  state.realtimeLoading = true;
   syncSelectedDeviceSummary(deviceId);
-  const body = await callApi(`/api/data/device/${encodeURIComponent(deviceId)}`);
-  const values = body.data || {};
-  const points = Object.values(values)
-    .filter((point) => matchesRealtimeSearch(point))
-    .map((point, index) => ({
-      ...point,
-      __pointKey: realtimePointKey(point, index)
-    }));
+  setRealtimeState(state.realtimeRawPoints.length ? "正在刷新实时数据..." : "正在加载实时数据...", "info");
 
-  state.realtimePoints = points;
-  if (!points.length) {
-    state.selectedRealtimePointKey = null;
-  } else if (!points.some((point) => point.__pointKey === state.selectedRealtimePointKey)) {
-    state.selectedRealtimePointKey = points[0].__pointKey;
-  }
-
-  const rows = points.map((point) => {
-    const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
-    const address = point.address || point.registerAddress || point.pointAddress || "-";
-    const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
-    return `
-      <tr data-point-key="${escapeAttr(point.__pointKey)}" class="${point.__pointKey === state.selectedRealtimePointKey ? "is-selected" : ""}">
-        <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
-        <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
-        <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
-        <td>${escapeHtml(formatValue(address))}</td>
-        <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
-        <td>${escapeHtml(formatValue(scale))}</td>
-        <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
-        <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
-        <td>${point.processingTime ?? "-"} ms</td>
-      </tr>`;
-  }).join("");
-  $("#realtimeRows").innerHTML = rows || `<tr><td colspan="9">暂无匹配的实时数据</td></tr>`;
-  if (points.length) {
-    renderSelectedPointInspector();
-  } else {
-    clearSelectedPointInspector();
+  try {
+    const body = await callApi(`/api/data/device/${encodeURIComponent(deviceId)}`);
+    if (requestSeq !== state.realtimeRequestSeq || deviceId !== selectedDeviceId()) {
+      return;
+    }
+    const values = dataOf(body) || body.data || {};
+    const sourcePoints = Array.isArray(values) ? values : Object.values(values || {});
+    state.realtimeRawPoints = sourcePoints.filter(Boolean).map((point) => ({ ...point }));
+    renderRealtimeTable();
+    setRealtimeState("");
+    $("#lastRefresh").textContent = new Date().toLocaleString();
+  } catch (error) {
+    if (requestSeq === state.realtimeRequestSeq && deviceId === selectedDeviceId()) {
+      setRealtimeState(error.message || "实时数据加载失败", "error");
+      if (!state.realtimeRawPoints.length) {
+        renderRealtimeTable();
+      }
+    }
+    throw error;
+  } finally {
+    if (requestSeq === state.realtimeRequestSeq) {
+      state.realtimeLoading = false;
+      if (state.realtimeQueued) {
+        state.realtimeQueued = false;
+        requestRealtimeRefresh();
+      }
+    }
   }
 }
 
 async function resetAdaptive() {
-  const deviceId = $("#realtimeDeviceSelect").value;
+  const deviceId = selectedDeviceId();
   if (!deviceId) {
+    setRealtimeState("请选择设备后再重置自适应参数", "warning");
     toast("请选择设备", true);
     return;
   }
   await callApi(`/api/data/device/${encodeURIComponent(deviceId)}/reset-adaptive`, { method: "POST" });
+  setRealtimeState("自适应采集参数已重置", "success");
   toast("自适应采集参数已重置");
 }
 
@@ -1676,50 +1981,63 @@ function showControlError(error) {
 }
 
 async function loadShadow() {
-  const deviceId = $("#shadowDeviceSelect").value;
+  const deviceId = $("#shadowDeviceSelect")?.value || selectedDeviceId();
   if (!deviceId) {
+    $("#shadowView").textContent = "请选择设备后查看影子状态";
+    setShadowState("请选择设备后查看影子状态", "muted");
     return;
   }
+  setShadowState("正在加载影子状态...", "info");
   const body = await callApi(`/api/shadow/${encodeURIComponent(deviceId)}`);
   $("#shadowView").textContent = JSON.stringify(dataOf(body), null, 2);
+  setShadowState("");
 }
 
 async function saveDesired() {
-  const deviceId = $("#shadowDeviceSelect").value;
+  const deviceId = $("#shadowDeviceSelect")?.value || selectedDeviceId();
   if (!deviceId) {
+    setShadowState("请选择设备后再提交 desired", "warning");
     toast("请选择设备", true);
     return;
   }
+  setShadowState("正在提交 desired...", "info");
   const payload = JSON.parse($("#desiredInput").value);
   const body = await callApi(`/api/shadow/${encodeURIComponent(deviceId)}/desired`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
   $("#shadowView").textContent = JSON.stringify(dataOf(body), null, 2);
+  setShadowState("desired 已提交", "success");
   toast("desired 已提交");
 }
 
 async function clearDesired() {
-  const deviceId = $("#shadowDeviceSelect").value;
+  const deviceId = $("#shadowDeviceSelect")?.value || selectedDeviceId();
   if (!deviceId) {
+    setShadowState("请选择设备后再清理 desired", "warning");
     toast("请选择设备", true);
     return;
   }
+  setShadowState("正在清理 desired...", "info");
   const body = await callApi(`/api/shadow/${encodeURIComponent(deviceId)}/desired`, { method: "DELETE" });
   $("#shadowView").textContent = JSON.stringify(dataOf(body), null, 2);
+  setShadowState("desired 已清理", "success");
   toast("desired 已清理");
 }
 
 async function loadMonitor() {
-  const [cache, devices, performance, system, errors] = await Promise.allSettled([
+  setMonitorState("正在加载监控视图...", "info");
+  const results = await Promise.allSettled([
     callApi("/monitor/cache"),
     callApi("/monitor/devices"),
     callApi("/monitor/performance"),
     callApi("/monitor/system"),
     callApi("/monitor/errors")
   ]);
+  const [cache, devices, performance, system, errors] = results;
   const cacheData = cache.status === "fulfilled" ? dataOf(cache.value) : {};
   const deviceData = devices.status === "fulfilled" ? dataOf(devices.value) : {};
+  const performanceData = performance.status === "fulfilled" ? dataOf(performance.value) : {};
   const systemData = system.status === "fulfilled" ? dataOf(system.value) : {};
   const errorData = errors.status === "fulfilled" ? dataOf(errors.value) : {};
 
@@ -1732,10 +2050,21 @@ async function loadMonitor() {
   $("#monitorView").textContent = JSON.stringify({
     cache: cacheData,
     devices: deviceData,
-    performance: performance.status === "fulfilled" ? dataOf(performance.value) : {},
+    performance: performanceData,
     system: systemData,
     errors: errorData
   }, null, 2);
+
+  const failureCount = results.filter((item) => item.status === "rejected").length;
+  if (failureCount === results.length) {
+    setMonitorState("监控数据全部加载失败", "error");
+    throw new Error("监控数据加载失败");
+  }
+  if (failureCount) {
+    setMonitorState(`部分监控指标加载失败（${failureCount}/${results.length}）`, "warning");
+    return;
+  }
+  setMonitorState("");
 }
 
 function renderCards(selector, items) {
@@ -1827,7 +2156,8 @@ function deviceProtocolCode(device) {
 }
 
 function syncControlCommandExample() {
-  const device = getDeviceById($("#controlDeviceSelect")?.value);
+  const deviceId = $("#controlDeviceSelect")?.value || selectedDeviceId();
+  const device = getDeviceById(deviceId);
   const protocol = deviceProtocolCode(device);
   const preset = controlCommandPresets[protocol] || controlCommandPresets.DEFAULT;
   const defaultExampleText = JSON.stringify(controlCommandPresets.DEFAULT.payload, null, 2);
@@ -1857,10 +2187,21 @@ function canonicalProtocolForUi(protocolCode) {
 }
 
 function syncProtocolSelectionToDevice(loadDiff = true) {
-  const deviceId = $("#connectionDeviceSelect").value;
+  const deviceId = $("#connectionDeviceSelect")?.value || selectedDeviceId();
+  if (!deviceId) {
+    setProtocolFormState("选择设备后可编辑连接参数", "muted");
+    if (loadDiff) {
+      setProtocolDiffState("选择设备后查看连接配置差异", "muted");
+    }
+    return;
+  }
   const device = getDeviceById(deviceId);
   const protocol = deviceProtocolCode(device);
   if (!protocol) {
+    setProtocolFormState("当前设备没有可识别的协议类型", "warning");
+    if (loadDiff) {
+      setProtocolDiffState("当前设备缺少协议信息，无法生成 diff", "warning");
+    }
     return;
   }
   if ($("#protocolSelect").value !== protocol) {
