@@ -1,4 +1,4 @@
-ï»¿server:
+server:
   port: 9090
   servlet:
     context-path: /collector
@@ -39,7 +39,7 @@ spring:
     driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
     url: jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector
     username: root
-    password: taosdata
+    password: change-me
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -52,7 +52,7 @@ spring:
       port: 6379
       database: 0
       timeout: 3000
-      password: 123456888wb
+      password:
       lettuce:
         pool:
           max-active: 20
@@ -60,16 +60,16 @@ spring:
           min-idle: 5
           max-wait: -1
         shutdown-timeout: 100ms
-      # é‡‡é›†å®æ—¶æ•°æ®redisç¼“å­˜
+      # ²É¼¯ÊµÊ±Êı¾İredis»º´æ
       stream:
         enabled: true
         key: collector:telemetry:stream
-        retention-mode: COUNT  #å¯é€‰COUNTï¼ˆæœ€è¿‘max-lengthæ¡æ•°æ®ï¼‰ï¼ŒTIMEï¼ˆæœ€è¿‘max-secondsç§’æ•°æ®ï¼‰
+        retention-mode: COUNT  #¿ÉÑ¡COUNT£¨×î½ümax-lengthÌõÊı¾İ£©£¬TIME£¨×î½ümax-secondsÃëÊı¾İ£©
         max-length: 200
         max-seconds: 60
-        approximate-trim: true  #ä¸ºtrue æ—¶ ä½¿ç”¨è¿‘ä¼¼è£å‰ª
-        trim-task-enabled: true #ä¸ºtrueæ—¶ å¯ç”¨timeæ¨¡å¼å®šæ—¶è£å‰ª
-        trim-interval-ms: 5000  #è£å‰ªå‘¨æœŸ
+        approximate-trim: true  #Îªtrue Ê± Ê¹ÓÃ½üËÆ²Ã¼ô
+        trim-task-enabled: true #ÎªtrueÊ± ÆôÓÃtimeÄ£Ê½¶¨Ê±²Ã¼ô
+        trim-interval-ms: 5000  #²Ã¼ôÖÜÆÚ
 
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -101,7 +101,6 @@ logging:
     org.mybatis.spring: ERROR
     com.baomidou.mybatisplus: ERROR
     com.zaxxer.hikari: WARN
-    # ä½ çš„ Mapper åŒ…è·¯å¾„ï¼Œæ”¹æˆé¡¹ç›®å®é™…è·¯å¾„
     com.wangbin.collector.mapper: ERROR
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
@@ -128,7 +127,6 @@ logging:
     request-id-header: X-Request-Id
     max-query-length: 512
 
-# é‡‡é›†tdengineé…ç½®
 telemetry:
   tdengine:
     enabled: true
@@ -149,37 +147,35 @@ collector:
       - /actuator/**
       - /admin/**
     ops-tokens:
-      ops-token: æœ¬åœ°å¼€å‘è¿ç»´ä»¤ç‰Œ
-  #è‡ªé€‚åº”é‡‡é›†é…ç½®
+      ops-token: ±¾µØ¿ª·¢ÔËÎ¬ÁîÅÆ
+  #×ÔÊÊÓ¦²É¼¯ÅäÖÃ
   adaptive-collection:
-    enabled: true          # è‡ªé€‚åº”é‡‡é›†å¼€å…³ï¼Œé»˜è®¤å¼€å¯
-    adjust-window-ms: 60000 # è°ƒæ•´çª—å£ï¼Œé»˜è®¤1åˆ†é’Ÿ
-  #é‡‡é›†ä»»åŠ¡è°ƒåº¦é…ç½®
+    enabled: true          # ×ÔÊÊÓ¦²É¼¯¿ª¹Ø£¬Ä¬ÈÏ¿ªÆô
+    adjust-window-ms: 60000 # µ÷Õû´°¿Ú£¬Ä¬ÈÏ1·ÖÖÓ
+  #²É¼¯ÈÎÎñµ÷¶ÈÅäÖÃ
   scheduler:
-    # åˆå§‹æ—¶é—´ç‰‡æ•°é‡ï¼šè°ƒåº¦å™¨å¯åŠ¨æ—¶åˆ†é…ç»™æ¯ä¸ªä»»åŠ¡çš„æ—¶é—´ç‰‡æ•°é‡
+    # ³õÊ¼Ê±¼äÆ¬ÊıÁ¿£ºµ÷¶ÈÆ÷Æô¶¯Ê±·ÖÅä¸øÃ¿¸öÈÎÎñµÄÊ±¼äÆ¬ÊıÁ¿
     initial-time-slice-count: 4
-    # æœ€å¤§æ—¶é—´ç‰‡æ•°é‡ï¼šæ¯ä¸ªä»»åŠ¡æœ€å¤šå¯ä»¥è·å¾—çš„æ—¶é—´ç‰‡æ•°é‡ä¸Šé™
+    # ×î´óÊ±¼äÆ¬ÊıÁ¿£ºÃ¿¸öÈÎÎñ×î¶à¿ÉÒÔ»ñµÃµÄÊ±¼äÆ¬ÊıÁ¿ÉÏÏŞ
     max-time-slice-count: 12
-    # æœ€å°æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šä¸¤ä¸ªæ—¶é—´ç‰‡ä¹‹é—´çš„æœ€å°æ—¶é—´é—´éš”ï¼Œé˜²æ­¢è¿‡åº¦é¢‘ç¹è°ƒåº¦
+    # ×îĞ¡Ê±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºÁ½¸öÊ±¼äÆ¬Ö®¼äµÄ×îĞ¡Ê±¼ä¼ä¸ô£¬·ÀÖ¹¹ı¶ÈÆµ·±µ÷¶È
     min-time-slice-interval-ms: 300
-    # é»˜è®¤æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šé»˜è®¤æƒ…å†µä¸‹æ—¶é—´ç‰‡çš„æ—¶é—´é•¿åº¦
+    # Ä¬ÈÏÊ±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºÄ¬ÈÏÇé¿öÏÂÊ±¼äÆ¬µÄÊ±¼ä³¤¶È
     default-time-slice-interval-ms: 1500
-    # åˆå§‹æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šè°ƒåº¦å™¨å¯åŠ¨æ—¶ä½¿ç”¨çš„æ—¶é—´ç‰‡é—´éš”
+    # ³õÊ¼Ê±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºµ÷¶ÈÆ÷Æô¶¯Ê±Ê¹ÓÃµÄÊ±¼äÆ¬¼ä¸ô
     initial-time-slice-interval-ms: 1500
-    # åŠ¨æ€è°ƒæ•´é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šè°ƒåº¦å™¨åŠ¨æ€è°ƒæ•´æ—¶é—´ç‰‡åˆ†é…ç­–ç•¥çš„æ—¶é—´é—´éš”
+    # ¶¯Ì¬µ÷Õû¼ä¸ô£¨ºÁÃë£©£ºµ÷¶ÈÆ÷¶¯Ì¬µ÷ÕûÊ±¼äÆ¬·ÖÅä²ßÂÔµÄÊ±¼ä¼ä¸ô
     dynamic-adjust-interval-ms: 60000
-    # æ”¶é›†è¶…æ—¶æ—¶é—´ï¼ˆæ¯«ç§’ï¼‰ï¼šç­‰å¾…ä»»åŠ¡æ‰§è¡Œç»“æœæˆ–çŠ¶æ€æ”¶é›†çš„æœ€å¤§ç­‰å¾…æ—¶é—´
+    # ÊÕ¼¯³¬Ê±Ê±¼ä£¨ºÁÃë£©£ºµÈ´ıÈÎÎñÖ´ĞĞ½á¹û»ò×´Ì¬ÊÕ¼¯µÄ×î´óµÈ´ıÊ±¼ä
     collect-timeout-ms: 800
 
-## ä»äº‘ç«¯è·å–é…ç½®æ•°æ®åœ°å€ï¼Œé…å¥—æœåŠ¡
+## ´ÓÔÆ¶Ë»ñÈ¡ÅäÖÃÊı¾İµØÖ·£¬ÅäÌ×·şÎñ
   config:
-    yun-url: http://localhost:48080/admin-api
+    yun-url: http://127.0.0.1:48080/admin-api
     sync-interval: 30000
     service-id: collector-1
     tenant-id: 1
     api-token: ""
-
-  # å®æ—¶ç¼“å­˜æ–¹å¼é…ç½®
   cache:
     type: local
     local:
@@ -192,7 +188,7 @@ collector:
       default-expire: 3600
       connection-timeout: 3000
 
-  # æ•°æ®ä¸ŠæŠ¥é…ç½®
+  # Êı¾İÉÏ±¨ÅäÖÃ
   report:
     enabled: true
     mode: mqtt
@@ -215,13 +211,13 @@ collector:
       history-ttl-seconds: 604800
     mqtt:
       enabled: true
-      broker-url: tcp://43.138.73.155:1883
-      client-id: byxuTQjqn6TCDwJ0.collector-1
-      username: collector-1&byxuTQjqn6TCDwJ0
-      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab8
+      broker-url: tcp://127.0.0.1:1883
+      client-id: collector-1
+      username:
+      password:
       topic-prefix: iot/device
       ack-topic-prefix: /sys
-      gateway-product-key: byxuTQjqn6TCDwJ0
+      gateway-product-key: change-me
       gateway-device-name: collector-1
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5
@@ -235,14 +231,11 @@ collector:
         state: thing/state/update
 
   mqtt:
-    broker-url: tcp://localhost:1883
+    broker-url: tcp://127.0.0.1:1883
     client-id: data-collector
-    username: admin
-    password: password
+    username:
+    password:
     qos: 1
     clean-session: true
     connection-timeout: 30
     keep-alive-interval: 60
-
-
-

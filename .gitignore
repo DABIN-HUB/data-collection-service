@@ -10,3 +10,7 @@ m2
 tmp
 .tmp
 .external
+.env
+.env.*
+!.env.example
+logs/

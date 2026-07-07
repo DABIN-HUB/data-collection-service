@@ -1,2 +1,8 @@
-# dev profile
+spring:
+  config:
+    activate:
+      on-profile: dev
 
+logging:
+  level:
+    com.wangbin.collector: DEBUG
