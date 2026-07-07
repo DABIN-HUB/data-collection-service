@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * 閲囬泦鍣ㄩ厤缃被
+ * 采集器配置类
  */
 @Data
 @Component
@@ -15,55 +15,56 @@ import java.util.Map;
 public class CollectorProperties {
 
     /**
-     * SNMP閰嶇疆
+     * SNMP配置
      */
     private SnmpConfig snmp = new SnmpConfig();
 
     /**
-     * OPC UA閰嶇疆
+     * OPC UA配置
      */
     private OpcUaConfig opcUa = new OpcUaConfig();
 
     /**
-     * MQTT閰嶇疆
+     * MQTT配置
      */
     private MqttConfig mqtt = new MqttConfig();
 
     /**
-     * Modbus閰嶇疆
+     * Modbus配置
      */
     private ModbusConfig modbus = new ModbusConfig();
 
     /**
-     * CoAP閰嶇疆
+     * CoAP配置
      */
     private CoapConfig coap = new CoapConfig();
 
     /**
-     * IEC104閰嶇疆
+     * IEC104配置
      */
     private Iec104Config iec104 = new Iec104Config();
 
     /**
-     * IEC61850閰嶇疆
+     * IEC61850配置
      */
     private Iec61850Config iec61850 = new Iec61850Config();
 
     /**
-     * 閫氱敤閰嶇疆
+     * 通用配置
      */
     private CommonConfig common = new CommonConfig();
-    
+
     /**
-     * 璋冨害鍣ㄩ厤缃?     */
+     * 调度器配置
+     */
     private SchedulerConfig scheduler = new SchedulerConfig();
-    
+
     /**
-     * 鑷€傚簲閲囬泦閰嶇疆
+     * 自适应采集配置
      */
     private AdaptiveCollectionConfig adaptiveCollection = new AdaptiveCollectionConfig();
 
-    // =============== 閰嶇疆绫诲畾涔?===============
+    // =============== 配置类定义 ===============
 
     @Data
     public static class SnmpConfig {
@@ -155,9 +156,9 @@ public class CollectorProperties {
         private boolean enableMonitor = true;
         private boolean enableAlert = true;
     }
-    
+
     /**
-     * 璋冨害鍣ㄩ厤缃被
+     * 调度器配置类
      */
     @Data
     public static class SchedulerConfig {
@@ -174,13 +175,13 @@ public class CollectorProperties {
         private long reconnectBaseDelayMs = 1000;
         private long reconnectMaxDelayMs = 30000;
     }
-    
+
     /**
-     * 鑷€傚簲閲囬泦閰嶇疆绫?     */
+     * 自适应采集配置类
+     */
     @Data
     public static class AdaptiveCollectionConfig {
         private boolean enabled = true;
         private long adjustWindowMs = 60000;
     }
 }
-
