@@ -19,18 +19,83 @@
 - 支持缓存、实时流、历史存储、云端上报的全链路闭环
 - 提供在线配置治理、运行态监控和问题可追踪能力
 
-## 控制台访问
+## 配套项目关系
 
-项目内置了静态管理控制台页面，服务启动后可直接访问：
+典型部署形态：
 
-- 本地默认地址：`http://127.0.0.1:9090/collector/admin/index.html`
-- 如果你修改了 `server.port` 或 `server.servlet.context-path`，请按实际配置调整访问地址
+### 1. `wangbin-iot-vue3`
 
-控制台前端资源位置：
+说明：前端管理与监控界面，负责设备配置、状态查看、数据展示。
 
-- `src/main/resources/static/admin/index.html`
-- `src/main/resources/static/admin/app.js`
-- `src/main/resources/static/admin/styles.css`
+采集前端（IoT 管理与监控界面）
+
+**项目名称：wangbin-iot-vue3**
+
+- 基于 **Vue 3 + TypeScript** 构建
+- 提供设备管理、点位配置、采集状态监控、数据展示等功能
+- 作为采集系统与后端服务的统一管理入口
+
+**Gitee：**  
+https://gitee.com/wangbinlx/wangbin-iot-vue3
+
+**GitHub：**  
+https://github.com/wangbin777/wangbin-iot-vue3
+
+### 2. `data-collection-service`
+
+说明：本仓库，负责现场设备接入、采集、处理、缓存、上报。
+
+**项目名称：data-collection-service**
+
+- 基于 **Java / Spring Boot** 开发
+- 用于对接各类工业设备与协议（如 Modbus 等）
+- 负责数据采集、处理、转换，并将纵向采集数据转化为横向结构数据
+- 支持将采集结果定期上报至云端后端服务
+
+**Gitee：**  
+https://gitee.com/wangbinlx/data-collection-service
+
+**GitHub：**  
+https://github.com/wangbin777/data-collection-service
+
+### 3. `wangbin-iot-cloud`
+
+说明：云端/后台服务，负责设备、用户、数据、权限和业务管理。
+
+**项目名称：wangbin-iot-cloud**
+
+- 基于 **Java / Spring Boot / 微服务架构**
+- 负责设备、数据、用户、权限等核心业务管理
+- 提供统一 API 接口，供前端与采集服务调用
+- 支撑采集数据的存储、分析与业务处理
+
+**Gitee：**  
+https://gitee.com/wangbinlx/wangbin-iot-cloud
+
+**GitHub：**  
+https://github.com/wangbin777/wangbin-iot-cloud
+
+架构关系：
+
+```text
+┌────────────────────┐
+│  wangbin-iot-vue3  │  ← 前端管理台
+└─────────▲──────────┘
+          │ API
+┌─────────┴──────────┐
+│ wangbin-iot-cloud  │  ← 云端/后台
+└─────────▲──────────┘
+          │ 数据上报 / 配置同步
+┌─────────┴──────────┐
+│ data-collection-   │
+│ service            │  ← 工业采集网关
+└─────────▲──────────┘
+          │ 多协议设备接入
+┌─────────┴──────────┐
+│ PLC / RTU / OPC /  │
+│ 传感器 / 边缘设备   │
+└────────────────────┘
+```
 
 ## 项目优势
 
@@ -62,19 +127,8 @@
 
 - `MODBUS_TCP`
 - `MODBUS_RTU`
-- `MODBUS_ASCII`（作为 `MODBUS_RTU` 兼容接入）
-- `SIEMENS_S7`
-- `MITSUBISHI_MC`
-- `OMRON_FINS`
-- `ETHERNET_IP`
-- `ADS`
-- `KNXNET_IP`
 - `OPC_UA`
-- `OPC_UA_PLC4X`
 - `OPC_DA`
-- `BACNET_IP`
-- `BACNET_MSTP`
-- `BACNET_SC`
 - `IEC104`
 - `IEC61850`
 - `MQTT`
@@ -83,38 +137,17 @@
 - `HTTP`
 - `WEBSOCKET`
 - `CUSTOM_TCP`（当前为占位实现）
-- `CUSTOM_UDP`（当前沿用占位实现别名）
-
-另外，统一协议工厂还兼容以下别名或安全变体：
-
-- `HTTPS`
-- `MQTT_SSL`
-- `COAP_SSL`
-- `WEBSOCKET_SSL`
-- `SNMP_V1` / `SNMP_V2C` / `SNMP_V3`
-- `S7` / `MC` / `FINS` / `BACNET` 等别名
 
 协议能力特征：
 
-- `Modbus`：支持 TCP / RTU / ASCII，支持读计划、连续地址聚合读取、批量分块写
-- `Siemens S7`：支持 `DB` / `I` / `Q` / `M` 等地址形式，支持读、写和订阅
-- `Mitsubishi MC`：当前已落地自研 `MC 3E Binary over TCP` 采集链路，支持轮询读写
-- `OMRON FINS`：已支持 `FINS/UDP` 读写与连续块合并读取
-- `EtherNet/IP`：支持 `Logix Tag` 风格符号地址读写
-- `ADS`：支持 `Beckhoff ADS / AMS` 符号读写与订阅
-- `KNXnet/IP`：支持组地址采集，支持 `DPT` 类型映射
+- `Modbus`：支持读计划、连续地址聚合读取、批量分块写
 - `OPC_UA`：支持读/写/订阅/浏览
-- `OPC_UA_PLC4X`：作为兼容别名保留，沿用 `OPC_UA` 主实现
 - `OPC_DA`：支持 `HTTP` 桥接模式与 `INMEMORY` 模式
-- `BACnet`：已覆盖 `IP`、`MS/TP`、`SC` 三类接入形态，支持读写与订阅；其中 `BACNET_SC` 当前按实验性能力提供
 - `IEC104`：支持读、总召唤、命令下发、单点召唤
 - `IEC61850`：支持模型加载、读写、报告处理
-- `MQTT`：支持主题订阅、发布、消息映射，兼容 `MQTT_SSL`
-- `SNMP`：支持 GET/SET/WALK，兼容 `SNMP_V1` / `SNMP_V2C` / `SNMP_V3`
-- `COAP`：支持 GET/POST/PUT/DELETE/Observe，兼容 `COAP_SSL`
-- `HTTP`：支持请求-响应采集，兼容 `HTTPS`
-- `WEBSOCKET`：支持消息解析、认证、心跳与缓存回填，兼容 `WEBSOCKET_SSL`
-- `CUSTOM_TCP` / `CUSTOM_UDP`：当前只保留生命周期占位能力，真实采集协议待补齐
+- `MQTT`：支持主题订阅、发布、消息映射
+- `SNMP`：支持 GET/SET/WALK，已支持 SNMPv3 安全参数
+- `HTTP` / `WEBSOCKET`：已补齐真实请求响应与消息回填逻辑
 
 协议文档入口：
 
@@ -335,26 +368,17 @@ src/main/java/com/wangbin/collector
 | 协议 | 状态 | 说明 |
 | --- | --- | --- |
 | MODBUS_TCP | 已支持 | 读计划 + 批量分块写 |
-| MODBUS_RTU / MODBUS_ASCII | 已支持 | 串口参数 + 帧间延时 |
-| SIEMENS_S7 | 已支持 | `DB/I/Q/M` 地址读写 + 订阅 |
-| MITSUBISHI_MC | 已支持 | 自研 `MC 3E Binary over TCP` 读写 |
-| OMRON_FINS | 已支持 | `FINS/UDP` 读写 + 批量块合并 |
-| ETHERNET_IP | 已支持 | `Logix Tag` 风格符号地址读写 |
-| ADS | 已支持 | `ADS / AMS` 符号读写 + 订阅 |
-| KNXNET_IP | 已支持 | 组地址采集 + `DPT` 类型映射 |
-| OPC_UA / OPC_UA_PLC4X | 已支持 | 读/写/订阅/浏览 |
+| MODBUS_RTU | 已支持 | 串口参数 + 帧间延时 |
+| OPC_UA | 已支持 | 读/写/订阅/浏览 |
 | OPC_DA | 已支持 | `HTTP` 桥接 / `INMEMORY` |
-| BACNET_IP | 已支持 | `Who-Is/I-Am`、`COV` 订阅、属性读写 |
-| BACNET_MSTP | 已支持 | `RS485` 令牌总线接入 |
-| BACNET_SC | 实验性 | 安全 WebSocket 形态，已接入统一链路 |
 | IEC104 | 已支持 | 读、召唤、命令 |
 | IEC61850 | 已支持 | 模型加载、读写、报告 |
-| MQTT / MQTT_SSL | 已支持 | 主题映射、订阅、发布 |
-| SNMP / SNMP_V1 / SNMP_V2C / SNMP_V3 | 已支持 | GET/SET/WALK，含 SNMPv3 |
-| COAP / COAP_SSL | 已支持 | GET/POST/PUT/DELETE/Observe |
-| HTTP / HTTPS | 已支持 | 请求-响应采集 |
-| WEBSOCKET / WEBSOCKET_SSL | 已支持 | 消息解析、认证、心跳与缓存回填 |
-| CUSTOM_TCP / CUSTOM_UDP | 占位 | 生命周期可用，真实协议待补齐 |
+| MQTT | 已支持 | 主题映射、订阅、发布 |
+| SNMP | 已支持 | GET/SET/WALK，含 SNMPv3 |
+| COAP | 已支持 | GET/POST/PUT/DELETE/Observe |
+| HTTP | 已支持 | 请求-响应采集 |
+| WEBSOCKET | 已支持 | 消息解析与缓存回填 |
+| CUSTOM_TCP | 占位 | 生命周期可用，真实协议待补齐 |
 
 ## 快速开始
 
