@@ -1,4 +1,4 @@
-﻿# data-collection-service
+# data-collection-service
 
 面向工业物联网场景的多协议采集网关，基于 `Spring Boot 3.x + Java 17` 构建，覆盖从设备接入、采集调度、数据处理、缓存、实时流、历史存储、云端上报到运行监控的完整链路。
 
@@ -371,6 +371,16 @@ src/main/java/com/wangbin/collector
 mvn clean package -DskipTests
 java -jar target/data-collection-service.jar --spring.profiles.active=dev
 ```
+
+### 配置说明
+
+当前仓库里与 MQTT 相关的配置有两组，作用不同：
+
+- `collector.report.mqtt`：云端上报与平台侧 MQTT 下行配置，供 `MqttReportHandler`、统一 ACK、`thing.property.set` / `thing.service.invoke` 等链路使用。
+- `collector.mqtt`：MQTT 作为采集协议时的默认连接兜底配置，主要供 `MqttCollector` 在设备连接参数不完整时回退使用。
+
+如果你当前主要使用“采集结果上报到云端”的链路，优先关注 `collector.report.mqtt`。
+如果你当前要接入“MQTT 设备作为采集源”，再关注 `collector.mqtt`。
 
 ### Docker Compose
 

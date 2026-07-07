@@ -60,16 +60,16 @@ spring:
           min-idle: 5
           max-wait: -1
         shutdown-timeout: 100ms
-      # ²É¼¯ÊµÊ±Êı¾İredis»º´æ
+      # é‡‡é›†å®æ—¶æ•°æ® Redis Stream é…ç½®
       stream:
         enabled: true
         key: collector:telemetry:stream
-        retention-mode: COUNT  #¿ÉÑ¡COUNT£¨×î½ümax-lengthÌõÊı¾İ£©£¬TIME£¨×î½ümax-secondsÃëÊı¾İ£©
+        retention-mode: COUNT  # å¯é€‰ COUNTï¼ˆæœ€è¿‘ max-length æ¡æ•°æ®ï¼‰æˆ– TIMEï¼ˆæœ€è¿‘ max-seconds ç§’æ•°æ®ï¼‰
         max-length: 200
         max-seconds: 60
-        approximate-trim: true  #Îªtrue Ê± Ê¹ÓÃ½üËÆ²Ã¼ô
-        trim-task-enabled: true #ÎªtrueÊ± ÆôÓÃtimeÄ£Ê½¶¨Ê±²Ã¼ô
-        trim-interval-ms: 5000  #²Ã¼ôÖÜÆÚ
+        approximate-trim: true  # ä¸º true æ—¶ä½¿ç”¨è¿‘ä¼¼è£å‰ª
+        trim-task-enabled: true # ä¸º true æ—¶å¯ç”¨ TIME æ¨¡å¼å®šæ—¶è£å‰ª
+        trim-interval-ms: 5000  # è£å‰ªå‘¨æœŸ
 
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -147,29 +147,29 @@ collector:
       - /actuator/**
       - /admin/**
     ops-tokens:
-      ops-token: ±¾µØ¿ª·¢ÔËÎ¬ÁîÅÆ
-  #×ÔÊÊÓ¦²É¼¯ÅäÖÃ
+      ops-token: æœ¬åœ°å¼€å‘è¿ç»´ä»¤ç‰Œ
+  # è‡ªé€‚åº”é‡‡é›†é…ç½®
   adaptive-collection:
-    enabled: true          # ×ÔÊÊÓ¦²É¼¯¿ª¹Ø£¬Ä¬ÈÏ¿ªÆô
-    adjust-window-ms: 60000 # µ÷Õû´°¿Ú£¬Ä¬ÈÏ1·ÖÖÓ
-  #²É¼¯ÈÎÎñµ÷¶ÈÅäÖÃ
+    enabled: true          # è‡ªé€‚åº”é‡‡é›†å¼€å…³ï¼Œé»˜è®¤å¼€å¯
+    adjust-window-ms: 60000 # è°ƒæ•´çª—å£ï¼Œé»˜è®¤ 1 åˆ†é’Ÿ
+  # é‡‡é›†ä»»åŠ¡è°ƒåº¦é…ç½®
   scheduler:
-    # ³õÊ¼Ê±¼äÆ¬ÊıÁ¿£ºµ÷¶ÈÆ÷Æô¶¯Ê±·ÖÅä¸øÃ¿¸öÈÎÎñµÄÊ±¼äÆ¬ÊıÁ¿
+    # åˆå§‹æ—¶é—´ç‰‡æ•°é‡ï¼šè°ƒåº¦å™¨å¯åŠ¨æ—¶åˆ†é…ç»™æ¯ä¸ªä»»åŠ¡çš„æ—¶é—´ç‰‡æ•°é‡
     initial-time-slice-count: 4
-    # ×î´óÊ±¼äÆ¬ÊıÁ¿£ºÃ¿¸öÈÎÎñ×î¶à¿ÉÒÔ»ñµÃµÄÊ±¼äÆ¬ÊıÁ¿ÉÏÏŞ
+    # æœ€å¤§æ—¶é—´ç‰‡æ•°é‡ï¼šæ¯ä¸ªä»»åŠ¡æœ€å¤šå¯ä»¥è·å¾—çš„æ—¶é—´ç‰‡æ•°é‡ä¸Šé™
     max-time-slice-count: 12
-    # ×îĞ¡Ê±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºÁ½¸öÊ±¼äÆ¬Ö®¼äµÄ×îĞ¡Ê±¼ä¼ä¸ô£¬·ÀÖ¹¹ı¶ÈÆµ·±µ÷¶È
+    # æœ€å°æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šé˜²æ­¢è¿‡åº¦é¢‘ç¹è°ƒåº¦
     min-time-slice-interval-ms: 300
-    # Ä¬ÈÏÊ±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºÄ¬ÈÏÇé¿öÏÂÊ±¼äÆ¬µÄÊ±¼ä³¤¶È
+    # é»˜è®¤æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šé»˜è®¤æƒ…å†µä¸‹æ—¶é—´ç‰‡é•¿åº¦
     default-time-slice-interval-ms: 1500
-    # ³õÊ¼Ê±¼äÆ¬¼ä¸ô£¨ºÁÃë£©£ºµ÷¶ÈÆ÷Æô¶¯Ê±Ê¹ÓÃµÄÊ±¼äÆ¬¼ä¸ô
+    # åˆå§‹æ—¶é—´ç‰‡é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šè°ƒåº¦å™¨å¯åŠ¨æ—¶ä½¿ç”¨çš„æ—¶é—´ç‰‡é—´éš”
     initial-time-slice-interval-ms: 1500
-    # ¶¯Ì¬µ÷Õû¼ä¸ô£¨ºÁÃë£©£ºµ÷¶ÈÆ÷¶¯Ì¬µ÷ÕûÊ±¼äÆ¬·ÖÅä²ßÂÔµÄÊ±¼ä¼ä¸ô
+    # åŠ¨æ€è°ƒæ•´é—´éš”ï¼ˆæ¯«ç§’ï¼‰ï¼šè°ƒåº¦å™¨åŠ¨æ€è°ƒæ•´æ—¶é—´ç‰‡åˆ†é…ç­–ç•¥çš„å‘¨æœŸ
     dynamic-adjust-interval-ms: 60000
-    # ÊÕ¼¯³¬Ê±Ê±¼ä£¨ºÁÃë£©£ºµÈ´ıÈÎÎñÖ´ĞĞ½á¹û»ò×´Ì¬ÊÕ¼¯µÄ×î´óµÈ´ıÊ±¼ä
+    # æ”¶é›†è¶…æ—¶æ—¶é—´ï¼ˆæ¯«ç§’ï¼‰ï¼šç­‰å¾…ä»»åŠ¡æ‰§è¡Œç»“æœæˆ–çŠ¶æ€æ”¶é›†çš„æœ€å¤§ç­‰å¾…æ—¶é—´
     collect-timeout-ms: 800
 
-## ´ÓÔÆ¶Ë»ñÈ¡ÅäÖÃÊı¾İµØÖ·£¬ÅäÌ×·şÎñ
+## ä»äº‘ç«¯è·å–é…ç½®æ•°æ®åœ°å€ï¼Œé…å¥—æœåŠ¡
   config:
     yun-url: http://127.0.0.1:48080/admin-api
     sync-interval: 30000
@@ -188,7 +188,7 @@ collector:
       default-expire: 3600
       connection-timeout: 3000
 
-  # Êı¾İÉÏ±¨ÅäÖÃ
+  # æ•°æ®ä¸ŠæŠ¥é…ç½®
   report:
     enabled: true
     mode: mqtt
@@ -209,6 +209,7 @@ collector:
       history-key-prefix: "collector:shadow:history:"
       history-max-records: 100
       history-ttl-seconds: 604800
+    # äº‘ç«¯ä¸ŠæŠ¥ä¸å¹³å° MQTT ä¸‹è¡Œé…ç½®ï¼ˆReportHandler / ACK / ç»Ÿä¸€ä¸‹è¡Œå…¥å£ï¼‰
     mqtt:
       enabled: true
       broker-url: tcp://127.0.0.1:1883
@@ -230,6 +231,7 @@ collector:
         event: thing/event/post
         state: thing/state/update
 
+  # MQTT é‡‡é›†åè®®é»˜è®¤è¿æ¥å…œåº•é…ç½®ï¼ˆMqttCollectorï¼‰
   mqtt:
     broker-url: tcp://127.0.0.1:1883
     client-id: data-collector
