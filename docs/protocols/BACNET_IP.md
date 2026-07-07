@@ -27,17 +27,14 @@
 
 当前仍未完成：
 
-- `WriteProperty`
-- `WritePropertyMultiple`
-- `SubscribeCOV / SubscribeCOVProperty`
-- `executeCommand`
-- `BBMD / Foreign Device Registration`
-- 分段报文
+- `BACNET_SC` 标准 `Hub / Node` 会话模型仍为实验性
 - constructed / array / sequence 类型的通用 `ANY` 解码
+- `IPv6` 仍未实现
 
 当前对外交付口径：
 
-- `BACnet/IP P0` 已可用于 `UDP` 轮询型 `ReadProperty / ReadPropertyMultiple` 采集。
+- `BACNET_IP` 已可用于 `UDP` 轮询、`ReadProperty / ReadPropertyMultiple`、`WriteProperty / WritePropertyMultiple`、`COV`、诊断命令、`BBMD / Foreign Device` 等场景。
+- `BACNET_SC` 仍应按实验性能力描述。
 - 不建议现场承诺写入、`COV`、`BBMD`、跨子网自动发现、复杂数组/对象属性。
 
 ---
@@ -91,19 +88,18 @@
 
 ## 高优先级
 
-1. `WriteProperty`
-    - 前端字段里已有 `writePriority` 等预留，但底层未兑现。
-    - 不建议现场承诺可控写回。
-2. `executeCommand`
-    - 还未实现 `who_is / read_property / read_property_multiple / discover_objects / diagnostic` 这类诊断命令入口。
+1. `BACNET_SC`
+    - 当前是 secure WebSocket binary tunnel 方向的实验性实现。
+    - 还不能视为完整的标准 `Hub / Node` 会话模型交付。
+2. constructed / array / sequence 类型通用 `ANY` 解码
+    - 当前仍以 primitive 类型支持为主。
 
 ## 中优先级
 
-3. `SubscribeCOV / SubscribeCOVProperty`
-    - 当前 `covEnabled` 只是 schema 和 validator 已接入。
-    - 还没有真正订阅、通知接收、断线补订阅。
-4. constructed / array / sequence 类型解码
-    - 当前只支持 primitive `ANY`。
+3. `IPv6`
+    - 当前仍未实现，文档中继续作为后续方向保留。
+4. 现场兼容性持续验证
+    - 包括不同厂商对象属性差异、跨子网网络质量、COV 稳定性与长连接恢复表现。
     - 像 `objectList`、`priorityArray`、复杂对象属性还不能承诺。
 5. `ReadPropertyMultiple` 读计划优化
     - 当前已做同对象聚合、批量切分、失败回退。
@@ -282,7 +278,7 @@ fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位�
 
 # BACnet 实现补齐路线图
 
-下面的路线图按 `P1 / P2 / P3` 切分，目标是把当前 `BACnet/IP P0` 从“最小可用轮询读”逐步补齐到“可现场交付的 BACnet 接入能力”。
+下面的路线图和后续核对清单主要用于保留历史实施记录，其中部分条目后续已经完成，不再直接代表当前未完成项；当前现状以上文“当前状态”“未完成功能清单”和 `../99-问题与未完成功能清单.md` 为准。
 
 ## P1：同网段可交付能力补齐
 
@@ -522,6 +518,8 @@ fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位�
 
 ## 待完成与待优化清单（2026-06-30 核对追加）
 
+> 说明：本节主要保留 2026-06-30 当时的核对记录，其中部分条目在后续版本中已经完成，请勿直接视为当前待办。
+
 说明：
 
 - 状态约定：`[ ]` 未完成，`[~]` 部分完成，`[x]` 已完成。
@@ -549,8 +547,8 @@ fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位�
   - 代码入口：`src/main/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollector.java`、`src/main/java/com/wangbin/collector/core/connection/adapter/BacnetIpConnectionAdapter.java`
   - 测试入口：`src/test/java/com/wangbin/collector/core/collector/protocol/bacnet/BacnetIpCollectorFeatureTest.java`
   - 说明：已补齐适配器重连回调、collector 自动补订阅与失败计数。
-  - 当前情况：配置字段已暴露，但当前 `BacnetIpCollector` / 调度层未实现“连接失效后重连并恢复 COV 订阅”闭环。
-  - 完成标记建议：补连接恢复后的订阅重建逻辑，并覆盖断线、重连、重复订阅去重、失败重试测试。
+  - 当前情况：基础闭环已经存在，连接恢复后会按配置自动执行补订阅；后续重点应放在不同设备与网络环境下的稳定性验证。
+  - 后续关注：继续覆盖断线、重连、重复订阅去重、失败重试等场景回归测试。
 
 - `[x]` `defaultCovIncrement` 连接级默认增量阈值生效
   - 完成日期：`2026-06-30`
@@ -665,7 +663,7 @@ fields.add(createFieldConfig("additionalConfig.covIncrement", "number", "点位�
   - 完成日期：`2026-06-30`
   - 代码入口：`BacnetValueDecoder`、`BacnetIpCollector`、`BacnetReadPropertyResponseDecoder`、`BacnetReadPropertyMultipleResponseDecoder`、`BacnetCovNotificationDecoder`
   - 测试入口：`mvn "-Dtest=BacnetReadPropertyCodecTest,BacnetIpCollectorFeatureTest,BacnetIpCollectorIntegrationTest" test`
-  - 说明：已完成从 BACnet 读值/COV 值解码到 `ProcessResult`、缓存/上报链的复杂值闭环，后续继续推进 COV 自动订阅/重连恢复和 `WritePropertyMultiple`。
+  - 说明：已完成从 BACnet 读值/COV 值解码到 `ProcessResult`、缓存/上报链的复杂值闭环；相关后续项已在第二批、第三批中继续落地。
 - `[x]` 第二批：COV 自动订阅、confirmed 通知与重连恢复闭环
   - 完成日期：`2026-06-30`
   - 代码入口：`BacnetIpCollector`、`CollectionScheduler`、`BacnetConnectionAdapter`、`BacnetIpConnectionAdapter`、`BacnetScConnectionAdapter`、`BacnetMstpConnectionAdapter`、`BacnetCovNotificationDecoder`、`BacnetConfirmedCovNotificationCodec`

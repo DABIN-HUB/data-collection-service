@@ -19,14 +19,15 @@
 - [COAP](./COAP.md)
 - [HTTP](./HTTP.md)
 - [WEBSOCKET](./WEBSOCKET.md)
+- [BACNET IP](./BACNET_IP.md)
+  说明：`BACNET_IP` 已具备真实数据面能力；其中 `BACNET_SC` 仍为实验性支持。
 
 ## 2. 占位协议
 
 - [CUSTOM TCP](./CUSTOM_TCP.md)
   说明：当前仅为占位实现，不属于真实可交付协议。
-- [BACNET IP](./BACNET_IP.md)
-  说明：当前已完成框架级接入和控制台字段元数据暴露，但真实读写/订阅数据面尚未实现，
-  不属于可承诺现场交付的 BACnet/IP 协议实现。
+- `CUSTOM_UDP`
+  说明：当前与 `CUSTOM_TCP` 共用占位采集器，不属于真实可交付协议。
 
 ## 3. 规划文档
 
