@@ -175,6 +175,10 @@ public class ReportProperties {
          * 业务自定义主题
          */
         private Map<String, String> topics = new HashMap<>();
+        /**
+         * 平台服务名到协议命令名的映射。
+         */
+        private Map<String, String> serviceCommandMappings = new HashMap<>();
 
         public String getTopicPrefix() {
             if (topicPrefix == null || topicPrefix.isEmpty()) {

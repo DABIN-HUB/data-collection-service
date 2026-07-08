@@ -934,6 +934,14 @@ public class ConfigManager {
                 case "connection":
                     reloadConnectionConfig(deviceId);
                     break;
+                case "collection":
+                    if (StringUtils.hasText(deviceId)) {
+                        reloadDeviceConfig(deviceId);
+                        reloadDataPoints(deviceId);
+                    } else {
+                        loadAllConfig();
+                    }
+                    break;
                 case "all":
                     loadAllConfig();
                     break;

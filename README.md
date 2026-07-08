@@ -376,7 +376,8 @@ java -jar target/data-collection-service.jar --spring.profiles.active=dev
 
 当前仓库里与 MQTT 相关的配置有两组，作用不同：
 
-- `collector.report.mqtt`：云端上报与平台侧 MQTT 下行配置，供 `MqttReportHandler`、统一 ACK、`thing.property.set` / `thing.service.invoke` 等链路使用。
+- `collector.report.mqtt`：云端上报与平台侧 MQTT 下行配置，供 `MqttReportHandler`、统一 ACK、`thing.property.set` / `thing.service.invoke` / `thing.config.push` 等链路使用。
+- `collector.report.mqtt.service-command-mappings`：当平台 `thing.service.invoke` 的 `service/identifier/serviceId` 与底层协议命令名不一致时，在这里做全局映射。
 - `collector.mqtt`：MQTT 作为采集协议时的默认连接兜底配置，主要供 `MqttCollector` 在设备连接参数不完整时回退使用。
 
 如果你当前主要使用“采集结果上报到云端”的链路，优先关注 `collector.report.mqtt`。

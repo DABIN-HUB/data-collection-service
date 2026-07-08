@@ -15,7 +15,7 @@
 
 - 本文描述的是“MQTT 作为采集协议”的实现，即通过 MQTT topic 采集 MQTT 设备点位。
 - 统一数据上报使用的是 `core/report/handler/MqttReportHandler`，不是本文的 `MqttCollector`。
-- MQTT 下行里，`thing.property.set` / `thing.service.invoke` 已可转发到 Modbus、OPC、IEC、SNMP 等协议写入链路；`thing.config.push`、`thing.ota.upgrade` 仍未实现，`thing.ota.progress` 目前仅有消息构造能力，详见 [上下行消息协议与实现状态](../11-上下行消息协议与实现状态.md)。
+- MQTT 下行里，`thing.property.set` / `thing.service.invoke` 已可转发到 Modbus、OPC、IEC、SNMP 等协议写入链路；`thing.config.push` 已接入配置治理触发链路，支持 `device/points/connection/collection/all`；`thing.ota.upgrade` 仍未实现，`thing.ota.progress` 目前仅有消息构造能力，详见 [上下行消息协议与实现状态](../11-上下行消息协议与实现状态.md)。
 
 ## 地址与点位配置
 

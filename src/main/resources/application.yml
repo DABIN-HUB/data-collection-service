@@ -230,6 +230,7 @@ collector:
         property: thing/property/post
         event: thing/event/post
         state: thing/state/update
+      service-command-mappings: {}  # 平台服务名 -> 协议命令名映射，未配置时直接使用原 service/identifier
 
   # MQTT 采集协议默认连接兜底配置（MqttCollector）
   mqtt:

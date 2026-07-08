@@ -8,6 +8,8 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.manager.ConfigSyncService;
+import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,9 @@ public class MqttDownlinkService {
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
+    private static final List<String> CONFIG_PUSH_TYPES = List.of(
+            "device", "points", "connection", "collection", "all"
+    );
     private static final List<String> RESERVED_KEYS = List.of(
             "id", "messageId", "version", "method", "deviceId", "deviceName",
             "productKey", "timestamp", "shadowVersion", "expectedVersion", "source"
@@ -40,6 +45,8 @@ public class MqttDownlinkService {
 
     private final ObjectMapper objectMapper;
     private final ConfigManager configManager;
+    private final ConfigSyncService configSyncService;
+    private final ReportProperties reportProperties;
     private final CollectionManager collectionManager;
     private final ShadowManager shadowManager;
 
@@ -64,7 +71,8 @@ public class MqttDownlinkService {
         return switch (method) {
             case MessageConstant.MESSAGE_TYPE_PROPERTY_SET -> handlePropertySet(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_SERVICE_INVOKE -> handleServiceInvoke(topic, root, messageId, method);
-            case MessageConstant.MESSAGE_TYPE_CONFIG_PUSH, MessageConstant.MESSAGE_TYPE_OTA_UPGRADE ->
+            case MessageConstant.MESSAGE_TYPE_CONFIG_PUSH -> handleConfigPush(topic, root, messageId, method);
+            case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE ->
                     MqttDownlinkResult.of(messageId, method, resolveDeviceId(root, topic),
                             501, method + " not implemented", Map.of("topic", topic));
             default -> {
@@ -124,9 +132,19 @@ public class MqttDownlinkService {
         }
 
         Map<String, Object> params = extractBusinessParams(root);
-        String command = firstText(root, "command", "service", "identifier", "serviceId");
+        String directCommand = firstText(root, "command");
+        if (!StringUtils.hasText(directCommand)) {
+            directCommand = firstString(params, "command");
+        }
+
+        String requestedCommand = directCommand;
+        String command = directCommand;
         if (!StringUtils.hasText(command)) {
-            command = firstString(params, "command", "service", "identifier", "serviceId");
+            requestedCommand = firstText(root, "service", "identifier", "serviceId");
+            if (!StringUtils.hasText(requestedCommand)) {
+                requestedCommand = firstString(params, "service", "identifier", "serviceId");
+            }
+            command = resolveServiceCommand(requestedCommand);
         }
         if (!StringUtils.hasText(command)) {
             return MqttDownlinkResult.of(messageId, method, deviceId, 400, "missing command", Map.of("params", params));
@@ -136,12 +154,115 @@ public class MqttDownlinkService {
             Object result = collectionManager.executeCommand(deviceId, command, params);
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("command", command);
+            if (StringUtils.hasText(requestedCommand) && !Objects.equals(requestedCommand, command)) {
+                data.put("requestedCommand", requestedCommand);
+                data.put("mappingApplied", true);
+            }
             data.put("result", result);
             return MqttDownlinkResult.success(messageId, method, deviceId, data);
         } catch (Exception e) {
             return MqttDownlinkResult.of(messageId, method, deviceId, 500,
                     e.getMessage(), Map.of("command", command));
         }
+    }
+    private MqttDownlinkResult handleConfigPush(String topic, JsonNode root, String messageId, String method) {
+        String hintedDeviceId = resolveDeviceId(root, topic);
+        String explicitDeviceId = resolveExplicitDeviceId(root);
+        Map<String, Object> params = extractBusinessParams(root);
+        String configType = resolveConfigPushType(root, params, hintedDeviceId);
+        String deviceId = StringUtils.hasText(explicitDeviceId)
+                ? explicitDeviceId
+                : "all".equals(configType) ? null : hintedDeviceId;
+        if (!CONFIG_PUSH_TYPES.contains(configType)) {
+            return MqttDownlinkResult.of(messageId, method, deviceId, 400,
+                    "unsupported configType", Map.of("configType", configType, "supportedTypes", CONFIG_PUSH_TYPES));
+        }
+        if (!"all".equals(configType) && !StringUtils.hasText(deviceId)) {
+            return MqttDownlinkResult.of(messageId, method, null, 400,
+                    "missing deviceId", Map.of("configType", configType));
+        }
+
+        log.info("收到 MQTT 配置推送，deviceId={}, configType={}", deviceId, configType);
+        try {
+            Map<String, Object> data = executeConfigPush(configType, deviceId);
+            data.put("topic", topic);
+            return MqttDownlinkResult.success(messageId, method, deviceId, data);
+        } catch (Exception e) {
+            return MqttDownlinkResult.of(messageId, method, deviceId, 500,
+                    e.getMessage(), Map.of("configType", configType));
+        }
+    }
+
+    private Map<String, Object> executeConfigPush(String configType, String deviceId) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("configType", configType);
+        if (StringUtils.hasText(deviceId)) {
+            data.put("deviceId", deviceId);
+        }
+
+        if ("all".equals(configType)) {
+            if (StringUtils.hasText(deviceId)) {
+                configSyncService.notifyConfigUpdate("device", deviceId);
+                configSyncService.notifyConfigUpdate("points", deviceId);
+                configSyncService.notifyConfigUpdate("connection", deviceId);
+                data.put("mode", "device-bundle");
+                data.put("triggeredTypes", List.of("device", "points", "connection"));
+            } else {
+                configSyncService.triggerManualSync();
+                data.put("mode", "global-sync");
+                data.put("triggeredTypes", List.of("all"));
+            }
+            return data;
+        }
+
+        configSyncService.notifyConfigUpdate(configType, deviceId);
+        data.put("mode", "incremental");
+        data.put("triggeredTypes", List.of(configType));
+        return data;
+    }
+
+    private String resolveServiceCommand(String requestedCommand) {
+        if (!StringUtils.hasText(requestedCommand)) {
+            return null;
+        }
+        Map<String, String> mappings = reportProperties.getMqtt().getServiceCommandMappings();
+        if (mappings == null || mappings.isEmpty()) {
+            return requestedCommand;
+        }
+
+        String direct = mappings.get(requestedCommand);
+        if (StringUtils.hasText(direct)) {
+            return direct;
+        }
+
+        String normalizedRequested = normalize(requestedCommand).replace('-', '_');
+        for (Map.Entry<String, String> entry : mappings.entrySet()) {
+            if (normalizedRequested.equals(normalize(entry.getKey()).replace('-', '_'))
+                    && StringUtils.hasText(entry.getValue())) {
+                return entry.getValue();
+            }
+        }
+        return requestedCommand;
+    }
+
+    private String resolveConfigPushType(JsonNode root, Map<String, Object> params, String deviceId) {
+        String configType = firstText(root, "configType", "type", "scope", "syncType");
+        if (!StringUtils.hasText(configType)) {
+            configType = firstString(params, "configType", "type", "scope", "syncType");
+        }
+        if (!StringUtils.hasText(configType)) {
+            return StringUtils.hasText(deviceId) ? "collection" : "all";
+        }
+        return normalizeConfigPushType(configType);
+    }
+
+    private String normalizeConfigPushType(String configType) {
+        String normalized = normalize(configType).replace('-', '_');
+        return switch (normalized) {
+            case "point" -> "points";
+            case "full", "global", "full_sync", "global_sync" -> "all";
+            default -> normalized;
+        };
     }
 
     private WritePlan buildWritePlan(String deviceId, Map<String, Object> values) {
@@ -221,6 +342,22 @@ public class MqttDownlinkService {
                 || normalizedField.equals(normalize(point.getPointCode()))
                 || normalizedField.equals(normalize(point.getPointId()))
                 || normalizedField.equals(normalize(point.getPointName()));
+    }
+
+    private String resolveExplicitDeviceId(JsonNode root) {
+        String direct = firstText(root, "deviceId", "deviceName");
+        if (StringUtils.hasText(direct)) {
+            return mapDeviceIdentifier(direct);
+        }
+
+        JsonNode params = root.get(MessageConstant.FIELD_PARAMS);
+        if (params != null && params.isObject()) {
+            String fromParams = firstText(params, "deviceId", "deviceName");
+            if (StringUtils.hasText(fromParams)) {
+                return mapDeviceIdentifier(fromParams);
+            }
+        }
+        return null;
     }
 
     private String resolveDeviceId(JsonNode root, String topic) {
