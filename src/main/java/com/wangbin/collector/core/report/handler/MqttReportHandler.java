@@ -6,6 +6,9 @@ import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
+import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.model.ReportConfig;
@@ -55,6 +58,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     private SubscriptionManager subscriptionManager;
     private final Map<String, MqttConnectionConfig> connectionConfigs = new ConcurrentHashMap<>();
     private final AckManager ackManager = new AckManager();
+    private final CloudProtocolAdapter fallbackCloudProtocolAdapter = AlinkCloudProtocolAdapter.standalone(OBJECT_MAPPER);
     @Autowired(required = false)
     @Qualifier("monitorExecutor")
     private ScheduledExecutorService monitorExecutor;
@@ -63,6 +67,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     private ExecutorService ioExecutor;
     @Autowired(required = false)
     private MqttDownlinkService downlinkService;
+    @Autowired(required = false)
+    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
 
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
@@ -381,6 +387,9 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         return connectionConfigs.computeIfAbsent(configKey, key -> {
             MqttConnectionConfig connConfig = new MqttConnectionConfig(config);
+            CloudProtocolAdapter cloudProtocolAdapter = resolveCloudProtocolAdapter(config);
+            connConfig.setCloudProvider(cloudProtocolAdapter.provider());
+            connConfig.setAckMethods(cloudProtocolAdapter.ackMethods());
 
             // 使用常量获取参数
             connConfig.setClientId(config.getMqttClientId());
@@ -462,60 +471,39 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     private MqttPublishOptions buildPublishOptions(ReportData data, ReportConfig config) {
-        MqttConnectionConfig connConfig = getConnectionConfig(config);
         MqttPublishOptions options = new MqttPublishOptions();
 
-        // 设置主题
-        String topic = connConfig.getDefaultPublishTopic();
-        if (topic == null || topic.isEmpty()) {
-            // 默认主题格式
-            topic = "data/" + config.getTargetId() + "/" + data.getPointCode();
-        } else {
-            // 替换主题中的变量
-            topic = replaceTopicVariables(topic, data, config);
-        }
-        options.setTopic(topic);
-
-        // 设置QoS级别
-        int qos = getQosLevel(config);
-        options.setQos(qos);
-
-        // 设置是否保留消息
-        boolean retained = isRetainedMessage(config);
-        options.setRetained(retained);
-
+        options.setTopic(resolveCloudProtocolAdapter(config).buildPublishTopic(data, config));
+        options.setQos(getQosLevel(config));
+        options.setRetained(isRetainedMessage(config));
         return options;
     }
 
-    private String replaceTopicVariables(String topic, ReportData data, ReportConfig config) {
-        String fallbackDeviceName = config.getStringParam("gatewayDeviceName");
-        if (fallbackDeviceName == null || fallbackDeviceName.isEmpty()) {
-            fallbackDeviceName = config.getTargetId();
+    private CloudProtocolAdapter resolveCloudProtocolAdapter(ReportConfig config) {
+        String provider = configText(config, "cloudProvider");
+        if (cloudProtocolAdapters != null) {
+            return cloudProtocolAdapters.resolve(provider);
         }
-        String deviceName = Optional.ofNullable(data.getDeviceId())
-                .filter(name -> !name.isEmpty())
-                .orElse(fallbackDeviceName);
-        String methodPath = Optional.ofNullable(data.getMethod())
-                .map(m -> m.replace('.', '/'))
-                .orElse("");
-        Object rawDeviceId = data.getMetadata() != null ? data.getMetadata().get("rawDeviceId") : null;
-        String productKey = "";
-        if (data.getMetadata() != null && data.getMetadata().get("productKey") != null) {
-            productKey = String.valueOf(data.getMetadata().get("productKey"));
+        if (!hasText(provider) || fallbackCloudProtocolAdapter.aliases().stream().anyMatch(alias -> alias.equalsIgnoreCase(provider))) {
+            return fallbackCloudProtocolAdapter;
         }
-        if (productKey.isEmpty() && config.getParams() != null) {
-            Map<String, Object> params = config.getParams();
-            productKey = (String) params.get("gatewayProductKey");
+        throw new IllegalArgumentException("unsupported cloud protocol provider: " + provider);
+    }
+
+    private String configText(ReportConfig config, String key) {
+        if (config == null || key == null) {
+            return null;
         }
-        return topic
-                .replace("{deviceName}", deviceName != null ? deviceName : "")
-                .replace("{deviceId}", deviceName != null ? deviceName : "")
-                .replace("{pointCode}", Optional.ofNullable(data.getPointCode()).orElse(""))
-                .replace("{targetId}", Optional.ofNullable(config.getTargetId()).orElse(""))
-                .replace("{timestamp}", String.valueOf(data.getTimestamp()))
-                .replace("{method}", methodPath)
-                .replace("{productKey}", productKey != null ? productKey : "")
-                .replace("{rawDeviceId}", rawDeviceId != null ? rawDeviceId.toString() : "");
+        String value = config.getStringParam(key);
+        if (hasText(value)) {
+            return value;
+        }
+        Object raw = config.getParams() != null ? config.getParams().get(key) : null;
+        return raw == null ? null : String.valueOf(raw);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private int getQosLevel(ReportConfig config) {
@@ -544,49 +532,11 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     private byte[] buildMessagePayload(ReportData data, ReportConfig config) {
-        String dataFormat = getStringConfig("dataFormat", "JSON");
-
-        switch (dataFormat.toUpperCase()) {
-            case "TEXT":
-                return buildTextPayload(data, config);
-            case "BINARY":
-                return buildBinaryPayload(data, config);
-            case "JSON":
-            default:
-                return buildJsonPayload(data, config);
-        }
+        return buildJsonPayload(data, config);
     }
 
     private byte[] buildJsonPayload(ReportData data, ReportConfig config) {
-        Map<String, Object> jsonData = new LinkedHashMap<>();
-        String messageId = resolveMessageId(data);
-        jsonData.put("id", messageId);
-        data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, messageId);
-        jsonData.put("version", MessageConstant.MESSAGE_VERSION_1_0);
-        jsonData.put("method", data.getMethod());
-        jsonData.put("deviceId", data.getDeviceId());
-        jsonData.put("timestamp", data.getTimestamp());
-
-        Map<String, Object> params = new LinkedHashMap<>();
-        if (data.hasProperties()) {
-            params.putAll(data.getProperties());
-        } else if (data.getPointCode() != null) {
-            params.put(data.getPointCode(), data.getValue());
-        }
-        jsonData.put("params", params);
-
-        if (!data.getPropertyQuality().isEmpty()) {
-            jsonData.put("quality", data.getPropertyQuality());
-        }
-        if (!data.getPropertyTs().isEmpty()) {
-            jsonData.put("propertyTs", data.getPropertyTs());
-        }
-        if (data.getMetadata() != null && !data.getMetadata().isEmpty()) {
-            jsonData.put("metadata", data.getMetadata());
-        }
-
-        String jsonString = simpleJsonEncode(jsonData);
-        return jsonString.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return resolveCloudProtocolAdapter(config).encodeReportData(data);
     }
 
     private byte[] buildTextPayload(ReportData data, ReportConfig config) {
@@ -634,51 +584,6 @@ public class MqttReportHandler extends AbstractReportHandler {
             log.error("构建二进制消息失败", e);
             return new byte[0];
         }
-    }
-
-    private String simpleJsonEncode(Map<String, Object> data) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-
-        boolean first = true;
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            if (!first) {
-                sb.append(",");
-            }
-            first = false;
-
-            sb.append("\"").append(entry.getKey()).append("\":");
-
-            Object value = entry.getValue();
-            if (value instanceof String) {
-                sb.append("\"").append(escapeJson((String) value)).append("\"");
-            } else if (value instanceof Number) {
-                sb.append(value);
-            } else if (value instanceof Boolean) {
-                sb.append(value);
-            } else if (value instanceof Map) {
-                sb.append(simpleJsonEncode((Map<String, Object>) value));
-            } else if (value == null) {
-                sb.append("null");
-            } else {
-                sb.append("\"").append(escapeJson(value.toString())).append("\"");
-            }
-        }
-
-        sb.append("}");
-        return sb.toString();
-    }
-
-    private String escapeJson(String text) {
-        if (text == null) {
-            return "";
-        }
-
-        return text.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 
     private void updateSubscriptions(MqttConnectionConfig connConfig) {
@@ -934,6 +839,8 @@ public class MqttReportHandler extends AbstractReportHandler {
         private long ackTimeoutMs = ProtocolConstant.DEFAULT_MQTT_ACK_TIMEOUT_MS;
         private String gatewayProductKey;
         private String gatewayDeviceName;
+        private String cloudProvider = CloudProtocolAdapter.DEFAULT_PROVIDER;
+        private List<String> ackMethods = MessageConstant.getAckMethods();
 
         public MqttConnectionConfig(ReportConfig config) {
             this.targetId = config.getTargetId();
@@ -962,7 +869,8 @@ public class MqttReportHandler extends AbstractReportHandler {
             List<String> topics = new ArrayList<>();
             List<Pattern> patterns = new ArrayList<>();
 
-            for (String method : MessageConstant.getAckMethods()) {
+            List<String> methods = ackMethods == null || ackMethods.isEmpty() ? MessageConstant.getAckMethods() : ackMethods;
+            for (String method : methods) {
                 String methodPath = MessageConstant.methodToTopicPath(method);
                 if (methodPath.isEmpty()) {
                     continue;
@@ -1456,6 +1364,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         public void messageArrived(String topic, MqttMessage message) {
             if (config.isAckTopic(topic)) {
                 handleAckMessage(topic, message);
+                handleDownlinkMessage(topic, message);
                 return;
             }
 
@@ -1531,7 +1440,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             if (downlinkService == null || message == null || message.getPayload() == null) {
                 return;
             }
-            MqttDownlinkResult result = downlinkService.handle(topic, message.getPayload());
+            MqttDownlinkResult result = downlinkService.handle(topic, message.getPayload(), config.getCloudProvider());
             if (result == null || !result.isResponseRequired()) {
                 return;
             }

@@ -152,10 +152,11 @@ public class ReportProperties {
         private String gatewayProductKey = "";
 
         private String gatewayDeviceName = "";
+        private String cloudProvider = "alink";
         /**
-         * topic 前缀，默认 iot/device。
+         * topic 前缀，默认 /sys。
          */
-        private String topicPrefix = "iot/device";
+        private String topicPrefix = "/sys";
         private String ackTopicPrefix = "/sys";
         private String ackTopicSuffix = "_reply";
         /**
@@ -182,7 +183,7 @@ public class ReportProperties {
 
         public String getTopicPrefix() {
             if (topicPrefix == null || topicPrefix.isEmpty()) {
-                return "iot/device";
+                return "/sys";
             }
             return topicPrefix.endsWith("/") ? topicPrefix.substring(0, topicPrefix.length() - 1) : topicPrefix;
         }

@@ -39,7 +39,7 @@ spring:
     driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
     url: jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector
     username: root
-    password: change-me
+    password: taosdata
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -52,7 +52,7 @@ spring:
       port: 6379
       database: 0
       timeout: 3000
-      password:
+      password: 123456888wb
       lettuce:
         pool:
           max-active: 20
@@ -216,10 +216,11 @@ collector:
       client-id: collector-1
       username:
       password:
-      topic-prefix: iot/device
+      topic-prefix: /sys
       ack-topic-prefix: /sys
       gateway-product-key: change-me
       gateway-device-name: collector-1
+      cloud-provider: alink
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5
       qos: 1

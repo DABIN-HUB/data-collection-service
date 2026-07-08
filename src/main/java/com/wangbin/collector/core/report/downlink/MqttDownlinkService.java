@@ -6,6 +6,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.core.cloud.ota.CloudOtaService;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolMessage;
+import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkMessageEnvelope;
+import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkPayloadDecoder;
+import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
+import com.wangbin.collector.core.cloud.topology.CloudTopologyService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
@@ -13,6 +22,7 @@ import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -49,21 +59,39 @@ public class MqttDownlinkService {
     private final ReportProperties reportProperties;
     private final CollectionManager collectionManager;
     private final ShadowManager shadowManager;
-
+    @Autowired(required = false)
+    private AlinkPayloadDecoder alinkPayloadDecoder;
+    @Autowired(required = false)
+    private CloudTopologyService cloudTopologyService;
+    @Autowired(required = false)
+    private CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
+    @Autowired(required = false)
+    private CloudOtaService cloudOtaService;
+    @Autowired(required = false)
+    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
     public MqttDownlinkResult handle(String topic, byte[] payload) {
+        return handle(topic, payload, null);
+    }
+
+    public MqttDownlinkResult handle(String topic, byte[] payload, String cloudProvider) {
         if (payload == null || payload.length == 0) {
             return MqttDownlinkResult.of(null, null, null, 400, "empty payload", Map.of("topic", topic));
         }
 
+        CloudProtocolMessage envelope = decodeCloud(topic, payload, cloudProvider);
         JsonNode root;
         try {
-            root = objectMapper.readTree(payload);
+            root = envelope != null ? envelope.payload() : objectMapper.readTree(payload);
         } catch (Exception e) {
             return MqttDownlinkResult.of(null, null, null, 400, "invalid json payload", Map.of("topic", topic));
         }
 
-        String method = resolveMethod(root, topic);
-        String messageId = resolveMessageId(root);
+        String method = envelope != null && StringUtils.hasText(envelope.method())
+                ? envelope.method()
+                : resolveMethod(root, topic);
+        String messageId = envelope != null && StringUtils.hasText(envelope.id())
+                ? envelope.id()
+                : resolveMessageId(root);
         if (!StringUtils.hasText(method)) {
             return MqttDownlinkResult.of(messageId, null, null, 400, "missing method", Map.of("topic", topic));
         }
@@ -72,9 +100,12 @@ public class MqttDownlinkService {
             case MessageConstant.MESSAGE_TYPE_PROPERTY_SET -> handlePropertySet(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_SERVICE_INVOKE -> handleServiceInvoke(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_CONFIG_PUSH -> handleConfigPush(topic, root, messageId, method);
-            case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE ->
-                    MqttDownlinkResult.of(messageId, method, resolveDeviceId(root, topic),
-                            501, method + " not implemented", Map.of("topic", topic));
+            case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE -> handleOtaUpgrade(topic, root, messageId, method);
+            case MessageConstant.MESSAGE_TYPE_TOPO_CHANGE,
+                 MessageConstant.MESSAGE_TYPE_TOPO_ADD,
+                 MessageConstant.MESSAGE_TYPE_TOPO_DELETE,
+                 MessageConstant.MESSAGE_TYPE_TOPO_GET -> handleTopology(topic, root, messageId, method);
+            case MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB -> handleSubDeviceRegisterReply(topic, root, messageId, method);
             default -> {
                 log.debug("忽略非下行业务 MQTT 消息 method={} topic={}", method, topic);
                 yield MqttDownlinkResult.ignored(method);
@@ -193,6 +224,99 @@ public class MqttDownlinkService {
         }
     }
 
+    private MqttDownlinkResult handleOtaUpgrade(String topic, JsonNode root, String messageId, String method) {
+        String deviceId = resolveDeviceId(root, topic);
+        if (!StringUtils.hasText(deviceId)) {
+            CloudDeviceIdentity identity = resolveCloudIdentity(root, topic);
+            deviceId = identity.valid() ? identity.deviceName() : null;
+        }
+        JsonNode params = businessNode(root);
+        Map<String, Object> data = cloudOtaService != null
+                ? cloudOtaService.createTask(deviceId, params)
+                : new LinkedHashMap<>();
+        data.put("topic", topic);
+        return MqttDownlinkResult.success(messageId, method, deviceId, data);
+    }
+
+    private MqttDownlinkResult handleTopology(String topic, JsonNode root, String messageId, String method) {
+        CloudDeviceIdentity gateway = resolveCloudIdentity(root, topic);
+        JsonNode params = businessNode(root);
+        Map<String, Object> data;
+        if (cloudTopologyService == null) {
+            data = new LinkedHashMap<>();
+            data.put("topic", topic);
+            data.put("gateway", gateway.valid() ? gateway.key() : null);
+        } else if (MessageConstant.MESSAGE_TYPE_TOPO_GET.equals(method)) {
+            data = cloudTopologyService.snapshot(gateway);
+        } else if (MessageConstant.MESSAGE_TYPE_TOPO_ADD.equals(method)) {
+            data = cloudTopologyService.addSubDevices(gateway, cloudTopologyService.parseSubDevices(params));
+        } else if (MessageConstant.MESSAGE_TYPE_TOPO_DELETE.equals(method)) {
+            data = cloudTopologyService.deleteSubDevices(gateway, cloudTopologyService.parseSubDevices(params));
+        } else {
+            data = cloudTopologyService.applyChange(gateway, params);
+        }
+        String deviceId = resolveDeviceId(root, topic);
+        if (!StringUtils.hasText(deviceId) && gateway.valid()) {
+            deviceId = gateway.deviceName();
+        }
+        return MqttDownlinkResult.success(messageId, method, deviceId, data);
+    }
+
+    private MqttDownlinkResult handleSubDeviceRegisterReply(String topic, JsonNode root, String messageId, String method) {
+        Map<String, Object> data = cloudSubDeviceRegisterService != null
+                ? cloudSubDeviceRegisterService.applyRegisterReply(root)
+                : new LinkedHashMap<>();
+        data.put("topic", topic);
+        return MqttDownlinkResult.success(messageId, method, resolveDeviceId(root, topic), data);
+    }
+
+    private JsonNode businessNode(JsonNode root) {
+        JsonNode params = root != null ? root.get(MessageConstant.FIELD_PARAMS) : null;
+        return params != null && !params.isNull() ? params : root;
+    }
+
+    private CloudProtocolMessage decodeCloud(String topic, byte[] payload, String cloudProvider) {
+        if (cloudProtocolAdapters != null) {
+            try {
+                CloudProtocolAdapter adapter = cloudProtocolAdapters.resolve(cloudProvider);
+                return adapter.decode(topic, payload);
+            } catch (Exception e) {
+                log.debug("云协议适配器解码失败，回退到兼容解析 provider={} topic={} err={}",
+                        cloudProvider, topic, e.getMessage());
+            }
+        }
+        if (alinkPayloadDecoder == null) {
+            return null;
+        }
+        try {
+            AlinkMessageEnvelope envelope = alinkPayloadDecoder.decode(topic, payload);
+            return new CloudProtocolMessage(
+                    envelope.id(),
+                    envelope.version(),
+                    envelope.method() != null ? envelope.method().method() : null,
+                    envelope.identity(),
+                    envelope.payload(),
+                    envelope.params());
+        } catch (Exception e) {
+            log.debug("Alink 解码失败，回退到兼容解析 topic={} err={}", topic, e.getMessage());
+            return null;
+        }
+    }
+
+    private CloudDeviceIdentity resolveCloudIdentity(JsonNode root, String topic) {
+        String productKey = firstText(root, MessageConstant.FIELD_PRODUCT_KEY, "pk");
+        String deviceName = firstText(root, MessageConstant.FIELD_DEVICE_NAME, "dn", "deviceId");
+        if (StringUtils.hasText(productKey) && StringUtils.hasText(deviceName)) {
+            return CloudDeviceIdentity.of(productKey, deviceName);
+        }
+        String[] segments = topic == null ? new String[0] : topic.replace('\\', '/').split("/");
+        for (int i = 0; i < segments.length; i++) {
+            if ("sys".equals(segments[i]) && i + 2 < segments.length) {
+                return CloudDeviceIdentity.of(segments[i + 1], segments[i + 2]);
+            }
+        }
+        return CloudDeviceIdentity.of(productKey, deviceName);
+    }
     private Map<String, Object> executeConfigPush(String configType, String deviceId) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("configType", configType);
@@ -442,6 +566,21 @@ public class MqttDownlinkService {
         }
         if (normalizedTopic.contains("thing/ota/upgrade")) {
             return MessageConstant.MESSAGE_TYPE_OTA_UPGRADE;
+        }
+        if (normalizedTopic.contains("thing/topo/change")) {
+            return MessageConstant.MESSAGE_TYPE_TOPO_CHANGE;
+        }
+        if (normalizedTopic.contains("thing/topo/add")) {
+            return MessageConstant.MESSAGE_TYPE_TOPO_ADD;
+        }
+        if (normalizedTopic.contains("thing/topo/delete")) {
+            return MessageConstant.MESSAGE_TYPE_TOPO_DELETE;
+        }
+        if (normalizedTopic.contains("thing/topo/get")) {
+            return MessageConstant.MESSAGE_TYPE_TOPO_GET;
+        }
+        if (normalizedTopic.contains("thing/auth/register/sub")) {
+            return MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB;
         }
         return null;
     }

@@ -4,6 +4,9 @@ import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.aggregation.CloudAggregationService;
+import com.wangbin.collector.core.cloud.aggregation.CloudPointBinding;
+import com.wangbin.collector.core.cloud.mapping.CloudPointMappingResolver;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
@@ -24,6 +27,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
@@ -70,7 +74,10 @@ public class CacheReportService {
     private final DistributedLock distributedLock;
     @Qualifier("taskScheduler")
     private final TaskScheduler taskScheduler;
-
+    @Autowired(required = false)
+    private CloudPointMappingResolver cloudPointMappingResolver;
+    @Autowired(required = false)
+    private CloudAggregationService cloudAggregationService;
     private final ConcurrentMap<String, String> identityGatewayMapping = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> identityProductKeys = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
@@ -102,6 +109,9 @@ public class CacheReportService {
         if (processResult == null) {
             return;
         }
+        if (hasCloudBindings(point) && reportCloudBindings(deviceId, point, processResult)) {
+            return;
+        }
         List<ReportIdentity> identities = identityResolver.resolve(deviceId, point, defaultProductKey());
         if (identities.isEmpty()) {
             identities = List.of(new ReportIdentity(deviceId, deviceId, defaultProductKey()));
@@ -126,6 +136,96 @@ public class CacheReportService {
             return "";
         }
         return mqtt.getGatewayProductKey();
+    }
+
+    private boolean hasCloudBindings(DataPoint point) {
+        return point != null && point.getAdditionalConfig("cloudBindings") != null;
+    }
+
+    private boolean reportCloudBindings(String gatewayDeviceId, DataPoint point, ProcessResult processResult) {
+        if (cloudPointMappingResolver == null) {
+            return false;
+        }
+        List<CloudPointBinding> bindings = cloudPointMappingResolver.resolve(point, defaultProductKey(), gatewayDeviceId);
+        if (bindings.isEmpty()) {
+            return false;
+        }
+        boolean handled = false;
+        for (CloudPointBinding binding : bindings) {
+            if (binding == null || binding.identity() == null || !binding.identity().valid()) {
+                continue;
+            }
+            ReportIdentity identity = new ReportIdentity(
+                    gatewayDeviceId,
+                    binding.identity().deviceName(),
+                    binding.identity().productKey());
+            identityGatewayMapping.put(identity.cloudDeviceId(), identity.gatewayDeviceId());
+            identityProductKeys.put(identity.cloudDeviceId(), identity.productKey());
+            if (!MessageConstant.MESSAGE_TYPE_PROPERTY_POST.equals(binding.messageType())) {
+                handled |= dispatchCloudBindingDirect(gatewayDeviceId, point, processResult, binding);
+                continue;
+            }
+            DataPoint mappedPoint = pointWithCloudField(point, binding.field());
+            ShadowUpdateResult updateResult = shadowManager.apply(identity.cloudDeviceId(), mappedPoint, processResult);
+            if (updateResult.changeTriggered()) {
+                triggerImmediateFlush(identity.cloudDeviceId());
+            }
+            EventInfo eventInfo = updateResult.eventInfo();
+            if (eventInfo != null) {
+                dispatchEvent(identity, mappedPoint, processResult, eventInfo);
+            }
+            handled = true;
+        }
+        return handled;
+    }
+
+    private boolean dispatchCloudBindingDirect(String gatewayDeviceId,
+                                               DataPoint point,
+                                               ProcessResult processResult,
+                                               CloudPointBinding binding) {
+        if (cloudAggregationService == null) {
+            return false;
+        }
+        ReportConfig reportConfig = resolveReportConfig(binding.identity().deviceName());
+        if (reportConfig == null || !reportConfig.validate()) {
+            log.warn("Skip cloud binding report because config is invalid, device={}", binding.identity().deviceName());
+            return true;
+        }
+        ReportData data = cloudAggregationService.toReportData(gatewayDeviceId, point, processResult, binding);
+        if (data == null) {
+            return true;
+        }
+        dispatch(data, reportConfig, true, null);
+        return true;
+    }
+
+    private DataPoint pointWithCloudField(DataPoint point, String field) {
+        if (point == null || field == null || field.isBlank()) {
+            return point;
+        }
+        DataPoint copy = new DataPoint();
+        copy.setId(point.getId());
+        copy.setUnitId(point.getUnitId());
+        copy.setCommonAddress(point.getCommonAddress());
+        copy.setPointId(point.getPointId());
+        copy.setPointCode(point.getPointCode());
+        copy.setPointName(point.getPointName());
+        copy.setPointAlias(point.getPointAlias());
+        copy.setDeviceId(point.getDeviceId());
+        copy.setDeviceName(point.getDeviceName());
+        copy.setGroupId(point.getGroupId());
+        copy.setAddress(point.getAddress());
+        copy.setDataType(point.getDataType());
+        copy.setReadWrite(point.getReadWrite());
+        copy.setUnit(point.getUnit());
+        copy.setStatus(point.getStatus());
+        copy.setPrecision(point.getPrecision());
+        copy.setRemark(point.getRemark());
+        copy.setReportFieldConflict(point.isReportFieldConflict());
+        Map<String, Object> additionalConfig = point.getAdditionalConfig();
+        additionalConfig.put("reportField", field);
+        copy.setAdditionalConfig(additionalConfig);
+        return copy;
     }
 
     private void triggerImmediateFlush(String deviceId) {

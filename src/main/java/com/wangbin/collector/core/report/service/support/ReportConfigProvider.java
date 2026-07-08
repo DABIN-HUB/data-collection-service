@@ -1,12 +1,17 @@
 
 package com.wangbin.collector.core.report.service.support;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.wangbin.collector.common.constant.ProtocolConstant;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
+import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
+import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -26,6 +31,9 @@ import java.util.Optional;
 public class ReportConfigProvider {
 
     private final ReportProperties reportProperties;
+    private final CloudProtocolAdapter fallbackCloudProtocolAdapter = AlinkCloudProtocolAdapter.standalone(new ObjectMapper());
+    @Autowired(required = false)
+    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
     private final Cache<String, ReportConfig> cache;
 
     public ReportConfigProvider(ConfigManager configManager, ReportProperties reportProperties) {
@@ -72,6 +80,7 @@ public class ReportConfigProvider {
         params.put(ProtocolConstant.MQTT_PARAM_PASSWORD, mqtt.getPassword());
         params.put(ProtocolConstant.MQTT_PARAM_KEEP_ALIVE, mqtt.getKeepAliveInterval());
         params.put(ProtocolConstant.MQTT_PARAM_CLEAN_SESSION, mqtt.isCleanSession());
+        params.put("cloudProvider", mqtt.getCloudProvider());
         params.put(ProtocolConstant.MQTT_PARAM_PUBLISH_TOPIC, mqtt.getDefaultTopicTemplate());
         params.put("qos", mqtt.getQos());
         params.put("retained", mqtt.isRetained());
@@ -111,12 +120,8 @@ public class ReportConfigProvider {
             return new ArrayList<>(topics);
         }
 
-        List<String> methods = List.of(
-                "thing/property/set",
-                "thing/service/invoke",
-                "thing/config/push",
-                "thing/ota/upgrade"
-        );
+        List<String> methods = resolveCloudProtocolAdapter(mqtt.getCloudProvider()).downlinkTopicPaths();
+
         for (String prefix : List.of(mqtt.getAckTopicPrefix(), mqtt.getTopicPrefix())) {
             String normalizedPrefix = normalizeTopicPrefix(prefix);
             for (String method : methods) {
@@ -126,6 +131,16 @@ public class ReportConfigProvider {
         return new ArrayList<>(topics);
     }
 
+    private CloudProtocolAdapter resolveCloudProtocolAdapter(String provider) {
+        if (cloudProtocolAdapters != null) {
+            return cloudProtocolAdapters.resolve(provider);
+        }
+        if (provider == null || provider.isBlank()
+                || fallbackCloudProtocolAdapter.aliases().stream().anyMatch(alias -> alias.equalsIgnoreCase(provider))) {
+            return fallbackCloudProtocolAdapter;
+        }
+        throw new IllegalArgumentException("unsupported cloud protocol provider: " + provider);
+    }
     private String normalizeTopicPrefix(String prefix) {
         String value = prefix == null || prefix.isBlank() ? "/sys" : prefix.trim();
         if (value.length() > 1 && value.endsWith("/")) {
