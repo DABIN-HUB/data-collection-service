@@ -6,9 +6,15 @@ import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.config.CloudAckCommitMode;
+import com.wangbin.collector.core.cloud.config.CloudAckMode;
+import com.wangbin.collector.core.cloud.config.CloudAckOptions;
+import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
+import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
+import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.model.ReportConfig;
@@ -387,9 +393,11 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         return connectionConfigs.computeIfAbsent(configKey, key -> {
             MqttConnectionConfig connConfig = new MqttConnectionConfig(config);
-            CloudProtocolAdapter cloudProtocolAdapter = resolveCloudProtocolAdapter(config);
-            connConfig.setCloudProvider(cloudProtocolAdapter.provider());
-            connConfig.setAckMethods(cloudProtocolAdapter.ackMethods());
+            CloudReportTargetContext cloudTargetContext = resolveCloudReportTargetContext(config);
+            connConfig.setCloudTargetContext(cloudTargetContext);
+            connConfig.setCloudProvider(cloudTargetContext.cloudProvider());
+            connConfig.setAckMethods(cloudTargetContext.protocolAdapter().ackMethods());
+            connConfig.setAckOptions(cloudTargetContext.ackOptions());
 
             // 使用常量获取参数
             connConfig.setClientId(config.getMqttClientId());
@@ -455,6 +463,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             connConfig.setAckTimeoutMs(config.getIntParam(
                     ProtocolConstant.MQTT_PARAM_ACK_TIMEOUT,
                     ProtocolConstant.DEFAULT_MQTT_ACK_TIMEOUT_MS));
+            connConfig.setAckTimeoutMs(cloudTargetContext.ackOptions().timeoutMs());
             connConfig.prepareAckSettings();
             for (String ackTopic : connConfig.getAckSubscriptionTopics()) {
                 if (!subscribeTopicList.contains(ackTopic)) {
@@ -473,10 +482,27 @@ public class MqttReportHandler extends AbstractReportHandler {
     private MqttPublishOptions buildPublishOptions(ReportData data, ReportConfig config) {
         MqttPublishOptions options = new MqttPublishOptions();
 
-        options.setTopic(resolveCloudProtocolAdapter(config).buildPublishTopic(data, config));
+        options.setTopic(resolveCloudReportTargetContext(config).protocolAdapter().buildPublishTopic(data, config));
         options.setQos(getQosLevel(config));
         options.setRetained(isRetainedMessage(config));
         return options;
+    }
+
+    private CloudReportTargetContext resolveCloudReportTargetContext(ReportConfig config) {
+        if (config != null) {
+            Object raw = config.getParam("cloudTargetContext");
+            if (raw instanceof CloudReportTargetContext context) {
+                return context;
+            }
+        }
+        CloudProtocolAdapter adapter = resolveCloudProtocolAdapter(config);
+        return new CloudReportTargetContext(
+                config != null ? config.getTargetId() : null,
+                adapter.provider(),
+                adapter,
+                CloudPayloadOptions.defaults(),
+                CloudBatchFlushPolicy.defaults(),
+                CloudAckOptions.defaults());
     }
 
     private CloudProtocolAdapter resolveCloudProtocolAdapter(ReportConfig config) {
@@ -536,7 +562,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     private byte[] buildJsonPayload(ReportData data, ReportConfig config) {
-        return resolveCloudProtocolAdapter(config).encodeReportData(data);
+        CloudReportTargetContext targetContext = resolveCloudReportTargetContext(config);
+        return targetContext.protocolAdapter().encodeReportData(data, targetContext.payloadOptions());
     }
 
     private byte[] buildTextPayload(ReportData data, ReportConfig config) {
@@ -597,9 +624,12 @@ public class MqttReportHandler extends AbstractReportHandler {
         if (connConfig == null || data == null) {
             return AckManager.AckRegistration.disabled();
         }
-        return ackManager.register(extractMessageId(data), connConfig.shouldWaitForAck());
+        CloudAckOptions ackOptions = connConfig.getAckOptions();
+        if (ackOptions == null || !ackOptions.enabled() || !connConfig.shouldWaitForAck()) {
+            return AckManager.AckRegistration.disabled();
+        }
+        return ackManager.register(extractMessageId(data), ackOptions);
     }
-
     private String extractMessageId(ReportData data) {
         if (data == null || data.getMetadata() == null) {
             return null;
@@ -658,7 +688,15 @@ public class MqttReportHandler extends AbstractReportHandler {
             ackManager.cancel(registration);
             return;
         }
-        AckMessage ack = ackManager.await(registration, connConfig.getAckTimeoutMs());
+        if (registration.getMode() == CloudAckMode.ASYNC) {
+            result.addMetadata("ackMode", CloudAckMode.ASYNC.name());
+            result.addMetadata("ackPending", true);
+            result.addMetadata("ackTimeoutMs", registration.getTimeoutMs());
+            result.addMetadata("ackCommitOn", registration.getCommitMode().name());
+            return;
+        }
+
+        AckMessage ack = ackManager.await(registration, registration.getTimeoutMs());
         if (ack == null) {
             ackManager.cancel(registration);
             return;
@@ -675,7 +713,6 @@ public class MqttReportHandler extends AbstractReportHandler {
             result.setErrorMessage("MQTT ack error: " + ack.message);
         }
     }
-
     private MqttAsyncClient obtainConnectedClient(MqttConnectionConfig connConfig) {
         try {
             MqttAsyncClient client = clientManager.getClient(connConfig);
@@ -711,18 +748,28 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     private static class AckManager {
-        private final ConcurrentHashMap<String, CompletableFuture<AckMessage>> pendingAcks = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, AckTicket> pendingAcks = new ConcurrentHashMap<>();
 
-        AckRegistration register(String messageId, boolean enabled) {
-            if (!enabled || messageId == null || messageId.isEmpty()) {
+        AckRegistration register(String messageId, CloudAckOptions options) {
+            if (options == null || !options.enabled() || messageId == null || messageId.isEmpty()) {
                 return AckRegistration.disabled();
             }
-            CompletableFuture<AckMessage> future = new CompletableFuture<>();
-            CompletableFuture<AckMessage> previous = pendingAcks.put(messageId, future);
-            if (previous != null) {
-                previous.cancel(true);
+            if (pendingAcks.size() >= options.maxPending()) {
+                log.warn("MQTT ACK pending 已满，跳过业务 ACK 跟踪：messageId={}, maxPending={}",
+                        messageId, options.maxPending());
+                return AckRegistration.disabled();
             }
-            return new AckRegistration(messageId, future, true);
+            AckTicket ticket = new AckTicket(
+                    messageId,
+                    new CompletableFuture<>(),
+                    System.currentTimeMillis(),
+                    System.currentTimeMillis() + options.timeoutMs(),
+                    options);
+            AckTicket previous = pendingAcks.put(messageId, ticket);
+            if (previous != null) {
+                previous.future.cancel(true);
+            }
+            return new AckRegistration(messageId, ticket, true);
         }
 
         AckMessage await(AckRegistration registration, long timeoutMs) {
@@ -731,12 +778,12 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
             long waitMs = timeoutMs > 0 ? timeoutMs : ProtocolConstant.DEFAULT_MQTT_ACK_TIMEOUT_MS;
             try {
-                return registration.future.get(waitMs, TimeUnit.MILLISECONDS);
+                return registration.ticket.future.get(waitMs, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
-                pendingAcks.remove(registration.messageId, registration.future);
+                pendingAcks.remove(registration.messageId, registration.ticket);
                 return AckMessage.timeout(registration.messageId);
             } catch (Exception e) {
-                pendingAcks.remove(registration.messageId, registration.future);
+                pendingAcks.remove(registration.messageId, registration.ticket);
                 return AckMessage.failure(registration.messageId, e.getMessage());
             }
         }
@@ -745,29 +792,64 @@ public class MqttReportHandler extends AbstractReportHandler {
             if (registration == null || !registration.isEnabled()) {
                 return;
             }
-            pendingAcks.remove(registration.messageId, registration.future);
+            pendingAcks.remove(registration.messageId, registration.ticket);
         }
 
         void complete(String messageId, AckMessage ackMessage) {
             if (messageId == null) {
                 return;
             }
-            CompletableFuture<AckMessage> future = pendingAcks.remove(messageId);
-            if (future != null) {
-                future.complete(ackMessage);
+            AckTicket ticket = pendingAcks.remove(messageId);
+            if (ticket != null) {
+                ticket.future.complete(ackMessage);
             } else {
                 log.debug("Received ACK for unknown messageId {}", messageId);
             }
         }
 
-        private static class AckRegistration {
+        void expireTimeouts() {
+            long now = System.currentTimeMillis();
+            for (Map.Entry<String, AckTicket> entry : pendingAcks.entrySet()) {
+                AckTicket ticket = entry.getValue();
+                if (ticket == null || ticket.deadlineAt > now) {
+                    continue;
+                }
+                if (pendingAcks.remove(entry.getKey(), ticket)) {
+                    ticket.future.complete(AckMessage.timeout(ticket.messageId));
+                    log.warn("MQTT ACK 超时：messageId={}, mode={}, timeoutMs={}",
+                            ticket.messageId, ticket.options.mode(), ticket.options.timeoutMs());
+                }
+            }
+        }
+
+        private static class AckTicket {
             private final String messageId;
             private final CompletableFuture<AckMessage> future;
-            private final boolean enabled;
+            private final long createdAt;
+            private final long deadlineAt;
+            private final CloudAckOptions options;
 
-            private AckRegistration(String messageId, CompletableFuture<AckMessage> future, boolean enabled) {
+            private AckTicket(String messageId,
+                              CompletableFuture<AckMessage> future,
+                              long createdAt,
+                              long deadlineAt,
+                              CloudAckOptions options) {
                 this.messageId = messageId;
                 this.future = future;
+                this.createdAt = createdAt;
+                this.deadlineAt = deadlineAt;
+                this.options = options;
+            }
+        }
+
+        private static class AckRegistration {
+            private final String messageId;
+            private final AckTicket ticket;
+            private final boolean enabled;
+
+            private AckRegistration(String messageId, AckTicket ticket, boolean enabled) {
+                this.messageId = messageId;
+                this.ticket = ticket;
                 this.enabled = enabled;
             }
 
@@ -776,11 +858,22 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
 
             boolean isEnabled() {
-                return enabled && messageId != null && future != null;
+                return enabled && messageId != null && ticket != null;
+            }
+
+            CloudAckMode getMode() {
+                return isEnabled() ? ticket.options.mode() : CloudAckMode.DISABLED;
+            }
+
+            CloudAckCommitMode getCommitMode() {
+                return isEnabled() ? ticket.options.commitMode() : CloudAckCommitMode.PUBLISH_SUCCESS;
+            }
+
+            long getTimeoutMs() {
+                return isEnabled() ? ticket.options.timeoutMs() : 0L;
             }
         }
     }
-
     private static class AckMessage {
         private final String messageId;
         private final int code;
@@ -840,6 +933,8 @@ public class MqttReportHandler extends AbstractReportHandler {
         private String gatewayProductKey;
         private String gatewayDeviceName;
         private String cloudProvider = CloudProtocolAdapter.DEFAULT_PROVIDER;
+        private CloudReportTargetContext cloudTargetContext;
+        private CloudAckOptions ackOptions = CloudAckOptions.defaults();
         private List<String> ackMethods = MessageConstant.getAckMethods();
 
         public MqttConnectionConfig(ReportConfig config) {
@@ -900,7 +995,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         public boolean shouldWaitForAck() {
-            return !ackTopicPatterns.isEmpty() && ackTimeoutMs > 0;
+            return ackOptions != null && ackOptions.enabled() && !ackTopicPatterns.isEmpty() && ackOptions.timeoutMs() > 0;
         }
 
         public boolean isAckTopic(String topic) {
@@ -1033,6 +1128,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         private static final long ERROR_LOG_INTERVAL_MS = 10000L;
         private final ScheduledExecutorService monitorExecutor;
         private ScheduledFuture<?> monitorFuture;
+        private ScheduledFuture<?> ackMonitorFuture;
         private final AckManager ackManager;
         private final MqttDownlinkService downlinkService;
 
@@ -1047,6 +1143,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         public void init() {
             if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
                 monitorFuture = monitorExecutor.scheduleAtFixedRate(this::monitorClients, 30, 30, TimeUnit.SECONDS);
+                ackMonitorFuture = monitorExecutor.scheduleAtFixedRate(ackManager::expireTimeouts, 1, 1, TimeUnit.SECONDS);
             }
             log.info("MQTT v5客户端管理器初始化完成");
         }
@@ -1139,6 +1236,10 @@ public class MqttReportHandler extends AbstractReportHandler {
             if (monitorFuture != null) {
                 monitorFuture.cancel(false);
                 monitorFuture = null;
+            }
+            if (ackMonitorFuture != null) {
+                ackMonitorFuture.cancel(false);
+                ackMonitorFuture = null;
             }
 
             // 关闭所有客户端

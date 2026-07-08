@@ -5,7 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.wangbin.collector.common.constant.ProtocolConstant;
+import com.wangbin.collector.core.cloud.config.CloudAckOptions;
+import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
+import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
+import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -64,6 +68,15 @@ public class ReportConfigProvider {
             return null;
         }
 
+        CloudProtocolAdapter cloudProtocolAdapter = resolveCloudProtocolAdapter(mqtt.getCloudProvider());
+        CloudReportTargetContext cloudTargetContext = new CloudReportTargetContext(
+                gatewayDeviceId,
+                cloudProtocolAdapter.provider(),
+                cloudProtocolAdapter,
+                CloudPayloadOptions.from(reportProperties.getCloud().getPayload()),
+                CloudBatchFlushPolicy.from(reportProperties.getCloud().getBatch()),
+                CloudAckOptions.from(reportProperties.getCloud().getAck())
+        );
         ReportConfig config = new ReportConfig();
         config.setProtocol(ProtocolConstant.PROTOCOL_MQTT);
         config.setHost(endpoint.host());
@@ -80,7 +93,8 @@ public class ReportConfigProvider {
         params.put(ProtocolConstant.MQTT_PARAM_PASSWORD, mqtt.getPassword());
         params.put(ProtocolConstant.MQTT_PARAM_KEEP_ALIVE, mqtt.getKeepAliveInterval());
         params.put(ProtocolConstant.MQTT_PARAM_CLEAN_SESSION, mqtt.isCleanSession());
-        params.put("cloudProvider", mqtt.getCloudProvider());
+        params.put("cloudProvider", cloudTargetContext.cloudProvider());
+        params.put("cloudTargetContext", cloudTargetContext);
         params.put(ProtocolConstant.MQTT_PARAM_PUBLISH_TOPIC, mqtt.getDefaultTopicTemplate());
         params.put("qos", mqtt.getQos());
         params.put("retained", mqtt.isRetained());

@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.cloud.protocol;
 
 import com.wangbin.collector.common.constant.MessageConstant;
+import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 
@@ -22,7 +23,11 @@ public interface CloudProtocolAdapter {
 
     String buildPublishTopic(ReportData data, ReportConfig config);
 
-    byte[] encodeReportData(ReportData data);
+    default byte[] encodeReportData(ReportData data) {
+        return encodeReportData(data, CloudPayloadOptions.defaults());
+    }
+
+    byte[] encodeReportData(ReportData data, CloudPayloadOptions options);
 
     CloudProtocolMessage decode(String topic, byte[] payload) throws IOException;
 

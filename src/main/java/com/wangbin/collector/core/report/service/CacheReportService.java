@@ -4,9 +4,15 @@ import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.aggregation.CloudAggregateSnapshot;
 import com.wangbin.collector.core.cloud.aggregation.CloudAggregationService;
+import com.wangbin.collector.core.cloud.aggregation.CloudBatchAccumulator;
+import com.wangbin.collector.core.cloud.aggregation.CloudBatchAccumulator.CloudBatchReport;
 import com.wangbin.collector.core.cloud.aggregation.CloudPointBinding;
+import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
 import com.wangbin.collector.core.cloud.mapping.CloudPointMappingResolver;
+import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
@@ -78,6 +84,8 @@ public class CacheReportService {
     private CloudPointMappingResolver cloudPointMappingResolver;
     @Autowired(required = false)
     private CloudAggregationService cloudAggregationService;
+    @Autowired(required = false)
+    private CloudBatchAccumulator cloudBatchAccumulator;
     private final ConcurrentMap<String, String> identityGatewayMapping = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> identityProductKeys = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
@@ -245,7 +253,11 @@ public class CacheReportService {
         if (dirtyDevices.isEmpty()) {
             return;
         }
+        Set<String> batchedDevices = tryFlushGatewayBatches(dirtyDevices);
         for (String deviceId : dirtyDevices) {
+            if (batchedDevices.contains(deviceId)) {
+                continue;
+            }
             try {
                 flushDevice(deviceId);
             } catch (Exception e) {
@@ -254,6 +266,186 @@ public class CacheReportService {
         }
     }
 
+    private Set<String> tryFlushGatewayBatches(Set<String> dirtyDevices) {
+        Set<String> batchedDevices = new java.util.LinkedHashSet<>();
+        if (cloudBatchAccumulator == null || cloudAggregationService == null || dirtyDevices.size() < 2) {
+            return batchedDevices;
+        }
+        Map<String, List<String>> devicesByGateway = new java.util.LinkedHashMap<>();
+        for (String deviceId : dirtyDevices) {
+            String gatewayDeviceId = identityGatewayMapping.get(deviceId);
+            if (gatewayDeviceId == null || gatewayDeviceId.isBlank()) {
+                continue;
+            }
+            devicesByGateway.computeIfAbsent(gatewayDeviceId, key -> new ArrayList<>()).add(deviceId);
+        }
+        for (Map.Entry<String, List<String>> entry : devicesByGateway.entrySet()) {
+            if (entry.getValue().size() < 2) {
+                continue;
+            }
+            batchedDevices.addAll(tryFlushGatewayBatch(entry.getKey(), entry.getValue()));
+        }
+        return batchedDevices;
+    }
+
+    private Set<String> tryFlushGatewayBatch(String gatewayDeviceId, List<String> deviceIds) {
+        Set<String> selectedDeviceIds = new java.util.LinkedHashSet<>();
+        ReportConfig reportConfig = reportConfigProvider.getConfig(gatewayDeviceId);
+        if (reportConfig == null || !reportConfig.validate()) {
+            return selectedDeviceIds;
+        }
+        Optional<CloudReportTargetContext> targetContext = resolveCloudTargetContext(reportConfig);
+        if (targetContext.isEmpty()) {
+            return selectedDeviceIds;
+        }
+        CloudBatchFlushPolicy policy = targetContext.get().batchPolicy();
+        if (policy == null || !policy.enabled()) {
+            return selectedDeviceIds;
+        }
+
+        List<BatchFlushCandidate> candidates = collectBatchCandidates(gatewayDeviceId, deviceIds);
+        if (candidates.size() < 2) {
+            candidates.forEach(candidate -> abortFlush(candidate.session));
+            return selectedDeviceIds;
+        }
+
+        List<CloudAggregateSnapshot> snapshots = new ArrayList<>(candidates.size());
+        for (BatchFlushCandidate candidate : candidates) {
+            snapshots.add(candidate.aggregateSnapshot);
+        }
+        Optional<CloudBatchReport> batchReport = cloudBatchAccumulator.tryAssemble(
+                resolveGatewayCloudIdentity(reportConfig, gatewayDeviceId),
+                gatewayDeviceId,
+                snapshots,
+                policy);
+        if (batchReport.isEmpty()) {
+            candidates.forEach(candidate -> abortFlush(candidate.session));
+            return selectedDeviceIds;
+        }
+
+        for (CloudAggregateSnapshot snapshot : batchReport.get().snapshots()) {
+            selectedDeviceIds.add(snapshot.identity().deviceName());
+        }
+        List<BatchFlushCandidate> selectedCandidates = new ArrayList<>();
+        for (BatchFlushCandidate candidate : candidates) {
+            if (selectedDeviceIds.contains(candidate.deviceId)) {
+                selectedCandidates.add(candidate);
+            } else {
+                abortFlush(candidate.session);
+            }
+        }
+        if (selectedCandidates.size() < 2) {
+            selectedCandidates.forEach(candidate -> abortFlush(candidate.session));
+            selectedDeviceIds.clear();
+            return selectedDeviceIds;
+        }
+        if (!gatewayRateLimiter.tryAcquire(false)) {
+            selectedCandidates.forEach(candidate -> closeFlushSession(candidate.session, false));
+            selectedDeviceIds.clear();
+            return selectedDeviceIds;
+        }
+
+        CompletableFuture<ReportResult> future = reportManager.reportAsync(batchReport.get().reportData(), reportConfig);
+        future.whenComplete((result, throwable) ->
+                handleBatchFlushResult(batchReport.get(), selectedCandidates, result, throwable, reportConfig));
+        return selectedDeviceIds;
+    }
+
+    private List<BatchFlushCandidate> collectBatchCandidates(String gatewayDeviceId, List<String> deviceIds) {
+        List<BatchFlushCandidate> candidates = new ArrayList<>();
+        for (String deviceId : deviceIds) {
+            if (!flushingDevices.add(deviceId)) {
+                continue;
+            }
+            FlushSession session = tryOpenFlushSession(deviceId);
+            if (session == null) {
+                flushingDevices.remove(deviceId);
+                continue;
+            }
+            String mappedGateway = identityGatewayMapping.get(deviceId);
+            if (!gatewayDeviceId.equals(mappedGateway)) {
+                abortFlush(session);
+                continue;
+            }
+            DeviceShadow shadow = shadowManager.getShadow(deviceId);
+            if (shadow == null || shadow.isEmpty()) {
+                shadowManager.clearDirty(deviceId);
+                abortFlush(session);
+                continue;
+            }
+            ReportData snapshot = buildSnapshot(shadow, gatewayDeviceId);
+            if (!snapshot.hasProperties()) {
+                shadowManager.clearDirty(deviceId);
+                abortFlush(session);
+                continue;
+            }
+            CloudAggregateSnapshot aggregateSnapshot = cloudAggregationService.snapshotOf(snapshot);
+            if (aggregateSnapshot == null || aggregateSnapshot.identity() == null || !aggregateSnapshot.identity().valid()) {
+                abortFlush(session);
+                continue;
+            }
+            candidates.add(new BatchFlushCandidate(deviceId, session, snapshot, aggregateSnapshot));
+        }
+        return candidates;
+    }
+
+    private Optional<CloudReportTargetContext> resolveCloudTargetContext(ReportConfig config) {
+        if (config == null) {
+            return Optional.empty();
+        }
+        Object raw = config.getParam("cloudTargetContext");
+        if (raw instanceof CloudReportTargetContext context) {
+            return Optional.of(context);
+        }
+        return Optional.empty();
+    }
+
+    private CloudDeviceIdentity resolveGatewayCloudIdentity(ReportConfig config, String gatewayDeviceId) {
+        String productKey = config.getStringParam("gatewayProductKey");
+        if (productKey == null || productKey.isBlank()) {
+            productKey = defaultProductKey();
+        }
+        String deviceName = config.getStringParam("gatewayDeviceName");
+        if (deviceName == null || deviceName.isBlank()) {
+            deviceName = gatewayDeviceId;
+        }
+        return CloudDeviceIdentity.of(productKey, deviceName);
+    }
+
+    private void handleBatchFlushResult(CloudBatchReport batchReport,
+                                        List<BatchFlushCandidate> candidates,
+                                        ReportResult result,
+                                        Throwable throwable,
+                                        ReportConfig config) {
+        boolean success = throwable == null && result != null && result.isSuccess();
+        long now = System.currentTimeMillis();
+        if (throwable != null) {
+            log.error("Send gateway property pack failed: {} -> {}", batchReport.reportData().getPointCode(),
+                    config.getTargetId(), throwable);
+        } else if (!success) {
+            log.warn("Gateway property pack rejected: {} -> {}, err={}",
+                    batchReport.reportData().getPointCode(), config.getTargetId(),
+                    result != null ? result.getErrorMessage() : "unknown");
+        }
+
+        for (BatchFlushCandidate candidate : candidates) {
+            if (success) {
+                shadowManager.markReportedValuesChunk(candidate.deviceId, candidate.snapshot.getProperties());
+                shadowManager.markReportedWindowCommitted(
+                        candidate.deviceId,
+                        now - reportProperties.getIntervalMs(),
+                        now);
+            } else {
+                scheduleBatchFallbackRetry(candidate.deviceId);
+            }
+            closeFlushSession(candidate.session, false);
+        }
+    }
+
+    private void scheduleBatchFallbackRetry(String deviceId) {
+        long delayMillis = computeRetryDelayMillis(0);
+        taskScheduler.schedule(() -> flushDevice(deviceId), Instant.now().plusMillis(delayMillis));
+    }
     private void flushDevice(String deviceId) {
         if (!flushingDevices.add(deviceId)) {
             return;
@@ -749,6 +941,22 @@ public class CacheReportService {
         return null;
     }
 
+    private static class BatchFlushCandidate {
+        private final String deviceId;
+        private final FlushSession session;
+        private final ReportData snapshot;
+        private final CloudAggregateSnapshot aggregateSnapshot;
+
+        private BatchFlushCandidate(String deviceId,
+                                    FlushSession session,
+                                    ReportData snapshot,
+                                    CloudAggregateSnapshot aggregateSnapshot) {
+            this.deviceId = deviceId;
+            this.session = session;
+            this.snapshot = snapshot;
+            this.aggregateSnapshot = aggregateSnapshot;
+        }
+    }
     private static class FlushSession {
         private final String deviceId;
         private final String lockKey;

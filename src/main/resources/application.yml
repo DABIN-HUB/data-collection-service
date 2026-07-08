@@ -209,6 +209,26 @@ collector:
       history-key-prefix: "collector:shadow:history:"
       history-max-records: 100
       history-ttl-seconds: 604800
+    cloud:
+      payload:
+        profile: compact
+        include-quality: on_error
+        include-property-ts: false
+        include-metadata: false
+        include-message-id: true
+      ack:
+        mode: async
+        timeout-ms: 5000
+        max-pending: 10000
+        timeout-scan-ms: 500
+        commit-on: publish-success
+      batch:
+        enabled: true
+        max-devices-per-pack: 50
+        max-properties-per-pack: 500
+        max-payload-bytes: 131072
+        max-delay-ms: 1000
+        high-priority-bypass: true
     # 云端上报与平台 MQTT 下行配置（ReportHandler / ACK / 统一下行入口）
     mqtt:
       enabled: true

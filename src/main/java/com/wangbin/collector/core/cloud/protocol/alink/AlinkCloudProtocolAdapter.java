@@ -2,6 +2,7 @@ package com.wangbin.collector.core.cloud.protocol.alink;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
+import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolMessage;
@@ -75,8 +76,8 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
     }
 
     @Override
-    public byte[] encodeReportData(ReportData data) {
-        return payloadEncoder.encodeReportData(data);
+    public byte[] encodeReportData(ReportData data, CloudPayloadOptions options) {
+        return payloadEncoder.encodeReportData(data, options);
     }
 
     @Override

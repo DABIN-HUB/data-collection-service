@@ -121,6 +121,10 @@ public class ReportProperties {
      * 设备影子相关配置
      */
     private final Shadow shadow = new Shadow();
+    /**
+     * 云平台上报链路优化配置。
+     */
+    private final Cloud cloud = new Cloud();
 
     public boolean mqttEnabled() {
         return mqtt.isEnabled() && isProtocolEnabled("MQTT");
@@ -271,5 +275,51 @@ public class ReportProperties {
          * 历史审计 Redis 过期时间，单位秒；小于等于 0 表示不过期。
          */
         private long historyTtlSeconds = 7 * 24 * 60 * 60;
+    }
+    @Data
+    public static class Cloud {
+
+        /**
+         * payload 精简策略。
+         */
+        private Payload payload = new Payload();
+
+        /**
+         * 平台业务 ACK 处理策略。
+         */
+        private Ack ack = new Ack();
+
+        /**
+         * 网关级批量属性包策略。
+         */
+        private Batch batch = new Batch();
+
+        @Data
+        public static class Payload {
+            private String profile = "compact";
+            private String includeQuality = "on_error";
+            private boolean includePropertyTs = false;
+            private boolean includeMetadata = false;
+            private boolean includeMessageId = true;
+        }
+
+        @Data
+        public static class Ack {
+            private String mode = "async";
+            private long timeoutMs = 5000L;
+            private int maxPending = 10000;
+            private long timeoutScanMs = 500L;
+            private String commitOn = "publish-success";
+        }
+
+        @Data
+        public static class Batch {
+            private boolean enabled = true;
+            private int maxDevicesPerPack = 50;
+            private int maxPropertiesPerPack = 500;
+            private int maxPayloadBytes = 128 * 1024;
+            private long maxDelayMs = 1000L;
+            private boolean highPriorityBypass = true;
+        }
     }
 }
