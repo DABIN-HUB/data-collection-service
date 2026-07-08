@@ -1,22 +1,23 @@
-[{
-  "status": 1,
-  "baseCollectionInterval": 2000,
-  "minCollectionInterval": 100,
-  "maxCollectionInterval": 5000,
-  "pointChangeThreshold": 100,
-  "cacheEnabled": 1,
-  "pointId": "opcua_temperature_1",
-  "pointName": "Demo Temperature 1",
-  "deviceId": "OPCUA_DEVICE_001",
-  "address": "ns=3;i=1006",
-  "dataType": "DOUBLE",
-  "readWrite": "R",
-  "collectionMode": "POLLING",
-  "additionalConfig": {
-    "opcUaType": "DOUBLE",
-    "deadband": 0.2
-  }
-},
+[
+  {
+    "status": 1,
+    "baseCollectionInterval": 2000,
+    "minCollectionInterval": 100,
+    "maxCollectionInterval": 5000,
+    "pointChangeThreshold": 100,
+    "cacheEnabled": 1,
+    "pointId": "opcua_temperature_1",
+    "pointName": "Demo Temperature 1",
+    "deviceId": "OPCUA_DEVICE_001",
+    "address": "ns=3;i=1006",
+    "dataType": "DOUBLE",
+    "readWrite": "R",
+    "collectionMode": "POLLING",
+    "additionalConfig": {
+      "opcUaType": "DOUBLE",
+      "deadband": 0.2
+    }
+  },
   {
     "status": 1,
     "baseCollectionInterval": 2000,
@@ -28940,14 +28941,19 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "op299",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      }],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "op299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        }
+      ]
     }
   },
   {
@@ -28967,14 +28973,19 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "oms299",
-      "reportBindings": [{
-        "deviceName": "cjzsb1",
-        "productKey": "clrkEwQYt462xDU2"
-      }],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "oms299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -28994,19 +29005,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "os299",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "os299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "os299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29026,19 +29044,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "oc299",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "oc299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "oc299",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29058,19 +29083,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "ot300",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "ot300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "ot300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29090,19 +29122,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "op300",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "op300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "op300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29122,19 +29161,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "oms300",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "oms300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "oms300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29154,19 +29200,26 @@
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "os300",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "os300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "os300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   },
   {
@@ -29183,25 +29236,32 @@
     "dataType": "DOUBLE",
     "readWrite": "RW",
     "collectionMode": "SUBSCRIPTION",
-    "minValue": -10.0,
-    "maxValue": 100.0,
+    "minValue": -10,
+    "maxValue": 100,
     "unit": "℃",
     "additionalConfig": {
       "reportEnabled": true,
       "reportField": "oc300",
-      "reportBindings": [{
-        "deviceName": "cjzsb",
-        "productKey": "clrkEwQYt462xDU2"
-      },
-        {
-          "deviceName": "cjzsb1",
-          "productKey": "clrkEwQYt462xDU2"
-        }
-      ],
       "changeThreshold": 0.01,
       "changeMinIntervalMs": 1000,
       "eventEnabled": false,
-      "eventMinIntervalMs": 5000
+      "eventMinIntervalMs": 5000,
+      "cloudBindings": [
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb",
+          "field": "oc300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb"
+        },
+        {
+          "productKey": "clrkEwQYt462xDU2",
+          "deviceName": "cjzsb1",
+          "field": "oc300",
+          "messageType": "property",
+          "aggregateTargetId": "cjzsb1"
+        }
+      ]
     }
   }
 ]

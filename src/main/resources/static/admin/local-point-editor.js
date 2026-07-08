@@ -24,6 +24,13 @@
     { value: 1, label: "启用" },
     { value: 0, label: "关闭" }
   ];
+  const CLOUD_MESSAGE_TYPE_OPTIONS = [
+    { value: "property", label: "property / 属性" },
+    { value: "event", label: "event / 事件" },
+    { value: "state", label: "state / 状态" },
+    { value: "property_pack", label: "property_pack / 批量属性" },
+    { value: "ota_progress", label: "ota_progress / OTA 进度" }
+  ];
   const MODBUS_FIELDS = [
     { path: "additionalConfig.registerType", label: "Register Type（寄存器区，当前以后端 address 判定）", control: "select", valueType: "string", allowEmpty: false, options: ["HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"].map((value) => ({ value, label: value })) },
     { path: "additionalConfig.byteOrder", label: "Byte Order（字节序，当前实际取连接配置）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
@@ -331,6 +338,7 @@
   function normalizeLocalPoint(point, deviceId, protocolCode, index) {
     const draft = isPlainObject(point) ? cloneData(point) : {};
     const additionalConfig = isPlainObject(draft.additionalConfig) ? draft.additionalConfig : {};
+    removeDeprecatedCloudBindingConfig(additionalConfig);
     const normalized = {
       ...draft,
       pointCode: hasValue(draft.pointCode) ? String(draft.pointCode).trim() : `point_${index + 1}`,
@@ -537,7 +545,7 @@
           <section class="field-group">
             <h3>上报 / 缓存</h3>
             <div class="form-grid">${renderFields(reportFields, point)}</div>
-            ${renderReportBindings(point)}
+            ${renderCloudBindings(point)}
           </section>
           <section class="field-group">
             <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
@@ -863,28 +871,30 @@
     return primaryValue || platformValue || "-";
   }
 
-  function renderReportBindings(point) {
-    const bindings = reportBindings(point);
+  function renderCloudBindings(point) {
+    const bindings = cloudBindings(point);
     return `
       <div class="point-subtable">
-        <p class="subtable-note">reportBindings 用于把当前点位绑定到多个上报目标；空行不会保留。</p>
+        <p class="subtable-note">cloudBindings 用于把本地点位映射到云端设备物模型；同一 productKey/deviceName/aggregateTargetId 会聚合成同一个横向属性快照，至少填写一个云端身份字段。</p>
         <div class="table-wrap compact">
           <table>
-            <thead><tr><th>deviceName</th><th>productKey</th><th>操作</th></tr></thead>
+            <thead><tr><th>productKey</th><th>deviceName</th><th>field</th><th>messageType</th><th>aggregateTargetId</th><th>操作</th></tr></thead>
             <tbody>
               ${bindings.length ? bindings.map((binding, index) => `
                 <tr>
-                  <td><input type="text" value="${escapeAttr(binding.deviceName || "")}" data-report-binding-index="${index}" data-report-binding-field="deviceName" data-value-type="string"></td>
-                  <td><input type="text" value="${escapeAttr(binding.productKey || binding.reportProductKey || "")}" data-report-binding-index="${index}" data-report-binding-field="productKey" data-value-type="string"></td>
-                  <td><button type="button" class="danger" data-remove-report-binding="${index}">删除</button></td>
-                </tr>`).join("") : `<tr><td colspan="3">暂无上报绑定</td></tr>`}
+                  <td><input type="text" value="${escapeAttr(binding.productKey || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="productKey" data-value-type="string"></td>
+                  <td><input type="text" value="${escapeAttr(binding.deviceName || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="deviceName" data-value-type="string"></td>
+                  <td><input type="text" value="${escapeAttr(binding.field || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="field" data-value-type="string"></td>
+                  <td><select data-cloud-binding-index="${index}" data-cloud-binding-field="messageType" data-value-type="string">${renderOptions(CLOUD_MESSAGE_TYPE_OPTIONS, binding.messageType || "property", false)}</select></td>
+                  <td><input type="text" value="${escapeAttr(binding.aggregateTargetId || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="aggregateTargetId" data-value-type="string"></td>
+                  <td><button type="button" class="danger" data-remove-cloud-binding="${index}">删除</button></td>
+                </tr>`).join("") : `<tr><td colspan="6">暂无云平台绑定</td></tr>`}
             </tbody>
           </table>
         </div>
-        <div class="inline-actions point-json-actions"><button type="button" data-add-report-binding="true">新增上报绑定</button></div>
+        <div class="inline-actions point-json-actions"><button type="button" data-add-cloud-binding="true">新增云平台绑定</button></div>
       </div>`;
   }
-
   function renderAlarmRules(point) {
     const rules = alarmRules(point);
     return `
@@ -985,9 +995,9 @@
       syncLocalPointsJson();
       return;
     }
-    const bindingField = event.target.closest("[data-report-binding-index]");
+    const bindingField = event.target.closest("[data-cloud-binding-index]");
     if (bindingField) {
-      updateReportBinding(Number(bindingField.dataset.reportBindingIndex), bindingField.dataset.reportBindingField, parseInputValue(bindingField.value, bindingField.dataset.valueType));
+      updateCloudBinding(Number(bindingField.dataset.cloudBindingIndex), bindingField.dataset.cloudBindingField, parseInputValue(bindingField.value, bindingField.dataset.valueType));
       syncLocalPointsJson();
       return;
     }
@@ -1012,13 +1022,13 @@
       removeAlarmRule(Number(removeAlarm.dataset.removeAlarmRule));
       return;
     }
-    if (event.target.closest("[data-add-report-binding]")) {
-      addReportBinding();
+    if (event.target.closest("[data-add-cloud-binding]")) {
+      addCloudBinding();
       return;
     }
-    const removeBinding = event.target.closest("[data-remove-report-binding]");
+    const removeBinding = event.target.closest("[data-remove-cloud-binding]");
     if (removeBinding) {
-      removeReportBinding(Number(removeBinding.dataset.removeReportBinding));
+      removeCloudBinding(Number(removeBinding.dataset.removeCloudBinding));
     }
   }
 
@@ -1177,8 +1187,15 @@
     syncLocalPointsJson();
   }
 
-  function reportBindings(point) {
-    const raw = point?.additionalConfig?.reportBindings;
+  function removeDeprecatedCloudBindingConfig(additionalConfig) {
+    if (isPlainObject(additionalConfig)) {
+      const obsoleteKey = ["report", "Bindings"].join("");
+      delete additionalConfig[obsoleteKey];
+    }
+  }
+
+  function cloudBindings(point) {
+    const raw = point?.additionalConfig?.cloudBindings;
     if (Array.isArray(raw)) {
       return raw.filter(isPlainObject).map((item) => ({ ...item }));
     }
@@ -1188,14 +1205,14 @@
     return [];
   }
 
-  function updateReportBinding(index, field, value) {
+  function updateCloudBinding(index, field, value) {
     const point = selectedPoint();
     if (!point) {
       return;
     }
-    const bindings = reportBindings(point);
+    const bindings = cloudBindings(point);
     while (bindings.length <= index) {
-      bindings.push({});
+      bindings.push(defaultCloudBinding(point));
     }
     if (value === undefined) {
       delete bindings[index][field];
@@ -1203,42 +1220,73 @@
       bindings[index][field] = value;
     }
     point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
-    point.additionalConfig.reportBindings = bindings.map((item) => pruneEmpty({ ...item })).filter((item) => Object.keys(item).length);
-    if (!point.additionalConfig.reportBindings.length) {
-      delete point.additionalConfig.reportBindings;
+    removeDeprecatedCloudBindingConfig(point.additionalConfig);
+    point.additionalConfig.cloudBindings = normalizeCloudBindings(bindings, point);
+    if (!point.additionalConfig.cloudBindings.length) {
+      delete point.additionalConfig.cloudBindings;
     }
   }
 
-  function addReportBinding() {
+  function addCloudBinding() {
     const point = selectedPoint();
     if (!point) {
       return;
     }
-    const bindings = reportBindings(point);
-    bindings.push({});
+    const bindings = cloudBindings(point);
+    bindings.push(defaultCloudBinding(point));
     point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
-    point.additionalConfig.reportBindings = bindings;
+    removeDeprecatedCloudBindingConfig(point.additionalConfig);
+    point.additionalConfig.cloudBindings = bindings;
     renderLocalPointDetail();
     syncLocalPointsJson();
   }
 
-  function removeReportBinding(index) {
+  function removeCloudBinding(index) {
     const point = selectedPoint();
     if (!point) {
       return;
     }
-    const bindings = reportBindings(point);
+    const bindings = cloudBindings(point);
     bindings.splice(index, 1);
     point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
+    removeDeprecatedCloudBindingConfig(point.additionalConfig);
     if (bindings.length) {
-      point.additionalConfig.reportBindings = bindings;
+      point.additionalConfig.cloudBindings = normalizeCloudBindings(bindings, point);
     } else {
-      delete point.additionalConfig.reportBindings;
+      delete point.additionalConfig.cloudBindings;
     }
     renderLocalPointDetail();
     syncLocalPointsJson();
   }
 
+  function defaultCloudBinding(point) {
+    return {
+      field: defaultCloudField(point),
+      messageType: "property"
+    };
+  }
+
+  function defaultCloudField(point) {
+    return point?.additionalConfig?.reportField || point?.pointCode || point?.pointId || "";
+  }
+
+  function normalizeCloudBindings(bindings, point) {
+    return bindings
+      .map((item) => {
+        const next = pruneEmpty(isPlainObject(item) ? { ...item } : {});
+        if (!hasValue(next.field)) {
+          next.field = defaultCloudField(point);
+        }
+        if (!hasValue(next.messageType)) {
+          next.messageType = "property";
+        }
+        if (!hasValue(next.aggregateTargetId) && hasValue(next.deviceName)) {
+          next.aggregateTargetId = next.deviceName;
+        }
+        return pruneEmpty(next);
+      })
+      .filter((item) => hasValue(item.productKey) || hasValue(item.deviceName) || hasValue(item.aggregateTargetId));
+  }
   function formatLocalPointsJson() {
     try {
       const points = parsePointsJson($("#localPointsJson").value || "[]");
@@ -1398,12 +1446,11 @@
     if (protocol === "OPC_UA" && !hasValue(additionalConfig.nodeId) && hasValue(next.address)) {
       additionalConfig.nodeId = next.address;
     }
-    if (Array.isArray(additionalConfig.reportBindings)) {
-      additionalConfig.reportBindings = additionalConfig.reportBindings
-        .map((item) => pruneEmpty(isPlainObject(item) ? { ...item } : {}))
-        .filter((item) => Object.keys(item).length);
-      if (!additionalConfig.reportBindings.length) {
-        delete additionalConfig.reportBindings;
+    removeDeprecatedCloudBindingConfig(additionalConfig);
+    if (Array.isArray(additionalConfig.cloudBindings)) {
+      additionalConfig.cloudBindings = normalizeCloudBindings(additionalConfig.cloudBindings, next);
+      if (!additionalConfig.cloudBindings.length) {
+        delete additionalConfig.cloudBindings;
       }
     }
     pruneEmpty(additionalConfig);

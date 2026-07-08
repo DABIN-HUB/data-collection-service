@@ -1,4 +1,3 @@
-
 package com.wangbin.collector.core.report.service.support;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -7,10 +6,16 @@ import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.model.ReportIdentity;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
- * Resolves report identities (productKey/deviceName) from point configuration.
+ * 解析点位上报身份。云平台物模型映射统一由 cloudBindings 处理。
  */
 @Component
 public class ReportIdentityResolver {
@@ -30,73 +35,7 @@ public class ReportIdentityResolver {
     public List<ReportIdentity> resolve(String gatewayDeviceId,
                                          DataPoint point,
                                          String defaultProductKey) {
-        List<ReportIdentity> fromBindings = resolveBindings(gatewayDeviceId, point, defaultProductKey);
-        if (!fromBindings.isEmpty()) {
-            return fromBindings;
-        }
         return resolveLegacyIdentities(gatewayDeviceId, point, defaultProductKey);
-    }
-
-    private List<ReportIdentity> resolveBindings(String gatewayDeviceId,
-                                                 DataPoint point,
-                                                 String defaultProductKey) {
-        if (point == null) {
-            return Collections.emptyList();
-        }
-        Object bindingsConfig = point.getAdditionalConfig("reportBindings");
-        if (bindingsConfig == null) {
-            return Collections.emptyList();
-        }
-        List<Map<String, Object>> bindings = new ArrayList<>();
-        if (bindingsConfig instanceof Collection<?> collection) {
-            for (Object item : collection) {
-                Map<String, Object> map = asMap(item);
-                if (map != null) {
-                    bindings.add(map);
-                }
-            }
-        } else if (bindingsConfig.getClass().isArray()) {
-            int len = java.lang.reflect.Array.getLength(bindingsConfig);
-            for (int i = 0; i < len; i++) {
-                Map<String, Object> map = asMap(java.lang.reflect.Array.get(bindingsConfig, i));
-                if (map != null) {
-                    bindings.add(map);
-                }
-            }
-        } else {
-            Map<String, Object> map = asMap(bindingsConfig);
-            if (map != null) {
-                bindings.add(map);
-            }
-        }
-        List<ReportIdentity> result = new ArrayList<>();
-        for (Map<String, Object> map : bindings) {
-            Object deviceName = map.get("deviceName");
-            Object pk = map.getOrDefault("productKey", map.get("reportProductKey"));
-            String name = normalizeString(deviceName);
-            if (name == null || name.isEmpty()) {
-                continue;
-            }
-            String productKey = normalizeString(pk);
-            if (productKey == null || productKey.isEmpty()) {
-                productKey = defaultProductKey;
-            }
-            result.add(new ReportIdentity(gatewayDeviceId, name, productKey));
-        }
-        return result;
-    }
-
-    private Map<String, Object> asMap(Object raw) {
-        if (raw instanceof Map<?, ?> map) {
-            Map<String, Object> result = new HashMap<>();
-            map.forEach((k, v) -> {
-                if (k != null) {
-                    result.put(String.valueOf(k), v);
-                }
-            });
-            return result;
-        }
-        return null;
     }
 
     private List<ReportIdentity> resolveLegacyIdentities(String gatewayDeviceId,
