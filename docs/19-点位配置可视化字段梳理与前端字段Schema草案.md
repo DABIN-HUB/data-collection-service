@@ -127,18 +127,23 @@
 - `description`
 - `enabled`
 
-### 4.2 `additionalConfig.reportBindings[]`
+### 4.2 `additionalConfig.cloudBindings[]`
 
-这是另一个明确的列表字段。
+这是云平台物模型绑定列表字段，用于把本地点位映射到云端设备属性。
 
 建议子项字段：
 
-- `deviceName`
 - `productKey`
+- `deviceName`
+- `field`
+- `messageType`
+- `aggregateTargetId`
 
 说明：
 
-- `reportProductKey` 只作为兼容读入字段，不作为主输入字段。
+- `field` 对应云平台物模型属性 identifier。
+- `messageType` 默认 `property`。
+- `aggregateTargetId` 用于把多个本地点位聚合到同一个云端设备横向快照。
 
 ## 5. 协议区的最终设计方式
 

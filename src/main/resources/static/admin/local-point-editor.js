@@ -84,6 +84,21 @@
     ]
   };
 
+  const LOCAL_EDITOR_SECTIONS = ["setup", "points", "cloud", "json"];
+  const LOCAL_EDITOR_SECTION_LABELS = {
+    setup: "基础连接",
+    points: "点位建模",
+    cloud: "云平台上报",
+    json: "JSON 高级"
+  };
+  const POINT_DETAIL_TABS = [
+    { key: "basic", label: "基础" },
+    { key: "data", label: "数据处理" },
+    { key: "report", label: "上报参数" },
+    { key: "protocol", label: "协议扩展" },
+    { key: "alarm", label: "告警" },
+    { key: "readonly", label: "只读信息" }
+  ];
   function installLocalPointEditor() {
     if (installLocalPointEditor.installed) {
       return;
@@ -92,6 +107,8 @@
     state.localPoints = [];
     state.selectedLocalPointIndex = -1;
     state.localPointSearch = "";
+    state.localEditorSection = "setup";
+    state.localPointDetailTab = "basic";
 
     enhanceLocalDeviceEntry();
 
@@ -106,6 +123,8 @@
     intercept("#openLocalDeviceBtn", "click", () => openLocalDeviceForm());
     intercept("#cancelLocalDeviceBtn", "click", closeLocalDeviceForm);
     intercept("#saveLocalDeviceBtn", "click", saveLocalDevice);
+    intercept("#localEditorPrevBtn", "click", () => moveLocalEditorSection(-1));
+    intercept("#localEditorNextBtn", "click", () => moveLocalEditorSection(1));
     intercept("#localProtocolSelect", "change", renderLocalProtocolSelection);
     intercept("#formatLocalPointsBtn", "click", formatLocalPointsJson);
     bind("#localEditorBackdrop", "click", closeLocalDeviceForm);
@@ -122,6 +141,12 @@
     bind("#localPointDetail", "input", handleLocalPointDetailInput);
     bind("#localPointDetail", "change", handleLocalPointDetailInput);
     bind("#localPointDetail", "click", handleLocalPointDetailClick);
+    bind("#localCloudRows", "click", handleLocalCloudRowsClick);
+    bind("#localCloudDetail", "input", handleLocalPointDetailInput);
+    bind("#localCloudDetail", "change", handleLocalPointDetailInput);
+    bind("#localCloudDetail", "click", handleLocalPointDetailClick);
+    bind("#localDevicePanel", "click", handleLocalEditorNavClick);
+    bindLocalSummaryInputs();
     document.addEventListener("keydown", handleLocalEditorKeydown);
   }
 
@@ -189,6 +214,8 @@
   function openLocalDeviceForm(bundle = null) {
     state.localDeviceEditingId = bundle?.device?.id || bundle?.device?.deviceId || null;
     state.localPointSearch = "";
+    state.localEditorSection = "setup";
+    state.localPointDetailTab = "basic";
     document.querySelector(".local-device-panel")?.classList.remove("hidden");
     $("#localDevicePanel").classList.remove("hidden");
     $("#localEditorBackdrop")?.classList.remove("hidden");
@@ -218,6 +245,7 @@
     state.selectedLocalPointIndex = state.localPoints.length ? 0 : -1;
 
     renderLocalProtocolSelection();
+    renderLocalEditorSections();
     fillProtocolForm("#localConnectionForm", state.currentLocalProtocol, {
       ...connection,
       host: connection.host || device.ipAddress,
@@ -232,6 +260,8 @@
     state.localPoints = [];
     state.selectedLocalPointIndex = -1;
     state.localPointSearch = "";
+    state.localEditorSection = "setup";
+    state.localPointDetailTab = "basic";
     state.currentLocalProtocol = null;
     $("#localDevicePanel").classList.add("hidden");
     document.querySelector(".local-device-panel")?.classList.add("hidden");
@@ -241,8 +271,71 @@
     $("#localPointSearch").value = "";
     $("#localPointRows").innerHTML = `<tr><td colspan="5">暂无点位</td></tr>`;
     $("#localPointDetail").innerHTML = "";
+    if ($("#localCloudDetail")) {
+      $("#localCloudDetail").innerHTML = "";
+    }
     $("#localPointEmpty").classList.remove("hidden");
+    $("#localCloudEmpty")?.classList.remove("hidden");
     refreshLocalEditorSummary();
+  }
+
+  function bindLocalSummaryInputs() {
+    ["#localDeviceId", "#localDeviceName", "#localProtocolSelect", "#localCollectionInterval", "#localMinCollectionInterval", "#localMaxCollectionInterval", "#localPointChangeThreshold"].forEach((selector) => {
+      bind(selector, "input", refreshLocalEditorSummary);
+      bind(selector, "change", refreshLocalEditorSummary);
+    });
+  }
+
+  function handleLocalEditorNavClick(event) {
+    const trigger = event.target.closest("[data-local-editor-section]");
+    if (!trigger || !$("#localDevicePanel")?.contains(trigger)) {
+      return;
+    }
+    event.preventDefault();
+    setLocalEditorSection(trigger.dataset.localEditorSection);
+  }
+
+  function moveLocalEditorSection(delta) {
+    const current = normalizeLocalEditorSection(state.localEditorSection);
+    const index = LOCAL_EDITOR_SECTIONS.indexOf(current);
+    const nextIndex = Math.max(0, Math.min(LOCAL_EDITOR_SECTIONS.length - 1, index + delta));
+    setLocalEditorSection(LOCAL_EDITOR_SECTIONS[nextIndex]);
+  }
+
+  function setLocalEditorSection(section) {
+    state.localEditorSection = normalizeLocalEditorSection(section);
+    renderLocalEditorSections();
+    refreshLocalEditorSummary();
+  }
+
+  function normalizeLocalEditorSection(section) {
+    return LOCAL_EDITOR_SECTIONS.includes(section) ? section : "setup";
+  }
+
+  function renderLocalEditorSections() {
+    const active = normalizeLocalEditorSection(state.localEditorSection);
+    state.localEditorSection = active;
+    document.querySelectorAll(".local-editor-tab[data-local-editor-section]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.localEditorSection === active);
+    });
+    document.querySelectorAll("[data-local-editor-pane]").forEach((pane) => {
+      pane.classList.toggle("is-active", pane.dataset.localEditorPane === active);
+    });
+    const currentIndex = LOCAL_EDITOR_SECTIONS.indexOf(active);
+    if ($("#localEditorPrevBtn")) {
+      $("#localEditorPrevBtn").disabled = currentIndex <= 0;
+    }
+    if ($("#localEditorNextBtn")) {
+      $("#localEditorNextBtn").disabled = currentIndex >= LOCAL_EDITOR_SECTIONS.length - 1;
+      $("#localEditorNextBtn").textContent = currentIndex >= LOCAL_EDITOR_SECTIONS.length - 1 ? "已到最后" : "下一步";
+    }
+    if (active === "points") {
+      renderLocalPointDetail();
+    } else if (active === "cloud") {
+      renderLocalCloudWorkspace();
+    } else if (active === "json") {
+      syncLocalPointsJson();
+    }
   }
 
   function refreshLocalEditorSummary() {
@@ -255,8 +348,92 @@
     if ($("#localEditorPointCount")) {
       $("#localEditorPointCount").textContent = String(pointCount);
     }
+
+    const checks = buildLocalEditorChecks();
+    renderLocalEditorChecklist(checks);
+    updateLocalEditorTabStates(checks);
+    const errorCount = checks.filter((item) => item.state === "error").length;
+    const warnCount = checks.filter((item) => item.state === "warn").length;
+    if ($("#localEditorValidationSummary")) {
+      $("#localEditorValidationSummary").textContent = errorCount
+        ? `${errorCount} 个必填项待处理`
+        : (warnCount ? `${warnCount} 个建议项可完善` : "必填配置已完成");
+    }
   }
 
+  function buildLocalEditorChecks() {
+    const deviceId = String($("#localDeviceId")?.value || "").trim();
+    const deviceName = String($("#localDeviceName")?.value || "").trim();
+    const points = Array.isArray(state.localPoints) ? state.localPoints : [];
+    const duplicatePointCode = findDuplicatePointCode(points);
+    const missingPoint = points.find((point) => !hasValue(point?.pointCode) || !hasValue(point?.pointName) || !hasValue(resolvePointAddress(point)));
+    const cloudBindingCount = totalCloudBindingCount(points);
+    const configuredCloudPoints = points.filter((point) => cloudBindings(point).length).length;
+    return [
+      {
+        section: "setup",
+        title: "设备基础",
+        state: deviceId && deviceName ? "ok" : "error",
+        detail: deviceId && deviceName ? `${deviceId} / ${deviceName}` : "设备 ID 和设备名称必填"
+      },
+      {
+        section: "setup",
+        title: "连接参数",
+        state: state.currentLocalProtocol ? "ok" : "warn",
+        detail: state.currentLocalProtocol?.title || "请选择协议并填写连接参数"
+      },
+      {
+        section: "points",
+        title: "点位建模",
+        state: !points.length || duplicatePointCode || missingPoint ? "error" : "ok",
+        detail: !points.length
+          ? "至少需要 1 个点位"
+          : (duplicatePointCode ? `点位编码重复：${duplicatePointCode}` : (missingPoint ? "存在点位缺少编码、名称或地址" : `${points.length} 个点位可保存`))
+      },
+      {
+        section: "cloud",
+        title: "云平台上报",
+        state: cloudBindingCount ? "ok" : "warn",
+        detail: cloudBindingCount ? `${configuredCloudPoints} 个点位 / ${cloudBindingCount} 个 cloudBindings` : "未配置 cloudBindings，保存允许但不会上报云端映射"
+      },
+      {
+        section: "json",
+        title: "JSON 高级",
+        state: "ok",
+        detail: "与可视化点位列表自动同步"
+      }
+    ];
+  }
+
+  function renderLocalEditorChecklist(checks) {
+    const target = $("#localEditorChecklist");
+    if (!target) {
+      return;
+    }
+    target.innerHTML = checks.map((item) => `
+      <li class="local-check-item is-${escapeAttr(item.state)}">
+        <button type="button" data-local-editor-section="${escapeAttr(item.section)}">
+          <span>${escapeHtml(item.title)}</span>
+          <small>${escapeHtml(item.detail)}</small>
+        </button>
+      </li>`).join("");
+  }
+
+  function updateLocalEditorTabStates(checks) {
+    document.querySelectorAll(".local-editor-tab").forEach((tab) => {
+      const section = tab.dataset.localEditorSection;
+      const related = checks.filter((item) => item.section === section);
+      const stateName = related.some((item) => item.state === "error")
+        ? "error"
+        : (related.some((item) => item.state === "warn") ? "warn" : "ok");
+      tab.dataset.state = stateName;
+      tab.title = `${LOCAL_EDITOR_SECTION_LABELS[section] || section}：${stateName === "error" ? "有必填项待处理" : (stateName === "warn" ? "有建议项可完善" : "已完成")}`;
+    });
+  }
+
+  function totalCloudBindingCount(points = state.localPoints) {
+    return (Array.isArray(points) ? points : []).reduce((total, point) => total + cloudBindings(point).length, 0);
+  }
   function handleLocalEditorKeydown(event) {
     if (event.key !== "Escape") {
       return;
@@ -275,6 +452,7 @@
     renderProtocolForm("#localConnectionForm", state.currentLocalProtocol, "localConnectionForm");
     renderLocalPointList();
     renderLocalPointDetail();
+    renderLocalCloudWorkspace();
     syncLocalPointsJson();
     refreshLocalEditorSummary();
   }
@@ -406,6 +584,7 @@
     ensureSelection();
     renderLocalPointList();
     renderLocalPointDetail();
+    renderLocalCloudWorkspace();
     syncLocalPointsJson();
     refreshLocalEditorSummary();
   }
@@ -518,6 +697,7 @@
       ["createTime", point.createTime ? formatTs(point.createTime) : null],
       ["updateTime", point.updateTime ? formatTs(point.updateTime) : null]
     ].filter((item) => hasValue(item[1]));
+    const activeTab = normalizePointDetailTab(state.localPointDetailTab);
     target.innerHTML = `
       <div class="point-detail-stack">
         <section class="point-detail-hero">
@@ -532,38 +712,71 @@
             <span class="pill subtle">${escapeHtml(statusLabel(point.status))}</span>
           </div>
         </section>
-        <div class="point-detail-grid">
-          <section class="field-group">
-            <h3>基础信息</h3>
-            <p class="point-section-note">设备级 Base / Min / Max CollectionInterval 与 PointChangeThreshold 会在保存时统一回写到全部点位。</p>
-            <div class="form-grid">${renderFields(basicFields, point)}</div>
-          </section>
-          <section class="field-group">
-            <h3>数据处理</h3>
-            <div class="form-grid">${renderFields(dataFields, point)}</div>
-          </section>
-          <section class="field-group">
-            <h3>上报 / 缓存</h3>
-            <div class="form-grid">${renderFields(reportFields, point)}</div>
-            ${renderCloudBindings(point)}
-          </section>
-          <section class="field-group">
-            <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
-            ${renderProtocolFields(protocolCode, point)}
-          </section>
-          <section class="field-group field-group-wide">
-            <h3>告警规则</h3>
-            <div class="form-grid">${renderFields(alarmFields, point)}</div>
-            ${renderAlarmRules(point)}
-          </section>
-          <section class="field-group field-group-wide">
-            <h3>只读信息</h3>
-            ${readonlyItems.length ? `<div class="readonly-grid">${readonlyItems.map(([label, value]) => renderReadonly(label, value)).join("")}</div>` : `<p class="field-description">当前点位没有额外只读运行态信息。</p>`}
-          </section>
+        <div class="point-detail-tabbar" role="tablist" aria-label="点位详情分区">
+          ${renderPointDetailTabButtons(activeTab)}
+        </div>
+        <div class="point-detail-grid point-detail-grid-single">
+          ${renderPointDetailTabContent(activeTab, point, protocolCode, basicFields, dataFields, reportFields, alarmFields, readonlyItems)}
         </div>
       </div>`;
   }
 
+  function normalizePointDetailTab(tab) {
+    return POINT_DETAIL_TABS.some((item) => item.key === tab) ? tab : "basic";
+  }
+
+  function renderPointDetailTabButtons(activeTab) {
+    return POINT_DETAIL_TABS.map((tab) => `
+      <button type="button" class="point-detail-tab ${tab.key === activeTab ? "is-active" : ""}" data-local-point-tab="${escapeAttr(tab.key)}">
+        ${escapeHtml(tab.label)}
+      </button>`).join("");
+  }
+
+  function renderPointDetailTabContent(activeTab, point, protocolCode, basicFields, dataFields, reportFields, alarmFields, readonlyItems) {
+    switch (activeTab) {
+      case "data":
+        return `
+          <section class="field-group field-group-wide">
+            <h3>数据处理</h3>
+            <div class="form-grid">${renderFields(dataFields, point)}</div>
+          </section>`;
+      case "report":
+        return `
+          <section class="field-group field-group-wide">
+            <h3>上报 / 缓存参数</h3>
+            <p class="point-section-note">这里维护点位上报开关、缓存和变化阈值；cloudBindings 已移到顶部“云平台上报”分区集中维护。</p>
+            <div class="form-grid">${renderFields(reportFields, point)}</div>
+            <div class="inline-actions point-json-actions"><button type="button" data-local-editor-section="cloud">配置 cloudBindings</button></div>
+          </section>`;
+      case "protocol":
+        return `
+          <section class="field-group field-group-wide">
+            <h3>${renderProtocolSectionTitle(protocolCode)}</h3>
+            ${renderProtocolFields(protocolCode, point)}
+          </section>`;
+      case "alarm":
+        return `
+          <section class="field-group field-group-wide">
+            <h3>告警规则</h3>
+            <div class="form-grid">${renderFields(alarmFields, point)}</div>
+            ${renderAlarmRules(point)}
+          </section>`;
+      case "readonly":
+        return `
+          <section class="field-group field-group-wide">
+            <h3>只读信息</h3>
+            ${readonlyItems.length ? `<div class="readonly-grid">${readonlyItems.map(([label, value]) => renderReadonly(label, value)).join("")}</div>` : `<p class="field-description">当前点位没有额外只读运行态信息。</p>`}
+          </section>`;
+      case "basic":
+      default:
+        return `
+          <section class="field-group field-group-wide">
+            <h3>基础信息</h3>
+            <p class="point-section-note">设备级 Base / Min / Max CollectionInterval 与 PointChangeThreshold 会在保存时统一回写到全部点位。</p>
+            <div class="form-grid">${renderFields(basicFields, point)}</div>
+          </section>`;
+    }
+  }
   function renderFields(fields, point) {
     return fields.map((field) => renderFieldControl(field, point)).join("");
   }
@@ -895,6 +1108,119 @@
         <div class="inline-actions point-json-actions"><button type="button" data-add-cloud-binding="true">新增云平台绑定</button></div>
       </div>`;
   }
+  function cloudReportFields() {
+    return [
+      { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
+      { path: "additionalConfig.reportField", label: "本地默认上报字段", control: "text", valueType: "string" },
+      { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
+      { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
+      { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.historyEnabled", label: "写历史存储", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
+      { path: "additionalConfig.streamEnabled", label: "写 Redis Stream", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS }
+    ];
+  }
+
+  function renderLocalCloudWorkspace() {
+    const rowsTarget = $("#localCloudRows");
+    if (!rowsTarget) {
+      return;
+    }
+    const points = Array.isArray(state.localPoints) ? state.localPoints : [];
+    const selected = selectedPoint();
+    const totalBindings = totalCloudBindingCount(points);
+    if ($("#localCloudBindingCount")) {
+      $("#localCloudBindingCount").textContent = `${totalBindings} 个云绑定`;
+    }
+    if ($("#localCloudPointMeta")) {
+      $("#localCloudPointMeta").textContent = selected ? `当前：${displayPointName(selected, state.selectedLocalPointIndex)}` : "未选择点位";
+    }
+    rowsTarget.innerHTML = points.length ? points.map((point, index) => {
+      const bindings = cloudBindings(point);
+      return `
+        <tr class="${index === state.selectedLocalPointIndex ? "is-selected" : ""}">
+          <td>
+            <button type="button" class="point-select-button" data-select-cloud-point="${index}">
+              <strong>${escapeHtml(displayPointName(point, index))}</strong>
+              <span>${escapeHtml(point.pointCode || `point_${index + 1}`)}</span>
+            </button>
+          </td>
+          <td>${escapeHtml(cloudTargetSummary(bindings))}</td>
+          <td>${escapeHtml(cloudFieldSummary(bindings, point))}</td>
+          <td>${bindings.length}</td>
+        </tr>`;
+    }).join("") : `<tr><td colspan="4">暂无点位</td></tr>`;
+    renderLocalCloudDetail();
+  }
+
+  function renderLocalCloudDetail() {
+    const target = $("#localCloudDetail");
+    const empty = $("#localCloudEmpty");
+    const point = selectedPoint();
+    if (!target || !empty) {
+      return;
+    }
+    if (!point) {
+      empty.classList.remove("hidden");
+      target.innerHTML = "";
+      return;
+    }
+    empty.classList.add("hidden");
+    const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
+    const bindings = cloudBindings(point);
+    target.innerHTML = `
+      <div class="point-detail-stack local-cloud-detail-stack">
+        <section class="point-detail-hero">
+          <div>
+            <span class="label-chip">当前点位</span>
+            <strong>${escapeHtml(displayPointName(point, state.selectedLocalPointIndex))}</strong>
+            <p>${escapeHtml(point.pointCode || "-")} · ${escapeHtml(resolvePointAddress(point) || "未设置地址")}</p>
+          </div>
+          <div class="point-detail-hero-meta">
+            <span class="pill subtle">${escapeHtml(resolvePointTypeSummary(point, protocolCode))}</span>
+            <span class="pill subtle">${bindings.length} 个云绑定</span>
+          </div>
+        </section>
+        <section class="field-group field-group-wide">
+          <h3>上报控制</h3>
+          <p class="point-section-note">上报开关和变化阈值决定本地点位是否进入云平台上报链路；cloudBindings 决定上报到哪个云端设备和字段。</p>
+          <div class="form-grid">${renderFields(cloudReportFields(), point)}</div>
+        </section>
+        <section class="field-group field-group-wide">
+          <h3>cloudBindings</h3>
+          ${renderCloudBindings(point)}
+        </section>
+      </div>`;
+  }
+
+  function handleLocalCloudRowsClick(event) {
+    const trigger = event.target.closest("[data-select-cloud-point]");
+    if (!trigger) {
+      return;
+    }
+    state.selectedLocalPointIndex = Number(trigger.dataset.selectCloudPoint);
+    renderLocalPointList();
+    renderLocalPointDetail();
+    renderLocalCloudWorkspace();
+    refreshLocalEditorSummary();
+  }
+
+  function cloudTargetSummary(bindings) {
+    if (!bindings.length) {
+      return "未配置";
+    }
+    const first = bindings[0];
+    const target = [first.productKey, first.deviceName || first.aggregateTargetId].filter(hasValue).join(" / ") || first.aggregateTargetId || "未指定目标";
+    return bindings.length > 1 ? `${target} +${bindings.length - 1}` : target;
+  }
+
+  function cloudFieldSummary(bindings, point) {
+    if (!bindings.length) {
+      return defaultCloudField(point) || "-";
+    }
+    const fields = bindings.map((binding) => binding.field).filter(hasValue);
+    return fields.length ? fields.join(", ") : defaultCloudField(point) || "-";
+  }
   function renderAlarmRules(point) {
     const rules = alarmRules(point);
     return `
@@ -986,6 +1312,8 @@
     state.selectedLocalPointIndex = Number(trigger.dataset.selectLocalPoint);
     renderLocalPointList();
     renderLocalPointDetail();
+    renderLocalCloudWorkspace();
+    refreshLocalEditorSummary();
   }
 
   function handleLocalPointDetailInput(event) {
@@ -993,12 +1321,17 @@
     if (alarmField) {
       updateAlarmRule(Number(alarmField.dataset.alarmRuleIndex), alarmField.dataset.alarmRuleField, parseInputValue(alarmField.value, alarmField.dataset.valueType));
       syncLocalPointsJson();
+      refreshLocalEditorSummary();
       return;
     }
     const bindingField = event.target.closest("[data-cloud-binding-index]");
     if (bindingField) {
       updateCloudBinding(Number(bindingField.dataset.cloudBindingIndex), bindingField.dataset.cloudBindingField, parseInputValue(bindingField.value, bindingField.dataset.valueType));
       syncLocalPointsJson();
+      if (event.type === "change") {
+        renderLocalCloudWorkspace();
+      }
+      refreshLocalEditorSummary();
       return;
     }
     const target = event.target.closest("[data-point-path]");
@@ -1009,10 +1342,21 @@
     syncLocalPointsJson();
     if (target.dataset.listRefresh === "true") {
       renderLocalPointList();
+      renderLocalCloudWorkspace();
     }
+    if (event.type === "change") {
+      renderLocalCloudWorkspace();
+    }
+    refreshLocalEditorSummary();
   }
 
   function handleLocalPointDetailClick(event) {
+    const pointTab = event.target.closest("[data-local-point-tab]");
+    if (pointTab) {
+      state.localPointDetailTab = normalizePointDetailTab(pointTab.dataset.localPointTab);
+      renderLocalPointDetail();
+      return;
+    }
     if (event.target.closest("[data-add-alarm-rule]")) {
       addAlarmRule();
       return;
@@ -1173,6 +1517,7 @@
     point.alarmRule = serializeAlarmRules(rules);
     renderLocalPointDetail();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function removeAlarmRule(index) {
@@ -1185,6 +1530,7 @@
     point.alarmRule = serializeAlarmRules(rules);
     renderLocalPointDetail();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function removeDeprecatedCloudBindingConfig(additionalConfig) {
@@ -1238,7 +1584,9 @@
     removeDeprecatedCloudBindingConfig(point.additionalConfig);
     point.additionalConfig.cloudBindings = bindings;
     renderLocalPointDetail();
+    renderLocalCloudWorkspace();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function removeCloudBinding(index) {
@@ -1256,7 +1604,9 @@
       delete point.additionalConfig.cloudBindings;
     }
     renderLocalPointDetail();
+    renderLocalCloudWorkspace();
     syncLocalPointsJson();
+    refreshLocalEditorSummary();
   }
 
   function defaultCloudBinding(point) {

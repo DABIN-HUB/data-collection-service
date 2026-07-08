@@ -2223,3 +2223,382 @@ body.modal-active {
     padding: 0.95rem;
   }
 }
+/* 新增设备工作台：固定弹窗壳，内部按任务局部滚动。 */
+#localDevicePanel:not(.hidden) {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  height: min(96vh, 980px);
+  max-height: 96vh;
+  overflow: hidden;
+}
+
+#localDevicePanel:not(.hidden) .local-editor-title {
+  position: static;
+  z-index: auto;
+  margin: 0;
+  padding: 0 0 0.85rem;
+}
+
+.local-editor-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.local-editor-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.2rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%);
+  color: #30475f;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 42, 74, 0.05);
+}
+
+.local-editor-tab span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #1d64c8;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.local-editor-tab strong {
+  font-size: 0.92rem;
+}
+
+.local-editor-tab::after {
+  content: "";
+  position: absolute;
+  right: 0.78rem;
+  top: 0.78rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #9aaac0;
+}
+
+.local-editor-tab[data-state="ok"]::after {
+  background: #24a36f;
+}
+
+.local-editor-tab[data-state="warn"]::after {
+  background: #e49b28;
+}
+
+.local-editor-tab[data-state="error"]::after {
+  background: #df5f5f;
+}
+
+.local-editor-tab.is-active {
+  border-color: rgba(35, 118, 234, 0.38);
+  background: linear-gradient(135deg, #eef6ff 0%, #ffffff 100%);
+  box-shadow: 0 14px 28px rgba(31, 96, 172, 0.12);
+}
+
+.local-editor-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 0.85rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.local-editor-rail {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(35, 118, 234, 0.1), transparent 11rem),
+    linear-gradient(180deg, #fbfdff 0%, #f1f6fc 100%);
+}
+
+.local-editor-rail strong {
+  display: block;
+  margin-top: 0.45rem;
+  color: #24384d;
+  line-height: 1.35;
+}
+
+.local-editor-rail p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.local-checklist {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.local-check-item button {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.7rem 0.75rem 0.7rem 0.95rem;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  text-align: left;
+}
+
+.local-check-item span {
+  font-weight: 800;
+  color: #24384d;
+}
+
+.local-check-item small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.local-check-item.is-ok button {
+  border-left-color: #24a36f;
+}
+
+.local-check-item.is-warn button {
+  border-left-color: #e49b28;
+}
+
+.local-check-item.is-error button {
+  border-left-color: #df5f5f;
+}
+
+#localDevicePanel .local-editor-body {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.local-editor-pane {
+  display: none;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.local-editor-pane.is-active {
+  display: grid;
+  align-content: start;
+}
+
+.local-editor-pane[data-local-editor-pane="points"].is-active,
+.local-editor-pane[data-local-editor-pane="cloud"].is-active {
+  overflow: hidden;
+}
+
+.local-editor-pane[data-local-editor-pane="json"] .point-json-panel {
+  min-height: 100%;
+}
+
+#localDevicePanel .point-editor,
+#localDevicePanel .local-cloud-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+#localDevicePanel .point-workspace,
+#localDevicePanel .local-cloud-workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 0.85rem;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#localDevicePanel .point-list-panel,
+#localDevicePanel .point-detail-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+#localDevicePanel .point-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+#localDevicePanel .point-detail-panel {
+  overflow: auto;
+}
+
+#localDevicePanel .point-table-wrap {
+  max-height: none;
+  height: 100%;
+}
+
+.point-detail-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #f7faff;
+}
+
+.point-detail-tab {
+  padding: 0.54rem 0.78rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #40566f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.point-detail-tab.is-active {
+  border-color: rgba(35, 118, 234, 0.24);
+  background: #ffffff;
+  color: #185ebf;
+  box-shadow: 0 8px 16px rgba(15, 42, 74, 0.07);
+}
+
+.point-detail-grid.point-detail-grid-single {
+  grid-template-columns: 1fr;
+}
+
+.local-cloud-detail-stack .point-subtable .table-wrap.compact,
+#localDevicePanel .point-detail-grid-single .point-subtable .table-wrap.compact {
+  max-height: 20rem;
+}
+
+#localDevicePanel .point-json-panel textarea {
+  min-height: 52vh;
+}
+
+#localDevicePanel .local-options {
+  grid-template-columns: minmax(170px, 0.7fr) minmax(170px, 0.7fr) minmax(300px, 1fr);
+  padding-top: 0.8rem;
+  padding-bottom: 0;
+}
+
+.local-step-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  min-height: 2.6rem;
+}
+
+#localDevicePanel .local-options .primary,
+.local-step-actions button {
+  height: auto;
+}
+
+.local-step-actions .primary {
+  min-width: 10rem;
+}
+
+@media (max-width: 1240px) {
+  #localDevicePanel:not(.hidden) {
+    height: calc(100vh - 1.5rem);
+  }
+
+  .local-editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .local-editor-rail {
+    max-height: 11rem;
+  }
+
+  #localDevicePanel .point-workspace,
+  #localDevicePanel .local-cloud-workspace {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  #localDevicePanel .point-detail-panel {
+    min-height: 24rem;
+  }
+}
+
+@media (max-width: 980px) {
+  .local-editor-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .local-editor-tab {
+    min-height: 2.8rem;
+  }
+
+  #localDevicePanel .local-options {
+    grid-template-columns: 1fr;
+  }
+
+  .local-step-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .local-step-actions .primary {
+    min-width: 0;
+  }
+
+  #localDevicePanel .point-json-panel textarea {
+    min-height: 42vh;
+  }
+}
+/* 点位建模右侧编辑区需要在固定弹窗内独立滚动，避免被工作区裁剪。 */
+#localDevicePanel .local-editor-layout,
+#localDevicePanel .local-editor-body,
+#localDevicePanel .local-editor-pane.is-active {
+  min-height: 0;
+  height: 100%;
+}
+
+#localDevicePanel .local-editor-pane.is-active {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+}
+
+#localDevicePanel .point-editor,
+#localDevicePanel .local-cloud-panel,
+#localDevicePanel .point-workspace,
+#localDevicePanel .local-cloud-workspace {
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+#localDevicePanel .point-workspace,
+#localDevicePanel .local-cloud-workspace {
+  align-items: stretch;
+}
+
+#localDevicePanel .point-detail-panel {
+  display: block;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#localDevicePanel #localPointDetail,
+#localDevicePanel #localCloudDetail,
+#localDevicePanel .point-detail-stack {
+  min-height: 0;
+}
