@@ -68,4 +68,33 @@
         ORDER BY ts DESC
         LIMIT #{limit}
     </select>
+    <select id="queryRecentAlarmHistory" resultType="java.util.Map">
+        SELECT
+            ts,event_ts,device_id,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
+        FROM ${database}.${superTable}
+        WHERE 1 = 1
+        <if test="deviceId != null and deviceId != ''">
+            AND device_id = #{deviceId}
+        </if>
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="pointCode != null and pointCode != ''">
+            AND point_code = #{pointCode}
+        </if>
+        <if test="alarmLevel != null and alarmLevel != ''">
+            AND alarm_level = #{alarmLevel}
+        </if>
+        <if test="ruleId != null and ruleId != ''">
+            AND rule_id = #{ruleId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND ts &lt;= #{endTs}
+        </if>
+        ORDER BY ts DESC
+        LIMIT #{limit}
+    </select>
 </mapper>

@@ -745,21 +745,33 @@ function previewApi(path, options = {}) {
   }
 
   if (normalizedPath === "/monitor/devices") {
+    const activeConnections = devices.filter((device) => ["ONLINE", "RUNNING"].includes(device.status)).length;
     return Promise.resolve({
       status: "success",
       data: {
-        activeConnections: 3,
+        totalConnections: devices.length,
+        activeConnections,
+        expectedConnections: devices.length,
+        healthyDevices: Math.max(activeConnections - 1, 0),
+        warningDevices: 1,
+        dangerDevices: 1,
         missingConnections: ["water-pump-02"],
-        connections: devices.map((device) => ({
+        connections: devices.map((device, index) => ({
           deviceId: device.id || device.deviceId,
           connected: device.status === "ONLINE",
           expectedOnly: device.status === "RUNNING",
-          status: device.status
+          status: device.status,
+          lastActivityTime: Date.now() - index * 45000,
+          idleTime: index === 1 ? 12 * 60 * 1000 : index * 45000,
+          bytesSent: 1024 * (index + 2),
+          bytesReceived: 2048 * (index + 3),
+          errors: index === 1 ? 3 : 0,
+          successRate: index === 1 ? 0.91 : 0.992,
+          connectionDuration: 3600000 + index * 300000
         }))
       }
     });
   }
-
   if (normalizedPath === "/monitor/cache") {
     return Promise.resolve({
       status: "success",
@@ -786,22 +798,127 @@ function previewApi(path, options = {}) {
       status: "success",
       data: {
         heapUsed: 512 * 1024 * 1024,
+        heapCommitted: 768 * 1024 * 1024,
+        heapMax: 1536 * 1024 * 1024,
+        nonHeapUsed: 180 * 1024 * 1024,
+        nonHeapCommitted: 220 * 1024 * 1024,
+        processCpuLoad: 0.22,
+        systemCpuLoad: 0.31,
         threadCount: 68,
-        systemCpuLoad: 0.31
+        daemonThreadCount: 51,
+        threadPools: {
+          reportExecutor: { corePoolSize: 10, maxPoolSize: 30, activeCount: 4, queueSize: 36, completedTaskCount: 12680, rejectedCount: 0 },
+          batchDispatcherExecutor: { corePoolSize: 8, maxPoolSize: 16, activeCount: 3, queueSize: 12, completedTaskCount: 8940, rejectedCount: 0 },
+          dataProcessorExecutor: { corePoolSize: 8, maxPoolSize: 16, activeCount: 5, queueSize: 28, completedTaskCount: 19820, rejectedCount: 0 },
+          cacheAsyncExecutor: { corePoolSize: 4, maxPoolSize: 8, activeCount: 1, queueSize: 4, completedTaskCount: 3240, rejectedCount: 0 }
+        }
       }
     });
   }
-
   if (normalizedPath === "/monitor/errors") {
     return Promise.resolve({
       status: "success",
       data: {
+        totalExceptions: 7,
         totalCount: 7,
-        totalErrors: 7
+        totalErrors: 7,
+        byCategory: { CONNECTION: 3, TIMEOUT: 2, DATA_QUALITY: 2 },
+        byDevice: { "water-pump-02": 3, "plc-line-01": 2, "energy-meter-01": 2 },
+        recent: [
+          { deviceId: "water-pump-02", pointId: "pressure", category: "CONNECTION", message: "连接超时", timestamp: Date.now() - 180000 },
+          { deviceId: "plc-line-01", pointId: "speed", category: "DATA_QUALITY", message: "采集值越界", timestamp: Date.now() - 420000 }
+        ]
       }
     });
   }
 
+  if (normalizedPath === "/monitor/perf/detail") {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        timeSliceCount: 8,
+        timeSliceIntervalMs: 250,
+        overloadedSlices: { 2: 318 },
+        slowestDevices: { "water-pump-02": 1280, "plc-line-01": 640, "energy-meter-01": 310 },
+        deviceStats: {},
+        processCpuLoad: 0.22,
+        batchDispatchRejectedCount: 0,
+        collectRejectedCount: 0,
+        processRejectedCount: 0,
+        reconnectAttemptCount: 6,
+        reconnectSuccessCount: 5,
+        reconnectFailureCount: 1,
+        reconnectingDevices: 1,
+        generatedAt: Date.now()
+      }
+    });
+  }
+
+  if (normalizedPath === "/monitor/report") {
+    const pointCount = Object.values(pointsMap).reduce((sum, items) => sum + items.length, 0);
+    return Promise.resolve({
+      status: "success",
+      data: {
+        enabled: true,
+        status: "WARN",
+        statusText: "云上报链路存在风险",
+        mode: "MQTT",
+        cloudProvider: "alink",
+        supportedProtocols: ["MQTT"],
+        handlersStatus: { MQTT: { connected: true, enabled: true } },
+        handlersStatistics: { MQTT: { successCount: 1280, failureCount: 2, pendingAck: 12 } },
+        configured: {
+          deviceCount: devices.length,
+          pointCount,
+          reportEnabledPointCount: Math.max(pointCount - 2, 0),
+          eventEnabledPointCount: Math.max(pointCount - 5, 0),
+          changeTriggerPointCount: 6,
+          cloudBoundPointCount: Math.max(pointCount - 3, 0),
+          cloudBindingCount: Math.max(pointCount - 1, 0),
+          invalidCloudBindingCount: 1,
+          devicesWithCloudBindings: Math.max(devices.length - 1, 0),
+          cloudTargetCount: 4,
+          cloudTargetKeys: ["line-1-energy-summary", "pump-station-01", "plc-line-01", "energy-meter-01"],
+          cloudBindingCoverage: pointCount ? Math.max(pointCount - 3, 0) / pointCount : 0
+        },
+        executor: {
+          type: "ThreadPoolTaskExecutor",
+          corePoolSize: 10,
+          maxPoolSize: 30,
+          poolSize: 12,
+          activeCount: 4,
+          queueSize: 36,
+          queueRemainingCapacity: 4964,
+          queueCapacity: 5000,
+          queueUsage: 0.0072,
+          completedTaskCount: 12680,
+          taskCount: 12716,
+          rejectedCount: 0
+        },
+        batch: { enabled: true, maxDevicesPerPack: 50, maxPropertiesPerPack: 500, maxPayloadBytes: 131072, maxDelayMs: 1000, highPriorityBypass: true },
+        ack: { mode: "async", timeoutMs: 5000, maxPending: 10000, timeoutScanMs: 500, commitOn: "publish-success" },
+        payload: { profile: "compact", includeQuality: "on_error", includePropertyTs: false, includeMetadata: false, includeMessageId: true },
+        risks: ["存在 cloudBindings 缺少 productKey/deviceName/field"],
+        generatedAt: Date.now()
+      }
+    });
+  }
+
+  if (normalizedPath.startsWith("/api/data/history/alarms")) {
+    return Promise.resolve({
+      status: "success",
+      data: {
+        status: "success",
+        count: 3,
+        data: [
+          { event_ts: Date.now() - 300000, device_id: "water-pump-02", device_name: "2# 循环水泵", point_code: "pressure", alarm_level: "HIGH", message: "出口压力高高限" },
+          { event_ts: Date.now() - 900000, device_id: "plc-line-01", device_name: "产线 PLC", point_code: "line_speed", alarm_level: "WARN", message: "产线速度波动过大" },
+          { event_ts: Date.now() - 1800000, device_id: "energy-meter-01", device_name: "总进线电表", point_code: "active_power", alarm_level: "INFO", message: "有功功率恢复正常" }
+        ],
+        timestamp: Date.now()
+      }
+    });
+  }
   if (normalizedPath === "/health") {
     return Promise.resolve({
       status: "success",
@@ -940,26 +1057,42 @@ function hydratePreviewMode() {
 }
 
 async function loadOverview() {
-  const [summaryBody, runningBody, health, cacheBody] = await Promise.allSettled([
+  const alarmStartTs = Date.now() - 24 * 60 * 60 * 1000;
+  const [summaryBody, runningBody, health, cacheBody, deviceBody, errorsBody, systemBody, perfDetailBody, reportBody, alarmBody] = await Promise.allSettled([
     callApi("/api/config/summary"),
     callApi("/api/device/running"),
     callApi("/health"),
-    callApi("/monitor/cache")
+    callApi("/monitor/cache"),
+    callApi("/monitor/devices"),
+    callApi("/monitor/errors"),
+    callApi("/monitor/system"),
+    callApi("/monitor/perf/detail"),
+    callApi("/monitor/report"),
+    callApi(`/api/data/history/alarms?limit=8&startTs=${alarmStartTs}`)
   ]);
 
-  const summary = summaryBody.status === "fulfilled" ? dataOf(summaryBody.value) : {};
-  const running = runningBody.status === "fulfilled" ? dataOf(runningBody.value) : [];
-  const healthData = health.status === "fulfilled" ? dataOf(health.value) : {};
-  const cache = cacheBody.status === "fulfilled" ? dataOf(cacheBody.value) : {};
+  const summary = settledData(summaryBody, {});
+  const running = settledData(runningBody, []);
+  const healthData = settledData(health, {});
+  const cache = settledData(cacheBody, {});
+  const deviceData = settledData(deviceBody, {});
+  const errorData = settledData(errorsBody, {});
+  const systemData = settledData(systemBody, {});
+  const perfDetail = settledData(perfDetailBody, {});
+  const reportData = settledData(reportBody, {});
+  const alarmData = normalizeAlarmData(settledBody(alarmBody, { status: "unavailable", data: [] }));
+
   const stats = summary.cacheStats || {};
-  const totalDevices = Number(stats.deviceCount ?? summary.deviceCount ?? (Array.isArray(state.devices) ? state.devices.length : 0) ?? 0);
-  const onlineDevices = Array.isArray(running) ? running.length : 0;
+  const totalDevices = numberValue(stats.deviceCount ?? summary.deviceCount, Array.isArray(state.devices) ? state.devices.length : 0);
+  const onlineDevices = Array.isArray(running) ? running.length : numberValue(deviceData.activeConnections, 0);
   const offlineDevices = totalDevices > 0 ? Math.max(totalDevices - onlineDevices, 0) : "-";
-  const pointCount = Number(stats.pointCount ?? summary.pointCount ?? 0);
-  const connectionCount = Number(stats.connectionCount ?? summary.connectionCount ?? 0);
-  const successRate = percent(cache.totalHitRate);
+  const pointCount = numberValue(stats.pointCount ?? summary.pointCount, 0);
+  const connectionCount = numberValue(stats.connectionCount ?? summary.connectionCount, totalDevices);
   const healthStatus = healthData.status || healthData.overallStatus || "UNKNOWN";
-  const latestSync = formatTs(summary.nextSyncTime);
+  const latestSync = formatTs(summary.nextSyncTime || summary.lastSyncTime);
+  const alarmCount = numberValue(alarmData.count, safeArray(alarmData.data).length);
+  const reportStatus = reportData.status || "UNKNOWN";
+  const cacheHitRate = percent(cache.totalHitRate);
 
   renderCards("#overviewCards", [
     {
@@ -971,36 +1104,446 @@ async function loadOverview() {
     {
       label: "点位总数",
       value: pointCount || "-",
-      meta: [["连接", connectionCount || 0], ["健康", healthStatus]],
+      meta: [["连接", connectionCount || 0], ["云绑定", numberValue(reportData.configured?.cloudBoundPointCount, 0)]],
       tone: "green"
     },
     {
-      label: "实时数据点",
-      value: pointCount || "-",
-      subtext: latestSync === "-" ? "最近上报等待中" : `计划同步 ${latestSync}`,
-      tone: "teal"
+      label: "全局告警",
+      value: alarmData.status === "disabled" ? "未启用" : alarmCount,
+      subtext: alarmData.status === "disabled" ? "TDengine 告警历史未启用" : "最近 24 小时最新记录",
+      tone: alarmCount > 0 ? "orange" : "teal"
     },
     {
       label: "运行设备",
       value: onlineDevices || "-",
-      meta: [["同步监听", summary.listenerCount ?? "-"], ["状态", healthStatus]],
+      meta: [["缺失连接", safeArray(deviceData.missingConnections).length], ["健康", deviceData.healthyDevices ?? healthStatus]],
       tone: "orange"
     },
     {
       label: "缓存命中率",
-      value: successRate,
-      subtext: `总访问 ${cache.totalAccess ?? "-"}`,
+      value: cacheHitRate,
+      subtext: `总访问 ${cache.totalAccess ?? cache.totalReads ?? "-"}`,
       tone: "purple"
     },
     {
-      label: "配置健康度",
-      value: healthStatus,
-      subtext: latestSync === "-" ? "暂无同步时间" : `下次同步 ${latestSync}`,
-      tone: "green"
+      label: "云上报链路",
+      value: cloudStatusLabel(reportStatus),
+      subtext: reportData.statusText || (latestSync === "-" ? "等待链路指标" : `配置同步 ${latestSync}`),
+      tone: homeTone(reportStatus)
     }
   ]);
+
+  renderHomeDashboard({
+    summary,
+    running,
+    healthData,
+    cache,
+    deviceData,
+    errorData,
+    systemData,
+    perfDetail,
+    reportData,
+    alarmData,
+    totalDevices,
+    onlineDevices,
+    pointCount,
+    connectionCount,
+    healthStatus
+  });
 }
 
+function settledData(result, fallback = {}) {
+  if (!result || result.status !== "fulfilled") {
+    return fallback;
+  }
+  const value = dataOf(result.value);
+  return value === null || value === undefined ? fallback : value;
+}
+
+function settledBody(result, fallback = {}) {
+  if (!result || result.status !== "fulfilled") {
+    return fallback;
+  }
+  return result.value === null || result.value === undefined ? fallback : result.value;
+}
+
+function normalizeAlarmData(body) {
+  if (Array.isArray(body)) {
+    return { status: "success", count: body.length, data: body };
+  }
+  if (!body || typeof body !== "object") {
+    return { status: "unavailable", count: 0, data: [] };
+  }
+  if (body.data && !Array.isArray(body.data) && typeof body.data === "object" && (body.data.status || Array.isArray(body.data.data))) {
+    return body.data;
+  }
+  return body;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectEntries(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value) : [];
+}
+
+function numberValue(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function ratioValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed > 1 ? parsed / 100 : parsed;
+}
+
+function pickValue(source, keys, fallback = "-") {
+  if (!source || !Array.isArray(keys)) {
+    return fallback;
+  }
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return fallback;
+}
+
+function cloudStatusLabel(status) {
+  const normalized = String(status || "UNKNOWN").toUpperCase();
+  if (normalized === "OK") {
+    return "正常";
+  }
+  if (normalized === "WARN") {
+    return "风险";
+  }
+  if (normalized === "ERROR") {
+    return "异常";
+  }
+  if (normalized === "DISABLED") {
+    return "未启用";
+  }
+  return "未知";
+}
+
+function homeTone(status) {
+  const normalized = String(status || "UNKNOWN").toUpperCase();
+  if (["OK", "UP", "ONLINE", "SUCCESS", "GOOD"].includes(normalized)) {
+    return "green";
+  }
+  if (["WARN", "WARNING", "DEGRADED"].includes(normalized)) {
+    return "orange";
+  }
+  if (["ERROR", "DOWN", "FAILED", "DANGER"].includes(normalized)) {
+    return "red";
+  }
+  if (normalized === "DISABLED") {
+    return "muted";
+  }
+  return "teal";
+}
+
+function statusTone(status) {
+  const normalized = String(status || "UNKNOWN").toUpperCase();
+  if (["OK", "UP", "ONLINE", "SUCCESS", "GOOD"].includes(normalized)) {
+    return "ok";
+  }
+  if (["WARN", "WARNING", "DEGRADED"].includes(normalized)) {
+    return "warn";
+  }
+  if (["ERROR", "DOWN", "FAILED", "DANGER", "OFFLINE"].includes(normalized)) {
+    return "error";
+  }
+  if (normalized === "DISABLED") {
+    return "muted";
+  }
+  return "info";
+}
+
+function setHomeBadge(selector, text, tone = "info") {
+  const target = $(selector);
+  if (!target) {
+    return;
+  }
+  target.textContent = text;
+  target.className = `home-panel-badge is-${tone}`;
+}
+
+function renderHomeDashboard(data) {
+  renderHomeAlarmCenter(data.alarmData, data.errorData);
+  renderHomeRiskDevices(data.deviceData, data.errorData, data.perfDetail);
+  renderHomePipeline(data);
+  renderHomeResources(data.systemData, data.perfDetail, data.reportData);
+}
+
+function renderHomeAlarmCenter(alarmData, errorData) {
+  const target = $("#homeAlarmRows");
+  if (!target) {
+    return;
+  }
+  if (alarmData?.status === "disabled") {
+    setHomeBadge("#homeAlarmSummary", "未启用", "muted");
+    target.innerHTML = `<div class="empty-state compact">TDengine 告警历史存储未启用，当前只能从异常统计判断风险。</div>`;
+    return;
+  }
+  if (alarmData?.status === "error") {
+    setHomeBadge("#homeAlarmSummary", "查询失败", "error");
+    target.innerHTML = `<div class="empty-state compact">${escapeHtml(alarmData.message || "告警历史查询失败")}</div>`;
+    return;
+  }
+  if (alarmData?.status === "unavailable") {
+    setHomeBadge("#homeAlarmSummary", "数据不可用", "muted");
+    target.innerHTML = `<div class="empty-state compact">全局告警接口暂不可用，其他运行指标仍正常展示。</div>`;
+    return;
+  }
+
+  const rows = safeArray(alarmData?.data).slice(0, 8);
+  setHomeBadge("#homeAlarmSummary", rows.length ? `最近 ${rows.length} 条` : "无新告警", rows.length ? "warn" : "ok");
+  if (!rows.length) {
+    const exceptionCount = numberValue(errorData?.totalExceptions ?? errorData?.totalCount ?? errorData?.totalErrors, 0);
+    target.innerHTML = `<div class="empty-state compact">最近 24 小时没有告警历史记录${exceptionCount ? `，但异常统计累计 ${exceptionCount} 次` : ""}。</div>`;
+    return;
+  }
+
+  target.innerHTML = rows.map((row) => {
+    const level = pickValue(row, ["alarm_level", "alarmLevel", "level"], "INFO");
+    const tone = alarmLevelTone(level);
+    const deviceId = pickValue(row, ["device_id", "deviceId"], "-");
+    const deviceName = pickValue(row, ["device_name", "deviceName"], deviceId);
+    const pointCode = pickValue(row, ["point_code", "pointCode", "point_id", "pointId"], "-");
+    const message = pickValue(row, ["message", "rule_name", "ruleName"], "告警触发");
+    const ts = pickValue(row, ["event_ts", "eventTs", "ts", "timestamp"], null);
+    return `
+      <div class="home-event-row is-${tone}">
+        <div class="home-event-main">
+          <strong>${escapeHtml(message)}</strong>
+          <span>${escapeHtml(deviceName)} / ${escapeHtml(pointCode)}</span>
+        </div>
+        <div class="home-event-meta">
+          <b>${escapeHtml(String(level))}</b>
+          <span>${escapeHtml(formatTs(ts))}</span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function alarmLevelTone(level) {
+  const normalized = String(level || "").toUpperCase();
+  if (["CRITICAL", "FATAL", "ERROR", "HIGH", "严重"].includes(normalized)) {
+    return "error";
+  }
+  if (["WARN", "WARNING", "MEDIUM", "中等", "警告"].includes(normalized)) {
+    return "warn";
+  }
+  return "info";
+}
+
+function renderHomeRiskDevices(deviceData, errorData, perfDetail) {
+  const target = $("#homeRiskRows");
+  if (!target) {
+    return;
+  }
+  const riskMap = new Map();
+  const upsertRisk = (deviceId, title, detail, tone, weight) => {
+    const id = String(deviceId || "unknown");
+    const current = riskMap.get(id);
+    if (!current || weight > current.weight) {
+      riskMap.set(id, { deviceId: id, title, detail, tone, weight });
+    }
+  };
+
+  safeArray(deviceData?.missingConnections).forEach((deviceId) => {
+    upsertRisk(deviceId, "连接缺失", "配置存在但运行连接未建立", "error", 90);
+  });
+
+  safeArray(deviceData?.connections).forEach((connection) => {
+    const deviceId = connection.deviceId || connection.id || connection.deviceName;
+    if (!deviceId) {
+      return;
+    }
+    if (connection.connected === false) {
+      upsertRisk(deviceId, "设备离线", `当前状态 ${connection.status || "UNKNOWN"}`, "error", 85);
+    }
+    const errors = numberValue(connection.errors, 0);
+    if (errors > 0) {
+      upsertRisk(deviceId, "连接异常", `累计错误 ${errors} 次`, "warn", 70 + Math.min(errors, 10));
+    }
+    const successRate = ratioValue(connection.successRate);
+    if (successRate !== null && successRate > 0 && successRate < 0.98) {
+      upsertRisk(deviceId, "成功率偏低", `成功率 ${percent(successRate)}`, "warn", 68);
+    }
+    const idleTime = numberValue(connection.idleTime, 0);
+    if (idleTime > 10 * 60 * 1000) {
+      upsertRisk(deviceId, "长时间无活动", `空闲 ${formatDurationMs(idleTime)}`, "warn", 60);
+    }
+  });
+
+  objectEntries(errorData?.byDevice).forEach(([deviceId, count]) => {
+    const total = numberValue(count, 0);
+    if (total > 0) {
+      upsertRisk(deviceId, "异常累计偏高", `异常 ${total} 次`, total >= 10 ? "error" : "warn", 72 + Math.min(total, 20));
+    }
+  });
+
+  objectEntries(perfDetail?.slowestDevices)
+    .sort((a, b) => numberValue(b[1]) - numberValue(a[1]))
+    .slice(0, 5)
+    .forEach(([deviceId, cost]) => {
+      const costMs = numberValue(cost, 0);
+      if (costMs > 0) {
+        upsertRisk(deviceId, "采集耗时较高", `最近耗时 ${costMs} ms`, costMs > 1000 ? "warn" : "info", 50 + Math.min(costMs / 100, 15));
+      }
+    });
+
+  const rows = Array.from(riskMap.values()).sort((a, b) => b.weight - a.weight).slice(0, 6);
+  setHomeBadge("#homeRiskSummary", rows.length ? `风险 ${rows.length}` : "健康", rows.length ? "warn" : "ok");
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty-state compact">当前没有连接缺失、慢设备或异常热点。</div>`;
+    return;
+  }
+  target.innerHTML = rows.map((item) => `
+    <div class="home-risk-row is-${item.tone}">
+      <span class="risk-dot"></span>
+      <div>
+        <strong>${escapeHtml(item.deviceId)}</strong>
+        <p>${escapeHtml(item.title)} · ${escapeHtml(item.detail)}</p>
+      </div>
+    </div>`).join("");
+}
+
+function renderHomePipeline(data) {
+  const target = $("#homePipeline");
+  if (!target) {
+    return;
+  }
+  const deviceData = data.deviceData || {};
+  const perfDetail = data.perfDetail || {};
+  const cache = data.cache || {};
+  const alarmData = data.alarmData || {};
+  const reportData = data.reportData || {};
+  const configured = reportData.configured || {};
+  const executor = reportData.executor || {};
+  const missingCount = safeArray(deviceData.missingConnections).length;
+  const dangerDevices = numberValue(deviceData.dangerDevices, 0);
+  const warningDevices = numberValue(deviceData.warningDevices, 0);
+  const expectedConnections = numberValue(deviceData.expectedConnections, data.connectionCount || data.totalDevices || 0);
+  const activeConnections = numberValue(deviceData.activeConnections, data.onlineDevices || 0);
+  const processRejected = numberValue(perfDetail.batchDispatchRejectedCount, 0)
+    + numberValue(perfDetail.collectRejectedCount, 0)
+    + numberValue(perfDetail.processRejectedCount, 0);
+  const overloadedCount = objectEntries(perfDetail.overloadedSlices).length;
+  const cacheHit = ratioValue(cache.totalHitRate);
+  const alarmRows = safeArray(alarmData.data).length;
+  const cloudStatus = reportData.status || "UNKNOWN";
+  const queueUsage = ratioValue(executor.queueUsage) ?? 0;
+
+  const steps = [
+    {
+      title: "采集连接",
+      status: dangerDevices > 0 || missingCount > 0 ? "error" : (warningDevices > 0 ? "warn" : "ok"),
+      value: `${activeConnections}/${expectedConnections || data.totalDevices || "-"}`,
+      detail: missingCount ? `缺失连接 ${missingCount} 个` : "连接池状态正常"
+    },
+    {
+      title: "调度处理",
+      status: processRejected > 0 ? "error" : (overloadedCount > 0 ? "warn" : "ok"),
+      value: processRejected > 0 ? `${processRejected} 拒绝` : `${overloadedCount} 过载片`,
+      detail: `重连失败 ${numberValue(perfDetail.reconnectFailureCount, 0)} 次`
+    },
+    {
+      title: "缓存命中",
+      status: cacheHit === null ? "muted" : (cacheHit >= 0.90 ? "ok" : (cacheHit >= 0.75 ? "warn" : "error")),
+      value: cacheHit === null ? "-" : percent(cacheHit),
+      detail: `访问 ${cache.totalAccess ?? cache.totalReads ?? "-"} 次`
+    },
+    {
+      title: "告警历史",
+      status: alarmData.status === "disabled" ? "muted" : (alarmData.status === "error" ? "error" : (alarmRows > 0 ? "warn" : "ok")),
+      value: alarmData.status === "disabled" ? "未启用" : `${alarmRows} 条`,
+      detail: alarmData.status === "disabled" ? "TDengine 历史存储关闭" : "全局最近记录已接入"
+    },
+    {
+      title: "云上报执行",
+      status: statusTone(cloudStatus),
+      value: cloudStatusLabel(cloudStatus),
+      detail: `云绑定 ${configured.cloudBoundPointCount ?? 0}/${configured.pointCount ?? data.pointCount ?? 0}，队列 ${percent(queueUsage)}`
+    }
+  ];
+
+  setHomeBadge("#homeReportSummary", reportData.statusText || cloudStatusLabel(cloudStatus), statusTone(cloudStatus));
+  target.innerHTML = steps.map((step, index) => `
+    <div class="pipeline-step is-${step.status}">
+      <span class="pipeline-index">${index + 1}</span>
+      <div class="pipeline-copy">
+        <strong>${escapeHtml(step.title)}</strong>
+        <p>${escapeHtml(step.detail)}</p>
+      </div>
+      <b>${escapeHtml(step.value)}</b>
+    </div>`).join("");
+}
+
+function renderHomeResources(systemData, perfDetail, reportData) {
+  const target = $("#homeResourceRows");
+  if (!target) {
+    return;
+  }
+  const heapUsed = numberValue(systemData?.heapUsed, -1);
+  const heapMax = numberValue(systemData?.heapMax, -1);
+  const heapRate = heapUsed >= 0 && heapMax > 0 ? heapUsed / heapMax : null;
+  const cpu = ratioValue(systemData?.systemCpuLoad);
+  const reportExecutor = reportData?.executor || {};
+  const threadPools = systemData?.threadPools || {};
+  const keyPools = ["reportExecutor", "batchDispatcherExecutor", "dataProcessorExecutor", "cacheAsyncExecutor"];
+  const poolRows = keyPools
+    .map((name) => [name, threadPools[name]])
+    .filter(([, value]) => value && numberValue(value.corePoolSize, -1) >= 0)
+    .slice(0, 3);
+
+  setHomeBadge("#homeResourceSummary", cpu !== null ? `CPU ${percent(cpu)}` : "资源未知", cpu !== null && cpu >= 0.80 ? "warn" : "ok");
+  const rows = [
+    metricRow("堆内存", heapMax > 0 ? `${bytes(heapUsed)} / ${bytes(heapMax)}` : bytes(heapUsed), heapRate === null ? "-" : percent(heapRate), heapRate !== null && heapRate >= 0.85 ? "warn" : "ok"),
+    metricRow("系统 CPU", cpu === null ? "-" : percent(cpu), `线程 ${systemData?.threadCount ?? "-"}`, cpu !== null && cpu >= 0.80 ? "warn" : "ok"),
+    metricRow("上报线程池", `${reportExecutor.activeCount ?? "-"}/${reportExecutor.maxPoolSize ?? "-"}`, `队列 ${reportExecutor.queueSize ?? "-"}/${reportExecutor.queueCapacity ?? "-"}`, ratioValue(reportExecutor.queueUsage) >= 0.70 ? "warn" : "ok")
+  ];
+
+  poolRows.forEach(([name, pool]) => {
+    rows.push(metricRow(name, `${pool.activeCount ?? "-"}/${pool.maxPoolSize ?? "-"}`, `队列 ${pool.queueSize ?? "-"}，拒绝 ${pool.rejectedCount ?? "-"}`, numberValue(pool.rejectedCount, 0) > 0 ? "warn" : "info"));
+  });
+
+  rows.push(metricRow("重连状态", `${numberValue(perfDetail?.reconnectingDevices, 0)} 个重连中`, `失败 ${numberValue(perfDetail?.reconnectFailureCount, 0)} 次`, numberValue(perfDetail?.reconnectFailureCount, 0) > 0 ? "warn" : "ok"));
+  target.innerHTML = rows.join("");
+}
+
+function metricRow(label, value, detail, tone = "info") {
+  return `
+    <div class="home-metric-row is-${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </div>`;
+}
+
+function formatDurationMs(value) {
+  const ms = numberValue(value, -1);
+  if (ms < 0) {
+    return "-";
+  }
+  if (ms < 1000) {
+    return `${ms} ms`;
+  }
+  if (ms < 60 * 1000) {
+    return `${(ms / 1000).toFixed(1)} 秒`;
+  }
+  if (ms < 60 * 60 * 1000) {
+    return `${(ms / 60000).toFixed(1)} 分钟`;
+  }
+  return `${(ms / 3600000).toFixed(1)} 小时`;
+}
 async function loadDevices() {
   setDeviceListState("正在加载设备列表...", "info");
   const [devicesBody, monitorBody, runningBody] = await Promise.allSettled([

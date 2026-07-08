@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 监控相关接口。
@@ -23,6 +24,7 @@ public class MonitorController {
     private final PerformanceMonitorService performanceMonitorService;
     private final SystemResourceMonitorService systemResourceMonitorService;
     private final ExceptionMonitorService exceptionMonitorService;
+    private final CloudReportMonitorService cloudReportMonitorService;
     private final CollectionScheduler collectionScheduler;
 
     @GetMapping("/cache")
@@ -48,6 +50,11 @@ public class MonitorController {
     @GetMapping("/errors")
     public ExceptionStatsSnapshot exceptionStats() {
         return exceptionMonitorService.getStats();
+    }
+
+    @GetMapping("/report")
+    public Map<String, Object> cloudReportMetrics() {
+        return cloudReportMonitorService.getCloudReportMetrics();
     }
 
     @GetMapping("/perf/detail")

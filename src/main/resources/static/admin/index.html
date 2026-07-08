@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>采集器管理控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=20260708-workbench-b">
+  <link rel="stylesheet" href="./styles.css?v=20260708-home-dashboard">
   <link rel="stylesheet" href="./admin-redesign.css?v=20260706-p0b">
   <link rel="stylesheet" href="./design-lab.css?v=20260702c">
 </head>
@@ -95,6 +95,56 @@
           </div>
         </div>
         <div id="overviewCards" class="overview-cards"></div>
+        <div class="home-dashboard" aria-label="首页运行总览">
+          <section class="home-panel home-panel-large">
+            <div class="home-panel-head">
+              <div>
+                <span class="panel-kicker">ALARM CENTER</span>
+                <h2>全局告警最近记录</h2>
+              </div>
+              <span id="homeAlarmSummary" class="home-panel-badge">加载中</span>
+            </div>
+            <div id="homeAlarmRows" class="home-event-list">
+              <div class="empty-state compact">正在加载告警记录...</div>
+            </div>
+          </section>
+          <section class="home-panel">
+            <div class="home-panel-head">
+              <div>
+                <span class="panel-kicker">RISK DEVICES</span>
+                <h2>设备与异常风险</h2>
+              </div>
+              <span id="homeRiskSummary" class="home-panel-badge">加载中</span>
+            </div>
+            <div id="homeRiskRows" class="home-risk-list">
+              <div class="empty-state compact">正在分析设备健康状态...</div>
+            </div>
+          </section>
+          <section class="home-panel home-panel-large">
+            <div class="home-panel-head">
+              <div>
+                <span class="panel-kicker">REPORT PIPELINE</span>
+                <h2>数据上报链路</h2>
+              </div>
+              <span id="homeReportSummary" class="home-panel-badge">加载中</span>
+            </div>
+            <div id="homePipeline" class="pipeline-steps">
+              <div class="empty-state compact">正在加载链路指标...</div>
+            </div>
+          </section>
+          <section class="home-panel">
+            <div class="home-panel-head">
+              <div>
+                <span class="panel-kicker">RUNTIME</span>
+                <h2>系统资源与线程池</h2>
+              </div>
+              <span id="homeResourceSummary" class="home-panel-badge">加载中</span>
+            </div>
+            <div id="homeResourceRows" class="home-resource-list">
+              <div class="empty-state compact">正在加载资源指标...</div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="workspace-grid">
@@ -679,7 +729,7 @@
   </div>
 
   <script src="./design-lab.js?v=20260702c"></script>
-  <script src="./app.js?v=20260706-p0a"></script>
+  <script src="./app.js?v=20260708-home-dashboard"></script>
   <script src="./local-point-editor.js?v=20260708-workbench"></script>
   <script src="./point-config-editor.js?v=20260702e"></script>
 </body>

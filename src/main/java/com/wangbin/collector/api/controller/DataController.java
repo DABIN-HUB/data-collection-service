@@ -301,6 +301,49 @@ public class DataController {
         }
     }
 
+    @GetMapping("/history/alarms")
+    public Map<String, Object> getRecentAlarmHistory(@RequestParam(required = false) String deviceId,
+                                                     @RequestParam(required = false) String pointId,
+                                                     @RequestParam(required = false) String pointCode,
+                                                     @RequestParam(required = false) String level,
+                                                     @RequestParam(required = false) String ruleId,
+                                                     @RequestParam(required = false) Long startTs,
+                                                     @RequestParam(required = false) Long endTs,
+                                                     @RequestParam(required = false) Integer limit) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (alarmHistoryService == null || !alarmHistoryService.isEnabled()) {
+                result.put("status", "disabled");
+                result.put("message", "TDengine 告警历史存储未启用");
+                result.put("count", 0);
+                result.put("data", List.of());
+                return result;
+            }
+            List<Map<String, Object>> rows = alarmHistoryService.queryRecentAlarmHistory(
+                    deviceId, pointId, pointCode, level, ruleId, startTs, endTs, limit);
+            result.put("status", "success");
+            result.put("deviceId", deviceId);
+            result.put("pointId", pointId);
+            result.put("pointCode", pointCode);
+            result.put("level", level);
+            result.put("ruleId", ruleId);
+            result.put("count", rows.size());
+            result.put("data", rows);
+            result.put("startTs", startTs);
+            result.put("endTs", endTs);
+            result.put("timestamp", System.currentTimeMillis());
+            return result;
+        } catch (Exception e) {
+            log.error("query recent alarm history failed, deviceId={}, pointId={}, pointCode={}, level={}, ruleId={}",
+                    deviceId, pointId, pointCode, level, ruleId, e);
+            result.put("status", "error");
+            result.put("message", "查询失败: " + e.getMessage());
+            result.put("count", 0);
+            result.put("data", List.of());
+            return result;
+        }
+    }
+
     @GetMapping("/history/device/{deviceId}/alarms")
     public Map<String, Object> getAlarmHistory(@PathVariable String deviceId,
                                                @RequestParam(required = false) String pointId,

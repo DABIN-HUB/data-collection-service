@@ -133,6 +133,38 @@ public class AlarmHistoryService {
         return rows;
     }
 
+    /**
+     * 查询全局最近告警记录，面向首页和监控页聚合展示。
+     */
+    public List<Map<String, Object>> queryRecentAlarmHistory(String deviceId,
+                                                             String pointId,
+                                                             String pointCode,
+                                                             String level,
+                                                             String ruleId,
+                                                             Long startTs,
+                                                             Long endTs,
+                                                             Integer limit) {
+        if (!properties.isEnabled()) {
+            return Collections.emptyList();
+        }
+        ensureSchema();
+        int resolvedLimit = limit == null || limit <= 0 ? properties.getQueryDefaultLimit() : limit;
+        int guardedLimit = Math.max(1, Math.min(resolvedLimit, properties.getQueryMaxLimit()));
+        List<Map<String, Object>> rows = alarmRepository.queryRecentAlarmHistory(
+                sanitizeIdentifier(properties.getDatabase()),
+                sanitizeIdentifier(properties.getAlarmSuperTable()),
+                blankToNull(deviceId),
+                blankToNull(pointId),
+                blankToNull(pointCode),
+                blankToNull(level),
+                blankToNull(ruleId),
+                startTs,
+                endTs,
+                guardedLimit
+        );
+        rows.forEach(this::addCompatibilityKeys);
+        return rows;
+    }
     public boolean isEnabled() {
         return properties.isEnabled();
     }
