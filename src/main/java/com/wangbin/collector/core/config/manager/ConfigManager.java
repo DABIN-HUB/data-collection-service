@@ -825,11 +825,23 @@ public class ConfigManager {
             }
             point.setUpdateTime(now);
             Map<String, Object> additionalConfig = point.getAdditionalConfig();
+            removePointCloudIdentity(additionalConfig);
             additionalConfig.put(CONFIG_SOURCE_KEY, CONFIG_SOURCE_LOCAL);
             additionalConfig.put(TEMPORARY_CONFIG_KEY, true);
             point.setAdditionalConfig(additionalConfig);
         }
         normalizeDataPointCollectionPolicy(device, points);
+    }
+
+    private void removePointCloudIdentity(Map<String, Object> additionalConfig) {
+        if (additionalConfig == null || additionalConfig.isEmpty()) {
+            return;
+        }
+        // 云设备身份只能配置在 DeviceInfo.cloudTarget，点位只保留 reportField。
+        additionalConfig.remove("reportDeviceName");
+        additionalConfig.remove("reportProductKey");
+        additionalConfig.remove("productKey");
+        additionalConfig.remove("cloudBindings");
     }
 
     private void normalizeDataPointCollectionPolicy(DeviceInfo device, List<DataPoint> points) {
@@ -845,6 +857,9 @@ public class ConfigManager {
             if (point == null) {
                 continue;
             }
+            Map<String, Object> additionalConfig = point.getAdditionalConfig();
+            removePointCloudIdentity(additionalConfig);
+            point.setAdditionalConfig(additionalConfig);
             long minInterval = normalizePositive(point.getMinCollectionInterval(),
                     AdaptiveCollectionUtil.DEFAULT_MIN_COLLECTION_INTERVAL);
             long maxInterval = normalizePositive(point.getMaxCollectionInterval(),

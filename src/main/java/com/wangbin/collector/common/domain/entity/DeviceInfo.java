@@ -1,6 +1,7 @@
 package com.wangbin.collector.common.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
 import lombok.Data;
 
 import java.util.Date;
@@ -64,6 +65,9 @@ public class DeviceInfo {
 
     /** 数据上报间隔（秒） */
     private Integer reportInterval;
+
+    /** 云平台上报目标，普通上报只从设备级读取 productKey/deviceName */
+    private CloudTargetConfig cloudTarget;
 
     // ==================== 设备状态 ====================
 

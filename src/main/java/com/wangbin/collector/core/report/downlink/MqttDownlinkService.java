@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
-import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.ota.CloudOtaService;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
@@ -14,6 +13,7 @@ import com.wangbin.collector.core.cloud.protocol.CloudProtocolMessage;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkMessageEnvelope;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkPayloadDecoder;
 import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
+import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.cloud.topology.CloudTopologyService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -59,6 +59,7 @@ public class MqttDownlinkService {
     private final ReportProperties reportProperties;
     private final CollectionManager collectionManager;
     private final ShadowManager shadowManager;
+    private final CloudDeviceIdentityService cloudDeviceIdentityService;
     @Autowired(required = false)
     private AlinkPayloadDecoder alinkPayloadDecoder;
     @Autowired(required = false)
@@ -95,17 +96,16 @@ public class MqttDownlinkService {
         if (!StringUtils.hasText(method)) {
             return MqttDownlinkResult.of(messageId, null, null, 400, "missing method", Map.of("topic", topic));
         }
+        if (isSubDeviceRegisterReplyTopic(topic)) {
+            return handleSubDeviceRegisterReply(topic, root, messageId, MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB);
+        }
 
         return switch (method) {
             case MessageConstant.MESSAGE_TYPE_PROPERTY_SET -> handlePropertySet(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_SERVICE_INVOKE -> handleServiceInvoke(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_CONFIG_PUSH -> handleConfigPush(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE -> handleOtaUpgrade(topic, root, messageId, method);
-            case MessageConstant.MESSAGE_TYPE_TOPO_CHANGE,
-                 MessageConstant.MESSAGE_TYPE_TOPO_ADD,
-                 MessageConstant.MESSAGE_TYPE_TOPO_DELETE,
-                 MessageConstant.MESSAGE_TYPE_TOPO_GET -> handleTopology(topic, root, messageId, method);
-            case MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB -> handleSubDeviceRegisterReply(topic, root, messageId, method);
+            case MessageConstant.MESSAGE_TYPE_TOPO_CHANGE -> handleTopology(topic, root, messageId, method);
             default -> {
                 log.debug("忽略非下行业务 MQTT 消息 method={} topic={}", method, topic);
                 yield MqttDownlinkResult.ignored(method);
@@ -116,7 +116,8 @@ public class MqttDownlinkService {
     private MqttDownlinkResult handlePropertySet(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
         if (!StringUtils.hasText(deviceId)) {
-            return MqttDownlinkResult.of(messageId, method, null, 400, "missing deviceId", Map.of("topic", topic));
+            return MqttDownlinkResult.of(messageId, method, null, 400,
+                    "missing cloudTarget mapping", Map.of("topic", topic));
         }
 
         Map<String, Object> desired = extractBusinessParams(root);
@@ -159,7 +160,8 @@ public class MqttDownlinkService {
     private MqttDownlinkResult handleServiceInvoke(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
         if (!StringUtils.hasText(deviceId)) {
-            return MqttDownlinkResult.of(messageId, method, null, 400, "missing deviceId", Map.of("topic", topic));
+            return MqttDownlinkResult.of(messageId, method, null, 400,
+                    "missing cloudTarget mapping", Map.of("topic", topic));
         }
 
         Map<String, Object> params = extractBusinessParams(root);
@@ -210,7 +212,7 @@ public class MqttDownlinkService {
         }
         if (!"all".equals(configType) && !StringUtils.hasText(deviceId)) {
             return MqttDownlinkResult.of(messageId, method, null, 400,
-                    "missing deviceId", Map.of("configType", configType));
+                    "missing cloudTarget mapping", Map.of("configType", configType));
         }
 
         log.info("收到 MQTT 配置推送，deviceId={}, configType={}", deviceId, configType);
@@ -226,10 +228,6 @@ public class MqttDownlinkService {
 
     private MqttDownlinkResult handleOtaUpgrade(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
-        if (!StringUtils.hasText(deviceId)) {
-            CloudDeviceIdentity identity = resolveCloudIdentity(root, topic);
-            deviceId = identity.valid() ? identity.deviceName() : null;
-        }
         JsonNode params = businessNode(root);
         Map<String, Object> data = cloudOtaService != null
                 ? cloudOtaService.createTask(deviceId, params)
@@ -246,19 +244,10 @@ public class MqttDownlinkService {
             data = new LinkedHashMap<>();
             data.put("topic", topic);
             data.put("gateway", gateway.valid() ? gateway.key() : null);
-        } else if (MessageConstant.MESSAGE_TYPE_TOPO_GET.equals(method)) {
-            data = cloudTopologyService.snapshot(gateway);
-        } else if (MessageConstant.MESSAGE_TYPE_TOPO_ADD.equals(method)) {
-            data = cloudTopologyService.addSubDevices(gateway, cloudTopologyService.parseSubDevices(params));
-        } else if (MessageConstant.MESSAGE_TYPE_TOPO_DELETE.equals(method)) {
-            data = cloudTopologyService.deleteSubDevices(gateway, cloudTopologyService.parseSubDevices(params));
         } else {
             data = cloudTopologyService.applyChange(gateway, params);
         }
         String deviceId = resolveDeviceId(root, topic);
-        if (!StringUtils.hasText(deviceId) && gateway.valid()) {
-            deviceId = gateway.deviceName();
-        }
         return MqttDownlinkResult.success(messageId, method, deviceId, data);
     }
 
@@ -305,7 +294,7 @@ public class MqttDownlinkService {
 
     private CloudDeviceIdentity resolveCloudIdentity(JsonNode root, String topic) {
         String productKey = firstText(root, MessageConstant.FIELD_PRODUCT_KEY, "pk");
-        String deviceName = firstText(root, MessageConstant.FIELD_DEVICE_NAME, "dn", "deviceId");
+        String deviceName = firstText(root, MessageConstant.FIELD_DEVICE_NAME, "dn");
         if (StringUtils.hasText(productKey) && StringUtils.hasText(deviceName)) {
             return CloudDeviceIdentity.of(productKey, deviceName);
         }
@@ -461,86 +450,47 @@ public class MqttDownlinkService {
     }
 
     private boolean matches(DataPoint point, String normalizedField) {
-        return normalizedField.equals(normalize(point.getReportField()))
-                || normalizedField.equals(normalize(point.getPointAlias()))
-                || normalizedField.equals(normalize(point.getPointCode()))
-                || normalizedField.equals(normalize(point.getPointId()))
-                || normalizedField.equals(normalize(point.getPointName()));
+        return normalizedField.equals(normalize(point.getReportField()));
     }
 
     private String resolveExplicitDeviceId(JsonNode root) {
-        String direct = firstText(root, "deviceId", "deviceName");
+        CloudDeviceIdentity identity = resolveCloudIdentity(root, null);
+        String mappedByCloud = cloudDeviceIdentityService.resolveLocalDeviceId(identity);
+        if (StringUtils.hasText(mappedByCloud)) {
+            return mappedByCloud;
+        }
+        String direct = firstText(root, "deviceId");
         if (StringUtils.hasText(direct)) {
-            return mapDeviceIdentifier(direct);
+            return direct;
         }
 
         JsonNode params = root.get(MessageConstant.FIELD_PARAMS);
         if (params != null && params.isObject()) {
-            String fromParams = firstText(params, "deviceId", "deviceName");
+            String fromParams = firstText(params, "deviceId");
             if (StringUtils.hasText(fromParams)) {
-                return mapDeviceIdentifier(fromParams);
+                return fromParams;
             }
         }
         return null;
     }
 
     private String resolveDeviceId(JsonNode root, String topic) {
-        String direct = firstText(root, "deviceId", "deviceName");
+        CloudDeviceIdentity identity = resolveCloudIdentity(root, topic);
+        String mappedByCloud = cloudDeviceIdentityService.resolveLocalDeviceId(identity);
+        if (StringUtils.hasText(mappedByCloud)) {
+            return mappedByCloud;
+        }
+
+        String direct = firstText(root, "deviceId");
         if (StringUtils.hasText(direct)) {
-            String mapped = mapDeviceIdentifier(direct);
-            if (StringUtils.hasText(mapped)) {
-                return mapped;
-            }
+            return direct;
         }
 
         JsonNode params = root.get(MessageConstant.FIELD_PARAMS);
         if (params != null && params.isObject()) {
-            String fromParams = firstText(params, "deviceId", "deviceName");
+            String fromParams = firstText(params, "deviceId");
             if (StringUtils.hasText(fromParams)) {
-                String mapped = mapDeviceIdentifier(fromParams);
-                if (StringUtils.hasText(mapped)) {
-                    return mapped;
-                }
-            }
-        }
-
-        String fromTopic = resolveDeviceFromTopic(topic);
-        return StringUtils.hasText(fromTopic) ? mapDeviceIdentifier(fromTopic) : null;
-    }
-
-    private String mapDeviceIdentifier(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        DeviceInfo direct = configManager.getDevice(value);
-        if (direct != null) {
-            return direct.getDeviceId();
-        }
-        List<DeviceInfo> devices = configManager.getAllDevices();
-        if (devices == null) {
-            return value;
-        }
-        for (DeviceInfo device : devices) {
-            if (device == null) {
-                continue;
-            }
-            if (Objects.equals(value, device.getDeviceName())
-                    || Objects.equals(value, device.getDeviceAlias())
-                    || Objects.equals(value, device.getDeviceId())) {
-                return device.getDeviceId();
-            }
-        }
-        return value;
-    }
-
-    private String resolveDeviceFromTopic(String topic) {
-        if (!StringUtils.hasText(topic)) {
-            return null;
-        }
-        String[] segments = topic.split("/");
-        for (int i = 0; i < segments.length - 2; i++) {
-            if ("thing".equals(segments[i])) {
-                return i > 0 ? segments[i - 1] : null;
+                return fromParams;
             }
         }
         return null;
@@ -570,19 +520,17 @@ public class MqttDownlinkService {
         if (normalizedTopic.contains("thing/topo/change")) {
             return MessageConstant.MESSAGE_TYPE_TOPO_CHANGE;
         }
-        if (normalizedTopic.contains("thing/topo/add")) {
-            return MessageConstant.MESSAGE_TYPE_TOPO_ADD;
-        }
-        if (normalizedTopic.contains("thing/topo/delete")) {
-            return MessageConstant.MESSAGE_TYPE_TOPO_DELETE;
-        }
-        if (normalizedTopic.contains("thing/topo/get")) {
-            return MessageConstant.MESSAGE_TYPE_TOPO_GET;
-        }
-        if (normalizedTopic.contains("thing/auth/register/sub")) {
+        if (isSubDeviceRegisterReplyTopic(normalizedTopic)) {
             return MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB;
         }
         return null;
+    }
+
+    private boolean isSubDeviceRegisterReplyTopic(String topic) {
+        if (!StringUtils.hasText(topic)) {
+            return false;
+        }
+        return topic.replace('\\', '/').contains("thing/auth/register/sub_reply");
     }
 
     private String resolveMessageId(JsonNode root) {

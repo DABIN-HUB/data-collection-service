@@ -4,7 +4,6 @@ import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.report.model.ReportData;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,29 +34,39 @@ public class CloudPackReportAssembler {
         data.addMetadata("rawDeviceId", rawGatewayDeviceId);
         data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, UUID.randomUUID().toString());
 
-        List<Map<String, Object>> pack = new ArrayList<>();
+        Map<String, Object> pack = new LinkedHashMap<>();
+        Map<String, Object> gatewayProperties = new LinkedHashMap<>();
+        Map<String, Object> gatewayEvents = new LinkedHashMap<>();
+        List<Map<String, Object>> subDevices = new ArrayList<>();
         for (CloudAggregateSnapshot snapshot : snapshots) {
             if (snapshot == null || snapshot.identity() == null || !snapshot.identity().valid()) {
                 continue;
             }
+            if (sameIdentity(gatewayIdentity, snapshot.identity())) {
+                gatewayProperties.putAll(snapshot.properties());
+                continue;
+            }
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("productKey", snapshot.identity().productKey());
-            item.put("deviceName", snapshot.identity().deviceName());
+            item.put("identity", Map.of(
+                    "productKey", snapshot.identity().productKey(),
+                    "deviceName", snapshot.identity().deviceName()));
             item.put("properties", snapshot.properties());
-            item.put("timestamp", System.currentTimeMillis());
-            if (!snapshot.propertyTs().isEmpty()) {
-                item.put("propertyTs", snapshot.propertyTs());
-            }
-            if (!snapshot.propertyQuality().isEmpty()) {
-                item.put("quality", snapshot.propertyQuality());
-            }
-            if (StringUtils.hasText(snapshot.aggregateTargetId())) {
-                item.put("aggregateTargetId", snapshot.aggregateTargetId());
-            }
-            pack.add(item);
+            item.put("events", new LinkedHashMap<>());
+            subDevices.add(item);
         }
+        pack.put("properties", gatewayProperties);
+        pack.put("events", gatewayEvents);
+        pack.put("subDevices", subDevices);
         data.addMetadata("propertyPack", pack);
-        data.addMetadata("packSize", pack.size());
+        data.addMetadata("packSize", subDevices.size() + (gatewayProperties.isEmpty() ? 0 : 1));
         return data;
+    }
+
+    private boolean sameIdentity(CloudDeviceIdentity left, CloudDeviceIdentity right) {
+        if (left == null || right == null || !left.valid() || !right.valid()) {
+            return false;
+        }
+        return left.productKey().equals(right.productKey())
+                && left.deviceName().equals(right.deviceName());
     }
 }

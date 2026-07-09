@@ -172,7 +172,7 @@ collector:
 ## 从云端获取配置数据地址，配套服务
   config:
     yun-url: http://127.0.0.1:48080/admin-api
-    sync-interval: 30000
+    sync-interval: 300000
     service-id: collector-1
     tenant-id: 1
     api-token: ""
@@ -233,13 +233,13 @@ collector:
     mqtt:
       enabled: true
       broker-url: tcp://127.0.0.1:1883
-      client-id: collector-1
-      username:
-      password:
+      client-id: QbEy71mjtoh5AwYr.ces111
+      username: ces111&QbEy71mjtoh5AwYr
+      password: e3e010c4ec2ace39ba2cebe559720d62b39fbaa98f507640294233d464325440
       topic-prefix: /sys
       ack-topic-prefix: /sys
-      gateway-product-key: change-me
-      gateway-device-name: collector-1
+      gateway-product-key: QbEy71mjtoh5AwYr
+      gateway-device-name: ces111
       cloud-provider: alink
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5

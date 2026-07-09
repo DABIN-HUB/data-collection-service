@@ -124,7 +124,14 @@ public class CloudTopologyService {
             return value == null || !value.isBoolean() || value.booleanValue();
         }
         String normalized = status.trim().toLowerCase();
-        return Set.of("add", "online", "bind", "enable", "1", "true").contains(normalized);
+        // 阿里云拓扑变更通知中 status=0 表示创建，status=1 表示删除。
+        if (Set.of("0", "add", "create", "created", "online", "bind", "enable", "true").contains(normalized)) {
+            return true;
+        }
+        if (Set.of("1", "delete", "remove", "removed", "offline", "unbind", "disable", "false").contains(normalized)) {
+            return false;
+        }
+        return true;
     }
 
     private JsonNode firstNode(JsonNode node, String... fields) {

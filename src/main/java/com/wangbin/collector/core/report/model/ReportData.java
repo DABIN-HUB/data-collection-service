@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -187,7 +186,7 @@ public class ReportData {
             }
         }
 
-        String field = Optional.ofNullable(point.getReportField()).orElse(reportData.getPointCode());
+        String field = point.getReportField();
         reportData.addProperty(field,
                 value,
                 valueTimestamp,

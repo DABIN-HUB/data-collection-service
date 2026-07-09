@@ -37,6 +37,20 @@ class AbstractModbusCollectorTest {
     }
 
     @Test
+    void shouldNotWriteNullWhenReadPlanFails() {
+        RecordingTransport transport = new RecordingTransport();
+        transport.readFailure = new IllegalStateException("read failed");
+        TestModbusCollector collector = new TestModbusCollector(transport);
+        List<DataPoint> points = List.of(point("p1", "0:0", "BOOLEAN"), point("p2", "0:1", "BOOLEAN"));
+
+        collector.rebuildReadPlans("dev-1", points);
+        Map<String, Object> values = collector.readRaw(points);
+
+        assertEquals(true, values.isEmpty());
+        assertEquals(List.of(new ReadCall(1, RegisterType.COIL, 0, 2)), transport.readCalls);
+    }
+
+    @Test
     void abstractModbusCollectorShouldUseInjectedExecutorWhenPresent() {
         RecordingTransport transport = new RecordingTransport();
         TestModbusCollector collector = new TestModbusCollector(transport);
@@ -90,12 +104,16 @@ class AbstractModbusCollectorTest {
 
     private static final class RecordingTransport implements ModbusTransport {
         private byte[] readResponse = new byte[0];
+        private RuntimeException readFailure;
         private final List<ReadCall> readCalls = new ArrayList<>();
         private final List<RegisterWrite> registerWrites = new ArrayList<>();
 
         @Override
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) {
             readCalls.add(new ReadCall(unitId, registerType, startAddress, quantity));
+            if (readFailure != null) {
+                throw readFailure;
+            }
             return readResponse;
         }
 

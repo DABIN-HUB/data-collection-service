@@ -238,6 +238,9 @@ public abstract class BaseCollector implements ProtocolCollector,
             for (DataPoint point : validPoints) {
                 String pointId = point.getPointId();
                 try {
+                    if (!rawValues.containsKey(pointId)) {
+                        continue;
+                    }
                     Object rawValue = rawValues.get(pointId);
 
                     if (rawValue == null) {

@@ -970,7 +970,8 @@ public class MqttReportHandler extends AbstractReportHandler {
                 if (methodPath.isEmpty()) {
                     continue;
                 }
-                String topic = prefix + "/" + gatewayProductKey + "/" + gatewayDeviceName + "/" + methodPath + normalizedSuffix;
+                // ACK 必须覆盖网关代理的子设备 topic，不能只订阅网关自身三元组。
+                String topic = prefix + "/+/+/" + methodPath + normalizedSuffix;
                 topics.add(topic);
                 patterns.add(buildAckPattern(topic));
             }

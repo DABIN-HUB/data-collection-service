@@ -88,14 +88,52 @@ public class AlinkPayloadEncoder {
         Map<String, Object> params = new LinkedHashMap<>();
         Object propertyPack = data.getMetadata() != null ? data.getMetadata().get(METADATA_PROPERTY_PACK) : null;
         if (MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST.equals(data.getMethod()) && propertyPack != null) {
-            // 批量属性包按云平台 Alink 规范放入 params.properties。
-            params.put("properties", propertyPack);
+            // 网关批量包的 params 顶层必须包含 properties/events/subDevices。
+            if (propertyPack instanceof Map<?, ?> pack) {
+                pack.forEach((key, value) -> {
+                    if (key != null) {
+                        params.put(String.valueOf(key), value);
+                    }
+                });
+            }
+        } else if (MessageConstant.MESSAGE_TYPE_EVENT_POST.equals(data.getMethod())) {
+            params.put("identifier", resolveEventIdentifier(data));
+            params.put("value", resolveEventValue(data));
+            params.put("time", data.getTimestamp() > 0 ? data.getTimestamp() : System.currentTimeMillis());
         } else if (data.hasProperties()) {
             params.putAll(data.getProperties());
-        } else if (data.getPointCode() != null) {
-            params.put(data.getPointCode(), data.getValue());
         }
         return params;
+    }
+
+    private String resolveEventIdentifier(ReportData data) {
+        if (data != null && data.getMetadata() != null) {
+            Object configured = data.getMetadata().get("eventIdentifier");
+            if (configured == null) {
+                configured = data.getMetadata().get("eventType");
+            }
+            if (configured != null && !String.valueOf(configured).isBlank()) {
+                return String.valueOf(configured);
+            }
+        }
+        if (data != null && data.getPointCode() != null && !data.getPointCode().isBlank()) {
+            return data.getPointCode();
+        }
+        return "event";
+    }
+
+    private Object resolveEventValue(ReportData data) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        if (data != null) {
+            value.put("value", data.getValue());
+            if (data.getQuality() != null) {
+                value.put("quality", data.getQuality());
+            }
+            if (data.getMetadata() != null && !data.getMetadata().isEmpty()) {
+                value.putAll(data.getMetadata());
+            }
+        }
+        return value;
     }
 
     private Map<String, Object> filterMetadata(ReportData data, CloudPayloadOptions options) {

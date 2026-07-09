@@ -23,15 +23,15 @@ class DataPointTest {
     }
 
     @Test
-    void aliasFallbackAndTrimWorks() {
+    void pointAliasDoesNotFallbackToReportField() {
         DataPoint point = new DataPoint();
         point.setPointAlias(" voltage ");
         Map<String, Object> config = new HashMap<>();
         config.put("reportEnabled", true);
         point.setAdditionalConfig(config);
 
-        assertEquals("voltage", point.getReportField());
-        assertTrue(point.isReportEnabled());
+        assertNull(point.getReportField());
+        assertFalse(point.isReportEnabled());
     }
 
     @Test
@@ -54,7 +54,7 @@ class DataPointTest {
         config.put("reportEnabled", false);
         point.setAdditionalConfig(config);
 
-        assertEquals("temp", point.getReportField());
+        assertNull(point.getReportField());
         assertFalse(point.isReportEnabled());
     }
 }

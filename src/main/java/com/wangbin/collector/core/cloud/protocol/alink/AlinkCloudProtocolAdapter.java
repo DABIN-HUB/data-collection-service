@@ -27,16 +27,14 @@ import java.util.List;
 public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
 
     public static final String PROVIDER = "alink";
+    public static final String AUTH_REGISTER_SUB_REPLY_PATH = "thing/auth/register/sub_reply";
     public static final List<String> DOWNLINK_TOPIC_PATHS = List.of(
             AlinkMethod.PROPERTY_SET.path(),
             AlinkMethod.SERVICE_INVOKE.path(),
             AlinkMethod.CONFIG_PUSH.path(),
             AlinkMethod.OTA_UPGRADE.path(),
             AlinkMethod.TOPO_CHANGE.path(),
-            AlinkMethod.TOPO_ADD.path(),
-            AlinkMethod.TOPO_DELETE.path(),
-            AlinkMethod.TOPO_GET.path(),
-            AlinkMethod.AUTH_REGISTER_SUB.path()
+            AUTH_REGISTER_SUB_REPLY_PATH
     );
 
     private final AlinkTopicBuilder topicBuilder;

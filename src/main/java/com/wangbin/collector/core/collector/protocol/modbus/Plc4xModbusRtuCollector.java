@@ -21,7 +21,6 @@ import org.springframework.stereotype.Component;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -60,10 +59,10 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
             ensureResponseOk(response, FIELD_NAME, "read");
 
             return switch (registerType) {
-                case COIL, DISCRETE_INPUT -> ModbusUtils.buildCoilBytes(
-                        new ArrayList<>(response.getAllBooleans(FIELD_NAME)),
-                        parity);
-                case HOLDING_REGISTER, INPUT_REGISTER -> toRegisterBytes(response.getAllObjects(FIELD_NAME), quantity);
+                case COIL, DISCRETE_INPUT -> Plc4xModbusValueExtractor.coilBytes(
+                        response, FIELD_NAME, quantity, parity);
+                case HOLDING_REGISTER, INPUT_REGISTER -> Plc4xModbusValueExtractor.registerBytes(
+                        response, FIELD_NAME, quantity);
             };
         }
 
@@ -394,28 +393,6 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         };
         String quantityPart = quantity > 1 ? "[" + quantity + "]" : "";
         return area + ":" + logicalAddress + ":" + dataType + quantityPart + "{unit-id: " + unitId + "}";
-    }
-
-    private byte[] toRegisterBytes(Collection<Object> values, int quantity) {
-        if (values == null || values.size() < quantity) {
-            throw new IllegalStateException("PLC4X register response size mismatch");
-        }
-        ByteBuffer buffer = ByteBuffer.allocate(quantity * 2).order(ByteOrder.BIG_ENDIAN);
-        int index = 0;
-        for (Object value : values) {
-            if (index >= quantity) {
-                break;
-            }
-            if (!(value instanceof Number number)) {
-                throw new IllegalStateException("PLC4X register response contains non-numeric value: " + value);
-            }
-            buffer.putShort((short) (number.intValue() & 0xFFFF));
-            index++;
-        }
-        if (index < quantity) {
-            throw new IllegalStateException("PLC4X register response is incomplete");
-        }
-        return buffer.array();
     }
 
     private Object[] toRegisterWriteValues(short[] registers) {

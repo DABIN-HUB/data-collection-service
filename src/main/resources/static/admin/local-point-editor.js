@@ -24,13 +24,6 @@
     { value: 1, label: "启用" },
     { value: 0, label: "关闭" }
   ];
-  const CLOUD_MESSAGE_TYPE_OPTIONS = [
-    { value: "property", label: "property / 属性" },
-    { value: "event", label: "event / 事件" },
-    { value: "state", label: "state / 状态" },
-    { value: "property_pack", label: "property_pack / 批量属性" },
-    { value: "ota_progress", label: "ota_progress / OTA 进度" }
-  ];
   const MODBUS_FIELDS = [
     { path: "additionalConfig.registerType", label: "Register Type（寄存器区，当前以后端 address 判定）", control: "select", valueType: "string", allowEmpty: false, options: ["HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"].map((value) => ({ value, label: value })) },
     { path: "additionalConfig.byteOrder", label: "Byte Order（字节序，当前实际取连接配置）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
@@ -240,6 +233,7 @@
     $("#localStartAfterSave").checked = false;
     $("#localOverwrite").checked = Boolean(state.localDeviceEditingId);
     $("#localPointSearch").value = "";
+    fillCloudTargetForm(device.cloudTarget || {});
 
     state.localPoints = normalizeLocalPoints(points, deviceId || "local-device", protocol);
     state.selectedLocalPointIndex = state.localPoints.length ? 0 : -1;
@@ -276,11 +270,12 @@
     }
     $("#localPointEmpty").classList.remove("hidden");
     $("#localCloudEmpty")?.classList.remove("hidden");
+    fillCloudTargetForm({});
     refreshLocalEditorSummary();
   }
 
   function bindLocalSummaryInputs() {
-    ["#localDeviceId", "#localDeviceName", "#localProtocolSelect", "#localCollectionInterval", "#localMinCollectionInterval", "#localMaxCollectionInterval", "#localPointChangeThreshold"].forEach((selector) => {
+    ["#localDeviceId", "#localDeviceName", "#localProtocolSelect", "#localCollectionInterval", "#localMinCollectionInterval", "#localMaxCollectionInterval", "#localPointChangeThreshold", "#localCloudEnabled", "#localCloudDeviceType", "#localCloudProductKey", "#localCloudDeviceName", "#localCloudTopologyEnabled"].forEach((selector) => {
       bind(selector, "input", refreshLocalEditorSummary);
       bind(selector, "change", refreshLocalEditorSummary);
     });
@@ -339,6 +334,7 @@
   }
 
   function refreshLocalEditorSummary() {
+    updateCloudTopicPreview();
     const protocolCode = canonicalProtocolForUi($("#localProtocolSelect")?.value || "");
     const protocolLabel = state.currentLocalProtocol?.title || protocolCode || "-";
     const pointCount = Array.isArray(state.localPoints) ? state.localPoints.length : 0;
@@ -367,8 +363,10 @@
     const points = Array.isArray(state.localPoints) ? state.localPoints : [];
     const duplicatePointCode = findDuplicatePointCode(points);
     const missingPoint = points.find((point) => !hasValue(point?.pointCode) || !hasValue(point?.pointName) || !hasValue(resolvePointAddress(point)));
-    const cloudBindingCount = totalCloudBindingCount(points);
-    const configuredCloudPoints = points.filter((point) => cloudBindings(point).length).length;
+    const reportFieldCount = totalReportFieldCount(points);
+    const cloudTarget = readCloudTargetForm(false);
+    const cloudEnabled = cloudTarget.enabled;
+    const cloudTargetValid = !cloudEnabled || (hasValue(cloudTarget.productKey) && hasValue(cloudTarget.deviceName));
     return [
       {
         section: "setup",
@@ -393,8 +391,12 @@
       {
         section: "cloud",
         title: "云平台上报",
-        state: cloudBindingCount ? "ok" : "warn",
-        detail: cloudBindingCount ? `${configuredCloudPoints} 个点位 / ${cloudBindingCount} 个 cloudBindings` : "未配置 cloudBindings，保存允许但不会上报云端映射"
+        state: !cloudTargetValid ? "error" : (cloudEnabled && reportFieldCount ? "ok" : "warn"),
+        detail: !cloudTargetValid
+          ? "启用云上报时必须填写云 productKey 和 deviceName"
+          : (cloudEnabled && reportFieldCount
+            ? `${reportFieldCount} 个点位可按设备级 cloudTarget 上报`
+            : "未启用云上报或未配置 reportField")
       },
       {
         section: "json",
@@ -403,6 +405,54 @@
         detail: "与可视化点位列表自动同步"
       }
     ];
+  }
+
+  function fillCloudTargetForm(cloudTarget) {
+    const target = isPlainObject(cloudTarget) ? cloudTarget : {};
+    if ($("#localCloudEnabled")) {
+      $("#localCloudEnabled").value = String(Boolean(target.enabled));
+    }
+    if ($("#localCloudDeviceType")) {
+      $("#localCloudDeviceType").value = target.deviceType || "SUB_DEVICE";
+    }
+    if ($("#localCloudProductKey")) {
+      $("#localCloudProductKey").value = target.productKey || "";
+    }
+    if ($("#localCloudDeviceName")) {
+      $("#localCloudDeviceName").value = target.deviceName || "";
+    }
+    if ($("#localCloudTopologyEnabled")) {
+      $("#localCloudTopologyEnabled").value = String(target.topologyEnabled !== false);
+    }
+    updateCloudTopicPreview();
+  }
+
+  function readCloudTargetForm(validate = true) {
+    const enabled = String($("#localCloudEnabled")?.value || "false") === "true";
+    const productKey = String($("#localCloudProductKey")?.value || "").trim();
+    const deviceName = String($("#localCloudDeviceName")?.value || "").trim();
+    const deviceType = String($("#localCloudDeviceType")?.value || "SUB_DEVICE").trim() || "SUB_DEVICE";
+    const topologyEnabled = String($("#localCloudTopologyEnabled")?.value || "true") === "true";
+    if (validate && enabled && (!productKey || !deviceName)) {
+      throw new Error("启用云上报时必须填写云 productKey 和云 deviceName");
+    }
+    if (!enabled) {
+      return { enabled: false, deviceType, topologyEnabled };
+    }
+    return { enabled, deviceType, productKey, deviceName, topologyEnabled };
+  }
+
+  function updateCloudTopicPreview() {
+    const target = readCloudTargetForm(false);
+    const preview = $("#localCloudTopicPreview");
+    if (!preview) {
+      return;
+    }
+    if (!target.enabled || !hasValue(target.productKey) || !hasValue(target.deviceName)) {
+      preview.value = "未启用云上报或云身份不完整";
+      return;
+    }
+    preview.value = `/sys/${target.productKey}/${target.deviceName}/thing/property/post`;
   }
 
   function renderLocalEditorChecklist(checks) {
@@ -431,8 +481,8 @@
     });
   }
 
-  function totalCloudBindingCount(points = state.localPoints) {
-    return (Array.isArray(points) ? points : []).reduce((total, point) => total + cloudBindings(point).length, 0);
+  function totalReportFieldCount(points = state.localPoints) {
+    return (Array.isArray(points) ? points : []).filter((point) => hasValue(point?.additionalConfig?.reportField)).length;
   }
   function handleLocalEditorKeydown(event) {
     if (event.key !== "Escape") {
@@ -516,7 +566,7 @@
   function normalizeLocalPoint(point, deviceId, protocolCode, index) {
     const draft = isPlainObject(point) ? cloneData(point) : {};
     const additionalConfig = isPlainObject(draft.additionalConfig) ? draft.additionalConfig : {};
-    removeDeprecatedCloudBindingConfig(additionalConfig);
+    removeDeprecatedCloudIdentityConfig(additionalConfig);
     const normalized = {
       ...draft,
       pointCode: hasValue(draft.pointCode) ? String(draft.pointCode).trim() : `point_${index + 1}`,
@@ -642,7 +692,7 @@
     const basicFields = [
       { path: "pointCode", label: "点位编码", control: "text", valueType: "string", required: true, placeholder: "temperature", listRefresh: true },
       { path: "pointName", label: "点位名称", control: "text", valueType: "string", required: true, placeholder: "温度", listRefresh: true },
-      { path: "pointAlias", label: "点位别名", control: "text", valueType: "string" },
+      { path: "pointAlias", label: "点位别名（仅展示）", control: "text", valueType: "string" },
       { path: "address", label: "点位地址", control: "text", valueType: "string", required: true, placeholder: defaultPointAddress(protocolCode), listRefresh: true, helpHtml: protocolCode === "SIEMENS_S7" ? s7AddressHelpTooltipHtml() : "", helpLabel: "S7 地址说明" },
       { path: "groupId", label: "分组 ID", control: "text", valueType: "string" },
       ...buildTypeEditorFields(protocolCode, protocol),
@@ -668,7 +718,7 @@
       { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", allowEmpty: false, options: ENABLE_OPTIONS },
       { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.reportField", label: "reportField", control: "text", valueType: "string" },
+      { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
       { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
       { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
@@ -744,9 +794,9 @@
         return `
           <section class="field-group field-group-wide">
             <h3>上报 / 缓存参数</h3>
-            <p class="point-section-note">这里维护点位上报开关、缓存和变化阈值；cloudBindings 已移到顶部“云平台上报”分区集中维护。</p>
+            <p class="point-section-note">这里维护点位上报开关、reportField、缓存和变化阈值；云设备身份统一在设备级 cloudTarget 配置。</p>
             <div class="form-grid">${renderFields(reportFields, point)}</div>
-            <div class="inline-actions point-json-actions"><button type="button" data-local-editor-section="cloud">配置 cloudBindings</button></div>
+            <div class="inline-actions point-json-actions"><button type="button" data-local-editor-section="cloud">配置云平台上报</button></div>
           </section>`;
       case "protocol":
         return `
@@ -1084,34 +1134,10 @@
     return primaryValue || platformValue || "-";
   }
 
-  function renderCloudBindings(point) {
-    const bindings = cloudBindings(point);
-    return `
-      <div class="point-subtable">
-        <p class="subtable-note">cloudBindings 用于把本地点位映射到云端设备物模型；同一 productKey/deviceName/aggregateTargetId 会聚合成同一个横向属性快照，至少填写一个云端身份字段。</p>
-        <div class="table-wrap compact">
-          <table>
-            <thead><tr><th>productKey</th><th>deviceName</th><th>field</th><th>messageType</th><th>aggregateTargetId</th><th>操作</th></tr></thead>
-            <tbody>
-              ${bindings.length ? bindings.map((binding, index) => `
-                <tr>
-                  <td><input type="text" value="${escapeAttr(binding.productKey || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="productKey" data-value-type="string"></td>
-                  <td><input type="text" value="${escapeAttr(binding.deviceName || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="deviceName" data-value-type="string"></td>
-                  <td><input type="text" value="${escapeAttr(binding.field || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="field" data-value-type="string"></td>
-                  <td><select data-cloud-binding-index="${index}" data-cloud-binding-field="messageType" data-value-type="string">${renderOptions(CLOUD_MESSAGE_TYPE_OPTIONS, binding.messageType || "property", false)}</select></td>
-                  <td><input type="text" value="${escapeAttr(binding.aggregateTargetId || "")}" data-cloud-binding-index="${index}" data-cloud-binding-field="aggregateTargetId" data-value-type="string"></td>
-                  <td><button type="button" class="danger" data-remove-cloud-binding="${index}">删除</button></td>
-                </tr>`).join("") : `<tr><td colspan="6">暂无云平台绑定</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-        <div class="inline-actions point-json-actions"><button type="button" data-add-cloud-binding="true">新增云平台绑定</button></div>
-      </div>`;
-  }
   function cloudReportFields() {
     return [
       { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.reportField", label: "本地默认上报字段", control: "text", valueType: "string" },
+      { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
       { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
       { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
@@ -1128,15 +1154,15 @@
     }
     const points = Array.isArray(state.localPoints) ? state.localPoints : [];
     const selected = selectedPoint();
-    const totalBindings = totalCloudBindingCount(points);
-    if ($("#localCloudBindingCount")) {
-      $("#localCloudBindingCount").textContent = `${totalBindings} 个云绑定`;
+    const cloudTarget = readCloudTargetForm(false);
+    if ($("#localCloudTargetCount")) {
+      const targetState = cloudTarget.enabled ? "cloudTarget 已启用" : "cloudTarget 未启用";
+      $("#localCloudTargetCount").textContent = `${totalReportFieldCount(points)} 个 reportField / ${targetState}`;
     }
     if ($("#localCloudPointMeta")) {
       $("#localCloudPointMeta").textContent = selected ? `当前：${displayPointName(selected, state.selectedLocalPointIndex)}` : "未选择点位";
     }
     rowsTarget.innerHTML = points.length ? points.map((point, index) => {
-      const bindings = cloudBindings(point);
       return `
         <tr class="${index === state.selectedLocalPointIndex ? "is-selected" : ""}">
           <td>
@@ -1145,9 +1171,9 @@
               <span>${escapeHtml(point.pointCode || `point_${index + 1}`)}</span>
             </button>
           </td>
-          <td>${escapeHtml(cloudTargetSummary(bindings))}</td>
-          <td>${escapeHtml(cloudFieldSummary(bindings, point))}</td>
-          <td>${bindings.length}</td>
+          <td>${escapeHtml(cloudTargetSummary(cloudTarget))}</td>
+          <td>${escapeHtml(defaultCloudField(point) || "-")}</td>
+          <td>${escapeHtml(cloudPointStatus(point, cloudTarget))}</td>
         </tr>`;
     }).join("") : `<tr><td colspan="4">暂无点位</td></tr>`;
     renderLocalCloudDetail();
@@ -1167,7 +1193,7 @@
     }
     empty.classList.add("hidden");
     const protocolCode = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
-    const bindings = cloudBindings(point);
+    const cloudTarget = readCloudTargetForm(false);
     target.innerHTML = `
       <div class="point-detail-stack local-cloud-detail-stack">
         <section class="point-detail-hero">
@@ -1178,17 +1204,18 @@
           </div>
           <div class="point-detail-hero-meta">
             <span class="pill subtle">${escapeHtml(resolvePointTypeSummary(point, protocolCode))}</span>
-            <span class="pill subtle">${bindings.length} 个云绑定</span>
+            <span class="pill subtle">${hasValue(point?.additionalConfig?.reportField) ? "已配置 reportField" : "未配置 reportField"}</span>
+            <span class="pill subtle">${cloudTarget.enabled ? "设备已启用云目标" : "设备未启用云目标"}</span>
           </div>
         </section>
         <section class="field-group field-group-wide">
           <h3>上报控制</h3>
-          <p class="point-section-note">上报开关和变化阈值决定本地点位是否进入云平台上报链路；cloudBindings 决定上报到哪个云端设备和字段。</p>
+          <p class="point-section-note">reportField 是云端物模型属性标识；未配置 reportField 或设备未启用 cloudTarget 的点位不会进入云属性上报。</p>
           <div class="form-grid">${renderFields(cloudReportFields(), point)}</div>
         </section>
         <section class="field-group field-group-wide">
-          <h3>cloudBindings</h3>
-          ${renderCloudBindings(point)}
+          <h3>设备级云目标</h3>
+          <p class="point-section-note">${escapeHtml(cloudTargetDetail(cloudTarget))}</p>
         </section>
       </div>`;
   }
@@ -1205,21 +1232,37 @@
     refreshLocalEditorSummary();
   }
 
-  function cloudTargetSummary(bindings) {
-    if (!bindings.length) {
-      return "未配置";
+  function cloudTargetSummary(cloudTarget) {
+    if (!cloudTarget?.enabled) {
+      return "未启用";
     }
-    const first = bindings[0];
-    const target = [first.productKey, first.deviceName || first.aggregateTargetId].filter(hasValue).join(" / ") || first.aggregateTargetId || "未指定目标";
-    return bindings.length > 1 ? `${target} +${bindings.length - 1}` : target;
+    return [cloudTarget.productKey, cloudTarget.deviceName].filter(hasValue).join(" / ") || "云身份不完整";
   }
 
-  function cloudFieldSummary(bindings, point) {
-    if (!bindings.length) {
-      return defaultCloudField(point) || "-";
+  function cloudTargetDetail(cloudTarget) {
+    if (!cloudTarget?.enabled) {
+      return "当前设备未启用云上报。请在基础连接页的“云平台身份”中启用 cloudTarget。";
     }
-    const fields = bindings.map((binding) => binding.field).filter(hasValue);
-    return fields.length ? fields.join(", ") : defaultCloudField(point) || "-";
+    if (!hasValue(cloudTarget.productKey) || !hasValue(cloudTarget.deviceName)) {
+      return "当前设备已启用云上报，但云 productKey 或云 deviceName 未填写。";
+    }
+    return `当前点位将随设备上报到 ${cloudTarget.productKey}/${cloudTarget.deviceName}，Topic：/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`;
+  }
+
+  function cloudPointStatus(point, cloudTarget) {
+    if (!cloudTarget?.enabled) {
+      return "设备未上云";
+    }
+    if (!hasValue(cloudTarget.productKey) || !hasValue(cloudTarget.deviceName)) {
+      return "云身份不完整";
+    }
+    if (!hasValue(point?.additionalConfig?.reportField)) {
+      return "缺少 reportField";
+    }
+    if (point?.additionalConfig?.reportEnabled !== true) {
+      return "未开启上报";
+    }
+    return "可上报";
   }
   function renderAlarmRules(point) {
     const rules = alarmRules(point);
@@ -1324,16 +1367,6 @@
       refreshLocalEditorSummary();
       return;
     }
-    const bindingField = event.target.closest("[data-cloud-binding-index]");
-    if (bindingField) {
-      updateCloudBinding(Number(bindingField.dataset.cloudBindingIndex), bindingField.dataset.cloudBindingField, parseInputValue(bindingField.value, bindingField.dataset.valueType));
-      syncLocalPointsJson();
-      if (event.type === "change") {
-        renderLocalCloudWorkspace();
-      }
-      refreshLocalEditorSummary();
-      return;
-    }
     const target = event.target.closest("[data-point-path]");
     if (!target) {
       return;
@@ -1366,14 +1399,6 @@
       removeAlarmRule(Number(removeAlarm.dataset.removeAlarmRule));
       return;
     }
-    if (event.target.closest("[data-add-cloud-binding]")) {
-      addCloudBinding();
-      return;
-    }
-    const removeBinding = event.target.closest("[data-remove-cloud-binding]");
-    if (removeBinding) {
-      removeCloudBinding(Number(removeBinding.dataset.removeCloudBinding));
-    }
   }
 
   function addLocalPoint() {
@@ -1404,7 +1429,7 @@
     copy.pointCode = createUniqueCode(state.localPoints || [], `${point.pointCode || "point"}_copy`);
     copy.pointName = `${point.pointName || point.pointCode || "点位"} 副本`;
     if (isPlainObject(copy.additionalConfig) && hasValue(copy.additionalConfig.reportField)) {
-      copy.additionalConfig.reportField = copy.pointCode;
+      copy.additionalConfig.reportField = `${copy.additionalConfig.reportField}_copy`;
     }
     state.localPoints.splice(state.selectedLocalPointIndex + 1, 0, copy);
     state.selectedLocalPointIndex += 1;
@@ -1533,110 +1558,21 @@
     refreshLocalEditorSummary();
   }
 
-  function removeDeprecatedCloudBindingConfig(additionalConfig) {
+  function removeDeprecatedCloudIdentityConfig(additionalConfig) {
     if (isPlainObject(additionalConfig)) {
       const obsoleteKey = ["report", "Bindings"].join("");
       delete additionalConfig[obsoleteKey];
+      delete additionalConfig.reportDeviceName;
+      delete additionalConfig.reportProductKey;
+      delete additionalConfig.productKey;
+      delete additionalConfig.cloudBindings;
     }
-  }
-
-  function cloudBindings(point) {
-    const raw = point?.additionalConfig?.cloudBindings;
-    if (Array.isArray(raw)) {
-      return raw.filter(isPlainObject).map((item) => ({ ...item }));
-    }
-    if (isPlainObject(raw)) {
-      return [{ ...raw }];
-    }
-    return [];
-  }
-
-  function updateCloudBinding(index, field, value) {
-    const point = selectedPoint();
-    if (!point) {
-      return;
-    }
-    const bindings = cloudBindings(point);
-    while (bindings.length <= index) {
-      bindings.push(defaultCloudBinding(point));
-    }
-    if (value === undefined) {
-      delete bindings[index][field];
-    } else {
-      bindings[index][field] = value;
-    }
-    point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
-    removeDeprecatedCloudBindingConfig(point.additionalConfig);
-    point.additionalConfig.cloudBindings = normalizeCloudBindings(bindings, point);
-    if (!point.additionalConfig.cloudBindings.length) {
-      delete point.additionalConfig.cloudBindings;
-    }
-  }
-
-  function addCloudBinding() {
-    const point = selectedPoint();
-    if (!point) {
-      return;
-    }
-    const bindings = cloudBindings(point);
-    bindings.push(defaultCloudBinding(point));
-    point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
-    removeDeprecatedCloudBindingConfig(point.additionalConfig);
-    point.additionalConfig.cloudBindings = bindings;
-    renderLocalPointDetail();
-    renderLocalCloudWorkspace();
-    syncLocalPointsJson();
-    refreshLocalEditorSummary();
-  }
-
-  function removeCloudBinding(index) {
-    const point = selectedPoint();
-    if (!point) {
-      return;
-    }
-    const bindings = cloudBindings(point);
-    bindings.splice(index, 1);
-    point.additionalConfig = isPlainObject(point.additionalConfig) ? point.additionalConfig : {};
-    removeDeprecatedCloudBindingConfig(point.additionalConfig);
-    if (bindings.length) {
-      point.additionalConfig.cloudBindings = normalizeCloudBindings(bindings, point);
-    } else {
-      delete point.additionalConfig.cloudBindings;
-    }
-    renderLocalPointDetail();
-    renderLocalCloudWorkspace();
-    syncLocalPointsJson();
-    refreshLocalEditorSummary();
-  }
-
-  function defaultCloudBinding(point) {
-    return {
-      field: defaultCloudField(point),
-      messageType: "property"
-    };
   }
 
   function defaultCloudField(point) {
-    return point?.additionalConfig?.reportField || point?.pointCode || point?.pointId || "";
+    return point?.additionalConfig?.reportField || "";
   }
 
-  function normalizeCloudBindings(bindings, point) {
-    return bindings
-      .map((item) => {
-        const next = pruneEmpty(isPlainObject(item) ? { ...item } : {});
-        if (!hasValue(next.field)) {
-          next.field = defaultCloudField(point);
-        }
-        if (!hasValue(next.messageType)) {
-          next.messageType = "property";
-        }
-        if (!hasValue(next.aggregateTargetId) && hasValue(next.deviceName)) {
-          next.aggregateTargetId = next.deviceName;
-        }
-        return pruneEmpty(next);
-      })
-      .filter((item) => hasValue(item.productKey) || hasValue(item.deviceName) || hasValue(item.aggregateTargetId));
-  }
   function formatLocalPointsJson() {
     try {
       const points = parsePointsJson($("#localPointsJson").value || "[]");
@@ -1723,6 +1659,7 @@
     }
     const connection = collectProtocolForm("#localConnectionForm", state.currentLocalProtocol, deviceId);
     const adaptive = readAdaptiveFormValues();
+    const cloudTarget = readCloudTargetForm(true);
     const points = state.localPoints.map((point, index) => sanitizePoint(point, index, deviceId, adaptive, protocol));
     return {
       device: {
@@ -1733,6 +1670,7 @@
         ipAddress: connection.host || undefined,
         port: connection.port || undefined,
         collectionInterval: adaptive.baseCollectionInterval,
+        cloudTarget,
         configSource: "local",
         temporaryConfig: true,
         status: "OFFLINE"
@@ -1796,13 +1734,12 @@
     if (protocol === "OPC_UA" && !hasValue(additionalConfig.nodeId) && hasValue(next.address)) {
       additionalConfig.nodeId = next.address;
     }
-    removeDeprecatedCloudBindingConfig(additionalConfig);
-    if (Array.isArray(additionalConfig.cloudBindings)) {
-      additionalConfig.cloudBindings = normalizeCloudBindings(additionalConfig.cloudBindings, next);
-      if (!additionalConfig.cloudBindings.length) {
-        delete additionalConfig.cloudBindings;
-      }
+    if (hasValue(additionalConfig.reportField)) {
+      additionalConfig.reportField = String(additionalConfig.reportField).trim();
+    } else {
+      delete additionalConfig.reportField;
     }
+    removeDeprecatedCloudIdentityConfig(additionalConfig);
     pruneEmpty(additionalConfig);
     next.additionalConfig = { ...additionalConfig, configSource: "local", temporaryConfig: true };
     return next;

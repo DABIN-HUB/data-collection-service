@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.cloud.model.CloudDeviceType;
+import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
@@ -34,12 +37,13 @@ class MqttDownlinkServiceTest {
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
         ShadowManager shadowManager = new ShadowManager(reportProperties);
-        MqttDownlinkService service = new MqttDownlinkService(
-                new ObjectMapper(), configManager, configSyncService, reportProperties, collectionManager, shadowManager);
+        MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
+                shadowManager);
 
         DeviceInfo device = device("dev-1", "fjb_001");
         DataPoint point = point("p1", "sqs", "RW");
         when(configManager.getDevice("dev-1")).thenReturn(device);
+        when(configManager.getAllDevices()).thenReturn(List.of(device));
         when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
         when(collectionManager.writePoints(eq("dev-1"), anyMap())).thenReturn(Map.of("p1", true));
 
@@ -67,10 +71,12 @@ class MqttDownlinkServiceTest {
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
         ShadowManager shadowManager = new ShadowManager(reportProperties);
-        MqttDownlinkService service = new MqttDownlinkService(
-                new ObjectMapper(), configManager, configSyncService, reportProperties, collectionManager, shadowManager);
+        MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
+                shadowManager);
 
-        when(configManager.getDevice("dev-1")).thenReturn(device("dev-1", "fjb_001"));
+        DeviceInfo device = device("dev-1", "fjb_001");
+        when(configManager.getDevice("dev-1")).thenReturn(device);
+        when(configManager.getAllDevices()).thenReturn(List.of(device));
         when(collectionManager.executeCommand(eq("dev-1"), eq("restart"), anyMap()))
                 .thenReturn(Map.of("accepted", true));
 
@@ -95,10 +101,12 @@ class MqttDownlinkServiceTest {
         ReportProperties reportProperties = new ReportProperties();
         reportProperties.getMqtt().getServiceCommandMappings().put("reset", "restart");
         ShadowManager shadowManager = new ShadowManager(reportProperties);
-        MqttDownlinkService service = new MqttDownlinkService(
-                new ObjectMapper(), configManager, configSyncService, reportProperties, collectionManager, shadowManager);
+        MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
+                shadowManager);
 
-        when(configManager.getDevice("dev-1")).thenReturn(device("dev-1", "fjb_001"));
+        DeviceInfo device = device("dev-1", "fjb_001");
+        when(configManager.getDevice("dev-1")).thenReturn(device);
+        when(configManager.getAllDevices()).thenReturn(List.of(device));
         when(collectionManager.executeCommand(eq("dev-1"), eq("restart"), anyMap()))
                 .thenReturn(Map.of("accepted", true));
 
@@ -123,10 +131,12 @@ class MqttDownlinkServiceTest {
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
         ShadowManager shadowManager = new ShadowManager(reportProperties);
-        MqttDownlinkService service = new MqttDownlinkService(
-                new ObjectMapper(), configManager, configSyncService, reportProperties, collectionManager, shadowManager);
+        MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
+                shadowManager);
 
-        when(configManager.getDevice("dev-1")).thenReturn(device("dev-1", "fjb_001"));
+        DeviceInfo device = device("dev-1", "fjb_001");
+        when(configManager.getDevice("dev-1")).thenReturn(device);
+        when(configManager.getAllDevices()).thenReturn(List.of(device));
         String payload = """
                 {"id":"m3","method":"thing.config.push","deviceId":"dev-1","params":{"reason":"manual"}}
                 """;
@@ -148,8 +158,8 @@ class MqttDownlinkServiceTest {
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
         ShadowManager shadowManager = new ShadowManager(reportProperties);
-        MqttDownlinkService service = new MqttDownlinkService(
-                new ObjectMapper(), configManager, configSyncService, reportProperties, collectionManager, shadowManager);
+        MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
+                shadowManager);
 
         String payload = """
                 {"id":"m4","method":"thing.config.push","params":{"type":"all"}}
@@ -170,7 +180,28 @@ class MqttDownlinkServiceTest {
         DeviceInfo device = new DeviceInfo();
         device.setDeviceId(deviceId);
         device.setDeviceName(deviceName);
+        CloudTargetConfig cloudTarget = new CloudTargetConfig();
+        cloudTarget.setEnabled(true);
+        cloudTarget.setDeviceType(CloudDeviceType.SUB_DEVICE);
+        cloudTarget.setProductKey("pk");
+        cloudTarget.setDeviceName(deviceName);
+        device.setCloudTarget(cloudTarget);
         return device;
+    }
+
+    private MqttDownlinkService service(ConfigManager configManager,
+                                        ConfigSyncService configSyncService,
+                                        CollectionManager collectionManager,
+                                        ReportProperties reportProperties,
+                                        ShadowManager shadowManager) {
+        return new MqttDownlinkService(
+                new ObjectMapper(),
+                configManager,
+                configSyncService,
+                reportProperties,
+                collectionManager,
+                shadowManager,
+                new CloudDeviceIdentityService(configManager));
     }
 
     private DataPoint point(String pointId, String pointCode, String readWrite) {
@@ -180,6 +211,7 @@ class MqttDownlinkServiceTest {
         point.setPointName(pointCode);
         point.setReadWrite(readWrite);
         point.setStatus(1);
+        point.setAdditionalConfig(Map.of("reportField", pointCode, "reportEnabled", true));
         return point;
     }
 }

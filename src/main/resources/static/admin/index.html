@@ -309,6 +309,54 @@
 
                         <form id="localConnectionForm" class="dynamic-form"></form>
                       </section>
+
+                      <section class="local-section-card local-cloud-target-card">
+                        <div class="local-section-head">
+                          <div>
+                            <span class="label-chip">云平台身份</span>
+                            <h3>设备级 cloudTarget</h3>
+                          </div>
+                          <p>这里决定该采集设备上报到哪个云设备；点位只维护 reportField。</p>
+                        </div>
+
+                        <div class="form-grid compact-form-grid">
+                          <label>
+                            启用云上报
+                            <select id="localCloudEnabled">
+                              <option value="false">否</option>
+                              <option value="true">是</option>
+                            </select>
+                          </label>
+                          <label>
+                            云设备类型
+                            <select id="localCloudDeviceType">
+                              <option value="SUB_DEVICE">子设备</option>
+                              <option value="GATEWAY">网关设备</option>
+                              <option value="DIRECT">直连设备</option>
+                              <option value="LOGICAL_SUB_DEVICE">逻辑子设备</option>
+                            </select>
+                          </label>
+                          <label>
+                            云 productKey
+                            <input id="localCloudProductKey" type="text" placeholder="pk_xxx">
+                          </label>
+                          <label>
+                            云 deviceName
+                            <input id="localCloudDeviceName" type="text" placeholder="sub_device_001">
+                          </label>
+                          <label>
+                            启用拓扑注册
+                            <select id="localCloudTopologyEnabled">
+                              <option value="true">是</option>
+                              <option value="false">否</option>
+                            </select>
+                          </label>
+                          <label class="wide-field">
+                            上报 Topic 示例
+                            <input id="localCloudTopicPreview" type="text" readonly>
+                          </label>
+                        </div>
+                      </section>
                     </div>
                   </section>
 
@@ -367,14 +415,14 @@
                       <div class="local-section-head">
                         <div>
                           <span class="label-chip">云平台上报</span>
-                          <h3>cloudBindings 集中配置</h3>
+                          <h3>设备级目标与 reportField</h3>
                         </div>
-                        <p>按点位维护云端 productKey、deviceName、field 和聚合目标，确保横向属性快照配置清晰。</p>
+                        <p>云设备身份在设备级 cloudTarget 维护；点位只配置云属性 reportField。</p>
                       </div>
                       <div class="local-cloud-workspace">
                         <section class="point-list-panel">
                           <div class="point-list-meta">
-                            <strong id="localCloudBindingCount">0 个云绑定</strong>
+                            <strong id="localCloudTargetCount">0 个可上报点位</strong>
                             <span id="localCloudPointMeta">未选择点位</span>
                           </div>
                           <div class="table-wrap compact point-table-wrap">
@@ -384,7 +432,7 @@
                                   <th>点位</th>
                                   <th>云端目标</th>
                                   <th>字段</th>
-                                  <th>绑定数</th>
+                                  <th>状态</th>
                                 </tr>
                               </thead>
                               <tbody id="localCloudRows">
@@ -537,7 +585,7 @@
                         <h3>批量写点位</h3>
                         <span class="surface-note">values payload</span>
                       </div>
-                      <p class="usage-note">支持 pointId、pointCode、pointName、pointAlias、reportField 作为键。</p>
+                      <p class="usage-note">云端属性下发按 reportField 匹配；本地批量写仍支持 pointId、pointCode、pointName、pointAlias。</p>
                       <textarea id="pointWriteInput" spellcheck="false">{
   "values": {
     "temperatureSet": 25

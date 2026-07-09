@@ -3,6 +3,7 @@ package com.wangbin.collector.core.report.service;
 import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
@@ -10,7 +11,6 @@ import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
 import com.wangbin.collector.core.report.service.support.GatewayRateLimiter;
 import com.wangbin.collector.core.report.service.support.ReportConfigProvider;
-import com.wangbin.collector.core.report.service.support.ReportIdentityResolver;
 import com.wangbin.collector.core.report.shadow.DeviceShadow;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import org.junit.jupiter.api.Test;
@@ -251,7 +251,7 @@ public class CacheReportServiceTest {
         when(distributedLock.tryLock(any(), anyLong(), any(TimeUnit.class))).thenReturn(Optional.empty());
 
         CacheReportService service = createService(reportManager, props, shadowManager, taskScheduler, distributedLock);
-        ReflectionTestUtils.setField(service, "identityGatewayMapping",
+        ReflectionTestUtils.setField(service, "shadowGatewayMapping",
                 new ConcurrentHashMap<>(Map.of("dev-lock", "gw-lock")));
         when(shadowManager.getShadow("dev-lock")).thenReturn(new NonEmptyDeviceShadow("dev-lock"));
 
@@ -274,7 +274,7 @@ public class CacheReportServiceTest {
                                              ShadowManager shadowManager,
                                              TaskScheduler taskScheduler,
                                              DistributedLock distributedLock) {
-        ReportIdentityResolver identityResolver = mock(ReportIdentityResolver.class);
+        CloudDeviceIdentityService cloudDeviceIdentityService = mock(CloudDeviceIdentityService.class);
         ReportConfigProvider reportConfigProvider = mock(ReportConfigProvider.class);
         GatewayRateLimiter gatewayRateLimiter = mock(GatewayRateLimiter.class);
         when(gatewayRateLimiter.tryAcquire(anyBoolean())).thenReturn(true);
@@ -283,7 +283,7 @@ public class CacheReportServiceTest {
                 reportManager,
                 props,
                 shadowManager,
-                identityResolver,
+                cloudDeviceIdentityService,
                 reportConfigProvider,
                 gatewayRateLimiter,
                 distributedLock,

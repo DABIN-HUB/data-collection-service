@@ -311,10 +311,8 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
                     plan.getRegisterType(),
                     plan.getStartAddress(),
                     e);
-
-            for (PointOffset pointOffset : plan.getPointOffsets()) {
-                results.put(pointOffset.getPointId(), null);
-            }
+            // ConcurrentHashMap 不允许写入 null。计划读取失败时保持点位缺失，
+            // 由上层按空结果判定本轮采集失败，避免真实异常被二次 NPE 覆盖。
         }
     }
 

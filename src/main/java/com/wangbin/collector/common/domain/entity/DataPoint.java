@@ -457,8 +457,10 @@ public class DataPoint {
     }
 
     /**
-     * 获取用于上报云端的字段名
-     * @return reportField 配置 > pointAlias > null
+     * 获取用于云端上报的属性字段。
+     * reportField 必须显式配置，pointAlias 仅作为本地展示别名。
+     *
+     * @return reportField 配置；未配置返回 null
      */
     public String getReportField() {
         ensureReportConfigParsed();
@@ -466,11 +468,7 @@ public class DataPoint {
         if (configured != null && !configured.isEmpty()) {
             return configured;
         }
-        if (pointAlias == null) {
-            return null;
-        }
-        String trimmed = pointAlias.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+        return null;
     }
 
     /**

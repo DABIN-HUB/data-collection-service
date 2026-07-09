@@ -128,8 +128,6 @@ public class IoTProtocolService {
             if (!data.getPropertyMetadata().isEmpty()) {
                 propertyMessage.addParam("propertyMetadata", data.getPropertyMetadata());
             }
-        } else {
-            propertyParams.put(data.getPointCode(), data.getValue());
         }
         propertyMessage.setParams(propertyParams);
         propertyMessage.setDeviceId(data.getDeviceId());

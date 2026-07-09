@@ -2,6 +2,7 @@ package com.wangbin.collector.monitor.metrics;
 
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.report.config.ReportProperties;
@@ -10,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,15 +80,22 @@ public class CloudReportMonitorService {
         int reportEnabledPointCount = 0;
         int eventEnabledPointCount = 0;
         int changeTriggerPointCount = 0;
-        int cloudBoundPointCount = 0;
-        int cloudBindingCount = 0;
-        int invalidCloudBindingCount = 0;
-        int devicesWithCloudBindings = 0;
+        int reportFieldPointCount = 0;
+        int reportablePointCount = 0;
+        int cloudTargetDeviceCount = 0;
+        int invalidCloudTargetDeviceCount = 0;
         Set<String> cloudTargetKeys = new LinkedHashSet<>();
 
         for (DeviceContext context : contexts) {
             List<DataPoint> points = context.getDataPoints() == null ? Collections.emptyList() : context.getDataPoints();
-            boolean deviceHasCloudBinding = false;
+            CloudTargetConfig cloudTarget = context.getDeviceInfo() != null ? context.getDeviceInfo().getCloudTarget() : null;
+            boolean validCloudTarget = cloudTarget != null && cloudTarget.valid();
+            if (validCloudTarget) {
+                cloudTargetDeviceCount++;
+                cloudTargetKeys.add(cloudTarget.identity().key());
+            } else if (cloudTarget != null && cloudTarget.isEnabled()) {
+                invalidCloudTargetDeviceCount++;
+            }
             for (DataPoint point : points) {
                 if (point == null) {
                     continue;
@@ -96,6 +103,7 @@ public class CloudReportMonitorService {
                 pointCount++;
                 if (point.isReportEnabled()) {
                     reportEnabledPointCount++;
+                    reportFieldPointCount++;
                 }
                 if (point.isReportEnabled() && point.isEventReportingEnabled()) {
                     eventEnabledPointCount++;
@@ -103,26 +111,9 @@ public class CloudReportMonitorService {
                 if (point.isChangeTriggerEnabled()) {
                     changeTriggerPointCount++;
                 }
-
-                List<Map<String, Object>> cloudBindings = cloudBindings(point);
-                if (cloudBindings.isEmpty()) {
-                    continue;
+                if (point.isReportEnabled() && validCloudTarget) {
+                    reportablePointCount++;
                 }
-                cloudBoundPointCount++;
-                cloudBindingCount += cloudBindings.size();
-                deviceHasCloudBinding = true;
-                for (Map<String, Object> binding : cloudBindings) {
-                    if (!hasCloudIdentity(binding)) {
-                        invalidCloudBindingCount++;
-                    }
-                    String targetKey = targetKey(binding);
-                    if (StringUtils.hasText(targetKey)) {
-                        cloudTargetKeys.add(targetKey);
-                    }
-                }
-            }
-            if (deviceHasCloudBinding) {
-                devicesWithCloudBindings++;
             }
         }
 
@@ -132,13 +123,13 @@ public class CloudReportMonitorService {
         result.put("reportEnabledPointCount", reportEnabledPointCount);
         result.put("eventEnabledPointCount", eventEnabledPointCount);
         result.put("changeTriggerPointCount", changeTriggerPointCount);
-        result.put("cloudBoundPointCount", cloudBoundPointCount);
-        result.put("cloudBindingCount", cloudBindingCount);
-        result.put("invalidCloudBindingCount", invalidCloudBindingCount);
-        result.put("devicesWithCloudBindings", devicesWithCloudBindings);
+        result.put("reportFieldPointCount", reportFieldPointCount);
+        result.put("reportablePointCount", reportablePointCount);
+        result.put("cloudTargetDeviceCount", cloudTargetDeviceCount);
+        result.put("invalidCloudTargetDeviceCount", invalidCloudTargetDeviceCount);
         result.put("cloudTargetCount", cloudTargetKeys.size());
         result.put("cloudTargetKeys", new ArrayList<>(cloudTargetKeys));
-        result.put("cloudBindingCoverage", pointCount > 0 ? (double) cloudBoundPointCount / pointCount : 0.0D);
+        result.put("cloudTargetCoverage", pointCount > 0 ? (double) reportablePointCount / pointCount : 0.0D);
         return result;
     }
 
@@ -150,56 +141,6 @@ public class CloudReportMonitorService {
             log.warn("读取云上报配置快照失败", e);
             return Collections.emptyList();
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> cloudBindings(DataPoint point) {
-        Object raw = point.getAdditionalConfig("cloudBindings");
-        if (raw instanceof List<?> list) {
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Object item : list) {
-                if (item instanceof Map<?, ?> map) {
-                    result.add((Map<String, Object>) map);
-                }
-            }
-            return result;
-        }
-        if (raw instanceof Map<?, ?> map) {
-            return List.of((Map<String, Object>) map);
-        }
-        return Collections.emptyList();
-    }
-
-    private boolean hasCloudIdentity(Map<String, Object> binding) {
-        return StringUtils.hasText(firstText(binding, "productKey", "pk"))
-                && StringUtils.hasText(firstText(binding, "deviceName", "dn"))
-                && StringUtils.hasText(firstText(binding, "field", "identifier"));
-    }
-
-    private String targetKey(Map<String, Object> binding) {
-        String aggregateTargetId = firstText(binding, "aggregateTargetId", "targetId");
-        if (StringUtils.hasText(aggregateTargetId)) {
-            return aggregateTargetId;
-        }
-        String productKey = firstText(binding, "productKey", "pk");
-        String deviceName = firstText(binding, "deviceName", "dn");
-        if (StringUtils.hasText(productKey) && StringUtils.hasText(deviceName)) {
-            return productKey + "/" + deviceName;
-        }
-        return null;
-    }
-
-    private String firstText(Map<String, Object> map, String... keys) {
-        if (map == null || keys == null) {
-            return null;
-        }
-        for (String key : keys) {
-            Object value = map.get(key);
-            if (value != null && StringUtils.hasText(String.valueOf(value))) {
-                return String.valueOf(value).trim();
-            }
-        }
-        return null;
     }
 
     private Map<String, Object> inspectReportExecutor() {
@@ -270,11 +211,14 @@ public class CloudReportMonitorService {
         if (reportManager.getSupportedProtocols() == null || reportManager.getSupportedProtocols().isEmpty()) {
             risks.add("未发现可用上报协议处理器");
         }
-        if (number(configured.get("cloudBoundPointCount")) <= 0) {
-            risks.add("未配置 cloudBindings 点位，云端横向快照无数据来源");
+        if (number(configured.get("reportFieldPointCount")) <= 0) {
+            risks.add("未配置启用上报且包含 reportField 的点位，云端属性上报无数据来源");
         }
-        if (number(configured.get("invalidCloudBindingCount")) > 0) {
-            risks.add("存在 cloudBindings 缺少 productKey/deviceName/field");
+        if (number(configured.get("invalidCloudTargetDeviceCount")) > 0) {
+            risks.add("存在启用云上报但缺少有效 cloudTarget 的采集设备");
+        }
+        if (number(configured.get("reportFieldPointCount")) > number(configured.get("reportablePointCount"))) {
+            risks.add("存在已配置 reportField 但所属设备缺少有效 cloudTarget 的点位");
         }
         if (number(executor.get("queueUsage")) >= QUEUE_WARN_THRESHOLD) {
             risks.add("上报线程池队列水位偏高");

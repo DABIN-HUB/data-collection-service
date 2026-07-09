@@ -12,6 +12,10 @@ import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicParser;
 import com.wangbin.collector.core.report.model.ReportData;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -46,5 +50,65 @@ class AlinkPayloadCodecTest {
         assertEquals(AlinkMethod.PROPERTY_POST, envelope.method());
         assertEquals("pk-a", envelope.identity().productKey());
         assertEquals("device-a", envelope.identity().deviceName());
+    }
+
+    @Test
+    void shouldEncodeGatewayPropertyPackWithDocumentShape() throws Exception {
+        AlinkPayloadEncoder encoder = new AlinkPayloadEncoder(objectMapper);
+
+        ReportData data = new ReportData();
+        data.setDeviceId("gateway-1");
+        data.setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST);
+        data.addMetadata("productKey", "pk-gw");
+        Map<String, Object> pack = new LinkedHashMap<>();
+        pack.put("properties", Map.of("cpuUsage", 45.2));
+        pack.put("events", Map.of());
+        pack.put("subDevices", List.of(Map.of(
+                "identity", Map.of("productKey", "pk-sub", "deviceName", "sub-1"),
+                "properties", Map.of("temperature", 36.5),
+                "events", Map.of())));
+        data.addMetadata("propertyPack", pack);
+
+        JsonNode body = objectMapper.readTree(encoder.encodeReportData(data));
+
+        assertEquals(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST, body.get("method").asText());
+        assertEquals(45.2, body.path("params").path("properties").path("cpuUsage").asDouble());
+        assertEquals("pk-sub", body.path("params").path("subDevices").get(0).path("identity").path("productKey").asText());
+        assertEquals(36.5, body.path("params").path("subDevices").get(0).path("properties").path("temperature").asDouble());
+    }
+
+    @Test
+    void shouldNotFallbackPointCodeAsCloudProperty() throws Exception {
+        AlinkPayloadEncoder encoder = new AlinkPayloadEncoder(objectMapper);
+        ReportData data = new ReportData();
+        data.setDeviceId("device-a");
+        data.setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_POST);
+        data.setPointCode("localPointCode");
+        data.setValue(12.3);
+
+        JsonNode body = objectMapper.readTree(encoder.encodeReportData(data));
+
+        assertEquals(0, body.path("params").size());
+    }
+
+    @Test
+    void shouldEncodeEventPostWithIdentifierValueAndTime() throws Exception {
+        AlinkPayloadEncoder encoder = new AlinkPayloadEncoder(objectMapper);
+        ReportData data = new ReportData();
+        data.setDeviceId("device-a");
+        data.setMethod(MessageConstant.MESSAGE_TYPE_EVENT_POST);
+        data.setPointCode("alarm");
+        data.setValue(true);
+        data.setTimestamp(2000L);
+        data.addMetadata("eventType", "ALARM");
+        data.addMetadata("eventLevel", "WARNING");
+
+        JsonNode body = objectMapper.readTree(encoder.encodeReportData(data));
+
+        assertEquals(MessageConstant.MESSAGE_TYPE_EVENT_POST, body.get("method").asText());
+        assertEquals("ALARM", body.path("params").path("identifier").asText());
+        assertEquals(true, body.path("params").path("value").path("value").asBoolean());
+        assertEquals("WARNING", body.path("params").path("value").path("eventLevel").asText());
+        assertEquals(2000L, body.path("params").path("time").asLong());
     }
 }

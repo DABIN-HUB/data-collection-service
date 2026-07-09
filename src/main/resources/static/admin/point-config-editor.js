@@ -247,7 +247,7 @@
         fields: [
           { path: "pointName", label: "点位名称", control: "text", valueType: "string", required: true },
           { path: "pointCode", label: "标识符", control: "text", valueType: "string", required: true },
-          { path: "pointAlias", label: "点位别名", control: "text", valueType: "string" },
+          { path: "pointAlias", label: "点位别名（仅展示）", control: "text", valueType: "string" },
           { path: "address", label: "寄存器地址", control: "text", valueType: "string", required: true },
           { path: "groupId", label: "分组 ID", control: "text", valueType: "string" },
           { path: "remark", label: "描述", control: "textarea", valueType: "string", rows: 3, fullWidth: true }
@@ -280,7 +280,7 @@
           { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: "1" },
           { path: "alarmEnabled", label: "启用告警", control: "select", valueType: "integer", options: POINT_ENABLE_OPTIONS },
           { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: POINT_BOOLEAN_OPTIONS },
-          { path: "additionalConfig.reportField", label: "reportField", control: "text", valueType: "string" },
+          { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
           { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
           { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
           { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: POINT_BOOLEAN_OPTIONS },

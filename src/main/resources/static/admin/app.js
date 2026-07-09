@@ -873,13 +873,13 @@ function previewApi(path, options = {}) {
           reportEnabledPointCount: Math.max(pointCount - 2, 0),
           eventEnabledPointCount: Math.max(pointCount - 5, 0),
           changeTriggerPointCount: 6,
-          cloudBoundPointCount: Math.max(pointCount - 3, 0),
-          cloudBindingCount: Math.max(pointCount - 1, 0),
-          invalidCloudBindingCount: 1,
-          devicesWithCloudBindings: Math.max(devices.length - 1, 0),
+          reportFieldPointCount: Math.max(pointCount - 3, 0),
+          reportablePointCount: Math.max(pointCount - 3, 0),
+          cloudTargetDeviceCount: 4,
+          invalidCloudTargetDeviceCount: 0,
           cloudTargetCount: 4,
           cloudTargetKeys: ["line-1-energy-summary", "pump-station-01", "plc-line-01", "energy-meter-01"],
-          cloudBindingCoverage: pointCount ? Math.max(pointCount - 3, 0) / pointCount : 0
+          cloudTargetCoverage: pointCount ? Math.max(pointCount - 3, 0) / pointCount : 0
         },
         executor: {
           type: "ThreadPoolTaskExecutor",
@@ -898,7 +898,7 @@ function previewApi(path, options = {}) {
         batch: { enabled: true, maxDevicesPerPack: 50, maxPropertiesPerPack: 500, maxPayloadBytes: 131072, maxDelayMs: 1000, highPriorityBypass: true },
         ack: { mode: "async", timeoutMs: 5000, maxPending: 10000, timeoutScanMs: 500, commitOn: "publish-success" },
         payload: { profile: "compact", includeQuality: "on_error", includePropertyTs: false, includeMetadata: false, includeMessageId: true },
-        risks: ["存在 cloudBindings 缺少 productKey/deviceName/field"],
+        risks: ["示例：请确保启用上报的设备配置 cloudTarget，点位配置 reportField"],
         generatedAt: Date.now()
       }
     });
@@ -1104,7 +1104,7 @@ async function loadOverview() {
     {
       label: "点位总数",
       value: pointCount || "-",
-      meta: [["连接", connectionCount || 0], ["云绑定", numberValue(reportData.configured?.cloudBoundPointCount, 0)]],
+      meta: [["连接", connectionCount || 0], ["reportField", numberValue(reportData.configured?.reportFieldPointCount, 0)]],
       tone: "green"
     },
     {
@@ -1471,7 +1471,7 @@ function renderHomePipeline(data) {
       title: "云上报执行",
       status: statusTone(cloudStatus),
       value: cloudStatusLabel(cloudStatus),
-      detail: `云绑定 ${configured.cloudBoundPointCount ?? 0}/${configured.pointCount ?? data.pointCount ?? 0}，队列 ${percent(queueUsage)}`
+      detail: `可上报点位 ${configured.reportablePointCount ?? 0}/${configured.pointCount ?? data.pointCount ?? 0}，队列 ${percent(queueUsage)}`
     }
   ];
 

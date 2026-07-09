@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BaseCollectorReadPointsTest {
 
     @Test
-    void shouldKeepBatchResultWhenOnePointHasNullRawValue() throws Exception {
+    void shouldSkipMissingRawValueWithoutBreakingBatch() throws Exception {
         Map<String, Object> rawValues = new HashMap<>();
         rawValues.put("p1", 12);
 
@@ -31,8 +31,7 @@ class BaseCollectorReadPointsTest {
         Map<String, Object> result = collector.readPoints(List.of(point("p1"), point("p2")));
 
         assertEquals(12.0, result.get("p1"));
-        assertTrue(result.containsKey("p2"));
-        assertNull(result.get("p2"));
+        assertEquals(false, result.containsKey("p2"));
     }
 
     @Test
