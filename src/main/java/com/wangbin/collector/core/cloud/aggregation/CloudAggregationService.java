@@ -29,6 +29,7 @@ public class CloudAggregationService {
                 data.getProperties(),
                 data.getPropertyTs(),
                 data.getPropertyQuality(),
-                data.getPropertyMetadata());
+                data.getPropertyMetadata(),
+                data.getEvents());
     }
 }

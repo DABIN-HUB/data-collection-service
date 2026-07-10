@@ -8,6 +8,7 @@ import com.wangbin.collector.core.cloud.aggregation.CloudAggregateSnapshot;
 import com.wangbin.collector.core.cloud.aggregation.CloudAggregationService;
 import com.wangbin.collector.core.cloud.aggregation.CloudBatchAccumulator;
 import com.wangbin.collector.core.cloud.aggregation.CloudBatchAccumulator.CloudBatchReport;
+import com.wangbin.collector.core.cloud.aggregation.CloudPackReportAssembler;
 import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
@@ -41,6 +42,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,6 +75,7 @@ public class CacheReportService {
     private final CloudDeviceIdentityService cloudDeviceIdentityService;
     private final ReportConfigProvider reportConfigProvider;
     private final GatewayRateLimiter gatewayRateLimiter;
+    private final CloudPackReportAssembler cloudPackReportAssembler;
     @Nullable
     private final DistributedLock distributedLock;
     @Qualifier("taskScheduler")
@@ -389,11 +392,11 @@ public class CacheReportService {
             return;
         }
 
-            String gatewayDeviceId = shadowGatewayMapping.get(deviceId);
-            DeviceShadow shadow = shadowManager.getShadow(deviceId);
-            if (gatewayDeviceId == null) {
-                log.warn("Skip flush because gateway mapping is missing, device={}", deviceId);
-                shadowManager.clearDirty(deviceId);
+        String gatewayDeviceId = shadowGatewayMapping.get(deviceId);
+        DeviceShadow shadow = shadowManager.getShadow(deviceId);
+        if (gatewayDeviceId == null) {
+            log.warn("Skip flush because gateway mapping is missing, device={}", deviceId);
+            shadowManager.clearDirty(deviceId);
             abortFlush(session);
             return;
         }
@@ -417,6 +420,17 @@ public class CacheReportService {
             return;
         }
 
+        if (shouldUseGatewayTopicForSubDevice(snapshot, reportConfig, gatewayDeviceId)) {
+            ReportData propertyPack = buildSingleSubDevicePack(snapshot, reportConfig, gatewayDeviceId);
+            if (propertyPack == null) {
+                log.warn("Skip flush because gateway property pack is invalid, device={}", deviceId);
+                abortFlush(session);
+                return;
+            }
+            dispatchGatewayPack(deviceId, session, snapshot, propertyPack, reportConfig);
+            return;
+        }
+
         List<ReportData> chunks = splitSnapshot(snapshot);
         if (chunks.isEmpty()) {
             shadowManager.clearDirty(deviceId);
@@ -437,6 +451,87 @@ public class CacheReportService {
         for (ReportData chunk : chunks) {
             dispatch(chunk, reportConfig, false, tracker, 0);
         }
+    }
+
+    private boolean shouldUseGatewayTopicForSubDevice(ReportData snapshot,
+                                                      ReportConfig reportConfig,
+                                                      String gatewayDeviceId) {
+        if (reportProperties.getCloud().isSubDeviceTopicProxyEnabled()) {
+            return false;
+        }
+        CloudDeviceIdentity gatewayIdentity = resolveGatewayCloudIdentity(reportConfig, gatewayDeviceId);
+        CloudDeviceIdentity reportIdentity = resolveReportIdentity(snapshot);
+        return gatewayIdentity.valid()
+                && reportIdentity.valid()
+                && !gatewayIdentity.equals(reportIdentity);
+    }
+
+    private ReportData buildSingleSubDevicePack(ReportData snapshot,
+                                                ReportConfig reportConfig,
+                                                String gatewayDeviceId) {
+        CloudAggregateSnapshot aggregateSnapshot = snapshotToAggregateSnapshot(snapshot);
+        if (aggregateSnapshot == null) {
+            return null;
+        }
+        return cloudPackReportAssembler.assemble(
+                resolveGatewayCloudIdentity(reportConfig, gatewayDeviceId),
+                gatewayDeviceId,
+                List.of(aggregateSnapshot)
+        );
+    }
+
+    private CloudAggregateSnapshot snapshotToAggregateSnapshot(ReportData snapshot) {
+        CloudDeviceIdentity identity = resolveReportIdentity(snapshot);
+        if (!identity.valid() || (!snapshot.hasProperties() && !snapshot.hasEvents())) {
+            return null;
+        }
+        String aggregateTargetId = Optional.ofNullable(snapshot.getMetadata().get("shadowKey"))
+                .map(String::valueOf)
+                .orElse(snapshot.getDeviceId());
+        return new CloudAggregateSnapshot(
+                aggregateTargetId,
+                identity,
+                MessageConstant.MESSAGE_TYPE_EVENT_POST.equals(snapshot.getMethod())
+                        ? Map.of()
+                        : snapshot.getProperties(),
+                snapshot.getPropertyTs(),
+                snapshot.getPropertyQuality(),
+                snapshot.getPropertyMetadata(),
+                snapshot.getEvents()
+        );
+    }
+
+    private CloudDeviceIdentity resolveReportIdentity(ReportData data) {
+        if (data == null) {
+            return CloudDeviceIdentity.of(null, null);
+        }
+        Object productKey = data.getMetadata().get("productKey");
+        return CloudDeviceIdentity.of(productKey != null ? String.valueOf(productKey) : null, data.getDeviceId());
+    }
+
+    private void dispatchGatewayPack(String deviceId,
+                                     FlushSession session,
+                                     ReportData snapshot,
+                                     ReportData propertyPack,
+                                     ReportConfig reportConfig) {
+        // property pack 的 MQTT payload 来自 metadata.propertyPack；这里的 properties 仅用于本地影子提交。
+        snapshot.getProperties().forEach((field, value) -> propertyPack.addProperty(
+                field,
+                value,
+                snapshot.getPropertyTs().getOrDefault(field, snapshot.getTimestamp()),
+                snapshot.getPropertyQuality().get(field),
+                snapshot.getPropertyMetadata().get(field)
+        ));
+        FlushTracker tracker = new FlushTracker(
+                deviceId,
+                System.currentTimeMillis() - reportProperties.getIntervalMs(),
+                System.currentTimeMillis(),
+                Math.max(0, reportProperties.getRetryTimes()),
+                Math.max(1, reportProperties.getMaxPendingChunksPerDevice())
+        );
+        session.bind(tracker);
+        flushTrackers.put(deviceId, tracker);
+        dispatch(propertyPack, reportConfig, false, tracker, 0);
     }
 
     private @Nullable FlushSession tryOpenFlushSession(String deviceId) {
@@ -784,6 +879,14 @@ public class CacheReportService {
         if (point.getDeviceName() != null) {
             eventData.addMetadata("deviceName", point.getDeviceName());
         }
+        addEventPayload(eventData);
+        if (shouldUseGatewayTopicForSubDevice(eventData, reportConfig, gatewayDeviceId)) {
+            ReportData propertyPack = buildSingleSubDevicePack(eventData, reportConfig, gatewayDeviceId);
+            if (propertyPack != null) {
+                dispatch(propertyPack, reportConfig, true, null);
+                return;
+            }
+        }
         dispatch(eventData, reportConfig, true, null);
     }
 
@@ -848,7 +951,34 @@ public class CacheReportService {
         alertData.addMetadata("shadowKey", shadowKey);
         alertData.addProperty(pointCode, notification.getValue(),
                 timestamp, QualityEnum.WARNING.getText());
+        addEventPayload(alertData);
+        if (shouldUseGatewayTopicForSubDevice(alertData, reportConfig, gatewayDeviceId())) {
+            ReportData propertyPack = buildSingleSubDevicePack(alertData, reportConfig, gatewayDeviceId());
+            if (propertyPack != null) {
+                dispatch(propertyPack, reportConfig, true, null);
+                return;
+            }
+        }
         dispatch(alertData, reportConfig, true, null);
+    }
+
+    private void addEventPayload(ReportData eventData) {
+        if (eventData == null) {
+            return;
+        }
+        String identifier = Optional.ofNullable(eventData.getMetadata().get("eventType"))
+                .map(String::valueOf)
+                .filter(value -> !value.isBlank())
+                .orElse(eventData.getPointCode() != null ? eventData.getPointCode() : "event");
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("value", eventData.getValue());
+        if (eventData.getQuality() != null) {
+            value.put("quality", eventData.getQuality());
+        }
+        if (eventData.getMetadata() != null && !eventData.getMetadata().isEmpty()) {
+            value.putAll(eventData.getMetadata());
+        }
+        eventData.addEvent(identifier, value, eventData.getTimestamp());
     }
 
     @EventListener

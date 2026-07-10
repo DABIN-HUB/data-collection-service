@@ -17,6 +17,7 @@ public class CloudAggregateSnapshot {
     private final Map<String, Long> propertyTs;
     private final Map<String, String> propertyQuality;
     private final Map<String, Map<String, Object>> sourceTrace;
+    private final Map<String, Object> events;
 
     public CloudAggregateSnapshot(String aggregateTargetId,
                                   CloudDeviceIdentity identity,
@@ -24,12 +25,23 @@ public class CloudAggregateSnapshot {
                                   Map<String, Long> propertyTs,
                                   Map<String, String> propertyQuality,
                                   Map<String, Map<String, Object>> sourceTrace) {
+        this(aggregateTargetId, identity, properties, propertyTs, propertyQuality, sourceTrace, Collections.emptyMap());
+    }
+
+    public CloudAggregateSnapshot(String aggregateTargetId,
+                                  CloudDeviceIdentity identity,
+                                  Map<String, Object> properties,
+                                  Map<String, Long> propertyTs,
+                                  Map<String, String> propertyQuality,
+                                  Map<String, Map<String, Object>> sourceTrace,
+                                  Map<String, Object> events) {
         this.aggregateTargetId = aggregateTargetId;
         this.identity = identity;
         this.properties = new LinkedHashMap<>(properties);
         this.propertyTs = new LinkedHashMap<>(propertyTs);
         this.propertyQuality = new LinkedHashMap<>(propertyQuality);
         this.sourceTrace = new LinkedHashMap<>(sourceTrace);
+        this.events = new LinkedHashMap<>(events);
     }
 
     public String aggregateTargetId() {
@@ -54,5 +66,9 @@ public class CloudAggregateSnapshot {
 
     public Map<String, Map<String, Object>> sourceTrace() {
         return Collections.unmodifiableMap(sourceTrace);
+    }
+
+    public Map<String, Object> events() {
+        return Collections.unmodifiableMap(events);
     }
 }

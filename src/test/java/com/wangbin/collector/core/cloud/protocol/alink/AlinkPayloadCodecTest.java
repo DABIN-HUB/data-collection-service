@@ -78,6 +78,34 @@ class AlinkPayloadCodecTest {
     }
 
     @Test
+    void shouldEncodeGatewayPropertyPackWithSubDeviceEvents() throws Exception {
+        AlinkPayloadEncoder encoder = new AlinkPayloadEncoder(objectMapper);
+
+        ReportData data = new ReportData();
+        data.setDeviceId("gateway-1");
+        data.setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST);
+        data.addMetadata("productKey", "pk-gw");
+        Map<String, Object> pack = new LinkedHashMap<>();
+        pack.put("properties", Map.of());
+        pack.put("events", Map.of());
+        pack.put("subDevices", List.of(Map.of(
+                "identity", Map.of("productKey", "pk-sub", "deviceName", "sub-1"),
+                "properties", Map.of(),
+                "events", Map.of("ALARM", Map.of(
+                        "value", Map.of("level", 1),
+                        "time", 2000L)))));
+        data.addMetadata("propertyPack", pack);
+
+        JsonNode body = objectMapper.readTree(encoder.encodeReportData(data));
+
+        assertEquals(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST, body.get("method").asText());
+        assertEquals(1, body.path("params").path("subDevices").get(0)
+                .path("events").path("ALARM").path("value").path("level").asInt());
+        assertEquals(2000L, body.path("params").path("subDevices").get(0)
+                .path("events").path("ALARM").path("time").asLong());
+    }
+
+    @Test
     void shouldNotFallbackPointCodeAsCloudProperty() throws Exception {
         AlinkPayloadEncoder encoder = new AlinkPayloadEncoder(objectMapper);
         ReportData data = new ReportData();

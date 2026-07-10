@@ -210,6 +210,10 @@ collector:
       history-max-records: 100
       history-ttl-seconds: 604800
     cloud:
+      # 是否允许网关 MQTT 连接代理发布子设备自己的 Topic。
+      # true：子设备数据发布到 /sys/{子设备productKey}/{子设备deviceName}/thing/property/post，保持历史兼容逻辑。
+      # false：子设备数据必须发布到网关 Topic，并在 payload 的 subDevices 中声明子设备身份，适配严格网关模型平台。
+      sub-device-topic-proxy-enabled: false
       payload:
         profile: compact
         include-quality: on_error

@@ -3,6 +3,7 @@ package com.wangbin.collector.core.report.service;
 import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.cloud.aggregation.CloudPackReportAssembler;
 import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
@@ -19,6 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Constructor;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,7 +49,8 @@ public class CacheReportServiceTest {
         ReportProperties props = new ReportProperties();
         props.setMaxPropertiesPerMessage(2);
         props.setMaxPayloadBytes(1024);
-        CacheReportService service = new CacheReportService(null, props, null, null, null, null, null, null);
+        CacheReportService service = new CacheReportService(null, props, null, null, null, null,
+                new CloudPackReportAssembler(), null, null);
 
         ReportData snapshot = new ReportData();
         snapshot.setDeviceId("dev-test");
@@ -84,7 +87,8 @@ public class CacheReportServiceTest {
         ReportProperties props = new ReportProperties();
         props.setMaxPropertiesPerMessage(1);
         props.setMaxPayloadBytes(1024);
-        CacheReportService service = new CacheReportService(null, props, null, null, null, null, null, null);
+        CacheReportService service = new CacheReportService(null, props, null, null, null, null,
+                new CloudPackReportAssembler(), null, null);
 
         ReportData snapshot = new ReportData();
         snapshot.setDeviceId("dev-test");
@@ -262,6 +266,88 @@ public class CacheReportServiceTest {
         verify(shadowManager, never()).clearDirty("dev-lock");
     }
 
+    @Test
+    void strictGatewayModeShouldBuildSingleSubDevicePropertyPack() {
+        ReportProperties props = baseProps();
+        props.getMqtt().setGatewayProductKey("pk-gw");
+        props.getMqtt().setGatewayDeviceName("gw-1");
+        props.getCloud().setSubDeviceTopicProxyEnabled(false);
+        CacheReportService service = createService(
+                mock(ReportManager.class),
+                props,
+                mock(ShadowManager.class),
+                mock(TaskScheduler.class)
+        );
+        ReportConfig config = validConfig();
+        config.getParams().put("gatewayProductKey", "pk-gw");
+        config.getParams().put("gatewayDeviceName", "gw-1");
+
+        ReportData snapshot = new ReportData();
+        snapshot.setDeviceId("sub-1");
+        snapshot.setTimestamp(1000L);
+        snapshot.addMetadata("productKey", "pk-sub");
+        snapshot.addMetadata("shadowKey", "pk-sub/sub-1");
+        snapshot.addProperty("temperature", 36.5, 1000L, "GOOD");
+
+        Boolean strictMode = ReflectionTestUtils.invokeMethod(
+                service,
+                "shouldUseGatewayTopicForSubDevice",
+                snapshot,
+                config,
+                "gw-1"
+        );
+        ReportData propertyPack = ReflectionTestUtils.invokeMethod(
+                service,
+                "buildSingleSubDevicePack",
+                snapshot,
+                config,
+                "gw-1"
+        );
+
+        assertEquals(Boolean.TRUE, strictMode);
+        assertNotNull(propertyPack);
+        assertEquals("gw-1", propertyPack.getDeviceId());
+        assertEquals("pk-gw", propertyPack.getMetadata().get("productKey"));
+        Map<?, ?> pack = (Map<?, ?>) propertyPack.getMetadata().get("propertyPack");
+        List<?> subDevices = (List<?>) pack.get("subDevices");
+        Map<?, ?> subDevice = (Map<?, ?>) subDevices.get(0);
+        Map<?, ?> identity = (Map<?, ?>) subDevice.get("identity");
+        Map<?, ?> properties = (Map<?, ?>) subDevice.get("properties");
+        assertEquals("pk-sub", identity.get("productKey"));
+        assertEquals("sub-1", identity.get("deviceName"));
+        assertEquals(36.5, properties.get("temperature"));
+    }
+
+    @Test
+    void proxyModeShouldKeepSubDeviceTopicPayload() {
+        ReportProperties props = baseProps();
+        props.getCloud().setSubDeviceTopicProxyEnabled(true);
+        CacheReportService service = createService(
+                mock(ReportManager.class),
+                props,
+                mock(ShadowManager.class),
+                mock(TaskScheduler.class)
+        );
+        ReportConfig config = validConfig();
+        config.getParams().put("gatewayProductKey", "pk-gw");
+        config.getParams().put("gatewayDeviceName", "gw-1");
+
+        ReportData snapshot = new ReportData();
+        snapshot.setDeviceId("sub-1");
+        snapshot.addMetadata("productKey", "pk-sub");
+        snapshot.addProperty("temperature", 36.5, 1000L, "GOOD");
+
+        Boolean strictMode = ReflectionTestUtils.invokeMethod(
+                service,
+                "shouldUseGatewayTopicForSubDevice",
+                snapshot,
+                config,
+                "gw-1"
+        );
+
+        assertEquals(Boolean.FALSE, strictMode);
+    }
+
     private CacheReportService createService(ReportManager reportManager,
                                              ReportProperties props,
                                              ShadowManager shadowManager,
@@ -286,6 +372,7 @@ public class CacheReportServiceTest {
                 cloudDeviceIdentityService,
                 reportConfigProvider,
                 gatewayRateLimiter,
+                new CloudPackReportAssembler(),
                 distributedLock,
                 taskScheduler
         );
@@ -316,6 +403,7 @@ public class CacheReportServiceTest {
         config.setTargetId("target-1");
         config.setHost("localhost");
         config.setPort(1883);
+        config.setParams(new HashMap<>());
         return config;
     }
 

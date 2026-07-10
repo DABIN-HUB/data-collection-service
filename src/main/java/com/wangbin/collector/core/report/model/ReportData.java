@@ -35,6 +35,7 @@ public class ReportData {
     private final Map<String, String> propertyQuality = new LinkedHashMap<>();
     private final Map<String, Long> propertyTs = new LinkedHashMap<>();
     private final Map<String, Map<String, Object>> propertyMetadata = new LinkedHashMap<>();
+    private final Map<String, Object> events = new LinkedHashMap<>();
 
     public void addMetadata(String key, Object v) {
         metadata.put(key, v);
@@ -68,6 +69,24 @@ public class ReportData {
 
     public boolean hasProperties() {
         return !properties.isEmpty();
+    }
+
+    public void addEvent(String identifier, Object value) {
+        addEvent(identifier, value, timestamp > 0 ? timestamp : System.currentTimeMillis());
+    }
+
+    public void addEvent(String identifier, Object value, long eventTime) {
+        if (identifier == null || identifier.trim().isEmpty()) {
+            return;
+        }
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("value", value);
+        event.put("time", eventTime > 0 ? eventTime : System.currentTimeMillis());
+        events.put(identifier, event);
+    }
+
+    public boolean hasEvents() {
+        return !events.isEmpty();
     }
 
     public int size() {
@@ -118,6 +137,7 @@ public class ReportData {
         copy.setQuality(quality);
         copy.getMetadata().putAll(metadata);
         propertyMetadata.forEach((field, value) -> copy.propertyMetadata.put(field, new LinkedHashMap<>(value)));
+        copy.events.putAll(events);
         return copy;
     }
 
@@ -137,6 +157,10 @@ public class ReportData {
         Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
         propertyMetadata.forEach((field, value) -> copy.put(field, Collections.unmodifiableMap(value)));
         return Collections.unmodifiableMap(copy);
+    }
+
+    public Map<String, Object> getEvents() {
+        return Collections.unmodifiableMap(events);
     }
 
     public void applyChunkMetadata(String batchId, int chunkIndex, int chunkTotal) {

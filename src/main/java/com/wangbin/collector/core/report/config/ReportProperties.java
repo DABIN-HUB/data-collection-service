@@ -280,6 +280,12 @@ public class ReportProperties {
     public static class Cloud {
 
         /**
+         * 是否允许网关 MQTT 连接代理发布子设备自己的 Topic。
+         * true 表示保持历史兼容逻辑，false 表示子设备必须通过网关 Topic 和 property pack 上报。
+         */
+        private boolean subDeviceTopicProxyEnabled = true;
+
+        /**
          * payload 精简策略。
          */
         private Payload payload = new Payload();

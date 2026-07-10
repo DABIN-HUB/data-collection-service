@@ -44,6 +44,7 @@ public class CloudPackReportAssembler {
             }
             if (sameIdentity(gatewayIdentity, snapshot.identity())) {
                 gatewayProperties.putAll(snapshot.properties());
+                gatewayEvents.putAll(snapshot.events());
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -51,7 +52,7 @@ public class CloudPackReportAssembler {
                     "productKey", snapshot.identity().productKey(),
                     "deviceName", snapshot.identity().deviceName()));
             item.put("properties", snapshot.properties());
-            item.put("events", new LinkedHashMap<>());
+            item.put("events", snapshot.events());
             subDevices.add(item);
         }
         pack.put("properties", gatewayProperties);

@@ -36,7 +36,7 @@ public class CloudBatchAccumulator {
         int estimatedBytes = 0;
         for (CloudAggregateSnapshot snapshot : snapshots) {
             if (snapshot == null || snapshot.identity() == null || !snapshot.identity().valid()
-                    || snapshot.properties().isEmpty()) {
+                    || emptySnapshot(snapshot)) {
                 continue;
             }
             int nextPropertyCount = propertyCount + snapshot.properties().size();
@@ -74,9 +74,14 @@ public class CloudBatchAccumulator {
         size += estimate(snapshot.identity().productKey());
         size += estimate(snapshot.identity().deviceName());
         size += estimate(snapshot.properties());
+        size += estimate(snapshot.events());
         size += estimate(snapshot.propertyQuality());
         size += estimate(snapshot.propertyTs());
         return size;
+    }
+
+    private boolean emptySnapshot(CloudAggregateSnapshot snapshot) {
+        return snapshot.properties().isEmpty() && snapshot.events().isEmpty();
     }
 
     private int estimate(Map<?, ?> values) {
