@@ -94,14 +94,18 @@ mybatis:
 
 logging:
   level:
-    com.wangbin.collector: INFO
+    # 默认只输出业务告警和错误；排查问题时可临时设置 COLLECTOR_LOG_APP_LEVEL=DEBUG。
+    com.wangbin.collector: ${COLLECTOR_LOG_APP_LEVEL:WARN}
     org.springframework: INFO
     org.springframework.web: INFO
-    org.mybatis: ERROR
-    org.mybatis.spring: ERROR
-    com.baomidou.mybatisplus: ERROR
+    # SQL 明细和参数日志量很大，默认只在错误时输出。
+    org.mybatis: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    org.mybatis.spring: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    org.apache.ibatis: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    com.baomidou.mybatisplus: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
     com.zaxxer.hikari: WARN
-    com.wangbin.collector.mapper: ERROR
+    com.wangbin.collector.mapper: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    com.wangbin.collector.storage.repository: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
