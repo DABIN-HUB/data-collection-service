@@ -3,6 +3,7 @@ package com.wangbin.collector.core.connection.factory;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
@@ -35,6 +36,9 @@ public class ConnectionFactory {
 
     @Autowired(required = false)
     private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
+
+    @Autowired(required = false)
+    private CollectorProperties collectorProperties;
 
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
@@ -114,11 +118,25 @@ public class ConnectionFactory {
 
     private ConnectionAdapter<?> createMqttConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
+            applyMqttConnectionDefaults(cfg);
             return new MqttConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
             log.error("鍒涘缓MQTT杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("鍒涘缓MQTT杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
         }
+    }
+
+    private void applyMqttConnectionDefaults(DeviceConnection cfg) {
+        if (cfg == null || collectorProperties == null || collectorProperties.getMqtt() == null) {
+            return;
+        }
+        if (cfg.getExtJson() == null) {
+            cfg.setExtJson(new LinkedHashMap<>());
+        }
+        // 平台不支持并发建连时，该值应保持为 1。
+        cfg.getExtJson().putIfAbsent(
+                "maxConcurrentConnects",
+                Math.max(1, collectorProperties.getMqtt().getMaxConcurrentConnects()));
     }
 
     private ConnectionAdapter<?> createWebSocketConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {

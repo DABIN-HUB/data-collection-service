@@ -108,6 +108,11 @@ public class CollectorProperties {
         private long dispatchFlushInterval = 0;
         private String overflowStrategy = "BLOCK";
         private int maxGroupConnections = 0;
+        /**
+         * MQTT 建连全局并发上限。
+         * 平台不支持并发创建连接时应配置为 1。
+         */
+        private int maxConcurrentConnects = 1;
     }
 
     @Data

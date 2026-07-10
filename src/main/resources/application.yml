@@ -251,6 +251,10 @@ collector:
       clean-session: true
       connection-timeout: 30
       keep-alive-interval: 60
+      # MQTT 建连全局并发上限；平台不支持并发创建连接时必须配置为 1。
+      max-concurrent-connects: 1
+      # MQTT 断线连接定时扫描重连间隔，单位毫秒。
+      reconnect-scan-interval-ms: 30000
       topics:
         property: thing/property/post
         event: thing/event/post
@@ -267,3 +271,5 @@ collector:
     clean-session: true
     connection-timeout: 30
     keep-alive-interval: 60
+    # MQTT 采集协议建连全局并发上限；平台不支持并发创建连接时必须配置为 1。
+    max-concurrent-connects: 1

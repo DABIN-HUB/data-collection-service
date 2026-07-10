@@ -151,6 +151,15 @@ public class ReportProperties {
         private String brokerUrl = "tcp://localhost:1883";
         private String clientId = "data-collector";
         /**
+         * MQTT 建连全局并发上限。
+         * 平台不支持并发创建连接时应配置为 1。
+         */
+        private int maxConcurrentConnects = 1;
+        /**
+         * 断线连接定时扫描重连间隔，单位毫秒。
+         */
+        private long reconnectScanIntervalMs = 30000L;
+        /**
          * 对应云平台的产品 key，用于拼装 topic。
          */
         private String gatewayProductKey = "";

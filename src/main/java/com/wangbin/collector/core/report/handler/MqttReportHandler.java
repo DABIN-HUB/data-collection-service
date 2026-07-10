@@ -17,6 +17,7 @@ import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter
 import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
+import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 /**
@@ -75,6 +77,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     private MqttDownlinkService downlinkService;
     @Autowired(required = false)
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
+    @Autowired(required = false)
+    private ReportProperties reportProperties;
 
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
@@ -82,7 +86,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     @Override
     protected void doInit() throws Exception {
-        log.info("初始化MQTT v5报告处理器...");
+        log.info("初始化 MQTT v5 报告处理器...");
 
         ScheduledExecutorService effectiveMonitorExecutor = ThreadPoolFallbacks.preferScheduler(
                 monitorExecutor,
@@ -98,7 +102,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         clientManager = new MqttClientManager(
                 ackManager,
                 downlinkService,
-                effectiveMonitorExecutor
+                effectiveMonitorExecutor,
+                resolveMaxConcurrentConnects(),
+                resolveReconnectScanIntervalMs()
         );
         clientManager.init();
 
@@ -111,12 +117,12 @@ public class MqttReportHandler extends AbstractReportHandler {
         subscriptionManager = new SubscriptionManager(clientManager);
         subscriptionManager.init();
 
-        log.info("MQTT v5报告处理器初始化完成");
+        log.info("MQTT v5 上报处理器初始化完成");
     }
 
     @Override
     protected ReportResult doReport(ReportData data, ReportConfig config) throws Exception {
-        log.debug("开始MQTT v5上报：{} -> {}:{}", data.getPointCode(), config.getHost(), config.getPort());
+        log.debug("开始 MQTT v5 上报：{} -> {}:{}", data.getPointCode(), config.getHost(), config.getPort());
         long startTime = System.currentTimeMillis();
 
         AckManager.AckRegistration ackRegistration = null;
@@ -124,7 +130,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             // 1. 获取连接配置
             MqttConnectionConfig connConfig = getConnectionConfig(config);
 
-            // 2. 获取MQTT客户端
+            // 2. 获取 MQTT 客户端
             MqttAsyncClient mqttClient = obtainConnectedClient(connConfig);
             if (mqttClient == null) {
                 return buildOfflineResult(data, config,
@@ -138,7 +144,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             // 4. 构建消息内容
             byte[] messagePayload = buildMessagePayload(data, config);
 
-            // 4.1 注册ACK监听
+            // 4.1 注册 ACK 监听
             ackRegistration = prepareAckRegistration(connConfig, data);
 
             // 5. 发布消息 - v5 API
@@ -184,7 +190,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     @Override
     protected List<ReportResult> doBatchReport(List<ReportData> dataList, ReportConfig config) throws Exception {
-        log.debug("开始批量MQTT v5上报：{}:{}，数据量：{}", config.getHost(), config.getPort(), dataList.size());
+        log.debug("开始批量 MQTT v5 上报：{}:{}，数据量：{}", config.getHost(), config.getPort(), dataList.size());
 
         List<ReportResult> results = new ArrayList<>(dataList.size());
         MqttConnectionConfig connConfig = getConnectionConfig(config);
@@ -192,7 +198,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         List<AckManager.AckRegistration> ackRegistrations = new ArrayList<>(dataList.size());
 
         try {
-            // 1. 获取MQTT客户端
+            // 1. 获取 MQTT 客户端
             MqttAsyncClient mqttClient = obtainConnectedClient(connConfig);
             if (mqttClient == null) {
                 String offlineMessage = "MQTT client not connected, reconnect scheduled";
@@ -211,7 +217,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 // 构建消息内容
                 byte[] messagePayload = buildMessagePayload(data, config);
 
-                // 注册ACK监听
+                // 注册 ACK 监听
                 ackRegistrations.add(prepareAckRegistration(connConfig, data));
 
                 // 创建发布任务
@@ -250,19 +256,19 @@ public class MqttReportHandler extends AbstractReportHandler {
 
             // 统计成功数量
             long successCount = results.stream().filter(ReportResult::isSuccess).count();
-            log.debug("批量MQTT v5上报完成：{}:{}, 成功：{}，失败：{}，总计：{}",
+            log.debug("批量 MQTT v5 上报完成：{}:{}, 成功：{}，失败：{}，总计：{}",
                     config.getHost(), config.getPort(),
                     successCount, results.size() - successCount, results.size());
 
         } catch (Exception e) {
             ackRegistrations.forEach(ackManager::cancel);
-            log.error("批量MQTT v5上报异常：{}:{}", config.getHost(), config.getPort(), e);
+            log.error("批量 MQTT v5 上报异常：{}:{}", config.getHost(), config.getPort(), e);
 
             // 为所有数据创建错误结果
             for (ReportData data : dataList) {
                 ReportResult errorResult = ReportResult.error(
                         data.getPointCode(),
-                        "批量MQTT v5上报异常: " + e.getMessage(),
+                        "批量 MQTT v5 上报异常: " + e.getMessage(),
                         config.getTargetId()
                 );
                 results.add(errorResult);
@@ -274,7 +280,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     @Override
     protected void doConfigUpdate(ReportConfig config) throws Exception {
-        log.debug("更新MQTT v5处理器配置：{}", config.getTargetId());
+        log.debug("更新 MQTT v5 处理器配置：{}", config.getTargetId());
 
         try {
             // 1. 获取或创建连接配置
@@ -295,17 +301,17 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     @Override
     protected void doConfigRemove(ReportConfig config) throws Exception {
-        log.debug("删除MQTT v5处理器配置：{}", config.getTargetId());
+        log.debug("删除 MQTT v5 处理器配置：{}", config.getTargetId());
 
         try {
             // 1. 移除连接配置
             String configKey = getConnectionConfigKey(config);
             connectionConfigs.remove(configKey);
 
-            // 2. 关闭相关客户端
+            // 2. 移除客户端连接
             clientManager.removeClient(configKey);
 
-            // 3. 移除相关订阅
+            // 3. 移除订阅配置
             subscriptionManager.removeSubscriptions(configKey);
 
             log.info("MQTT v5处理器配置删除完成：{}", config.getTargetId());
@@ -317,7 +323,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     @Override
     protected void doDestroy() throws Exception {
-        log.info("销毁MQTT v5报告处理器...");
+        log.info("销毁 MQTT v5 报告处理器...");
 
         try {
             // 1. 销毁订阅管理器
@@ -341,9 +347,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             // 4. 清空配置
             connectionConfigs.clear();
 
-            log.info("MQTT v5报告处理器销毁完成");
+            log.info("MQTT v5上报处理器销毁完成");
         } catch (Exception e) {
-            log.error("MQTT v5报告处理器销毁失败", e);
+            log.error("MQTT v5上报处理器销毁失败", e);
             throw e;
         }
     }
@@ -382,10 +388,24 @@ public class MqttReportHandler extends AbstractReportHandler {
         return stats;
     }
 
-    // =============== 辅助方法 ===============
+    // =============== 私有辅助方法 ===============
 
     private void loadMqttConfig() {
-        log.debug("加载MQTT v5配置完成");
+        log.debug("加载 MQTT v5 配置完成");
+    }
+
+    private int resolveMaxConcurrentConnects() {
+        if (reportProperties == null || reportProperties.getMqtt() == null) {
+            return 1;
+        }
+        return Math.max(1, reportProperties.getMqtt().getMaxConcurrentConnects());
+    }
+
+    private long resolveReconnectScanIntervalMs() {
+        if (reportProperties == null || reportProperties.getMqtt() == null) {
+            return 30000L;
+        }
+        return Math.max(1000L, reportProperties.getMqtt().getReconnectScanIntervalMs());
     }
 
     private MqttConnectionConfig getConnectionConfig(ReportConfig config) {
@@ -399,17 +419,17 @@ public class MqttReportHandler extends AbstractReportHandler {
             connConfig.setAckMethods(cloudTargetContext.protocolAdapter().ackMethods());
             connConfig.setAckOptions(cloudTargetContext.ackOptions());
 
-            // 使用常量获取参数
+            // 基础连接配置
             connConfig.setClientId(config.getMqttClientId());
             connConfig.setKeepAliveInterval(config.getIntParam(
                     ProtocolConstant.MQTT_PARAM_KEEP_ALIVE, 60));
             connConfig.setConnectionTimeout((int) config.getEffectiveConnectTimeout());
             connConfig.setCleanStart(config.getBooleanParam(
                     ProtocolConstant.MQTT_PARAM_CLEAN_SESSION, true)); // v5: cleanStart
-            connConfig.setAutomaticReconnect(true);
+            connConfig.setAutomaticReconnect(false);
             connConfig.setMaxReconnectDelay(60000);
 
-            // 认证信息
+            // 认证配置
             connConfig.setUsername(config.getStringParam(ProtocolConstant.MQTT_PARAM_USERNAME));
 
             String password = config.getStringParam(ProtocolConstant.MQTT_PARAM_PASSWORD);
@@ -421,7 +441,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             connConfig.setSslEnabled(config.getBooleanParam(
                     ProtocolConstant.MQTT_PARAM_SSL_ENABLED, false));
 
-            // 遗嘱消息
+            // 遗嘱消息配置
             String willTopic = config.getStringParam(ProtocolConstant.MQTT_PARAM_WILL_TOPIC);
             String willMessage = config.getStringParam(ProtocolConstant.MQTT_PARAM_WILL_MESSAGE);
             if (willTopic != null && willMessage != null) {
@@ -434,13 +454,13 @@ public class MqttReportHandler extends AbstractReportHandler {
                 connConfig.setWillMessage(will);
             }
 
-            // 发布主题
+            // 发布主题配置
             String publishTopic = config.getStringParam(ProtocolConstant.MQTT_PARAM_PUBLISH_TOPIC);
             if (publishTopic != null) {
                 connConfig.setDefaultPublishTopic(publishTopic);
             }
 
-            // 订阅主题
+            // 订阅主题配置
             List<String> subscribeTopicList = new ArrayList<>();
             Object subscribeTopics = config.getParam(ProtocolConstant.MQTT_PARAM_SUBSCRIBE_TOPICS);
             if (subscribeTopics instanceof java.util.List) {
@@ -543,7 +563,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
             }
         }
-        return 1; // 默认QoS 1
+        return 1; // 默认 QoS 1
     }
 
     private boolean isRetainedMessage(ReportConfig config) {
@@ -554,7 +574,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return (Boolean) retainedObj;
             }
         }
-        return false; // 默认不保留
+        return false; // 默认不保留消息
     }
 
     private byte[] buildMessagePayload(ReportData data, ReportConfig config) {
@@ -580,7 +600,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     private byte[] buildBinaryPayload(ReportData data, ReportConfig config) {
-        // 简化实现
+        // 简化的二进制编码格式
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         java.io.DataOutputStream dos = new java.io.DataOutputStream(baos);
 
@@ -597,7 +617,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             // 写入时间戳
             dos.writeLong(data.getTimestamp());
 
-            // 写入数据值
+            // 写入数值
             if (data.getValue() instanceof Number) {
                 dos.writeDouble(((Number) data.getValue()).doubleValue());
             } else {
@@ -720,7 +740,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return client;
             }
         } catch (Exception e) {
-            log.warn("获取MQTT客户端失败：{}", connConfig.getKey(), e);
+            log.warn("获取 MQTT 客户端失败：{}", connConfig.getKey(), e);
         }
 
         if (!clientManager.tryReconnect(connConfig)) {
@@ -733,7 +753,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return client;
             }
         } catch (Exception e) {
-            log.warn("重试获取MQTT客户端失败：{}", connConfig.getKey(), e);
+            log.warn("重连后获取 MQTT 客户端失败：{}", connConfig.getKey(), e);
         }
         return null;
     }
@@ -755,7 +775,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return AckRegistration.disabled();
             }
             if (pendingAcks.size() >= options.maxPending()) {
-                log.warn("MQTT ACK pending 已满，跳过业务 ACK 跟踪：messageId={}, maxPending={}",
+                log.warn("MQTT ACK pending 已达上限，跳过本次 ACK 等待：messageId={}, maxPending={}",
                         messageId, options.maxPending());
                 return AckRegistration.disabled();
             }
@@ -816,7 +836,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
                 if (pendingAcks.remove(entry.getKey(), ticket)) {
                     ticket.future.complete(AckMessage.timeout(ticket.messageId));
-                    log.warn("MQTT ACK 超时：messageId={}, mode={}, timeoutMs={}",
+                    log.warn("MQTT ACK 等待超时：messageId={}, mode={}, timeoutMs={}",
                             ticket.messageId, ticket.options.mode(), ticket.options.timeoutMs());
                 }
             }
@@ -900,10 +920,10 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
-    // =============== 内部类 ===============
+    // =============== 内部数据模型 ===============
 
     /**
-     * MQTT连接配置类 - v5
+     * MQTT连接配置 - v5
      */
     @Data
     private static class MqttConnectionConfig {
@@ -915,7 +935,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         private char[] password;
         private int keepAliveInterval = 60;
         private int connectionTimeout = 30;
-        private boolean cleanStart = true; // v5: cleanStart 替代 cleanSession
+        private boolean cleanStart = true; // v5: cleanStart 对应 cleanSession
         private boolean automaticReconnect = true;
         private int maxReconnectDelay = 60000;
         private boolean sslEnabled = false;
@@ -970,7 +990,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 if (methodPath.isEmpty()) {
                     continue;
                 }
-                // ACK 必须覆盖网关代理的子设备 topic，不能只订阅网关自身三元组。
+                // ACK 订阅必须使用通配符匹配产品和设备名称，兼容网关子设备回复 topic。
                 String topic = prefix + "/+/+/" + methodPath + normalizedSuffix;
                 topics.add(topic);
                 patterns.add(buildAckPattern(topic));
@@ -1035,7 +1055,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     /**
-     * MQTT遗嘱消息类
+     * MQTT遗嘱消息配置
      */
     private static class MqttWillMessage {
         private String topic;
@@ -1057,7 +1077,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     /**
-     * MQTT发布选项类
+     * MQTT发布选项
      */
     private static class MqttPublishOptions {
         private String topic;
@@ -1075,7 +1095,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     /**
-     * 发布任务类
+     * 发布任务
      */
     @Data
     private static class PublishTask {
@@ -1098,7 +1118,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     }
 
     /**
-     * 发布结果类
+     * 发布结果
      */
     @Data
     private static class PublishResult {
@@ -1122,12 +1142,12 @@ public class MqttReportHandler extends AbstractReportHandler {
      * MQTT客户端管理器 - v5
      */
     private static class MqttClientManager {
-        private final Map<String, MqttAsyncClient> clients = new ConcurrentHashMap<>();
-        private final Map<String, MqttConnectionConfig> clientConfigs = new ConcurrentHashMap<>();
+        private final Map<String, MqttClientHolder> clients = new ConcurrentHashMap<>();
         private final Map<String, Long> lastReconnectErrorLog = new ConcurrentHashMap<>();
-        //每10秒打印一次错误
         private static final long ERROR_LOG_INTERVAL_MS = 10000L;
         private final ScheduledExecutorService monitorExecutor;
+        private final Semaphore connectSemaphore;
+        private final long reconnectScanIntervalMs;
         private ScheduledFuture<?> monitorFuture;
         private ScheduledFuture<?> ackMonitorFuture;
         private final AckManager ackManager;
@@ -1135,37 +1155,32 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         public MqttClientManager(AckManager ackManager,
                                  MqttDownlinkService downlinkService,
-                                 ScheduledExecutorService monitorExecutor) {
+                                 ScheduledExecutorService monitorExecutor,
+                                 int maxConcurrentConnects,
+                                 long reconnectScanIntervalMs) {
             this.ackManager = ackManager;
             this.downlinkService = downlinkService;
             this.monitorExecutor = monitorExecutor;
+            this.connectSemaphore = new Semaphore(Math.max(1, maxConcurrentConnects));
+            this.reconnectScanIntervalMs = Math.max(1000L, reconnectScanIntervalMs);
         }
 
         public void init() {
             if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
-                monitorFuture = monitorExecutor.scheduleAtFixedRate(this::monitorClients, 30, 30, TimeUnit.SECONDS);
+                monitorFuture = monitorExecutor.scheduleAtFixedRate(
+                        this::monitorClients,
+                        reconnectScanIntervalMs,
+                        reconnectScanIntervalMs,
+                        TimeUnit.MILLISECONDS);
                 ackMonitorFuture = monitorExecutor.scheduleAtFixedRate(ackManager::expireTimeouts, 1, 1, TimeUnit.SECONDS);
             }
-            log.info("MQTT v5客户端管理器初始化完成");
+            log.info("MQTT v5 客户端管理器初始化完成，maxConcurrentConnects={}，reconnectScanIntervalMs={}",
+                    connectSemaphore.availablePermits(), reconnectScanIntervalMs);
         }
 
         public MqttAsyncClient getClient(MqttConnectionConfig config) throws MqttException {
-            String configKey = config.getKey();
-            clientConfigs.put(configKey, config);
-            try {
-                return clients.computeIfAbsent(configKey, key -> {
-                    try {
-                        return createMqttClient(config);
-                    } catch (MqttException e) {
-                        throw new RuntimeException("创建MQTT v5客户端失败", e);
-                    }
-                });
-            } catch (RuntimeException e) {
-                if (e.getCause() instanceof MqttException mqttException) {
-                    throw mqttException;
-                }
-                throw e;
-            }
+            MqttClientHolder holder = holder(config);
+            return holder.getOrConnect(config);
         }
 
         public boolean tryReconnect(MqttConnectionConfig config) {
@@ -1173,20 +1188,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return false;
             }
             String configKey = config.getKey();
-            clientConfigs.put(configKey, config);
-            MqttAsyncClient client = clients.get(configKey);
-
             try {
-                if (client == null) {
-                    MqttAsyncClient newClient = createMqttClient(config);
-                    clients.put(configKey, newClient);
-                    return true;
-                }
-                if (client.isConnected()) {
-                    return true;
-                }
-                connectClient(client, config);
-                return true;
+                MqttClientHolder holder = holder(config);
+                return holder.reconnect(config) != null;
             } catch (MqttException e) {
                 logReconnectFailure(configKey, config.getBrokerUrl(), e);
                 return false;
@@ -1194,46 +1198,26 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         public void updateConnectionConfig(MqttConnectionConfig config) {
-            String configKey = config.getKey();
-            MqttAsyncClient client = clients.get(configKey);
-
-            if (client != null) {
-                try {
-                    // 断开旧连接
-                    if (client.isConnected()) {
-                        client.disconnect();
-                    }
-
-                    // 更新配置
-                    clientConfigs.put(configKey, config);
-
-                    // 重新连接
-                    connectClient(client, config);
-
-                } catch (MqttException e) {
-                    log.error("更新MQTT v5客户端配置失败：{}", config.getBrokerUrl(), e);
-                }
+            if (config == null) {
+                return;
+            }
+            try {
+                MqttClientHolder holder = holder(config);
+                holder.close();
+                holder.reconnect(config);
+            } catch (MqttException e) {
+                log.error("更新 MQTT v5 客户端配置失败：{}", config.getBrokerUrl(), e);
             }
         }
 
         public void removeClient(String configKey) {
-            MqttAsyncClient client = clients.remove(configKey);
-            clientConfigs.remove(configKey);
-
-            if (client != null) {
-                try {
-                    if (client.isConnected()) {
-                        client.disconnect();
-                    }
-                    client.close();
-                } catch (MqttException e) {
-                    log.warn("关闭MQTT v5客户端失败：{}", configKey, e);
-                }
+            MqttClientHolder holder = clients.remove(configKey);
+            if (holder != null) {
+                holder.close();
             }
         }
 
         public void destroy() {
-            // 停止监控任务
             if (monitorFuture != null) {
                 monitorFuture.cancel(false);
                 monitorFuture = null;
@@ -1243,34 +1227,26 @@ public class MqttReportHandler extends AbstractReportHandler {
                 ackMonitorFuture = null;
             }
 
-            // 关闭所有客户端
-            for (Map.Entry<String, MqttAsyncClient> entry : clients.entrySet()) {
-                try {
-                    MqttAsyncClient client = entry.getValue();
-                    if (client.isConnected()) {
-                        client.disconnect();
-                    }
-                    client.close();
-                } catch (MqttException e) {
-                    log.warn("关闭MQTT v5客户端失败：{}", entry.getKey(), e);
-                }
+            for (MqttClientHolder holder : clients.values()) {
+                holder.close();
             }
 
             clients.clear();
-            clientConfigs.clear();
-            log.info("MQTT v5客户端管理器销毁完成");
+            log.info("MQTT v5 客户端管理器销毁完成");
         }
 
         public Map<String, Object> getStatus() {
             Map<String, Object> status = new HashMap<>();
             status.put("clientCount", clients.size());
+            status.put("availableConnectPermits", connectSemaphore.availablePermits());
+            status.put("waitingConnectThreads", connectSemaphore.getQueueLength());
 
             Map<String, Object> clientStatus = new HashMap<>();
-            for (Map.Entry<String, MqttAsyncClient> entry : clients.entrySet()) {
-                MqttAsyncClient client = entry.getValue();
+            for (Map.Entry<String, MqttClientHolder> entry : clients.entrySet()) {
+                MqttAsyncClient client = entry.getValue().client();
                 Map<String, Object> clientInfo = new HashMap<>();
-                clientInfo.put("connected", client.isConnected());
-                clientInfo.put("serverURI", client.getServerURI());
+                clientInfo.put("connected", client != null && client.isConnected());
+                clientInfo.put("serverURI", client != null ? client.getServerURI() : null);
                 clientStatus.put(entry.getKey(), clientInfo);
             }
             status.put("clients", clientStatus);
@@ -1282,8 +1258,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             Map<String, Object> stats = new HashMap<>();
 
             int connectedCount = 0;
-            for (MqttAsyncClient client : clients.values()) {
-                if (client.isConnected()) {
+            for (MqttClientHolder holder : clients.values()) {
+                MqttAsyncClient client = holder.client();
+                if (client != null && client.isConnected()) {
                     connectedCount++;
                 }
             }
@@ -1295,15 +1272,20 @@ public class MqttReportHandler extends AbstractReportHandler {
             return stats;
         }
 
+        private MqttClientHolder holder(MqttConnectionConfig config) {
+            String configKey = config.getKey();
+            MqttClientHolder holder = clients.computeIfAbsent(configKey, MqttClientHolder::new);
+            holder.updateConfig(config);
+            return holder;
+        }
+
         private MqttAsyncClient createMqttClient(MqttConnectionConfig config) throws MqttException {
             try {
                 String brokerUrl = config.getBrokerUrl();
                 String clientId = config.getClientId();
                 MemoryPersistence persistence = new MemoryPersistence();
 
-                // 总是使用异步客户端
                 MqttAsyncClient asyncClient = new MqttAsyncClient(brokerUrl, clientId, persistence);
-
                 MqttConnectionOptions options = buildConnectOptions(config);
                 asyncClient.setCallback(new MqttCallbackHandler(config, ackManager, downlinkService,
                         (topic, payload, qos) -> {
@@ -1312,15 +1294,12 @@ public class MqttReportHandler extends AbstractReportHandler {
                             asyncClient.publish(topic, response);
                         }));
 
-                // 连接服务器
-                IMqttToken token = asyncClient.connect(options);
-                token.waitForCompletion();
+                connectWithPermit(asyncClient, options);
 
-                log.info("MQTT v5客户端创建并连接成功：{} -> {}", clientId, brokerUrl);
-                return asyncClient; // MqttAsyncClient 实现了 IMqttClient 接口
-
+                log.info("MQTT v5 客户端创建并连接成功：{} -> {}", clientId, brokerUrl);
+                return asyncClient;
             } catch (MqttException e) {
-                log.error("创建MQTT v5客户端失败：{} -> {}", config.getClientId(), config.getBrokerUrl(), e);
+                log.error("创建 MQTT v5 客户端失败：{} -> {}", config.getClientId(), config.getBrokerUrl(), e);
                 throw e;
             }
         }
@@ -1328,25 +1307,36 @@ public class MqttReportHandler extends AbstractReportHandler {
         private void connectClient(MqttAsyncClient client, MqttConnectionConfig config) throws MqttException {
             try {
                 MqttConnectionOptions options = buildConnectOptions(config);
-
-                // 判断是否是异步客户端
-                if (client != null) {
-                    // 异步客户端
-                    IMqttToken token = client.connect(options);
-                    token.waitForCompletion();
-                } else {
-                    // 同步客户端
-                    client.connect(options);
-                }
-
-                log.info("MQTT v5客户端重新连接成功：{}", config.getBrokerUrl());
+                connectWithPermit(client, options);
+                log.info("MQTT v5 客户端重新连接成功：{}", config.getBrokerUrl());
             } catch (MqttException e) {
                 String message = e.getMessage();
-                if (message != null && (message.contains("已在进行连接") || message.contains("正在断开连接"))) {
-                    log.warn("MQTT v5客户端处于过渡状态（{}），忽略本次请求：{}", message, config.getBrokerUrl());
+                if (message != null && (message.contains("connect in progress") || message.contains("disconnecting"))) {
+                    log.warn("MQTT v5 客户端处于连接过渡状态（{}），忽略本次请求：{}", message, config.getBrokerUrl());
                     return;
                 }
                 throw e;
+            }
+        }
+
+        private void connectWithPermit(MqttAsyncClient client, MqttConnectionOptions options) throws MqttException {
+            boolean acquired = false;
+            try {
+                connectSemaphore.acquire();
+                acquired = true;
+                IMqttToken token = client.connect(options);
+                token.waitForCompletion();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new MqttException(e);
+            } catch (MqttException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new MqttException(e);
+            } finally {
+                if (acquired) {
+                    connectSemaphore.release();
+                }
             }
         }
 
@@ -1355,23 +1345,22 @@ public class MqttReportHandler extends AbstractReportHandler {
             Long last = lastReconnectErrorLog.get(configKey);
             if (last == null || now - last >= ERROR_LOG_INTERVAL_MS) {
                 lastReconnectErrorLog.put(configKey, now);
-                log.warn("MQTT v5客户端重连失败：{} ({})", configKey, brokerUrl, e);
+                log.warn("MQTT v5 客户端重连失败：{} ({})", configKey, brokerUrl, e);
             } else {
-                log.debug("忽略重复的MQTT重连失败日志 {}: {}", configKey, e.getMessage());
+                log.debug("忽略重复的 MQTT 重连失败日志 {}: {}", configKey, e.getMessage());
             }
         }
 
         private MqttConnectionOptions buildConnectOptions(MqttConnectionConfig config) {
             MqttConnectionOptions options = new MqttConnectionOptions();
 
-            // v5 基本配置
-            options.setCleanStart(config.isCleanStart()); // v5: cleanStart
+            options.setCleanStart(config.isCleanStart());
             options.setConnectionTimeout(config.getConnectionTimeout());
             options.setKeepAliveInterval(config.getKeepAliveInterval());
-            options.setAutomaticReconnect(config.isAutomaticReconnect());
+            // 统一由本管理器串行重连，禁止 Paho 自动重连绕过建连闸门。
+            options.setAutomaticReconnect(false);
             options.setMaxReconnectDelay(config.getMaxReconnectDelay());
 
-            // 认证信息
             if (config.getUsername() != null) {
                 options.setUserName(config.getUsername());
             }
@@ -1379,7 +1368,6 @@ public class MqttReportHandler extends AbstractReportHandler {
                 options.setPassword(new String(config.getPassword()).getBytes());
             }
 
-            // 遗嘱消息 - v5
             MqttWillMessage will = config.getWillMessage();
             if (will != null) {
                 MqttMessage willMessage = new MqttMessage(will.getMessage());
@@ -1388,7 +1376,6 @@ public class MqttReportHandler extends AbstractReportHandler {
                 options.setWill(will.getTopic(), willMessage);
             }
 
-            // SSL/TLS配置
             if (config.isSslEnabled()) {
                 configureSsl(options);
             }
@@ -1397,34 +1384,106 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         private void configureSsl(MqttConnectionOptions options) {
-            // SSL/TLS配置
-            // 这里需要根据实际需求配置SSL上下文
+            // SSL/TLS 配置预留，后续按平台证书要求扩展。
         }
 
         private void monitorClients() {
-            for (Map.Entry<String, MqttAsyncClient> entry : clients.entrySet()) {
+            for (Map.Entry<String, MqttClientHolder> entry : clients.entrySet()) {
                 String configKey = entry.getKey();
-                MqttAsyncClient client = entry.getValue();
-                MqttConnectionConfig config = clientConfigs.get(configKey);
+                MqttClientHolder holder = entry.getValue();
+                MqttConnectionConfig config = holder.config();
+                MqttAsyncClient client = holder.client();
 
-                if (config != null && !client.isConnected()) {
+                if (config != null && (client == null || !client.isConnected())) {
                     try {
-                        log.info("MQTT v5客户端断开连接，尝试重新连接：{}", configKey);
-                        MqttConnectionOptions options = buildConnectOptions(config);
-
-                        // 异步客户端
-                        IMqttToken token = client.connect(options);
-                        token.waitForCompletion();
-
-                        log.info("MQTT v5客户端重新连接成功：{}", configKey);
+                        log.info("MQTT v5 客户端已断开，尝试重新连接：{}", configKey);
+                        holder.reconnect(config);
                     } catch (MqttException e) {
-                        log.warn("MQTT v5客户端重新连接失败：{}", configKey, e);
+                        logReconnectFailure(configKey, config.getBrokerUrl(), e);
                     }
                 }
             }
         }
-    }
 
+        private class MqttClientHolder {
+            private final String configKey;
+            private final ReentrantLock lifecycleLock = new ReentrantLock();
+            private volatile MqttConnectionConfig config;
+            private volatile MqttAsyncClient client;
+
+            private MqttClientHolder(String configKey) {
+                this.configKey = configKey;
+            }
+
+            private void updateConfig(MqttConnectionConfig latestConfig) {
+                if (latestConfig != null) {
+                    this.config = latestConfig;
+                }
+            }
+
+            private MqttConnectionConfig config() {
+                return config;
+            }
+
+            private MqttAsyncClient client() {
+                return client;
+            }
+
+            private MqttAsyncClient getOrConnect(MqttConnectionConfig latestConfig) throws MqttException {
+                updateConfig(latestConfig);
+                MqttAsyncClient existing = client;
+                if (existing != null && existing.isConnected()) {
+                    return existing;
+                }
+                return reconnect(config);
+            }
+
+            private MqttAsyncClient reconnect(MqttConnectionConfig latestConfig) throws MqttException {
+                updateConfig(latestConfig);
+                lifecycleLock.lock();
+                try {
+                    MqttConnectionConfig activeConfig = config;
+                    if (activeConfig == null) {
+                        return null;
+                    }
+                    MqttAsyncClient existing = client;
+                    if (existing == null) {
+                        client = createMqttClient(activeConfig);
+                        return client;
+                    }
+                    if (existing.isConnected()) {
+                        return existing;
+                    }
+                    connectClient(existing, activeConfig);
+                    return existing;
+                } finally {
+                    lifecycleLock.unlock();
+                }
+            }
+
+            private void close() {
+                lifecycleLock.lock();
+                try {
+                    MqttAsyncClient existing = client;
+                    client = null;
+                    if (existing == null) {
+                        return;
+                    }
+                    try {
+                        if (existing.isConnected()) {
+                            existing.disconnect();
+                        }
+                        existing.close();
+                    } catch (MqttException e) {
+                        log.warn("关闭 MQTT v5 客户端失败：{}", configKey, e);
+                    }
+                } finally {
+                    lifecycleLock.unlock();
+                }
+            }
+        }
+
+    }
 
     @FunctionalInterface
     private interface DownlinkResponsePublisher {
@@ -1452,14 +1511,14 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         @Override
         public void disconnected(MqttDisconnectResponse disconnectResponse) {
-            log.warn("MQTT v5连接断开：{}，原因码：{}",
+            log.warn("MQTT v5连接已断开：broker={} returnCode={}",
                     config.getBrokerUrl(),
                     disconnectResponse != null ? disconnectResponse.getReturnCode() : -1);
         }
 
         @Override
         public void mqttErrorOccurred(MqttException exception) {
-            log.error("MQTT v5错误：{}", config.getBrokerUrl(), exception);
+            log.error("MQTT v5发生异常：broker={}", config.getBrokerUrl(), exception);
         }
 
         @Override
@@ -1472,29 +1531,29 @@ public class MqttReportHandler extends AbstractReportHandler {
 
             int payloadLength = message != null && message.getPayload() != null
                     ? message.getPayload().length : 0;
-            log.debug("MQTT v5消息接收：topic={} QoS={} bytes={}",
+            log.debug("MQTT v5收到消息：topic={} qos={} bytes={}",
                     topic, message != null ? message.getQos() : -1, payloadLength);
             handleDownlinkMessage(topic, message);
         }
 
         @Override
         public void deliveryComplete(IMqttToken token) {
-            log.debug("MQTT v5消息发布完成：消息ID={}", token != null ? token.getMessageId() : -1);
+            log.debug("MQTT v5消息发布完成：messageId={}", token != null ? token.getMessageId() : -1);
         }
 
         @Override
         public void connectComplete(boolean reconnect, String serverURI) {
-            log.info("MQTT v5连接{}完成：{}", reconnect ? "重连" : "初次", serverURI);
+            log.info("MQTT v5连接完成：type={} serverURI={}", reconnect ? "重连" : "首次连接", serverURI);
         }
 
         @Override
         public void authPacketArrived(int reasonCode, MqttProperties properties) {
-            log.debug("MQTT v5认证包到达：原因码{}", reasonCode);
+            log.debug("MQTT v5认证包到达：reasonCode={}", reasonCode);
         }
 
         private void handleAckMessage(String topic, MqttMessage message) {
             if (message == null || message.getPayload() == null) {
-                log.debug("接收到无有效ACK payload：topic={}", topic);
+                log.debug("忽略空 MQTT ACK payload：topic={}", topic);
                 return;
             }
             try {
@@ -1514,9 +1573,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                         ? root.get("msg").asText("")
                         : "";
                 ackManager.complete(messageId, AckMessage.received(messageId, code, msgText));
-                log.debug("MQTT ACK到达：id={} code={} topic={}", messageId, code, topic);
+                log.debug("MQTT ACK处理完成：id={} code={} topic={}", messageId, code, topic);
             } catch (Exception e) {
-                log.warn("解析MQTT ACK 异常：topic={} err={}", topic, e.getMessage());
+                log.warn("解析 MQTT ACK 失败：topic={} err={}", topic, e.getMessage());
             }
         }
 
@@ -1553,16 +1612,16 @@ public class MqttReportHandler extends AbstractReportHandler {
             try {
                 int qos = Math.max(0, Math.min(1, message.getQos()));
                 responsePublisher.publish(replyTopic, downlinkService.buildResponsePayload(result), qos);
-                log.debug("MQTT 下行响应已发布 topic={} code={} method={}",
+                log.debug("MQTT下行响应已发布：topic={} code={} method={}",
                         replyTopic, result.getCode(), result.getMethod());
             } catch (Exception e) {
-                log.warn("MQTT 下行响应发布失败 topic={} err={}", replyTopic, e.getMessage());
+                log.warn("MQTT下行响应发布失败：topic={} err={}", replyTopic, e.getMessage());
             }
         }
     }
 
     /**
-     * 消息发布管理器 - v5
+     * MQTT消息发布器 - v5
      */
     private static class MessagePublisher {
         private final MqttClientManager clientManager;
@@ -1577,7 +1636,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         public void init() {
-            log.info("MQTT v5消息发布管理器初始化完成");
+            log.info("MQTT v5 消息发布管理器初始化完成");
         }
 
         public PublishResult publish(MqttAsyncClient client, String topic,
@@ -1586,7 +1645,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             long startTime = System.currentTimeMillis();
 
             try {
-                // 创建MQTT v5消息
+                // 创建 MQTT v5 消息
                 MqttMessage message = new MqttMessage(payload);
                 message.setQos(options.getQos());
                 message.setRetained(options.isRetained());
@@ -1594,17 +1653,17 @@ public class MqttReportHandler extends AbstractReportHandler {
                 IMqttToken token = null;
                 int messageId = 0;
 
-                // 根据客户端类型发布消息
+                // 异步发布消息，按 QoS 等待确认
                 if (client != null) {
-                    // 异步客户端
+                    // 异步发布消息
                     token = client.publish(topic, message);
 
-                    // 等待发布完成（根据QoS级别）
+                    // QoS 大于 0 时等待发布完成
                     if (options.getQos() > 0) {
-                        token.waitForCompletion(5000); // 等待5秒
+                        token.waitForCompletion(5000); // 等待发布完成
                     }
 
-                    // 获取消息ID
+                    // 获取消息 ID
                     try {
                         MqttPublish publishPacket = (MqttPublish) token.getRequestMessage();
                         if (publishPacket != null) {
@@ -1614,10 +1673,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                         messageId = (int)(System.currentTimeMillis() % 1000);
                     }
                 } else {
-                    // 同步客户端
-                    client.publish(topic, message);
-                    // 同步发布无法获取token，使用默认消息ID
-                    messageId = (int)(System.currentTimeMillis() % 10000);
+                    return new PublishResult(false, "MQTT client is null", 0, null, null);
                 }
 
                 // 检查发布结果
@@ -1626,19 +1682,19 @@ public class MqttReportHandler extends AbstractReportHandler {
                     successPublishCount.incrementAndGet();
                     long costTime = System.currentTimeMillis() - startTime;
 
-                    log.debug("MQTT v5消息发布成功：主题={}，QoS={}，耗时={}ms",
+                    log.debug("MQTT v5消息发布成功：{}，QoS={}，耗时={}ms",
                             topic, options.getQos(), costTime);
 
                     return new PublishResult(true, null, messageId, null, null);
                 } else {
                     failurePublishCount.incrementAndGet();
-                    log.warn("MQTT v5消息发布失败：主题={}，错误={}", topic, exception.getMessage());
+                    log.warn("MQTT v5消息发布失败：{}，错误={}", topic, exception.getMessage());
                     return new PublishResult(false, exception.getMessage(), 0, null, null);
                 }
 
             } catch (Exception e) {
                 failurePublishCount.incrementAndGet();
-                log.error("MQTT v5消息发布异常：主题={}", topic, e);
+                log.error("MQTT v5消息发布异常：{}", topic, e);
                 return new PublishResult(false, e.getMessage(), 0, null, null);
             }
         }
@@ -1662,7 +1718,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
                 try {
                     PublishResult publishResult = future.get(10, TimeUnit.SECONDS);
-                    // 添加业务信息
+                    // 补充点位和目标信息
                     PublishResult resultWithInfo = new PublishResult(
                             publishResult.isSuccess(),
                             publishResult.getErrorMessage(),
@@ -1723,7 +1779,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
 
         public void init() {
-            log.info("MQTT v5订阅管理器初始化完成");
+            log.info("MQTT v5 订阅管理器初始化完成");
         }
 
         public void updateSubscriptions(MqttConnectionConfig config, List<String> topics) {
@@ -1732,7 +1788,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             try {
                 MqttAsyncClient client = clientManager.getClient(config);
                 if (client == null || !client.isConnected()) {
-                    log.warn("无法更新订阅，客户端未连接：{}", configKey);
+                    log.warn("无法更新订阅，MQTT 客户端未连接：{}", configKey);
                     return;
                 }
 
@@ -1740,11 +1796,11 @@ public class MqttReportHandler extends AbstractReportHandler {
                 Set<String> currentTopics = clientSubscriptions.getOrDefault(configKey, new HashSet<>());
                 Set<String> newTopics = new HashSet<>(topics);
 
-                // 需要取消的订阅
+                // 计算需要取消的订阅
                 Set<String> toUnsubscribe = new HashSet<>(currentTopics);
                 toUnsubscribe.removeAll(newTopics);
 
-                // 需要新增的订阅
+                // 计算需要新增的订阅
                 Set<String> toSubscribe = new HashSet<>(newTopics);
                 toSubscribe.removeAll(currentTopics);
 
@@ -1752,9 +1808,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 for (String topic : toUnsubscribe) {
                     try {
                         client.unsubscribe(topic);
-                        log.debug("取消MQTT v5订阅：{} -> {}", configKey, topic);
+                        log.debug("取消 MQTT v5 订阅：{} -> {}", configKey, topic);
                     } catch (MqttException e) {
-                        log.warn("取消MQTT v5订阅失败：{} -> {}", configKey, topic, e);
+                        log.warn("取消 MQTT v5 订阅失败：{} -> {}", configKey, topic, e);
                     }
                 }
 
@@ -1762,29 +1818,29 @@ public class MqttReportHandler extends AbstractReportHandler {
                 for (String topic : toSubscribe) {
                     try {
                         // v5: subscribe 返回 IMqttToken
-                        IMqttToken token = client.subscribe(topic, 1); // 默认QoS 1
+                        IMqttToken token = client.subscribe(topic, 1); // 默认 QoS 1
                         token.waitForCompletion(5000);
                         totalSubscribeCount.incrementAndGet();
-                        log.debug("新增MQTT v5订阅：{} -> {}", configKey, topic);
+                        log.debug("新增 MQTT v5 订阅：{} -> {}", configKey, topic);
                     } catch (MqttException e) {
-                        log.warn("新增MQTT v5订阅失败：{} -> {}", configKey, topic, e);
+                        log.warn("新增 MQTT v5 订阅失败：{} -> {}", configKey, topic, e);
                     }
                 }
 
-                // 更新订阅记录
+                // 更新订阅状态
                 clientSubscriptions.put(configKey, newTopics);
 
-                log.info("MQTT v5订阅更新完成：{}，订阅数：{}", configKey, newTopics.size());
+                log.info("MQTT v5订阅更新完成：{}，当前订阅数量={}", configKey, newTopics.size());
 
             } catch (Exception e) {
-                log.error("更新MQTT v5订阅失败：{}", configKey, e);
+                log.error("更新 MQTT v5 订阅失败：{}", configKey, e);
             }
         }
 
         public void removeSubscriptions(String configKey) {
             Set<String> topics = clientSubscriptions.remove(configKey);
             if (topics != null && !topics.isEmpty()) {
-                log.info("移除MQTT v5订阅：{}，订阅数：{}", configKey, topics.size());
+                log.info("移除 MQTT v5 订阅：{}，数量={}", configKey, topics.size());
             }
         }
 
