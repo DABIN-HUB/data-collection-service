@@ -34,7 +34,7 @@ public class AlinkPayloadDecoder {
                 .map(AlinkTopic::identity)
                 .orElseGet(() -> CloudDeviceIdentity.of(text(root, "productKey"), text(root, "deviceName")));
         return new AlinkMessageEnvelope(
-                firstText(root, "id", MessageConstant.FIELD_MESSAGE_ID),
+                firstText(root, "id", MessageConstant.FIELD_REQUEST_ID, MessageConstant.FIELD_MESSAGE_ID),
                 firstText(root, "version"),
                 method,
                 identity,

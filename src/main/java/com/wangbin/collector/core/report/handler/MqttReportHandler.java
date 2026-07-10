@@ -1,6 +1,5 @@
 package com.wangbin.collector.core.report.handler;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
@@ -16,9 +15,13 @@ import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
-import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.config.ReportProperties;
+import com.wangbin.collector.core.report.inbound.MqttAckReplyHandler;
+import com.wangbin.collector.core.report.inbound.MqttBusinessReplyService;
+import com.wangbin.collector.core.report.inbound.MqttDownlinkCommandHandler;
+import com.wangbin.collector.core.report.inbound.MqttInboundMessage;
+import com.wangbin.collector.core.report.inbound.MqttInboundMessageDispatcher;
 import com.wangbin.collector.core.report.lifecycle.MqttCloudDeviceLifecyclePublisher;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -78,6 +81,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     @Autowired(required = false)
     private MqttDownlinkService downlinkService;
     @Autowired(required = false)
+    private MqttBusinessReplyService businessReplyService;
+    @Autowired(required = false)
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
     @Autowired(required = false)
     private ReportProperties reportProperties;
@@ -106,6 +111,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         clientManager = new MqttClientManager(
                 ackManager,
                 downlinkService,
+                businessReplyService,
                 lifecyclePublisher,
                 effectiveMonitorExecutor,
                 resolveMaxConcurrentConnects(),
@@ -430,7 +436,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                     ProtocolConstant.MQTT_PARAM_KEEP_ALIVE, 60));
             connConfig.setConnectionTimeout((int) config.getEffectiveConnectTimeout());
             connConfig.setCleanStart(config.getBooleanParam(
-                    ProtocolConstant.MQTT_PARAM_CLEAN_SESSION, true)); // v5: cleanStart
+                    ProtocolConstant.MQTT_PARAM_CLEAN_SESSION, true)); // MQTT v5 使用 cleanStart 表达清理会话。
             connConfig.setAutomaticReconnect(false);
             connConfig.setMaxReconnectDelay(60000);
 
@@ -486,10 +492,6 @@ public class MqttReportHandler extends AbstractReportHandler {
             String ackSuffix = config.getStringParam(ProtocolConstant.MQTT_PARAM_ACK_TOPIC_SUFFIX);
             connConfig.setAckTopicPrefix(ackPrefix);
             connConfig.setAckTopicSuffix(ackSuffix);
-            connConfig.setAckTimeoutMs(config.getIntParam(
-                    ProtocolConstant.MQTT_PARAM_ACK_TIMEOUT,
-                    ProtocolConstant.DEFAULT_MQTT_ACK_TIMEOUT_MS));
-            connConfig.setAckTimeoutMs(cloudTargetContext.ackOptions().timeoutMs());
             connConfig.prepareAckSettings();
             for (String ackTopic : connConfig.getAckSubscriptionTopics()) {
                 if (!subscribeTopicList.contains(ackTopic)) {
@@ -840,7 +842,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             if (ticket != null) {
                 ticket.future.complete(ackMessage);
             } else {
-                log.debug("Received ACK for unknown messageId {}", messageId);
+                log.trace("收到未跟踪的 MQTT ACK：messageId={}", messageId);
             }
         }
 
@@ -952,7 +954,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         private char[] password;
         private int keepAliveInterval = 60;
         private int connectionTimeout = 30;
-        private boolean cleanStart = true; // v5: cleanStart 对应 cleanSession
+        private boolean cleanStart = true; // MQTT v5 的 cleanStart 对应旧版 cleanSession。
         private boolean automaticReconnect = true;
         private int maxReconnectDelay = 60000;
         private boolean sslEnabled = false;
@@ -966,7 +968,6 @@ public class MqttReportHandler extends AbstractReportHandler {
         @Getter
         private List<String> ackSubscriptionTopics = Collections.emptyList();
         private List<Pattern> ackTopicPatterns = Collections.emptyList();
-        private long ackTimeoutMs = ProtocolConstant.DEFAULT_MQTT_ACK_TIMEOUT_MS;
         private String gatewayProductKey;
         private String gatewayDeviceName;
         private String cloudProvider = CloudProtocolAdapter.DEFAULT_PROVIDER;
@@ -1043,29 +1044,6 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         public boolean shouldWaitForAck() {
             return ackOptions != null && ackOptions.enabled() && !ackTopicPatterns.isEmpty() && ackOptions.timeoutMs() > 0;
-        }
-
-        public boolean isAckTopic(String topic) {
-            if (ackTopicPatterns.isEmpty() || topic == null) {
-                return false;
-            }
-            for (Pattern pattern : ackTopicPatterns) {
-                if (pattern.matcher(topic).matches()) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public String resolveDownlinkReplyTopic(String inboundTopic) {
-            if (inboundTopic == null || inboundTopic.isBlank()) {
-                return null;
-            }
-            String suffix = ackTopicSuffix == null || ackTopicSuffix.isBlank() ? "_reply" : ackTopicSuffix.trim();
-            if (inboundTopic.endsWith(suffix)) {
-                return null;
-            }
-            return inboundTopic + suffix;
         }
 
         private String normalizePrefix(String prefix) {
@@ -1178,16 +1156,19 @@ public class MqttReportHandler extends AbstractReportHandler {
         private ScheduledFuture<?> ackMonitorFuture;
         private final AckManager ackManager;
         private final MqttDownlinkService downlinkService;
+        private final MqttBusinessReplyService businessReplyService;
         private final MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
 
         public MqttClientManager(AckManager ackManager,
                                  MqttDownlinkService downlinkService,
+                                 MqttBusinessReplyService businessReplyService,
                                  MqttCloudDeviceLifecyclePublisher lifecyclePublisher,
                                  ScheduledExecutorService monitorExecutor,
                                  int maxConcurrentConnects,
                                  long reconnectScanIntervalMs) {
             this.ackManager = ackManager;
             this.downlinkService = downlinkService;
+            this.businessReplyService = businessReplyService;
             this.lifecyclePublisher = lifecyclePublisher;
             this.monitorExecutor = monitorExecutor;
             this.connectSemaphore = new Semaphore(Math.max(1, maxConcurrentConnects));
@@ -1317,12 +1298,22 @@ public class MqttReportHandler extends AbstractReportHandler {
 
                 MqttAsyncClient asyncClient = new MqttAsyncClient(brokerUrl, clientId, persistence);
                 MqttConnectionOptions options = buildConnectOptions(config);
-                asyncClient.setCallback(new MqttCallbackHandler(config, ackManager, downlinkService,
-                        (topic, payload, qos) -> {
+                CloudProtocolAdapter protocolAdapter = config.getCloudTargetContext() != null
+                        ? config.getCloudTargetContext().protocolAdapter()
+                        : null;
+                MqttInboundMessageDispatcher inboundDispatcher = new MqttInboundMessageDispatcher(
+                        protocolAdapter,
+                        config.getAckTopicSuffix(),
+                        new MqttAckReplyHandler(OBJECT_MAPPER, ackReply -> ackManager.complete(
+                                ackReply.messageId(),
+                                AckMessage.received(ackReply.messageId(), ackReply.code(), ackReply.message()))),
+                        businessReplyService,
+                        new MqttDownlinkCommandHandler(downlinkService, (topic, payload, qos) -> {
                             MqttMessage response = new MqttMessage(payload);
                             response.setQos(qos);
                             asyncClient.publish(topic, response);
-                        }));
+                        }, config.getAckTopicSuffix()));
+                asyncClient.setCallback(new MqttCallbackHandler(config, inboundDispatcher));
 
                 connectWithPermit(asyncClient, options);
                 publishGatewayOnline(asyncClient, config);
@@ -1557,28 +1548,17 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     }
 
-    @FunctionalInterface
-    private interface DownlinkResponsePublisher {
-        void publish(String topic, byte[] payload, int qos) throws MqttException;
-    }
-
     /**
-     * MQTT v5 callback handler
+     * MQTT v5 回调处理器。
      */
     private static class MqttCallbackHandler implements MqttCallback {
         private final MqttConnectionConfig config;
-        private final AckManager ackManager;
-        private final MqttDownlinkService downlinkService;
-        private final DownlinkResponsePublisher responsePublisher;
+        private final MqttInboundMessageDispatcher inboundDispatcher;
 
         private MqttCallbackHandler(MqttConnectionConfig config,
-                                    AckManager ackManager,
-                                    MqttDownlinkService downlinkService,
-                                    DownlinkResponsePublisher responsePublisher) {
+                                    MqttInboundMessageDispatcher inboundDispatcher) {
             this.config = config;
-            this.ackManager = ackManager;
-            this.downlinkService = downlinkService;
-            this.responsePublisher = responsePublisher;
+            this.inboundDispatcher = inboundDispatcher;
         }
 
         @Override
@@ -1595,22 +1575,20 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         @Override
         public void messageArrived(String topic, MqttMessage message) {
-            if (config.isAckTopic(topic)) {
-                handleAckMessage(topic, message);
-                handleDownlinkMessage(topic, message);
-                return;
-            }
-
             int payloadLength = message != null && message.getPayload() != null
                     ? message.getPayload().length : 0;
-            log.debug("MQTT v5收到消息：topic={} qos={} bytes={}",
+            log.trace("MQTT v5收到消息：topic={} qos={} bytes={}",
                     topic, message != null ? message.getQos() : -1, payloadLength);
-            handleDownlinkMessage(topic, message);
+            inboundDispatcher.dispatch(new MqttInboundMessage(
+                    topic,
+                    message != null ? message.getPayload() : null,
+                    message != null ? message.getQos() : 0,
+                    config.getCloudProvider()));
         }
 
         @Override
         public void deliveryComplete(IMqttToken token) {
-            log.debug("MQTT v5消息发布完成：messageId={}", token != null ? token.getMessageId() : -1);
+            log.trace("MQTT v5消息发布完成：messageId={}", token != null ? token.getMessageId() : -1);
         }
 
         @Override
@@ -1620,75 +1598,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         @Override
         public void authPacketArrived(int reasonCode, MqttProperties properties) {
-            log.debug("MQTT v5认证包到达：reasonCode={}", reasonCode);
-        }
-
-        private void handleAckMessage(String topic, MqttMessage message) {
-            if (message == null || message.getPayload() == null) {
-                log.debug("忽略空 MQTT ACK payload：topic={}", topic);
-                return;
-            }
-            try {
-                JsonNode root = OBJECT_MAPPER.readTree(message.getPayload());
-                JsonNode idNode = root.get("id");
-                if (idNode == null || idNode.isNull()) {
-                    log.debug("MQTT ACK缺少id：topic={}", topic);
-                    return;
-                }
-                String messageId = idNode.asText(null);
-                if (messageId == null || messageId.isEmpty()) {
-                    log.debug("MQTT ACK id为空：topic={}", topic);
-                    return;
-                }
-                int code = parseAckCode(root);
-                String msgText = root.has("msg") && !root.get("msg").isNull()
-                        ? root.get("msg").asText("")
-                        : "";
-                ackManager.complete(messageId, AckMessage.received(messageId, code, msgText));
-                log.debug("MQTT ACK处理完成：id={} code={} topic={}", messageId, code, topic);
-            } catch (Exception e) {
-                log.warn("解析 MQTT ACK 失败：topic={} err={}", topic, e.getMessage());
-            }
-        }
-
-        private int parseAckCode(JsonNode root) {
-            if (root == null) {
-                return 0;
-            }
-            JsonNode codeNode = root.get("code");
-            if (codeNode == null || codeNode.isNull()) {
-                return 0;
-            }
-            if (codeNode.isInt()) {
-                return codeNode.asInt();
-            }
-            try {
-                return Integer.parseInt(codeNode.asText());
-            } catch (NumberFormatException ex) {
-                return 0;
-            }
-        }
-
-        private void handleDownlinkMessage(String topic, MqttMessage message) {
-            if (downlinkService == null || message == null || message.getPayload() == null) {
-                return;
-            }
-            MqttDownlinkResult result = downlinkService.handle(topic, message.getPayload(), config.getCloudProvider());
-            if (result == null || !result.isResponseRequired()) {
-                return;
-            }
-            String replyTopic = config.resolveDownlinkReplyTopic(topic);
-            if (replyTopic == null || replyTopic.isBlank() || responsePublisher == null) {
-                return;
-            }
-            try {
-                int qos = Math.max(0, Math.min(1, message.getQos()));
-                responsePublisher.publish(replyTopic, downlinkService.buildResponsePayload(result), qos);
-                log.debug("MQTT下行响应已发布：topic={} code={} method={}",
-                        replyTopic, result.getCode(), result.getMethod());
-            } catch (Exception e) {
-                log.warn("MQTT下行响应发布失败：topic={} err={}", replyTopic, e.getMessage());
-            }
+            log.trace("MQTT v5认证包到达：reasonCode={}", reasonCode);
         }
     }
 
@@ -1889,7 +1799,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 // 新增订阅
                 for (String topic : toSubscribe) {
                     try {
-                        // v5: subscribe 返回 IMqttToken
+                        // MQTT v5 订阅返回 IMqttToken。
                         IMqttToken token = client.subscribe(topic, 1); // 默认 QoS 1
                         token.waitForCompletion(5000);
                         totalSubscribeCount.incrementAndGet();

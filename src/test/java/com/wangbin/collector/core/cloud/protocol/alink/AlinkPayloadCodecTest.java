@@ -44,7 +44,10 @@ class AlinkPayloadCodecTest {
         assertEquals(MessageConstant.MESSAGE_TYPE_PROPERTY_POST, body.get("method").asText());
         assertEquals(26.5, body.path("params").path("temperature").asDouble());
         assertNotNull(body.get("id"));
-        assertEquals(body.get("id").asText(), data.getMetadata().get(MessageConstant.FIELD_MESSAGE_ID));
+        String correlationId = body.get("id").asText();
+        assertEquals(correlationId, body.get(MessageConstant.FIELD_REQUEST_ID).asText());
+        assertEquals(correlationId, body.get(MessageConstant.FIELD_MESSAGE_ID).asText());
+        assertEquals(correlationId, data.getMetadata().get(MessageConstant.FIELD_MESSAGE_ID));
 
         AlinkMessageEnvelope envelope = decoder.decode(topic, payload);
         assertEquals(AlinkMethod.PROPERTY_POST, envelope.method());
@@ -60,6 +63,7 @@ class AlinkPayloadCodecTest {
         data.setDeviceId("gateway-1");
         data.setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST);
         data.addMetadata("productKey", "pk-gw");
+        data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, "pack-request-1");
         Map<String, Object> pack = new LinkedHashMap<>();
         pack.put("properties", Map.of("cpuUsage", 45.2));
         pack.put("events", Map.of());
@@ -72,9 +76,14 @@ class AlinkPayloadCodecTest {
         JsonNode body = objectMapper.readTree(encoder.encodeReportData(data));
 
         assertEquals(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST, body.get("method").asText());
+        assertEquals("pack-request-1", body.get("id").asText());
+        assertEquals("pack-request-1", body.get(MessageConstant.FIELD_REQUEST_ID).asText());
+        assertEquals("pack-request-1", body.get(MessageConstant.FIELD_MESSAGE_ID).asText());
         assertEquals(45.2, body.path("params").path("properties").path("cpuUsage").asDouble());
-        assertEquals("pk-sub", body.path("params").path("subDevices").get(0).path("identity").path("productKey").asText());
-        assertEquals(36.5, body.path("params").path("subDevices").get(0).path("properties").path("temperature").asDouble());
+        assertEquals("pk-sub", body.path("params").path("subDevices").get(0)
+                .path("identity").path("productKey").asText());
+        assertEquals(36.5, body.path("params").path("subDevices").get(0)
+                .path("properties").path("temperature").asDouble());
     }
 
     @Test

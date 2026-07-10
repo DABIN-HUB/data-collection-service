@@ -12,7 +12,6 @@ import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolMessage;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkMessageEnvelope;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkPayloadDecoder;
-import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
 import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.cloud.topology.CloudTopologyService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
@@ -65,8 +64,6 @@ public class MqttDownlinkService {
     @Autowired(required = false)
     private CloudTopologyService cloudTopologyService;
     @Autowired(required = false)
-    private CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
-    @Autowired(required = false)
     private CloudOtaService cloudOtaService;
     @Autowired(required = false)
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
@@ -96,10 +93,6 @@ public class MqttDownlinkService {
         if (!StringUtils.hasText(method)) {
             return MqttDownlinkResult.of(messageId, null, null, 400, "missing method", Map.of("topic", topic));
         }
-        if (isSubDeviceRegisterReplyTopic(topic)) {
-            return handleSubDeviceRegisterReply(topic, root, messageId, MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB);
-        }
-
         return switch (method) {
             case MessageConstant.MESSAGE_TYPE_PROPERTY_SET -> handlePropertySet(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_SERVICE_INVOKE -> handleServiceInvoke(topic, root, messageId, method);
@@ -107,7 +100,7 @@ public class MqttDownlinkService {
             case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE -> handleOtaUpgrade(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_TOPO_CHANGE -> handleTopology(topic, root, messageId, method);
             default -> {
-                log.debug("忽略非下行业务 MQTT 消息 method={} topic={}", method, topic);
+                log.trace("忽略非下行命令 MQTT 消息 method={} topic={}", method, topic);
                 yield MqttDownlinkResult.ignored(method);
             }
         };
@@ -249,14 +242,6 @@ public class MqttDownlinkService {
         }
         String deviceId = resolveDeviceId(root, topic);
         return MqttDownlinkResult.success(messageId, method, deviceId, data);
-    }
-
-    private MqttDownlinkResult handleSubDeviceRegisterReply(String topic, JsonNode root, String messageId, String method) {
-        Map<String, Object> data = cloudSubDeviceRegisterService != null
-                ? cloudSubDeviceRegisterService.applyRegisterReply(root)
-                : new LinkedHashMap<>();
-        data.put("topic", topic);
-        return MqttDownlinkResult.success(messageId, method, resolveDeviceId(root, topic), data);
     }
 
     private JsonNode businessNode(JsonNode root) {
@@ -520,17 +505,7 @@ public class MqttDownlinkService {
         if (normalizedTopic.contains("thing/topo/change")) {
             return MessageConstant.MESSAGE_TYPE_TOPO_CHANGE;
         }
-        if (isSubDeviceRegisterReplyTopic(normalizedTopic)) {
-            return MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB;
-        }
         return null;
-    }
-
-    private boolean isSubDeviceRegisterReplyTopic(String topic) {
-        if (!StringUtils.hasText(topic)) {
-            return false;
-        }
-        return topic.replace('\\', '/').contains("thing/auth/register/sub_reply");
     }
 
     private String resolveMessageId(JsonNode root) {

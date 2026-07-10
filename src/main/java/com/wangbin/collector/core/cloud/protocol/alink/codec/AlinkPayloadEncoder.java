@@ -54,10 +54,11 @@ public class AlinkPayloadEncoder {
     public Map<String, Object> toReportBody(ReportData data, CloudPayloadOptions options) {
         CloudPayloadOptions payloadOptions = options == null ? CloudPayloadOptions.defaults() : options;
         Map<String, Object> body = new LinkedHashMap<>();
-        String messageId = resolveMessageId(data);
-        body.put("id", messageId);
+        String correlationId = resolveCorrelationId(data);
+        body.put("id", correlationId);
+        body.put(MessageConstant.FIELD_REQUEST_ID, correlationId);
         if (payloadOptions.includeMessageId()) {
-            body.put(MessageConstant.FIELD_MESSAGE_ID, messageId);
+            body.put(MessageConstant.FIELD_MESSAGE_ID, correlationId);
         }
         body.put("version", MessageConstant.MESSAGE_VERSION_1_0);
         body.put("method", data.getMethod());
@@ -153,13 +154,18 @@ public class AlinkPayloadEncoder {
         return metadata;
     }
 
-    private String resolveMessageId(ReportData data) {
+    private String resolveCorrelationId(ReportData data) {
         if (data == null) {
             return UUID.randomUUID().toString();
         }
         Object existing = data.getMetadata().get(MessageConstant.FIELD_MESSAGE_ID);
         if (existing != null && !existing.toString().isBlank()) {
             return existing.toString();
+        }
+        Object requestId = data.getMetadata().get(MessageConstant.FIELD_REQUEST_ID);
+        if (requestId != null && !requestId.toString().isBlank()) {
+            data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, requestId.toString());
+            return requestId.toString();
         }
         Object id = data.getMetadata().get("id");
         if (id != null && !id.toString().isBlank()) {

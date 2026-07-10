@@ -36,6 +36,7 @@ public class MessageConstant {
     public static final String FIELD_PASSWORD = "password";
     public static final String FIELD_PARAMS = "params";
     public static final String FIELD_MESSAGE_ID = "messageId";
+    public static final String FIELD_REQUEST_ID = "requestId";
     public static final String FIELD_VERSION = "version";
     public static final String FIELD_METHOD = "method";
 

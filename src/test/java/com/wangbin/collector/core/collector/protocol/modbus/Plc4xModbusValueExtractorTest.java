@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -15,7 +16,7 @@ import static org.mockito.Mockito.when;
 class Plc4xModbusValueExtractorTest {
 
     @Test
-    void shouldFlattenPlcValueListForRegisterBytes() {
+    void shouldExtractRegisterBytesFromPlcList() {
         PlcReadResponse response = mock(PlcReadResponse.class);
         PlcValue root = plcList(plcNumber(0x337E), plcNumber(0x3379));
         when(response.getPlcValue("value")).thenReturn(root);
@@ -26,17 +27,51 @@ class Plc4xModbusValueExtractorTest {
     }
 
     @Test
-    void shouldFlattenFallbackObjectCollectionForRegisterBytes() {
+    void shouldPreserveUnsignedRegisterBits() {
         PlcReadResponse response = mock(PlcReadResponse.class);
-        when(response.getAllObjects("value")).thenReturn(List.of(List.of(0x1234, 0x5678)));
+        PlcValue root = plcList(plcNumber(0x0000), plcNumber(0x8000), plcNumber(0xFFFF));
+        when(response.getPlcValue("value")).thenReturn(root);
 
-        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 2);
+        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 3);
 
-        assertArrayEquals(new byte[]{0x12, 0x34, 0x56, 0x78}, raw);
+        assertArrayEquals(new byte[]{0x00, 0x00, (byte) 0x80, 0x00, (byte) 0xFF, (byte) 0xFF}, raw);
     }
 
     @Test
-    void shouldFlattenPlcValueListForCoilBytes() {
+    void shouldExtractSingleRegisterFromScalarValue() {
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue value = plcNumber(0x1234);
+        when(response.getPlcValue("value")).thenReturn(value);
+
+        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 1);
+
+        assertArrayEquals(new byte[]{0x12, 0x34}, raw);
+    }
+
+    @Test
+    void shouldRejectRegisterResponseWithMissingValue() {
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue root = plcList(plcNumber(0x1234));
+        when(response.getPlcValue("value")).thenReturn(root);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> Plc4xModbusValueExtractor.registerBytes(response, "value", 2));
+    }
+
+    @Test
+    void shouldRejectRegisterResponseWithUnexpectedValue() {
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue root = plcList(plcNumber(0x1234), plcNumber(0x5678), plcNumber(0x789A));
+        when(response.getPlcValue("value")).thenReturn(root);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> Plc4xModbusValueExtractor.registerBytes(response, "value", 2));
+    }
+
+    @Test
+    void shouldExtractCoilBytesFromPlcList() {
         PlcReadResponse response = mock(PlcReadResponse.class);
         PlcValue root = plcList(plcBool(true), plcBool(false), plcBool(true));
         when(response.getPlcValue("value")).thenReturn(root);

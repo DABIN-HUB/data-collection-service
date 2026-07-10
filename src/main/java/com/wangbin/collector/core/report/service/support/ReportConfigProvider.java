@@ -29,7 +29,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Provides cached MQTT reporting configuration for a specific gateway device.
+ * 为指定网关设备提供缓存后的 MQTT 上报配置。
  */
 @Component
 public class ReportConfigProvider {
@@ -134,12 +134,16 @@ public class ReportConfigProvider {
             return new ArrayList<>(topics);
         }
 
-        List<String> methods = resolveCloudProtocolAdapter(mqtt.getCloudProvider()).downlinkTopicPaths();
+        CloudProtocolAdapter cloudProtocolAdapter = resolveCloudProtocolAdapter(mqtt.getCloudProvider());
+        List<String> topicPaths = new ArrayList<>();
+        topicPaths.addAll(cloudProtocolAdapter.downlinkTopicPaths());
+        // 业务回执不是下行命令，但必须订阅，例如子设备动态注册结果。
+        topicPaths.addAll(cloudProtocolAdapter.businessReplyTopicPaths());
 
         for (String prefix : List.of(mqtt.getAckTopicPrefix(), mqtt.getTopicPrefix())) {
             String normalizedPrefix = normalizeTopicPrefix(prefix);
-            for (String method : methods) {
-                topics.add(normalizedPrefix + "/+/+/" + method);
+            for (String topicPath : topicPaths) {
+                topics.add(normalizedPrefix + "/+/+/" + topicPath);
             }
         }
         return new ArrayList<>(topics);

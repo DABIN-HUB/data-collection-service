@@ -33,7 +33,9 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
             AlinkMethod.SERVICE_INVOKE.path(),
             AlinkMethod.CONFIG_PUSH.path(),
             AlinkMethod.OTA_UPGRADE.path(),
-            AlinkMethod.TOPO_CHANGE.path(),
+            AlinkMethod.TOPO_CHANGE.path()
+    );
+    public static final List<String> BUSINESS_REPLY_TOPIC_PATHS = List.of(
             AUTH_REGISTER_SUB_REPLY_PATH
     );
 
@@ -93,6 +95,11 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
     @Override
     public List<String> downlinkTopicPaths() {
         return DOWNLINK_TOPIC_PATHS;
+    }
+
+    @Override
+    public List<String> businessReplyTopicPaths() {
+        return BUSINESS_REPLY_TOPIC_PATHS;
     }
 
     private CloudDeviceIdentity resolveCloudIdentity(ReportData data, ReportConfig config) {

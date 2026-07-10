@@ -31,7 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * PLC4X-backed Modbus TCP collector that keeps the existing Modbus batch plan and processing flow.
+ * 基于 PLC4X 的 Modbus TCP 采集器，复用现有批量计划和数据处理流程。
  */
 @Slf4j
 @Component
@@ -48,7 +48,8 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
             PlcReadResponse response = await(requireConnection().getClient()
                     .readRequestBuilder()
-                    .addTagAddress(FIELD_NAME, buildRegisterTag(registerType, startAddress, quantity, unitId))
+                    .addTagAddress(FIELD_NAME, Plc4xModbusTagBuilder.build(
+                            registerType, startAddress, quantity, unitId))
                     .build()
                     .execute());
             ensureResponseOk(response, FIELD_NAME, "read");
@@ -62,11 +63,15 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         }
 
         @Override
-        public boolean writeMultipleCoils(int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
+        public boolean writeMultipleCoils(
+                int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
             Object[] values = ModbusUtils.getCoilValues(coilBytes, quantity, parity).toArray();
             PlcWriteResponse response = await(requireConnection().getClient()
                     .writeRequestBuilder()
-                    .addTagAddress(FIELD_NAME, buildRegisterTag(RegisterType.COIL, startAddress, quantity, unitId), values)
+                    .addTagAddress(
+                            FIELD_NAME,
+                            Plc4xModbusTagBuilder.build(RegisterType.COIL, startAddress, quantity, unitId),
+                            values)
                     .build()
                     .execute());
             ensureResponseOk(response, FIELD_NAME, "write");
@@ -79,7 +84,8 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
                     .writeRequestBuilder()
                     .addTagAddress(
                             FIELD_NAME,
-                            buildRegisterTag(RegisterType.HOLDING_REGISTER, startAddress, registers.length, unitId),
+                            Plc4xModbusTagBuilder.build(
+                                    RegisterType.HOLDING_REGISTER, startAddress, registers.length, unitId),
                             toRegisterWriteValues(registers))
                     .build()
                     .execute());
@@ -154,7 +160,8 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
 
         return switch (modbusAddress.getRegisterType()) {
             case COIL, DISCRETE_INPUT -> ModbusUtils.parseCoilValue(raw, 0, parity);
-            case HOLDING_REGISTER, INPUT_REGISTER -> ModbusUtils.parseRegisterValue(raw, point.getDataType(), byteOrder);
+            case HOLDING_REGISTER, INPUT_REGISTER ->
+                    ModbusUtils.parseRegisterValue(raw, point.getDataType(), byteOrder);
         };
     }
 
@@ -354,22 +361,6 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             case COIL, DISCRETE_INPUT -> 1;
             case HOLDING_REGISTER, INPUT_REGISTER -> DataType.fromString(dataType).getRegisterCount();
         };
-    }
-
-    private String buildRegisterTag(RegisterType registerType, int zeroBasedAddress, int quantity, int unitId) {
-        int logicalAddress = zeroBasedAddress + 1;
-        String area = switch (registerType) {
-            case COIL -> "coil";
-            case DISCRETE_INPUT -> "discrete-input";
-            case HOLDING_REGISTER -> "holding-register";
-            case INPUT_REGISTER -> "input-register";
-        };
-        String dataType = switch (registerType) {
-            case COIL, DISCRETE_INPUT -> "BOOL";
-            case HOLDING_REGISTER, INPUT_REGISTER -> "WORD";
-        };
-        String quantityPart = quantity > 1 ? "[" + quantity + "]" : "";
-        return area + ":" + logicalAddress + ":" + dataType + quantityPart + "{unit-id: " + unitId + "}";
     }
 
     private Object[] toRegisterWriteValues(short[] registers) {

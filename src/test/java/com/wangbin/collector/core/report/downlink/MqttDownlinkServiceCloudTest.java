@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.cloud.model.CloudDeviceType;
 import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.core.cloud.protocol.CloudInboundRoute;
 import com.wangbin.collector.core.cloud.ota.CloudOtaService;
 import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
 import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
@@ -12,6 +13,9 @@ import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.report.config.ReportProperties;
+import com.wangbin.collector.core.report.inbound.MqttBusinessReplyResult;
+import com.wangbin.collector.core.report.inbound.MqttBusinessReplyService;
+import com.wangbin.collector.core.report.inbound.MqttInboundMessage;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -76,16 +80,20 @@ class MqttDownlinkServiceCloudTest {
 
     @Test
     void shouldStoreSubDeviceRegisterReply() {
-        MqttDownlinkService service = service();
+        MqttBusinessReplyService service = new MqttBusinessReplyService(new ObjectMapper());
         ReflectionTestUtils.setField(service, "cloudSubDeviceRegisterService", new CloudSubDeviceRegisterService());
 
-        MqttDownlinkResult result = service.handle(
-                "/sys/pk-gw/gateway-1/thing/auth/register/sub_reply",
-                json("{\"id\":\"reg-1\",\"data\":[{\"productKey\":\"pk-sub\",\"deviceName\":\"sub-1\",\"deviceSecret\":\"secret\"}]}"));
+        MqttBusinessReplyResult result = service.handle(
+                new MqttInboundMessage(
+                        "/sys/pk-gw/gateway-1/thing/auth/register/sub_reply",
+                        json("{\"id\":\"reg-1\",\"data\":[{\"productKey\":\"pk-sub\",\"deviceName\":\"sub-1\",\"deviceSecret\":\"secret\"}]}"),
+                        1,
+                        "alink"),
+                CloudInboundRoute.businessReply("thing.auth.register.sub"));
 
-        assertEquals(0, result.getCode());
-        assertEquals(1, result.getData().get("registered"));
-        assertEquals(1, result.getData().get("total"));
+        assertEquals(0, result.code());
+        assertEquals(1, result.data().get("registered"));
+        assertEquals(1, result.data().get("total"));
     }
 
     private MqttDownlinkService service() {
