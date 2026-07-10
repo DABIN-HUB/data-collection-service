@@ -45,7 +45,6 @@ public class MessageConstant {
     public static final int MAX_QUEUE_SIZE = 10000;
 
     private static final List<String> ACK_METHODS = List.of(
-            MESSAGE_TYPE_STATE_UPDATE,
             MESSAGE_TYPE_PROPERTY_POST,
             MESSAGE_TYPE_PROPERTY_SET,
             MESSAGE_TYPE_EVENT_POST,

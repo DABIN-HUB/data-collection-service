@@ -186,6 +186,10 @@ public class ReportProperties {
         private boolean downlinkEnabled = true;
         private List<String> subscribeTopics = new ArrayList<>();
         /**
+         * MQTT 云设备生命周期上报配置。
+         */
+        private Lifecycle lifecycle = new Lifecycle();
+        /**
          * 业务自定义主题
          */
         private Map<String, String> topics = new HashMap<>();
@@ -230,6 +234,34 @@ public class ReportProperties {
                 value = "_reply";
             }
             return value;
+        }
+
+        @Data
+        public static class Lifecycle {
+            /**
+             * 是否启用 MQTT 设备生命周期上报。
+             */
+            private boolean enabled = true;
+
+            /**
+             * 网关 MQTT 连接成功后是否主动上报在线状态。
+             */
+            private boolean gatewayOnlineEnabled = true;
+
+            /**
+             * 服务主动关闭或配置移除前是否主动上报离线状态。
+             */
+            private boolean gatewayGracefulOfflineEnabled = true;
+
+            /**
+             * 生命周期状态消息 QoS，只等待 MQTT PUBACK，不等待平台业务 _reply。
+             */
+            private int qos = 1;
+
+            /**
+             * 生命周期状态消息 MQTT publish 等待超时，单位毫秒。
+             */
+            private long publishTimeoutMs = 3000L;
         }
     }
 

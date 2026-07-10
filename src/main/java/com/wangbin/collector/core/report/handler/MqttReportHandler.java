@@ -11,6 +11,7 @@ import com.wangbin.collector.core.cloud.config.CloudAckMode;
 import com.wangbin.collector.core.cloud.config.CloudAckOptions;
 import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
 import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
+import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;
@@ -18,6 +19,7 @@ import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkResult;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.config.ReportProperties;
+import com.wangbin.collector.core.report.lifecycle.MqttCloudDeviceLifecyclePublisher;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
@@ -79,6 +81,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
     @Autowired(required = false)
     private ReportProperties reportProperties;
+    @Autowired(required = false)
+    private MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
 
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
@@ -102,6 +106,7 @@ public class MqttReportHandler extends AbstractReportHandler {
         clientManager = new MqttClientManager(
                 ackManager,
                 downlinkService,
+                lifecyclePublisher,
                 effectiveMonitorExecutor,
                 resolveMaxConcurrentConnects(),
                 resolveReconnectScanIntervalMs()
@@ -411,7 +416,7 @@ public class MqttReportHandler extends AbstractReportHandler {
     private MqttConnectionConfig getConnectionConfig(ReportConfig config) {
         String configKey = getConnectionConfigKey(config);
 
-        return connectionConfigs.computeIfAbsent(configKey, key -> {
+        return connectionConfigs.compute(configKey, (key, existing) -> {
             MqttConnectionConfig connConfig = new MqttConnectionConfig(config);
             CloudReportTargetContext cloudTargetContext = resolveCloudReportTargetContext(config);
             connConfig.setCloudTargetContext(cloudTargetContext);
@@ -476,6 +481,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
             connConfig.setGatewayProductKey(config.getStringParam("gatewayProductKey"));
             connConfig.setGatewayDeviceName(config.getStringParam("gatewayDeviceName"));
+            applyLifecycleConfig(connConfig);
             String ackPrefix = config.getStringParam(ProtocolConstant.MQTT_PARAM_ACK_TOPIC_PREFIX);
             String ackSuffix = config.getStringParam(ProtocolConstant.MQTT_PARAM_ACK_TOPIC_SUFFIX);
             connConfig.setAckTopicPrefix(ackPrefix);
@@ -497,6 +503,17 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     private String getConnectionConfigKey(ReportConfig config) {
         return config.getTargetId() + "@" + config.getHost() + ":" + config.getPort();
+    }
+
+    private void applyLifecycleConfig(MqttConnectionConfig connConfig) {
+        ReportProperties.Mqtt.Lifecycle lifecycle = reportProperties != null && reportProperties.getMqtt() != null
+                ? reportProperties.getMqtt().getLifecycle()
+                : new ReportProperties.Mqtt.Lifecycle();
+        connConfig.setLifecycleEnabled(lifecycle.isEnabled());
+        connConfig.setGatewayOnlineEnabled(lifecycle.isGatewayOnlineEnabled());
+        connConfig.setGatewayGracefulOfflineEnabled(lifecycle.isGatewayGracefulOfflineEnabled());
+        connConfig.setLifecycleQos(Math.max(0, Math.min(1, lifecycle.getQos())));
+        connConfig.setLifecyclePublishTimeoutMs(Math.max(1000L, lifecycle.getPublishTimeoutMs()));
     }
 
     private MqttPublishOptions buildPublishOptions(ReportData data, ReportConfig config) {
@@ -956,6 +973,11 @@ public class MqttReportHandler extends AbstractReportHandler {
         private CloudReportTargetContext cloudTargetContext;
         private CloudAckOptions ackOptions = CloudAckOptions.defaults();
         private List<String> ackMethods = MessageConstant.getAckMethods();
+        private boolean lifecycleEnabled = true;
+        private boolean gatewayOnlineEnabled = true;
+        private boolean gatewayGracefulOfflineEnabled = true;
+        private int lifecycleQos = 1;
+        private long lifecyclePublishTimeoutMs = 3000L;
 
         public MqttConnectionConfig(ReportConfig config) {
             this.targetId = config.getTargetId();
@@ -970,6 +992,10 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         public String getKey() {
             return targetId + "@" + host + ":" + port;
+        }
+
+        public CloudDeviceIdentity getGatewayIdentity() {
+            return CloudDeviceIdentity.of(gatewayProductKey, gatewayDeviceName);
         }
 
         public void prepareAckSettings() {
@@ -1152,14 +1178,17 @@ public class MqttReportHandler extends AbstractReportHandler {
         private ScheduledFuture<?> ackMonitorFuture;
         private final AckManager ackManager;
         private final MqttDownlinkService downlinkService;
+        private final MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
 
         public MqttClientManager(AckManager ackManager,
                                  MqttDownlinkService downlinkService,
+                                 MqttCloudDeviceLifecyclePublisher lifecyclePublisher,
                                  ScheduledExecutorService monitorExecutor,
                                  int maxConcurrentConnects,
                                  long reconnectScanIntervalMs) {
             this.ackManager = ackManager;
             this.downlinkService = downlinkService;
+            this.lifecyclePublisher = lifecyclePublisher;
             this.monitorExecutor = monitorExecutor;
             this.connectSemaphore = new Semaphore(Math.max(1, maxConcurrentConnects));
             this.reconnectScanIntervalMs = Math.max(1000L, reconnectScanIntervalMs);
@@ -1202,8 +1231,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return;
             }
             try {
-                MqttClientHolder holder = holder(config);
+                MqttClientHolder holder = clients.computeIfAbsent(config.getKey(), MqttClientHolder::new);
                 holder.close();
+                holder.updateConfig(config);
                 holder.reconnect(config);
             } catch (MqttException e) {
                 log.error("更新 MQTT v5 客户端配置失败：{}", config.getBrokerUrl(), e);
@@ -1295,6 +1325,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                         }));
 
                 connectWithPermit(asyncClient, options);
+                publishGatewayOnline(asyncClient, config);
 
                 log.info("MQTT v5 客户端创建并连接成功：{} -> {}", clientId, brokerUrl);
                 return asyncClient;
@@ -1308,6 +1339,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             try {
                 MqttConnectionOptions options = buildConnectOptions(config);
                 connectWithPermit(client, options);
+                publishGatewayOnline(client, config);
                 log.info("MQTT v5 客户端重新连接成功：{}", config.getBrokerUrl());
             } catch (MqttException e) {
                 String message = e.getMessage();
@@ -1317,6 +1349,44 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
                 throw e;
             }
+        }
+
+        private void publishGatewayOnline(MqttAsyncClient client, MqttConnectionConfig config) {
+            if (!shouldPublishOnline(config)) {
+                return;
+            }
+            if (lifecyclePublisher == null) {
+                log.warn("MQTT 生命周期发布器未初始化，跳过网关上线状态上报：{}", config.getKey());
+                return;
+            }
+            lifecyclePublisher.publishGatewayOnline(
+                    client,
+                    config.getGatewayIdentity(),
+                    config.getLifecycleQos(),
+                    config.getLifecyclePublishTimeoutMs());
+        }
+
+        private void publishGatewayOffline(MqttAsyncClient client, MqttConnectionConfig config) {
+            if (!shouldPublishOffline(config)) {
+                return;
+            }
+            if (lifecyclePublisher == null) {
+                log.warn("MQTT 生命周期发布器未初始化，跳过网关离线状态上报：{}", config.getKey());
+                return;
+            }
+            lifecyclePublisher.publishGatewayOffline(
+                    client,
+                    config.getGatewayIdentity(),
+                    config.getLifecycleQos(),
+                    config.getLifecyclePublishTimeoutMs());
+        }
+
+        private boolean shouldPublishOnline(MqttConnectionConfig config) {
+            return config != null && config.isLifecycleEnabled() && config.isGatewayOnlineEnabled();
+        }
+
+        private boolean shouldPublishOffline(MqttConnectionConfig config) {
+            return config != null && config.isLifecycleEnabled() && config.isGatewayGracefulOfflineEnabled();
         }
 
         private void connectWithPermit(MqttAsyncClient client, MqttConnectionOptions options) throws MqttException {
@@ -1465,11 +1535,13 @@ public class MqttReportHandler extends AbstractReportHandler {
                 lifecycleLock.lock();
                 try {
                     MqttAsyncClient existing = client;
+                    MqttConnectionConfig activeConfig = config;
                     client = null;
                     if (existing == null) {
                         return;
                     }
                     try {
+                        publishGatewayOffline(existing, activeConfig);
                         if (existing.isConnected()) {
                             existing.disconnect();
                         }
