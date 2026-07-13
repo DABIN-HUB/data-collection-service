@@ -7,14 +7,14 @@
     { value: 3, label: "异常" }
   ];
   const READ_WRITE_OPTIONS = [
-    { value: "R", label: "R / 只读" },
-    { value: "W", label: "W / 只写" },
-    { value: "RW", label: "RW / 读写" }
+    { value: "R", label: "只读（R）" },
+    { value: "W", label: "只写（W）" },
+    { value: "RW", label: "读写（RW）" }
   ];
   const COLLECTION_MODE_OPTIONS = [
-    { value: "POLLING", label: "POLLING / 轮询" },
-    { value: "SUBSCRIPTION", label: "SUBSCRIPTION / 订阅" },
-    { value: "EVENT", label: "EVENT / 事件" }
+    { value: "POLLING", label: "轮询（POLLING）" },
+    { value: "SUBSCRIPTION", label: "订阅（SUBSCRIPTION）" },
+    { value: "EVENT", label: "事件（EVENT）" }
   ];
   const BOOLEAN_OPTIONS = [
     { value: true, label: "是" },
@@ -25,54 +25,54 @@
     { value: 0, label: "关闭" }
   ];
   const MODBUS_FIELDS = [
-    { path: "additionalConfig.registerType", label: "Register Type（寄存器区，当前以后端 address 判定）", control: "select", valueType: "string", allowEmpty: false, options: ["HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"].map((value) => ({ value, label: value })) },
-    { path: "additionalConfig.byteOrder", label: "Byte Order（字节序，当前实际取连接配置）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
-    { path: "additionalConfig.wordOrder", label: "Word Order（字序，当前后端未使用）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
-    { path: "additionalConfig.bitIndex", label: "Bit Index（位偏移，当前后端未使用）", control: "number", valueType: "integer", step: "1" },
-    { path: "additionalConfig.functionCode", label: "Function Code（功能码，当前自动按寄存器区选择）", control: "number", valueType: "integer", step: "1" },
-    { path: "additionalConfig.stringLength", label: "String Length（字符串长度，当前 Modbus 未使用）", control: "number", valueType: "integer", step: "1" }
+    { path: "additionalConfig.registerType", label: "寄存器类型（Register Type，当前以后端 address 判定）", control: "select", valueType: "string", allowEmpty: false, options: ["HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"].map((value) => ({ value, label: value })) },
+    { path: "additionalConfig.byteOrder", label: "字节序（Byte Order，当前实际取连接配置）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
+    { path: "additionalConfig.wordOrder", label: "字序（Word Order，当前后端未使用）", control: "select", valueType: "string", options: ["BIG_ENDIAN", "LITTLE_ENDIAN"].map((value) => ({ value, label: value })) },
+    { path: "additionalConfig.bitIndex", label: "位偏移（Bit Index，当前后端未使用）", control: "number", valueType: "integer", step: "1" },
+    { path: "additionalConfig.functionCode", label: "功能码（Function Code，当前自动按寄存器区选择）", control: "number", valueType: "integer", step: "1" },
+    { path: "additionalConfig.stringLength", label: "字符串长度（String Length，当前 Modbus 未使用）", control: "number", valueType: "integer", step: "1" }
   ];
   const PROTOCOL_FIELDS = {
     MODBUS_TCP: MODBUS_FIELDS,
     MODBUS_RTU: MODBUS_FIELDS,
     MQTT: [
-      { path: "additionalConfig.topic", label: "Subscribe Topic", control: "text", valueType: "string" },
-      { path: "additionalConfig.writeTopic", label: "Write Topic", control: "text", valueType: "string" },
+      { path: "additionalConfig.topic", label: "订阅主题（Topic）", control: "text", valueType: "string" },
+      { path: "additionalConfig.writeTopic", label: "写入主题（Topic）", control: "text", valueType: "string" },
       { path: "additionalConfig.qos", label: "QoS", control: "select", valueType: "integer", options: [0, 1, 2].map((value) => ({ value, label: String(value) })) },
-      { path: "additionalConfig.retain", label: "Retain", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS },
+      { path: "additionalConfig.retain", label: "保留消息（Retain）", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS },
       { path: "additionalConfig.jsonPath", label: "JSONPath", control: "text", valueType: "string" },
-      { path: "additionalConfig.payloadEncoding", label: "Payload Encoding", control: "select", valueType: "string", options: ["JSON", "PLAIN_TEXT", "BASE64", "HEX"].map((value) => ({ value, label: value })) },
-      { path: "additionalConfig.charset", label: "Charset", control: "text", valueType: "string", placeholder: "UTF-8" },
-      { path: "additionalConfig.publishTemplate", label: "Publish Template", control: "textarea", valueType: "string", rows: 3, fullWidth: true }
+      { path: "additionalConfig.payloadEncoding", label: "载荷编码", control: "select", valueType: "string", options: ["JSON", "PLAIN_TEXT", "BASE64", "HEX"].map((value) => ({ value, label: value })) },
+      { path: "additionalConfig.charset", label: "字符集", control: "text", valueType: "string", placeholder: "UTF-8" },
+      { path: "additionalConfig.publishTemplate", label: "发布模板", control: "textarea", valueType: "string", rows: 3, fullWidth: true }
     ],
     OPC_UA: [
-      { path: "additionalConfig.nodeId", label: "NodeId", control: "text", valueType: "string" },
-      { path: "additionalConfig.namespace", label: "Namespace", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.identifier", label: "Identifier", control: "text", valueType: "string" },
-      { path: "additionalConfig.identifierType", label: "Identifier Type", control: "select", valueType: "string", options: ["STRING", "NUMERIC", "GUID", "OPAQUE"].map((value) => ({ value, label: value })) },
-      { path: "additionalConfig.opcUaType", label: "OPC UA Type", control: "text", valueType: "string" },
-      { path: "additionalConfig.samplingInterval", label: "Sampling Interval (ms)", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.publishingInterval", label: "Publishing Interval (ms)", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.queueSize", label: "Queue Size", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.subscribe", label: "Subscribe", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.monitor", label: "Monitor", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS }
+      { path: "additionalConfig.nodeId", label: "节点标识（NodeId）", control: "text", valueType: "string" },
+      { path: "additionalConfig.namespace", label: "命名空间", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.identifier", label: "标识符", control: "text", valueType: "string" },
+      { path: "additionalConfig.identifierType", label: "标识符类型", control: "select", valueType: "string", options: ["STRING", "NUMERIC", "GUID", "OPAQUE"].map((value) => ({ value, label: value })) },
+      { path: "additionalConfig.opcUaType", label: "OPC UA 类型", control: "text", valueType: "string" },
+      { path: "additionalConfig.samplingInterval", label: "采样间隔 (ms)", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.publishingInterval", label: "发布间隔 (ms)", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.queueSize", label: "队列长度", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.subscribe", label: "启用订阅", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS },
+      { path: "additionalConfig.monitor", label: "启用监控", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS }
     ],
     OPC_DA: [
-      { path: "additionalConfig.itemId", label: "Item ID", control: "text", valueType: "string" },
-      { path: "additionalConfig.itemPath", label: "Item Path", control: "text", valueType: "string" },
-      { path: "additionalConfig.dataSource", label: "Data Source", control: "select", valueType: "string", options: ["DEVICE", "CACHE"].map((value) => ({ value, label: value })) }
+      { path: "additionalConfig.itemId", label: "项标识（Item ID）", control: "text", valueType: "string" },
+      { path: "additionalConfig.itemPath", label: "项路径", control: "text", valueType: "string" },
+      { path: "additionalConfig.dataSource", label: "数据来源", control: "select", valueType: "string", options: ["DEVICE", "CACHE"].map((value) => ({ value, label: value })) }
     ],
     IEC104: [
-      { path: "additionalConfig.typeId", label: "Type ID", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.iecTypeId", label: "IEC Type ID", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.registerType", label: "Register Type", control: "text", valueType: "string" },
-      { path: "additionalConfig.writeAddress", label: "Write Address", control: "text", valueType: "string" },
-      { path: "additionalConfig.writeCommonAddress", label: "Write Common Address", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.writeQl", label: "Write QL", control: "number", valueType: "integer", step: "1" },
-      { path: "additionalConfig.writeSelect", label: "Write Select", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS }
+      { path: "additionalConfig.typeId", label: "类型标识（Type ID）", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.iecTypeId", label: "IEC 类型标识", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.registerType", label: "寄存器类型", control: "text", valueType: "string" },
+      { path: "additionalConfig.writeAddress", label: "写入地址", control: "text", valueType: "string" },
+      { path: "additionalConfig.writeCommonAddress", label: "写入公共地址", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.writeQl", label: "写入质量位（QL）", control: "number", valueType: "integer", step: "1" },
+      { path: "additionalConfig.writeSelect", label: "写入选择位", control: "select", valueType: "boolean", options: BOOLEAN_OPTIONS }
     ],
     KNX: [
-      { path: "additionalConfig.dptId", label: "DPT ID", control: "text", valueType: "string" },
+      { path: "additionalConfig.dptId", label: "DPT 标识", control: "text", valueType: "string" },
       { path: "additionalConfig.dpt", label: "DPT", control: "text", valueType: "string" }
     ]
   };
@@ -393,10 +393,10 @@
         title: "云平台上报",
         state: !cloudTargetValid ? "error" : (cloudEnabled && reportFieldCount ? "ok" : "warn"),
         detail: !cloudTargetValid
-          ? "启用云上报时必须填写云 productKey 和 deviceName"
+          ? "启用云上报时必须填写云端产品标识（productKey）和云端设备名称（deviceName）"
           : (cloudEnabled && reportFieldCount
-            ? `${reportFieldCount} 个点位可按设备级 cloudTarget 上报`
-            : "未启用云上报或未配置 reportField")
+            ? `${reportFieldCount} 个点位可按设备级云目标（cloudTarget）上报`
+            : "未启用云上报或未配置上报属性")
       },
       {
         section: "json",
@@ -434,7 +434,7 @@
     const deviceType = String($("#localCloudDeviceType")?.value || "SUB_DEVICE").trim() || "SUB_DEVICE";
     const topologyEnabled = String($("#localCloudTopologyEnabled")?.value || "true") === "true";
     if (validate && enabled && (!productKey || !deviceName)) {
-      throw new Error("启用云上报时必须填写云 productKey 和云 deviceName");
+      throw new Error("启用云上报时必须填写云端产品标识（productKey）和云端设备名称（deviceName）");
     }
     if (!enabled) {
       return { enabled: false, deviceType, topologyEnabled };
@@ -703,28 +703,28 @@
     ];
     const dataFields = [
       { path: "unit", label: "单位", control: "text", valueType: "string", placeholder: "°C" },
-      { path: "additionalConfig.sourceUnit", label: "sourceUnit", control: "text", valueType: "string" },
+      { path: "additionalConfig.sourceUnit", label: "源单位（sourceUnit）", control: "text", valueType: "string" },
       { path: "scalingFactor", label: "缩放系数", control: "number", valueType: "number", step: "0.0001" },
       { path: "offset", label: "偏移量", control: "number", valueType: "number", step: "0.0001" },
       { path: "deadband", label: "死区", control: "number", valueType: "number", step: "0.0001" },
       { path: "minValue", label: "最小值", control: "number", valueType: "number", step: "0.0001" },
       { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: "0.0001" },
       { path: "precision", label: "小数位", control: "number", valueType: "integer", step: "1", min: "0" },
-      { path: "unitId", label: "Unit ID", control: "number", valueType: "integer", step: "1" },
-      { path: "commonAddress", label: "Common Address", control: "number", valueType: "integer", step: "1" }
+      { path: "unitId", label: "单元地址（Unit ID）", control: "number", valueType: "integer", step: "1" },
+      { path: "commonAddress", label: "公共地址", control: "number", valueType: "integer", step: "1" }
     ];
     const reportFields = [
       { path: "priority", label: "优先级", control: "number", valueType: "integer", step: "1" },
       { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", allowEmpty: false, options: ENABLE_OPTIONS },
       { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
+      { path: "additionalConfig.reportField", label: "云端属性（reportField）", control: "text", valueType: "string" },
       { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
       { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
       { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.historyEnabled", label: "写历史存储", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.streamEnabled", label: "写 Redis Stream", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS }
+      { path: "additionalConfig.streamEnabled", label: "写入 Redis Stream", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS }
     ];
     const alarmFields = [
       { path: "alarmEnabled", label: "启用告警", control: "select", valueType: "integer", allowEmpty: false, options: ENABLE_OPTIONS }
@@ -794,7 +794,7 @@
         return `
           <section class="field-group field-group-wide">
             <h3>上报 / 缓存参数</h3>
-            <p class="point-section-note">这里维护点位上报开关、reportField、缓存和变化阈值；云设备身份统一在设备级 cloudTarget 配置。</p>
+            <p class="point-section-note">这里维护点位上报开关、上报属性（reportField）、缓存和变化阈值；云设备身份统一在设备级云目标（cloudTarget）配置。</p>
             <div class="form-grid">${renderFields(reportFields, point)}</div>
             <div class="inline-actions point-json-actions"><button type="button" data-local-editor-section="cloud">配置云平台上报</button></div>
           </section>`;
@@ -822,7 +822,7 @@
         return `
           <section class="field-group field-group-wide">
             <h3>基础信息</h3>
-            <p class="point-section-note">设备级 Base / Min / Max CollectionInterval 与 PointChangeThreshold 会在保存时统一回写到全部点位。</p>
+            <p class="point-section-note">设备级基础/最小/最大采集周期和点位变化阈值会在保存时统一回写到全部点位。</p>
             <div class="form-grid">${renderFields(basicFields, point)}</div>
           </section>`;
     }
@@ -1078,6 +1078,48 @@
     return fields;
   }
 
+  function displayPointFieldLabel(label) {
+    const rawLabel = String(label || "");
+    const translations = {
+      "Register Type": "寄存器类型",
+      "Byte Order": "字节序",
+      "Word Order": "字序",
+      "Bit Index": "位偏移",
+      "Function Code": "功能码",
+      "String Length": "字符串长度",
+      "Subscribe Topic": "订阅主题（Topic）",
+      "Write Topic": "写入主题（Topic）",
+      Retain: "保留消息（Retain）",
+      "Payload Encoding": "载荷编码",
+      Charset: "字符集",
+      "Publish Template": "发布模板",
+      NodeId: "节点标识（NodeId）",
+      Namespace: "命名空间",
+      Identifier: "标识符",
+      "Identifier Type": "标识符类型",
+      "OPC UA Type": "OPC UA 类型",
+      "Sampling Interval (ms)": "采样间隔 (ms)",
+      "Publishing Interval (ms)": "发布间隔 (ms)",
+      "Queue Size": "队列长度",
+      Subscribe: "启用订阅",
+      Monitor: "启用监控",
+      "Item ID": "项标识（Item ID）",
+      "Item Path": "项路径",
+      "Data Source": "数据来源",
+      "Type ID": "类型标识（Type ID）",
+      "IEC Type ID": "IEC 类型标识",
+      "Write Address": "写入地址",
+      "Write Common Address": "写入公共地址",
+      "Write QL": "写入质量位（QL）",
+      "Write Select": "写入选择位",
+      "DPT ID": "DPT 标识",
+      reportField: "上报属性（reportField）",
+      sourceUnit: "源单位（sourceUnit）",
+      unitId: "单元地址（Unit ID）",
+      commonAddress: "公共地址"
+    };
+    return translations[rawLabel] || rawLabel;
+  }
   function schemaFieldToLocalField(field) {
     const type = String(field?.type || "string").toLowerCase();
     const control = type === "select" || type === "boolean"
@@ -1092,7 +1134,7 @@
       : (field.options || []).map((value) => ({ value, label: String(value) }));
     return {
       path: field.name,
-      label: field.label || field.name,
+      label: displayPointFieldLabel(field.label || field.name),
       control,
       valueType,
       allowEmpty: !field.required,
@@ -1137,13 +1179,13 @@
   function cloudReportFields() {
     return [
       { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
+      { path: "additionalConfig.reportField", label: "云端属性（reportField）", control: "text", valueType: "string" },
       { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
       { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
       { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
       { path: "additionalConfig.historyEnabled", label: "写历史存储", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS },
-      { path: "additionalConfig.streamEnabled", label: "写 Redis Stream", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS }
+      { path: "additionalConfig.streamEnabled", label: "写入 Redis Stream", control: "select", valueType: "boolean", allowEmpty: false, options: BOOLEAN_OPTIONS }
     ];
   }
 
@@ -1156,8 +1198,8 @@
     const selected = selectedPoint();
     const cloudTarget = readCloudTargetForm(false);
     if ($("#localCloudTargetCount")) {
-      const targetState = cloudTarget.enabled ? "cloudTarget 已启用" : "cloudTarget 未启用";
-      $("#localCloudTargetCount").textContent = `${totalReportFieldCount(points)} 个 reportField / ${targetState}`;
+      const targetState = cloudTarget.enabled ? "云目标已启用" : "云目标未启用";
+      $("#localCloudTargetCount").textContent = `${totalReportFieldCount(points)} 个上报属性 / ${targetState}`;
     }
     if ($("#localCloudPointMeta")) {
       $("#localCloudPointMeta").textContent = selected ? `当前：${displayPointName(selected, state.selectedLocalPointIndex)}` : "未选择点位";
@@ -1204,13 +1246,13 @@
           </div>
           <div class="point-detail-hero-meta">
             <span class="pill subtle">${escapeHtml(resolvePointTypeSummary(point, protocolCode))}</span>
-            <span class="pill subtle">${hasValue(point?.additionalConfig?.reportField) ? "已配置 reportField" : "未配置 reportField"}</span>
+            <span class="pill subtle">${hasValue(point?.additionalConfig?.reportField) ? "已配置上报属性" : "未配置上报属性"}</span>
             <span class="pill subtle">${cloudTarget.enabled ? "设备已启用云目标" : "设备未启用云目标"}</span>
           </div>
         </section>
         <section class="field-group field-group-wide">
           <h3>上报控制</h3>
-          <p class="point-section-note">reportField 是云端物模型属性标识；未配置 reportField 或设备未启用 cloudTarget 的点位不会进入云属性上报。</p>
+          <p class="point-section-note">上报属性（reportField）是云端物模型属性标识；未配置上报属性或设备未启用云目标（cloudTarget）的点位不会进入云属性上报。</p>
           <div class="form-grid">${renderFields(cloudReportFields(), point)}</div>
         </section>
         <section class="field-group field-group-wide">
@@ -1241,12 +1283,12 @@
 
   function cloudTargetDetail(cloudTarget) {
     if (!cloudTarget?.enabled) {
-      return "当前设备未启用云上报。请在基础连接页的“云平台身份”中启用 cloudTarget。";
+      return "当前设备未启用云上报。请在基础连接页的“云平台身份”中启用云目标（cloudTarget）。";
     }
     if (!hasValue(cloudTarget.productKey) || !hasValue(cloudTarget.deviceName)) {
-      return "当前设备已启用云上报，但云 productKey 或云 deviceName 未填写。";
+      return "当前设备已启用云上报，但云端产品标识（productKey）或云端设备名称（deviceName）未填写。";
     }
-    return `当前点位将随设备上报到 ${cloudTarget.productKey}/${cloudTarget.deviceName}，Topic：/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`;
+    return `当前点位将随设备上报到 ${cloudTarget.productKey}/${cloudTarget.deviceName}，主题（Topic）：/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`;
   }
 
   function cloudPointStatus(point, cloudTarget) {
@@ -1257,21 +1299,36 @@
       return "云身份不完整";
     }
     if (!hasValue(point?.additionalConfig?.reportField)) {
-      return "缺少 reportField";
+      return "缺少上报属性";
     }
     if (point?.additionalConfig?.reportEnabled !== true) {
       return "未开启上报";
     }
     return "可上报";
   }
+  function alarmLevelLabel(value) {
+    switch (String(value || "").toUpperCase()) {
+      case "INFO":
+        return "信息";
+      case "WARNING":
+      case "WARN":
+        return "警告";
+      case "ERROR":
+        return "错误";
+      case "CRITICAL":
+        return "严重";
+      default:
+        return value;
+    }
+  }
   function renderAlarmRules(point) {
     const rules = alarmRules(point);
     return `
       <div class="point-subtable">
-        <p class="subtable-note">alarmRule 会在提交时序列化回顶层 JSON 字符串；只保留有实际内容的规则。</p>
+        <p class="subtable-note">告警规则（alarmRule）会在提交时序列化回顶层 JSON 字符串；只保留有实际内容的规则。</p>
         <div class="table-wrap compact">
           <table>
-            <thead><tr><th>ruleId</th><th>ruleName</th><th>operator</th><th>threshold</th><th>duration(s)</th><th>level</th><th>enabled</th><th>description</th><th>操作</th></tr></thead>
+            <thead><tr><th>规则ID</th><th>规则名称</th><th>运算符</th><th>阈值</th><th>持续时间(s)</th><th>级别</th><th>启用</th><th>描述</th><th>操作</th></tr></thead>
             <tbody>
               ${rules.length ? rules.map((rule, index) => `
                 <tr>
@@ -1280,7 +1337,7 @@
                   <td><select data-alarm-rule-index="${index}" data-alarm-rule-field="operator" data-value-type="string">${renderOptions([">", ">=", "<", "<=", "==", "!="].map((value) => ({ value, label: value })), rule.operator, false)}</select></td>
                   <td><input type="number" step="0.0001" value="${escapeAttr(rule.threshold ?? "")}" data-alarm-rule-index="${index}" data-alarm-rule-field="threshold" data-value-type="number"></td>
                   <td><input type="number" step="1" value="${escapeAttr(rule.duration ?? "")}" data-alarm-rule-index="${index}" data-alarm-rule-field="duration" data-value-type="integer"></td>
-                  <td><select data-alarm-rule-index="${index}" data-alarm-rule-field="level" data-value-type="string">${renderOptions(["INFO", "WARNING", "ERROR", "CRITICAL"].map((value) => ({ value, label: value })), rule.level, true)}</select></td>
+                  <td><select data-alarm-rule-index="${index}" data-alarm-rule-field="level" data-value-type="string">${renderOptions(["INFO", "WARNING", "ERROR", "CRITICAL"].map((value) => ({ value, label: alarmLevelLabel(value) })), rule.level, true)}</select></td>
                   <td><select data-alarm-rule-index="${index}" data-alarm-rule-field="enabled" data-value-type="boolean">${renderOptions(BOOLEAN_OPTIONS, rule.enabled, true)}</select></td>
                   <td><input type="text" value="${escapeAttr(rule.description || "")}" data-alarm-rule-index="${index}" data-alarm-rule-field="description" data-value-type="string"></td>
                   <td><button type="button" class="danger" data-remove-alarm-rule="${index}">删除</button></td>
@@ -1341,10 +1398,31 @@
     return `<p class="protocol-point-note">${note}</p><div class="form-grid">${renderFields(fields, point)}</div>`;
   }
 
+  function readonlyLabel(label) {
+    const translations = {
+      id: "记录ID",
+      pointId: "点位ID",
+      deviceId: "设备ID",
+      deviceName: "设备名称",
+      baseCollectionInterval: "基础采集周期",
+      currentCollectionInterval: "当前采集周期",
+      minCollectionInterval: "最小采集周期",
+      maxCollectionInterval: "最大采集周期",
+      pointChangeThreshold: "点位变化阈值",
+      stableCount: "稳定次数",
+      lastValue: "最新值",
+      changeRate: "变化率",
+      lastAdjustTime: "最近调整时间",
+      reportFieldConflict: "上报属性冲突",
+      createTime: "创建时间",
+      updateTime: "更新时间"
+    };
+    return translations[label] || label;
+  }
   function renderReadonly(label, value) {
     const text = typeof value === "object" ? JSON.stringify(value) : String(value);
     const body = text.length > 36 ? `<code>${escapeHtml(text)}</code>` : `<strong>${escapeHtml(text)}</strong>`;
-    return `<div class="readonly-card"><small>${escapeHtml(label)}</small>${body}</div>`;
+    return `<div class="readonly-card"><small>${escapeHtml(readonlyLabel(label))}</small>${body}</div>`;
   }
 
   function handleLocalPointListClick(event) {
@@ -1578,7 +1656,7 @@
       const points = parsePointsJson($("#localPointsJson").value || "[]");
       $("#localPointsJson").value = JSON.stringify(points, null, 2);
     } catch (error) {
-      toast(`JSON format error: ${error.message}`, true);
+      toast(`JSON 格式错误：${error.message}`, true);
     }
   }
 
@@ -1592,9 +1670,9 @@
       const nextIndex = currentCode ? points.findIndex((item) => item.pointCode === currentCode) : -1;
       state.selectedLocalPointIndex = nextIndex >= 0 ? nextIndex : (points.length ? 0 : -1);
       renderLocalPointEditor();
-      toast("Point JSON applied to visual editor");
+      toast("点位 JSON 已应用到可视化编辑器");
     } catch (error) {
-      toast(`JSON apply error: ${error.message}`, true);
+      toast(`JSON 应用失败：${error.message}`, true);
     }
   }
 
@@ -1616,7 +1694,7 @@
       const payload = dataOf(body);
       openLocalDeviceForm(payload.bundle);
     } catch (error) {
-      toast(error.message || "Load local device failed", true);
+      toast(error.message || "本地设备加载失败", true);
     }
   }
 
@@ -1628,7 +1706,7 @@
         method: editing ? "PUT" : "POST",
         body: JSON.stringify(payload)
       });
-      toast("Local temporary device saved");
+      toast("本地临时设备已保存");
       closeLocalDeviceForm();
       await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
       if (payload.startAfterSave) {
@@ -1636,7 +1714,7 @@
         await showDeviceStatus(payload.device.id);
       }
     } catch (error) {
-      toast(error.message || "Save local device failed", true);
+      toast(error.message || "本地设备保存失败", true);
     }
   }
 
@@ -1645,17 +1723,17 @@
     const deviceName = $("#localDeviceName").value.trim();
     const protocol = canonicalProtocolForUi($("#localProtocolSelect").value || "MODBUS_TCP");
     if (!deviceId) {
-      throw new Error("Device ID is required");
+      throw new Error("设备 ID 为必填项");
     }
     if (!deviceName) {
-      throw new Error("Device name is required");
+      throw new Error("设备名称为必填项");
     }
     if (!Array.isArray(state.localPoints) || !state.localPoints.length) {
-      throw new Error("At least one point is required");
+      throw new Error("至少需要配置一个点位");
     }
     const duplicatePointCode = findDuplicatePointCode(state.localPoints);
     if (duplicatePointCode) {
-      throw new Error(`Duplicate pointCode: ${duplicatePointCode}`);
+      throw new Error(`点位编码重复：${duplicatePointCode}`);
     }
     const connection = collectProtocolForm("#localConnectionForm", state.currentLocalProtocol, deviceId);
     const adaptive = readAdaptiveFormValues();
@@ -1689,13 +1767,13 @@
 
   function sanitizePoint(point, index, deviceId, adaptive, protocol) {
     if (!hasValue(point?.pointCode)) {
-      throw new Error(`Point ${index + 1}: pointCode is required`);
+      throw new Error(`第 ${index + 1} 个点位：点位编码为必填项`);
     }
     if (!hasValue(point?.pointName)) {
-      throw new Error(`Point ${index + 1} (${point.pointCode}): pointName is required`);
+      throw new Error(`第 ${index + 1} 个点位（${point.pointCode}）：点位名称为必填项`);
     }
     if (!hasValue(resolvePointAddress(point))) {
-      throw new Error(`Point ${index + 1} (${point.pointCode}): address is required`);
+      throw new Error(`第 ${index + 1} 个点位（${point.pointCode}）：点位地址为必填项`);
     }
     const next = cloneData(point);
     next.pointCode = String(next.pointCode).trim();
@@ -1759,7 +1837,7 @@
   }
 
   function displayPointName(point, index) {
-    return point.pointName || point.pointCode || `Point ${index + 1}`;
+    return point.pointName || point.pointCode || `点位 ${index + 1}`;
   }
 
   function statusLabel(status) {

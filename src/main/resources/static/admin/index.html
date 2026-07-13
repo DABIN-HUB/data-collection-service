@@ -16,7 +16,7 @@
           <span class="brand-mark"></span>
           <div class="brand-copy">
             <strong>采集器管理控制台</strong>
-            <small>Collector Admin Console</small>
+            <small>采集器运维管理台</small>
           </div>
         </div>
 
@@ -35,7 +35,7 @@
         <details class="token-drawer">
           <summary>访问令牌</summary>
           <div class="token-body">
-            <label for="tokenInput">X-Collector-Token</label>
+            <label for="tokenInput">接口令牌（X-Collector-Token）</label>
             <input id="tokenInput" type="text" placeholder="开发默认值：ops-token">
             <p>静态页面免鉴权，接口请求仍会携带这里保存的令牌。</p>
             <button id="saveTokenBtn" type="button">保存令牌</button>
@@ -63,20 +63,20 @@
           <button type="button" class="icon-button secondary" aria-label="帮助"></button>
           <div class="user-pill">
             <span class="avatar"></span>
-            <span>admin</span>
+            <span>管理员</span>
           </div>
         </div>
       </header>
 
-      <section id="designLabBar" class="design-lab-bar hidden" aria-label="Theme Lab">
+      <section id="designLabBar" class="design-lab-bar hidden" aria-label="主题实验室">
         <div class="design-lab-copy">
-          <span class="design-lab-kicker">Theme Lab</span>
-          <strong>Five visual directions for this console</strong>
-          <p>Preview mode uses local mock data and keeps the current information architecture intact.</p>
+          <span class="design-lab-kicker">主题实验室</span>
+          <strong>控制台视觉方案预览</strong>
+          <p>预览模式使用本地模拟数据，并保持当前信息架构不变。</p>
         </div>
-        <div id="designLabThemes" class="design-lab-themes" role="group" aria-label="Theme options"></div>
+        <div id="designLabThemes" class="design-lab-themes" role="group" aria-label="主题选项"></div>
         <div class="design-lab-current">
-          <span class="design-lab-meta-label">Current</span>
+          <span class="design-lab-meta-label">当前方案</span>
           <strong id="designLabCurrentName">-</strong>
           <p id="designLabCurrentNote">-</p>
         </div>
@@ -99,7 +99,7 @@
           <section class="home-panel home-panel-large">
             <div class="home-panel-head">
               <div>
-                <span class="panel-kicker">ALARM CENTER</span>
+                <span class="panel-kicker">告警中心</span>
                 <h2>全局告警最近记录</h2>
               </div>
               <span id="homeAlarmSummary" class="home-panel-badge">加载中</span>
@@ -111,7 +111,7 @@
           <section class="home-panel">
             <div class="home-panel-head">
               <div>
-                <span class="panel-kicker">RISK DEVICES</span>
+                <span class="panel-kicker">风险设备</span>
                 <h2>设备与异常风险</h2>
               </div>
               <span id="homeRiskSummary" class="home-panel-badge">加载中</span>
@@ -123,7 +123,7 @@
           <section class="home-panel home-panel-large">
             <div class="home-panel-head">
               <div>
-                <span class="panel-kicker">REPORT PIPELINE</span>
+                <span class="panel-kicker">上报链路</span>
                 <h2>数据上报链路</h2>
               </div>
               <span id="homeReportSummary" class="home-panel-badge">加载中</span>
@@ -135,7 +135,7 @@
           <section class="home-panel">
             <div class="home-panel-head">
               <div>
-                <span class="panel-kicker">RUNTIME</span>
+                <span class="panel-kicker">运行状态</span>
                 <h2>系统资源与线程池</h2>
               </div>
               <span id="homeResourceSummary" class="home-panel-badge">加载中</span>
@@ -161,7 +161,7 @@
             </div>
 
             <div class="search-row">
-              <input id="deviceSearchInput" type="search" placeholder="搜索设备 / 协议 / IP">
+              <input id="deviceSearchInput" type="search" placeholder="搜索设备 / 协议 / 地址">
               <span id="deviceSearchMeta" class="search-meta">等待加载</span>
             </div>
             <div id="deviceListState" class="panel-state hidden" role="status"></div>
@@ -280,19 +280,19 @@
                             <select id="localProtocolSelect"></select>
                           </label>
                           <label>
-                            BaseCollectionInterval (ms)
+                            基础采集周期 (ms)
                             <input id="localCollectionInterval" type="number" value="2000">
                           </label>
                           <label>
-                            MinCollectionInterval (ms)
+                            最小采集周期 (ms)
                             <input id="localMinCollectionInterval" type="number" value="100">
                           </label>
                           <label>
-                            MaxCollectionInterval (ms)
+                            最大采集周期 (ms)
                             <input id="localMaxCollectionInterval" type="number" value="3600000">
                           </label>
                           <label>
-                            PointChangeThreshold
+                            点位变化阈值
                             <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
                           </label>
                         </div>
@@ -314,9 +314,9 @@
                         <div class="local-section-head">
                           <div>
                             <span class="label-chip">云平台身份</span>
-                            <h3>设备级 cloudTarget</h3>
+                            <h3>设备级云目标（cloudTarget）</h3>
                           </div>
-                          <p>这里决定该采集设备上报到哪个云设备；点位只维护 reportField。</p>
+                          <p>这里决定该采集设备上报到哪个云设备；点位只维护云端属性（reportField）。</p>
                         </div>
 
                         <div class="form-grid compact-form-grid">
@@ -337,11 +337,11 @@
                             </select>
                           </label>
                           <label>
-                            云 productKey
+                            云端产品标识（productKey）
                             <input id="localCloudProductKey" type="text" placeholder="pk_xxx">
                           </label>
                           <label>
-                            云 deviceName
+                            云端设备名称（deviceName）
                             <input id="localCloudDeviceName" type="text" placeholder="sub_device_001">
                           </label>
                           <label>
@@ -352,7 +352,7 @@
                             </select>
                           </label>
                           <label class="wide-field">
-                            上报 Topic 示例
+                            上报主题示例（Topic）
                             <input id="localCloudTopicPreview" type="text" readonly>
                           </label>
                         </div>
@@ -415,9 +415,9 @@
                       <div class="local-section-head">
                         <div>
                           <span class="label-chip">云平台上报</span>
-                          <h3>设备级目标与 reportField</h3>
+                          <h3>设备级目标与云端属性（reportField）</h3>
                         </div>
-                        <p>云设备身份在设备级 cloudTarget 维护；点位只配置云属性 reportField。</p>
+                        <p>云设备身份在设备级云目标（cloudTarget）维护；点位只配置云属性（reportField）。</p>
                       </div>
                       <div class="local-cloud-workspace">
                         <section class="point-list-panel">
@@ -583,9 +583,9 @@
                     <div class="surface-card">
                       <div class="surface-card-head">
                         <h3>批量写点位</h3>
-                        <span class="surface-note">values payload</span>
+                        <span class="surface-note">写入参数载荷</span>
                       </div>
-                      <p class="usage-note">云端属性下发按 reportField 匹配；本地批量写仍支持 pointId、pointCode、pointName、pointAlias。</p>
+                      <p class="usage-note">云端属性下发按云端属性（reportField）匹配；本地批量写仍支持 pointId、pointCode、pointName、pointAlias。</p>
                       <textarea id="pointWriteInput" spellcheck="false">{
   "values": {
     "temperatureSet": 25
@@ -597,7 +597,7 @@
                     <div class="surface-card">
                       <div class="surface-card-head">
                         <h3>执行命令</h3>
-                        <span class="surface-note">CollectionManager.executeCommand</span>
+                        <span class="surface-note">采集器命令执行接口</span>
                       </div>
                       <p id="commandHelpText" class="usage-note">先选择设备，再填写采集器支持的命令名和参数。</p>
                       <pre id="commandExample" class="json-view">{
@@ -637,13 +637,13 @@
 
                     <div class="surface-card">
                       <div class="surface-card-head">
-                        <h3>Desired 更新</h3>
-                        <button id="clearDesiredBtn" type="button" class="danger">清理 desired</button>
+                        <h3>期望状态更新（desired）</h3>
+                        <button id="clearDesiredBtn" type="button" class="danger">清理期望状态</button>
                       </div>
                       <textarea id="desiredInput" spellcheck="false">{
   "desired": {}
 }</textarea>
-                      <button id="saveDesiredBtn" type="button" class="primary wide">提交 desired</button>
+                      <button id="saveDesiredBtn" type="button" class="primary wide">提交期望状态</button>
                     </div>
                   </div>
                 </section>
@@ -699,10 +699,10 @@
                   <div class="protocol-diff-block">
                     <div class="surface-card-head">
                       <h3>配置差异</h3>
-                      <span class="surface-note">本地 vs 远端</span>
+                      <span class="surface-note">本地与远端</span>
                     </div>
                     <div id="protocolDiffState" class="panel-state hidden" role="status"></div>
-                    <pre id="diffView" class="json-view">请选择设备查看 diff</pre>
+                    <pre id="diffView" class="json-view">请选择设备查看配置差异</pre>
                   </div>
                 </aside>
               </div>

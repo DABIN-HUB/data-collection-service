@@ -41,11 +41,11 @@ const previewData = previewMode && typeof designLab.previewDataset === "function
 
 const controlCommandPresets = {
   DEFAULT: {
-    helpText: "Default example. Replace command and params with the collector-specific operation you need.",
+    helpText: "默认示例。请把 command 和 params 替换为当前采集器支持的具体操作。",
     payload: { command: "status", params: {} }
   },
   SIEMENS_S7: {
-    helpText: "S7 supports shorthand addresses like DB1.DBW0 and native PLC4X addresses like %DB1.DBX0.0:BOOL. MODE/SYS/USR/ALM are subscription modes, not normal point addresses.",
+    helpText: "S7 支持 DB1.DBW0 这类简写地址，也支持 %DB1.DBX0.0:BOOL 这类 PLC4X 原生地址。MODE/SYS/USR/ALM 是订阅模式，不是普通点位地址。",
     payload: { command: "diagnostic", params: {} }
   }
 };
@@ -285,7 +285,7 @@ function renderSelectedPointInspector() {
     return;
   }
 
-  const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+  const qualityText = localizePointQuality(point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD"));
   const address = point.address || point.registerAddress || point.pointAddress || "-";
   const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
   const pointCode = point.pointCode || point.pointId || "-";
@@ -339,6 +339,17 @@ function renderLiveClock() {
   target.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function localizePointQuality(quality) {
+  const normalized = String(quality || "").trim().toUpperCase();
+  if (normalized === "GOOD") {
+    return "正常";
+  }
+  if (normalized === "BAD") {
+    return "异常";
+  }
+  return quality || "-";
+}
+
 function localizeDeviceStatus(status) {
   switch (String(status || "").toUpperCase()) {
     case "ONLINE":
@@ -347,6 +358,13 @@ function localizeDeviceStatus(status) {
       return "启动中";
     case "OFFLINE":
       return "离线";
+    case "CONNECTING":
+      return "连接中";
+    case "ERROR":
+      return "异常";
+    case "UNKNOWN":
+    case "":
+      return "未知";
     default:
       return status || "未知";
   }
@@ -539,7 +557,7 @@ function renderRealtimeTable() {
   }
 
   const rows = points.map((point) => {
-    const qualityText = point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD");
+    const qualityText = localizePointQuality(point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD"));
     const address = point.address || point.registerAddress || point.pointAddress || "-";
     const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
     return `
@@ -665,8 +683,8 @@ function previewApi(path, options = {}) {
           dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
           driverTypeEnabled: false,
           connectionFields: [
-            { name: "host", label: "Host", type: "text", storage: "topLevel", required: true, group: "connection" },
-            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 502 }
+            { name: "host", label: "主机地址", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "端口", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 502 }
           ]
         },
         {
@@ -679,8 +697,8 @@ function previewApi(path, options = {}) {
           dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE"],
           driverTypeEnabled: false,
           connectionFields: [
-            { name: "host", label: "COM", type: "text", storage: "topLevel", required: true, group: "connection", defaultValue: "COM3" },
-            { name: "port", label: "Baud", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 9600 }
+            { name: "host", label: "串口号", type: "text", storage: "topLevel", required: true, group: "connection", defaultValue: "COM3" },
+            { name: "port", label: "波特率", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 9600 }
           ]
         },
         {
@@ -693,8 +711,8 @@ function previewApi(path, options = {}) {
           dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
           driverTypeEnabled: false,
           connectionFields: [
-            { name: "host", label: "Endpoint", type: "text", storage: "topLevel", required: true, group: "connection" },
-            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 4840 }
+            { name: "host", label: "端点地址", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "端口", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 4840 }
           ]
         },
         {
@@ -707,8 +725,8 @@ function previewApi(path, options = {}) {
           dataTypes: ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"],
           driverTypeEnabled: false,
           connectionFields: [
-            { name: "host", label: "Broker", type: "text", storage: "topLevel", required: true, group: "connection" },
-            { name: "port", label: "Port", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 1883 }
+            { name: "host", label: "代理地址", type: "text", storage: "topLevel", required: true, group: "connection" },
+            { name: "port", label: "端口", type: "number", storage: "topLevel", required: true, group: "connection", defaultValue: 1883 }
           ]
         }
       ]
@@ -898,7 +916,7 @@ function previewApi(path, options = {}) {
         batch: { enabled: true, maxDevicesPerPack: 50, maxPropertiesPerPack: 500, maxPayloadBytes: 131072, maxDelayMs: 1000, highPriorityBypass: true },
         ack: { mode: "async", timeoutMs: 5000, maxPending: 10000, timeoutScanMs: 500, commitOn: "publish-success" },
         payload: { profile: "compact", includeQuality: "on_error", includePropertyTs: false, includeMetadata: false, includeMessageId: true },
-        risks: ["示例：请确保启用上报的设备配置 cloudTarget，点位配置 reportField"],
+        risks: ["示例：请确保启用上报的设备配置云目标（cloudTarget），点位配置上报属性（reportField）"],
         generatedAt: Date.now()
       }
     });
@@ -1104,7 +1122,7 @@ async function loadOverview() {
     {
       label: "点位总数",
       value: pointCount || "-",
-      meta: [["连接", connectionCount || 0], ["reportField", numberValue(reportData.configured?.reportFieldPointCount, 0)]],
+      meta: [["连接", connectionCount || 0], ["上报属性", numberValue(reportData.configured?.reportFieldPointCount, 0)]],
       tone: "green"
     },
     {
@@ -1325,13 +1343,31 @@ function renderHomeAlarmCenter(alarmData, errorData) {
           <span>${escapeHtml(deviceName)} / ${escapeHtml(pointCode)}</span>
         </div>
         <div class="home-event-meta">
-          <b>${escapeHtml(String(level))}</b>
+          <b>${escapeHtml(localizeAlarmLevel(level))}</b>
           <span>${escapeHtml(formatTs(ts))}</span>
         </div>
       </div>`;
   }).join("");
 }
 
+function localizeAlarmLevel(level) {
+  switch (String(level || "").toUpperCase()) {
+    case "CRITICAL":
+    case "FATAL":
+    case "HIGH":
+      return "严重";
+    case "ERROR":
+      return "错误";
+    case "WARN":
+    case "WARNING":
+    case "MEDIUM":
+      return "警告";
+    case "INFO":
+      return "信息";
+    default:
+      return level || "未知";
+  }
+}
 function alarmLevelTone(level) {
   const normalized = String(level || "").toUpperCase();
   if (["CRITICAL", "FATAL", "ERROR", "HIGH", "严重"].includes(normalized)) {
@@ -1367,7 +1403,7 @@ function renderHomeRiskDevices(deviceData, errorData, perfDetail) {
       return;
     }
     if (connection.connected === false) {
-      upsertRisk(deviceId, "设备离线", `当前状态 ${connection.status || "UNKNOWN"}`, "error", 85);
+      upsertRisk(deviceId, "设备离线", `当前状态 ${localizeDeviceStatus(connection.status || "UNKNOWN")}`, "error", 85);
     }
     const errors = numberValue(connection.errors, 0);
     if (errors > 0) {
@@ -1623,7 +1659,7 @@ function renderDevices() {
               <button onclick="startDevice('${escapeAttr(id)}')">启动</button>
               <button onclick="stopDevice('${escapeAttr(id)}')" class="danger">停止</button>
               <button onclick="showDeviceStatus('${escapeAttr(id)}')">状态</button>
-              <button onclick="showDiff('${escapeAttr(id)}')">Diff</button>
+              <button onclick="showDiff('${escapeAttr(id)}')">差异</button>
               ${editButtons}
             </div>
           </div>
@@ -1640,7 +1676,7 @@ function isLocalDevice(device) {
 function fillDeviceSelects() {
   const options = state.devices.map((device) => {
     const id = device.id || device.deviceId;
-    const source = isLocalDevice(device) ? "local" : "sync";
+    const source = isLocalDevice(device) ? "本地" : "同步";
     return `<option value="${escapeAttr(id)}">${escapeHtml(device.deviceName || id)} (${escapeHtml(id)} / ${source})</option>`;
   }).join("");
 
@@ -1676,21 +1712,21 @@ function getProtocolSchema(protocolCode) {
 function groupTitle(group) {
   switch (group) {
     case "connection":
-      return "Connection";
+      return "连接参数";
     case "protocol":
-      return "Protocol";
+      return "协议参数";
     case "security":
-      return "Security";
+      return "安全参数";
     case "advanced":
-      return "Advanced";
+      return "高级参数";
     case "topic":
-      return "Topics";
+      return "主题参数";
     case "request":
-      return "Request";
+      return "请求参数";
     case "bridge":
-      return "Bridge";
+      return "桥接参数";
     default:
-      return "Fields";
+      return "字段参数";
   }
 }
 
@@ -1747,7 +1783,7 @@ function renderProtocolMeta(protocol) {
     ? `
       <p><code>pointFields</code>：协议专属点位扩展字段。含义：新增/编辑点位时，前端会把这些字段额外展示出来。</p>
       <ul>${pointFields.map((field) => {
-        const label = field.label || field.name || "-";
+        const label = displayFieldLabel(field);
         const description = field.description || "协议扩展字段";
         const storage = field.storage ? `；保存位置：${field.storage}` : "";
         return `<li><code>${escapeHtml(field.name || "-")}</code> / ${escapeHtml(label)}：${escapeHtml(description + storage)}</li>`;
@@ -1760,8 +1796,8 @@ function renderProtocolMeta(protocol) {
     <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
     <p>${escapeHtml(protocol.description || "")}</p>
     ${riskNoteHtml}
-    <p>Aliases: ${aliases}</p>
-    <p>Address hints: ${addressHints}</p>
+    <p>协议别名：${aliases}</p>
+    <p>地址示例：${addressHints}</p>
     <p><code>dataTypes</code>：${dataTypes}</p>
     <p><code>typeMode</code>：${escapeHtml(typeModeLabel)}。含义：这个协议的主类型字段到底走平台统一类型、协议原生类型，还是协议专属字段。</p>
     <p><code>primaryTypeField</code>：<code>${escapeHtml(protocol.primaryTypeField || "-")}</code>。含义：前端当前协议真正优先展示和编辑的主类型字段路径。</p>
@@ -1821,6 +1857,43 @@ function renderFieldOption(option, currentValue) {
   return `<option value="${escapeAttr(value ?? "")}" ${String(value ?? "") === String(currentValue ?? "") ? "selected" : ""}>${escapeHtml(label ?? "")}</option>`;
 }
 
+function displayFieldLabel(field) {
+  const rawLabel = String(field?.label || field?.name || "");
+  const translations = {
+    Host: "主机地址",
+    Port: "端口",
+    COM: "串口号",
+    Baud: "波特率",
+    Endpoint: "端点地址",
+    Broker: "代理地址",
+    Username: "用户名",
+    Password: "密码",
+    ClientId: "客户端标识",
+    ClientID: "客户端标识",
+    "Client ID": "客户端标识",
+    SlaveId: "从站地址",
+    "Slave ID": "从站地址",
+    UnitId: "单元地址",
+    "Unit ID": "单元地址",
+    Rack: "机架号",
+    Slot: "槽位号",
+    Timeout: "超时时间",
+    Retry: "重试次数",
+    Retries: "重试次数",
+    TLS: "TLS 加密",
+    SSL: "SSL 加密",
+    Topic: "主题",
+    "Subscribe Topic": "订阅主题（Topic）",
+    "Write Topic": "写入主题（Topic）",
+    "Payload Encoding": "载荷编码",
+    reportField: "上报属性（reportField）",
+    productKey: "产品标识（productKey）",
+    deviceName: "设备名称（deviceName）",
+    cloudTarget: "云目标（cloudTarget）",
+    dataType: "数据类型"
+  };
+  return translations[rawLabel] || rawLabel;
+}
 function renderField(field, formId) {
   const required = field.required ? `<span class="field-required">*</span>` : "";
   const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
@@ -1851,7 +1924,7 @@ function renderField(field, formId) {
   }
   return `
     <label class="${labelClass}" data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
-      ${escapeHtml(field.label || field.name)} ${required} ${hint}
+      ${escapeHtml(displayFieldLabel(field))} ${required} ${hint}
       ${control}
       ${note ? `<span class="field-description">${escapeHtml(note)}</span>` : ""}
       <span class="field-error hidden"></span>
@@ -1981,6 +2054,11 @@ function setFieldError(label, message) {
   if (!target) {
     return;
   }
+  if (!message) {
+    target.textContent = "";
+    target.classList.add("hidden");
+    return;
+  }
   target.textContent = message;
   target.classList.remove("hidden");
 }
@@ -2008,9 +2086,9 @@ function collectProtocolForm(containerSelector, protocol, deviceId) {
     const trimmed = typeof rawValue === "string" ? rawValue.trim() : rawValue;
     const required = Boolean(field.required) || Boolean(field.requiredWhen && active);
     if (required && (trimmed === "" || trimmed === null || trimmed === undefined)) {
-      errors.push(`${field.label || field.name} is required`);
+      errors.push(`${displayFieldLabel(field)}为必填项`);
       if (label) {
-        setFieldError(label, "Required");
+        setFieldError(label, "");
       }
       return;
     }
@@ -2018,9 +2096,9 @@ function collectProtocolForm(containerSelector, protocol, deviceId) {
     try {
       parsed = parseValue(rawValue, field.type);
     } catch (error) {
-      errors.push(`${field.label || field.name}: ${error.message}`);
+      errors.push(`${displayFieldLabel(field)}：${error.message}`);
       if (label) {
-        setFieldError(label, "Invalid format");
+        setFieldError(label, "格式错误");
       }
       return;
     }
@@ -2055,7 +2133,7 @@ function openLocalDeviceForm(bundle = null) {
   );
   const adaptive = resolveAdaptiveDefaults(device, points);
 
-  $("#localEditorTitle").textContent = state.localDeviceEditingId ? "Edit local temporary device" : "Create local temporary device";
+  $("#localEditorTitle").textContent = state.localDeviceEditingId ? "编辑本地临时设备" : "新增本地临时设备";
   $("#localDeviceId").value = deviceId;
   $("#localDeviceId").disabled = Boolean(state.localDeviceEditingId);
   $("#localDeviceName").value = device.deviceName || "";
@@ -2154,7 +2232,7 @@ function formatLocalPointsJson() {
     const points = JSON.parse($("#localPointsJson").value || "[]");
     $("#localPointsJson").value = JSON.stringify(Array.isArray(points) ? points : [points], null, 2);
   } catch (error) {
-    toast(`JSON format error: ${error.message}`, true);
+    toast(`JSON 格式错误：${error.message}`, true);
   }
 }
 
@@ -2220,7 +2298,7 @@ async function saveLocalDevice() {
     method: editing ? "PUT" : "POST",
     body: JSON.stringify(payload)
   });
-  toast("Local temporary device saved");
+  toast("本地临时设备已保存");
   closeLocalDeviceForm();
   await Promise.all([loadDevices(), loadOverview(), loadMonitor()]);
   if (payload.startAfterSave) {
@@ -2285,7 +2363,7 @@ async function loadConnection() {
   const deviceId = $("#connectionDeviceSelect").value;
   if (!deviceId) {
     setProtocolFormState("请先选择设备，再读取连接配置", "warning");
-    toast("Select a device first", true);
+    toast("请先选择设备", true);
     return;
   }
   syncProtocolSelectionToDevice(false);
@@ -2295,7 +2373,7 @@ async function loadConnection() {
   fillProtocolForm("#connectionForm", state.currentProtocol, connection);
   setProtocolFormState("");
   await loadDeviceDiff();
-  toast("Connection config loaded");
+  toast("连接配置已读取");
 }
 
 async function saveConnection() {
@@ -2304,7 +2382,7 @@ async function saveConnection() {
   const protocol = deviceProtocolCode(device);
   if (!deviceId || !protocol) {
     setProtocolFormState("请选择设备并确认协议类型", "warning");
-    toast("Select both device and protocol", true);
+    toast("请选择设备并确认协议类型", true);
     return;
   }
   if ($("#protocolSelect").value !== protocol) {
@@ -2320,7 +2398,7 @@ async function saveConnection() {
   });
   setProtocolFormState("连接配置已保存", "success");
   await loadDeviceDiff();
-  toast("Connection config saved");
+  toast("连接配置已保存");
 }
 
 function parseValue(value, type) {
@@ -2348,7 +2426,7 @@ function positiveNumber(value) {
 async function loadDeviceDiff() {
   const deviceId = $("#connectionDeviceSelect").value;
   if (!deviceId) {
-    $("#diffView").textContent = "请选择设备查看 diff";
+    $("#diffView").textContent = "请选择设备查看配置差异";
     setProtocolDiffState("选择设备后查看连接配置差异", "muted");
     return;
   }
@@ -2539,33 +2617,33 @@ async function loadShadow() {
 async function saveDesired() {
   const deviceId = $("#shadowDeviceSelect")?.value || selectedDeviceId();
   if (!deviceId) {
-    setShadowState("请选择设备后再提交 desired", "warning");
+    setShadowState("请选择设备后再提交期望状态", "warning");
     toast("请选择设备", true);
     return;
   }
-  setShadowState("正在提交 desired...", "info");
+  setShadowState("正在提交期望状态...", "info");
   const payload = JSON.parse($("#desiredInput").value);
   const body = await callApi(`/api/shadow/${encodeURIComponent(deviceId)}/desired`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
   $("#shadowView").textContent = JSON.stringify(dataOf(body), null, 2);
-  setShadowState("desired 已提交", "success");
-  toast("desired 已提交");
+  setShadowState("期望状态已提交", "success");
+  toast("期望状态已提交");
 }
 
 async function clearDesired() {
   const deviceId = $("#shadowDeviceSelect")?.value || selectedDeviceId();
   if (!deviceId) {
-    setShadowState("请选择设备后再清理 desired", "warning");
+    setShadowState("请选择设备后再清理期望状态", "warning");
     toast("请选择设备", true);
     return;
   }
-  setShadowState("正在清理 desired...", "info");
+  setShadowState("正在清理期望状态...", "info");
   const body = await callApi(`/api/shadow/${encodeURIComponent(deviceId)}/desired`, { method: "DELETE" });
   $("#shadowView").textContent = JSON.stringify(dataOf(body), null, 2);
-  setShadowState("desired 已清理", "success");
-  toast("desired 已清理");
+  setShadowState("期望状态已清理", "success");
+  toast("期望状态已清理");
 }
 
 async function loadMonitor() {
@@ -2743,7 +2821,7 @@ function syncProtocolSelectionToDevice(loadDiff = true) {
   if (!protocol) {
     setProtocolFormState("当前设备没有可识别的协议类型", "warning");
     if (loadDiff) {
-      setProtocolDiffState("当前设备缺少协议信息，无法生成 diff", "warning");
+      setProtocolDiffState("当前设备缺少协议信息，无法生成配置差异", "warning");
     }
     return;
   }
@@ -2802,13 +2880,13 @@ function renderDeviceStatus(status, runtime, device) {
     : status === "RUNNING"
       ? "status-warn"
       : "status-bad";
-  const configStatus = device?.status || "-";
+  const configStatus = localizeDeviceStatus(device?.status || "UNKNOWN");
   const detail = runtime?.connected
-    ? "runtime connected"
+    ? "运行连接已建立"
     : runtime?.isRunning
-      ? "runtime started, waiting for connection"
-      : `config ${configStatus}`;
-  return `<div class="${cssClass}">${escapeHtml(status)}</div><small class="status-detail">${escapeHtml(detail)}</small>`;
+      ? "已启动，等待连接建立"
+      : `配置状态 ${configStatus}`;
+  return `<div class="${cssClass}">${escapeHtml(localizeDeviceStatus(status))}</div><small class="status-detail">${escapeHtml(detail)}</small>`;
 }
 
 function fieldHelpText(field) {
@@ -2819,15 +2897,15 @@ function fieldHelpText(field) {
     return field.description;
   }
   if (field.required) {
-    return "Required field";
+    return "";
   }
   if (field.defaultValue !== null && field.defaultValue !== undefined && String(field.defaultValue) !== "") {
-    return `Optional. Default: ${field.defaultValue}`;
+    return `可选，默认值：${field.defaultValue}`;
   }
   if (field.group === "advanced") {
-    return "Optional advanced override. Leave empty to use generated or backend defaults.";
+    return "可选高级覆盖项。留空时使用自动生成值或后端默认值。";
   }
-  return "Optional. Leave empty to use backend defaults when supported.";
+  return "可选。支持时留空使用后端默认值。";
 }
 
 function renderGroupDescription(protocol, group) {
@@ -2836,8 +2914,8 @@ function renderGroupDescription(protocol, group) {
   }
   const protocolCode = protocol?.protocol || "";
   const description = protocolCode.startsWith("MODBUS")
-    ? "Advanced PLC4X overrides. Host, port and serial settings remain the normal source of truth."
-    : "Optional advanced overrides and compatibility aliases. Leave empty unless you need explicit tuning.";
+    ? "PLC4X 高级覆盖项。主机、端口和串口设置仍是标准配置来源。"
+    : "可选高级覆盖项和兼容别名。没有明确调优需求时请留空。";
   return `<p class="group-description">${escapeHtml(description)}</p>`;
 }
 

@@ -185,7 +185,8 @@
   }
 
   function pointQualityText(runtimePoint) {
-    return runtimePoint?.quality || (runtimePoint?.qualityAcceptable === false ? "BAD" : "GOOD");
+    const quality = runtimePoint?.quality || (runtimePoint?.qualityAcceptable === false ? "BAD" : "GOOD");
+    return localizePointQuality(quality);
   }
 
   function pointQualityClass(runtimePoint) {
@@ -268,8 +269,8 @@
           { path: "minValue", label: "最小值", control: "number", valueType: "number", step: "0.0001" },
           { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: "0.0001" },
           { path: "precision", label: "小数位数", control: "number", valueType: "integer", step: "1", min: "0" },
-          { path: "unitId", label: "Unit ID", control: "number", valueType: "integer", step: "1" },
-          { path: "commonAddress", label: "Common Address", control: "number", valueType: "integer", step: "1" }
+          { path: "unitId", label: "单元地址（Unit ID）", control: "number", valueType: "integer", step: "1" },
+          { path: "commonAddress", label: "公共地址", control: "number", valueType: "integer", step: "1" }
         ]
       },
       {
@@ -280,7 +281,7 @@
           { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: "1" },
           { path: "alarmEnabled", label: "启用告警", control: "select", valueType: "integer", options: POINT_ENABLE_OPTIONS },
           { path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: POINT_BOOLEAN_OPTIONS },
-          { path: "additionalConfig.reportField", label: "云端属性 reportField", control: "text", valueType: "string" },
+          { path: "additionalConfig.reportField", label: "云端属性（reportField）", control: "text", valueType: "string" },
           { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: "0.0001" },
           { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: "1" },
           { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: POINT_BOOLEAN_OPTIONS },
@@ -367,8 +368,8 @@
           <section class="field-group point-config-card point-config-card-wide">
             <h3>高级 JSON</h3>
             <div class="point-config-form-grid point-config-form-grid-wide">
-              ${renderPointConfigField({ path: "additionalConfig", label: "additionalConfig JSON", control: "textarea", valueType: "json-object", rows: 8, fullWidth: true, description: "保留协议扩展字段和上报扩展配置。" }, configPoint)}
-              ${renderPointConfigField({ path: "alarmRule", label: "alarmRule JSON", control: "textarea", valueType: "json-string", rows: 6, fullWidth: true, description: "支持数组 JSON；保存时会原样写回 alarmRule。" }, configPoint)}
+              ${renderPointConfigField({ path: "additionalConfig", label: "扩展配置（additionalConfig JSON）", control: "textarea", valueType: "json-object", rows: 8, fullWidth: true, description: "保留协议扩展字段和上报扩展配置。" }, configPoint)}
+              ${renderPointConfigField({ path: "alarmRule", label: "告警规则（alarmRule JSON）", control: "textarea", valueType: "json-string", rows: 6, fullWidth: true, description: "支持数组 JSON；保存时会原样写回告警规则（alarmRule）。" }, configPoint)}
             </div>
           </section>
         </div>
@@ -470,7 +471,7 @@
         next.alarmRule = JSON.stringify(JSON.parse(next.alarmRule));
       } catch (error) {
         throw new Error(
-            `点位 ${next.pointName || next.pointCode || ""} 的 alarmRule JSON 格式错误`
+            `点位 ${next.pointName || next.pointCode || ""} 的告警规则（alarmRule JSON）格式错误`
         );
       }
     }
