@@ -86,7 +86,6 @@ public class CacheReportService {
     private CloudBatchAccumulator cloudBatchAccumulator;
     private final ConcurrentMap<String, String> shadowGatewayMapping = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CloudDeviceIdentity> shadowIdentities = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, String> localDeviceShadowKeys = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
     private final ConcurrentMap<String, FlushTracker> flushTrackers = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, FlushSession> flushSessions = new ConcurrentHashMap<>();
@@ -108,15 +107,15 @@ public class CacheReportService {
         }
     }
 
-    public void reportPoint(String deviceId, String method, DataPoint point, Object cacheValue) {
-        if (!isMqttEnabled() || deviceId == null || point == null || cacheValue == null) {
+    public void reportPoint(String localDeviceId, String method, DataPoint point, Object cacheValue) {
+        if (!isMqttEnabled() || localDeviceId == null || point == null || cacheValue == null) {
             return;
         }
-        CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(deviceId);
+        CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(localDeviceId);
         if (cloudTarget == null || !cloudTarget.valid()) {
             if (point.isReportEnabled()) {
                 log.warn("跳过云端上报，设备未配置有效 cloudTarget，deviceId={}, pointCode={}",
-                        deviceId, point.getPointCode());
+                        localDeviceId, point.getPointCode());
             }
             return;
         }
@@ -124,18 +123,17 @@ public class CacheReportService {
         if (processResult == null) {
             return;
         }
-        String shadowKey = shadowKey(cloudTarget.identity());
-        shadowGatewayMapping.put(shadowKey, gatewayDeviceId());
-        shadowIdentities.put(shadowKey, cloudTarget.identity());
-        localDeviceShadowKeys.put(deviceId, shadowKey);
+        String gatewayDeviceId = gatewayDeviceId();
+        shadowGatewayMapping.put(localDeviceId, gatewayDeviceId);
+        shadowIdentities.put(localDeviceId, cloudTarget.identity());
 
-        ShadowUpdateResult updateResult = shadowManager.apply(shadowKey, point, processResult);
+        ShadowUpdateResult updateResult = shadowManager.apply(localDeviceId, point, processResult);
         if (updateResult.changeTriggered()) {
-            triggerImmediateFlush(shadowKey);
+            triggerImmediateFlush(localDeviceId);
         }
         EventInfo eventInfo = updateResult.eventInfo();
         if (eventInfo != null) {
-            dispatchEvent(gatewayDeviceId(), cloudTarget, shadowKey, point, processResult, eventInfo);
+            dispatchEvent(gatewayDeviceId, cloudTarget, localDeviceId, point, processResult, eventInfo);
         }
     }
 
@@ -165,10 +163,6 @@ public class CacheReportService {
             return "";
         }
         return mqtt.getGatewayProductKey();
-    }
-
-    private String shadowKey(CloudDeviceIdentity identity) {
-        return identity != null && identity.valid() ? identity.key() : "";
     }
 
     private void triggerImmediateFlush(String deviceId) {
@@ -591,20 +585,24 @@ public class CacheReportService {
         }
     }
 
-    private ReportData buildSnapshot(DeviceShadow shadow, String rawDeviceId) {
+    private ReportData buildSnapshot(DeviceShadow shadow, String gatewayDeviceId) {
         ReportData data = new ReportData();
-        CloudDeviceIdentity identity = shadowIdentities.get(shadow.getDeviceId());
-        data.setDeviceId(identity != null && identity.valid() ? identity.deviceName() : shadow.getDeviceId());
+        String localDeviceId = shadow.getDeviceId();
+        CloudDeviceIdentity identity = shadowIdentities.get(localDeviceId);
+        data.setDeviceId(identity != null && identity.valid() ? identity.deviceName() : localDeviceId);
         data.setTimestamp(System.currentTimeMillis());
         data.addMetadata("schemaVersion", reportProperties.getSchemaVersion());
         data.addMetadata("seq", shadow.nextSeq());
-        if (rawDeviceId != null) {
-            data.addMetadata("rawDeviceId", rawDeviceId);
+        if (localDeviceId != null) {
+            data.addMetadata("rawDeviceId", localDeviceId);
+        }
+        if (gatewayDeviceId != null) {
+            data.addMetadata("gatewayDeviceId", gatewayDeviceId);
         }
         if (identity != null && identity.valid()) {
             data.addMetadata("productKey", identity.productKey());
             data.addMetadata("cloudDeviceName", identity.deviceName());
-            data.addMetadata("shadowKey", shadow.getDeviceId());
+            data.addMetadata("shadowKey", localDeviceId);
         }
         Map<String, ValueMeta> latest = shadow.snapshot();
         DeviceShadow.PointInfo primaryPoint = resolvePrimaryPointInfo(shadow, latest);
@@ -835,30 +833,31 @@ public class CacheReportService {
 
     private void dispatchEvent(String gatewayDeviceId,
                                CloudTargetConfig cloudTarget,
-                               String shadowKey,
+                               String localDeviceId,
                                DataPoint point,
                                ProcessResult result,
                                EventInfo eventInfo) {
         if (cloudTarget == null || !cloudTarget.valid()) {
             return;
         }
-        String deviceId = cloudTarget.getDeviceName();
-        ReportConfig reportConfig = resolveReportConfig(shadowKey);
+        String cloudDeviceName = cloudTarget.getDeviceName();
+        ReportConfig reportConfig = resolveReportConfig(localDeviceId);
         if (reportConfig == null || !reportConfig.validate()) {
-            log.warn("Skip event report because config is invalid, device={}", deviceId);
+            log.warn("Skip event report because config is invalid, device={}", cloudDeviceName);
             return;
         }
         ReportData eventData = new ReportData();
-        eventData.setDeviceId(deviceId);
+        eventData.setDeviceId(cloudDeviceName);
         ReportData.applyPointInfo(eventData, point);
         eventData.setTimestamp(System.currentTimeMillis());
         eventData.setMethod(MessageConstant.MESSAGE_TYPE_EVENT_POST);
         eventData.setValue(result.getFinalValue());
         eventData.setQuality(QualityEnum.fromCode(result.getQuality()).getText());
-        eventData.addMetadata("rawDeviceId", gatewayDeviceId);
+        eventData.addMetadata("rawDeviceId", localDeviceId);
+        eventData.addMetadata("gatewayDeviceId", gatewayDeviceId);
         eventData.addMetadata("productKey", cloudTarget.getProductKey());
         eventData.addMetadata("cloudDeviceName", cloudTarget.getDeviceName());
-        eventData.addMetadata("shadowKey", shadowKey);
+        eventData.addMetadata("shadowKey", localDeviceId);
         eventData.addMetadata("eventType", eventInfo.eventType());
         if (eventInfo.level() != null) {
             eventData.addMetadata("eventLevel", eventInfo.level());
@@ -904,11 +903,10 @@ public class CacheReportService {
             log.warn("Skip alert upload, cloudTarget missing for {}", localDeviceId);
             return;
         }
-        String shadowKey = shadowKey(cloudTarget.identity());
-        shadowGatewayMapping.put(shadowKey, gatewayDeviceId());
-        shadowIdentities.put(shadowKey, cloudTarget.identity());
-        localDeviceShadowKeys.put(localDeviceId, shadowKey);
-        ReportConfig reportConfig = resolveReportConfig(shadowKey);
+        String gatewayDeviceId = gatewayDeviceId();
+        shadowGatewayMapping.put(localDeviceId, gatewayDeviceId);
+        shadowIdentities.put(localDeviceId, cloudTarget.identity());
+        ReportConfig reportConfig = resolveReportConfig(localDeviceId);
         if (reportConfig == null) {
             log.warn("Skip alert upload, report config missing for {}", localDeviceId);
             return;
@@ -946,14 +944,15 @@ public class CacheReportService {
             alertData.addMetadata("unit", notification.getUnit());
         }
         alertData.addMetadata("rawDeviceId", localDeviceId);
+        alertData.addMetadata("gatewayDeviceId", gatewayDeviceId);
         alertData.addMetadata("productKey", cloudTarget.getProductKey());
         alertData.addMetadata("cloudDeviceName", cloudTarget.getDeviceName());
-        alertData.addMetadata("shadowKey", shadowKey);
+        alertData.addMetadata("shadowKey", localDeviceId);
         alertData.addProperty(pointCode, notification.getValue(),
                 timestamp, QualityEnum.WARNING.getText());
         addEventPayload(alertData);
-        if (shouldUseGatewayTopicForSubDevice(alertData, reportConfig, gatewayDeviceId())) {
-            ReportData propertyPack = buildSingleSubDevicePack(alertData, reportConfig, gatewayDeviceId());
+        if (shouldUseGatewayTopicForSubDevice(alertData, reportConfig, gatewayDeviceId)) {
+            ReportData propertyPack = buildSingleSubDevicePack(alertData, reportConfig, gatewayDeviceId);
             if (propertyPack != null) {
                 dispatch(propertyPack, reportConfig, true, null);
                 return;
@@ -984,7 +983,7 @@ public class CacheReportService {
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         if (event.getDeviceId() != null) {
-            evictGateway(event.getDeviceId());
+            evictReportMappings(event.getDeviceId(), "local-delete".equals(event.getConfigType()));
         }
     }
 
@@ -992,23 +991,33 @@ public class CacheReportService {
         return reportProperties != null && reportProperties.mqttEnabled();
     }
 
-    private void evictGateway(String gatewayDeviceId) {
-        if (gatewayDeviceId == null) {
+    private void evictReportMappings(String deviceId, boolean removeShadow) {
+        if (deviceId == null) {
             return;
         }
-        reportConfigProvider.evict(gatewayDeviceId);
-        List<String> orphanIdentities = new ArrayList<>();
-        shadowGatewayMapping.forEach((identity, gateway) -> {
-            if (gatewayDeviceId.equals(gateway)) {
-                orphanIdentities.add(identity);
+        reportConfigProvider.evict(deviceId);
+        String mappedGateway = shadowGatewayMapping.remove(deviceId);
+        shadowIdentities.remove(deviceId);
+        if (mappedGateway != null) {
+            reportConfigProvider.evict(mappedGateway);
+        }
+        if (removeShadow) {
+            shadowManager.removeShadow(deviceId);
+        }
+
+        List<String> localDeviceIds = new ArrayList<>();
+        shadowGatewayMapping.forEach((localDeviceId, gatewayDeviceId) -> {
+            if (deviceId.equals(gatewayDeviceId)) {
+                localDeviceIds.add(localDeviceId);
             }
         });
-        for (String identity : orphanIdentities) {
-            shadowGatewayMapping.remove(identity);
-            shadowIdentities.remove(identity);
-            shadowManager.removeShadow(identity);
+        for (String localDeviceId : localDeviceIds) {
+            shadowGatewayMapping.remove(localDeviceId);
+            shadowIdentities.remove(localDeviceId);
+            if (removeShadow) {
+                shadowManager.removeShadow(localDeviceId);
+            }
         }
-        localDeviceShadowKeys.entrySet().removeIf(entry -> orphanIdentities.contains(entry.getValue()));
     }
 
     private ReportConfig resolveReportConfig(String deviceId) {
