@@ -1609,9 +1609,25 @@ body.modal-active {
 
 .local-setup-cluster {
   display: grid;
-  grid-template-columns: minmax(360px, 0.92fr) minmax(0, 1.08fr);
+  grid-template-columns: minmax(340px, 0.8fr) minmax(0, 1.2fr);
+  grid-template-areas:
+    "device-basic connection"
+    "cloud-target connection";
   gap: 0.9rem;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* 左列承载设备基础和云平台身份，右列给连接参数独占更大的编辑空间。 */
+.local-setup-card {
+  grid-area: device-basic;
+}
+
+.local-connection-card {
+  grid-area: connection;
+}
+
+.local-cloud-target-card {
+  grid-area: cloud-target;
 }
 
 .local-section-card {
@@ -1709,6 +1725,14 @@ body.modal-active {
 
 #localDevicePanel .local-setup-card .compact-form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#localDevicePanel .local-cloud-target-card .compact-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#localDevicePanel .local-cloud-target-card .wide-field {
+  grid-column: 1 / -1;
 }
 
 #localDevicePanel .dynamic-form {
@@ -1873,6 +1897,13 @@ body.modal-active {
   #localDevicePanel .point-workspace,
   .point-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .local-setup-cluster {
+    grid-template-areas:
+      "device-basic"
+      "cloud-target"
+      "connection";
   }
 
   .point-detail-grid .field-group-wide {
