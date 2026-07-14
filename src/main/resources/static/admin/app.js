@@ -285,12 +285,12 @@ function renderSelectedPointInspector() {
     return;
   }
 
-  const qualityText = localizePointQuality(point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD"));
+  const qualityText = realtimePointQualityText(point);
   const address = point.address || point.registerAddress || point.pointAddress || "-";
   const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
   const pointCode = point.pointCode || point.pointId || "-";
   const unit = point.unit || point.sourceUnit || "-";
-  const processText = `${point.processingTime ?? "-"} ms`;
+  const processText = realtimePointProcessingTimeText(point);
 
   $("#selectedPointEmpty")?.classList.add("hidden");
   $("#selectedPointPanel")?.classList.remove("hidden");
@@ -303,16 +303,16 @@ function renderSelectedPointInspector() {
   const badge = $("#inspectorPointQualityBadge");
   if (badge) {
     badge.textContent = qualityText;
-    badge.className = `badge ${point.qualityAcceptable === false ? "badge-alert" : "badge-remote"}`;
+    badge.className = `badge ${realtimePointQualityBadgeClass(point)}`;
   }
 
   setInspectorField("#inspectorPointCode", pointCode);
   setInspectorField("#inspectorPointType", point.dataType || point.driverDataType || point.type || "-");
   setInspectorField("#inspectorPointAddress", formatValue(address));
-  setInspectorField("#inspectorPointAccess", point.readWrite || point.accessMode || "R");
+  setInspectorField("#inspectorPointAccess", point.readWrite || point.accessMode || "-");
   setInspectorField("#inspectorPointScale", formatValue(scale));
-  setInspectorField("#inspectorPointValue", formatValue(point.value));
-  setInspectorField("#inspectorPointRawValue", formatValue(point.rawValue));
+  setInspectorField("#inspectorPointValue", realtimePointValueText(point));
+  setInspectorField("#inspectorPointRawValue", realtimePointRawValueText(point));
   setInspectorField("#inspectorPointQuality", qualityText);
   setInspectorField("#inspectorPointUnit", unit);
   setInspectorField("#inspectorPointProcessingTime", processText);
@@ -348,6 +348,75 @@ function localizePointQuality(quality) {
     return "异常";
   }
   return quality || "-";
+}
+
+function hasRealtimeDisplayValue(value) {
+  return value !== null && value !== undefined && (typeof value !== "string" || value.trim() !== "");
+}
+
+function hasRealtimeCachedValue(point) {
+  if (!point) {
+    return false;
+  }
+  if (point.hasCachedValue === true) {
+    return true;
+  }
+  if (point.hasCachedValue === false) {
+    return false;
+  }
+  return hasRealtimeDisplayValue(point.value);
+}
+
+function realtimePointValueText(point) {
+  return hasRealtimeCachedValue(point) ? formatValue(point?.value) : "无缓存";
+}
+
+function realtimePointRawValueText(point) {
+  return hasRealtimeCachedValue(point) ? formatValue(point?.rawValue) : "无缓存";
+}
+
+function realtimePointQualityText(point) {
+  if (!point || point.qualityAvailable === false) {
+    return "未处理";
+  }
+  if (hasRealtimeDisplayValue(point.quality)) {
+    return localizePointQuality(point.quality);
+  }
+  if (point.qualityAcceptable === false) {
+    return "异常";
+  }
+  if (point.qualityAcceptable === true) {
+    return "正常";
+  }
+  return "未处理";
+}
+
+function realtimePointQualityStatusClass(point) {
+  if (!point || point.qualityAvailable === false) {
+    return "status-warn";
+  }
+  return point.qualityAcceptable === false ? "status-bad" : "status-good";
+}
+
+function realtimePointQualityBadgeClass(point) {
+  if (!point || point.qualityAvailable === false) {
+    return "badge-remote";
+  }
+  return point.qualityAcceptable === false ? "badge-alert" : "badge-remote";
+}
+
+function realtimePointRuntimeTone(point) {
+  if (!point || point.qualityAvailable === false) {
+    return "default";
+  }
+  return point.qualityAcceptable === false ? "bad" : "good";
+}
+
+function realtimePointProcessingTimeText(point) {
+  if (!point || point.processingTimeAvailable === false || !hasRealtimeDisplayValue(point.processingTime)) {
+    return "-";
+  }
+  return `${point.processingTime} ms`;
 }
 
 function localizeDeviceStatus(status) {
@@ -557,20 +626,22 @@ function renderRealtimeTable() {
   }
 
   const rows = points.map((point) => {
-    const qualityText = localizePointQuality(point.quality || (point.qualityAcceptable === false ? "BAD" : "GOOD"));
+    const qualityText = realtimePointQualityText(point);
+    const qualityClass = realtimePointQualityStatusClass(point);
     const address = point.address || point.registerAddress || point.pointAddress || "-";
     const scale = point.scalingFactor ?? point.scale ?? point.factor ?? "-";
+    const processText = realtimePointProcessingTimeText(point);
     return `
       <tr data-point-key="${escapeAttr(point.__pointKey)}" class="${point.__pointKey === state.selectedRealtimePointKey ? "is-selected" : ""}">
         <td>${escapeHtml(point.pointName || point.pointId || "-")}</td>
         <td><code>${escapeHtml(point.pointCode || point.pointId || "-")}</code></td>
         <td>${escapeHtml(point.dataType || point.driverDataType || point.type || "-")}</td>
         <td>${escapeHtml(formatValue(address))}</td>
-        <td>${escapeHtml(point.readWrite || point.accessMode || "R")}</td>
+        <td>${escapeHtml(point.readWrite || point.accessMode || "-")}</td>
         <td>${escapeHtml(formatValue(scale))}</td>
-        <td><strong>${escapeHtml(formatValue(point.value))}</strong></td>
-        <td class="${point.qualityAcceptable === false ? "status-bad" : "status-good"}">${escapeHtml(qualityText)}</td>
-        <td>${point.processingTime ?? "-"} ms</td>
+        <td><strong>${escapeHtml(realtimePointValueText(point))}</strong></td>
+        <td class="${qualityClass}">${escapeHtml(qualityText)}</td>
+        <td>${escapeHtml(processText)}</td>
       </tr>`;
   }).join("");
 
@@ -1897,6 +1968,8 @@ function displayFieldLabel(field) {
 function renderField(field, formId) {
   const required = field.required ? `<span class="field-required">*</span>` : "";
   const hint = field.requiredWhen ? `<span class="field-hint">${escapeHtml(field.requiredWhen)}</span>` : "";
+  const labelText = `<span class="field-label-text">${escapeHtml(displayFieldLabel(field))}${required}</span>`;
+  const labelRow = `<span class="field-label-row">${labelText}${hint}</span>`;
   const note = fieldHelpText(field);
   const value = fieldDefaultValue(field);
   const inputName = escapeAttr(field.name);
@@ -1924,7 +1997,7 @@ function renderField(field, formId) {
   }
   return `
     <label class="${labelClass}" data-field="${inputName}" data-required="${field.required ? "true" : "false"}" data-required-when="${escapeAttr(field.requiredWhen || "")}">
-      ${escapeHtml(displayFieldLabel(field))} ${required} ${hint}
+      ${labelRow}
       ${control}
       ${note ? `<span class="field-description">${escapeHtml(note)}</span>` : ""}
       <span class="field-error hidden"></span>
@@ -2177,6 +2250,7 @@ function defaultPointTemplate(deviceId) {
     dataType: "FLOAT",
     readWrite: "R",
     status: 1,
+    cacheEnabled: 1,
     baseCollectionInterval: adaptiveDefaults.baseCollectionInterval,
     currentCollectionInterval: adaptiveDefaults.baseCollectionInterval,
     minCollectionInterval: adaptiveDefaults.minCollectionInterval,

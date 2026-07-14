@@ -534,7 +534,7 @@
       readWrite: draft.readWrite || "R",
       collectionMode: draft.collectionMode || (protocolCode === "MQTT" ? "SUBSCRIPTION" : "POLLING"),
       status: draft.status ?? 1,
-      cacheEnabled: draft.cacheEnabled ?? 0,
+      cacheEnabled: draft.cacheEnabled ?? 1,
       alarmEnabled: draft.alarmEnabled ?? 0,
       baseCollectionInterval: draft.baseCollectionInterval ?? adaptiveDefaults.baseCollectionInterval,
       currentCollectionInterval: draft.currentCollectionInterval ?? adaptiveDefaults.baseCollectionInterval,
@@ -577,7 +577,7 @@
       readWrite: draft.readWrite || "R",
       collectionMode: draft.collectionMode || (protocolCode === "MQTT" ? "SUBSCRIPTION" : "POLLING"),
       status: draft.status ?? 1,
-      cacheEnabled: draft.cacheEnabled ?? 0,
+      cacheEnabled: draft.cacheEnabled ?? 1,
       alarmEnabled: draft.alarmEnabled ?? 0,
       additionalConfig
     };

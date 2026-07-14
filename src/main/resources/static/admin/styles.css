@@ -1187,7 +1187,12 @@ pre {
 }
 
 .field-required {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.18rem;
   color: var(--danger);
+  font-weight: 800;
+  line-height: 1;
 }
 
 .field-description,
@@ -1213,6 +1218,16 @@ pre {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.field-label-text {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .protocol-label {

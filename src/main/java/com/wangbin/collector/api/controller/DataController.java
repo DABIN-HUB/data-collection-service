@@ -6,6 +6,7 @@ import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.service.HistoryDataService;
 import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -60,11 +61,8 @@ public class DataController {
             DataPoint dataPoint = configManager.getDataPointByPointId(deviceId, pointId);
             
             if (dataPoint != null) {
+                putPointConfigPayload(result, dataPoint);
                 result.put("deviceId", deviceId);
-                result.put("pointId", pointId);
-                result.put("pointName", dataPoint.getPointName());
-                result.put("pointCode", dataPoint.getPointCode());
-                result.put("dataType", dataPoint.getDataType());
                 enrichWithCachedPayload(result, value);
                 result.put("timestamp", System.currentTimeMillis());
                 result.put("status", "success");
@@ -122,10 +120,7 @@ public class DataController {
                 Object value = values.get(cacheKey);
                 
                 Map<String, Object> pointData = new HashMap<>();
-                pointData.put("pointId", point.getPointId());
-                pointData.put("pointName", point.getPointName());
-                pointData.put("pointCode", point.getPointCode());
-                pointData.put("dataType", point.getDataType());
+                putPointConfigPayload(pointData, point);
                 enrichWithCachedPayload(pointData, value);
                 
                 dataMap.put(point.getPointId(), pointData);
@@ -198,12 +193,7 @@ public class DataController {
             List<Map<String, Object>> pointsInfo = new ArrayList<>();
             for (DataPoint point : dataPoints) {
                 Map<String, Object> pointInfo = new HashMap<>();
-                pointInfo.put("pointId", point.getPointId());
-                pointInfo.put("pointName", point.getPointName());
-                pointInfo.put("pointCode", point.getPointCode());
-                pointInfo.put("dataType", point.getDataType());
-                pointInfo.put("unit", point.getUnit());
-                //pointInfo.put("description", point.getDescription());
+                putPointConfigPayload(pointInfo, point);
                 
                 pointsInfo.add(pointInfo);
             }
@@ -224,28 +214,82 @@ public class DataController {
     }
 
     /**
+     * 写入点位配置字段，保证配置接口和实时接口返回结构一致。
+     */
+    private void putPointConfigPayload(Map<String, Object> target, DataPoint point) {
+        target.put("id", point.getId());
+        target.put("unitId", point.getUnitId());
+        target.put("commonAddress", point.getCommonAddress());
+        target.put("pointId", point.getPointId());
+        target.put("pointCode", point.getPointCode());
+        target.put("pointName", point.getPointName());
+        target.put("pointAlias", point.getPointAlias());
+        target.put("deviceId", point.getDeviceId());
+        target.put("deviceName", point.getDeviceName());
+        target.put("groupId", point.getGroupId());
+        target.put("address", point.getAddress());
+        target.put("dataType", point.getDataType());
+        target.put("readWrite", point.getReadWrite());
+        target.put("scalingFactor", point.getScalingFactor());
+        target.put("offset", point.getOffset());
+        target.put("deadband", point.getDeadband());
+        target.put("unit", point.getUnit());
+        target.put("minValue", point.getMinValue());
+        target.put("maxValue", point.getMaxValue());
+        target.put("collectionMode", point.getCollectionMode());
+        target.put("priority", point.getPriority());
+        target.put("cacheEnabled", point.getCacheEnabled());
+        target.put("cacheDuration", point.getCacheDuration());
+        target.put("alarmEnabled", point.getAlarmEnabled());
+        target.put("status", point.getStatus());
+        target.put("createTime", point.getCreateTime());
+        target.put("updateTime", point.getUpdateTime());
+        target.put("precision", point.getPrecision());
+        target.put("remark", point.getRemark());
+        target.put("additionalConfig", point.getAdditionalConfig());
+        target.put("baseCollectionInterval", point.getBaseCollectionInterval());
+        target.put("currentCollectionInterval", point.getCurrentCollectionInterval());
+        target.put("minCollectionInterval", point.getMinCollectionInterval());
+        target.put("maxCollectionInterval", point.getMaxCollectionInterval());
+        target.put("pointChangeThreshold", point.getPointChangeThreshold());
+        target.put("stableCount", point.getStableCount());
+        target.put("lastValue", point.getLastValue());
+        target.put("changeRate", point.getChangeRate());
+        target.put("lastAdjustTime", point.getLastAdjustTime());
+    }
+
+    /**
      * 将缓存中的ProcessResult或普通值展开为响应字段。
      */
     private void enrichWithCachedPayload(Map<String, Object> target, Object cachedValue) {
         if (cachedValue instanceof ProcessResult processResult) {
             Object finalValue = processResult.getFinalValue();
+            Map<String, Object> metadata = processResult.getMetadata();
+            Map<String, Object> metadataPayload = metadata != null ? new HashMap<>(metadata) : new HashMap<>();
             target.put("value", finalValue);
             target.put("rawValue", processResult.getRawValue());
             target.put("processedValue", processResult.getProcessedValue());
+            target.put("hasCachedValue", true);
             target.put("quality", processResult.getQuality());
             target.put("qualityDescription", processResult.getQualityDescription());
             target.put("qualityLevel", processResult.getQualityLevel());
             target.put("qualityAcceptable", processResult.isQualityAcceptable());
+            target.put("qualityAvailable", true);
             target.put("processMessage", processResult.getMessage());
             target.put("processSuccess", processResult.isSuccess());
             target.put("skipped", processResult.isSkipped());
             target.put("processorName", processResult.getProcessorName());
             target.put("processingTime", processResult.getProcessingTime());
-            Map<String, Object> metadata = processResult.getMetadata();
-            target.put("metadata", metadata != null ? new HashMap<>(metadata) : new HashMap<>());
+            target.put("processingTimeAvailable", true);
+            target.put("metadata", metadataPayload);
+            target.put("lastUpdateTime", metadataPayload.get(ProcessResultMetadataKeys.COLLECT_TIME));
         } else {
             target.put("value", cachedValue);
             target.put("rawValue", cachedValue);
+            target.put("hasCachedValue", cachedValue != null);
+            target.put("qualityAvailable", false);
+            target.put("processingTimeAvailable", false);
+            target.put("metadata", new HashMap<>());
         }
     }
 

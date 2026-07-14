@@ -185,12 +185,27 @@
   }
 
   function pointQualityText(runtimePoint) {
-    const quality = runtimePoint?.quality || (runtimePoint?.qualityAcceptable === false ? "BAD" : "GOOD");
-    return localizePointQuality(quality);
+    return realtimePointQualityText(runtimePoint);
   }
 
   function pointQualityClass(runtimePoint) {
-    return runtimePoint?.qualityAcceptable === false ? "badge-alert" : "badge-remote";
+    return realtimePointQualityBadgeClass(runtimePoint);
+  }
+
+  function pointRuntimeTone(runtimePoint) {
+    return realtimePointRuntimeTone(runtimePoint);
+  }
+
+  function pointCurrentValueText(runtimePoint) {
+    return realtimePointValueText(runtimePoint);
+  }
+
+  function pointRawValueText(runtimePoint) {
+    return realtimePointRawValueText(runtimePoint);
+  }
+
+  function pointProcessingTimeText(runtimePoint) {
+    return realtimePointProcessingTimeText(runtimePoint);
   }
 
   function protocolDataTypeOptions(protocol) {
@@ -300,7 +315,7 @@
     const heroName = configPoint?.pointName || runtimePoint?.pointName || configPoint?.pointCode || runtimePoint?.pointCode || "未命名点位";
     const heroCode = configPoint?.pointCode || runtimePoint?.pointCode || runtimePoint?.pointId || "-";
     const heroAddress = configPoint?.address || runtimePoint?.address || runtimePoint?.registerAddress || runtimePoint?.pointAddress || "-";
-    const runtimeTone = runtimePoint?.qualityAcceptable === false ? "bad" : "good";
+    const runtimeTone = pointRuntimeTone(runtimePoint);
     const dirty = isPointConfigDirty(deviceId);
 
     if (!configPoint) {
@@ -321,10 +336,10 @@
             <h3>尚未匹配到配置点位</h3>
             <p class="field-description">当前只拿到了运行态数据，没有从配置接口中匹配到同名点位。请先重新加载点位配置，或检查 pointId / pointCode / address 是否一致。</p>
             <div class="point-runtime-metrics">
-              ${renderRuntimeMetric("当前值", runtimePoint?.value, runtimeTone)}
-              ${renderRuntimeMetric("原始值", runtimePoint?.rawValue)}
+              ${renderRuntimeMetric("当前值", pointCurrentValueText(runtimePoint), runtimeTone)}
+              ${renderRuntimeMetric("原始值", pointRawValueText(runtimePoint))}
               ${renderRuntimeMetric("质量", qualityText, runtimeTone)}
-              ${renderRuntimeMetric("处理耗时", `${runtimePoint?.processingTime ?? "-"} ms`)}
+              ${renderRuntimeMetric("处理耗时", pointProcessingTimeText(runtimePoint))}
             </div>
           </section>
         </div>`;
@@ -341,7 +356,7 @@
           </div>
           <div class="point-detail-hero-meta">
             <span class="pill subtle">${escapeHtml(protocol?.title || device?.protocolType || device?.connectionType || "-")}</span>
-            <span class="pill subtle">${escapeHtml(configPoint.readWrite || runtimePoint?.readWrite || "R")}</span>
+            <span class="pill subtle">${escapeHtml(configPoint.readWrite || runtimePoint?.readWrite || "-")}</span>
             <span class="badge ${qualityClass}">${escapeHtml(qualityText)}</span>
             ${dirty ? '<span class="pill point-state-dirty">未保存</span>' : ""}
           </div>
@@ -357,10 +372,10 @@
           <section class="field-group point-config-card">
             <h3>运行态</h3>
             <div class="point-runtime-metrics">
-              ${renderRuntimeMetric("当前值", runtimePoint?.value, runtimeTone)}
-              ${renderRuntimeMetric("原始值", runtimePoint?.rawValue)}
+              ${renderRuntimeMetric("当前值", pointCurrentValueText(runtimePoint), runtimeTone)}
+              ${renderRuntimeMetric("原始值", pointRawValueText(runtimePoint))}
               ${renderRuntimeMetric("质量", qualityText, runtimeTone)}
-              ${renderRuntimeMetric("处理耗时", `${runtimePoint?.processingTime ?? "-"} ms`)}
+              ${renderRuntimeMetric("处理耗时", pointProcessingTimeText(runtimePoint))}
               ${renderRuntimeMetric("单位", configPoint.unit || runtimePoint?.unit || "-")}
               ${renderRuntimeMetric("地址", heroAddress)}
             </div>
