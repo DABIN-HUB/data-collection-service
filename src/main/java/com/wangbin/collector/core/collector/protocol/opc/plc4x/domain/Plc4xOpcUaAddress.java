@@ -15,7 +15,7 @@ public class Plc4xOpcUaAddress {
     private final int queueSize;
     private final double deadband;
     private final boolean subscribe;
-    private final boolean scalar;
+    private final int arraySize;
 
     public Plc4xOpcUaAddress(String rawAddress,
                              String plc4xAddress,
@@ -24,7 +24,7 @@ public class Plc4xOpcUaAddress {
                              int queueSize,
                              double deadband,
                              boolean subscribe,
-                             boolean scalar) {
+                             int arraySize) {
         this.rawAddress = rawAddress;
         this.plc4xAddress = plc4xAddress;
         this.dataType = dataType;
@@ -32,10 +32,14 @@ public class Plc4xOpcUaAddress {
         this.queueSize = queueSize;
         this.deadband = deadband;
         this.subscribe = subscribe;
-        this.scalar = scalar;
+        this.arraySize = Math.max(1, arraySize);
     }
 
     public boolean needSubscribe() {
         return subscribe;
+    }
+
+    public boolean isScalar() {
+        return arraySize <= 1;
     }
 }

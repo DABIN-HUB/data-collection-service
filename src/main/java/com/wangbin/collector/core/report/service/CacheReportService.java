@@ -20,6 +20,9 @@ import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
+import com.wangbin.collector.core.report.outbox.CloudOutboxMetadataKeys;
+import com.wangbin.collector.core.report.outbox.CloudOutboxMessage;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import com.wangbin.collector.core.report.service.support.GatewayRateLimiter;
 import com.wangbin.collector.core.report.service.support.ReportConfigProvider;
 import com.wangbin.collector.core.report.shadow.DeviceShadow;
@@ -66,6 +69,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class CacheReportService {
 
     private static final String SNAPSHOT_POINT_CODE = "snapshot";
+    private static final String DEFAULT_GATEWAY_DEVICE_ID = "gateway";
     private static final String FLUSH_LOCK_KEY_PREFIX = "collector:report:flush:";
     private static final long FLUSH_LOCK_EXPIRE_MS = 30000L;
 
@@ -84,6 +88,8 @@ public class CacheReportService {
     private CloudAggregationService cloudAggregationService;
     @Autowired(required = false)
     private CloudBatchAccumulator cloudBatchAccumulator;
+    @Autowired(required = false)
+    private CloudOutboxService cloudOutboxService;
     private final ConcurrentMap<String, String> shadowGatewayMapping = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CloudDeviceIdentity> shadowIdentities = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
@@ -103,7 +109,12 @@ public class CacheReportService {
     @PreDestroy
     public void shutdown() {
         if (flushTask != null) {
-            flushTask.cancel(true);
+            flushTask.cancel(false);
+        }
+        try {
+            flushDirtyDevices();
+        } catch (RuntimeException e) {
+            log.warn("停机前刷新待上报设备失败", e);
         }
     }
 
@@ -152,7 +163,7 @@ public class CacheReportService {
     private String gatewayDeviceId() {
         ReportProperties.Mqtt mqtt = reportProperties.getMqtt();
         if (mqtt == null || mqtt.getGatewayDeviceName() == null || mqtt.getGatewayDeviceName().isBlank()) {
-            return "gateway";
+            return DEFAULT_GATEWAY_DEVICE_ID;
         }
         return mqtt.getGatewayDeviceName();
     }
@@ -163,6 +174,37 @@ public class CacheReportService {
             return "";
         }
         return mqtt.getGatewayProductKey();
+    }
+
+    /**
+     * 从正式设备配置恢复影子上报所需的运行时索引。
+     *
+     * @param localDeviceId 本地设备ID
+     * @return 网关设备ID，云身份无效时返回空
+     */
+    private String restoreCloudContext(String localDeviceId) {
+        if (localDeviceId == null || localDeviceId.isBlank()) {
+            return null;
+        }
+        CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(localDeviceId);
+        if (cloudTarget == null || !cloudTarget.valid()) {
+            return null;
+        }
+        String gatewayDeviceId = gatewayDeviceId();
+        shadowGatewayMapping.put(localDeviceId, gatewayDeviceId);
+        shadowIdentities.put(localDeviceId, cloudTarget.identity());
+        return gatewayDeviceId;
+    }
+
+    private CloudDeviceIdentity resolveShadowIdentity(String localDeviceId) {
+        CloudDeviceIdentity identity = shadowIdentities.get(localDeviceId);
+        if (identity != null && identity.valid()) {
+            return identity;
+        }
+        if (restoreCloudContext(localDeviceId) == null) {
+            return null;
+        }
+        return shadowIdentities.get(localDeviceId);
     }
 
     private void triggerImmediateFlush(String deviceId) {
@@ -202,7 +244,7 @@ public class CacheReportService {
         }
         Map<String, List<String>> devicesByGateway = new java.util.LinkedHashMap<>();
         for (String deviceId : dirtyDevices) {
-            String gatewayDeviceId = shadowGatewayMapping.get(deviceId);
+            String gatewayDeviceId = restoreCloudContext(deviceId);
             if (gatewayDeviceId == null || gatewayDeviceId.isBlank()) {
                 continue;
             }
@@ -268,15 +310,43 @@ public class CacheReportService {
             selectedDeviceIds.clear();
             return selectedDeviceIds;
         }
+        ReportData aggregatedData = batchReport.get().reportData();
+        aggregatedData.addMetadata(CloudOutboxMetadataKeys.GATEWAY_DEVICE_ID, gatewayDeviceId);
+        String outboxMessageId = null;
+        if (cloudOutboxService != null && cloudOutboxService.isEnabled()) {
+            try {
+                List<CloudOutboxMessage.CloudOutboxCommit> commits =
+                        new ArrayList<>(selectedCandidates.size());
+                long now = System.currentTimeMillis();
+                for (BatchFlushCandidate candidate : selectedCandidates) {
+                    commits.add(new CloudOutboxMessage.CloudOutboxCommit(
+                            candidate.deviceId,
+                            metadataLong(candidate.snapshot, CloudOutboxMetadataKeys.SHADOW_VERSION),
+                            now - reportProperties.getIntervalMs(),
+                            now,
+                            new LinkedHashMap<>(candidate.snapshot.getProperties())));
+                }
+                outboxMessageId = cloudOutboxService.stageBatch(commits, aggregatedData);
+            } catch (RuntimeException exception) {
+                log.error("持久化多设备聚合上报失败，本次不发送，gatewayDeviceId={}",
+                        gatewayDeviceId, exception);
+                selectedCandidates.forEach(candidate -> closeFlushSession(candidate.session, false));
+                return selectedDeviceIds;
+            }
+        }
         if (!gatewayRateLimiter.tryAcquire(false)) {
             selectedCandidates.forEach(candidate -> closeFlushSession(candidate.session, false));
-            selectedDeviceIds.clear();
+            if (outboxMessageId == null) {
+                selectedDeviceIds.clear();
+            }
             return selectedDeviceIds;
         }
 
-        CompletableFuture<ReportResult> future = reportManager.reportAsync(batchReport.get().reportData(), reportConfig);
+        CompletableFuture<ReportResult> future = reportManager.reportAsync(aggregatedData, reportConfig);
+        String stagedMessageId = outboxMessageId;
         future.whenComplete((result, throwable) ->
-                handleBatchFlushResult(batchReport.get(), selectedCandidates, result, throwable, reportConfig));
+                handleBatchFlushResult(batchReport.get(), selectedCandidates, result, throwable,
+                        reportConfig, stagedMessageId));
         return selectedDeviceIds;
     }
 
@@ -291,7 +361,7 @@ public class CacheReportService {
                 flushingDevices.remove(deviceId);
                 continue;
             }
-            String mappedGateway = shadowGatewayMapping.get(deviceId);
+            String mappedGateway = restoreCloudContext(deviceId);
             if (!gatewayDeviceId.equals(mappedGateway)) {
                 abortFlush(session);
                 continue;
@@ -345,7 +415,11 @@ public class CacheReportService {
                                         List<BatchFlushCandidate> candidates,
                                         ReportResult result,
                                         Throwable throwable,
-                                        ReportConfig config) {
+                                        ReportConfig config,
+                                        String outboxMessageId) {
+        if (cloudOutboxService != null) {
+            cloudOutboxService.handlePublishResult(outboxMessageId, result, throwable);
+        }
         boolean success = throwable == null && result != null && result.isSuccess();
         long now = System.currentTimeMillis();
         if (throwable != null) {
@@ -358,14 +432,16 @@ public class CacheReportService {
         }
 
         for (BatchFlushCandidate candidate : candidates) {
-            if (success) {
-                shadowManager.markReportedValuesChunk(candidate.deviceId, candidate.snapshot.getProperties());
-                shadowManager.markReportedWindowCommitted(
-                        candidate.deviceId,
-                        now - reportProperties.getIntervalMs(),
-                        now);
-            } else {
-                scheduleBatchFallbackRetry(candidate.deviceId);
+            if (outboxMessageId == null) {
+                if (success) {
+                    shadowManager.markReportedValuesChunk(candidate.deviceId, candidate.snapshot.getProperties());
+                    shadowManager.markReportedWindowCommitted(
+                            candidate.deviceId,
+                            now - reportProperties.getIntervalMs(),
+                            now);
+                } else {
+                    scheduleBatchFallbackRetry(candidate.deviceId);
+                }
             }
             closeFlushSession(candidate.session, false);
         }
@@ -386,11 +462,10 @@ public class CacheReportService {
             return;
         }
 
-        String gatewayDeviceId = shadowGatewayMapping.get(deviceId);
+        String gatewayDeviceId = restoreCloudContext(deviceId);
         DeviceShadow shadow = shadowManager.getShadow(deviceId);
         if (gatewayDeviceId == null) {
-            log.warn("Skip flush because gateway mapping is missing, device={}", deviceId);
-            shadowManager.clearDirty(deviceId);
+            log.warn("保留待上报影子，设备云身份暂时无法恢复，deviceId={}", deviceId);
             abortFlush(session);
             return;
         }
@@ -588,11 +663,12 @@ public class CacheReportService {
     private ReportData buildSnapshot(DeviceShadow shadow, String gatewayDeviceId) {
         ReportData data = new ReportData();
         String localDeviceId = shadow.getDeviceId();
-        CloudDeviceIdentity identity = shadowIdentities.get(localDeviceId);
+        CloudDeviceIdentity identity = resolveShadowIdentity(localDeviceId);
         data.setDeviceId(identity != null && identity.valid() ? identity.deviceName() : localDeviceId);
         data.setTimestamp(System.currentTimeMillis());
         data.addMetadata("schemaVersion", reportProperties.getSchemaVersion());
         data.addMetadata("seq", shadow.nextSeq());
+        data.addMetadata(CloudOutboxMetadataKeys.SHADOW_VERSION, shadow.currentVersion());
         if (localDeviceId != null) {
             data.addMetadata("rawDeviceId", localDeviceId);
         }
@@ -695,15 +771,30 @@ public class CacheReportService {
             completeIfIdle(tracker);
             return;
         }
+        String outboxMessageId;
+        try {
+            outboxMessageId = stageOutbox(data, tracker);
+        } catch (RuntimeException exception) {
+            log.error("持久化云端上报消息失败，本次不发送，deviceId={}, point={}",
+                    resolveLocalDeviceId(data, tracker), data.getPointCode(), exception);
+            if (tracker != null) {
+                tracker.markFailure();
+                if (tracker.markCompleted()) {
+                    completeFlush(tracker);
+                }
+            }
+            return;
+        }
         if (!gatewayRateLimiter.tryAcquire(highPriority)) {
             log.warn("Gateway rate limit dropped current report: {} -> {}", data.getPointCode(), config.getTargetId());
-            handleChunkResult(data, null, null, tracker, chunkKey, config, highPriority, attempt);
+            handleChunkResult(data, null, null, tracker, chunkKey, config, highPriority, attempt, outboxMessageId);
             return;
         }
 
         CompletableFuture<ReportResult> future = reportManager.reportAsync(data, config);
         future.whenComplete((result, throwable) ->
-                handleChunkResult(data, result, throwable, tracker, chunkKey, config, highPriority, attempt));
+                handleChunkResult(data, result, throwable, tracker, chunkKey, config,
+                        highPriority, attempt, outboxMessageId));
     }
 
     private void handleChunkResult(ReportData data,
@@ -714,6 +805,22 @@ public class CacheReportService {
                                    ReportConfig config,
                                    boolean highPriority,
                                    int attempt) {
+        handleChunkResult(data, result, throwable, tracker, chunkKey, config,
+                highPriority, attempt, null);
+    }
+
+    private void handleChunkResult(ReportData data,
+                                   ReportResult result,
+                                   Throwable throwable,
+                                   FlushTracker tracker,
+                                   String chunkKey,
+                                   ReportConfig config,
+                                   boolean highPriority,
+                                   int attempt,
+                                   String outboxMessageId) {
+        if (cloudOutboxService != null) {
+            cloudOutboxService.handlePublishResult(outboxMessageId, result, throwable);
+        }
         if (tracker == null) {
             return;
         }
@@ -741,6 +848,10 @@ public class CacheReportService {
                 log.warn("Deferred report retry exhausted: device={}, key={}, maxRetries={}",
                         tracker.deviceId, chunkKey, reportProperties.getRetryTimes());
             }
+        } else if (success && cloudOutboxService != null && cloudOutboxService.isAwaitingAck(result)) {
+            tracker.markFailure();
+            log.debug("云端消息等待平台业务确认，暂不提交影子，deviceId={}, key={}",
+                    tracker.deviceId, chunkKey);
         } else if (success) {
             shadowManager.markReportedValuesChunk(tracker.deviceId, data.getProperties());
         } else if (chunkKey != null && retryable && tracker.shouldRetry(chunkKey)) {
@@ -755,6 +866,37 @@ public class CacheReportService {
         boolean allCompleted = tracker.markCompleted();
         if (!scheduledRetry && allCompleted) {
             completeFlush(tracker);
+        }
+    }
+
+    private String stageOutbox(ReportData data, FlushTracker tracker) {
+        if (cloudOutboxService == null || !cloudOutboxService.isEnabled()) {
+            return null;
+        }
+        String localDeviceId = resolveLocalDeviceId(data, tracker);
+        long shadowVersion = metadataLong(data, CloudOutboxMetadataKeys.SHADOW_VERSION);
+        long windowStart = tracker != null ? tracker.windowStart : data.getTimestamp();
+        long windowEnd = tracker != null ? tracker.windowEnd : data.getTimestamp();
+        return cloudOutboxService.stage(localDeviceId, shadowVersion, windowStart, windowEnd, data);
+    }
+
+    private String resolveLocalDeviceId(ReportData data, FlushTracker tracker) {
+        if (tracker != null) {
+            return tracker.deviceId;
+        }
+        Object value = data.getMetadata().get(CloudOutboxMetadataKeys.RAW_DEVICE_ID);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private long metadataLong(ReportData data, String key) {
+        Object value = data.getMetadata().get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return value == null ? 0L : Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            return 0L;
         }
     }
 
@@ -1021,7 +1163,10 @@ public class CacheReportService {
     }
 
     private ReportConfig resolveReportConfig(String deviceId) {
-        String gatewayDeviceId = shadowGatewayMapping.getOrDefault(deviceId, gatewayDeviceId());
+        String gatewayDeviceId = restoreCloudContext(deviceId);
+        if (gatewayDeviceId == null) {
+            return null;
+        }
         ReportConfig config = reportConfigProvider.getConfig(gatewayDeviceId);
         if (config != null && config.validate()) {
             return config;

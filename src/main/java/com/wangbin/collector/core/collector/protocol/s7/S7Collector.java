@@ -1388,9 +1388,7 @@ public class S7Collector extends ConnectionBackedCollector {
     }
 
     private Duration resolveSubscriptionInterval(DataPoint point) {
-        long intervalMs = point != null && point.getCurrentCollectionInterval() > 0
-                ? point.getCurrentCollectionInterval()
-                : point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
+        long intervalMs = point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
                 ? point.getBaseCollectionInterval()
                 : deviceInfo != null && deviceInfo.getCollectionInterval() != null && deviceInfo.getCollectionInterval() > 0
                 ? deviceInfo.getCollectionInterval()

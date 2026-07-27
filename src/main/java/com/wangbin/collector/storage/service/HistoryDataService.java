@@ -5,6 +5,8 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.storage.config.TdengineProperties;
+import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
+import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +22,7 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class HistoryDataService {
 
+    private final HistoryWriteBuffer historyWriteBuffer;
     private final TimeSeriesService timeSeriesService;
     private final ConfigManager configManager;
     private final TdengineProperties properties;
@@ -37,7 +40,8 @@ public class HistoryDataService {
         } catch (Exception e) {
             log.debug("resolve protocolType from config failed, deviceId={}", deviceId, e);
         }
-        timeSeriesService.append(deviceId, protocolType, point, processResult, System.currentTimeMillis());
+        historyWriteBuffer.writeOrBuffer(new HistoryWriteRequest(
+                deviceId, protocolType, point, processResult, System.currentTimeMillis()));
     }
 
     public List<Map<String, Object>> queryPointHistory(String deviceId,
@@ -54,4 +58,5 @@ public class HistoryDataService {
     public boolean isEnabled() {
         return properties.isEnabled();
     }
+
 }

@@ -228,6 +228,34 @@ class Plc4xOpcUaCollectorTest {
         assertEquals(9.5f, (Float) value, 0.0001f);
     }
 
+    @Test
+    void shouldConvertOpcUaArrayReadAndWriteValues() {
+        Plc4xOpcUaCollector collector = new Plc4xOpcUaCollector();
+        DataPoint point = point("p-array", "values", "ns=2;s=Values", "INT");
+        point.setAdditionalConfig(Map.of("driverDataType", "INT", "arraySize", 2));
+        Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(point);
+
+        PlcValue arrayValue = mock(PlcValue.class);
+        PlcValue first = mock(PlcValue.class);
+        PlcValue second = mock(PlcValue.class);
+        when(arrayValue.isNull()).thenReturn(false);
+        when(arrayValue.isList()).thenReturn(true);
+        when(arrayValue.getLength()).thenReturn(2);
+        when(arrayValue.getIndex(0)).thenReturn(first);
+        when(arrayValue.getIndex(1)).thenReturn(second);
+        when(first.isInteger()).thenReturn(true);
+        when(second.isInteger()).thenReturn(true);
+        when(first.getInteger()).thenReturn(7);
+        when(second.getInteger()).thenReturn(8);
+
+        Object readValue = ReflectionTestUtils.invokeMethod(collector, "extractValue", arrayValue, point, address);
+        Object writeValue = ReflectionTestUtils.invokeMethod(
+                collector, "coerceWriteValue", new int[]{9, 10}, address, point);
+
+        assertEquals(List.of(7, 8), readValue);
+        assertEquals(List.of(9, 10), writeValue);
+    }
+
     private void prepareConnectedCollector(Plc4xOpcUaCollector collector) throws Exception {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));

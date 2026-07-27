@@ -29,7 +29,7 @@ class DevicePerformance {
     double healthScore = 100.0;
     long lastHealthCheckTime = System.currentTimeMillis();
     int consecutiveFailureCount = 0;
-    long lastSuccessTime = System.currentTimeMillis();
+    long lastSuccessTime;
 
     final List<Long> recentResponseTimes = new ArrayList<>();
     static final int MAX_RESPONSE_TIME_HISTORY = 10;

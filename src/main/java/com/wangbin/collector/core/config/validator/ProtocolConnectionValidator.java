@@ -53,14 +53,18 @@ public class ProtocolConnectionValidator {
                 validateSnmp(deviceInfo, connection);
             }
             case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
+            case "DLT645_2007" -> validateDlt645(deviceInfo, connection);
+            case "IEC101" -> validateIec101(deviceInfo, connection);
             case "OPC_UA" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA");
             case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA_PLC4X");
+            case "OPC_UA_MILO" -> validateMiloOpcUa(deviceInfo, connection);
             case "OPC_DA" -> validateOpcDa(deviceInfo, connection);
-            case "MODBUS_RTU", "MODBUS_ASCII", "CUSTOM_TCP", "CUSTOM_UDP", "TCP" -> {
-                // These protocols have usable defaults or protocol-specific validation later.
+            case "CUSTOM_TCP", "CUSTOM_UDP" -> requireHostPort(deviceInfo, connection, protocol);
+            case "MODBUS_RTU", "MODBUS_ASCII", "TCP" -> {
+                // 这些协议具备可用的默认参数，或由后续协议流程执行专项校验。
             }
             default -> {
-                // Unknown protocol support is handled by CollectorFactory/ConnectionFactory.
+                // 未知协议由采集器工厂和连接工厂统一判定是否支持。
             }
         }
     }
@@ -305,8 +309,95 @@ public class ProtocolConnectionValidator {
         validateBooleanFlag(deviceInfo, connection.getProperty("remoteIsMaster"), "BACNET_MSTP remoteIsMaster");
     }
 
+    private void validateDlt645(DeviceInfo deviceInfo, DeviceConnection connection) {
+        validateSerialConnection(deviceInfo, connection, "DL/T 645");
+        String meterAddress = connection.getStringConfig("meterAddress", null);
+        if (isBlank(meterAddress)
+                || !meterAddress.replace(" ", "").replace("-", "").matches("(?i)[0-9a-f]{12}")) {
+            fail(deviceInfo, "DL/T 645 电表通信地址必须是 12 位十六进制字符");
+        }
+        validateNonNegative(deviceInfo, connection.getIntConfig("retryCount", null), "DL/T 645 重试次数");
+        validateNonNegative(deviceInfo, connection.getIntConfig("wakeupByteCount", null), "DL/T 645 唤醒字节数");
+        validateNonNegative(deviceInfo, connection.getIntConfig("interFrameDelayMs", null), "DL/T 645 帧间隔");
+
+        if (Boolean.TRUE.equals(connection.getBoolConfig("writeEnabled", false))) {
+            validateHexCredential(deviceInfo, connection.getStringConfig("writePasswordHex", null), "写入密码");
+            validateHexCredential(deviceInfo, connection.getStringConfig("operatorCodeHex", null), "操作者代码");
+        }
+    }
+
+    private void validateIec101(DeviceInfo deviceInfo, DeviceConnection connection) {
+        validateSerialConnection(deviceInfo, connection, "IEC101");
+        String linkMode = connection.getStringConfig("linkMode", "UNBALANCED");
+        if (!"UNBALANCED".equalsIgnoreCase(linkMode)) {
+            fail(deviceInfo, "IEC101 当前仅支持非平衡式控制站模式");
+        }
+        validateSizedAddress(deviceInfo, connection.getIntConfig("linkAddress", 1),
+                connection.getIntConfig("linkAddressSize", 1), "IEC101 链路地址");
+        validateSizedAddress(deviceInfo, connection.getIntConfig("commonAddress", 1),
+                connection.getIntConfig("commonAddressSize", 2), "IEC101 公共地址");
+        validateRange(deviceInfo, connection.getIntConfig("causeOfTransmissionSize", 2), 1, 2,
+                "IEC101 传送原因长度");
+        validateRange(deviceInfo, connection.getIntConfig("informationObjectAddressSize", 3), 1, 3,
+                "IEC101 信息体地址长度");
+        validateNonNegative(deviceInfo, connection.getIntConfig("retryCount", null), "IEC101 重试次数");
+        validatePositive(deviceInfo, connection.getIntConfig("class1PollIntervalMs", null), "IEC101 一级数据轮询周期");
+        validatePositive(deviceInfo, connection.getIntConfig("class2PollIntervalMs", null), "IEC101 二级数据轮询周期");
+    }
+
+    private void validateSerialConnection(DeviceInfo deviceInfo,
+                                          DeviceConnection connection,
+                                          String protocolName) {
+        if (isBlank(connection.getStringConfig("serialPort", null))) {
+            fail(deviceInfo, protocolName + " 必须配置串口名称");
+        }
+        validatePositive(deviceInfo, connection.getIntConfig("baudRate", null), protocolName + " 波特率");
+        validateRange(deviceInfo, connection.getIntConfig("dataBits", 8), 5, 8, protocolName + " 数据位");
+        validateRange(deviceInfo, connection.getIntConfig("stopBits", 1), 1, 2, protocolName + " 停止位");
+        String parity = connection.getStringConfig("parity", "EVEN").toUpperCase(Locale.ROOT);
+        if (!Set.of("NONE", "EVEN", "ODD").contains(parity)) {
+            fail(deviceInfo, protocolName + " 校验位只允许 NONE、EVEN 或 ODD");
+        }
+        validatePositive(deviceInfo, connection.getIntConfig("readTimeout", null), protocolName + " 读取超时");
+        validatePositive(deviceInfo, connection.getIntConfig("writeTimeout", null), protocolName + " 写入超时");
+    }
+
+    private void validateHexCredential(DeviceInfo deviceInfo, String value, String fieldName) {
+        if (isBlank(value) || !value.replace(" ", "").matches("(?i)[0-9a-f]{8}")) {
+            fail(deviceInfo, "DL/T 645 " + fieldName + "必须是 4 字节十六进制字符");
+        }
+    }
+
+    private void validateSizedAddress(DeviceInfo deviceInfo, Integer address, Integer size, String fieldName) {
+        validateRange(deviceInfo, size, 1, 2, fieldName + "长度");
+        int maximum = size != null && size == 1 ? 0xFF : 0xFFFF;
+        if (address == null || address < 0 || address > maximum) {
+            fail(deviceInfo, fieldName + "超出当前地址长度允许范围");
+        }
+    }
+
+    private void validateRange(DeviceInfo deviceInfo, Integer value, int min, int max, String fieldName) {
+        if (value == null || value < min || value > max) {
+            fail(deviceInfo, fieldName + "必须在 " + min + " 到 " + max + " 之间");
+        }
+    }
+
     private void validateBacnetSc(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireUrlOrHostPort(deviceInfo, connection, "BACNET_SC");
+
+        String url = firstNonBlank(connection.getUrl(), connection.getStringConfig("endpointUrl", null));
+        if (hasText(url) && !url.toLowerCase().startsWith("wss://")) {
+            fail(deviceInfo, "BACNET_SC requires a wss:// secure WebSocket URL");
+        }
+        if (Boolean.TRUE.equals(connection.getBoolConfig("trustAllServerCert", false))) {
+            fail(deviceInfo, "BACNET_SC does not allow trustAllServerCert");
+        }
+        if (isBlank(connection.getStringConfig("keyStoreFile", null))) {
+            fail(deviceInfo, "BACNET_SC requires keyStoreFile for mutual TLS");
+        }
+        if (isBlank(connection.getStringConfig("trustStoreFile", null))) {
+            fail(deviceInfo, "BACNET_SC requires trustStoreFile for server certificate validation");
+        }
 
         Integer remoteDeviceInstance = connection.getIntConfig("remoteDeviceInstance", null);
         if (remoteDeviceInstance == null || remoteDeviceInstance < 0) {
@@ -336,6 +427,20 @@ public class ProtocolConnectionValidator {
             return;
         }
 
+        validateOpcUaSecurity(deviceInfo, connection, protocolLabel, true);
+    }
+
+    private void validateMiloOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
+        if (!hasOpcUaEndpoint(deviceInfo, connection)) {
+            fail(deviceInfo, "OPC_UA_MILO requires url, endpointUrl, endpoint, or host");
+        }
+        validateOpcUaSecurity(deviceInfo, connection, "OPC_UA_MILO", false);
+    }
+
+    private void validateOpcUaSecurity(DeviceInfo deviceInfo,
+                                       DeviceConnection connection,
+                                       String protocolLabel,
+                                       boolean allowPlc4xConnectionString) {
         String authType = firstNonBlank(connection.getStringConfig("authType", null), "ANONYMOUS")
                 .trim()
                 .toUpperCase();
@@ -376,7 +481,12 @@ public class ProtocolConnectionValidator {
         }
 
         if (Boolean.TRUE.equals(connection.getBoolConfig("trustAllServerCert", false))) {
-            fail(deviceInfo, protocolLabel + " generated config does not support trustAllServerCert; use trustStoreFile or plc4xConnectionString");
+            String supportedTrustConfig = allowPlc4xConnectionString
+                    ? "trustStoreFile or plc4xConnectionString"
+                    : "trustStoreFile";
+            fail(deviceInfo, protocolLabel
+                    + " generated config does not support trustAllServerCert; use "
+                    + supportedTrustConfig);
         }
     }
 
@@ -549,7 +659,10 @@ public class ProtocolConnectionValidator {
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
             case "OPCUA" -> "OPC_UA";
             case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
+            case "OPCUA_MILO" -> "OPC_UA_MILO";
             case "IEC_104" -> "IEC104";
+            case "DLT645", "DL_T_645", "DLT_645_2007" -> "DLT645_2007";
+            case "IEC_101", "IEC60870_5_101" -> "IEC101";
             case "IEC_61850" -> "IEC61850";
             default -> normalized;
         };

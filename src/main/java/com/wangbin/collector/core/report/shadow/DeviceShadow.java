@@ -224,6 +224,26 @@ public class DeviceShadow {
         }
     }
 
+    /**
+     * 判断当前全部最新值是否已经完成上报。
+     *
+     * @return 全部最新值已上报时返回true
+     */
+    public boolean allLatestValuesReported() {
+        if (latest.isEmpty()) {
+            return true;
+        }
+        for (Map.Entry<String, ValueMeta> entry : latest.entrySet()) {
+            ValueMeta valueMeta = entry.getValue();
+            Object latestValue = valueMeta == null ? null : valueMeta.getValue();
+            if (!lastReportedValues.containsKey(entry.getKey())
+                    || !valuesEqual(lastReportedValues.get(entry.getKey()), latestValue)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public void restoreLastReportedValues(Map<String, Object> values) {
         if (values == null || values.isEmpty()) {
             return;

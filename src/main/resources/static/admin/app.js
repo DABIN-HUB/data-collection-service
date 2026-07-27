@@ -1,5 +1,5 @@
 const state = {
-  token: localStorage.getItem("collectorToken") || "ops-token",
+  token: localStorage.getItem("collectorToken") || "",
   devices: [],
   protocols: [],
   runtimeStatus: {},
@@ -25,6 +25,18 @@ const state = {
 const $ = (selector) => document.querySelector(selector);
 const API_BASE = resolveContextPath();
 const HIDDEN_PROTOCOLS = new Set(["OPC_UA_PLC4X"]);
+const THREAD_POOL_LABELS = Object.freeze({
+  reportExecutor: "云端发送线程池",
+  batchDispatcherExecutor: "批次分发线程池",
+  asyncCollectorExecutor: "异步采集线程池",
+  dataProcessorExecutor: "数据处理线程池",
+  cacheAsyncExecutor: "缓存异步线程池",
+  telemetryCacheStageExecutor: "实时缓存阶段",
+  telemetryStreamStageExecutor: "流缓存阶段",
+  telemetryHistoryStageExecutor: "历史存储阶段",
+  telemetryReportStageExecutor: "上报处理阶段",
+  timeSliceScheduler: "时间片调度池"
+});
 
 const adaptiveDefaults = {
   baseCollectionInterval: 2000,
@@ -429,6 +441,14 @@ function localizeDeviceStatus(status) {
       return "离线";
     case "CONNECTING":
       return "连接中";
+    case "RECONNECTING":
+      return "重连中";
+    case "DEGRADED":
+      return "降级运行";
+    case "FAILED":
+      return "采集失败";
+    case "STOPPED":
+      return "已停止";
     case "ERROR":
       return "异常";
     case "UNKNOWN":
@@ -698,7 +718,22 @@ async function callApi(path, options = {}) {
   }
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const text = await response.text();
-  const body = text ? JSON.parse(text) : {};
+  let body = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch (error) {
+      body = { message: text.trim() || `HTTP ${response.status}` };
+    }
+  }
+  if (response.status === 401) {
+    state.token = "";
+    localStorage.removeItem("collectorToken");
+    const tokenInput = $("#tokenInput");
+    if (tokenInput) {
+      tokenInput.value = "";
+    }
+  }
   if (!response.ok) {
     throw apiError(body.message || `HTTP ${response.status}`, body, response.status);
   }
@@ -859,6 +894,20 @@ function previewApi(path, options = {}) {
           connectionDuration: 3600000 + index * 300000
         }))
       }
+    });
+  }
+
+  if (normalizedPath === "/api/device/runtime") {
+    return Promise.resolve({
+      status: "success",
+      data: devices.map((device) => ({
+        deviceId: device.id || device.deviceId,
+        phase: device.status === "ONLINE" ? "ONLINE" : (device.status === "RUNNING" ? "RUNNING" : "STOPPED"),
+        running: ["ONLINE", "RUNNING"].includes(device.status),
+        starting: false,
+        connected: device.status === "ONLINE",
+        reconnecting: false
+      }))
     });
   }
   if (normalizedPath === "/monitor/cache") {
@@ -1178,6 +1227,7 @@ async function loadOverview() {
   const pointCount = numberValue(stats.pointCount ?? summary.pointCount, 0);
   const connectionCount = numberValue(stats.connectionCount ?? summary.connectionCount, totalDevices);
   const healthStatus = healthData.status || healthData.overallStatus || "UNKNOWN";
+  updateRuntimeIndicator(healthStatus, onlineDevices);
   const latestSync = formatTs(summary.nextSyncTime || summary.lastSyncTime);
   const alarmCount = numberValue(alarmData.count, safeArray(alarmData.data).length);
   const reportStatus = reportData.status || "UNKNOWN";
@@ -1239,6 +1289,21 @@ async function loadOverview() {
     connectionCount,
     healthStatus
   });
+}
+
+function updateRuntimeIndicator(healthStatus, runningDeviceCount) {
+  const indicator = $("#runtimeIndicator");
+  if (!indicator) {
+    return;
+  }
+  const normalizedStatus = String(healthStatus || "UNKNOWN").toUpperCase();
+  if (normalizedStatus === "UP") {
+    indicator.lastChild.textContent = runningDeviceCount > 0
+      ? `运行中（${runningDeviceCount} 台设备）` : "服务正常（暂无运行设备）";
+    return;
+  }
+  indicator.lastChild.textContent = normalizedStatus === "UNKNOWN"
+    ? "状态未知" : `服务异常（${normalizedStatus}）`;
 }
 
 function settledData(result, fallback = {}) {
@@ -1605,21 +1670,23 @@ function renderHomeResources(systemData, perfDetail, reportData) {
   const cpu = ratioValue(systemData?.systemCpuLoad);
   const reportExecutor = reportData?.executor || {};
   const threadPools = systemData?.threadPools || {};
-  const keyPools = ["reportExecutor", "batchDispatcherExecutor", "dataProcessorExecutor", "cacheAsyncExecutor"];
-  const poolRows = keyPools
-    .map((name) => [name, threadPools[name]])
-    .filter(([, value]) => value && numberValue(value.corePoolSize, -1) >= 0)
-    .slice(0, 3);
+  const outboxPendingCount = numberValue(systemData?.outboxPendingCount, -1);
+  const outboxIsolatedCount = numberValue(systemData?.outboxIsolatedCount, -1);
+  const outboxOldestAge = numberValue(systemData?.outboxOldestMessageAgeMillis, -1);
+  const poolRows = Object.entries(threadPools)
+    .filter(([, value]) => value && numberValue(value.corePoolSize, -1) >= 0);
 
   setHomeBadge("#homeResourceSummary", cpu !== null ? `CPU ${percent(cpu)}` : "资源未知", cpu !== null && cpu >= 0.80 ? "warn" : "ok");
   const rows = [
     metricRow("堆内存", heapMax > 0 ? `${bytes(heapUsed)} / ${bytes(heapMax)}` : bytes(heapUsed), heapRate === null ? "-" : percent(heapRate), heapRate !== null && heapRate >= 0.85 ? "warn" : "ok"),
     metricRow("系统 CPU", cpu === null ? "-" : percent(cpu), `线程 ${systemData?.threadCount ?? "-"}`, cpu !== null && cpu >= 0.80 ? "warn" : "ok"),
-    metricRow("上报线程池", `${reportExecutor.activeCount ?? "-"}/${reportExecutor.maxPoolSize ?? "-"}`, `队列 ${reportExecutor.queueSize ?? "-"}/${reportExecutor.queueCapacity ?? "-"}`, ratioValue(reportExecutor.queueUsage) >= 0.70 ? "warn" : "ok")
+    metricRow("云端发送线程池", `${reportExecutor.activeCount ?? "-"}/${reportExecutor.maxPoolSize ?? "-"}`, `队列 ${reportExecutor.queueSize ?? "-"}/${reportExecutor.queueCapacity ?? "-"}，累计完成 ${reportExecutor.completedTaskCount ?? "-"}`, ratioValue(reportExecutor.queueUsage) >= 0.70 ? "warn" : "ok"),
+    metricRow("云端待发消息", outboxPendingCount < 0 ? "未知" : `${outboxPendingCount} 条`, `最老等待 ${formatDurationMs(outboxOldestAge)}，隔离 ${outboxIsolatedCount < 0 ? "未知" : `${outboxIsolatedCount} 条`}`, outboxIsolatedCount > 0 ? "warn" : "ok")
   ];
 
   poolRows.forEach(([name, pool]) => {
-    rows.push(metricRow(name, `${pool.activeCount ?? "-"}/${pool.maxPoolSize ?? "-"}`, `队列 ${pool.queueSize ?? "-"}，拒绝 ${pool.rejectedCount ?? "-"}`, numberValue(pool.rejectedCount, 0) > 0 ? "warn" : "info"));
+    const label = THREAD_POOL_LABELS[name] || name;
+    rows.push(metricRow(label, `${pool.activeCount ?? "-"}/${pool.maxPoolSize ?? "-"}`, `队列 ${pool.queueSize ?? "-"}，完成 ${pool.completedTaskCount ?? "-"}，拒绝 ${pool.rejectedCount ?? "-"}`, numberValue(pool.rejectedCount, 0) > 0 ? "warn" : "info"));
   });
 
   rows.push(metricRow("重连状态", `${numberValue(perfDetail?.reconnectingDevices, 0)} 个重连中`, `失败 ${numberValue(perfDetail?.reconnectFailureCount, 0)} 次`, numberValue(perfDetail?.reconnectFailureCount, 0) > 0 ? "warn" : "ok"));
@@ -1653,14 +1720,12 @@ function formatDurationMs(value) {
 }
 async function loadDevices() {
   setDeviceListState("正在加载设备列表...", "info");
-  const [devicesBody, monitorBody, runningBody] = await Promise.allSettled([
+  const [devicesBody, runtimeBody] = await Promise.allSettled([
     callApi("/api/config/devices"),
-    callApi("/monitor/devices"),
-    callApi("/api/device/running")
+    callApi("/api/device/runtime")
   ]);
-  const monitor = monitorBody.status === "fulfilled" ? dataOf(monitorBody.value) : {};
-  const running = runningBody.status === "fulfilled" ? dataOf(runningBody.value) : [];
-  state.runtimeStatus = buildRuntimeStatusMap(monitor, Array.isArray(running) ? running : []);
+  const runtime = runtimeBody.status === "fulfilled" ? dataOf(runtimeBody.value) : [];
+  state.runtimeStatus = buildUnifiedRuntimeStatusMap(Array.isArray(runtime) ? runtime : []);
 
   if (devicesBody.status !== "fulfilled") {
     state.devices = [];
@@ -1822,7 +1887,20 @@ function renderProtocolMeta(protocol) {
   if (!protocol) {
     return "<p>暂无协议说明</p>";
   }
-  const status = protocol.implemented ? "Implemented" : "Placeholder";
+  const capabilityLabels = {
+    SUPPORTED: "支持",
+    UNSUPPORTED: "不支持",
+    RUNTIME_DEPENDENT: "依赖运行环境",
+    EXPERIMENTAL: "实验性"
+  };
+  const implementationState = protocol.implementationState
+    || (protocol.implemented ? "SUPPORTED" : "UNSUPPORTED");
+  const writeCapability = protocol.writeCapability
+    || (protocol.writable ? "SUPPORTED" : "UNSUPPORTED");
+  const subscriptionCapability = protocol.subscriptionCapability
+    || (protocol.subscribable ? "SUPPORTED" : "UNSUPPORTED");
+  const browseCapability = protocol.browseCapability || "UNSUPPORTED";
+  const status = capabilityLabels[implementationState] || implementationState;
   const aliases = (protocol.aliases || []).map(escapeHtml).join(", ") || "-";
   const addressHints = (protocol.pointAddressHints || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-";
   const dataTypes = (protocol.dataTypes || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") || "-";
@@ -1864,9 +1942,10 @@ function renderProtocolMeta(protocol) {
   const riskNoteHtml = renderProtocolRiskNote(protocol);
   return `
     <strong>${escapeHtml(protocol.title)}</strong>
-    <span class="${protocol.implemented ? "status-good" : "status-bad"}">${status}</span>
+    <span class="${implementationState === "UNSUPPORTED" ? "status-bad" : "status-good"}">${escapeHtml(status)}</span>
     <p>${escapeHtml(protocol.description || "")}</p>
     ${riskNoteHtml}
+    <p>写入能力：${escapeHtml(capabilityLabels[writeCapability] || writeCapability)}；订阅能力：${escapeHtml(capabilityLabels[subscriptionCapability] || subscriptionCapability)}；浏览能力：${escapeHtml(capabilityLabels[browseCapability] || browseCapability)}</p>
     <p>协议别名：${aliases}</p>
     <p>地址示例：${addressHints}</p>
     <p><code>dataTypes</code>：${dataTypes}</p>
@@ -2934,11 +3013,31 @@ function buildRuntimeStatusMap(deviceMonitor, runningDevices) {
   return map;
 }
 
+function buildUnifiedRuntimeStatusMap(runtimeSnapshots) {
+  const map = {};
+  runtimeSnapshots.forEach((snapshot) => {
+    if (!snapshot?.deviceId) {
+      return;
+    }
+    map[snapshot.deviceId] = {
+      connected: snapshot.connected === true,
+      isRunning: snapshot.running === true || snapshot.starting === true,
+      reconnecting: snapshot.reconnecting === true,
+      status: snapshot.phase || null,
+      snapshot
+    };
+  });
+  return map;
+}
+
 function getRuntimeStatus(deviceId) {
   return state.runtimeStatus[deviceId] || null;
 }
 
 function resolveDeviceStatus(device, runtime) {
+  if (["FAILED", "DEGRADED", "RECONNECTING"].includes(runtime?.status)) {
+    return runtime.status;
+  }
   if (runtime?.connected) {
     return "ONLINE";
   }
@@ -2951,12 +3050,14 @@ function resolveDeviceStatus(device, runtime) {
 function renderDeviceStatus(status, runtime, device) {
   const cssClass = status === "ONLINE"
     ? "status-good"
-    : status === "RUNNING"
+    : ["RUNNING", "RECONNECTING", "DEGRADED"].includes(status)
       ? "status-warn"
       : "status-bad";
   const configStatus = localizeDeviceStatus(device?.status || "UNKNOWN");
-  const detail = runtime?.connected
-    ? "运行连接已建立"
+  const detail = runtime?.snapshot?.degradedReason
+    ? runtime.snapshot.degradedReason
+    : runtime?.connected
+      ? "运行连接已建立"
     : runtime?.isRunning
       ? "已启动，等待连接建立"
       : `配置状态 ${configStatus}`;

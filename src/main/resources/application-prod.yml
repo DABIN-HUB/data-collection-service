@@ -3,16 +3,20 @@ spring:
     activate:
       on-profile: prod
   datasource:
-    url: ${COLLECTOR_TDENGINE_URL:jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector}
-    username: ${COLLECTOR_TDENGINE_USERNAME:root}
-    password: ${COLLECTOR_TDENGINE_PASSWORD:change-me}
+    url: ${COLLECTOR_TDENGINE_URL}
+    username: ${COLLECTOR_TDENGINE_USERNAME}
+    password: ${COLLECTOR_TDENGINE_PASSWORD}
   data:
     redis:
       host: ${COLLECTOR_REDIS_HOST:127.0.0.1}
       port: ${COLLECTOR_REDIS_PORT:6379}
       database: ${COLLECTOR_REDIS_DATABASE:0}
       timeout: ${COLLECTOR_REDIS_TIMEOUT:3000}
-      password: ${COLLECTOR_REDIS_PASSWORD:}
+      password: ${COLLECTOR_REDIS_PASSWORD}
+
+telemetry:
+  tdengine:
+    enabled: ${COLLECTOR_TDENGINE_ENABLED:true}
 
 collector:
   config:
@@ -27,5 +31,5 @@ collector:
       client-id: ${COLLECTOR_REPORT_MQTT_CLIENT_ID:collector-1}
       username: ${COLLECTOR_REPORT_MQTT_USERNAME:}
       password: ${COLLECTOR_REPORT_MQTT_PASSWORD:}
-      gateway-product-key: ${COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY:change-me}
-      gateway-device-name: ${COLLECTOR_REPORT_GATEWAY_DEVICE_NAME:collector-1}
+      gateway-product-key: ${COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY:}
+      gateway-device-name: ${COLLECTOR_REPORT_GATEWAY_DEVICE_NAME:}

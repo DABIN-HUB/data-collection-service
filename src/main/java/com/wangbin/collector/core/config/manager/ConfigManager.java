@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
@@ -36,6 +37,8 @@ public class ConfigManager {
     public static final String CONFIG_SOURCE_LOCAL = "local";
     public static final String CONFIG_SOURCE_KEY = "configSource";
     public static final String TEMPORARY_CONFIG_KEY = "temporaryConfig";
+    private static final String OLD_VERSION_KEY = "oldVersion";
+    private static final String NEW_VERSION_KEY = "newVersion";
 
     /**
      * 设备配置缓存 key:设备ID value:设备信息
@@ -236,7 +239,6 @@ public class ConfigManager {
         if(CollectionUtils.isEmpty(dataPoints)){
             return Collections.emptyList();
         }
-        dataPoints.forEach(AdaptiveCollectionUtil::resetAdaptiveConfig);
         return dataPoints;
     }
 
@@ -342,7 +344,7 @@ public class ConfigManager {
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
-                    .configType("device")
+                    .configType(ConfigUpdateType.DEVICE.getValue())
                     .connectionChanged(connectionChanged)
                     .updateTime(new Date())
                     .build();
@@ -391,7 +393,7 @@ public class ConfigManager {
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
-                    .configType("points")
+                    .configType(ConfigUpdateType.POINTS.getValue())
                     .updateTime(new Date())
                     .build();
 
@@ -437,7 +439,7 @@ public class ConfigManager {
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
-                    .configType("connection")
+                    .configType(ConfigUpdateType.CONNECTION.getValue())
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
@@ -452,7 +454,111 @@ public class ConfigManager {
     }
 
     /**
-     * Save a complete local temporary device bundle without touching the remote sync source.
+     * 原子替换一组设备上下文，任一配置校验失败时不修改现有缓存。
+     *
+     * @param contexts 待导入的设备上下文
+     * @return 是否全部导入成功
+     */
+    public boolean replaceDeviceContextsAtomically(List<DeviceContext> contexts) {
+        if (CollectionUtils.isEmpty(contexts)) {
+            return false;
+        }
+
+        String oldVersion;
+        String newVersion;
+        lock.writeLock().lock();
+        try {
+            Set<String> deviceIds = new HashSet<>();
+            Map<String, List<DataPoint>> normalizedPoints = new HashMap<>();
+            for (DeviceContext context : contexts) {
+                validateImportContext(context, deviceIds, normalizedPoints);
+            }
+
+            Map<String, DeviceInfo> deviceBackup = new HashMap<>(deviceCache);
+            Map<String, DeviceConnection> connectionBackup = new HashMap<>(connectionCache);
+            Map<String, List<DataPoint>> pointBackup = new HashMap<>(pointCache);
+            Map<String, DeviceContext> contextBackup = new HashMap<>(deviceContextCache);
+            oldVersion = calculateConfigVersion();
+            try {
+                for (DeviceContext context : contexts) {
+                    String deviceId = context.getDeviceId();
+                    deviceCache.put(deviceId, context.getDeviceInfo());
+                    if (context.getConnectionConfig() == null) {
+                        connectionCache.remove(deviceId);
+                    } else {
+                        connectionCache.put(deviceId, context.copyConnectionConfig());
+                    }
+                    pointCache.put(deviceId, normalizedPoints.get(deviceId));
+                    rebuildDeviceContext(deviceId);
+                }
+            } catch (RuntimeException e) {
+                restoreCache(deviceCache, deviceBackup);
+                restoreCache(connectionCache, connectionBackup);
+                restoreCache(pointCache, pointBackup);
+                restoreCache(deviceContextCache, contextBackup);
+                throw e;
+            }
+            newVersion = calculateConfigVersion();
+        } catch (IllegalArgumentException e) {
+            log.warn("设备配置批量导入校验失败，现有缓存未修改: {}", e.getMessage());
+            return false;
+        } catch (RuntimeException e) {
+            log.error("设备配置批量导入失败，现有缓存未修改", e);
+            return false;
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        ConfigUpdateEvent event = ConfigUpdateEvent.createAllUpdateEvent();
+        event.setSource("config-import");
+        event.setExtraParams(Map.of(OLD_VERSION_KEY, oldVersion, NEW_VERSION_KEY, newVersion));
+        try {
+            eventPublisher.publishEvent(event);
+        } catch (RuntimeException e) {
+            log.error("配置已提交，但发布配置变更事件失败，版本: {}", newVersion, e);
+        }
+        log.info("设备配置批量原子导入完成，设备数量: {}，版本: {} -> {}",
+                contexts.size(), oldVersion, newVersion);
+        return true;
+    }
+
+    private String calculateConfigVersion() {
+        return Integer.toUnsignedString(Objects.hash(
+                deviceCache, connectionCache, pointCache), 16);
+    }
+
+    private <T> void restoreCache(Map<String, T> target, Map<String, T> backup) {
+        target.clear();
+        target.putAll(backup);
+    }
+
+    private void validateImportContext(DeviceContext context,
+                                       Set<String> deviceIds,
+                                       Map<String, List<DataPoint>> normalizedPoints) {
+        if (context == null || context.getDeviceInfo() == null
+                || !StringUtils.hasText(context.getDeviceId())) {
+            throw new IllegalArgumentException("导入设备及设备ID不能为空");
+        }
+        String deviceId = context.getDeviceId();
+        if (!deviceIds.add(deviceId)) {
+            throw new IllegalArgumentException("导入内容包含重复设备ID: " + deviceId);
+        }
+
+        DeviceConnection connection = context.copyConnectionConfig();
+        if (connection != null) {
+            connection.setDeviceId(deviceId);
+            protocolConnectionValidator.validate(context.getDeviceInfo(), connection);
+        }
+        List<DataPoint> points = context.copyDataPoints();
+        normalizeDataPointCollectionPolicy(context.getDeviceInfo(), points);
+        if (fieldUniquenessValidator != null) {
+            fieldUniquenessValidator.validate(deviceId, points);
+        }
+        normalizedPoints.put(deviceId, points);
+    }
+
+    /**
+     * 保存完整的本地临时设备配置，不修改远程同步源。
      */
     public boolean saveLocalDeviceConfig(DeviceInfo device,
                                          DeviceConnection connection,
@@ -493,7 +599,7 @@ public class ConfigManager {
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
-                    .configType("local")
+                    .configType(ConfigUpdateType.LOCAL.getValue())
                     .connectionChanged(true)
                     .updateTime(new Date())
                     .build();
@@ -527,7 +633,7 @@ public class ConfigManager {
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
-                    .configType("local-delete")
+                    .configType(ConfigUpdateType.LOCAL_DELETE.getValue())
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
@@ -873,9 +979,6 @@ public class ConfigManager {
             baseInterval = Math.max(minInterval, Math.min(baseInterval, maxInterval));
 
             point.setBaseCollectionInterval(baseInterval);
-            if (point.getCurrentCollectionInterval() <= 0) {
-                point.setCurrentCollectionInterval(baseInterval);
-            }
             point.setMinCollectionInterval(minInterval);
             point.setMaxCollectionInterval(maxInterval);
             if (point.getPointChangeThreshold() == null) {
@@ -936,20 +1039,25 @@ public class ConfigManager {
 
         String deviceId = event.getDeviceId();
         String configType = event.getConfigType();
+        ConfigUpdateType updateType = ConfigUpdateType.fromValue(configType).orElse(null);
 
         try {
             // 根据变更类型重新加载配置
-            switch (configType) {
-                case "device":
+            if (updateType == null) {
+                log.warn("未知的配置类型: {}", configType);
+                return;
+            }
+            switch (updateType) {
+                case DEVICE:
                     reloadDeviceConfig(deviceId);
                     break;
-                case "points":
+                case POINTS:
                     reloadDataPoints(deviceId);
                     break;
-                case "connection":
+                case CONNECTION:
                     reloadConnectionConfig(deviceId);
                     break;
-                case "collection":
+                case COLLECTION:
                     if (StringUtils.hasText(deviceId)) {
                         reloadDeviceConfig(deviceId);
                         reloadDataPoints(deviceId);
@@ -957,7 +1065,7 @@ public class ConfigManager {
                         loadAllConfig();
                     }
                     break;
-                case "all":
+                case ALL:
                     loadAllConfig();
                     break;
                 default:

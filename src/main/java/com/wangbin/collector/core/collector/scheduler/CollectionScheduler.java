@@ -4,6 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
@@ -23,10 +26,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -44,7 +49,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Collection scheduler.
+ * 采集任务调度器。
  */
 @Slf4j
 @Service
@@ -81,6 +86,9 @@ public class CollectionScheduler {
 
     @Autowired
     private CollectionTaskGuard collectionTaskGuard;
+
+    @Autowired
+    private PointRuntimeStateService pointRuntimeStateService;
 
     private final ScheduledExecutorService timeSliceScheduler;
     private final ExecutorService batchDispatcher;
@@ -265,8 +273,7 @@ public class CollectionScheduler {
                     CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                             .get(Math.max(1, currentSliceInterval - 10L), TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
-                    cancelSliceTasks(sliceIndex, revision);
-                    log.warn("time slice execute timeout, slice={}", sliceIndex);
+                    log.warn("time slice execute timeout, keep periodic tasks active, slice={}", sliceIndex);
                 } catch (Exception e) {
                     log.error("time slice execute failed, slice={}", sliceIndex, e);
                 }
@@ -311,7 +318,11 @@ public class CollectionScheduler {
                 );
             } catch (TimeoutException e) {
                 collectFuture.cancel(true);
+                batchTask.recordFailure();
                 log.warn("batch collection timeout, device={}, timeoutMs={}", deviceId, collectTimeoutMs);
+                return;
+            } catch (CancellationException e) {
+                log.debug("batch collection cancelled, device={}", deviceId);
                 return;
             } catch (InterruptedException e) {
                 collectFuture.cancel(true);
@@ -388,9 +399,7 @@ public class CollectionScheduler {
             }
 
             if (collectorProperties.getAdaptiveCollection().isEnabled()) {
-                for (DataPoint dataPoint : dataPoints) {
-                    AdaptiveCollectionUtil.initDataPointAdaptiveConfig(dataPoint);
-                }
+                pointRuntimeStateService.initializeDevice(deviceId, dataPoints);
             }
 
             generation = collectionTaskGuard.activateNextGeneration(deviceId);
@@ -675,15 +684,21 @@ public class CollectionScheduler {
     }
 
     private CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task) {
+        if (!task.tryStartExecution()) {
+            return null;
+        }
         try {
             return CompletableFuture.runAsync(() -> {
                 try {
                     processDeviceBatch(task);
                 } catch (Exception e) {
                     log.error("device batch execute failed, device={}", task.deviceId, e);
+                } finally {
+                    task.finishExecution();
                 }
             }, batchDispatcher);
         } catch (RejectedExecutionException e) {
+            task.finishExecution();
             batchDispatchRejectedCount.incrementAndGet();
             task.recordFailure();
             log.warn("batch dispatch rejected, device={}, slice={}, queueSize={}",
@@ -955,6 +970,69 @@ public class CollectionScheduler {
         return status;
     }
 
+    public List<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshots() {
+        Set<String> deviceIds = new HashSet<>(collectionManager.getAllDeviceIds());
+        deviceIds.addAll(deviceScheduleInfo.keySet());
+        deviceIds.addAll(startingDevices);
+        deviceIds.addAll(reconnectStates.keySet());
+        return deviceIds.stream()
+                .sorted()
+                .map(this::buildRuntimeSnapshot)
+                .toList();
+    }
+
+    private DeviceRuntimeSnapshot buildRuntimeSnapshot(String deviceId) {
+        DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
+        ReconnectState reconnectState = reconnectStates.get(deviceId);
+        boolean running = scheduleInfo != null && scheduleInfo.isRunning();
+        boolean starting = startingDevices.contains(deviceId);
+        boolean connected = collectionManager.isDeviceConnected(deviceId);
+        boolean reconnecting = reconnectState != null && reconnectState.reconnecting.get();
+        DevicePerformance performance = performanceMonitor.devicePerformance.get(deviceId);
+        int consecutiveFailures = performance != null ? performance.consecutiveFailureCount : 0;
+        long lastSuccessfulCollectionAt = performance != null ? performance.lastSuccessTime : 0L;
+        long backoffUntil = timeSliceTasks.values().stream()
+                .flatMap(List::stream)
+                .filter(task -> deviceId.equals(task.deviceId))
+                .mapToLong(DeviceBatchTask::getNextAllowedExecutionTime)
+                .max()
+                .orElse(0L);
+        DeviceRuntimePhase phase;
+        String degradedReason = null;
+        if (consecutiveFailures >= 5) {
+            phase = DeviceRuntimePhase.FAILED;
+            degradedReason = "连续采集失败";
+        } else if (consecutiveFailures > 0) {
+            phase = DeviceRuntimePhase.DEGRADED;
+            degradedReason = "采集存在连续失败";
+        } else if (connected) {
+            phase = DeviceRuntimePhase.ONLINE;
+        } else if (reconnecting) {
+            phase = DeviceRuntimePhase.RECONNECTING;
+        } else if (starting) {
+            phase = DeviceRuntimePhase.STARTING;
+        } else if (running) {
+            phase = DeviceRuntimePhase.RUNNING;
+        } else {
+            phase = DeviceRuntimePhase.STOPPED;
+        }
+        return new DeviceRuntimeSnapshot(
+                deviceId,
+                phase,
+                running,
+                starting,
+                connected,
+                reconnecting,
+                reconnectState != null ? reconnectState.nextRetryAt.get() : 0L,
+                scheduleInfo != null ? scheduleInfo.getStartTime() : 0L,
+                scheduleInfo != null ? scheduleInfo.getGeneration() : 0L,
+                lastSuccessfulCollectionAt,
+                consecutiveFailures,
+                backoffUntil,
+                degradedReason,
+                System.currentTimeMillis());
+    }
+
     public List<String> getRunningDevices() {
         return deviceScheduleInfo.entrySet().stream()
                 .filter(entry -> entry.getValue().isRunning())
@@ -1046,18 +1124,6 @@ public class CollectionScheduler {
                 && collectionTaskGuard.isCurrent(batchTask.deviceId, batchTask.generation);
     }
 
-    private void cancelSliceTasks(int sliceIndex, long revision) {
-        List<DeviceBatchTask> tasks = timeSliceTasks.get(sliceIndex);
-        if (tasks == null || tasks.isEmpty()) {
-            return;
-        }
-        for (DeviceBatchTask task : tasks) {
-            if (task.timeSliceRevision == revision) {
-                task.cancel();
-            }
-        }
-    }
-
     private void registerCollectFuture(String deviceId, Future<?> future) {
         if (future == null) {
             return;
@@ -1138,7 +1204,6 @@ public class CollectionScheduler {
             ScheduledFuture<?> restartTask = timeSliceScheduler.schedule(() -> {
                 stopDevice(deviceId);
                 startDevice(deviceId);
-                configManager.getDataPointsAndAdaptiveConfig(deviceId);
                 pendingConfigRestartTasks.remove(deviceId);
             }, CONFIG_RESTART_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
             pendingConfigRestartTasks.put(deviceId, restartTask);

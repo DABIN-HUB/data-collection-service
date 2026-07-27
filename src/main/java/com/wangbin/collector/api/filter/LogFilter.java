@@ -69,7 +69,7 @@ public class LogFilter extends OncePerRequestFilter {
         String method = request.getMethod();
         String query = truncate(request.getQueryString(), properties.getMaxQueryLength());
         String clientIp = resolveClientIp(request);
-        String token = request.getHeader(properties.getTokenHeader());
+        Object principal = request.getAttribute(AuthFilter.ATTR_PRINCIPAL);
         String deviceId = resolveDeviceId(request);
         boolean highRisk = isHighRisk(method, path);
         boolean success = response.getStatus() < 400;
@@ -84,7 +84,7 @@ public class LogFilter extends OncePerRequestFilter {
                 .append(" success=").append(success)
                 .append(" latencyMs=").append(durationMs)
                 .append(" ip=").append(clientIp)
-                .append(" token=").append(StringUtils.hasText(token) ? token : "-");
+                .append(" principal=").append(resolvePrincipal(principal));
 
         if (properties.isLogBodySize()) {
             builder.append(" reqSize=").append(Math.max(request.getContentLengthLong(), 0))
@@ -114,6 +114,13 @@ public class LogFilter extends OncePerRequestFilter {
         } else {
             log.info(builder.toString());
         }
+    }
+
+    private String resolvePrincipal(Object principal) {
+        if (principal instanceof AuthFilter.AuthPrincipal authPrincipal) {
+            return authPrincipal.getType() + ":" + authPrincipal.getId();
+        }
+        return "-";
     }
 
     private String resolveRequestId(HttpServletRequest request) {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>采集器管理控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=20260708-home-dashboard">
+  <link rel="stylesheet" href="./styles.css?v=20260715-home-layout">
   <link rel="stylesheet" href="./admin-redesign.css?v=20260706-p0b">
   <link rel="stylesheet" href="./design-lab.css?v=20260702c">
 </head>
@@ -36,7 +36,7 @@
           <summary>访问令牌</summary>
           <div class="token-body">
             <label for="tokenInput">接口令牌（X-Collector-Token）</label>
-            <input id="tokenInput" type="text" placeholder="开发默认值：ops-token">
+            <input id="tokenInput" type="password" placeholder="请输入接口令牌" autocomplete="off">
             <p>静态页面免鉴权，接口请求仍会携带这里保存的令牌。</p>
             <button id="saveTokenBtn" type="button">保存令牌</button>
           </div>
@@ -48,23 +48,13 @@
     <main class="content">
       <header class="topbar">
         <div class="topbar-site">
-          <span class="topbar-label">当前站点：</span>
-          <select class="site-select">
-            <option>南京江宁工厂</option>
-            <option>苏州测试站</option>
-            <option>默认采集站</option>
-          </select>
+          <span class="topbar-label">当前节点：</span>
+          <strong>本机采集节点</strong>
         </div>
 
         <div class="topbar-actions">
-          <span class="run-indicator"><i></i>运行中</span>
+          <span id="runtimeIndicator" class="run-indicator"><i></i>状态检测中</span>
           <span id="liveClock" class="clock">--:--:--</span>
-          <button type="button" class="icon-button" aria-label="通知"></button>
-          <button type="button" class="icon-button secondary" aria-label="帮助"></button>
-          <div class="user-pill">
-            <span class="avatar"></span>
-            <span>管理员</span>
-          </div>
         </div>
       </header>
 
@@ -96,54 +86,58 @@
         </div>
         <div id="overviewCards" class="overview-cards"></div>
         <div class="home-dashboard" aria-label="首页运行总览">
-          <section class="home-panel home-panel-large">
-            <div class="home-panel-head">
-              <div>
-                <span class="panel-kicker">告警中心</span>
-                <h2>全局告警最近记录</h2>
+          <div class="home-dashboard-row home-dashboard-primary">
+            <section class="home-panel home-panel-large">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">告警中心</span>
+                  <h2>全局告警最近记录</h2>
+                </div>
+                <span id="homeAlarmSummary" class="home-panel-badge">加载中</span>
               </div>
-              <span id="homeAlarmSummary" class="home-panel-badge">加载中</span>
-            </div>
-            <div id="homeAlarmRows" class="home-event-list">
-              <div class="empty-state compact">正在加载告警记录...</div>
-            </div>
-          </section>
-          <section class="home-panel">
-            <div class="home-panel-head">
-              <div>
-                <span class="panel-kicker">风险设备</span>
-                <h2>设备与异常风险</h2>
+              <div id="homeAlarmRows" class="home-event-list">
+                <div class="empty-state compact">正在加载告警记录...</div>
               </div>
-              <span id="homeRiskSummary" class="home-panel-badge">加载中</span>
-            </div>
-            <div id="homeRiskRows" class="home-risk-list">
-              <div class="empty-state compact">正在分析设备健康状态...</div>
-            </div>
-          </section>
-          <section class="home-panel home-panel-large">
-            <div class="home-panel-head">
-              <div>
-                <span class="panel-kicker">上报链路</span>
-                <h2>数据上报链路</h2>
+            </section>
+            <section class="home-panel">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">风险设备</span>
+                  <h2>设备与异常风险</h2>
+                </div>
+                <span id="homeRiskSummary" class="home-panel-badge">加载中</span>
               </div>
-              <span id="homeReportSummary" class="home-panel-badge">加载中</span>
-            </div>
-            <div id="homePipeline" class="pipeline-steps">
-              <div class="empty-state compact">正在加载链路指标...</div>
-            </div>
-          </section>
-          <section class="home-panel">
-            <div class="home-panel-head">
-              <div>
-                <span class="panel-kicker">运行状态</span>
-                <h2>系统资源与线程池</h2>
+              <div id="homeRiskRows" class="home-risk-list">
+                <div class="empty-state compact">正在分析设备健康状态...</div>
               </div>
-              <span id="homeResourceSummary" class="home-panel-badge">加载中</span>
-            </div>
-            <div id="homeResourceRows" class="home-resource-list">
-              <div class="empty-state compact">正在加载资源指标...</div>
-            </div>
-          </section>
+            </section>
+          </div>
+          <div class="home-dashboard-row home-dashboard-observability">
+            <section class="home-panel home-panel-report">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">上报链路</span>
+                  <h2>数据上报链路</h2>
+                </div>
+                <span id="homeReportSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homePipeline" class="pipeline-steps">
+                <div class="empty-state compact">正在加载链路指标...</div>
+              </div>
+            </section>
+            <section class="home-panel home-panel-runtime">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">运行状态</span>
+                  <h2>系统资源与线程池</h2>
+                </div>
+                <span id="homeResourceSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homeResourceRows" class="home-resource-list">
+                <div class="empty-state compact">正在加载资源指标...</div>
+              </div>
+            </section>
+          </div>
         </div>
       </section>
 

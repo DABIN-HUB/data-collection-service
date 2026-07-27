@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Immutable snapshot of remote-loaded config state.
+ * 远程加载配置的不可变快照。
  */
 public record ConfigSnapshot(
         Map<String, DeviceInfo> devices,

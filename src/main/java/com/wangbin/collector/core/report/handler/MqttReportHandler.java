@@ -18,6 +18,7 @@ import com.wangbin.collector.core.cloud.service.CloudReportTargetContext;
 import com.wangbin.collector.core.report.downlink.MqttDownlinkService;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.inbound.MqttAckReplyHandler;
+import com.wangbin.collector.core.report.inbound.MqttAckReplyObserver;
 import com.wangbin.collector.core.report.inbound.MqttBusinessReplyService;
 import com.wangbin.collector.core.report.inbound.MqttDownlinkCommandHandler;
 import com.wangbin.collector.core.report.inbound.MqttInboundMessage;
@@ -88,6 +89,8 @@ public class MqttReportHandler extends AbstractReportHandler {
     private ReportProperties reportProperties;
     @Autowired(required = false)
     private MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
+    @Autowired(required = false)
+    private MqttAckReplyObserver ackReplyObserver;
 
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
@@ -113,6 +116,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                 downlinkService,
                 businessReplyService,
                 lifecyclePublisher,
+                ackReplyObserver,
                 effectiveMonitorExecutor,
                 resolveMaxConcurrentConnects(),
                 resolveReconnectScanIntervalMs()
@@ -1158,11 +1162,13 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final MqttDownlinkService downlinkService;
         private final MqttBusinessReplyService businessReplyService;
         private final MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
+        private final MqttAckReplyObserver ackReplyObserver;
 
         public MqttClientManager(AckManager ackManager,
                                  MqttDownlinkService downlinkService,
                                  MqttBusinessReplyService businessReplyService,
                                  MqttCloudDeviceLifecyclePublisher lifecyclePublisher,
+                                 MqttAckReplyObserver ackReplyObserver,
                                  ScheduledExecutorService monitorExecutor,
                                  int maxConcurrentConnects,
                                  long reconnectScanIntervalMs) {
@@ -1170,6 +1176,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             this.downlinkService = downlinkService;
             this.businessReplyService = businessReplyService;
             this.lifecyclePublisher = lifecyclePublisher;
+            this.ackReplyObserver = ackReplyObserver;
             this.monitorExecutor = monitorExecutor;
             this.connectSemaphore = new Semaphore(Math.max(1, maxConcurrentConnects));
             this.reconnectScanIntervalMs = Math.max(1000L, reconnectScanIntervalMs);
@@ -1304,9 +1311,19 @@ public class MqttReportHandler extends AbstractReportHandler {
                 MqttInboundMessageDispatcher inboundDispatcher = new MqttInboundMessageDispatcher(
                         protocolAdapter,
                         config.getAckTopicSuffix(),
-                        new MqttAckReplyHandler(OBJECT_MAPPER, ackReply -> ackManager.complete(
-                                ackReply.messageId(),
-                                AckMessage.received(ackReply.messageId(), ackReply.code(), ackReply.message()))),
+                        new MqttAckReplyHandler(OBJECT_MAPPER, ackReply -> {
+                            ackManager.complete(
+                                    ackReply.messageId(),
+                                    AckMessage.received(ackReply.messageId(), ackReply.code(), ackReply.message()));
+                            if (ackReplyObserver != null) {
+                                try {
+                                    ackReplyObserver.onAck(ackReply);
+                                } catch (RuntimeException exception) {
+                                    log.error("提交MQTT业务确认到持久化发件箱失败，messageId={}",
+                                            ackReply.messageId(), exception);
+                                }
+                            }
+                        }),
                         businessReplyService,
                         new MqttDownlinkCommandHandler(downlinkService, (topic, payload, qos) -> {
                             MqttMessage response = new MqttMessage(payload);

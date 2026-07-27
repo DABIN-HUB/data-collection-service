@@ -21,6 +21,8 @@ class ProtocolBatchStrategy {
             Map.entry("OPCUA", new BatchLimits(100, 200, 100, 50)),
             Map.entry("OPC_DA", new BatchLimits(50, 100, 100, 50)),
             Map.entry("IEC104", new BatchLimits(50, 100, 100, 50)),
+            Map.entry("DLT645_2007", new BatchLimits(16, 16, 16, 8)),
+            Map.entry("IEC101", new BatchLimits(50, 100, 100, 50)),
             Map.entry("IEC_104", new BatchLimits(50, 100, 100, 50)),
             Map.entry("IEC61850", new BatchLimits(50, 100, 100, 50)),
             Map.entry("IEC_61850", new BatchLimits(50, 100, 100, 50)),

@@ -10,6 +10,8 @@ import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
+import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
+import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
@@ -77,6 +79,7 @@ public abstract class BaseCollector implements ProtocolCollector,
 
     // 处理结果
     protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
+    private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
 
     // 订阅的点位
     protected final Set<String> subscribedPointsSet = ConcurrentHashMap.newKeySet();
@@ -86,6 +89,10 @@ public abstract class BaseCollector implements ProtocolCollector,
 
     // 使用Map存储订阅的点位对象，而不是Set只存ID
     protected final Map<String, DataPoint> subscribedPointMap = new ConcurrentHashMap<>();
+    private volatile SubscriptionRuntimeMode requestedSubscriptionMode = SubscriptionRuntimeMode.DISABLED;
+    private volatile SubscriptionRuntimeMode actualSubscriptionMode = SubscriptionRuntimeMode.DISABLED;
+    private volatile String subscriptionDegradedReason;
+    private volatile int subscriptionFallbackPointCount;
 
     @Override
     public void init(DeviceInfo deviceInfo) throws CollectorException {
@@ -172,6 +179,7 @@ public abstract class BaseCollector implements ProtocolCollector,
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
+        invocationProcessResults.remove();
 
         long startTime = System.currentTimeMillis();
         try {
@@ -185,6 +193,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
             enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
+            invocationProcessResults.set(Map.of(point.getPointId(), processResult.snapshot()));
 
             if (!processResult.isSuccess()) {
                 log.warn("Data quality check failed {}.{}, reason: {}",
@@ -201,6 +210,7 @@ public abstract class BaseCollector implements ProtocolCollector,
 
             return finalValue;
         } catch (Exception e) {
+            invocationProcessResults.remove();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             log.error("Point read failed {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
@@ -214,9 +224,11 @@ public abstract class BaseCollector implements ProtocolCollector,
 @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         checkConnection();
+        invocationProcessResults.remove();
 
         long startTime = System.currentTimeMillis();
         Map<String, Object> results = new HashMap<>();
+        Map<String, ProcessResult> batchProcessResults = new LinkedHashMap<>();
 
         try {
             log.debug("Batch read points: {}, size: {}", deviceInfo.getDeviceId(), points.size());
@@ -228,6 +240,7 @@ public abstract class BaseCollector implements ProtocolCollector,
 
             if (validPoints.isEmpty()) {
                 log.debug("没有有效点位需要读取: {}", deviceInfo.getDeviceId());
+                invocationProcessResults.set(Map.of());
                 return results;
             }
 
@@ -255,6 +268,7 @@ public abstract class BaseCollector implements ProtocolCollector,
                     ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
                     enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
+                    batchProcessResults.put(pointId, processResult.snapshot());
 
                     if (!processResult.isSuccess()) {
                         log.warn("Data quality check failed {}.{}, reason: {}",
@@ -275,8 +289,10 @@ public abstract class BaseCollector implements ProtocolCollector,
 
             log.debug("批量点位读取成功: {}, 数量: {}, 值：{}", deviceInfo.getDeviceId(), validPoints.size());
 
+            invocationProcessResults.set(Collections.unmodifiableMap(new LinkedHashMap<>(batchProcessResults)));
             return results;
         } catch (Exception e) {
+            invocationProcessResults.remove();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             log.error("批量点位读取失败: {}", deviceInfo.getDeviceId(), e);
@@ -407,9 +423,24 @@ public abstract class BaseCollector implements ProtocolCollector,
 
         try {
             log.debug("订阅点位: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+            requestedSubscriptionMode = SubscriptionRuntimeMode.SUBSCRIPTION;
 
-            // 执行实际订阅逻辑
-            doSubscribe(points);
+            try {
+                doSubscribe(points);
+                actualSubscriptionMode = SubscriptionRuntimeMode.SUBSCRIPTION;
+                subscriptionDegradedReason = null;
+                subscriptionFallbackPointCount = 0;
+            } catch (UnsupportedOperationException exception) {
+                if (resolveSubscriptionFallbackStrategy() != SubscriptionFallbackStrategy.FALLBACK_TO_POLLING) {
+                    throw exception;
+                }
+                actualSubscriptionMode = SubscriptionRuntimeMode.POLLING;
+                subscriptionDegradedReason = exception.getMessage();
+                subscriptionFallbackPointCount = points.size();
+                log.warn("设备订阅已降级为轮询: deviceId={}, pointCount={}, reason={}",
+                        deviceInfo.getDeviceId(), points.size(), exception.getMessage());
+                return;
+            }
 
             // 记录订阅的点位
             for (DataPoint point : points) {
@@ -489,6 +520,10 @@ public abstract class BaseCollector implements ProtocolCollector,
             status.put("lastConnectTime", lastConnectTime);
             status.put("lastActivityTime", lastActivityTime);
             status.put("subscribedPoints", subscribedPointMap.size());
+            status.put("requestedSubscriptionMode", requestedSubscriptionMode.name());
+            status.put("actualSubscriptionMode", actualSubscriptionMode.name());
+            status.put("subscriptionDegradedReason", subscriptionDegradedReason);
+            status.put("subscriptionFallbackPointCount", subscriptionFallbackPointCount);
             status.put("totalReadCount", totalReadCount.get());
             status.put("totalWriteCount", totalWriteCount.get());
             status.put("totalErrorCount", totalErrorCount.get());
@@ -779,6 +814,17 @@ public abstract class BaseCollector implements ProtocolCollector,
         return pointId == null ? null : lastProcessResults.get(pointId);
     }
 
+    /**
+     * 获取并清理当前采集调用生成的处理结果快照。
+     *
+     * @return 当前调用的处理结果
+     */
+    public Map<String, ProcessResult> takeInvocationProcessResults() {
+        Map<String, ProcessResult> snapshot = invocationProcessResults.get();
+        invocationProcessResults.remove();
+        return snapshot == null ? Map.of() : snapshot;
+    }
+
     protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
         if (point == null) {
             return null;
@@ -876,6 +922,14 @@ public abstract class BaseCollector implements ProtocolCollector,
     protected DeviceConnection getCurrentConnectionConfig() {
         DeviceContext context = getDeviceContextSnapshot();
         return context != null ? context.getConnectionConfig() : null;
+    }
+
+    protected SubscriptionFallbackStrategy resolveSubscriptionFallbackStrategy() {
+        DeviceConnection connection = getCurrentConnectionConfig();
+        String configuredStrategy = connection != null
+                ? connection.getString("subscriptionFallbackStrategy", null)
+                : null;
+        return SubscriptionFallbackStrategy.fromValue(configuredStrategy);
     }
 
     protected DeviceConnection requireConnectionConfig() {

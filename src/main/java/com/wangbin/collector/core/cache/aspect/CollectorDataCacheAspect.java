@@ -52,8 +52,9 @@ public class CollectorDataCacheAspect {
 
             BaseCollector collector = joinPoint.getTarget() instanceof BaseCollector
                     ? (BaseCollector) joinPoint.getTarget() : null;
-            ProcessResult processResult = collector != null
-                    ? collector.getLatestProcessResult(point.getPointId()) : null;
+            Map<String, ProcessResult> invocationResults = collector != null
+                    ? collector.takeInvocationProcessResults() : Map.of();
+            ProcessResult processResult = invocationResults.get(point.getPointId());
             Object cacheValue = processResult != null ? processResult : result;
 
             dataPostProcessor.savePointAsync(deviceId, point, cacheValue);
@@ -85,8 +86,10 @@ public class CollectorDataCacheAspect {
 
             BaseCollector collector = joinPoint.getTarget() instanceof BaseCollector
                     ? (BaseCollector) joinPoint.getTarget() : null;
+            Map<String, ProcessResult> invocationResults = collector != null
+                    ? collector.takeInvocationProcessResults() : Map.of();
 
-            dataPostProcessor.saveBatchAsync(deviceId, points, result, collector);
+            dataPostProcessor.saveBatchAsync(deviceId, points, result, invocationResults);
         } catch (Exception e) {
             log.error("prepare async batch cache failed", e);
         }

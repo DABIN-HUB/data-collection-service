@@ -99,6 +99,23 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
+    void shouldRejectMiloRawPlc4xConnectionStringWithoutEndpoint() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-milo", "OPC_UA_MILO"), connection));
+    }
+
+    @Test
+    void shouldAcceptMiloEndpoint() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-milo", "OPC_UA_MILO"), connection));
+    }
+
+    @Test
     void shouldRejectPlc4xOpcUaWithoutEndpoint() {
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), new DeviceConnection()));
@@ -187,6 +204,23 @@ class ProtocolConnectionValidatorTest {
 
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-opcda", "OPC_DA"), connection));
+    }
+
+    @Test
+    void shouldRequireMutualTlsForBacnetSc() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("wss://127.0.0.1:443/bacnet/sc");
+        connection.setExtJson(ext("remoteDeviceInstance", 1001));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet-sc", "BACNET_SC"), connection));
+
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "keyStoreFile", "client.p12",
+                "trustStoreFile", "trust.p12"
+        ));
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet-sc", "BACNET_SC"), connection));
     }
 
     @Test
@@ -357,6 +391,61 @@ class ProtocolConnectionValidatorTest {
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
     }
+
+    @Test
+    void shouldAcceptDlt645SerialConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM3",
+                "baudRate", 2400,
+                "meterAddress", "000000000001"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-meter", "DLT645"), connection));
+    }
+
+    @Test
+    void shouldRejectDlt645WriteWithoutCredential() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM3",
+                "baudRate", 2400,
+                "meterAddress", "000000000001",
+                "writeEnabled", true
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-meter", "DLT645_2007"), connection));
+    }
+
+    @Test
+    void shouldAcceptIec101UnbalancedConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM4",
+                "baudRate", 9600,
+                "linkMode", "UNBALANCED",
+                "linkAddress", 1,
+                "commonAddress", 1
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-rtu", "IEC_101"), connection));
+    }
+
+    @Test
+    void shouldRejectIec101AddressOverflow() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM4",
+                "baudRate", 9600,
+                "linkAddressSize", 1,
+                "linkAddress", 256
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-rtu", "IEC101"), connection));
+    }
+
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

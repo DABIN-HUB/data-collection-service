@@ -42,6 +42,7 @@ public final class Plc4xOpcUaAddressParser {
         int queueSize = parseInt(config.get("queueSize"), 10);
         double deadband = parseDouble(config.get("deadband"), -1d);
         boolean subscribe = resolveSubscription(point, config);
+        int arraySize = Math.max(1, parseInt(firstPresent(config, "arraySize", "numberOfElements"), 1));
 
         return new Plc4xOpcUaAddress(
                 rawAddress,
@@ -51,7 +52,7 @@ public final class Plc4xOpcUaAddressParser {
                 queueSize,
                 deadband,
                 subscribe,
-                true);
+                arraySize);
     }
 
     public static Plc4xOpcUaAddress parse(String address) {
@@ -69,7 +70,7 @@ public final class Plc4xOpcUaAddressParser {
                 10,
                 -1d,
                 false,
-                true);
+                1);
     }
 
     private static String resolveAddress(DataPoint point, Map<String, Object> config) {

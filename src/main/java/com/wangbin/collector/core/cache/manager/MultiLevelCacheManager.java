@@ -3,6 +3,8 @@ package com.wangbin.collector.core.cache.manager;
 import com.google.common.util.concurrent.Striped;
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
+import com.wangbin.collector.core.cache.config.CacheMode;
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -25,21 +27,25 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 
 /**
- * 澶氱骇缂撳瓨绠＄悊鍣? */
+ * 多级缓存管理器。
+ */
 @Slf4j
 @Component("multiLevelCacheManager")
 public class MultiLevelCacheManager implements CacheManager {
 
-    @Autowired
+    @Autowired(required = false)
     @Qualifier("localCacheManager")
     private LocalCacheManager localCacheManager;
 
-    @Autowired
+    @Autowired(required = false)
     @Qualifier("redisCacheManager")
     private RedisCacheManager redisCacheManager;
 
     @Autowired(required = false)
     private ExceptionMonitorService exceptionMonitorService;
+
+    @Autowired
+    private CacheProperties cacheProperties;
 
     private final List<CacheManager> cacheManagers = new CopyOnWriteArrayList<>();
     private volatile boolean enabled = true;
@@ -66,27 +72,38 @@ public class MultiLevelCacheManager implements CacheManager {
     public void init() {
         shuttingDown = false;
         if (!isOperational()) {
-            log.warn("澶氱骇缂撳瓨绠＄悊鍣ㄥ凡绂佺敤");
-            recordCacheWarning("澶氱骇缂撳瓨绠＄悊鍣ㄥ凡绂佺敤", null);
+            log.warn("多级缓存管理器已禁用");
+            recordCacheWarning("多级缓存管理器已禁用", null);
             return;
         }
 
         cacheManagers.clear();
-        cacheManagers.add(localCacheManager);
-        cacheManagers.add(redisCacheManager);
+        CacheMode cacheMode = cacheProperties.getType();
+        if (cacheMode == CacheMode.REDIS) {
+            addCacheManager(redisCacheManager, CacheMode.REDIS);
+        } else if (cacheMode == CacheMode.MULTI_LEVEL) {
+            addCacheManager(localCacheManager, CacheMode.MULTI_LEVEL);
+            addCacheManager(redisCacheManager, CacheMode.MULTI_LEVEL);
+        } else {
+            addCacheManager(localCacheManager, CacheMode.LOCAL);
+        }
+        if (cacheManagers.isEmpty()) {
+            enabled = false;
+            throw new IllegalStateException("缓存模式未找到可用缓存管理器: " + cacheMode);
+        }
         cacheManagers.sort(Comparator.comparingInt(CacheManager::getCacheLevel));
 
         for (CacheManager manager : cacheManagers) {
             try {
                 manager.init();
-                log.info("缂撳瓨绠＄悊鍣ㄥ垵濮嬪寲瀹屾垚: {} [Level: {}]",
+                log.info("缓存管理器初始化完成: {} [层级: {}]",
                         manager.getCacheType(), manager.getCacheLevel());
             } catch (Exception e) {
-                log.error("缂撳瓨绠＄悊鍣ㄥ垵濮嬪寲澶辫触: {}", manager.getCacheType(), e);
+                log.error("缓存管理器初始化失败: {}", manager.getCacheType(), e);
             }
         }
 
-        log.info("澶氱骇缂撳瓨绠＄悊鍣ㄥ垵濮嬪寲瀹屾垚锛屽眰绾ф暟: {}", cacheManagers.size());
+        log.info("多级缓存管理器初始化完成，层级数: {}", cacheManagers.size());
     }
 
     @PreDestroy
@@ -132,10 +149,10 @@ public class MultiLevelCacheManager implements CacheManager {
                     boolean success = manager.put(key, value, expireTime);
                     if (!success) {
                         allSuccess = false;
-                        log.warn("缂撳瓨鍐欏叆澶辫触: {} [Level: {}]",
+                        log.warn("缓存写入失败: {} [层级: {}]",
                                 manager.getCacheType(), manager.getCacheLevel());
                         recordCacheWarning(
-                                String.format("缂撳瓨鍐欏叆澶辫触: %s [Level: %d]",
+                                String.format("缓存写入失败: %s [层级: %d]",
                                         manager.getCacheType(), manager.getCacheLevel()),
                                 key);
                     }
@@ -145,22 +162,23 @@ public class MultiLevelCacheManager implements CacheManager {
                 boolean success = primaryManager.put(key, value, expireTime);
                 if (!success) {
                     allSuccess = false;
-                    log.warn("涓荤紦瀛樺啓鍏ュけ璐? {}", primaryManager.getCacheType());
+                    log.warn("主缓存写入失败: {}", primaryManager.getCacheType());
                     recordCacheWarning(
-                            String.format("涓荤紦瀛樺啓鍏ュけ璐? %s", primaryManager.getCacheType()),
+                            String.format("主缓存写入失败: %s", primaryManager.getCacheType()),
                             key);
                 }
                 asyncRemoveLowerLevels(key, primaryManager.getCacheLevel());
             } else {
-                boolean success = localCacheManager.put(key, value, expireTime);
+                CacheManager primaryManager = getPrimaryCacheManager(key);
+                boolean success = primaryManager != null && primaryManager.put(key, value, expireTime);
                 if (!success) {
                     allSuccess = false;
-                    log.warn("鏈湴缂撳瓨鍐欏叆澶辫触");
-                    recordCacheWarning("鏈湴缂撳瓨鍐欏叆澶辫触", key);
+                    log.warn("本地缓存写入失败");
+                    recordCacheWarning("本地缓存写入失败", key);
                 }
             }
 
-            log.debug("澶氱骇缂撳瓨鍐欏叆瀹屾垚: key={}, levels={}, success={}",
+            log.debug("多级缓存写入完成: key={}, levels={}, success={}",
                     key, cacheManagers.size(), allSuccess);
             return allSuccess;
         } finally {
@@ -182,7 +200,7 @@ public class MultiLevelCacheManager implements CacheManager {
             }
         }
 
-        log.debug("鎵归噺缂撳瓨鍐欏叆瀹屾垚: 鎬绘暟={}, 鍏ㄩ儴鎴愬姛={}", dataMap.size(), allSuccess);
+        log.debug("批量缓存写入完成: 总数={}, 全部成功={}", dataMap.size(), allSuccess);
         return allSuccess;
     }
 
@@ -229,9 +247,9 @@ public class MultiLevelCacheManager implements CacheManager {
 
             if (value == null) {
                 totalMisses.incrementAndGet();
-                log.debug("澶氱骇缂撳瓨鏈懡涓? key={}", key);
+                log.debug("多级缓存未命中: key={}", key);
             } else {
-                log.debug("澶氱骇缂撳瓨鍛戒腑: key={}, level={}", key, hitLevel);
+                log.debug("多级缓存命中: key={}, level={}", key, hitLevel);
             }
 
             return value;
@@ -247,7 +265,8 @@ public class MultiLevelCacheManager implements CacheManager {
             return null;
         }
 
-        CacheData<T> cacheData = localCacheManager.getWithMetadata(key);
+        CacheManager primaryManager = cacheManagers.isEmpty() ? null : cacheManagers.get(0);
+        CacheData<T> cacheData = primaryManager == null ? null : primaryManager.getWithMetadata(key);
         if (cacheData == null) {
             cacheData = new CacheData<>();
             cacheData.setKey(key);
@@ -282,7 +301,7 @@ public class MultiLevelCacheManager implements CacheManager {
                     redisCandidates.add(key);
                 }
             } catch (Exception e) {
-                log.warn("鏈湴缂撳瓨鎵归噺璇诲彇澶辫触锛屽皢鍥為€€鍒?Redis: key={}", key, e);
+                log.warn("本地缓存批量读取失败，将回退到 Redis: key={}", key, e);
                 recordCacheException(e, key);
                 redisCandidates.add(key);
             }
@@ -304,7 +323,7 @@ public class MultiLevelCacheManager implements CacheManager {
                     }
                 }
             } catch (Exception e) {
-                log.warn("Redis 鎵归噺璇诲彇澶辫触锛屽皢鍥為€€鍒伴€愪釜璇诲彇: count={}", redisCandidates.size(), e);
+                log.warn("Redis 批量读取失败，将回退到逐个读取: count={}", redisCandidates.size(), e);
                 recordCacheException(e, null);
                 populateFromRedisIndividually(redisCandidates, result);
             }
@@ -345,10 +364,10 @@ public class MultiLevelCacheManager implements CacheManager {
                 boolean success = manager.delete(key);
                 if (!success) {
                     allSuccess = false;
-                    log.warn("缂撳瓨鍒犻櫎澶辫触: {} [Level: {}]",
+                    log.warn("缓存删除失败: {} [层级: {}]",
                             manager.getCacheType(), manager.getCacheLevel());
                     recordCacheWarning(
-                            String.format("缂撳瓨鍒犻櫎澶辫触: %s [Level: %d]",
+                            String.format("缓存删除失败: %s [层级: %d]",
                                     manager.getCacheType(), manager.getCacheLevel()),
                             key);
                 }
@@ -370,8 +389,8 @@ public class MultiLevelCacheManager implements CacheManager {
             boolean success = delete(key);
             if (!success) {
                 allSuccess = false;
-                log.warn("鎵归噺缂撳瓨鍒犻櫎澶辫触: key={}", key);
-                recordCacheWarning(String.format("鎵归噺缂撳瓨鍒犻櫎澶辫触: %s", key), key);
+                log.warn("批量缓存删除失败: key={}", key);
+                recordCacheWarning(String.format("批量缓存删除失败: %s", key), key);
             }
         }
 
@@ -389,10 +408,10 @@ public class MultiLevelCacheManager implements CacheManager {
             boolean success = manager.deleteByPattern(pattern);
             if (!success) {
                 allSuccess = false;
-                log.warn("妯″紡鍒犻櫎缂撳瓨澶辫触: {} [Level: {}]",
+                log.warn("按模式删除缓存失败: {} [层级: {}]",
                         manager.getCacheType(), manager.getCacheLevel());
                 recordCacheWarning(
-                        String.format("妯″紡鍒犻櫎缂撳瓨澶辫触: %s [Level: %d]",
+                        String.format("按模式删除缓存失败: %s [层级: %d]",
                                 manager.getCacheType(), manager.getCacheLevel()),
                         null);
             }
@@ -427,10 +446,10 @@ public class MultiLevelCacheManager implements CacheManager {
             boolean success = manager.expire(key, expireTime);
             if (!success) {
                 allSuccess = false;
-                log.warn("璁剧疆缂撳瓨杩囨湡鏃堕棿澶辫触: {} [Level: {}]",
+                log.warn("设置缓存过期时间失败: {} [层级: {}]",
                         manager.getCacheType(), manager.getCacheLevel());
                 recordCacheWarning(
-                        String.format("璁剧疆缂撳瓨杩囨湡鏃堕棿澶辫触: %s [Level: %d]",
+                        String.format("设置缓存过期时间失败: %s [层级: %d]",
                                 manager.getCacheType(), manager.getCacheLevel()),
                         key);
             }
@@ -464,9 +483,9 @@ public class MultiLevelCacheManager implements CacheManager {
         for (CacheManager manager : cacheManagers) {
             try {
                 manager.clear();
-                log.info("缂撳瓨娓呯┖瀹屾垚: {}", manager.getCacheType());
+                log.info("缓存清空完成: {}", manager.getCacheType());
             } catch (Exception e) {
-                log.error("缂撳瓨娓呯┖澶辫触: {}", manager.getCacheType(), e);
+                log.error("缓存清空失败: {}", manager.getCacheType(), e);
             }
         }
     }
@@ -550,7 +569,7 @@ public class MultiLevelCacheManager implements CacheManager {
             manager.resetStatistics();
         }
 
-        log.info("澶氱骇缂撳瓨缁熻閲嶇疆瀹屾垚");
+        log.info("多级缓存统计重置完成");
     }
 
     @Override
@@ -577,12 +596,22 @@ public class MultiLevelCacheManager implements CacheManager {
         switch (hitLevel) {
             case 1 -> level1Hits.incrementAndGet();
             case 2 -> level2Hits.incrementAndGet();
-            default -> log.debug("鏈煡鐨勭紦瀛樺眰绾у懡涓? level={}", hitLevel);
+            default -> log.debug("未知的缓存层级命中: level={}", hitLevel);
         }
     }
 
     private boolean canUseRedisBulkRead() {
-        return maxLevel >= redisCacheManager.getCacheLevel();
+        return localCacheManager != null
+                && redisCacheManager != null
+                && maxLevel >= redisCacheManager.getCacheLevel();
+    }
+
+    private void addCacheManager(CacheManager cacheManager, CacheMode cacheMode) {
+        if (cacheManager == null) {
+            log.warn("缓存模式缺少对应缓存层，mode={}", cacheMode);
+            return;
+        }
+        cacheManagers.add(cacheManager);
     }
 
     private <T> Map<CacheKey, T> getAllIndividually(List<CacheKey> keys) {
@@ -611,7 +640,7 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             } catch (Exception ex) {
                 totalMisses.incrementAndGet();
-                log.warn("Redis 鍗曢敭琛ュ伩璇诲彇澶辫触: key={}", key, ex);
+                log.warn("Redis 单键补偿读取失败: key={}", key, ex);
                 recordCacheException(ex, key);
             }
         }
@@ -627,12 +656,12 @@ public class MultiLevelCacheManager implements CacheManager {
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.put(key, value);
-                        log.debug("缂撳瓨鍥炲啓瀹屾垚: key={}, level={} -> {}",
+                        log.debug("缓存回写完成: key={}, level={} -> {}",
                                 key, currentLevel, manager.getCacheLevel());
                     }
                 }
             } catch (Exception e) {
-                log.error("缂撳瓨鍥炲啓澶辫触: key={}", key, e);
+                log.error("缓存回写失败: key={}", key, e);
             }
         });
     }
@@ -647,12 +676,12 @@ public class MultiLevelCacheManager implements CacheManager {
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.delete(key);
-                        log.debug("缂撳瓨娓呴櫎瀹屾垚: key={}, level={}",
+                        log.debug("缓存清除完成: key={}, level={}",
                                 key, manager.getCacheLevel());
                     }
                 }
             } catch (Exception e) {
-                log.error("缂撳瓨娓呴櫎澶辫触: key={}", key, e);
+                log.error("缓存清除失败: key={}", key, e);
             }
         });
     }
@@ -667,13 +696,13 @@ public class MultiLevelCacheManager implements CacheManager {
         for (CacheManager manager : cacheManagers) {
             try {
                 manager.put(key, value);
-                log.debug("缂撳瓨棰勭儹瀹屾垚: {} [Level: {}]",
+                log.debug("缓存预热完成: {} [层级: {}]",
                         manager.getCacheType(), manager.getCacheLevel());
             } catch (Exception e) {
-                log.error("缂撳瓨棰勭儹澶辫触: {}", manager.getCacheType(), e);
+                log.error("缓存预热失败: {}", manager.getCacheType(), e);
             }
         }
-        log.info("缂撳瓨棰勭儹瀹屾垚: key={}", key);
+        log.info("缓存预热完成: key={}", key);
     }
 
     public <T> void warmUpAll(Map<CacheKey, T> dataMap) {
@@ -681,17 +710,17 @@ public class MultiLevelCacheManager implements CacheManager {
             return;
         }
 
-        log.info("寮€濮嬫壒閲忛鐑紦瀛橈紝鏁伴噺: {}", dataMap.size());
+        log.info("开始批量预热缓存，数量: {}", dataMap.size());
         int successCount = 0;
         for (Map.Entry<CacheKey, T> entry : dataMap.entrySet()) {
             try {
                 warmUp(entry.getKey(), entry.getValue());
                 successCount++;
             } catch (Exception e) {
-                log.error("鎵归噺缂撳瓨棰勭儹澶辫触: key={}", entry.getKey(), e);
+                log.error("批量缓存预热失败: key={}", entry.getKey(), e);
             }
         }
-        log.info("鎵归噺缂撳瓨棰勭儹瀹屾垚: 鎬绘暟={}, 鎴愬姛={}", dataMap.size(), successCount);
+        log.info("批量缓存预热完成: 总数={}, 成功={}", dataMap.size(), successCount);
     }
 
     public <T> boolean refresh(CacheKey key, T newValue) {
@@ -702,7 +731,7 @@ public class MultiLevelCacheManager implements CacheManager {
         log.info("寮€濮嬪埛鏂扮紦瀛? key={}", key);
         delete(key);
         boolean success = put(key, newValue);
-        log.info("缂撳瓨鍒锋柊瀹屾垚: key={}, success={}", key, success);
+        log.info("缓存刷新完成: key={}, success={}", key, success);
         return success;
     }
 
@@ -750,22 +779,22 @@ public class MultiLevelCacheManager implements CacheManager {
     public String getPerformanceReport() {
         Map<String, Object> stats = getStatistics();
         StringBuilder report = new StringBuilder();
-        report.append("=== 澶氱骇缂撳瓨鎬ц兘鎶ュ憡 ===\n");
-        report.append("鎬昏闂鏁? ").append(stats.get("totalAccess")).append("\n");
-        report.append("鎬诲懡涓巼: ").append(stats.get("totalHitRate")).append("\n");
-        report.append("涓€绾х紦瀛樺懡涓巼: ").append(stats.get("level1HitRate")).append("\n");
-        report.append("浜岀骇缂撳瓨鍛戒腑鐜? ").append(stats.get("level2HitRate")).append("\n");
-        report.append("鏈懡涓巼: ").append(stats.get("missRate")).append("\n");
-        report.append("鎬诲啓鍏ユ鏁? ").append(stats.get("totalWrites")).append("\n");
-        report.append("鎬诲垹闄ゆ鏁? ").append(stats.get("totalDeletes")).append("\n");
+        report.append("=== 多级缓存性能报告 ===\n");
+        report.append("总访问次数: ").append(stats.get("totalAccess")).append("\n");
+        report.append("总命中率: ").append(stats.get("totalHitRate")).append("\n");
+        report.append("一级缓存命中率: ").append(stats.get("level1HitRate")).append("\n");
+        report.append("二级缓存命中率: ").append(stats.get("level2HitRate")).append("\n");
+        report.append("未命中率: ").append(stats.get("missRate")).append("\n");
+        report.append("总写入次数: ").append(stats.get("totalWrites")).append("\n");
+        report.append("总删除次数: ").append(stats.get("totalDeletes")).append("\n");
 
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> levelStats =
                 (Map<String, Map<String, Object>>) stats.get("levelStatistics");
         if (levelStats != null) {
-            report.append("\n=== 鍚勭骇缂撳瓨璇︽儏 ===\n");
+            report.append("\n=== 各级缓存详情 ===\n");
             for (Map.Entry<String, Map<String, Object>> entry : levelStats.entrySet()) {
-                report.append("缂撳瓨绫诲瀷: ").append(entry.getKey()).append("\n");
+                report.append("缓存类型: ").append(entry.getKey()).append("\n");
                 for (Map.Entry<String, Object> statEntry : entry.getValue().entrySet()) {
                     report.append("  ").append(statEntry.getKey()).append(": ")
                             .append(statEntry.getValue()).append("\n");
@@ -780,18 +809,18 @@ public class MultiLevelCacheManager implements CacheManager {
         this.writeThrough = writeThrough;
         this.readThrough = readThrough;
         this.cacheAside = cacheAside;
-        log.info("缂撳瓨绛栫暐璁剧疆瀹屾垚: writeThrough={}, readThrough={}, cacheAside={}",
+        log.info("缓存策略设置完成: writeThrough={}, readThrough={}, cacheAside={}",
                 writeThrough, readThrough, cacheAside);
     }
 
     public void setMaxLevel(int maxLevel) {
         this.maxLevel = maxLevel;
-        log.info("鏈€澶х紦瀛樺眰绾ц缃畬鎴? {}", maxLevel);
+        log.info("最大缓存层级设置完成: {}", maxLevel);
     }
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
-        log.info("缂撳瓨绠＄悊鍣ㄥ凡{}", enabled ? "鍚敤" : "绂佺敤");
+        log.info("缓存管理器已{}", enabled ? "启用" : "禁用");
     }
 
     private void recordCacheWarning(String message, CacheKey key) {

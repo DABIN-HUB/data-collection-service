@@ -59,4 +59,6 @@ public interface BacnetConnectionAdapter {
     default long getReplyToPollCount() { return 0L; }
     default long getFrameErrorCount() { return 0L; }
     default long getCrcErrorCount() { return 0L; }
+    default String getSessionState() { return "NOT_APPLICABLE"; }
+    default boolean isStandardSessionEstablished() { return true; }
 }

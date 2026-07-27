@@ -44,6 +44,16 @@ public class AlertManager {
     }
 
     public void notifyAlert(AlertNotification notification) {
+        notifyAlert(notification, true);
+    }
+
+    /**
+     * 记录告警，并按调用来源决定是否直接上传云端。
+     *
+     * @param notification 告警通知
+     * @param uploadToCloud 是否直接上传云端
+     */
+    public void notifyAlert(AlertNotification notification, boolean uploadToCloud) {
         if (notification == null) {
             return;
         }
@@ -57,7 +67,9 @@ public class AlertManager {
                 notification.getLevel(),
                 notification.getMessage());
         saveAlarmHistory(notification);
-        cacheReportService.reportAlert(notification);
+        if (uploadToCloud) {
+            cacheReportService.reportAlert(notification);
+        }
     }
 
     public List<AlertNotification> getRecentAlerts() {

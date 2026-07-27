@@ -3,6 +3,7 @@ package com.wangbin.collector.storage.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
@@ -58,7 +59,8 @@ class TimeSeriesServiceTdengineIT {
                 dataRepository,
                 deviceRepository,
                 properties,
-                objectMapper
+                objectMapper,
+                new PointRuntimeStateService()
         );
 
         long eventTs = System.currentTimeMillis();

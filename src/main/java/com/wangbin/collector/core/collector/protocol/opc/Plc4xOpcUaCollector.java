@@ -7,6 +7,7 @@ import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUa
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.domain.Plc4xOpcUaType;
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.util.Plc4xOpcUaAddressParser;
 import com.wangbin.collector.core.collector.protocol.opc.plc4x.util.Plc4xOpcUaTypeResolver;
+import com.wangbin.collector.core.collector.protocol.plc4x.domain.Plc4xArrayValueSupport;
 import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.api.messages.PlcBrowseItem;
@@ -117,7 +118,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
-        ensureScalar(address, point, "read");
         String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
@@ -156,7 +156,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
-        ensureScalar(address, point, "write");
         String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
@@ -185,7 +184,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                     continue;
                 }
                 Plc4xOpcUaAddress address = requireAddress(point);
-                ensureScalar(address, point, "write");
                 builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
@@ -402,7 +400,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 continue;
             }
             Plc4xOpcUaAddress address = requireAddress(point);
-            ensureScalar(address, point, "read");
             builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         PlcReadResponse response = await(builder.build().execute());
@@ -450,20 +447,10 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     }
 
     private Object extractValue(PlcValue plcValue, DataPoint point, Plc4xOpcUaAddress address) {
-        if (plcValue == null || plcValue.isNull()) {
-            return null;
-        }
-        if (plcValue.isList()) {
-            if (address.isScalar() && plcValue.getLength() == 1) {
-                plcValue = plcValue.getIndex(0);
-            } else {
-                throw new IllegalStateException("PLC4X OPC UA arrays are not supported by the current collector: "
-                        + address.getRawAddress());
-            }
-        }
-
         Plc4xOpcUaType pointType = resolvePointType(point, address);
-        return pointType != null ? pointType.read(plcValue) : extractDefaultValue(plcValue);
+        return Plc4xArrayValueSupport.decode(plcValue, address.getArraySize(),
+                value -> pointType != null ? pointType.read(value) : extractDefaultValue(value),
+                "OPC UA", address.getRawAddress());
     }
 
     private Object extractDefaultValue(PlcValue plcValue) {
@@ -504,11 +491,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     }
 
     private Object coerceWriteValue(Object value, Plc4xOpcUaAddress address, DataPoint point) {
-        if (value == null) {
-            return null;
-        }
         Plc4xOpcUaType pointType = resolvePointType(point, address);
-        return pointType != null ? pointType.write(value) : value;
+        return Plc4xArrayValueSupport.encode(value, address.getArraySize(),
+                item -> pointType != null ? pointType.write(item) : item, "OPC UA");
     }
 
     private Plc4xOpcUaType resolvePointType(DataPoint point, Plc4xOpcUaAddress address) {
@@ -727,8 +712,6 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     private Duration resolveSubscriptionInterval(DataPoint point, Plc4xOpcUaAddress address) {
         long intervalMs = address != null && address.getSamplingInterval() > 0
                 ? Math.round(address.getSamplingInterval())
-                : point != null && point.getCurrentCollectionInterval() > 0
-                ? point.getCurrentCollectionInterval()
                 : point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
                 ? point.getBaseCollectionInterval()
                 : deviceInfo != null && deviceInfo.getCollectionInterval() != null && deviceInfo.getCollectionInterval() > 0

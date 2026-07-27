@@ -5,8 +5,11 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.loader.ConfigLoader;
 import com.wangbin.collector.core.config.model.ConfigDiff;
+import com.wangbin.collector.core.config.model.ConfigLoadResult;
+import com.wangbin.collector.core.config.model.ConfigLoadStatus;
 import com.wangbin.collector.core.config.model.ConfigSnapshot;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,6 +29,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
@@ -47,6 +51,7 @@ public class ConfigSyncService {
     private final ConfigLoader configLoader;
     private final Executor syncExecutor;
     private final AtomicBoolean syncing = new AtomicBoolean(false);
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     private final Object cacheLock = new Object();
 
     private final List<Consumer<ConfigUpdateEvent>> configListeners = new CopyOnWriteArrayList<>();
@@ -55,6 +60,8 @@ public class ConfigSyncService {
     private final Map<String, DeviceConnection> connectionConfigs = new ConcurrentHashMap<>();
 
     private volatile long lastSyncTime;
+    private volatile long lastFailureTime;
+    private volatile String sourceVersion;
 
     public ConfigSyncService(ConfigLoader configLoader,
                              @Qualifier("ioIntensiveExecutor") Executor syncExecutor) {
@@ -105,11 +112,26 @@ public class ConfigSyncService {
         try {
             log.debug("开始执行配置同步");
             ConfigSnapshot previousSnapshot = snapshotCurrentConfig();
-            ConfigSnapshot latestSnapshot = configLoader.loadSnapshot();
+            ConfigLoadResult loadResult = configLoader.loadSnapshotResult();
+            if (loadResult == null || loadResult.status() == ConfigLoadStatus.FAILED) {
+                recordSyncFailure(loadResult == null ? "配置加载结果为空" : loadResult.errorMessage());
+                return;
+            }
+            if (loadResult.status() == ConfigLoadStatus.NOT_MODIFIED) {
+                recordSyncSuccess();
+                log.debug("配置同步完成，远端配置未发生变化");
+                return;
+            }
+            ConfigSnapshot latestSnapshot = loadResult.snapshot();
+            if (latestSnapshot == null) {
+                recordSyncFailure("配置加载成功但快照为空");
+                return;
+            }
             applySnapshot(latestSnapshot);
+            sourceVersion = loadResult.sourceVersion();
 
             ConfigDiff diff = ConfigDiff.between(previousSnapshot, latestSnapshot);
-            lastSyncTime = System.currentTimeMillis();
+            recordSyncSuccess();
             if (!diff.hasChanges()) {
                 log.debug("配置同步完成，未检测到增量变更");
                 return;
@@ -123,6 +145,7 @@ public class ConfigSyncService {
                     diff.changedPoints().size(),
                     diff.changedConnections().size());
         } catch (Exception e) {
+            recordSyncFailure(e.getMessage());
             log.error("配置定时同步失败", e);
         } finally {
             syncing.set(false);
@@ -222,6 +245,24 @@ public class ConfigSyncService {
         return lastSyncTime;
     }
 
+    public long getLastFailureTime() {
+        return lastFailureTime;
+    }
+
+    public String getSourceVersion() {
+        return sourceVersion;
+    }
+
+    public int getSnapshotDeviceCount() {
+        synchronized (cacheLock) {
+            return deviceConfigs.size();
+        }
+    }
+
+    public int getConsecutiveFailures() {
+        return consecutiveFailures.get();
+    }
+
     public long getSyncInterval() {
         return syncInterval;
     }
@@ -259,6 +300,18 @@ public class ConfigSyncService {
         } catch (Exception e) {
             log.error("手动配置同步失败", e);
         }
+    }
+
+    private void recordSyncSuccess() {
+        lastSyncTime = System.currentTimeMillis();
+        consecutiveFailures.set(0);
+    }
+
+    private void recordSyncFailure(String errorMessage) {
+        lastFailureTime = System.currentTimeMillis();
+        int failureCount = consecutiveFailures.incrementAndGet();
+        log.warn("配置同步失败，保留最后有效快照，连续失败次数={}，原因={}",
+                failureCount, errorMessage);
     }
 
     private void publishIncrementalEvents(ConfigDiff diff,
@@ -358,19 +411,29 @@ public class ConfigSyncService {
     }
 
     private ConfigUpdateEvent createManualEvent(String configType, String deviceId) {
+        ConfigUpdateType updateType = ConfigUpdateType.fromValue(configType).orElse(null);
         ConfigUpdateEvent event;
-        switch (configType) {
-            case "device" -> event = createDeviceEvent(deviceId, false);
-            case "points" -> event = createPointsEvent(deviceId, 0);
-            case "connection" -> event = createConnectionEvent(deviceId);
-            case "collection" -> event = ConfigUpdateEvent.createCollectionUpdateEvent(deviceId);
-            case "all" -> event = ConfigUpdateEvent.createAllUpdateEvent();
-            default -> event = ConfigUpdateEvent.builder()
+        if (updateType == null) {
+            event = ConfigUpdateEvent.builder()
                     .configType(configType)
                     .deviceId(deviceId)
                     .createTime(new Date())
                     .status("pending")
                     .build();
+        } else {
+            event = switch (updateType) {
+                case DEVICE -> createDeviceEvent(deviceId, false);
+                case POINTS -> createPointsEvent(deviceId, 0);
+                case CONNECTION -> createConnectionEvent(deviceId);
+                case COLLECTION -> ConfigUpdateEvent.createCollectionUpdateEvent(deviceId);
+                case ALL -> ConfigUpdateEvent.createAllUpdateEvent();
+                default -> ConfigUpdateEvent.builder()
+                        .configType(updateType.getValue())
+                        .deviceId(deviceId)
+                        .createTime(new Date())
+                        .status("pending")
+                        .build();
+            };
         }
         event.setSource("manual");
         event.setUpdateTime(new Date());

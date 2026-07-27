@@ -178,7 +178,7 @@ public class CollectionSchedulerTest {
     }
 
     @Test
-    void collectionSchedulerShouldCancelSliceTasksWhenSliceExecutionTimeout() throws Exception {
+    void collectionSchedulerShouldKeepPeriodicTaskWhenSliceExecutionTimeout() throws Exception {
         setupSingleDevice("dev-slice-timeout");
         collectorProperties.getScheduler().setCollectTimeoutMs(500);
         when(collectionManager.readPoints(eq("dev-slice-timeout"), anyList())).thenAnswer(invocation -> {
@@ -195,7 +195,7 @@ public class CollectionSchedulerTest {
 
         TimeUnit.MILLISECONDS.sleep(100);
         DeviceBatchTask task = firstScheduledTask(0);
-        assertTrue(task.isCancelled());
+        assertFalse(task.isCancelled());
     }
 
     @Test

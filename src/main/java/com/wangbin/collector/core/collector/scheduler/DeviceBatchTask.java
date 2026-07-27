@@ -14,6 +14,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class DeviceBatchTask {
 
+    private static final long INITIAL_BACKOFF_MILLIS = 1_000L;
+    private static final long MAX_BACKOFF_MILLIS = 30_000L;
+    private static final int MAX_BACKOFF_EXPONENT = 5;
+
     final String deviceId;
     final List<DataPoint> points;
     final int timeSliceIndex;
@@ -22,7 +26,9 @@ class DeviceBatchTask {
     long lastExecutionTime;
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
+    private final AtomicBoolean running = new AtomicBoolean(false);
     private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
+    private volatile long nextAllowedExecutionTime;
 
     DeviceBatchTask(String deviceId, List<DataPoint> points, int timeSliceIndex, long generation, long timeSliceRevision) {
         this.deviceId = deviceId;
@@ -33,15 +39,30 @@ class DeviceBatchTask {
     }
 
     boolean shouldSkip() {
-        return cancelled.get() || failureCount.get() > 3;
+        return cancelled.get() || running.get() || System.currentTimeMillis() < nextAllowedExecutionTime;
+    }
+
+    boolean tryStartExecution() {
+        if (cancelled.get() || System.currentTimeMillis() < nextAllowedExecutionTime) {
+            return false;
+        }
+        return running.compareAndSet(false, true);
+    }
+
+    void finishExecution() {
+        running.set(false);
     }
 
     void recordFailure() {
-        failureCount.incrementAndGet();
+        int failures = failureCount.incrementAndGet();
+        int exponent = Math.min(Math.max(0, failures - 1), MAX_BACKOFF_EXPONENT);
+        long backoffMillis = Math.min(MAX_BACKOFF_MILLIS, INITIAL_BACKOFF_MILLIS << exponent);
+        nextAllowedExecutionTime = System.currentTimeMillis() + backoffMillis;
     }
 
     void recordSuccess() {
         failureCount.set(0);
+        nextAllowedExecutionTime = 0L;
     }
 
     void cancel() {
@@ -51,6 +72,10 @@ class DeviceBatchTask {
 
     boolean isCancelled() {
         return cancelled.get();
+    }
+
+    long getNextAllowedExecutionTime() {
+        return nextAllowedExecutionTime;
     }
 
     void registerInFlight(Future<?> future) {

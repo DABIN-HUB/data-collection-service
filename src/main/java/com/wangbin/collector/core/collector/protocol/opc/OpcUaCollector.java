@@ -45,12 +45,20 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
 
     @Override
     public String getCollectorType() {
-        return "OPC_UA";
+        return declaredProtocolType();
     }
 
     @Override
     public String getProtocolType() {
-        return "OPC_UA";
+        return declaredProtocolType();
+    }
+
+    private String declaredProtocolType() {
+        if (deviceInfo == null || deviceInfo.getProtocolType() == null) {
+            return "OPC_UA_MILO";
+        }
+        String normalized = deviceInfo.getProtocolType().trim().toUpperCase(Locale.ROOT).replace("-", "_");
+        return "OPCUA_MILO".equals(normalized) ? "OPC_UA_MILO" : normalized;
     }
 
     @Override
@@ -160,6 +168,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("endpoint", endpointUrl);
+        status.put("protocol", getProtocolType());
+        status.put("driver", "MILO");
+        status.put("implementationState", "EXPERIMENTAL");
         status.put("securityPolicy", securityPolicy);
         status.put("connected", client != null);
         status.put("subscriptions", subscriptions.size());

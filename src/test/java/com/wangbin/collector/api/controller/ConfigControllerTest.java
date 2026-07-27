@@ -7,13 +7,16 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
+import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -34,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ConfigController.class)
+@Import(SensitiveConfigSanitizer.class)
 class ConfigControllerTest {
 
     @Autowired
@@ -50,6 +54,9 @@ class ConfigControllerTest {
 
     @MockBean
     private CollectionService collectionService;
+
+    @MockBean
+    private PointRuntimeStateService pointRuntimeStateService;
 
     @Test
     void shouldReturnSummary() throws Exception {
@@ -92,8 +99,7 @@ class ConfigControllerTest {
         bundle.getDevice().setDeviceId("dev-1");
         request.setBundles(List.of(bundle));
 
-        when(configManager.updateDeviceConfig(any(DeviceInfo.class))).thenReturn(true);
-        when(configManager.updateDataPoints(eq("dev-1"), anyList())).thenReturn(true);
+        when(configManager.replaceDeviceContextsAtomically(anyList())).thenReturn(true);
 
         mockMvc.perform(post("/api/config/import")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -143,7 +149,16 @@ class ConfigControllerTest {
         when(configManager.isLocalTemporaryDevice("remote-1")).thenReturn(false);
 
         mockMvc.perform(delete("/api/config/local/device/remote-1"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status", is("error")));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenConnectionDeviceDoesNotExist() throws Exception {
+        when(configManager.containsDevice("missing")).thenReturn(false);
+
+        mockMvc.perform(get("/api/config/device/missing/connection"))
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status", is("error")));
     }
 

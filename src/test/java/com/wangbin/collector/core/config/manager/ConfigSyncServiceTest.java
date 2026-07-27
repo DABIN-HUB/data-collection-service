@@ -112,6 +112,31 @@ public class ConfigSyncServiceTest {
         assertTrue(service.getLastSyncTime() > 0);
     }
 
+    @Test
+    void configSyncServiceShouldKeepLastSnapshotWhenRemoteLoadFails() {
+        StubConfigLoader loader = new StubConfigLoader();
+        loader.setSnapshot(
+                List.of(device("dev-1", "device-1", "MODBUS_TCP", 2000)),
+                Map.of("dev-1", List.of(point("dev-1", "temperature", "40001"))),
+                Map.of("dev-1", connection("dev-1", "127.0.0.1", 502))
+        );
+        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run);
+        service.loadAllDevices();
+        service.loadDataPoints("dev-1");
+        service.loadConnectionConfig("dev-1");
+        List<ConfigUpdateEvent> events = new CopyOnWriteArrayList<>();
+        service.registerConfigListener(events::add);
+
+        loader.failSnapshotLoad();
+        service.syncAllConfig();
+
+        assertEquals("device-1", service.getDeviceConfigs().get("dev-1").getDeviceName());
+        assertEquals(1, service.getPointConfigs().get("dev-1").size());
+        assertTrue(events.isEmpty());
+        assertEquals(1, service.getConsecutiveFailures());
+        assertTrue(service.getLastFailureTime() > 0);
+    }
+
     private static DeviceInfo device(String deviceId, String deviceName, String protocolType, int collectionInterval) {
         DeviceInfo device = new DeviceInfo();
         device.setDeviceId(deviceId);
@@ -147,6 +172,7 @@ public class ConfigSyncServiceTest {
         private volatile Map<String, DeviceConnection> connections = Map.of();
         private volatile CountDownLatch enteredLoadAllDevices;
         private volatile CountDownLatch releaseLoadAllDevices;
+        private volatile boolean failSnapshotLoad;
 
         void setSnapshot(List<DeviceInfo> devices,
                          Map<String, List<DataPoint>> points,
@@ -165,9 +191,16 @@ public class ConfigSyncServiceTest {
             return loadAllDevicesCalls.get();
         }
 
+        void failSnapshotLoad() {
+            failSnapshotLoad = true;
+        }
+
         @Override
         public List<DeviceInfo> loadAllDevices() {
             loadAllDevicesCalls.incrementAndGet();
+            if (failSnapshotLoad) {
+                throw new IllegalStateException("模拟远程配置加载失败");
+            }
             CountDownLatch entered = enteredLoadAllDevices;
             CountDownLatch release = releaseLoadAllDevices;
             if (entered != null && release != null) {

@@ -25,7 +25,7 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:never}
   prometheus:
     metrics:
       export:
@@ -35,11 +35,13 @@ spring:
     name: data-collection-service
   profiles:
     active: dev
+  lifecycle:
+    timeout-per-shutdown-phase: 35s
   datasource:
     driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
-    url: jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector
-    username: root
-    password: taosdata
+    url: ${TDENGINE_DATASOURCE_URL:jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector}
+    username: ${TDENGINE_USERNAME:root}
+    password: ${TDENGINE_PASSWORD:taosdata}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -52,7 +54,7 @@ spring:
       port: 6379
       database: 0
       timeout: 3000
-      password: 123456888wb
+      password: ${REDIS_PASSWORD:123456888wb}
       lettuce:
         pool:
           max-active: 20
@@ -133,7 +135,7 @@ logging:
 
 telemetry:
   tdengine:
-    enabled: true
+    enabled: ${COLLECTOR_TDENGINE_ENABLED:false}
     database: wangbin_collector
     super-table: wangbin_super
     sub-table-prefix: d_
@@ -142,6 +144,14 @@ telemetry:
     auto-create: true
     keep-days: 30
     query-default-limit: 500
+    buffer:
+      enabled: true
+      pending-key: "collector:${spring.profiles.active:default}:history:pending:v1"
+      processing-key: "collector:${spring.profiles.active:default}:history:processing:v1"
+      dead-letter-key: "collector:${spring.profiles.active:default}:history:dead:v1"
+      replay-interval-ms: 3000
+      replay-batch-size: 200
+      local-queue-capacity: 10000
     query-max-limit: 5000
 
 collector:
@@ -150,8 +160,31 @@ collector:
       - /health
       - /actuator/**
       - /admin/**
-    ops-tokens:
-      ops-token: 本地开发运维令牌
+      - /v3/api-docs/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+    ops-tokens: {ops-token: dev}
+    default-required-scope: VIEW
+    default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE, EDGE_INGEST]
+    ops-scopes: {}
+    access-rules:
+      - methods: [POST]
+        paths: [/api/edge/telemetry]
+        required-scope: EDGE_INGEST
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/device/**, /api/data/device/*/reset-adaptive]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/config/**]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/config/export]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/**, /monitor/**]
+        required-scope: VIEW
+    allow-ip-authentication: false
+    trusted-proxy-ranges: []
   # 自适应采集配置
   adaptive-collection:
     enabled: true          # 自适应采集开关，默认开启
@@ -172,6 +205,24 @@ collector:
     dynamic-adjust-interval-ms: 60000
     # 收集超时时间（毫秒）：等待任务执行结果或状态收集的最大等待时间
     collect-timeout-ms: 800
+  # 数据采集后各处理阶段使用独立线程池，避免单个下游阻塞整条链路。
+  telemetry-executors:
+    cache:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    stream:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    history:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
+    report:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
 
 ## 从云端获取配置数据地址，配套服务
   config:
@@ -193,6 +244,14 @@ collector:
       connection-timeout: 3000
 
   # 数据上报配置
+  alarm:
+    state:
+      enabled: true
+      key-prefix: "collector:${spring.profiles.active:default}:alarm:state:v1:"
+      ttl-seconds: 2592000
+      retry-interval-ms: 5000
+      retry-batch-size: 500
+
   report:
     enabled: true
     mode: mqtt
@@ -229,7 +288,7 @@ collector:
         timeout-ms: 5000
         max-pending: 10000
         timeout-scan-ms: 500
-        commit-on: publish-success
+        commit-on: ack-success
       batch:
         enabled: true
         max-devices-per-pack: 50
@@ -237,17 +296,25 @@ collector:
         max-payload-bytes: 131072
         max-delay-ms: 1000
         high-priority-bypass: true
+    outbox:
+      enabled: true
+      key-prefix: "collector:${spring.profiles.active:default}:cloud:outbox:v1:"
+      poll-interval-ms: 1000
+      claim-batch-size: 100
+      lease-ms: 15000
+      waiting-config-retry-ms: 10000
+      max-retry-times: 20
     # 云端上报与平台 MQTT 下行配置（ReportHandler / ACK / 统一下行入口）
     mqtt:
-      enabled: true
-      broker-url: tcp://127.0.0.1:1883
-      client-id: QbEy71mjtoh5AwYr.ces111
-      username: ces111&QbEy71mjtoh5AwYr
-      password: e3e010c4ec2ace39ba2cebe559720d62b39fbaa98f507640294233d464325440
+      enabled: ${COLLECTOR_REPORT_MQTT_ENABLED:false}
+      broker-url: ${COLLECTOR_REPORT_MQTT_BROKER_URL:tcp://127.0.0.1:1883}
+      client-id: ${COLLECTOR_REPORT_MQTT_CLIENT_ID:}
+      username: ${COLLECTOR_REPORT_MQTT_USERNAME:}
+      password: ${COLLECTOR_REPORT_MQTT_PASSWORD:}
       topic-prefix: /sys
       ack-topic-prefix: /sys
-      gateway-product-key: QbEy71mjtoh5AwYr
-      gateway-device-name: ces111
+      gateway-product-key: ${COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY:}
+      gateway-device-name: ${COLLECTOR_REPORT_GATEWAY_DEVICE_NAME:}
       cloud-provider: alink
       ack-topic-suffix: _reply
       ack-timeout-seconds: 5

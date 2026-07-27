@@ -14,6 +14,11 @@ class ReportTelemetryPostProcessStage implements TelemetryPostProcessStage {
     private final CacheReportService cacheReportService;
 
     @Override
+    public TelemetryStageType type() {
+        return TelemetryStageType.REPORT;
+    }
+
+    @Override
     public String name() {
         return "report";
     }

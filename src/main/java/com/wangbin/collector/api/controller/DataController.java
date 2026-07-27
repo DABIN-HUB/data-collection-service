@@ -2,7 +2,8 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
-import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -40,6 +41,9 @@ public class DataController {
 
     @Autowired(required = false)
     private AlarmHistoryService alarmHistoryService;
+
+    @Autowired
+    private PointRuntimeStateService pointRuntimeStateService;
 
     /**
      * 查询指定设备的指定数据点的实时值
@@ -248,14 +252,15 @@ public class DataController {
         target.put("remark", point.getRemark());
         target.put("additionalConfig", point.getAdditionalConfig());
         target.put("baseCollectionInterval", point.getBaseCollectionInterval());
-        target.put("currentCollectionInterval", point.getCurrentCollectionInterval());
+        PointRuntimeStateSnapshot runtimeState = pointRuntimeStateService.snapshot(point.getDeviceId(), point);
+        target.put("currentCollectionInterval", runtimeState.currentCollectionInterval());
         target.put("minCollectionInterval", point.getMinCollectionInterval());
         target.put("maxCollectionInterval", point.getMaxCollectionInterval());
         target.put("pointChangeThreshold", point.getPointChangeThreshold());
-        target.put("stableCount", point.getStableCount());
-        target.put("lastValue", point.getLastValue());
-        target.put("changeRate", point.getChangeRate());
-        target.put("lastAdjustTime", point.getLastAdjustTime());
+        target.put("stableCount", runtimeState.stableCount());
+        target.put("lastValue", runtimeState.lastValue());
+        target.put("changeRate", runtimeState.changeRate());
+        target.put("lastAdjustTime", runtimeState.lastAdjustTime());
     }
 
     /**
@@ -300,7 +305,7 @@ public class DataController {
         try {
             List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
             for (DataPoint point : dataPoints) {
-                AdaptiveCollectionUtil.resetAdaptiveConfig(point);
+                pointRuntimeStateService.reset(deviceId, point);
             }
             result.put("code", 200);
             result.put("message", "重置成功");

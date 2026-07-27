@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 
 /**
  * Unified collection service facade.
@@ -65,5 +66,9 @@ public class CollectionService {
 
     public boolean isDeviceRunning(String deviceId) {
         return collectionScheduler.isDeviceRunning(deviceId);
+    }
+
+    public List<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshots() {
+        return collectionScheduler.getDeviceRuntimeSnapshots();
     }
 }

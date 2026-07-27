@@ -1,6 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.BeanFactory;
@@ -19,13 +20,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 /**
- * JVM/system resource monitor.
+ * JVM 与系统资源监控服务。
  */
 @Service
 @RequiredArgsConstructor
 public class SystemResourceMonitorService {
 
     private final BeanFactory beanFactory;
+    private final CloudOutboxService cloudOutboxService;
 
     private MemoryMXBean memoryMXBean;
     private ThreadMXBean threadMXBean;
@@ -61,25 +63,16 @@ public class SystemResourceMonitorService {
                 .systemCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getSystemCpuLoad))
                 .threadCount(threadMXBean != null ? threadMXBean.getThreadCount() : -1)
                 .daemonThreadCount(threadMXBean != null ? threadMXBean.getDaemonThreadCount() : -1)
+                .outboxPendingCount(cloudOutboxService.getPendingCount())
+                .outboxIsolatedCount(cloudOutboxService.getIsolatedCount())
+                .outboxOldestMessageAgeMillis(cloudOutboxService.getOldestMessageAgeMillis())
                 .threadPools(threadPools)
                 .build();
     }
 
     private Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> collectThreadPoolStats() {
         Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> result = new LinkedHashMap<>();
-        String[] poolBeanNames = new String[]{
-                "batchDispatcherExecutor",
-                "asyncCollectorExecutor",
-                "dataProcessorExecutor",
-                "cacheAsyncExecutor",
-                "reportExecutor",
-                "timeSliceScheduler",
-                "monitorExecutor",
-                "taskScheduler",
-                "ioIntensiveExecutor",
-                "cpuIntensiveExecutor"
-        };
-        for (String beanName : poolBeanNames) {
+        for (String beanName : MonitorThreadPoolNames.ALL) {
             result.put(beanName, inspectThreadPool(beanName));
         }
         return result;

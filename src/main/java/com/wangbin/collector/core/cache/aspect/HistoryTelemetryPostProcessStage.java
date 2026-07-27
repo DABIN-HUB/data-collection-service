@@ -15,6 +15,11 @@ class HistoryTelemetryPostProcessStage implements TelemetryPostProcessStage {
     private final HistoryDataService historyDataService;
 
     @Override
+    public TelemetryStageType type() {
+        return TelemetryStageType.HISTORY;
+    }
+
+    @Override
     public String name() {
         return "history";
     }

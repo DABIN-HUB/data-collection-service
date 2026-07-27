@@ -15,6 +15,11 @@ class StreamTelemetryPostProcessStage implements TelemetryPostProcessStage {
     private final TelemetryStreamProperties streamProperties;
 
     @Override
+    public TelemetryStageType type() {
+        return TelemetryStageType.STREAM;
+    }
+
+    @Override
     public String name() {
         return "stream";
     }

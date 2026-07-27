@@ -2,7 +2,6 @@ package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +50,7 @@ public class CollectorDataPostProcessor {
     public void saveBatchAsync(String deviceId,
                                List<DataPoint> points,
                                Map<String, Object> values,
-                               BaseCollector collector) {
+                               Map<String, ProcessResult> processResults) {
         Long generation = captureGeneration(deviceId);
         submit(deviceId, null, generation, () -> {
             if (points == null || values == null || values.isEmpty()) {
@@ -72,9 +71,8 @@ public class CollectorDataPostProcessor {
                 if (value == null) {
                     continue;
                 }
-                ProcessResult collectorResult = collector != null
-                        ? collector.getLatestProcessResult(pointId)
-                        : null;
+                ProcessResult collectorResult = processResults != null
+                        ? processResults.get(pointId) : null;
                 Object cacheValue = collectorResult != null ? collectorResult : value;
                 ProcessResult processResult = toProcessResult(cacheValue);
                 if (processResult == null) {

@@ -4,6 +4,7 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.model.ConfigSnapshot;
+import com.wangbin.collector.core.config.model.ConfigLoadResult;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +19,19 @@ public interface ConfigLoader {
     List<DataPoint> loadDataPoints(String deviceId);
 
     DeviceConnection loadConnectionConfig(String deviceId);
+
+    /**
+     * 加载完整配置快照，并明确区分成功与失败。
+     *
+     * @return 配置加载结果
+     */
+    default ConfigLoadResult loadSnapshotResult() {
+        try {
+            return ConfigLoadResult.success(loadSnapshot());
+        } catch (RuntimeException exception) {
+            return ConfigLoadResult.failed(exception.getMessage());
+        }
+    }
 
     default ConfigSnapshot loadSnapshot() {
         List<DeviceInfo> devices = loadAllDevices();

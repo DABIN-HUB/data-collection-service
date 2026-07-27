@@ -9,6 +9,7 @@ import com.wangbin.collector.core.collector.protocol.fins.codec.FinsFrameCodec;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsAddress;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsByteOrder;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsConnectionConfig;
+import com.wangbin.collector.core.collector.protocol.fins.domain.FinsCommand;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsWordOrder;
 import com.wangbin.collector.core.collector.protocol.fins.service.FinsReadPlan;
 import com.wangbin.collector.core.collector.protocol.fins.service.FinsReadPlanBuilder;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -458,8 +460,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
 
     @Override
     protected void doSubscribe(List<DataPoint> points) {
-        log.info("OMRON FINS collector does not support native subscribe, deviceId={}, points={}",
-                deviceInfo.getDeviceId(), points != null ? points.size() : 0);
+        throw new UnsupportedOperationException("OMRON FINS不支持原生点位订阅");
     }
 
     @Override
@@ -500,12 +501,33 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         status.put("lastFinsResponseCode", lastFinsEndCode);
         status.put("lastRequestUnitCount", lastRequestUnitCount);
         status.put("connected", connectionAdapter != null && connectionAdapter.isConnected());
+        status.put("supportedCommands", Arrays.stream(FinsCommand.values()).map(Enum::name).toList());
         return status;
     }
 
     @Override
-    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
-        throw new UnsupportedOperationException("OMRON FINS executeCommand is not implemented in P0");
+    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
+        FinsCommand finsCommand = FinsCommand.fromValue(command);
+        int sid = nextSid();
+        byte[] request = FinsFrameCodec.buildCommandRequest(
+                requireFinsConfig(), sid, finsCommand.getMainCommand(), finsCommand.getSubCommand(), null);
+        recordProtocolRequestStart();
+        try {
+            FinsFrameCodec.FinsResponse response = FinsFrameCodec.parseResponse(
+                    exchange(request), sid, finsCommand.getMainCommand(), finsCommand.getSubCommand());
+            lastFinsEndCode = response.endCode();
+            if (!response.success()) {
+                throw new IllegalStateException(String.format(
+                        "FINS命令执行失败: command=%s, endCode=0x%04X", finsCommand.name(), response.endCode()));
+            }
+            recordProtocolRequestSuccess();
+            Map<String, Object> result = new LinkedHashMap<>(finsCommand.decode(response.payload()));
+            result.put("endCode", response.endCode());
+            return result;
+        } catch (Exception exception) {
+            recordProtocolRequestFailure(exception);
+            throw exception;
+        }
     }
 
     @Override

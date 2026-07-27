@@ -228,10 +228,8 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
             case "READ_COILS" -> executeReadCoils(targetUnitId, safeParams);
             case "WRITE_COILS" -> executeWriteCoils(targetUnitId, safeParams);
             case "DIAGNOSTIC" -> executeDiagnostic(targetUnitId);
-            case "READ_EXCEPTION_STATUS" -> executeReadExceptionStatus(targetUnitId);
-            case "DIAGNOSTICS" -> executeDiagnostics(targetUnitId, safeParams);
-            case "GET_COMM_EVENT_COUNTER" -> executeGetCommEventCounter();
-            case "GET_COMM_EVENT_LOG" -> executeGetCommEventLog();
+            case "READ_EXCEPTION_STATUS", "DIAGNOSTICS", "GET_COMM_EVENT_COUNTER", "GET_COMM_EVENT_LOG" ->
+                    throw unsupportedSerialCommand(command);
             default -> throw new IllegalArgumentException("Unsupported Modbus command: " + command);
         };
     }
@@ -312,35 +310,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
-    private Object executeReadExceptionStatus(int unitId) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("request", ModbusUtils.buildRtuExceptionStatusRequest(unitId));
-        result.put("message", "PLC4X serial path keeps the existing placeholder behavior for this command");
-        return result;
-    }
-
-    private Object executeDiagnostics(int unitId, Map<String, Object> params) {
-        int subFunction = toInt(params.getOrDefault("subFunction", 0x0000), 0x0000);
-        int data = toInt(params.getOrDefault("data", 0x0000), 0x0000);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("request", ModbusUtils.buildRtuDiagnosticRequest(unitId, subFunction, data));
-        result.put("message", "PLC4X serial path keeps the existing placeholder behavior for this command");
-        return result;
-    }
-
-    private Object executeGetCommEventCounter() {
-        return Map.of(
-                "success", false,
-                "message", "Get communication event counter is still a placeholder");
-    }
-
-    private Object executeGetCommEventLog() {
-        return Map.of(
-                "success", false,
-                "message", "Get communication event log is still a placeholder");
+    private UnsupportedOperationException unsupportedSerialCommand(String command) {
+        return new UnsupportedOperationException(
+                "PLC4X Modbus RTU串口连接不支持直接执行功能码命令: " + command);
     }
 
     private Object executeDiagnostic(int unitId) {

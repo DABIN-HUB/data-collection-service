@@ -2,7 +2,8 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.config.CollectorProperties;
-import lombok.RequiredArgsConstructor;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -12,10 +13,21 @@ import java.util.Map;
  * 采集数据处理器：负责采集结果后的数据处理和自适应频率更新。
  */
 @Component
-@RequiredArgsConstructor
 class CollectedDataProcessor {
 
     private final CollectorProperties collectorProperties;
+    private final PointRuntimeStateService pointRuntimeStateService;
+
+    @Autowired
+    CollectedDataProcessor(CollectorProperties collectorProperties,
+                           PointRuntimeStateService pointRuntimeStateService) {
+        this.collectorProperties = collectorProperties;
+        this.pointRuntimeStateService = pointRuntimeStateService;
+    }
+
+    CollectedDataProcessor(CollectorProperties collectorProperties) {
+        this(collectorProperties, new PointRuntimeStateService());
+    }
 
     void process(String deviceId,
                  List<DataPoint> points,
@@ -31,11 +43,11 @@ class CollectedDataProcessor {
             performanceMonitor.recordDataProcessed(deviceId);
             DevicePerformance perf = performanceMonitor.devicePerformance.get(deviceId);
             if (perf != null && perf.consecutiveFailureCount > 0) {
-                AdaptiveCollectionUtil.resetAdaptiveConfig(point);
+                pointRuntimeStateService.reset(deviceId, point);
             }
 
             if (collectorProperties.getAdaptiveCollection().isEnabled()) {
-                AdaptiveCollectionUtil.adjustCollectionFrequency(
+                pointRuntimeStateService.adjust(
                         deviceId,
                         point,
                         value,

@@ -59,6 +59,20 @@ public final class FinsFrameCodec {
         return parseResponse(frame, expectedSid, COMMAND_MEMORY_AREA, SUBCOMMAND_MEMORY_WRITE);
     }
 
+    public static byte[] buildCommandRequest(FinsConnectionConfig config,
+                                             int sid,
+                                             int mainCommand,
+                                             int subCommand,
+                                             byte[] payload) {
+        byte[] safePayload = payload == null ? new byte[0] : payload;
+        byte[] frame = new byte[HEADER_LENGTH + 2 + safePayload.length];
+        System.arraycopy(buildHeader(config, sid), 0, frame, 0, HEADER_LENGTH);
+        frame[10] = (byte) (mainCommand & 0xFF);
+        frame[11] = (byte) (subCommand & 0xFF);
+        System.arraycopy(safePayload, 0, frame, 12, safePayload.length);
+        return frame;
+    }
+
     public static FinsResponse parseResponse(byte[] frame,
                                              int expectedSid,
                                              int expectedMainCommand,

@@ -43,6 +43,22 @@ class FinsFrameCodecTest {
         assertArrayEquals(new byte[]{0x12, 0x34}, parsed.payload());
     }
 
+    @Test
+    void shouldBuildAndParseGenericCommand() {
+        byte[] request = FinsFrameCodec.buildCommandRequest(config(), 0x33, 0x06, 0x01, null);
+        byte[] response = new byte[]{
+                (byte) 0xC0, 0, 2, 0, 1, 0, 0, 10, 0, 0x33,
+                0x06, 0x01, 0x00, 0x00, 0x01, 0x02
+        };
+
+        FinsFrameCodec.FinsResponse parsed = FinsFrameCodec.parseResponse(response, 0x33, 0x06, 0x01);
+
+        assertEquals(12, request.length);
+        assertEquals(0x06, request[10] & 0xFF);
+        assertEquals(0x01, request[11] & 0xFF);
+        assertArrayEquals(new byte[]{0x01, 0x02}, parsed.payload());
+    }
+
     private FinsConnectionConfig config() {
         DeviceConnection connection = new DeviceConnection();
         connection.setHost("127.0.0.1");

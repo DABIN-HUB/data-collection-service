@@ -7,17 +7,25 @@ import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.api.controller.dto.ConfigImportResult;
 import com.wangbin.collector.api.controller.dto.ConfigSummaryResponse;
 import com.wangbin.collector.api.controller.dto.LocalDeviceConfigRequest;
+import com.wangbin.collector.api.exception.ConfigApiException;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,7 +41,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -49,11 +56,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ConfigController {
 
-    private static final Set<String> SYNC_TYPES = Set.of("device", "points", "connection", "collection", "all");
-
     private final ConfigManager configManager;
     private final ConfigSyncService configSyncService;
     private final CollectionService collectionService;
+    private final SensitiveConfigSanitizer sensitiveConfigSanitizer;
+    private final PointRuntimeStateService pointRuntimeStateService;
 
     @GetMapping("/summary")
     public Map<String, Object> getSummary() {
@@ -83,13 +90,13 @@ public class ConfigController {
     }
 
     @PostMapping("/local/devices")
-    public Map<String, Object> createLocalDevice(@RequestBody LocalDeviceConfigRequest request) {
+    public Map<String, Object> createLocalDevice(@Valid @RequestBody LocalDeviceConfigRequest request) {
         return saveLocalDevice(request, null, request != null && request.isOverwrite());
     }
 
     @PutMapping("/local/device/{deviceId}")
     public Map<String, Object> updateLocalDevice(@PathVariable String deviceId,
-                                                 @RequestBody LocalDeviceConfigRequest request) {
+                                                 @Valid @RequestBody LocalDeviceConfigRequest request) {
         return saveLocalDevice(request, deviceId, true);
     }
 
@@ -136,7 +143,7 @@ public class ConfigController {
         DeviceInfo local = configManager.getDevice(deviceId);
         DeviceInfo remote = configSyncService.getDeviceConfigs().get(deviceId);
         if (local == null && remote == null) {
-            return error("设备不存在: " + deviceId);
+            return notFound("设备不存在: " + deviceId);
         }
         Map<String, Object> data = new HashMap<>();
         data.put("deviceId", deviceId);
@@ -151,27 +158,40 @@ public class ConfigController {
                                                @RequestParam(value = "includeAdaptive", defaultValue = "false")
                                                boolean includeAdaptive) {
         if (!configManager.containsDevice(deviceId)) {
-            return error("设备不存在: " + deviceId);
+            return notFound("设备不存在: " + deviceId);
         }
-        List<DataPoint> points = includeAdaptive
-                ? configManager.getDataPointsAndAdaptiveConfig(deviceId)
-                : configManager.getDataPoints(deviceId);
+        List<DataPoint> points = configManager.getDataPoints(deviceId);
+        List<DataPoint> responsePoints = includeAdaptive
+                ? points.stream().map(point -> withRuntimeState(deviceId, point)).toList()
+                : points;
         Map<String, Object> data = new HashMap<>();
         data.put("deviceId", deviceId);
-        data.put("count", points.size());
-        data.put("points", points);
+        data.put("count", responsePoints.size());
+        data.put("points", responsePoints);
         return success(data);
+    }
+
+    private DataPoint withRuntimeState(String deviceId, DataPoint point) {
+        DataPoint response = new DataPoint();
+        BeanUtils.copyProperties(point, response);
+        PointRuntimeStateSnapshot state = pointRuntimeStateService.snapshot(deviceId, point);
+        response.setCurrentCollectionInterval(state.currentCollectionInterval());
+        response.setStableCount(state.stableCount());
+        response.setLastValue(state.lastValue());
+        response.setChangeRate(state.changeRate());
+        response.setLastAdjustTime(state.lastAdjustTime());
+        return response;
     }
 
     @GetMapping("/device/{deviceId}/connection")
     public Map<String, Object> getDeviceConnection(@PathVariable String deviceId) {
         if (!configManager.containsDevice(deviceId)) {
-            return error("设备不存在: " + deviceId);
+            return notFound("设备不存在: " + deviceId);
         }
         DeviceConnection connection = configManager.getConnectionConfig(deviceId);
         Map<String, Object> data = new HashMap<>();
         data.put("deviceId", deviceId);
-        data.put("connection", connection);
+        data.put("connection", sensitiveConfigSanitizer.sanitize(connection));
         return success(data);
     }
 
@@ -180,7 +200,7 @@ public class ConfigController {
         DeviceInfo local = configManager.getDevice(deviceId);
         DeviceInfo remote = configSyncService.getDeviceConfigs().get(deviceId);
         if (local == null && remote == null) {
-            return error("无法比对，设备不存在: " + deviceId);
+            return notFound("无法比对，设备不存在: " + deviceId);
         }
         DeviceConnection localConn = configManager.getConnectionConfig(deviceId);
         DeviceConnection remoteConn = configSyncService.getConnectionConfigs().get(deviceId);
@@ -224,6 +244,8 @@ public class ConfigController {
             return error("连接配置不能为空");
         }
         connection.setDeviceId(deviceId);
+        sensitiveConfigSanitizer.restoreMaskedValues(
+                connection, configManager.getConnectionConfig(deviceId));
         boolean updated = configManager.updateConnectionConfig(deviceId, connection);
         return updated ? success("连接配置已更新", Map.of("deviceId", deviceId))
                 : error("更新连接配置失败: " + deviceId);
@@ -253,12 +275,16 @@ public class ConfigController {
     public Map<String, Object> triggerPartialSync(@PathVariable String type,
                                                   @RequestParam(value = "deviceId", required = false)
                                                   String deviceId) {
-        String normalized = type.toLowerCase(Locale.ROOT);
-        if (!SYNC_TYPES.contains(normalized)) {
+        ConfigUpdateType updateType = ConfigUpdateType.fromValue(type)
+                .filter(value -> value != ConfigUpdateType.LOCAL && value != ConfigUpdateType.LOCAL_DELETE)
+                .orElse(null);
+        if (updateType == null) {
             return error("不支持的同步类型: " + type);
         }
-        configSyncService.notifyConfigUpdate(normalized, deviceId);
-        return success("已触发 " + normalized + " 同步", Map.of("deviceId", deviceId));
+        configSyncService.notifyConfigUpdate(updateType.getValue(), deviceId);
+        Map<String, Object> data = new HashMap<>();
+        data.put("deviceId", deviceId);
+        return success("已触发 " + updateType.getValue() + " 同步", data);
     }
 
     @GetMapping("/sync/status")
@@ -268,6 +294,10 @@ public class ConfigController {
         data.put("lastSyncTime", configSyncService.getLastSyncTime());
         data.put("syncInterval", configSyncService.getSyncInterval());
         data.put("listenerCount", configSyncService.getListenerCount());
+        data.put("consecutiveFailures", configSyncService.getConsecutiveFailures());
+        data.put("lastFailureTime", configSyncService.getLastFailureTime());
+        data.put("sourceVersion", configSyncService.getSourceVersion());
+        data.put("snapshotDeviceCount", configSyncService.getSnapshotDeviceCount());
         return success(data);
     }
 
@@ -277,7 +307,7 @@ public class ConfigController {
         List<ConfigBundle> bundles = contexts.stream()
                 .map(ctx -> ConfigBundle.builder()
                         .device(ctx.getDeviceInfo())
-                        .connection(ctx.getConnectionConfig())
+                        .connection(sensitiveConfigSanitizer.sanitize(ctx.getConnectionConfig()))
                         .points(ctx.getDataPoints())
                         .build())
                 .collect(Collectors.toList());
@@ -288,48 +318,54 @@ public class ConfigController {
     }
 
     @PostMapping("/import")
-    public Map<String, Object> importConfigs(@RequestBody ConfigImportRequest request) {
+    public Map<String, Object> importConfigs(@Valid @RequestBody ConfigImportRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getBundles())) {
             return error("导入内容不能为空");
         }
-        int successCount = 0;
-        List<String> failedDevices = new ArrayList<>();
-        List<String> touchedDevices = new ArrayList<>();
-
+        List<DeviceContext> importContexts = new ArrayList<>();
+        List<String> deviceIds = new ArrayList<>();
         for (ConfigBundle bundle : request.getBundles()) {
             String deviceId = resolveDeviceId(bundle);
             if (!StringUtils.hasText(deviceId)) {
-                failedDevices.add("UNKNOWN");
-                continue;
+                return error("导入内容存在缺少设备ID的配置");
             }
-            boolean ok = true;
-            if (bundle.getDevice() != null) {
-                bundle.getDevice().setDeviceId(deviceId);
-                ok = configManager.updateDeviceConfig(bundle.getDevice()) && ok;
+            DeviceInfo device = bundle.getDevice() != null
+                    ? bundle.getDevice() : configManager.getDevice(deviceId);
+            if (device == null) {
+                return error("导入设备不存在且未提供设备基础信息: " + deviceId);
             }
-            if (bundle.getConnection() != null) {
-                bundle.getConnection().setDeviceId(deviceId);
-                ok = configManager.updateConnectionConfig(deviceId, bundle.getConnection()) && ok;
+            device.setDeviceId(deviceId);
+
+            DeviceConnection connection = bundle.getConnection() != null
+                    ? bundle.getConnection() : configManager.getConnectionConfig(deviceId);
+            if (connection != null) {
+                connection.setDeviceId(deviceId);
+                sensitiveConfigSanitizer.restoreMaskedValues(
+                        connection, configManager.getConnectionConfig(deviceId));
             }
-            if (!CollectionUtils.isEmpty(bundle.getPoints())) {
-                ok = configManager.updateDataPoints(deviceId, bundle.getPoints()) && ok;
-            }
-            if (ok) {
-                successCount++;
-                touchedDevices.add(deviceId);
-            } else {
-                failedDevices.add(deviceId);
-            }
+            List<DataPoint> points = CollectionUtils.isEmpty(bundle.getPoints())
+                    ? configManager.getDataPoints(deviceId) : bundle.getPoints();
+            importContexts.add(DeviceContext.of(device, connection, points));
+            deviceIds.add(deviceId);
         }
 
-        if (request.isReloadAfterImport() && !touchedDevices.isEmpty()) {
+        boolean imported = configManager.replaceDeviceContextsAtomically(importContexts);
+        if (!imported) {
+            ConfigImportResult result = ConfigImportResult.builder()
+                    .total(request.getBundles().size())
+                    .success(0)
+                    .failedDevices(deviceIds)
+                    .build();
+            return error("导入失败，现有配置未发生变化", result);
+        }
+        if (request.isReloadAfterImport()) {
             collectionService.reloadAllDevices();
         }
 
         ConfigImportResult result = ConfigImportResult.builder()
                 .total(request.getBundles().size())
-                .success(successCount)
-                .failedDevices(failedDevices)
+                .success(request.getBundles().size())
+                .failedDevices(Collections.emptyList())
                 .build();
         return success("导入完成", result);
     }
@@ -447,10 +483,14 @@ public class ConfigController {
     }
 
     private Map<String, Object> error(String message) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("status", "error");
-        payload.put("message", message);
-        payload.put("timestamp", System.currentTimeMillis());
-        return payload;
+        return error(message, null);
+    }
+
+    private Map<String, Object> error(String message, Object data) {
+        throw new ConfigApiException(HttpStatus.BAD_REQUEST, message, data);
+    }
+
+    private Map<String, Object> notFound(String message) {
+        throw new ConfigApiException(HttpStatus.NOT_FOUND, message, null);
     }
 }

@@ -1,9 +1,14 @@
 package com.wangbin.collector.api.filter;
 
 import com.wangbin.collector.api.filter.config.AuthProperties;
+import com.wangbin.collector.api.filter.config.AuthScope;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -12,17 +17,26 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -34,18 +48,49 @@ import javax.crypto.spec.SecretKeySpec;
 public class AuthFilter extends OncePerRequestFilter {
 
     public static final String ATTR_PRINCIPAL = AuthFilter.class.getName() + ".principal";
+    private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
+    private static final String REAL_IP_HEADER = "X-Real-IP";
+    private static final String NONCE_KEY_PREFIX = "collector:auth:nonce:";
+    private static final String AUTH_METRIC_NAME = "collector.auth.requests";
+    private static final String UNKNOWN_AUTH_TYPE = "UNKNOWN";
 
     private final AuthProperties properties;
     private final Clock clock;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final MeterRegistry meterRegistry;
     private final AntPathMatcher matcher = new AntPathMatcher();
+    private final ConcurrentMap<String, Long> localNonces = new ConcurrentHashMap<>();
 
     public AuthFilter(AuthProperties properties) {
-        this(properties, Clock.systemUTC());
+        this(properties, Clock.systemUTC(), null, null);
+    }
+
+    public AuthFilter(AuthProperties properties, StringRedisTemplate stringRedisTemplate) {
+        this(properties, Clock.systemUTC(), stringRedisTemplate, null);
+    }
+
+    public AuthFilter(AuthProperties properties,
+                      StringRedisTemplate stringRedisTemplate,
+                      MeterRegistry meterRegistry) {
+        this(properties, Clock.systemUTC(), stringRedisTemplate, meterRegistry);
     }
 
     AuthFilter(AuthProperties properties, Clock clock) {
+        this(properties, clock, null, null);
+    }
+
+    AuthFilter(AuthProperties properties, Clock clock, StringRedisTemplate stringRedisTemplate) {
+        this(properties, clock, stringRedisTemplate, null);
+    }
+
+    AuthFilter(AuthProperties properties,
+               Clock clock,
+               StringRedisTemplate stringRedisTemplate,
+               MeterRegistry meterRegistry) {
         this.properties = properties;
         this.clock = clock;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -61,7 +106,12 @@ public class AuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        AuthDecision decision = authorize(request);
+        HttpServletRequest securedRequest = prepareSignedRequest(request, response);
+        if (securedRequest == null) {
+            return;
+        }
+        AuthDecision decision = authorize(securedRequest);
+        recordAuthentication(decision);
         if (!decision.isAllowed()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json;charset=UTF-8");
@@ -71,10 +121,53 @@ public class AuthFilter extends OncePerRequestFilter {
                     .append("\"}");
             return;
         }
-        if (decision.getPrincipal() != null) {
-            request.setAttribute(ATTR_PRINCIPAL, decision.getPrincipal());
+        AuthScope requiredScope = resolveRequiredScope(securedRequest);
+        if (requiredScope != null && (decision.getPrincipal() == null
+                || !decision.getPrincipal().getScopes().contains(requiredScope))) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            String quote = Character.toString((char) 34);
+            response.getWriter()
+                    .append("{").append(quote).append("status").append(quote)
+                    .append(":").append(quote).append("error").append(quote)
+                    .append(",").append(quote).append("message").append(quote)
+                    .append(":").append(quote).append("权限不足").append(quote).append("}");
+            return;
         }
-        filterChain.doFilter(request, response);
+        if (decision.getPrincipal() != null) {
+            securedRequest.setAttribute(ATTR_PRINCIPAL, decision.getPrincipal());
+        }
+        filterChain.doFilter(securedRequest, response);
+    }
+
+    private void recordAuthentication(AuthDecision decision) {
+        if (meterRegistry == null) {
+            return;
+        }
+        String type = decision.getPrincipal() == null
+                ? UNKNOWN_AUTH_TYPE : decision.getPrincipal().getType();
+        meterRegistry.counter(AUTH_METRIC_NAME,
+                        "result", decision.isAllowed() ? "allowed" : "denied",
+                        "type", type)
+                .increment();
+    }
+
+    private HttpServletRequest prepareSignedRequest(HttpServletRequest request,
+                                                    HttpServletResponse response) throws IOException {
+        if (!StringUtils.hasText(request.getHeader(properties.getServiceHeader()))) {
+            return request;
+        }
+        int maximumBodyBytes = Math.max(0, properties.getMaxSignedBodyBytes());
+        if (maximumBodyBytes > 0 && request.getContentLengthLong() > maximumBodyBytes) {
+            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "signed request body too large");
+            return null;
+        }
+        CachedBodyRequest cachedRequest = new CachedBodyRequest(request);
+        if (maximumBodyBytes > 0 && cachedRequest.bodyLength() > maximumBodyBytes) {
+            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "signed request body too large");
+            return null;
+        }
+        return cachedRequest;
     }
 
     private AuthDecision authorize(HttpServletRequest request) {
@@ -86,8 +179,10 @@ public class AuthFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token)) {
             return authorizeOps(request, token);
         }
-        if (ipAllowed(resolveClientIp(request), properties.getIpAllowList())) {
-            return AuthDecision.allow(AuthPrincipal.ops("ip-allowlist", "global"));
+        if (properties.isAllowIpAuthentication()
+                && ipAllowed(resolveClientIp(request), properties.getIpAllowList())) {
+            return AuthDecision.allow(AuthPrincipal.ops(
+                    "ip-allowlist", "global", Set.copyOf(properties.getDefaultOpsScopes())));
         }
         return AuthDecision.deny("missing credential");
     }
@@ -102,7 +197,8 @@ public class AuthFilter extends OncePerRequestFilter {
             return AuthDecision.deny("invalid ops token");
         }
         String ip = resolveClientIp(request);
-        return AuthDecision.allow(AuthPrincipal.ops(label, ip));
+        return AuthDecision.allow(AuthPrincipal.ops(
+                label, ip, Set.copyOf(properties.resolveOpsScopes(label))));
     }
 
     private AuthDecision authorizeService(HttpServletRequest request, String serviceId) {
@@ -115,16 +211,22 @@ public class AuthFilter extends OncePerRequestFilter {
         String signatureHeader = request.getHeader(properties.getSignatureHeader());
         if (!StringUtils.hasText(signatureHeader)) {
             if (client.isAllowIpFallback() && ipTrusted) {
-                return AuthDecision.allow(AuthPrincipal.service(serviceId, clientIp, "ip-fallback"));
+                return AuthDecision.allow(AuthPrincipal.service(
+                        serviceId, clientIp, "ip-fallback", Set.copyOf(client.getScopes())));
             }
             if (!client.isRequireSignature()) {
-                return AuthDecision.allow(AuthPrincipal.service(serviceId, clientIp, "header-only"));
+                return AuthDecision.allow(AuthPrincipal.service(
+                        serviceId, clientIp, "header-only", Set.copyOf(client.getScopes())));
             }
             return AuthDecision.deny("signature required");
         }
         String timestampHeader = request.getHeader(properties.getTimestampHeader());
         if (!StringUtils.hasText(timestampHeader)) {
             return AuthDecision.deny("timestamp required");
+        }
+        String nonce = request.getHeader(properties.getNonceHeader());
+        if (!StringUtils.hasText(nonce)) {
+            return AuthDecision.deny("nonce required");
         }
         long timestampMillis;
         try {
@@ -140,7 +242,7 @@ public class AuthFilter extends OncePerRequestFilter {
                 return AuthDecision.deny("timestamp skew too large");
             }
         }
-        String canonical = buildCanonicalRequest(request, timestampHeader);
+        String canonical = buildCanonicalRequest(request, timestampHeader, nonce);
         String keyVersion = request.getHeader(properties.getKeyVersionHeader());
         String secret = client.resolveSecret(keyVersion);
         if (!StringUtils.hasText(secret)) {
@@ -150,12 +252,32 @@ public class AuthFilter extends OncePerRequestFilter {
         if (!constantTimeEquals(expectedSignature, signatureHeader)) {
             if (client.isAllowIpFallback() && ipTrusted) {
                 log.warn("signature check failed for service {} but IP {} is trusted, fallback allowed", serviceId, clientIp);
-                return AuthDecision.allow(AuthPrincipal.service(serviceId, clientIp, "ip-fallback"));
+                return AuthDecision.allow(AuthPrincipal.service(
+                        serviceId, clientIp, "ip-fallback", Set.copyOf(client.getScopes())));
             }
             return AuthDecision.deny("signature mismatch");
         }
-        return AuthDecision.allow(AuthPrincipal.service(serviceId, clientIp,
-                StringUtils.hasText(keyVersion) ? keyVersion : "default"));
+        if (!registerNonce(serviceId, nonce, skewSeconds)) {
+            return AuthDecision.deny("request replayed");
+        }
+        return AuthDecision.allow(AuthPrincipal.service(
+                serviceId,
+                clientIp,
+                StringUtils.hasText(keyVersion) ? keyVersion : "default",
+                Set.copyOf(client.getScopes())));
+    }
+
+    private AuthScope resolveRequiredScope(HttpServletRequest request) {
+        String path = resolveApplicationPath(request);
+        String method = request.getMethod().toUpperCase(Locale.ROOT);
+        for (AuthProperties.AccessRule rule : properties.getAccessRules()) {
+            boolean methodMatches = CollectionUtils.isEmpty(rule.getMethods())
+                    || rule.getMethods().stream().anyMatch(method::equalsIgnoreCase);
+            if (methodMatches && matches(path, rule.getPaths())) {
+                return rule.getRequiredScope();
+            }
+        }
+        return properties.getDefaultRequiredScope();
     }
 
     private boolean matches(String path, List<String> patterns) {
@@ -191,11 +313,33 @@ public class AuthFilter extends OncePerRequestFilter {
         return merged.isEmpty() ? List.of() : List.copyOf(merged);
     }
 
-    private String buildCanonicalRequest(HttpServletRequest request, String timestamp) {
+    private String buildCanonicalRequest(HttpServletRequest request, String timestamp, String nonce) {
         String method = request.getMethod().toUpperCase(Locale.ROOT);
         String path = request.getRequestURI();
         String query = request.getQueryString();
-        return timestamp + '\n' + method + '\n' + path + '\n' + (query == null ? "" : query);
+        return String.join("\n",
+                timestamp,
+                nonce,
+                method,
+                path,
+                query == null ? "" : query,
+                sha256Base64(resolveBody(request)));
+    }
+
+    private byte[] resolveBody(HttpServletRequest request) {
+        if (request instanceof CachedBodyRequest cachedBodyRequest) {
+            return cachedBodyRequest.body();
+        }
+        return new byte[0];
+    }
+
+    private String sha256Base64(byte[] content) {
+        try {
+            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+            return Base64.getEncoder().encodeToString(messageDigest.digest(content));
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException("无法计算请求体摘要", exception);
+        }
     }
 
     private String hmacSha256(String secret, String payload) {
@@ -207,6 +351,32 @@ public class AuthFilter extends OncePerRequestFilter {
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("unable to compute signature", e);
         }
+    }
+
+    private boolean registerNonce(String serviceId, String nonce, long skewSeconds) {
+        long effectiveSkewSeconds = Math.max(1L, skewSeconds);
+        String nonceKey = NONCE_KEY_PREFIX + sha256Base64(
+                (serviceId + ":" + nonce).getBytes(StandardCharsets.UTF_8));
+        if (stringRedisTemplate != null) {
+            try {
+                return Boolean.TRUE.equals(stringRedisTemplate.opsForValue()
+                        .setIfAbsent(nonceKey, "1", Duration.ofSeconds(effectiveSkewSeconds)));
+            } catch (RuntimeException exception) {
+                log.error("防重放存储不可用，拒绝服务签名请求，serviceId={}", serviceId, exception);
+                return false;
+            }
+        }
+
+        long nowMillis = Instant.now(clock).toEpochMilli();
+        long expireAt = nowMillis + effectiveSkewSeconds * 1000L;
+        Long existing = localNonces.putIfAbsent(nonceKey, expireAt);
+        if (existing == null) {
+            return true;
+        }
+        if (existing < nowMillis && localNonces.replace(nonceKey, existing, expireAt)) {
+            return true;
+        }
+        return false;
     }
 
     private boolean constantTimeEquals(String expected, String actual) {
@@ -280,16 +450,72 @@ public class AuthFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
+        String remoteAddress = request.getRemoteAddr();
+        if (!ipAllowed(remoteAddress, properties.getTrustedProxyRanges())) {
+            return remoteAddress;
+        }
+        String forwarded = request.getHeader(FORWARDED_FOR_HEADER);
         if (StringUtils.hasText(forwarded)) {
             int idx = forwarded.indexOf(',');
             return idx > 0 ? forwarded.substring(0, idx).trim() : forwarded.trim();
         }
-        String realIp = request.getHeader("X-Real-IP");
+        String realIp = request.getHeader(REAL_IP_HEADER);
         if (StringUtils.hasText(realIp)) {
             return realIp.trim();
         }
-        return request.getRemoteAddr();
+        return remoteAddress;
+    }
+
+    /**
+     * 可重复读取请求体的签名请求包装器。
+     */
+    private static final class CachedBodyRequest extends HttpServletRequestWrapper {
+
+        private final byte[] body;
+
+        private CachedBodyRequest(HttpServletRequest request) throws IOException {
+            super(request);
+            this.body = request.getInputStream().readAllBytes();
+        }
+
+        private int bodyLength() {
+            return body.length;
+        }
+
+        private byte[] body() {
+            return body.clone();
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override
+                public boolean isFinished() {
+                    return inputStream.available() == 0;
+                }
+
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setReadListener(ReadListener readListener) {
+                    // 当前管理接口使用同步请求读取，不注册异步读取监听器。
+                }
+
+                @Override
+                public int read() {
+                    return inputStream.read();
+                }
+            };
+        }
+
+        @Override
+        public BufferedReader getReader() {
+            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        }
     }
 
     @RequiredArgsConstructor
@@ -314,13 +540,17 @@ public class AuthFilter extends OncePerRequestFilter {
         private final String type;
         private final String id;
         private final String source;
+        private final Set<AuthScope> scopes;
 
-        static AuthPrincipal ops(String label, String source) {
-            return new AuthPrincipal("OPS_TOKEN", label, source);
+        static AuthPrincipal ops(String label, String source, Set<AuthScope> scopes) {
+            return new AuthPrincipal("OPS_TOKEN", label, source, scopes);
         }
 
-        static AuthPrincipal service(String serviceId, String source, String credential) {
-            return new AuthPrincipal("SERVICE", serviceId + ":" + credential, source);
+        static AuthPrincipal service(String serviceId,
+                                     String source,
+                                     String credential,
+                                     Set<AuthScope> scopes) {
+            return new AuthPrincipal("SERVICE", serviceId + ":" + credential, source, scopes);
         }
     }
 }

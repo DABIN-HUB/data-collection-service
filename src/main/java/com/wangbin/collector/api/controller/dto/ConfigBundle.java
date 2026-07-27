@@ -7,6 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import jakarta.validation.Valid;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,8 +21,11 @@ import java.util.List;
 @AllArgsConstructor
 public class ConfigBundle {
 
+    @Valid
     private DeviceInfo device;
+    @Valid
     private DeviceConnection connection;
+    @Valid
     @Builder.Default
     private List<DataPoint> points = new ArrayList<>();
 }

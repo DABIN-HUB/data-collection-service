@@ -387,6 +387,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         status.put("replyToPollCount", connectionAdapter != null ? connectionAdapter.getReplyToPollCount() : 0L);
         status.put("frameErrorCount", connectionAdapter != null ? connectionAdapter.getFrameErrorCount() : 0L);
         status.put("crcErrorCount", connectionAdapter != null ? connectionAdapter.getCrcErrorCount() : 0L);
+        status.put("sessionState", connectionAdapter != null ? connectionAdapter.getSessionState() : "DISCONNECTED");
+        status.put("standardSessionEstablished", connectionAdapter != null
+                && connectionAdapter.isStandardSessionEstablished());
         status.put("bbmdActive", connectionAdapter != null && connectionAdapter.isForeignDeviceRegistrationActive());
         status.put("foreignDeviceRegistrationCount", connectionAdapter != null ? connectionAdapter.getForeignDeviceRegistrationCount() : 0L);
         status.put("foreignDeviceRenewCount", connectionAdapter != null ? connectionAdapter.getForeignDeviceRenewCount() : 0L);

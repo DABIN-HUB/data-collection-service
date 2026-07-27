@@ -21,6 +21,18 @@ public class ProtocolSchema {
     private boolean subscribable;
 
     @Builder.Default
+    private ProtocolCapabilityState implementationState = ProtocolCapabilityState.UNSUPPORTED;
+
+    @Builder.Default
+    private ProtocolCapabilityState writeCapability = ProtocolCapabilityState.UNSUPPORTED;
+
+    @Builder.Default
+    private ProtocolCapabilityState subscriptionCapability = ProtocolCapabilityState.UNSUPPORTED;
+
+    @Builder.Default
+    private ProtocolCapabilityState browseCapability = ProtocolCapabilityState.UNSUPPORTED;
+
+    @Builder.Default
     private ProtocolTypeMode typeMode = ProtocolTypeMode.PLATFORM_ONLY;
 
     @Builder.Default

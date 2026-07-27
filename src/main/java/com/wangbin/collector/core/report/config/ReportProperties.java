@@ -126,6 +126,11 @@ public class ReportProperties {
      */
     private final Cloud cloud = new Cloud();
 
+    /**
+     * 云端上报持久化发件箱配置。
+     */
+    private final Outbox outbox = new Outbox();
+
     public boolean mqttEnabled() {
         return mqtt.isEnabled() && isProtocolEnabled("MQTT");
     }
@@ -368,5 +373,30 @@ public class ReportProperties {
             private long maxDelayMs = 1000L;
             private boolean highPriorityBypass = true;
         }
+    }
+
+    @Data
+    public static class Outbox {
+
+        /** 是否启用持久化发件箱。 */
+        private boolean enabled = true;
+
+        /** Redis键前缀，必须包含环境和结构版本。 */
+        private String keyPrefix = "collector:default:cloud:outbox:v1:";
+
+        /** 到期消息扫描间隔。 */
+        private long pollIntervalMs = 1000L;
+
+        /** 单次认领的最大消息数。 */
+        private int claimBatchSize = 100;
+
+        /** 单次发送租约时间。 */
+        private long leaseMs = 15000L;
+
+        /** 配置缺失后的重试间隔。 */
+        private long waitingConfigRetryMs = 10000L;
+
+        /** 持久消息最大重试次数。 */
+        private int maxRetryTimes = 20;
     }
 }

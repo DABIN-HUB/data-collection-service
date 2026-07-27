@@ -177,6 +177,24 @@ class OmronFinsCollectorIntegrationTest {
         }
     }
 
+    @Test
+    void shouldExecuteReadOnlyOperationalCommands() throws Exception {
+        try (FakeFinsUdpServer server = new FakeFinsUdpServer()) {
+            OmronFinsCollector collector = prepareCollector(server, List.of(), 1000, true);
+            try {
+                Map<?, ?> cpuStatus = (Map<?, ?>) collector.executeCommand("CPU_STATUS_READ", Map.of());
+                Map<?, ?> clock = (Map<?, ?>) collector.executeCommand("CLOCK_READ", Map.of());
+
+                assertEquals(1, cpuStatus.get("status"));
+                assertEquals(2, cpuStatus.get("mode"));
+                assertEquals("2026-07-17T09:30", clock.get("clock"));
+                assertEquals(0, cpuStatus.get("endCode"));
+            } finally {
+                collector.disconnect();
+            }
+        }
+    }
+
     private OmronFinsCollector prepareCollector(FakeFinsUdpServer server,
                                                 List<DataPoint> points,
                                                 int readTimeoutMs,
@@ -326,11 +344,17 @@ class OmronFinsCollectorIntegrationTest {
         }
 
         private byte[] handle(byte[] request) {
-            if (request.length < 18) {
+            if (request.length < 12) {
                 throw new IllegalArgumentException("FINS request too short");
             }
             int mainCommand = request[10] & 0xFF;
             int subCommand = request[11] & 0xFF;
+            if (mainCommand != 0x01) {
+                return handleOperationalCommand(request, mainCommand, subCommand);
+            }
+            if (request.length < 18) {
+                throw new IllegalArgumentException("FINS memory request too short");
+            }
             ResolvedArea area = resolveArea(request[12] & 0xFF);
             int startWord = ((request[13] & 0xFF) << 8) | (request[14] & 0xFF);
             int bitOffset = request[15] & 0xFF;
@@ -338,9 +362,6 @@ class OmronFinsCollectorIntegrationTest {
             int endCode = 0;
             byte[] payload = new byte[0];
 
-            if (mainCommand != 0x01) {
-                throw new IllegalArgumentException("Unsupported FINS main command: " + mainCommand);
-            }
             if (subCommand == 0x01) {
                 if (!area.bitUnit() && unitCount > rejectWordReadUnitCountAbove) {
                     endCode = 0x2105;
@@ -371,6 +392,30 @@ class OmronFinsCollectorIntegrationTest {
             if (payload.length > 0) {
                 System.arraycopy(payload, 0, response, 14, payload.length);
             }
+            return response;
+        }
+
+        private byte[] handleOperationalCommand(byte[] request, int mainCommand, int subCommand) {
+            byte[] payload;
+            if (mainCommand == 0x05 && subCommand == 0x01) {
+                payload = new byte[40];
+                byte[] model = "CJ2M-CPU33".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+                byte[] version = "V2.1".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+                System.arraycopy(model, 0, payload, 0, model.length);
+                System.arraycopy(version, 0, payload, 20, version.length);
+            } else if (mainCommand == 0x06 && subCommand == 0x01) {
+                payload = new byte[]{0x01, 0x02, 0x00, 0x00, 0x00, 0x00};
+            } else if (mainCommand == 0x07 && subCommand == 0x01) {
+                payload = new byte[]{0x26, 0x07, 0x17, 0x09, 0x30, 0x00, 0x05};
+            } else {
+                throw new IllegalArgumentException("Unsupported FINS operational command");
+            }
+            byte[] response = new byte[14 + payload.length];
+            System.arraycopy(request, 0, response, 0, 10);
+            response[0] = (byte) 0xC0;
+            response[10] = (byte) mainCommand;
+            response[11] = (byte) subCommand;
+            System.arraycopy(payload, 0, response, 14, payload.length);
             return response;
         }
 

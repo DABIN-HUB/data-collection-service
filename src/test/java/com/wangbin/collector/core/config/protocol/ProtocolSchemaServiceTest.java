@@ -26,11 +26,20 @@ public class ProtocolSchemaServiceTest {
             assertEquals(descriptor.title(), schema.getTitle());
             assertEquals(descriptor.description(), schema.getDescription());
             assertEquals(descriptor.aliases(), schema.getAliases());
-            assertEquals(descriptor.connectionFields(), schema.getConnectionFields());
+            assertTrue(schema.getConnectionFields().containsAll(descriptor.connectionFields()));
+            int fallbackFieldCount = descriptor.subscribable()
+                    && descriptor.connectionFields().stream()
+                    .noneMatch(field -> "subscriptionFallbackStrategy".equals(field.getName())) ? 1 : 0;
+            assertEquals(descriptor.connectionFields().size() + fallbackFieldCount,
+                    schema.getConnectionFields().size());
             assertEquals(descriptor.pointAddressHints(), schema.getPointAddressHints());
             assertEquals(descriptor.implemented(), schema.isImplemented());
             assertEquals(descriptor.writable(), schema.isWritable());
             assertEquals(descriptor.subscribable(), schema.isSubscribable());
+            assertEquals(descriptor.implementationState(), schema.getImplementationState());
+            assertEquals(descriptor.writeCapability(), schema.getWriteCapability());
+            assertEquals(descriptor.subscriptionCapability(), schema.getSubscriptionCapability());
+            assertEquals(descriptor.browseCapability(), schema.getBrowseCapability());
             assertEquals(expectedDataTypes(descriptor.code()), schema.getDataTypes());
             assertEquals(expectedTypeMode(descriptor.code()), schema.getTypeMode());
             assertEquals(expectedPrimaryTypeField(descriptor.code()), schema.getPrimaryTypeField());
@@ -68,14 +77,66 @@ public class ProtocolSchemaServiceTest {
     }
 
     @Test
-    void shouldMarkCustomTcpAsPlaceholder() {
+    void shouldExposeCustomProtocolAsExperimental() {
         ProtocolSchema customTcp = service.getSchema("CUSTOM_TCP").orElseThrow();
 
-        assertFalse(customTcp.isImplemented());
-        assertTrue(customTcp.getConnectionFields().isEmpty());
+        assertTrue(customTcp.isImplemented());
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, customTcp.getImplementationState());
+        assertTrue(customTcp.isWritable());
+        assertFalse(customTcp.isSubscribable());
+        assertTrue(customTcp.getConnectionFields().stream()
+                .anyMatch(field -> "frameMode".equals(field.getName())));
+        assertTrue(customTcp.getPointFields().stream()
+                .anyMatch(field -> "additionalConfig.requestTemplate".equals(field.getName())));
         assertEquals(ProtocolTypeMode.PLATFORM_ONLY, customTcp.getTypeMode());
         assertEquals("dataType", customTcp.getPrimaryTypeField());
         assertEquals(PlatformDataTypeMode.REQUIRED, customTcp.getPlatformDataTypeMode());
+
+        ProtocolSchema customUdp = service.getSchema("CUSTOM_UDP").orElseThrow();
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, customUdp.getImplementationState());
+        assertFalse(customUdp.getConnectionFields().stream()
+                .anyMatch(field -> "frameMode".equals(field.getName())));
+    }
+
+    @Test
+    void shouldExposeAccurateRuntimeCapabilities() {
+        ProtocolSchema bacnetSc = service.getSchema("BACNET_SC").orElseThrow();
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, bacnetSc.getImplementationState());
+        assertEquals(ProtocolCapabilityState.RUNTIME_DEPENDENT, bacnetSc.getSubscriptionCapability());
+
+        ProtocolSchema snmp = service.getSchema("SNMP").orElseThrow();
+        assertTrue(snmp.isWritable());
+        assertTrue(snmp.isSubscribable());
+        assertEquals(ProtocolCapabilityState.RUNTIME_DEPENDENT, snmp.getSubscriptionCapability());
+        assertEquals(ProtocolCapabilityState.SUPPORTED, snmp.getBrowseCapability());
+
+        ProtocolSchema coap = service.getSchema("COAP").orElseThrow();
+        assertTrue(coap.isSubscribable());
+        assertEquals(ProtocolCapabilityState.RUNTIME_DEPENDENT, coap.getSubscriptionCapability());
+
+        ProtocolSchema iec104 = service.getSchema("IEC104").orElseThrow();
+        assertTrue(iec104.isWritable());
+        assertTrue(iec104.isSubscribable());
+
+        ProtocolSchema iec61850 = service.getSchema("IEC61850").orElseThrow();
+        assertTrue(iec61850.isWritable());
+        assertTrue(iec61850.isSubscribable());
+        assertEquals(ProtocolCapabilityState.RUNTIME_DEPENDENT, iec61850.getBrowseCapability());
+
+        ProtocolSchema dlt645 = service.getSchema("DLT645").orElseThrow();
+        assertEquals("DLT645_2007", dlt645.getProtocol());
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, dlt645.getImplementationState());
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, dlt645.getWriteCapability());
+        assertFalse(dlt645.isSubscribable());
+        assertTrue(dlt645.getConnectionFields().stream()
+                .anyMatch(field -> "meterAddress".equals(field.getName())));
+
+        ProtocolSchema iec101 = service.getSchema("IEC_101").orElseThrow();
+        assertEquals("IEC101", iec101.getProtocol());
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, iec101.getImplementationState());
+        assertEquals(ProtocolCapabilityState.EXPERIMENTAL, iec101.getSubscriptionCapability());
+        assertTrue(iec101.getPointFields().stream()
+                .anyMatch(field -> "additionalConfig.writeSelect".equals(field.getName())));
     }
 
     @Test
@@ -186,6 +247,10 @@ public class ProtocolSchemaServiceTest {
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "authType".equals(field.getName())));
         assertTrue(opcUa.getConnectionFields().stream().anyMatch(field -> "requestTimeoutMs".equals(field.getName())));
         assertTrue(opcUa.getPointFields().stream().anyMatch(field -> "additionalConfig.nodeId".equals(field.getName())));
+
+        ProtocolSchema opcUaMilo = service.getSchema("OPC_UA_MILO").orElseThrow();
+        assertTrue(opcUaMilo.getConnectionFields().stream()
+                .noneMatch(field -> "plc4xConnectionString".equals(field.getName())));
     }
 
     @Test
@@ -213,7 +278,7 @@ public class ProtocolSchemaServiceTest {
 
     private ProtocolTypeMode expectedTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };

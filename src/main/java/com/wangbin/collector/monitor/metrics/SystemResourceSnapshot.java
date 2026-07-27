@@ -8,7 +8,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * JVM/system resource snapshot.
+ * JVM 与系统资源快照。
  */
 @Data
 @Builder
@@ -24,6 +24,9 @@ public class SystemResourceSnapshot {
     private final double systemCpuLoad;
     private final int threadCount;
     private final int daemonThreadCount;
+    private final long outboxPendingCount;
+    private final long outboxIsolatedCount;
+    private final long outboxOldestMessageAgeMillis;
 
     @Builder.Default
     private final Map<String, ThreadPoolSnapshot> threadPools = Collections.emptyMap();

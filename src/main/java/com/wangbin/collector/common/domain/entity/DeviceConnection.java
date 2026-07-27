@@ -237,12 +237,13 @@ public class DeviceConnection {
             case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "OMRON_FINS", "BACNET_IP", "ETHERNET_IP", "ADS" ->
                     hasHost();
             case "KNXNET_IP" -> hasText(getStringConfig("plc4xConnectionString", null)) || hasHost();
-            case "OPC_UA", "OPC_UA_PLC4X" -> hasText(url)
+            case "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO" -> hasText(url)
                     || hasText(getStringConfig("endpointUrl", null))
                     || hasText(getStringConfig("endpoint", null))
                     || hasHost();
             case "OPC_DA" -> isOpcDaConnectionValid();
-            case "MODBUS_RTU", "BACNET_MSTP", "CUSTOM_TCP", "CUSTOM_UDP" -> true;
+            case "CUSTOM_TCP", "CUSTOM_UDP" -> hasHostPort();
+            case "MODBUS_RTU", "BACNET_MSTP", "DLT645_2007", "IEC101" -> true;
             default -> true;
         };
     }
@@ -292,7 +293,10 @@ public class DeviceConnection {
             case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
             case "OPCUA" -> "OPC_UA";
             case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
+            case "OPCUA_MILO" -> "OPC_UA_MILO";
             case "IEC_104" -> "IEC104";
+            case "DLT645", "DL_T_645", "DLT_645_2007" -> "DLT645_2007";
+            case "IEC_101", "IEC60870_5_101" -> "IEC101";
             case "IEC_61850" -> "IEC61850";
             default -> normalized;
         };

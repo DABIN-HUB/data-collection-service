@@ -7,10 +7,12 @@ import com.wangbin.collector.core.collector.protocol.bacnet.BacnetMstpCollector;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetScCollector;
 import com.wangbin.collector.core.collector.protocol.coap.CoapCollector;
 import com.wangbin.collector.core.collector.protocol.custom.CustomProtocolCollector;
+import com.wangbin.collector.core.collector.protocol.dlt645.Dlt645Collector;
 import com.wangbin.collector.core.collector.protocol.ethernetip.EtherNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.http.HttpCollector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
+import com.wangbin.collector.core.collector.protocol.iec101.Iec101Collector;
 import com.wangbin.collector.core.collector.protocol.knx.KnxNetIpCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
@@ -18,6 +20,7 @@ import com.wangbin.collector.core.collector.protocol.mc.McCollector;
 import com.wangbin.collector.core.collector.protocol.fins.OmronFinsCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
+import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.s7.S7Collector;
 import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
@@ -232,6 +235,12 @@ public class ProtocolDescriptorRegistry {
                         field("path", "string", "Path", false, "/bacnet/sc", null, "connection"),
                         field("remoteDeviceInstance", "number", "Remote device instance", true, "", null, "protocol"),
                         field("subprotocol", "string", "WebSocket subprotocol", false, "bacnet-sc", null, "protocol"),
+                        field("keyStoreFile", "string", "客户端密钥库文件", true, "", null, "security"),
+                        field("keyStoreType", "string", "客户端密钥库类型", false, "PKCS12", null, "security"),
+                        field("keyStorePassword", "password", "客户端密钥库密码", true, "", null, "security"),
+                        field("trustStoreFile", "string", "服务端信任库文件", true, "", null, "security"),
+                        field("trustStoreType", "string", "服务端信任库类型", false, "PKCS12", null, "security"),
+                        field("trustStorePassword", "password", "服务端信任库密码", true, "", null, "security"),
                         field("apduTimeout", "number", "APDU timeout (ms)", false, "5000", null, "advanced"),
                         field("segmentTimeout", "number", "Segment timeout (ms)", false, "2000", null, "advanced"),
                         field("retries", "number", "Retry count", false, "1", null, "advanced"),
@@ -411,9 +420,15 @@ public class ProtocolDescriptorRegistry {
                 true, true, true,
                 List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001;REAL"),
                 opcUaFields()));
+        registerPrimary(descriptor("OPC_UA_MILO", "OPC UA（Milo 实验驱动）",
+                "使用 Eclipse Milo 的独立 OPC UA 客户端，需单独完成实服契约测试后再用于生产。",
+                List.of("OPCUA_MILO"), OpcUaCollector.class, "OPC_UA_MILO", 4840, ProtocolAddressingMode.SYMBOLIC,
+                true, true, true,
+                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001"),
+                opcUaMiloFields()));
         registerPrimary(descriptor("SNMP", "SNMP", "SNMP polling protocol.",
                 List.of("SNMP_V1", "SNMP_V2C", "SNMP_V3"), SnmpCollector.class, "SNMP", 161, ProtocolAddressingMode.NUMERIC,
-                true, false, false,
+                true, true, true,
                 List.of("1.3.6.1.2.1.1.3.0", "1.3.6.1.4.1.2021.10.1.3.1"),
                 fields(
                         field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
@@ -444,7 +459,7 @@ public class ProtocolDescriptorRegistry {
                         field("snmpRetries", "number", "Retry count", false, "1", null, "advanced"))));
         registerPrimary(descriptor("COAP", "CoAP", "CoAP request/response collection protocol.",
                 List.of("COAP_SSL"), CoapCollector.class, "COAP", 5683, ProtocolAddressingMode.SYMBOLIC,
-                true, true, false,
+                true, true, true,
                 List.of("/sensors/temp", "coap://device.local/sensors/humidity"),
                 fields(
                         field("url", "string", "CoAP base URL", false, "coap://127.0.0.1:5683", null, "connection"),
@@ -510,16 +525,59 @@ public class ProtocolDescriptorRegistry {
                         field("authParams", "object", "Extended auth params", false, "{}", null, "security"))));
         registerPrimary(descriptor("IEC104", "IEC 60870-5-104", "IEC104 telemetry collection.",
                 List.of("IEC_104"), Iec104Collector.class, "IEC104", 2404, ProtocolAddressingMode.NUMERIC,
-                true, false, false,
+                true, true, true,
                 List.of("M_SP_NA_1:1", "M_ME_NC_1:100"),
                 fields(
                         field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
                         field("port", "number", "Port", true, "2404", null, "connection"),
                         field("slaveId", "number", "Common address", true, "1", null, "protocol"),
                         field("timeout", "number", "Protocol timeout (ms)", true, "5000", null, "advanced"))));
+        registerPrimary(descriptor("DLT645_2007", "DL/T 645-2007", "电能表串行通信数据采集。",
+                List.of("DLT645", "DL_T_645", "DLT_645_2007"), Dlt645Collector.class, "DLT645_2007", null,
+                ProtocolAddressingMode.SYMBOLIC, true, true, false,
+                List.of("00010000", "02010100"),
+                fields(
+                        field("serialPort", "string", "串口名称", true, "COM1", null, "connection"),
+                        field("baudRate", "number", "波特率", true, "2400", null, "connection"),
+                        field("dataBits", "number", "数据位", true, "8", null, "connection"),
+                        field("stopBits", "number", "停止位", true, "1", null, "connection"),
+                        field("parity", "select", "校验位", true, "EVEN", List.of("NONE", "EVEN", "ODD"), "connection"),
+                        field("meterAddress", "string", "电表通信地址", true, "000000000001", null, "protocol"),
+                        field("readTimeout", "number", "读取超时（毫秒）", false, "3000", null, "advanced"),
+                        field("writeTimeout", "number", "写入超时（毫秒）", false, "3000", null, "advanced"),
+                        field("retryCount", "number", "重试次数", false, "2", null, "advanced"),
+                        field("wakeupByteCount", "number", "唤醒字节数", false, "4", null, "advanced"),
+                        field("interFrameDelayMs", "number", "帧间隔（毫秒）", false, "20", null, "advanced"),
+                        field("writeEnabled", "boolean", "允许远程写入", false, "false", List.of("true", "false"), "security"),
+                        field("writePasswordHex", "password", "写入密码（十六进制）", false, "", null, "security"),
+                        field("operatorCodeHex", "password", "操作者代码（十六进制）", false, "", null, "security"))));
+        registerPrimary(descriptor("IEC101", "IEC 60870-5-101", "非平衡式主站串行遥测与遥控。",
+                List.of("IEC_101", "IEC60870_5_101"), Iec101Collector.class, "IEC101", null,
+                ProtocolAddressingMode.MIXED, true, true, true,
+                List.of("M_SP_NA_1:1", "M_ME_NC_1:100"),
+                fields(
+                        field("serialPort", "string", "串口名称", true, "COM1", null, "connection"),
+                        field("baudRate", "number", "波特率", true, "9600", null, "connection"),
+                        field("dataBits", "number", "数据位", true, "8", null, "connection"),
+                        field("stopBits", "number", "停止位", true, "1", null, "connection"),
+                        field("parity", "select", "校验位", true, "EVEN", List.of("NONE", "EVEN", "ODD"), "connection"),
+                        field("linkMode", "select", "链路模式", true, "UNBALANCED", List.of("UNBALANCED"), "protocol"),
+                        field("linkAddress", "number", "链路地址", true, "1", null, "protocol"),
+                        field("commonAddress", "number", "公共地址", true, "1", null, "protocol"),
+                        field("linkAddressSize", "select", "链路地址长度", true, "1", List.of("1", "2"), "protocol"),
+                        field("causeOfTransmissionSize", "select", "传送原因长度", true, "2", List.of("1", "2"), "protocol"),
+                        field("commonAddressSize", "select", "公共地址长度", true, "2", List.of("1", "2"), "protocol"),
+                        field("informationObjectAddressSize", "select", "信息体地址长度", true, "3", List.of("1", "2", "3"), "protocol"),
+                        field("readTimeout", "number", "读取超时（毫秒）", false, "3000", null, "advanced"),
+                        field("retryCount", "number", "重试次数", false, "2", null, "advanced"),
+                        field("interFrameDelayMs", "number", "帧间隔（毫秒）", false, "20", null, "advanced"),
+                        field("class1PollIntervalMs", "number", "一级数据轮询周期（毫秒）", false, "1000", null, "subscription"),
+                        field("class2PollIntervalMs", "number", "二级数据轮询周期（毫秒）", false, "5000", null, "subscription"),
+                        field("generalInterrogationOnConnect", "boolean", "连接后总召唤", false, "true", List.of("true", "false"), "subscription"),
+                        field("clockSyncOnConnect", "boolean", "连接后时钟同步", false, "false", List.of("true", "false"), "subscription"))));
         registerPrimary(descriptor("IEC61850", "IEC 61850", "IEC61850 MMS collection.",
                 List.of("IEC_61850"), Iec61850Collector.class, "IEC61850", 102, ProtocolAddressingMode.SYMBOLIC,
-                true, false, false,
+                true, true, true,
                 List.of("LD0/MMXU1.A.phsA.cVal.mag.f"),
                 fields(
                         field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
@@ -591,11 +649,17 @@ public class ProtocolDescriptorRegistry {
                         field("deviceSecret", "password", "Device secret", false, "", null, "security"),
                         field("authParams", "object", "Extended auth params", false, "{}", null, "security"))));
         registerPrimary(descriptor("CUSTOM_TCP", "Custom TCP",
-                "Placeholder custom protocol. Real collection is not implemented yet.",
-                List.of("CUSTOM_UDP"), CustomProtocolCollector.class, "TCP", null, ProtocolAddressingMode.SYMBOLIC,
-                false, false, false,
-                List.of(),
-                fields()));
+                "受控模板和帧编解码驱动的自定义TCP请求响应协议。",
+                List.of(), CustomProtocolCollector.class, "CUSTOM_TCP", null, ProtocolAddressingMode.MIXED,
+                true, true, false,
+                List.of("BYTE:0:2", "BIT:2:3", "JSON:$.data.value"),
+                customConnectionFields(false)));
+        registerPrimary(descriptor("CUSTOM_UDP", "Custom UDP",
+                "以单个数据报为完整帧的自定义UDP请求响应协议。",
+                List.of(), CustomProtocolCollector.class, "CUSTOM_UDP", null, ProtocolAddressingMode.MIXED,
+                true, true, false,
+                List.of("BYTE:0:4", "BIT:4:0", "JSON:$.value"),
+                customConnectionFields(true)));
 
         registerAlias("HTTPS", "HTTP", cfg -> {
             cfg.setSslEnabled(true);
@@ -690,6 +754,10 @@ public class ProtocolDescriptorRegistry {
                 .implemented(descriptor.implemented())
                 .writable(descriptor.writable())
                 .subscribable(descriptor.subscribable())
+                .implementationState(descriptor.implementationState())
+                .writeCapability(descriptor.writeCapability())
+                .subscriptionCapability(descriptor.subscriptionCapability())
+                .browseCapability(descriptor.browseCapability())
                 .aliases(descriptor.aliases())
                 .pointAddressHints(descriptor.pointAddressHints())
                 .dataTypes(resolveDataTypes(canonical))
@@ -701,8 +769,24 @@ public class ProtocolDescriptorRegistry {
                 .driverTypeField(resolveDriverTypeField(canonical))
                 .driverDataTypes(resolveDriverDataTypes(canonical))
                 .pointFields(resolvePointFields(canonical))
-                .connectionFields(descriptor.connectionFields())
+                .connectionFields(resolveConnectionFields(descriptor))
                 .build();
+    }
+
+    private List<ProtocolFieldConfig> resolveConnectionFields(ProtocolDescriptor descriptor) {
+        if (!descriptor.subscribable()) {
+            return descriptor.connectionFields();
+        }
+        boolean alreadyConfigured = descriptor.connectionFields().stream()
+                .anyMatch(item -> "subscriptionFallbackStrategy".equals(item.getName()));
+        if (alreadyConfigured) {
+            return descriptor.connectionFields();
+        }
+        List<ProtocolFieldConfig> resolved = new java.util.ArrayList<>(descriptor.connectionFields());
+        resolved.add(field("subscriptionFallbackStrategy", "select", "订阅不可用处理策略", false,
+                "FAIL_FAST", List.of("FAIL_FAST", "FALLBACK_TO_POLLING"), "advanced",
+                "驱动或设备不支持订阅时，可选择立即失败或继续使用现有轮询采集。"));
+        return List.copyOf(resolved);
     }
 
     private List<String> resolveDataTypes(String protocol) {
@@ -714,7 +798,7 @@ public class ProtocolDescriptorRegistry {
 
     private ProtocolTypeMode resolveTypeMode(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
             case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
             default -> ProtocolTypeMode.PLATFORM_ONLY;
         };
@@ -737,7 +821,7 @@ public class ProtocolDescriptorRegistry {
 
     private boolean resolveDriverTypeEnabled(String protocol) {
         return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "SNMP" -> true;
+            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> true;
             default -> false;
         };
     }
@@ -751,7 +835,7 @@ public class ProtocolDescriptorRegistry {
             case "BACNET_SC" -> "BACnet/SC driver type";
             case "ETHERNET_IP" -> "EIP driver type";
             case "ADS" -> "ADS driver type";
-            case "OPC_UA", "OPC_UA_PLC4X" -> "OPC UA driver type";
+            case "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO" -> "OPC UA 驱动数据类型";
             case "SNMP" -> "SNMP value type";
             default -> null;
         };
@@ -777,7 +861,7 @@ public class ProtocolDescriptorRegistry {
             case "ADS" -> List.of(
                     "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT",
                     "LINT", "ULINT", "REAL", "LREAL", "STRING", "WSTRING");
-            case "OPC_UA", "OPC_UA_PLC4X" -> List.of(
+            case "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO" -> List.of(
                     "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT",
                     "LINT", "ULINT", "REAL", "LREAL", "CHAR", "WCHAR", "STRING",
                     "TIME", "DATE", "DATE_AND_TIME");
@@ -798,13 +882,39 @@ public class ProtocolDescriptorRegistry {
             case "ETHERNET_IP" -> etherNetIpPointFields();
             case "ADS" -> adsPointFields();
             case "KNXNET_IP" -> knxPointFields();
-            case "OPC_UA", "OPC_UA_PLC4X" -> opcUaPointFields();
+            case "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO" -> opcUaPointFields();
             case "OPC_DA" -> opcDaPointFields();
             case "MQTT" -> mqttPointFields();
             case "IEC104" -> iec104PointFields();
+            case "DLT645_2007" -> dlt645PointFields();
+            case "IEC101" -> iec101PointFields();
             case "COAP" -> coapPointFields();
+            case "CUSTOM_TCP", "CUSTOM_UDP" -> customPointFields();
             default -> Collections.emptyList();
         };
+    }
+
+    private List<ProtocolFieldConfig> customPointFields() {
+        return List.of(
+                pointField("additionalConfig.requestTemplate", "textarea", "读取请求模板", false, "",
+                        Collections.emptyList(), "可覆盖连接级读取模板，仅支持固定占位符，不执行脚本。", null),
+                pointField("additionalConfig.writeRequestTemplate", "textarea", "写入请求模板", false, "",
+                        Collections.emptyList(), "写入模板可使用value和valueHex等受控占位符。", null),
+                pointField("additionalConfig.requestAddress", "string", "协议请求地址", false, "",
+                        Collections.emptyList(), "与响应解析地址分离的设备原始地址。", null),
+                pointField("additionalConfig.addressHex", "string", "请求地址十六进制", false, "",
+                        Collections.emptyList(), "直接写入模板addressHex占位符的十六进制内容。", null),
+                pointField("additionalConfig.byteOrder", "select", "字节序", false, "BIG_ENDIAN",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "数值解析和valueHex编码使用的字节序。", null),
+                pointField("additionalConfig.length", "number", "解析长度", false, "",
+                        Collections.emptyList(), "字符串或变长字段的解析字节数。", null),
+                pointField("additionalConfig.charset", "string", "字符集", false, "UTF-8",
+                        Collections.emptyList(), "文本模板、字符串值和JSON响应使用的字符集。", null),
+                pointField("additionalConfig.writeExpectResponse", "boolean", "写入等待响应", false, "true",
+                        List.of("true", "false"), "关闭后写入仅发送请求，不等待响应。", null),
+                pointField("additionalConfig.writeSuccessHex", "string", "写入成功响应前缀", false, "",
+                        Collections.emptyList(), "配置后仅响应十六进制以前缀开头时判定成功。", null)
+        );
     }
 
     private List<ProtocolFieldConfig> modbusPointFields() {
@@ -924,6 +1034,8 @@ public class ProtocolDescriptorRegistry {
                         Collections.emptyList(), "Publishing interval used for subscriptions.", null),
                 pointField("additionalConfig.queueSize", "number", "Queue size", false, "",
                         Collections.emptyList(), "Subscription queue size for buffered notifications.", null),
+                pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
+                        Collections.emptyList(), "OPC UA 一维数组节点的元素数量，标量点位保持为空。", null),
                 pointField("additionalConfig.subscribe", "boolean", "Subscribe", false, "",
                         List.of("true", "false"), "Whether this point should use subscription mode.", null),
                 pointField("additionalConfig.monitor", "boolean", "Monitor alias", false, "",
@@ -977,6 +1089,31 @@ public class ProtocolDescriptorRegistry {
                         Collections.emptyList(), "Quality descriptor used for control commands.", null),
                 pointField("additionalConfig.writeSelect", "boolean", "Select before execute", false, "",
                         List.of("true", "false"), "Whether control commands should use select-before-execute.", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> dlt645PointFields() {
+        return List.of(
+                pointField("additionalConfig.valueType", "select", "原始值类型", false, "BCD",
+                        List.of("BCD", "DECIMAL", "UINT_LE", "INT_LE", "FLOAT_LE", "ASCII", "DATETIME", "HEX"),
+                        "数据标识对应的数据区解析类型。", null),
+                pointField("additionalConfig.dataFormat", "string", "BCD 数据格式", false, "",
+                        Collections.emptyList(), "例如 XXXXXX.XX，用于确定小数位。", null),
+                pointField("additionalConfig.valueIndex", "number", "值序号", false, "0",
+                        Collections.emptyList(), "响应包含多个值时，从零开始选择目标值。", null)
+        );
+    }
+
+    private List<ProtocolFieldConfig> iec101PointFields() {
+        return List.of(
+                pointField("additionalConfig.typeId", "number", "类型标识", false, "",
+                        Collections.emptyList(), "IEC101 信息体类型标识。", null),
+                pointField("additionalConfig.writeAddress", "string", "写入地址", false, "",
+                        Collections.emptyList(), "遥控或设点命令使用的信息体地址。", null),
+                pointField("additionalConfig.writeSelect", "boolean", "预置后执行", false, "false",
+                        List.of("true", "false"), "启用后先发送选择命令，再发送执行命令。", null),
+                pointField("additionalConfig.writeQualifier", "number", "命令限定词", false, "0",
+                        Collections.emptyList(), "遥控或设点命令使用的限定词。", null)
         );
     }
 
@@ -1064,12 +1201,88 @@ public class ProtocolDescriptorRegistry {
                 connectionType,
                 defaultPort,
                 addressingMode,
-                implemented,
-                writable,
-                subscribable,
+                resolveImplementationState(code, implemented),
+                resolveWriteCapability(code, writable),
+                resolveSubscriptionCapability(code, subscribable),
+                resolveBrowseCapability(code),
                 connectionFields,
                 pointAddressHints
         );
+    }
+
+    private ProtocolCapabilityState resolveImplementationState(String protocol, boolean implemented) {
+        if (!implemented) {
+            return ProtocolCapabilityState.UNSUPPORTED;
+        }
+        return switch (protocol) {
+            case "BACNET_SC", "CUSTOM_TCP", "CUSTOM_UDP", "OPC_UA_MILO", "DLT645_2007", "IEC101" ->
+                    ProtocolCapabilityState.EXPERIMENTAL;
+            default -> ProtocolCapabilityState.SUPPORTED;
+        };
+    }
+
+    private ProtocolCapabilityState resolveWriteCapability(String protocol, boolean writable) {
+        if (!writable) {
+            return ProtocolCapabilityState.UNSUPPORTED;
+        }
+        return switch (protocol) {
+            case "DLT645_2007", "IEC101" -> ProtocolCapabilityState.EXPERIMENTAL;
+            default -> ProtocolCapabilityState.SUPPORTED;
+        };
+    }
+
+    private ProtocolCapabilityState resolveSubscriptionCapability(String protocol, boolean subscribable) {
+        if (!subscribable) {
+            return ProtocolCapabilityState.UNSUPPORTED;
+        }
+        return switch (protocol) {
+            case "IEC101" -> ProtocolCapabilityState.EXPERIMENTAL;
+            case "SIEMENS_S7", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ADS", "KNXNET_IP",
+                    "OPC_DA", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP", "COAP", "IEC104", "IEC61850" ->
+                    ProtocolCapabilityState.RUNTIME_DEPENDENT;
+            default -> ProtocolCapabilityState.SUPPORTED;
+        };
+    }
+
+    private ProtocolCapabilityState resolveBrowseCapability(String protocol) {
+        return switch (protocol) {
+            case "SNMP" -> ProtocolCapabilityState.SUPPORTED;
+            case "OPC_DA", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "IEC61850" ->
+                    ProtocolCapabilityState.RUNTIME_DEPENDENT;
+            default -> ProtocolCapabilityState.UNSUPPORTED;
+        };
+    }
+
+    private List<ProtocolFieldConfig> customConnectionFields(boolean udp) {
+        List<ProtocolFieldConfig> configured = new java.util.ArrayList<>();
+        configured.add(field("host", "string", "设备主机", true, "127.0.0.1", null, "connection"));
+        configured.add(field("port", "number", "设备端口", true, "", null, "connection"));
+        configured.add(field("readRequestTemplate", "textarea", "读取请求模板", true, "", null, "request"));
+        configured.add(field("writeRequestTemplate", "textarea", "写入请求模板", false, "", null, "request"));
+        configured.add(field("requestEncoding", "select", "请求编码", true, "HEX",
+                List.of("HEX", "TEXT", "BASE64"), "request"));
+        configured.add(field("writeRequestEncoding", "select", "写入请求编码", false, "HEX",
+                List.of("HEX", "TEXT", "BASE64"), "request"));
+        configured.add(field("writeExpectResponse", "boolean", "写入等待响应", false, "true",
+                List.of("true", "false"), "request"));
+        configured.add(field("writeSuccessHex", "string", "写入成功响应前缀", false, "", null, "request"));
+        configured.add(field("charset", "string", "字符集", false, "UTF-8", null, "request"));
+        configured.add(field("readTimeout", "number", "读取超时（毫秒）", false, "5000", null, "advanced"));
+        configured.add(field("bufferSize", "number", "接收缓冲区大小", false, "8192", null, "advanced"));
+        if (!udp) {
+            configured.add(field("frameMode", "select", "帧边界模式", true, "LENGTH_FIELD",
+                    List.of("LENGTH_FIELD", "FIXED_LENGTH", "DELIMITER"), "protocol"));
+            configured.add(field("fixedFrameLength", "number", "固定帧长度", false, "", null, "protocol"));
+            configured.add(field("delimiterHex", "string", "分隔符十六进制", false, "0A", null, "protocol"));
+            configured.add(field("lengthFieldOffset", "number", "长度字段偏移", false, "0", null, "protocol"));
+            configured.add(field("lengthFieldLength", "select", "长度字段字节数", false, "4",
+                    List.of("1", "2", "4", "8"), "protocol"));
+            configured.add(field("lengthAdjustment", "number", "长度修正值", false, "0", null, "protocol"));
+            configured.add(field("initialBytesToStrip", "number", "响应剥离字节数", false, "4", null, "protocol"));
+            configured.add(field("prependLengthField", "boolean", "请求添加长度字段", false, "true",
+                    List.of("true", "false"), "protocol"));
+        }
+        return List.copyOf(configured);
     }
 
     private List<ProtocolFieldConfig> opcUaFields() {
@@ -1116,6 +1329,12 @@ public class ProtocolDescriptorRegistry {
                 field("subscriptionInterval", "number", "Subscription interval (ms)", false, "1000", null, "advanced"),
                 field("maxFieldsPerRequest", "number", "Max fields per request", false, "100", null, "advanced"),
                 field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"));
+    }
+
+    private List<ProtocolFieldConfig> opcUaMiloFields() {
+        return opcUaFields().stream()
+                .filter(field -> !"plc4xConnectionString".equals(field.getName()))
+                .toList();
     }
 
     private List<ProtocolFieldConfig> fields(ProtocolFieldConfig... fields) {

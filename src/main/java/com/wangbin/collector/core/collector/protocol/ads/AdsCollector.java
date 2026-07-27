@@ -7,6 +7,7 @@ import com.wangbin.collector.core.collector.protocol.ads.domain.AdsPlcType;
 import com.wangbin.collector.core.collector.protocol.ads.util.AdsAddressParser;
 import com.wangbin.collector.core.collector.protocol.ads.util.AdsPlcTypeResolver;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.plc4x.domain.Plc4xArrayValueSupport;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
@@ -96,7 +97,6 @@ public class AdsCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         AdsAddress address = requireAddress(point);
-        ensureScalar(address, point, "read");
         String fieldName = resolvePointTagName(point);
 
         PlcReadResponse response = await(requireConnection().getClient()
@@ -135,7 +135,6 @@ public class AdsCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         AdsAddress address = requireAddress(point);
-        ensureScalar(address, point, "write");
         String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response = await(requireConnection().getClient()
@@ -164,7 +163,6 @@ public class AdsCollector extends ConnectionBackedCollector {
                     continue;
                 }
                 AdsAddress address = requireAddress(point);
-                ensureScalar(address, point, "write");
                 builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress(), coerceWriteValue(entry.getValue(), address, point));
                 orderedPoints.add(point);
             }
@@ -386,7 +384,6 @@ public class AdsCollector extends ConnectionBackedCollector {
                 continue;
             }
             AdsAddress address = requireAddress(point);
-            ensureScalar(address, point, "read");
             builder.addTagAddress(resolvePointTagName(point), address.getPlc4xAddress());
         }
         return await(builder.build().execute());
@@ -413,27 +410,16 @@ public class AdsCollector extends ConnectionBackedCollector {
 
     private Object extractValue(PlcReadResponse response, String fieldName, DataPoint point, AdsAddress address) {
         PlcValue plcValue = response.getPlcValue(fieldName);
-        if (plcValue == null || plcValue.isNull()) {
-            return null;
-        }
-        if (plcValue.isList()) {
-            if (address.isScalar() && plcValue.getLength() == 1) {
-                plcValue = plcValue.getIndex(0);
-            } else {
-                throw new IllegalStateException("ADS point arrays are not supported by the current collector: " + address.getRawAddress());
-            }
-        }
-
         AdsPlcType plcType = resolvePlcType(point, address);
-        return plcType != null ? plcType.read(plcValue) : plcValue.getObject();
+        return Plc4xArrayValueSupport.decode(plcValue, address.getArraySize(),
+                value -> plcType != null ? plcType.read(value) : value.getObject(),
+                "ADS", address.getRawAddress());
     }
 
     private Object coerceWriteValue(Object value, AdsAddress address, DataPoint point) {
-        if (value == null) {
-            return null;
-        }
         AdsPlcType plcType = resolvePlcType(point, address);
-        return plcType != null ? plcType.write(value) : value;
+        return Plc4xArrayValueSupport.encode(value, address.getArraySize(),
+                item -> plcType != null ? plcType.write(item) : item, "ADS");
     }
 
     private AdsPlcType resolvePlcType(DataPoint point, AdsAddress address) {
@@ -501,9 +487,7 @@ public class AdsCollector extends ConnectionBackedCollector {
     }
 
     private Duration resolveSubscriptionInterval(DataPoint point) {
-        long intervalMs = point != null && point.getCurrentCollectionInterval() > 0
-                ? point.getCurrentCollectionInterval()
-                : point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
+        long intervalMs = point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
                 ? point.getBaseCollectionInterval()
                 : deviceInfo != null && deviceInfo.getCollectionInterval() != null && deviceInfo.getCollectionInterval() > 0
                 ? deviceInfo.getCollectionInterval()

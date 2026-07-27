@@ -1,8 +1,11 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.api.validation.ApiValidationConstants;
+import jakarta.validation.constraints.Pattern;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,21 +15,26 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 
 /**
  * 设备管理控制器
  * 提供设备采集的启动、停止与状态查询接口
  */
 @Slf4j
+@Validated
 @RestController
 @RequestMapping("/api/device")
+@RequiredArgsConstructor
 public class DeviceController {
 
-    @Autowired
-    private CollectionService collectionService;
+    private final CollectionService collectionService;
 
     @PostMapping("/{deviceId}/start")
-    public Map<String, Object> startDevice(@PathVariable String deviceId) {
+    public Map<String, Object> startDevice(
+            @PathVariable
+            @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
+                    message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
         Map<String, Object> result = baseResult(deviceId);
         try {
             boolean success = collectionService.startDevice(deviceId);
@@ -46,7 +54,10 @@ public class DeviceController {
     }
 
     @PostMapping("/{deviceId}/start-local")
-    public Map<String, Object> startLocalDevice(@PathVariable String deviceId) {
+    public Map<String, Object> startLocalDevice(
+            @PathVariable
+            @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
+                    message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
         Map<String, Object> result = baseResult(deviceId);
         try {
             boolean success = collectionService.startLocalDevice(deviceId);
@@ -66,7 +77,10 @@ public class DeviceController {
     }
 
     @PostMapping("/{deviceId}/stop")
-    public Map<String, Object> stopDevice(@PathVariable String deviceId) {
+    public Map<String, Object> stopDevice(
+            @PathVariable
+            @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
+                    message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
         Map<String, Object> result = baseResult(deviceId);
         try {
             boolean success = collectionService.stopDevice(deviceId);
@@ -102,7 +116,10 @@ public class DeviceController {
     }
 
     @GetMapping("/{deviceId}/status")
-    public Map<String, Object> getDeviceStatus(@PathVariable String deviceId) {
+    public Map<String, Object> getDeviceStatus(
+            @PathVariable
+            @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
+                    message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
         Map<String, Object> result = baseResult(deviceId);
         try {
             Map<String, Object> status = collectionService.getDeviceStatus(deviceId);
@@ -149,8 +166,22 @@ public class DeviceController {
         return result;
     }
 
+    @GetMapping("/runtime")
+    public Map<String, Object> getDeviceRuntimeSnapshots() {
+        Map<String, Object> result = new HashMap<>();
+        List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
+        result.put("status", "success");
+        result.put("data", snapshots);
+        result.put("count", snapshots.size());
+        result.put("timestamp", System.currentTimeMillis());
+        return result;
+    }
+
     @GetMapping("/{deviceId}/running")
-    public Map<String, Object> isDeviceRunning(@PathVariable String deviceId) {
+    public Map<String, Object> isDeviceRunning(
+            @PathVariable
+            @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
+                    message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
         Map<String, Object> result = baseResult(deviceId);
         try {
             boolean running = collectionService.isDeviceRunning(deviceId);

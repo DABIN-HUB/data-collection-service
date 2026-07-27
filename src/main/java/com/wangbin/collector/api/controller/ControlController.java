@@ -8,6 +8,7 @@ import com.wangbin.collector.common.web.result.ResultCode;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -23,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Manual control APIs for point writes and protocol commands.
+ * 点位写入和协议命令控制接口。
  */
 @RestController
 @RequestMapping("/api/control")
@@ -37,7 +38,7 @@ public class ControlController {
     @PostMapping("/device/{deviceId}/point/{pointRef}")
     public ApiResult<Map<String, Object>> writePoint(@PathVariable String deviceId,
                                                      @PathVariable String pointRef,
-                                                     @RequestBody PointWriteRequest request) {
+                                                     @Valid @RequestBody PointWriteRequest request) {
         if (request == null || request.getValue() == null) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "value 不能为空");
         }
@@ -63,7 +64,7 @@ public class ControlController {
 
     @PostMapping("/device/{deviceId}/points")
     public ApiResult<Map<String, Object>> writePoints(@PathVariable String deviceId,
-                                                      @RequestBody PointWriteRequest request) {
+                                                      @Valid @RequestBody PointWriteRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getValues())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "values 不能为空");
         }
@@ -124,7 +125,7 @@ public class ControlController {
 
     @PostMapping("/device/{deviceId}/command")
     public ApiResult<Map<String, Object>> executeCommand(@PathVariable String deviceId,
-                                                         @RequestBody DeviceCommandRequest request) {
+                                                         @Valid @RequestBody DeviceCommandRequest request) {
         if (request == null || !StringUtils.hasText(request.getCommand())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "command 不能为空");
         }

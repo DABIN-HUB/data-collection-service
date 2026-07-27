@@ -4,6 +4,8 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
+import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,19 +21,24 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ConfigManagerLocalDeviceTest {
 
     private ConfigManager configManager;
     private ConfigSyncService configSyncService;
+    private ApplicationEventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {
         configManager = new ConfigManager();
         configSyncService = mock(ConfigSyncService.class);
         ReflectionTestUtils.setField(configManager, "configSyncService", configSyncService);
-        ReflectionTestUtils.setField(configManager, "eventPublisher", mock(ApplicationEventPublisher.class));
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        ReflectionTestUtils.setField(configManager, "eventPublisher", eventPublisher);
         ReflectionTestUtils.setField(configManager, "fieldUniquenessValidator", new FieldUniquenessValidator());
         ReflectionTestUtils.setField(configManager, "protocolConnectionValidator", new ProtocolConnectionValidator());
     }
@@ -54,7 +61,7 @@ class ConfigManagerLocalDeviceTest {
         assertEquals(ConfigManager.CONFIG_SOURCE_LOCAL,
                 savedPoint.getAdditionalConfig().get(ConfigManager.CONFIG_SOURCE_KEY));
         assertEquals(2000L, savedPoint.getBaseCollectionInterval());
-        assertEquals(2000L, savedPoint.getCurrentCollectionInterval());
+        assertEquals(0L, savedPoint.getCurrentCollectionInterval());
         assertEquals(100L, savedPoint.getMinCollectionInterval());
         assertEquals(3600000L, savedPoint.getMaxCollectionInterval());
         assertEquals(1.0, savedPoint.getPointChangeThreshold());
@@ -111,6 +118,34 @@ class ConfigManagerLocalDeviceTest {
                 ConfigUpdateEvent.createConnectionUpdateEvent("remote-1"));
 
         assertNull(configManager.getConnectionConfig("remote-1"));
+    }
+
+    @Test
+    void shouldPublishOnlyOneEventAfterAtomicImport() {
+        DeviceInfo importedDevice = device("import-1");
+        boolean imported = configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(importedDevice, connection("import-1"), List.of(point("import-1")))));
+
+        assertTrue(imported);
+        verify(eventPublisher, times(1)).publishEvent(argThat((Object event) ->
+                event instanceof ConfigUpdateEvent updateEvent
+                        && ConfigUpdateType.ALL.getValue().equals(updateEvent.getConfigType())));
+    }
+
+    @Test
+    void shouldKeepOriginalConfigWhenAtomicImportValidationFails() {
+        DeviceInfo original = device("stable-1");
+        original.setDeviceName("原设备");
+        assertTrue(configManager.updateDeviceConfig(original));
+
+        DeviceInfo replacement = device("stable-1");
+        replacement.setDeviceName("错误替换设备");
+        boolean imported = configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(replacement, connection("stable-1"), List.of(point("stable-1"))),
+                DeviceContext.of(null, null, List.of())));
+
+        assertFalse(imported);
+        assertEquals("原设备", configManager.getDevice("stable-1").getDeviceName());
     }
 
     private DeviceInfo device(String deviceId) {

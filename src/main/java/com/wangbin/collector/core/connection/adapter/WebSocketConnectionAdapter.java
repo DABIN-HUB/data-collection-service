@@ -7,7 +7,10 @@ import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,7 +18,10 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.security.KeyStore;
 import java.security.cert.X509Certificate;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
@@ -186,7 +192,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
 
         // 配置SSL
         if (Boolean.TRUE.equals(config.getSslEnabled())) {
-            builder.sslContext(createTrustAllSSLContext());
+            builder.sslContext(createSslContext());
         }
 
         return builder.build();
@@ -305,6 +311,55 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
                 closing.set(false);
             }
         }
+    }
+
+    private SSLContext createSslContext() {
+        if (config.getBoolConfig("trustAllServerCert", false)) {
+            return createTrustAllSSLContext();
+        }
+        try {
+            KeyManager[] keyManagers = loadKeyManagers();
+            TrustManager[] trustManagers = loadTrustManagers();
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(keyManagers, trustManagers, new SecureRandom());
+            return sslContext;
+        } catch (Exception ex) {
+            throw new IllegalStateException("WebSocket TLS 上下文初始化失败", ex);
+        }
+    }
+
+    private KeyManager[] loadKeyManagers() throws Exception {
+        String keyStoreFile = config.getStringConfig("keyStoreFile", null);
+        if (keyStoreFile == null || keyStoreFile.isBlank()) {
+            return null;
+        }
+        char[] password = config.getStringConfig("keyStorePassword", "").toCharArray();
+        KeyStore keyStore = loadKeyStore(keyStoreFile,
+                config.getStringConfig("keyStoreType", "PKCS12"), password);
+        KeyManagerFactory factory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        factory.init(keyStore, password);
+        return factory.getKeyManagers();
+    }
+
+    private TrustManager[] loadTrustManagers() throws Exception {
+        String trustStoreFile = config.getStringConfig("trustStoreFile", null);
+        if (trustStoreFile == null || trustStoreFile.isBlank()) {
+            return null;
+        }
+        char[] password = config.getStringConfig("trustStorePassword", "").toCharArray();
+        KeyStore trustStore = loadKeyStore(trustStoreFile,
+                config.getStringConfig("trustStoreType", "PKCS12"), password);
+        TrustManagerFactory factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        factory.init(trustStore);
+        return factory.getTrustManagers();
+    }
+
+    private KeyStore loadKeyStore(String file, String type, char[] password) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(type);
+        try (var inputStream = Files.newInputStream(Path.of(file))) {
+            keyStore.load(inputStream, password);
+        }
+        return keyStore;
     }
 
     @Override

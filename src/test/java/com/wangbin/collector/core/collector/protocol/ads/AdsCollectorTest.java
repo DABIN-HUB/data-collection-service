@@ -152,6 +152,36 @@ class AdsCollectorTest {
         assertEquals(12.5d, (Double) value, 0.0001d);
     }
 
+    @Test
+    void shouldConvertAdsArrayReadAndWriteValues() {
+        AdsCollector collector = new AdsCollector();
+        DataPoint point = point("p-array", "temperatures", "0x4020/0x0:LREAL[2]", "RW");
+        AdsAddress address = AdsAddressParser.parse(point);
+
+        PlcReadResponse response = mock(PlcReadResponse.class);
+        PlcValue arrayValue = mock(PlcValue.class);
+        PlcValue first = mock(PlcValue.class);
+        PlcValue second = mock(PlcValue.class);
+        when(response.getPlcValue("p-array")).thenReturn(arrayValue);
+        when(arrayValue.isNull()).thenReturn(false);
+        when(arrayValue.isList()).thenReturn(true);
+        when(arrayValue.getLength()).thenReturn(2);
+        when(arrayValue.getIndex(0)).thenReturn(first);
+        when(arrayValue.getIndex(1)).thenReturn(second);
+        when(first.isDouble()).thenReturn(true);
+        when(second.isDouble()).thenReturn(true);
+        when(first.getDouble()).thenReturn(1.5d);
+        when(second.getDouble()).thenReturn(2.5d);
+
+        Object readValue = ReflectionTestUtils.invokeMethod(
+                collector, "extractValue", response, "p-array", point, address);
+        Object writeValue = ReflectionTestUtils.invokeMethod(
+                collector, "coerceWriteValue", List.of("3.5", "4.5"), address, point);
+
+        assertEquals(List.of(1.5d, 2.5d), readValue);
+        assertEquals(List.of(3.5d, 4.5d), writeValue);
+    }
+
     private void prepareCommandCollector(AdsCollector collector, ConfigManager configManager) throws Exception {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));

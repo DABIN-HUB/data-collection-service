@@ -2,14 +2,12 @@ package com.wangbin.collector.core.report.shadow;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.common.domain.entity.AlarmRule;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.logging.log4j.util.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.ReturnType;
@@ -17,7 +15,6 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -184,13 +181,7 @@ public class ShadowManager {
         long now = System.currentTimeMillis();
         long minInterval = point.getEventMinIntervalMs(reportProperties.getEventMinIntervalMs());
 
-        EventInfo info = null;
-        if (Strings.isNotBlank(fieldKey)) {
-            info = matchAlarmRule(point, point.getAlarmRule(), result);
-        }
-        if (info == null) {
-            info = evaluateProcessResultEvent(result);
-        }
+        EventInfo info = evaluateProcessResultEvent(result);
         if (info == null) {
             return null;
         }
@@ -209,34 +200,6 @@ public class ShadowManager {
         shadow.markEventTrigger(eventKey, now);
         shadow.markEventSignature(signatureBase, now);
         return info;
-    }
-
-    private EventInfo matchAlarmRule(DataPoint point, List<AlarmRule> rules, ProcessResult result) {
-        if (point == null || point.getAlarmEnabled() == null || point.getAlarmEnabled() != 1) {
-            return null;
-        }
-        if (CollectionUtils.isEmpty(rules)) {
-            return null;
-        }
-        Double value = toDouble(result.getFinalValue());
-        if (value == null) {
-            return null;
-        }
-        for (AlarmRule rule : rules) {
-            if (rule == null || Boolean.FALSE.equals(rule.getEnabled())) {
-                continue;
-            }
-            if (rule.checkAlarm(value)) {
-                return new EventInfo(
-                        rule.getRuleId(),
-                        rule.getRuleName(),
-                        rule.getLevel(),
-                        rule.getDescription() != null ? rule.getDescription() : "alarm triggered",
-                        "ALARM"
-                );
-            }
-        }
-        return null;
     }
 
     private EventInfo evaluateProcessResultEvent(ProcessResult result) {
@@ -334,6 +297,33 @@ public class ShadowManager {
             shadow.markReportedValues(properties);
             return shadow;
         });
+    }
+
+    /**
+     * 提交持久化发件箱对应的影子字段，并在确认没有后续消息时完成窗口。
+     *
+     * @param deviceId 本地设备ID
+     * @param properties 已确认的属性
+     * @param windowStart 窗口开始时间
+     * @param windowEnd 窗口结束时间
+     * @param allowWindowCommit 是否允许完成窗口
+     */
+    public void markOutboxReported(String deviceId,
+                                   Map<String, Object> properties,
+                                   long windowStart,
+                                   long windowEnd,
+                                   boolean allowWindowCommit) {
+        Boolean committed = mutateReportedShadow(deviceId, shadow -> {
+            shadow.markReportedValues(properties);
+            if (allowWindowCommit && shadow.allLatestValuesReported()) {
+                shadow.markReportedWindowCommitted(System.currentTimeMillis(), windowStart, windowEnd);
+                return Boolean.TRUE;
+            }
+            return Boolean.FALSE;
+        });
+        if (Boolean.TRUE.equals(committed)) {
+            clearDirty(deviceId);
+        }
     }
 
     public void removeShadow(String deviceId) {
@@ -570,7 +560,7 @@ public class ShadowManager {
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("璁惧褰卞瓙 reported CAS 鍐茬獊锛屽噯澶囬噸璇?deviceId={} attempt={} err={}",
+                log.debug("设备影子 reported CAS 冲突，准备重试，deviceId={} attempt={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -905,7 +895,7 @@ public class ShadowManager {
                 }
             }
         } catch (Exception e) {
-            log.warn("鏍囪褰卞瓙 dirty 璁惧澶辫触 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("标记影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
         }
     }
 
@@ -932,7 +922,7 @@ public class ShadowManager {
                 return values;
             }
         } catch (Exception e) {
-            log.warn("鍔犺浇褰卞瓙 dirty 璁惧闆嗗悎澶辫触 err={}", e.getMessage());
+            log.warn("加载影子 dirty 设备集合失败，err={}", e.getMessage());
         }
         return Collections.emptySet();
     }
@@ -946,7 +936,7 @@ public class ShadowManager {
                 redisTemplate.opsForSet().remove(dirtySetKey(), deviceId);
             }
         } catch (Exception e) {
-            log.warn("绉婚櫎褰卞瓙 dirty 璁惧澶辫触 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("移除影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
         }
     }
 

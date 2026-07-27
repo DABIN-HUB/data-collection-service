@@ -13,6 +13,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscri
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyMultipleRequest;
+import com.wangbin.collector.core.collector.protocol.bacnet.session.BacnetScSessionState;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
@@ -29,6 +30,7 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
     private BacnetRemoteDevice remoteDevice;
     private volatile Consumer<BacnetCovNotification> covNotificationListener;
     private volatile Runnable reconnectListener;
+    private volatile BacnetScSessionState sessionState = BacnetScSessionState.DISCONNECTED;
 
     public BacnetScConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null, null);
@@ -43,37 +45,51 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
 
     @Override
     protected void doConnect() throws Exception {
-        super.doConnect();
-        bacnetClient = new BacnetScClient(this);
-        if (covNotificationListener != null) {
-            bacnetClient.setCovNotificationHandler(covNotificationListener);
+        sessionState = BacnetScSessionState.TRANSPORT_CONNECTING;
+        try {
+            super.doConnect();
+            bacnetClient = new BacnetScClient(this);
+            if (covNotificationListener != null) {
+                bacnetClient.setCovNotificationHandler(covNotificationListener);
+            }
+            remoteDevice = BacnetRemoteDevice.builder()
+                    .deviceInstance(resolveRemoteDeviceInstance())
+                    .socketAddress(resolveRemoteSocketAddress())
+                    .discoveredByWhoIs(false)
+                    .build();
+            sessionState = BacnetScSessionState.SECURE_TUNNEL_ACTIVE;
+            Map<String, Object> params = new LinkedHashMap<>(getConnectionParams());
+            params.put("remoteDeviceInstance", resolveRemoteDeviceInstance());
+            params.put("transport", "WSS");
+            params.put("sessionState", sessionState.name());
+            params.put("standardSessionEstablished", false);
+            connectionParams.clear();
+            connectionParams.putAll(params);
+            statistics.put("protocol", "BACNET_SC");
+            statistics.put("implemented", true);
+            statistics.put("transport", "WSS");
+            statistics.put("message", "BACnet/SC 实验性安全隧道已连接，标准 Hub/Node 会话尚未建立");
+            notifyReconnectListener();
+        } catch (Exception ex) {
+            sessionState = BacnetScSessionState.FAILED;
+            throw ex;
         }
-        remoteDevice = BacnetRemoteDevice.builder()
-                .deviceInstance(resolveRemoteDeviceInstance())
-                .socketAddress(resolveRemoteSocketAddress())
-                .discoveredByWhoIs(false)
-                .build();
-        Map<String, Object> params = new LinkedHashMap<>(getConnectionParams());
-        params.put("remoteDeviceInstance", resolveRemoteDeviceInstance());
-        params.put("transport", "WSS");
-        connectionParams.clear();
-        connectionParams.putAll(params);
-        statistics.put("protocol", "BACNET_SC");
-        statistics.put("implemented", true);
-        statistics.put("transport", "WSS");
-        statistics.put("message", "BACnet/SC experimental secure WebSocket tunnel connected");
-        notifyReconnectListener();
     }
 
     @Override
     protected void doDisconnect() throws Exception {
+        sessionState = BacnetScSessionState.DISCONNECTING;
         BacnetScClient existingClient = bacnetClient;
         bacnetClient = null;
         if (existingClient != null) {
             existingClient.close();
         }
         remoteDevice = null;
-        super.doDisconnect();
+        try {
+            super.doDisconnect();
+        } finally {
+            sessionState = BacnetScSessionState.DISCONNECTED;
+        }
     }
 
     @Override
@@ -168,6 +184,12 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
     public long getCovNotificationCount() { return bacnetClient != null ? bacnetClient.getCovNotificationCount() : 0L; }
     @Override
     public long getSegmentedResponseCount() { return bacnetClient != null ? bacnetClient.getSegmentedResponseCount() : 0L; }
+    @Override
+    public String getSessionState() { return sessionState.name(); }
+    @Override
+    public boolean isStandardSessionEstablished() {
+        return sessionState == BacnetScSessionState.STANDARD_SESSION_ACTIVE;
+    }
 
     private BacnetScClient requireClient() {
         if (bacnetClient == null) {

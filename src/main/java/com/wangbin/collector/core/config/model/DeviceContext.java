@@ -3,6 +3,7 @@ package com.wangbin.collector.core.config.model;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
 import lombok.Getter;
 import lombok.ToString;
 import org.springframework.beans.BeanUtils;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable snapshot that bundles device level caches for convenient access.
+ * 聚合设备级缓存的不可变配置快照。
  */
 @Getter
 @ToString
@@ -38,9 +39,10 @@ public class DeviceContext {
                                    DeviceConnection connectionConfig,
                                    List<DataPoint> dataPoints) {
         String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
+        DeviceInfo deviceSnapshot = copyDevice(deviceInfo);
         DeviceConnection connectionSnapshot = copyConnection(connectionConfig);
         List<DataPoint> pointSnapshot = snapshotPoints(dataPoints);
-        return new DeviceContext(deviceId, deviceInfo, connectionSnapshot, pointSnapshot);
+        return new DeviceContext(deviceId, deviceSnapshot, connectionSnapshot, pointSnapshot);
     }
 
     public DeviceConnection copyConnectionConfig() {
@@ -48,7 +50,22 @@ public class DeviceContext {
     }
 
     public List<DataPoint> copyDataPoints() {
-        return new ArrayList<>(dataPoints);
+        return snapshotPoints(dataPoints);
+    }
+
+    private static DeviceInfo copyDevice(DeviceInfo source) {
+        if (source == null) {
+            return null;
+        }
+        DeviceInfo target = new DeviceInfo();
+        BeanUtils.copyProperties(source, target);
+        target.setAuthConfig(source.getAuthConfig() == null ? null : new java.util.LinkedHashMap<>(source.getAuthConfig()));
+        if (source.getCloudTarget() != null) {
+            CloudTargetConfig cloudTarget = new CloudTargetConfig();
+            BeanUtils.copyProperties(source.getCloudTarget(), cloudTarget);
+            target.setCloudTarget(cloudTarget);
+        }
+        return target;
     }
 
     private static DeviceConnection copyConnection(DeviceConnection source) {
@@ -67,7 +84,12 @@ public class DeviceContext {
         List<DataPoint> snapshot = new ArrayList<>(points.size());
         for (DataPoint point : points) {
             if (point != null) {
-                snapshot.add(point);
+                DataPoint pointCopy = new DataPoint();
+                BeanUtils.copyProperties(point, pointCopy);
+                pointCopy.setAdditionalConfig(point.getAdditionalConfig() == null
+                        ? new java.util.LinkedHashMap<>()
+                        : new java.util.LinkedHashMap<>(point.getAdditionalConfig()));
+                snapshot.add(pointCopy);
             }
         }
         return Collections.unmodifiableList(snapshot);

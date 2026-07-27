@@ -2,6 +2,7 @@ package com.wangbin.collector.core.cache.manager;
 
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("redisCacheManager")
+@ConditionalOnExpression("'${collector.cache.type:local}' != 'local'")
 public class RedisCacheManager extends AbstractCacheManager {
 
     @Autowired

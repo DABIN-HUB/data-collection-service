@@ -8,6 +8,7 @@ import com.github.benmanes.caffeine.cache.stats.CacheStats;
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("localCacheManager")
+@ConditionalOnExpression("'${collector.cache.type:local}' != 'redis'")
 public class LocalCacheManager extends AbstractCacheManager {
 
     @Value("${collector.cache.local.max-size:10000}")

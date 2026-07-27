@@ -65,4 +65,18 @@ class Plc4xOpcUaAddressParserTest {
         assertEquals("ns=2;s=Channel1.Device1.Payload;BYTESTRING", address.getPlc4xAddress());
         assertEquals("BYTESTRING", address.getDataType());
     }
+
+    @Test
+    void shouldParseConfiguredArraySize() {
+        DataPoint point = new DataPoint();
+        point.setPointId("p4");
+        point.setAddress("ns=2;s=Channel1.Device1.Values");
+        point.setDataType("INT");
+        point.setAdditionalConfig(new LinkedHashMap<>(Map.of("arraySize", 4)));
+
+        Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(point);
+
+        assertEquals(4, address.getArraySize());
+        assertTrue(!address.isScalar());
+    }
 }

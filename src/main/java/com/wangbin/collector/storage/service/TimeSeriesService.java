@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
@@ -43,6 +44,7 @@ public class TimeSeriesService {
     private final DeviceRepository deviceRepository;
     private final TdengineProperties properties;
     private final ObjectMapper objectMapper;
+    private final PointRuntimeStateService pointRuntimeStateService;
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
@@ -210,7 +212,7 @@ public class TimeSeriesService {
         putIfAbsent(result, "batchId", firstNonNull(metadata.get(ProcessResultMetadataKeys.BATCH_ID), additionalConfig(point, "batchId")));
         putIfAbsent(result, "groupId", firstNonNull(point != null ? point.getGroupId() : null, metadata.get(ProcessResultMetadataKeys.GROUP_ID)));
         putIfAbsent(result, "source", firstNonNull(metadata.get(ProcessResultMetadataKeys.SOURCE), "POLLING"));
-        putIfAbsent(result, "collectionInterval", resolveCollectionInterval(point));
+        putIfAbsent(result, "collectionInterval", resolveCollectionInterval(deviceId, point));
         putIfAbsent(result, "processingVersion", firstNonNull(metadata.get(ProcessResultMetadataKeys.PROCESSING_VERSION), additionalConfig(point, "processingVersion")));
         putIfAbsent(result, "reportEnabled", point != null ? point.isReportEnabled() : null);
         putIfAbsent(result, "alarmEnabled", point != null && point.getAlarmEnabled() != null ? point.getAlarmEnabled() == 1 : null);
@@ -260,14 +262,11 @@ public class TimeSeriesService {
         }
     }
 
-    private Object resolveCollectionInterval(DataPoint point) {
+    private Object resolveCollectionInterval(String deviceId, DataPoint point) {
         if (point == null) {
             return null;
         }
-        if (point.getCurrentCollectionInterval() > 0) {
-            return point.getCurrentCollectionInterval();
-        }
-        return point.getBaseCollectionInterval();
+        return pointRuntimeStateService.snapshot(deviceId, point).currentCollectionInterval();
     }
 
     private long resolveCollectTime(Map<String, Object> metadata, long eventTs) {

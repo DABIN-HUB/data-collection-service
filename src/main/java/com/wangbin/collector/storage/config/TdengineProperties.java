@@ -10,52 +10,52 @@ import org.springframework.stereotype.Component;
 public class TdengineProperties {
 
     /**
-     * Enable TDengine persistence.
+     * 是否启用 TDengine 持久化。
      */
     private boolean enabled = false;
 
     /**
-     * TDengine database.
+     * TDengine 数据库名称。
      */
     private String database = "wangbin_collector";
 
     /**
-     * Super table name.
+     * 遥测超级表名称。
      */
     private String superTable = "telemetry_super";
 
     /**
-     * Child table prefix.
+     * 遥测子表前缀。
      */
     private String subTablePrefix = "d_";
 
     /**
-     * Alarm super table name.
+     * 告警超级表名称。
      */
     private String alarmSuperTable = "alarm_super";
 
     /**
-     * Alarm child table prefix.
+     * 告警子表前缀。
      */
     private String alarmSubTablePrefix = "d_alarm_";
 
     /**
-     * Keep days for DB retention.
+     * 数据保留天数。
      */
     private int keepDays = 30;
 
     /**
-     * Auto create database/stable/sub-tables.
+     * 是否自动创建数据库、超级表和子表。
      */
     private boolean autoCreate = true;
 
     /**
-     * Query default limit.
+     * 查询默认返回数量。
      */
     private int queryDefaultLimit = 500;
 
     /**
-     * Query max limit guard.
+     * 查询最大返回数量。
      */
     private int queryMaxLimit = 5000;
 }

@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.protocol.base;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -47,6 +48,22 @@ class BaseCollectorReadPointsTest {
 
         assertEquals(1, collector.getDeviceStatus().get("subscribedPoints"));
         assertEquals(1, collector.getStatistics().get("subscribedPoints"));
+    }
+
+    @Test
+    void shouldKeepProcessResultSnapshotBoundToEachCollectionRound() throws Exception {
+        Map<String, Object> rawValues = new HashMap<>();
+        rawValues.put("p1", 10);
+        TestCollector collector = connectedCollector(new TestCollector(rawValues));
+
+        collector.readPoints(List.of(point("p1")));
+        Map<String, ProcessResult> firstRound = collector.takeInvocationProcessResults();
+        rawValues.put("p1", 20);
+        collector.readPoints(List.of(point("p1")));
+        Map<String, ProcessResult> secondRound = collector.takeInvocationProcessResults();
+
+        assertEquals(10.0D, firstRound.get("p1").getFinalValue());
+        assertEquals(20.0D, secondRound.get("p1").getFinalValue());
     }
 
     @Test

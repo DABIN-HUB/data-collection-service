@@ -4,16 +4,21 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.CustomTcpConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.CustomUdpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.AdsConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.KnxNetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.OpcUaConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Plc4xOpcUaConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Plc4xModbusRtuConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.Plc4xModbusTcpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.TcpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.WebSocketConnectionAdapter;
 import org.junit.jupiter.api.Test;
 
@@ -88,6 +93,42 @@ class ConnectionFactoryProtocolAliasMappingTest {
     }
 
     @Test
+    void shouldPreferModbusTcpProtocolOverGenericTcpConnectionType() {
+        DeviceInfo deviceInfo = device("dev-modbus-tcp", "MODBUS_TCP");
+        deviceInfo.setConnectionType("TCP");
+        DeviceConnection config = new DeviceConnection();
+        config.setConnectionType("MODBUS_TCP");
+
+        assertInstanceOf(Plc4xModbusTcpConnectionAdapter.class,
+                factory.createConnection(deviceInfo, config));
+        assertEquals(502, config.getPort());
+    }
+
+    @Test
+    void shouldFallbackToGenericConnectionTypeForUnregisteredProtocol() {
+        DeviceInfo deviceInfo = device("dev-custom", "VENDOR_PRIVATE_PROTOCOL");
+        deviceInfo.setConnectionType("TCP");
+
+        assertInstanceOf(TcpConnectionAdapter.class,
+                factory.createConnection(deviceInfo, new DeviceConnection()));
+    }
+
+    @Test
+    void shouldCreateIndependentCustomTransportAdapters() {
+        DeviceConnection tcpConfig = new DeviceConnection();
+        tcpConfig.setHost("127.0.0.1");
+        tcpConfig.setPort(19001);
+        DeviceConnection udpConfig = new DeviceConnection();
+        udpConfig.setHost("127.0.0.1");
+        udpConfig.setPort(19002);
+
+        assertInstanceOf(CustomTcpConnectionAdapter.class,
+                factory.createConnection(device("dev-custom-tcp", "CUSTOM_TCP"), tcpConfig));
+        assertInstanceOf(CustomUdpConnectionAdapter.class,
+                factory.createConnection(device("dev-custom-udp", "CUSTOM_UDP"), udpConfig));
+    }
+
+    @Test
     void shouldMapS7AliasToAdapterWithDefaultPort() {
         DeviceConnection config = new DeviceConnection();
 
@@ -153,6 +194,15 @@ class ConnectionFactoryProtocolAliasMappingTest {
 
         assertInstanceOf(Plc4xOpcUaConnectionAdapter.class,
                 factory.createConnection(device("dev-opcua", "OPC_UA"), config));
+        assertEquals(4840, config.getPort());
+    }
+
+    @Test
+    void shouldMapMiloOpcUaProtocolToIndependentAdapter() {
+        DeviceConnection config = new DeviceConnection();
+
+        assertInstanceOf(OpcUaConnectionAdapter.class,
+                factory.createConnection(device("dev-opcua-milo", "OPCUA_MILO"), config));
         assertEquals(4840, config.getPort());
     }
 

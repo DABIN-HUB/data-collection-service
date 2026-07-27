@@ -3,6 +3,7 @@ package com.wangbin.collector.storage.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
@@ -39,7 +40,8 @@ class TimeSeriesServiceTest {
                 dataRepository,
                 deviceRepository,
                 properties,
-                objectMapper
+                objectMapper,
+                new PointRuntimeStateService()
         );
 
         DataPoint point = new DataPoint();
@@ -53,7 +55,7 @@ class TimeSeriesServiceTest {
         point.setDataType("FLOAT");
         point.setUnit("C");
         point.setUnitId(1);
-        point.setCurrentCollectionInterval(1000);
+        point.setBaseCollectionInterval(1000L);
         point.setAlarmEnabled(1);
         Map<String, Object> additionalConfig = new LinkedHashMap<>();
         additionalConfig.put("reportEnabled", true);

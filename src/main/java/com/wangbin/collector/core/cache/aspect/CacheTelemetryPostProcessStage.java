@@ -15,6 +15,11 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
     private final MultiLevelCacheManager multiLevelCacheManager;
 
     @Override
+    public TelemetryStageType type() {
+        return TelemetryStageType.CACHE;
+    }
+
+    @Override
     public String name() {
         return "cache";
     }

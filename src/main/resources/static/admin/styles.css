@@ -2670,10 +2670,23 @@ body.modal-active {
 
 .home-dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.9fr);
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.home-dashboard-row {
+  display: grid;
+  gap: 1rem;
   align-items: stretch;
+}
+
+.home-dashboard-primary {
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.9fr);
+}
+
+/* 上报链路保持顺序展示，运行状态获得更多空间用于双列指标。 */
+.home-dashboard-observability {
+  grid-template-columns: minmax(360px, 0.72fr) minmax(0, 1fr);
 }
 
 .home-panel {
@@ -2777,6 +2790,15 @@ body.modal-active {
 .pipeline-steps {
   display: grid;
   gap: 0.72rem;
+}
+
+.home-resource-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+
+.home-resource-list > .empty-state {
+  grid-column: 1 / -1;
 }
 
 .home-event-row,
@@ -2940,7 +2962,13 @@ body.modal-active {
 }
 
 @media (max-width: 1320px) {
-  .home-dashboard {
+  .home-dashboard-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .home-resource-list {
     grid-template-columns: 1fr;
   }
 }

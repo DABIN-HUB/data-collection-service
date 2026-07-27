@@ -7,6 +7,7 @@ import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
+import com.wangbin.collector.core.connection.serial.SharedSerialChannelManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,9 @@ public class ConnectionFactory {
     @Autowired(required = false)
     private CollectorProperties collectorProperties;
 
+    @Autowired(required = false)
+    private SharedSerialChannelManager sharedSerialChannelManager = new SharedSerialChannelManager();
+
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
@@ -68,8 +72,13 @@ public class ConnectionFactory {
             case "MODBUS_RTU" -> createModbusRtuConnection(deviceInfo, cfg);
             case "SNMP" -> createSnmpConnection(deviceInfo, cfg);
             case "OPC_UA", "OPC_UA_PLC4X" -> createPlc4xOpcUaConnection(deviceInfo, cfg);
+            case "OPC_UA_MILO" -> createOpcUaConnection(deviceInfo, cfg);
             case "IEC104" -> createIec104Connection(deviceInfo, cfg);
+            case "DLT645_2007" -> createDlt645Connection(deviceInfo, cfg);
+            case "IEC101" -> createIec101Connection(deviceInfo, cfg);
             case "IEC61850" -> createIec61850Connection(deviceInfo, cfg);
+            case "CUSTOM_TCP" -> createCustomTcpConnection(deviceInfo, cfg);
+            case "CUSTOM_UDP" -> createCustomUdpConnection(deviceInfo, cfg);
             default -> throw new CollectorException(
                     String.format("涓嶆敮鎸佺殑杩炴帴绫诲瀷: %s", connectionType),
                     deviceInfo.getDeviceId(), null
@@ -78,14 +87,21 @@ public class ConnectionFactory {
     }
 
     private String resolveConnectionType(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        String protocolType = null;
+        if (deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
+            protocolType = normalize(deviceInfo.getProtocolType());
+            if (protocolDescriptorRegistry.resolve(protocolType) != null) {
+                return protocolType;
+            }
+        }
         if (deviceInfo.getConnectionType() != null && !deviceInfo.getConnectionType().isBlank()) {
             return normalize(deviceInfo.getConnectionType());
         }
-        if (deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
-            return normalize(deviceInfo.getProtocolType());
-        }
         if (cfg != null && cfg.getConnectionType() != null && !cfg.getConnectionType().isBlank()) {
             return normalize(cfg.getConnectionType());
+        }
+        if (protocolType != null) {
+            return protocolType;
         }
         return "TCP";
     }
@@ -291,12 +307,48 @@ public class ConnectionFactory {
         }
     }
 
+    private ConnectionAdapter<?> createDlt645Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new Dlt645ConnectionAdapter(deviceInfo, cfg, sharedSerialChannelManager);
+        } catch (Exception exception) {
+            log.error("创建 DL/T 645 连接失败: {}", deviceInfo.getDeviceId(), exception);
+            throw new CollectorException("创建 DL/T 645 连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createIec101Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new Iec101ConnectionAdapter(deviceInfo, cfg, sharedSerialChannelManager);
+        } catch (Exception exception) {
+            log.error("创建 IEC101 连接失败: {}", deviceInfo.getDeviceId(), exception);
+            throw new CollectorException("创建 IEC101 连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
     private ConnectionAdapter<?> createIec61850Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Iec61850ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
             log.error("鍒涘缓IEC61850杩炴帴澶辫触: {}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("鍒涘缓IEC61850杩炴帴澶辫触", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createCustomTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new CustomTcpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception exception) {
+            log.error("创建自定义TCP连接失败: {}", deviceInfo.getDeviceId(), exception);
+            throw new CollectorException("创建自定义TCP连接失败", deviceInfo.getDeviceId(), null);
+        }
+    }
+
+    private ConnectionAdapter<?> createCustomUdpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
+        try {
+            return new CustomUdpConnectionAdapter(deviceInfo, cfg);
+        } catch (Exception exception) {
+            log.error("创建自定义UDP连接失败: {}", deviceInfo.getDeviceId(), exception);
+            throw new CollectorException("创建自定义UDP连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 }

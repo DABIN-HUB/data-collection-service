@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -27,6 +28,9 @@ import java.util.Objects;
 @Service
 @ConditionalOnProperty(prefix = "collector.config", name = "loader", havingValue = "remote", matchIfMissing = true)
 public class RemoteConfigLoader implements ConfigLoader {
+
+    private static final String API_TOKEN_HEADER = "X-API-Token";
+    private static final String TENANT_ID_HEADER = "tenant-id";
 
     @Value("${collector.config.yun-url:http://localhost:8080/admin-api}")
     private String runUrl;
@@ -60,11 +64,13 @@ public class RemoteConfigLoader implements ConfigLoader {
                 List<DeviceInfo> devices = response.getBody().getData();
                 return devices != null ? devices : Collections.emptyList();
             }
-            log.warn("load remote devices failed, status={}", response.getStatusCode());
-        } catch (Exception e) {
-            log.error("加载远程设备配置失败,不影响现有采集，url:{}", url);
+            throw new ConfigLoadException("远程设备配置响应异常，状态码: " + response.getStatusCode());
+        } catch (Exception exception) {
+            if (exception instanceof ConfigLoadException configLoadException) {
+                throw configLoadException;
+            }
+            throw new ConfigLoadException("加载远程设备配置失败，继续保留最后有效配置", exception);
         }
-        return Collections.emptyList();
     }
 
     @Override
@@ -77,11 +83,16 @@ public class RemoteConfigLoader implements ConfigLoader {
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 return response.getBody().getData();
             }
-            log.warn("load remote device failed, deviceId={}, status={}", deviceId, response.getStatusCode());
-        } catch (Exception e) {
-            log.error("load remote device failed, deviceId={}", deviceId, e);
+            throw new ConfigLoadException("远程设备配置响应异常，deviceId=" + deviceId
+                    + "，状态码=" + response.getStatusCode());
+        } catch (HttpClientErrorException.NotFound exception) {
+            return null;
+        } catch (Exception exception) {
+            if (exception instanceof ConfigLoadException configLoadException) {
+                throw configLoadException;
+            }
+            throw new ConfigLoadException("加载远程设备配置失败，deviceId=" + deviceId, exception);
         }
-        return null;
     }
 
     @Override
@@ -95,11 +106,14 @@ public class RemoteConfigLoader implements ConfigLoader {
                 List<DataPoint> points = response.getBody().getData();
                 return points != null ? points : Collections.emptyList();
             }
-            log.warn("load remote points failed, deviceId={}, status={}", deviceId, response.getStatusCode());
-        } catch (Exception e) {
-            log.error("load remote points failed, deviceId={}", deviceId, e);
+            throw new ConfigLoadException("远程点位配置响应异常，deviceId=" + deviceId
+                    + "，状态码=" + response.getStatusCode());
+        } catch (Exception exception) {
+            if (exception instanceof ConfigLoadException configLoadException) {
+                throw configLoadException;
+            }
+            throw new ConfigLoadException("加载远程点位配置失败，deviceId=" + deviceId, exception);
         }
-        return Collections.emptyList();
     }
 
     @Override
@@ -112,17 +126,20 @@ public class RemoteConfigLoader implements ConfigLoader {
             if (response.getStatusCode() == HttpStatus.OK) {
                 return Objects.requireNonNull(response.getBody()).getData();
             }
-            log.warn("load remote connection failed, deviceId={}, status={}", deviceId, response.getStatusCode());
-        } catch (Exception e) {
-            log.error("load remote connection failed, deviceId={}", deviceId, e);
+            throw new ConfigLoadException("远程连接配置响应异常，deviceId=" + deviceId
+                    + "，状态码=" + response.getStatusCode());
+        } catch (Exception exception) {
+            if (exception instanceof ConfigLoadException configLoadException) {
+                throw configLoadException;
+            }
+            throw new ConfigLoadException("加载远程连接配置失败，deviceId=" + deviceId, exception);
         }
-        return null;
     }
 
     private HttpEntity<String> createAuthRequest() {
         HttpHeaders headers = new HttpHeaders();
-        headers.set("X-API-Token", getApiToken());
-        headers.set("tenant-id", tenantId);
+        headers.set(API_TOKEN_HEADER, getApiToken());
+        headers.set(TENANT_ID_HEADER, tenantId);
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
         return new HttpEntity<>(headers);
@@ -136,7 +153,7 @@ public class RemoteConfigLoader implements ConfigLoader {
         if (envToken != null && !envToken.trim().isEmpty()) {
             return envToken.trim();
         }
-        log.warn("API token not configured, using empty value");
+        log.warn("远程配置接口令牌未配置，将使用空令牌");
         return "";
     }
 }
