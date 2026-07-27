@@ -6,7 +6,8 @@
 
 createFieldConfig 参数含义依次为：字段名、字段类型、中文说明、是否必填、默认值、固定枚举值。
 
-CUSTOM_TCP 当前仍为占位实现，没有读取专属连接字段，因此仅保留空分支说明。
+CUSTOM_TCP 与 CUSTOM_UDP 已拆分为独立实验性适配器，字段以 `ProtocolDescriptorRegistry` 的
+`customConnectionFields(...)` 和 `customPointFields()` 为准，支持受控请求模板、帧边界和字节/位/JSON 路径解析。
 ```java
 case "MODBUS_TCP":
     fields.add(createFieldConfig("host", "string", "设备IP", true, "127.0.0.1", null));
@@ -37,6 +38,45 @@ case "MODBUS_RTU":
     fields.add(createFieldConfig("maxCoilsPerRequest", "number", "单次最大线圈数", false, "2000", null));
     fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "3000", null));
     fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "3000", null));
+    break;
+
+case "DLT645_2007":
+    fields.add(createFieldConfig("serialPort", "string", "串口名称", true, "COM1", null));
+    fields.add(createFieldConfig("baudRate", "number", "波特率", true, "2400", null));
+    fields.add(createFieldConfig("dataBits", "number", "数据位", true, "8", null));
+    fields.add(createFieldConfig("stopBits", "number", "停止位", true, "1", null));
+    fields.add(createFieldConfig("parity", "select", "校验位", true, "EVEN", new String[]{"NONE", "EVEN", "ODD"}));
+    fields.add(createFieldConfig("meterAddress", "string", "电表通信地址", true, "000000000001", null));
+    fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "3000", null));
+    fields.add(createFieldConfig("writeTimeout", "number", "写入超时(ms)", false, "3000", null));
+    fields.add(createFieldConfig("retryCount", "number", "重试次数", false, "2", null));
+    fields.add(createFieldConfig("wakeupByteCount", "number", "唤醒字节数", false, "4", null));
+    fields.add(createFieldConfig("interFrameDelayMs", "number", "帧间隔(ms)", false, "20", null));
+    fields.add(createFieldConfig("writeEnabled", "boolean", "允许远程写入", false, "false", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("writePasswordHex", "password", "写入密码", false, "", null));
+    fields.add(createFieldConfig("operatorCodeHex", "password", "操作者代码", false, "", null));
+    break;
+
+case "IEC101":
+    fields.add(createFieldConfig("serialPort", "string", "串口名称", true, "COM1", null));
+    fields.add(createFieldConfig("baudRate", "number", "波特率", true, "9600", null));
+    fields.add(createFieldConfig("dataBits", "number", "数据位", true, "8", null));
+    fields.add(createFieldConfig("stopBits", "number", "停止位", true, "1", null));
+    fields.add(createFieldConfig("parity", "select", "校验位", true, "EVEN", new String[]{"NONE", "EVEN", "ODD"}));
+    fields.add(createFieldConfig("linkMode", "select", "链路模式", true, "UNBALANCED", new String[]{"UNBALANCED"}));
+    fields.add(createFieldConfig("linkAddress", "number", "链路地址", true, "1", null));
+    fields.add(createFieldConfig("commonAddress", "number", "公共地址", true, "1", null));
+    fields.add(createFieldConfig("linkAddressSize", "select", "链路地址长度", true, "1", new String[]{"1", "2"}));
+    fields.add(createFieldConfig("causeOfTransmissionSize", "select", "传送原因长度", true, "2", new String[]{"1", "2"}));
+    fields.add(createFieldConfig("commonAddressSize", "select", "公共地址长度", true, "2", new String[]{"1", "2"}));
+    fields.add(createFieldConfig("informationObjectAddressSize", "select", "信息体地址长度", true, "3", new String[]{"1", "2", "3"}));
+    fields.add(createFieldConfig("readTimeout", "number", "读取超时(ms)", false, "3000", null));
+    fields.add(createFieldConfig("retryCount", "number", "重试次数", false, "2", null));
+    fields.add(createFieldConfig("interFrameDelayMs", "number", "帧间隔(ms)", false, "20", null));
+    fields.add(createFieldConfig("class1PollIntervalMs", "number", "一级数据轮询周期(ms)", false, "1000", null));
+    fields.add(createFieldConfig("class2PollIntervalMs", "number", "二级数据轮询周期(ms)", false, "5000", null));
+    fields.add(createFieldConfig("generalInterrogationOnConnect", "boolean", "连接后总召唤", false, "true", new String[]{"true", "false"}));
+    fields.add(createFieldConfig("clockSyncOnConnect", "boolean", "连接后时钟同步", false, "false", new String[]{"true", "false"}));
     break;
 
 case "SIEMENS_S7":

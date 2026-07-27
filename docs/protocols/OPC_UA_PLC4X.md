@@ -31,7 +31,7 @@
 - 支持 connect / read / write。
 - `browse` 仍受 PLC4X runtime metadata 限制。
 - 订阅注册已验证，值回推仍需逐台服务器确认。
-- 数组点位仍不支持。
+- 支持通过 `additionalConfig.arraySize` 声明的一维同构数组轮询读写，数组订阅仍不支持。
 
 ## 联调基线
 

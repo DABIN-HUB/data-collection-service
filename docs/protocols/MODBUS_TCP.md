@@ -13,7 +13,10 @@
 
 ## 地址与点位配置
 
-- `DataPoint.address` 支持：`3x40001`、`3:40001`、`440001`。
+- 标准引用地址 `40001` 表示保持寄存器第 1 个地址，`40002` 表示第 2 个地址。
+- Slave 页面显示保持寄存器 `4001` 时，本系统点位地址填写 `44001`；`4001` 到 `4010` 对应填写 `44001` 到 `44010`。
+- 也可使用显式类型和零基偏移，例如 `4:4000` 或 `4x4000` 均表示保持寄存器 `4001`。
+- 不要把 Slave 显示的 `4001` 直接填入点位地址；单独的 `4001` 不包含本系统要求的寄存器区类型。
 - `unitId` 优先取点位 `unitId`，否则取连接配置 `slaveId`。
 
 ## 连接扩展参数（extJson）
@@ -51,3 +54,24 @@ fields.add(createFieldConfig("timeout", "number", "协议超时(ms)", false, "30
 1. 设备 `protocolType` 设置为 `MODBUS_TCP`。
 2. 在连接配置提供 `host/port`。
 3. 点位配置 `address + dataType + readWrite`。
+
+## 验收方式
+
+嵌入式真实 TCP 报文验收：
+
+```powershell
+mvn -q "-Dtest=ModbusTcpCollectionChainAcceptanceTest" test
+```
+
+连接已经启动的真实 Slave，并验证寄存器值在两次采样之间发生变化：
+
+```powershell
+.\scripts\run-modbus-real-acceptance.ps1 `
+  -ServerHost 127.0.0.1 `
+  -Port 502 `
+  -UnitId 1 `
+  -StartRegister 4001 `
+  -PointCount 10
+```
+
+真实从站验收默认按 `UINT16`、大端字节序读取，可通过 `-DataType` 和 `-ByteOrder` 覆盖。

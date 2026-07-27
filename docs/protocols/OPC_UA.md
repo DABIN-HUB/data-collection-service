@@ -4,7 +4,7 @@
 
 - 生产 `OPC_UA` 路由已经切到 PLC4X。
 - 兼容协议别名 `OPCUA`。
-- 旧的 Milo `OpcUaCollector` / `OpcUaConnectionAdapter` 仍在仓库中保留，但当前默认路由不再使用。
+- Milo 实现已通过独立实验协议 `OPC_UA_MILO` 接入，默认 `OPC_UA` 路由仍不改变。
 
 核心类：
 
@@ -18,7 +18,8 @@
 - 支持 connect / read / write。
 - 支持 collector 侧订阅注册，但不同服务器上的值回推能力仍需逐台验证。
 - `browse` 是否可用取决于 PLC4X runtime metadata 和目标服务器行为，不能默认视为可用。
-- 当前只支持标量点位；数组点位仍然拒绝。
+- 支持标量和一维同构数组轮询读写；数组订阅仍然拒绝。
+- `OPC_UA_MILO` 尚未完成与 PLC4X 的同服契约测试，不能替换生产默认驱动。
 
 ## 点位配置
 
@@ -26,6 +27,7 @@
 - 若地址里未显式带 PLC4X 数据类型后缀，解析器会结合 `DataPoint.dataType` 尝试补齐，例如 `;REAL`、`;BOOL`。
 - 兼容 `additionalConfig` 中的 `namespace`、`identifier`、`identifierType`。
 - 订阅兼容字段仍可使用：`samplingInterval`、`queueSize`、`deadband`、`subscribe`。
+- 数组节点通过 `additionalConfig.arraySize` 声明元素数量，读写数量不一致时直接失败。
 
 ## 连接字段
 
@@ -48,6 +50,7 @@
 1. 设备 `protocolType` 设置为 `OPC_UA`。
 2. 连接配置提供端点和认证参数。
 3. 点位地址保持 OPC UA `NodeId` 风格。
+4. 只有明确联调 Milo 时才把 `protocolType` 设置为 `OPC_UA_MILO`；同一设备不能混用两种驱动。
 
 ## 当前验证结论
 

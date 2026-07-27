@@ -71,19 +71,22 @@
 - `KNXNET_IP`
 - `OPC_UA`
 - `OPC_UA_PLC4X`
+- `OPC_UA_MILO`（实验性独立驱动）
 - `OPC_DA`
 - `BACNET_IP`
 - `BACNET_MSTP`
 - `BACNET_SC`
 - `IEC104`
+- `DLT645_2007`（实验性）
+- `IEC101`（实验性非平衡控制站）
 - `IEC61850`
 - `MQTT`
 - `SNMP`
 - `COAP`
 - `HTTP`
 - `WEBSOCKET`
-- `CUSTOM_TCP`（当前为占位实现）
-- `CUSTOM_UDP`（当前沿用占位实现别名）
+- `CUSTOM_TCP`（实验性可配置请求响应数据面）
+- `CUSTOM_UDP`（实验性独立 UDP 数据面）
 
 另外，统一协议工厂还兼容以下别名或安全变体：
 
@@ -103,18 +106,21 @@
 - `EtherNet/IP`：支持 `Logix Tag` 风格符号地址读写
 - `ADS`：支持 `Beckhoff ADS / AMS` 符号读写与订阅
 - `KNXnet/IP`：支持组地址采集，支持 `DPT` 类型映射
-- `OPC_UA`：支持读/写/订阅/浏览
+- `OPC_UA`：默认使用 PLC4X，支持标量和一维数组读写、浏览及标量订阅
 - `OPC_UA_PLC4X`：作为兼容别名保留，沿用 `OPC_UA` 主实现
+- `OPC_UA_MILO`：显式选择 Eclipse Milo 独立客户端，当前保持实验状态，不会与 PLC4X 混用连接
 - `OPC_DA`：支持 `HTTP` 桥接模式与 `INMEMORY` 模式
 - `BACnet`：已覆盖 `IP`、`MS/TP`、`SC` 三类接入形态，支持读写与订阅；其中 `BACNET_SC` 当前按实验性能力提供
 - `IEC104`：支持读、总召唤、命令下发、单点召唤
+- `DLT645_2007`：支持串口多表、数据读取、后续帧、BCD 等值解析和受控写入
+- `IEC101`：支持非平衡链路、一级/二级数据、总召唤、时钟同步和遥控
 - `IEC61850`：支持模型加载、读写、报告处理
 - `MQTT`：支持主题订阅、发布、消息映射，兼容 `MQTT_SSL`
 - `SNMP`：支持 GET/SET/WALK，兼容 `SNMP_V1` / `SNMP_V2C` / `SNMP_V3`
 - `COAP`：支持 GET/POST/PUT/DELETE/Observe，兼容 `COAP_SSL`
 - `HTTP`：支持请求-响应采集，兼容 `HTTPS`
 - `WEBSOCKET`：支持消息解析、认证、心跳与缓存回填，兼容 `WEBSOCKET_SSL`
-- `CUSTOM_TCP` / `CUSTOM_UDP`：当前只保留生命周期占位能力，真实采集协议待补齐
+- `CUSTOM_TCP` / `CUSTOM_UDP`：支持受控模板、帧边界和字节/位/JSON 路径解析，仍需按实际厂商协议联调验收
 
 协议文档入口：
 
@@ -342,19 +348,22 @@ src/main/java/com/wangbin/collector
 | ETHERNET_IP | 已支持 | `Logix Tag` 风格符号地址读写 |
 | ADS | 已支持 | `ADS / AMS` 符号读写 + 订阅 |
 | KNXNET_IP | 已支持 | 组地址采集 + `DPT` 类型映射 |
-| OPC_UA / OPC_UA_PLC4X | 已支持 | 读/写/订阅/浏览 |
+| OPC_UA / OPC_UA_PLC4X | 已支持 | 标量及一维数组读写、浏览、标量订阅 |
+| OPC_UA_MILO | 实验性 | 独立 Milo 驱动，需实服契约测试 |
 | OPC_DA | 已支持 | `HTTP` 桥接 / `INMEMORY` |
 | BACNET_IP | 已支持 | `Who-Is/I-Am`、`COV` 订阅、属性读写 |
 | BACNET_MSTP | 已支持 | `RS485` 令牌总线接入 |
 | BACNET_SC | 实验性 | 安全 WebSocket 形态，已接入统一链路 |
 | IEC104 | 已支持 | 读、召唤、命令 |
+| DLT645_2007 | 实验性 | DL/T 645-2007 串口多表、读取、后续帧和受控写入 |
+| IEC101 | 实验性 | 非平衡控制站、FT1.2、一级/二级数据、召唤和遥控 |
 | IEC61850 | 已支持 | 模型加载、读写、报告 |
 | MQTT / MQTT_SSL | 已支持 | 主题映射、订阅、发布 |
 | SNMP / SNMP_V1 / SNMP_V2C / SNMP_V3 | 已支持 | GET/SET/WALK，含 SNMPv3 |
 | COAP / COAP_SSL | 已支持 | GET/POST/PUT/DELETE/Observe |
 | HTTP / HTTPS | 已支持 | 请求-响应采集 |
 | WEBSOCKET / WEBSOCKET_SSL | 已支持 | 消息解析、认证、心跳与缓存回填 |
-| CUSTOM_TCP / CUSTOM_UDP | 占位 | 生命周期可用，真实协议待补齐 |
+| CUSTOM_TCP / CUSTOM_UDP | 实验性 | 独立 TCP/UDP 请求响应、帧边界与受控值解析 |
 
 ## 快速开始
 
@@ -374,21 +383,938 @@ java -jar target/data-collection-service.jar --spring.profiles.active=dev
 
 ### 配置说明
 
-当前仓库里与 MQTT 相关的配置有两组，作用不同：
+当前配置由以下文件共同组成：
 
-- `collector.report.mqtt`：云端上报与平台侧 MQTT 下行配置，供 `MqttReportHandler`、统一 ACK、`thing.property.set` / `thing.service.invoke` / `thing.config.push` 等链路使用。
-- `collector.report.mqtt.service-command-mappings`：当平台 `thing.service.invoke` 的 `service/identifier/serviceId` 与底层协议命令名不一致时，在这里做全局映射。
-- `collector.mqtt`：MQTT 作为采集协议时的默认连接兜底配置，主要供 `MqttCollector` 在设备连接参数不完整时回退使用。
+| 配置来源 | 作用 | 使用建议 |
+| --- | --- | --- |
+| `application.yml` | 通用默认值和开发环境基础配置 | 可以查看默认值，不要在这里提交真实密码 |
+| `application-dev.yml` | `dev` 环境覆盖项 | 本地开发使用 |
+| `application-prod.yml` | `prod` 环境覆盖项 | 生产环境必须同时提供外部秘密 |
+| 环境变量 | 数据库、Redis、MQTT 等部署参数 | 生产环境推荐方式 |
+| 外部 YAML | Token Map、服务签名客户端等结构化秘密 | 不提交仓库，通过 `spring.config.additional-location` 加载 |
+| 启动参数 | 临时覆盖单个配置 | 适合联调，不建议在命令行暴露密码 |
 
-如果你当前主要使用“采集结果上报到云端”的链路，优先关注 `collector.report.mqtt`。
-如果你当前要接入“MQTT 设备作为采集源”，再关注 `collector.mqtt`。
+Spring Boot 配置优先级遵循“启动参数 > 环境变量 > 外部配置 > Profile 配置 > `application.yml`”。本文中的 `ms` 表示毫秒，`seconds` 表示秒，容量类参数表示条数而不是字节数。
 
-### Docker Compose
+#### 1. 本地最小启动
+
+默认 Profile 是 `dev`。当前开发默认值为：
+
+- TDengine 历史存储关闭：`COLLECTOR_TDENGINE_ENABLED=false`。
+- 云端 MQTT 连接关闭：`COLLECTOR_REPORT_MQTT_ENABLED=false`。
+- 主缓存使用本地缓存：`collector.cache.type=local`。
+- Redis Stream 默认开启，因此要查看实时流或使用影子、告警持久化，仍应启动 Redis。
+- 管理接口鉴权开启，开发令牌是 `ops-token`，只允许本机开发使用。
+
+只验证应用启动、不连接 TDengine 和云平台时：
 
 ```bash
-docker compose up -d
+mvn clean package -DskipTests
+java -jar target/data-collection-service.jar \
+  --spring.profiles.active=dev \
+  --telemetry.tdengine.enabled=false \
+  --collector.report.mqtt.enabled=false
+```
+
+如果本地连 Redis 也不需要，可额外关闭依赖 Redis 的运行分支：
+
+```bash
+java -jar target/data-collection-service.jar \
+  --spring.profiles.active=dev \
+  --spring.data.redis.stream.enabled=false \
+  --collector.cache.type=local \
+  --collector.report.enabled=false \
+  --collector.report.mqtt.enabled=false \
+  --collector.report.shadow.persistence-enabled=false \
+  --collector.alarm.state.enabled=false \
+  --telemetry.tdengine.enabled=false
+```
+
+该模式适合界面和协议配置开发，不具备 Redis Stream、跨重启设备影子、告警状态恢复、历史失败缓冲和可靠 Outbox 能力。
+
+#### 2. 控制台令牌和接口鉴权
+
+控制台静态资源 `/admin/**` 可以直接打开，但页面发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
+
+打开控制台后，在左下角“访问令牌”区域填写令牌并保存。页面会：
+
+1. 把令牌保存在当前浏览器的 `localStorage.collectorToken`。
+2. 每次接口请求携带 `X-Collector-Token`。
+3. 收到未授权响应时清除失效令牌。
+
+令牌配置是 Map，必须理解键和值的含义：
+
+```yaml
+collector:
+  auth:
+    ops-tokens:
+      "replace-with-random-read-token": readonly
+      "replace-with-random-ops-token": operator
+    ops-scopes:
+      readonly: [VIEW]
+      operator: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE]
+```
+
+- Map 的 Key 是请求真正携带的令牌。
+- Map 的 Value 是令牌标签，只用于身份识别、日志和查找 `ops-scopes`。
+- `ops-scopes` 的 Key 必须写标签，例如 `readonly`，不能写令牌本身。
+- 未单独配置 `ops-scopes` 的标签会继承 `default-ops-scopes`。
+
+可用权限范围：
+
+| 权限 | 典型用途 |
+| --- | --- |
+| `VIEW` | 查询设备、实时数据、影子、监控和普通配置 |
+| `DEVICE_CONTROL` | 启停设备、写点位、发送命令、重置自适应状态 |
+| `CONFIG_MANAGE` | 新增或修改本地设备、同步、导入导出配置 |
+| `SECURITY_MANAGE` | 安全管理扩展权限，建议只给管理员 |
+| `EDGE_INGEST` | 独立 PROFINET/EtherCAT 边缘进程上送遥测 |
+
+默认访问规则：
+
+```yaml
+collector:
+  auth:
+    default-required-scope: VIEW
+    default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE, EDGE_INGEST]
+    access-rules:
+      - methods: [POST]
+        paths: [/api/edge/telemetry]
+        required-scope: EDGE_INGEST
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/device/**, /api/data/device/*/reset-adaptive]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/config/**]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/config/export]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/**, /monitor/**]
+        required-scope: VIEW
+```
+
+规则按配置顺序匹配，第一条命中的规则生效。认证失败返回 `401`，认证成功但权限不足返回 `403`。
+
+命令行调用示例：
+
+```bash
+curl -H "X-Collector-Token: replace-with-random-read-token" \
+  http://127.0.0.1:9090/collector/api/config/devices
+```
+
+生产环境不要使用仓库里的 `ops-token`。建议生成至少 32 字节随机令牌，并放在仓库外部的秘密配置中。
+
+#### 3. 服务到服务签名
+
+云端配置服务可以使用 HMAC-SHA256 签名，不必共享运维令牌：
+
+```yaml
+collector:
+  auth:
+    max-skew-seconds: 300
+    max-signed-body-bytes: 1048576
+    service-clients:
+      cloud-config:
+        enabled: true
+        require-signature: true
+        default-key: v2
+        keys:
+          v1: "old-secret"
+          v2: "replace-with-new-secret"
+        scopes: [VIEW, CONFIG_MANAGE]
+        allow-ip-fallback: false
+        allow-ips: [10.10.0.0/16]
+```
+
+请求 Header：
+
+| Header | 说明 |
+| --- | --- |
+| `X-Collector-Service` | 对应 `service-clients` 的 Key |
+| `X-Collector-Timestamp` | Epoch 毫秒时间戳 |
+| `X-Collector-Nonce` | 每次请求唯一的随机值 |
+| `X-Collector-Key-Version` | 密钥版本，可选；缺省使用 `default-key` |
+| `X-Collector-Signature` | Canonical String 的 HMAC-SHA256 Base64 |
+
+Canonical String 必须按以下顺序拼接，每项之间使用一个换行符：
+
+```text
+timestamp
+nonce
+UPPERCASE_HTTP_METHOD
+requestURI
+rawQueryString_or_empty
+Base64(SHA-256(rawRequestBody))
+```
+
+`requestURI` 必须与服务端收到的 URI 一致。默认 context path 下通常包含 `/collector`；查询字符串使用原始顺序；空请求体也必须计算 SHA-256。服务端会在 Redis 中登记 nonce，Redis 不可用时签名请求默认失败关闭，避免放过重放请求。
+
+`allow-ip-authentication` 和 `allow-ip-fallback` 默认关闭。只有明确处于可信内网时才能开启：
+
+```yaml
+collector:
+  auth:
+    allow-ip-authentication: false
+    ip-allow-list: [10.10.0.0/16]
+    trusted-proxy-ranges: [10.10.0.10/32]
+```
+
+`X-Forwarded-For` 只有在直连代理地址命中 `trusted-proxy-ranges` 时才会被采用，禁止把 `*` 用于生产环境。
+
+##### 3.1 实时边缘进程遥测入口
+
+PROFINET IO 和 EtherCAT 的确定性循环应运行在独立实时边缘进程中。Java 服务不注册这两个直连协议，边缘进程使用
+`POST /collector/api/edge/telemetry` 上送控制台已经存在的设备和点位。生产环境建议为每个边缘进程配置独立服务签名：
+
+```yaml
+collector:
+  auth:
+    service-clients:
+      realtime-edge-01:
+        enabled: true
+        require-signature: true
+        default-key: v1
+        keys:
+          v1: "replace-with-at-least-32-byte-secret"
+        scopes: [EDGE_INGEST]
+```
+
+请求体示例：
+
+```json
+{
+  "gatewayId": "edge-line-01",
+  "protocol": "PROFINET",
+  "configVersion": "2026-07-17-v1",
+  "items": [
+    {
+      "deviceId": "local-device-001",
+      "pointRef": "temperature",
+      "value": 25.6,
+      "quality": 100,
+      "timestamp": 1784253600000,
+      "sequence": 10001
+    }
+  ]
+}
+```
+
+- `protocol` 允许 `PROFINET`、`ETHERCAT`、`GENERIC_EDGE`，仅表示数据来源，不代表 Java 服务实现了总线主站。
+- `deviceId` 必须是本地设备主键，`pointRef` 可使用点位 ID、编码、别名、上报字段或名称。
+- `sequence` 在同一个 `gatewayId + deviceId` 下必须严格递增；重复或乱序数据不会进入后处理链路。
+- `quality` 范围按 0 到 100 处理，最终质量不会高于边缘进程给出的质量。
+- 接收成功的数据继续经过缩放、质量校验、告警、缓存、Redis Stream、历史存储和云端上报。
+- `configVersion` 当前用于请求和响应关联；配置版本握手确认、边缘心跳与跨重启序号持久化仍属于后续能力。
+
+##### 3.2 BACnet/SC 双向 TLS
+
+`BACNET_SC` 当前仍是实验性安全隧道，连接配置必须使用 `wss://` 并提供客户端密钥库与服务端信任库：
+
+```yaml
+connectionType: BACNET_SC
+url: wss://bacnet-hub.example.com:443/bacnet/sc
+extJson:
+  remoteDeviceInstance: 1001
+  subprotocol: bacnet-sc
+  keyStoreFile: /opt/collector/certs/client.p12
+  keyStoreType: PKCS12
+  keyStorePassword: "${BACNET_SC_KEYSTORE_PASSWORD}"
+  trustStoreFile: /opt/collector/certs/trust.p12
+  trustStoreType: PKCS12
+  trustStorePassword: "${BACNET_SC_TRUSTSTORE_PASSWORD}"
+```
+
+WebSocket TLS 默认使用 JVM 信任链，不再无条件信任所有服务端证书；`BACNET_SC` 明确拒绝
+`trustAllServerCert=true`。运行状态为 `SECURE_TUNNEL_ACTIVE` 只表示安全隧道可用，只有后续标准 BVLL Hub/Node
+握手完成后才能视为 `STANDARD_SESSION_ACTIVE`。
+
+#### 4. 设备配置来源
+
+系统支持远程配置和文件配置两种启动来源。
+
+远程配置是默认模式：
+
+```yaml
+collector:
+  config:
+    loader: remote
+    yun-url: http://config-service:48080/admin-api
+    sync-interval: 30000
+    service-id: collector-1
+    tenant-id: 1
+    api-token: "${COLLECTOR_CONFIG_API_TOKEN:}"
+```
+
+远程接口使用 `X-API-Token` 和 `tenant-id` Header。同步失败时保留最后一次有效配置，不应把空响应直接覆盖运行配置。
+
+离线文件模式：
+
+```yaml
+collector:
+  config:
+    loader: file
+    file:
+      devices: ./config/devices.json
+      points-dir: ./config/points
+      connections-dir: ./config/connections
+```
+
+目录约定：
+
+```text
+config/
+├── devices.json
+├── points/
+│   ├── device-001.json
+│   └── device-002.json
+└── connections/
+    ├── device-001.json
+    └── device-002.json
+```
+
+`devices.json` 和点位文件都是 JSON 数组；连接文件是单个 JSON 对象；子文件名必须严格使用本地 `deviceId`。
+
+控制台“新增本地临时设备”写入的是当前进程内存配置，不会反向修改远程配置源，也不会自动落盘。服务重启后临时设备会消失，正式使用前必须导出并纳入远程配置服务或文件配置。
+
+#### 5. Redis、主缓存和实时流
+
+Redis 连接配置：
+
+```yaml
+spring:
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 3000
+      password: "${REDIS_PASSWORD}"
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: -1
+```
+
+生产 Profile 使用 `COLLECTOR_REDIS_HOST`、`COLLECTOR_REDIS_PORT`、`COLLECTOR_REDIS_DATABASE`、`COLLECTOR_REDIS_TIMEOUT` 和 `COLLECTOR_REDIS_PASSWORD`。生产启动校验要求 Redis 密码非空。
+
+主缓存模式：
+
+```yaml
+collector:
+  cache:
+    type: multi-level
+    local:
+      max-size: 10000
+      expire-after-write: 300
+      expire-after-access: 60
+      initial-capacity: 1000
+    redis:
+      key-prefix: "collector:cache:"
+      default-expire: 3600
+      connection-timeout: 3000
+```
+
+| 模式 | 行为 | 适用场景 |
+| --- | --- | --- |
+| `local` | 只写当前 JVM 本地缓存 | 单实例开发、允许重启丢缓存 |
+| `redis` | 只使用 Redis 缓存 | 多实例共享、需要跨进程查询 |
+| `multi-level` | 本地一级缓存加 Redis 二级缓存 | 生产推荐，兼顾查询延迟和共享能力 |
+
+本地缓存过期单位是秒。Redis Key 前缀必须包含业务域，多个环境共用 Redis 时建议改成 `collector:prod:cache:` 这类环境隔离前缀。
+
+Redis Stream 是独立分支，不受 `collector.cache.type` 控制：
+
+```yaml
+spring:
+  data:
+    redis:
+      stream:
+        enabled: true
+        key: collector:telemetry:stream
+        retention-mode: COUNT
+        max-length: 200
+        max-seconds: 60
+        approximate-trim: true
+        trim-task-enabled: true
+        trim-interval-ms: 5000
+```
+
+- `COUNT`：保留最近 `max-length` 条。
+- `TIME`：保留最近 `max-seconds` 秒，并由定时任务按 `trim-interval-ms` 裁剪。
+- `approximate-trim=true`：使用 Redis 近似裁剪，吞吐更好，但条数可能略高于目标值。
+- 不需要实时消费时应关闭 `enabled`，否则 Redis 故障会持续产生流写入错误。
+
+#### 6. TDengine 和历史失败缓冲
+
+开发环境默认关闭 TDengine，生产环境默认开启：
+
+```yaml
+telemetry:
+  tdengine:
+    enabled: true
+    database: wangbin_collector
+    super-table: wangbin_super
+    sub-table-prefix: d_
+    alarm-super-table: alarm_super
+    alarm-sub-table-prefix: d_alarm_
+    auto-create: true
+    keep-days: 30
+    query-default-limit: 500
+    query-max-limit: 5000
+```
+
+数据源配置：
+
+```yaml
+spring:
+  datasource:
+    driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
+    url: jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector
+    username: root
+    password: replace-with-strong-password
+```
+
+生产环境变量是 `COLLECTOR_TDENGINE_URL`、`COLLECTOR_TDENGINE_USERNAME`、`COLLECTOR_TDENGINE_PASSWORD` 和 `COLLECTOR_TDENGINE_ENABLED`。当前生产 Profile 即使临时关闭 TDengine，也建议完整提供数据源变量，避免必填占位符和生产安全校验导致启动失败。
+
+历史写入失败缓冲：
+
+```yaml
+telemetry:
+  tdengine:
+    buffer:
+      enabled: true
+      pending-key: "collector:prod:history:pending:v1"
+      processing-key: "collector:prod:history:processing:v1"
+      dead-letter-key: "collector:prod:history:dead:v1"
+      replay-interval-ms: 3000
+      replay-batch-size: 200
+      local-queue-capacity: 10000
+```
+
+处理顺序：
+
+1. 正常情况下直接写 TDengine。
+2. TDengine 写失败后，把消息放入 Redis `pending-key`。
+3. 回放时将消息原子移动到 `processing-key`，成功写入后删除。
+4. 消息无法反序列化时移动到 `dead-letter-key`。
+5. TDengine 和 Redis 同时不可用时进入 JVM 本地有界队列。
+6. 本地队列只用于短时降级，进程异常退出后无法恢复。
+
+`replay-batch-size` 越大，恢复越快，但会增加 TDengine 和 Redis 瞬时压力。三个 Redis Key 必须按环境隔离并保留结构版本，不能让测试环境消费生产待写数据。隔离队列不应直接删除，应先导出内容分析格式或配置版本问题。
+
+#### 7. 采集后处理线程池
+
+采集结果生成后，缓存、Redis Stream、历史存储和云端上报分别进入独立线程池：
+
+```yaml
+collector:
+  telemetry-executors:
+    cache:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    stream:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    history:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
+    report:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
+```
+
+这些线程池不会改变设备协议采集线程，只负责采集完成后的四个下游阶段。某个下游变慢时，不会直接占住采集线程，也不会阻塞其他阶段。
+
+控制台显示 `activeCount=0` 表示采样时没有任务正在该线程池执行，不代表线程池未创建。短任务通常在两次监控采样之间完成，因此长时间看到 0 是正常现象。判断是否异常应同时看：
+
+- 队列长度是否持续增长。
+- `completedTaskCount` 是否随采集增加。
+- `rejectedCount` 是否大于 0。
+- 对应缓存、Stream、历史或上报结果是否更新。
+
+调优原则：
+
+- `core-size` 按持续吞吐配置，不要直接等于设备数量。
+- `max-size` 必须大于等于 `core-size`，代码会自动修正非法的小值。
+- `queue-capacity` 用于吸收短时尖峰，不应通过无限增大掩盖下游故障。
+- 历史和上报属于网络 I/O，可比缓存阶段配置更大的队列。
+- 出现拒绝任务时先解决 Redis、TDengine、MQTT 延迟，再考虑扩容线程。
+
+#### 8. 告警状态持久化
+
+```yaml
+collector:
+  alarm:
+    state:
+      enabled: true
+      key-prefix: "collector:prod:alarm:state:v1:"
+      ttl-seconds: 2592000
+      retry-interval-ms: 5000
+      retry-batch-size: 500
+```
+
+告警状态按 `deviceId + pointId + ruleId` 维度存入 Redis，使 `PENDING`、`ACTIVE`、`ACKED`、`RECOVERED` 状态可以在重启后恢复。
+
+- Redis 写失败时先保留在 JVM 待重试 Map，不阻塞采集处理线程。
+- `retry-interval-ms` 控制重试周期。
+- `retry-batch-size` 限制每次重试数量。
+- `ttl-seconds` 默认 30 天，必须覆盖最长告警处理和审计周期。
+- 多环境共用 Redis 时必须修改 `key-prefix`。
+
+关闭 `enabled` 后仍可进行当前进程内的告警判定，但状态不能跨重启恢复。
+
+#### 9. 云端上报总开关和设备映射
+
+云端上报至少经过三层开关：
+
+```yaml
+collector:
+  report:
+    enabled: true
+    mode: mqtt
+    mqtt:
+      enabled: true
+```
+
+只有 `collector.report.enabled=true`、`mode=mqtt` 且 `collector.report.mqtt.enabled=true` 时 MQTT 上报链路才启用。
+
+本地设备 ID 和云设备身份是两个不同概念：
+
+- 本地 `deviceId` 是控制台查询、采集调度、缓存和运行态查询的唯一主键。
+- `DeviceInfo.cloudTarget.productKey/deviceName` 是云平台 Topic 和云端设备路由身份。
+- 两者不能互相替代，也不能把云端 `productKey/deviceName` 写回本地 `deviceId`。
+
+设备级配置：
+
+```json
+{
+  "deviceId": "local-device-001",
+  "cloudTarget": {
+    "enabled": true,
+    "deviceType": "SUB_DEVICE",
+    "productKey": "cloud-product-key",
+    "deviceName": "cloud-device-name",
+    "topologyEnabled": true
+  }
+}
+```
+
+点位级配置：
+
+```json
+{
+  "pointId": "temperature-01",
+  "pointCode": "TEMP_01",
+  "additionalConfig": {
+    "reportEnabled": true,
+    "reportField": "temperature"
+  }
+}
+```
+
+上报判断顺序：
+
+1. 根据本地 `deviceId` 找到设备配置。
+2. `cloudTarget.enabled=false` 或缺少 `productKey/deviceName` 时不上云。
+3. 点位 `reportEnabled=false` 或缺少 `reportField` 时不上报该点位。
+4. `reportField` 必须等于云端物模型属性标识，同一云设备内必须唯一。
+5. `pointAlias` 只用于本地显示，不参与云端字段匹配。
+
+#### 10. MQTT、上报频率、ACK 和 Outbox
+
+云平台 MQTT 配置：
+
+```yaml
+collector:
+  report:
+    enabled: true
+    mode: mqtt
+    interval-ms: 1000
+    min-report-interval-ms: 2000
+    event-min-interval-ms: 5000
+    retry-times: 3
+    retry-backoff-ms: 1000
+    max-retry-backoff-ms: 10000
+    retry-jitter-enabled: true
+    max-gateway-messages-per-second: 200
+    mqtt:
+      enabled: true
+      broker-url: tcp://mqtt.example.com:1883
+      client-id: collector-gateway-001
+      username: gateway-user
+      password: replace-with-secret
+      gateway-product-key: gateway-product-key
+      gateway-device-name: gateway-device-name
+      cloud-provider: alink
+      topic-prefix: /sys
+      ack-topic-prefix: /sys
+      ack-topic-suffix: _reply
+      qos: 1
+      clean-session: true
+      max-concurrent-connects: 1
+      reconnect-scan-interval-ms: 30000
+```
+
+生产环境对应变量：
+
+| 环境变量 | 说明 | 是否建议必填 |
+| --- | --- | --- |
+| `COLLECTOR_REPORT_MQTT_ENABLED` | 是否建立云端 MQTT 连接 | 是 |
+| `COLLECTOR_REPORT_MQTT_BROKER_URL` | Broker 地址 | 启用时必填 |
+| `COLLECTOR_REPORT_MQTT_CLIENT_ID` | 网关客户端 ID | 启用时必填且必须唯一 |
+| `COLLECTOR_REPORT_MQTT_USERNAME` | MQTT 用户名 | 按平台要求 |
+| `COLLECTOR_REPORT_MQTT_PASSWORD` | MQTT 密码或设备密钥 | 启用时必填 |
+| `COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY` | 网关云产品标识 | 启用时必填 |
+| `COLLECTOR_REPORT_GATEWAY_DEVICE_NAME` | 网关云设备名称 | 启用时必填 |
+
+当前仓库里与 MQTT 相关的配置有两组，作用不同：
+
+- `collector.report.mqtt`：采集结果上云、平台 ACK 和 `thing.property.set`、`thing.service.invoke`、`thing.config.push` 下行。
+- `collector.report.mqtt.service-command-mappings`：平台服务标识与底层协议命令名不一致时的全局映射。
+- `collector.mqtt`：MQTT 作为现场采集协议时的默认连接兜底，仅供 `MqttCollector` 使用。
+
+##### 10.1 上报频率
+
+上报频率不是单一参数，而是以下约束共同作用：
+
+| 配置 | 当前默认值 | 作用 |
+| --- | ---: | --- |
+| 点位采集周期 | 点位配置决定 | 决定新数据产生速度 |
+| `collector.report.interval-ms` | 1000 ms | 脏设备扫描和上报调度周期，代码最小按 1000 ms 执行 |
+| `collector.report.min-report-interval-ms` | 2000 ms | 同一设备变化上报的最小间隔 |
+| `collector.report.event-min-interval-ms` | 5000 ms | 事件和告警默认最小间隔 |
+| `collector.report.cloud.batch.max-delay-ms` | 1000 ms | 批量包最多等待时间 |
+| `collector.report.outbox.poll-interval-ms` | 1000 ms | Outbox 到期消息扫描周期 |
+
+因此，普通属性从采集完成到开始发送的典型延迟约为“等待下一次 `interval-ms` 扫描 + 批量等待 + Outbox 扫描”，并且同一设备仍受 `min-report-interval-ms` 限制。平台 ACK 延迟不计入下一次采集，但在 `ack-success` 模式下会影响影子提交和 Outbox 完成。
+
+`flush-interval` 是保留的通用字段，当前 `CacheReportService` 的实际周期调度使用 `interval-ms`。需要控制上报频率时应优先调整 `interval-ms`、`min-report-interval-ms` 和批量 `max-delay-ms`，不要只修改 `flush-interval`。
+
+##### 10.2 Payload 和批量包
+
+```yaml
+collector:
+  report:
+    cloud:
+      sub-device-topic-proxy-enabled: false
+      payload:
+        profile: compact
+        include-quality: on_error
+        include-property-ts: false
+        include-metadata: false
+        include-message-id: true
+      batch:
+        enabled: true
+        max-devices-per-pack: 50
+        max-properties-per-pack: 500
+        max-payload-bytes: 131072
+        max-delay-ms: 1000
+        high-priority-bypass: true
+```
+
+- `compact` 适合生产高吞吐；`standard` 可携带更多质量和时间信息；`diagnostic` 只建议联调使用。
+- `include-quality=on_error` 仅在质量异常时附带质量字段。
+- `include-message-id=true` 是 ACK、幂等和 Outbox 关联的基础，不建议关闭。
+- 批量阈值任一达到即可触发发送；高优先级事件可以绕过批量等待。
+- `sub-device-topic-proxy-enabled=false` 适用于严格网关模型，子设备通过网关 Topic 和批量载荷声明身份；平台要求代理发布子设备 Topic 时才设为 `true`。
+
+##### 10.3 ACK 提交模式
+
+```yaml
+collector:
+  report:
+    cloud:
+      ack:
+        mode: async
+        timeout-ms: 5000
+        max-pending: 10000
+        timeout-scan-ms: 500
+        commit-on: ack-success
+```
+
+- `mode=async`：发送线程发布后立即返回，ACK 由独立状态机处理。
+- `commit-on=publish-success`：MQTT 发布成功即提交影子，吞吐高，但不能证明平台业务已接受。
+- `commit-on=ack-success`：收到平台业务 `_reply` 成功后才提交影子并完成 Outbox，可靠性更高。
+- `timeout-ms`：等待业务 ACK 的时间。
+- `max-pending`：同时等待 ACK 的消息上限，防止云端异常时无限占用内存。
+- `timeout-scan-ms`：超时票据扫描间隔。
+
+使用 `ack-success` 前必须确认：
+
+1. 网关已订阅正确的 ACK Topic。
+2. `ack-topic-prefix`、`ack-topic-suffix` 与平台一致。
+3. 平台回包携带原消息 ID。
+4. 平台成功码能被适配器识别。
+5. Broker ACL 允许订阅网关和子设备的 Reply Topic。
+
+否则消息会在 `WAITING_ACK` 和重试之间循环，最终进入隔离区。
+
+##### 10.4 可靠 Outbox
+
+```yaml
+collector:
+  report:
+    outbox:
+      enabled: true
+      key-prefix: "collector:prod:cloud:outbox:v1:"
+      poll-interval-ms: 1000
+      claim-batch-size: 100
+      lease-ms: 15000
+      waiting-config-retry-ms: 10000
+      max-retry-times: 20
+```
+
+Outbox 只有在自身开启且 MQTT 上报有效时工作。它把待上报消息和固定云身份写入 Redis，避免进程重启后丢失尚未确认的数据。
+
+状态含义：
+
+| 状态 | 含义 |
+| --- | --- |
+| `PENDING` | 等待发送或重试 |
+| `SENDING` | 已被实例租约认领 |
+| `WAITING_ACK` | 发布成功，等待平台业务确认 |
+| `WAITING_CONFIG` | 暂时找不到有效上报配置 |
+| `ISOLATED` | 超过最大重试次数，需要人工处理 |
+
+`lease-ms` 必须大于正常的一次发布和 ACK 处理时间，避免消息仍在发送时被其他实例重新认领。`max-retry-times` 达到后消息不会静默删除，而是进入隔离集合。不要直接清空 Outbox Redis Key，否则会破坏影子 dirty 状态与消息提交关系。
+
+##### 10.5 设备影子
+
+```yaml
+collector:
+  report:
+    shadow:
+      persistence-enabled: true
+      cas-enabled: true
+      key-prefix: "collector:prod:shadow:"
+      ttl-seconds: 86400
+      auto-merge-enabled: true
+      merge-retry-times: 2
+      history-enabled: true
+      history-key-prefix: "collector:prod:shadow:history:"
+      history-max-records: 100
+      history-ttl-seconds: 604800
+```
+
+- 持久化开启后影子可跨重启恢复。
+- CAS 防止下行 desired、采集 reported 和 ACK 提交并发覆盖。
+- 自动合并只在 CAS 冲突后基于 Redis 最新版本重试，不等于无限重试。
+- 影子 TTL 必须大于设备最长离线周期。
+- 历史审计用于 desired/clear 操作追踪，不应替代正式历史数据库。
+
+#### 11. 生产环境配置
+
+生产环境使用 `prod` Profile：
+
+```bash
+java -jar target/data-collection-service.jar --spring.profiles.active=prod
+```
+
+最少需要检查以下环境变量：
+
+| 环境变量 | 默认行为 | 生产要求 |
+| --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | 默认 `dev` | 设置为 `prod` |
+| `COLLECTOR_TDENGINE_URL` | 生产无默认值 | 必填 |
+| `COLLECTOR_TDENGINE_USERNAME` | 生产无默认值 | 必填 |
+| `COLLECTOR_TDENGINE_PASSWORD` | 生产无默认值 | 必填且不能为 `change-me` |
+| `COLLECTOR_TDENGINE_ENABLED` | 生产默认 `true` | 按部署决定 |
+| `COLLECTOR_REDIS_HOST` | `127.0.0.1` | 容器环境填写服务名或真实地址 |
+| `COLLECTOR_REDIS_PORT` | `6379` | 按部署决定 |
+| `COLLECTOR_REDIS_DATABASE` | `0` | 多环境建议隔离 |
+| `COLLECTOR_REDIS_PASSWORD` | 生产无默认值 | 必填 |
+| `COLLECTOR_CONFIG_YUN_URL` | 本机示例地址 | 远程配置模式下填写 |
+| `COLLECTOR_CONFIG_API_TOKEN` | 空 | 远程配置服务要求鉴权时必填 |
+| `COLLECTOR_SERVICE_ID` | `collector-1` | 多实例必须唯一或符合配置中心约定 |
+| `COLLECTOR_TENANT_ID` | `1` | 按租户填写 |
+| `COLLECTOR_REPORT_MQTT_ENABLED` | `false` | 需要上云时设置 `true` |
+| `COLLECTOR_LOG_APP_LEVEL` | `WARN` | 排障时临时改为 `INFO` 或 `DEBUG` |
+| `COLLECTOR_LOG_SQL_LEVEL` | `ERROR` | 只在短时 SQL 排障时提高 |
+| `MANAGEMENT_HEALTH_DETAILS` | `never` | 仅在受控网络临时使用 `always` |
+
+运维 Token 和服务签名客户端是 Map，建议放到仓库外部的 `config/application-secrets.yml`：
+
+```yaml
+collector:
+  auth:
+    ops-tokens:
+      "replace-with-at-least-32-random-bytes": production-admin
+      "replace-with-another-random-token": production-viewer
+    ops-scopes:
+      production-admin: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE]
+      production-viewer: [VIEW]
+    service-clients:
+      cloud-config:
+        enabled: true
+        require-signature: true
+        default-key: v1
+        keys:
+          v1: "replace-with-service-signing-secret"
+        scopes: [VIEW, CONFIG_MANAGE]
+```
+
+启动时加载外部文件：
+
+```bash
+java -jar target/data-collection-service.jar \
+  --spring.profiles.active=prod \
+  --spring.config.additional-location=file:./config/application-secrets.yml
+```
+
+重要安全限制：当前通用 `application.yml` 中的 `ops-token: dev` 是开发示例。生产打包或部署前必须从基础配置删除该条目并只在 `application-dev.yml` 保留开发令牌。仅在高优先级配置中“新增”生产 Token 可能与低优先级 Map 合并，不等于删除已知开发 Token。
+
+生产启动校验会拒绝空 TDengine 密码、空 Redis 密码、`change-me` 示例秘密和缺失运维令牌。开启 MQTT 后还会检查 MQTT 密码、网关产品标识和网关设备名称。
+
+##### 11.1 Linux 环境变量示例
+
+```bash
+export SPRING_PROFILES_ACTIVE=prod
+export COLLECTOR_TDENGINE_URL='jdbc:TAOS-RS://tdengine:6041/wangbin_collector'
+export COLLECTOR_TDENGINE_USERNAME='root'
+export COLLECTOR_TDENGINE_PASSWORD='replace-with-strong-password'
+export COLLECTOR_REDIS_HOST='redis'
+export COLLECTOR_REDIS_PORT='6379'
+export COLLECTOR_REDIS_PASSWORD='replace-with-strong-password'
+export COLLECTOR_REPORT_MQTT_ENABLED='true'
+export COLLECTOR_REPORT_MQTT_BROKER_URL='tcp://mqtt.example.com:1883'
+export COLLECTOR_REPORT_MQTT_CLIENT_ID='collector-gateway-001'
+export COLLECTOR_REPORT_MQTT_USERNAME='gateway-user'
+export COLLECTOR_REPORT_MQTT_PASSWORD='replace-with-device-secret'
+export COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY='gateway-product-key'
+export COLLECTOR_REPORT_GATEWAY_DEVICE_NAME='gateway-device-name'
+```
+
+##### 11.2 PowerShell 环境变量示例
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE = "prod"
+$env:COLLECTOR_TDENGINE_URL = "jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector"
+$env:COLLECTOR_TDENGINE_USERNAME = "root"
+$env:COLLECTOR_TDENGINE_PASSWORD = "replace-with-strong-password"
+$env:COLLECTOR_REDIS_HOST = "127.0.0.1"
+$env:COLLECTOR_REDIS_PORT = "6379"
+$env:COLLECTOR_REDIS_PASSWORD = "replace-with-strong-password"
+$env:COLLECTOR_REPORT_MQTT_ENABLED = "true"
+$env:COLLECTOR_REPORT_MQTT_BROKER_URL = "tcp://mqtt.example.com:1883"
+$env:COLLECTOR_REPORT_MQTT_CLIENT_ID = "collector-gateway-001"
+$env:COLLECTOR_REPORT_MQTT_USERNAME = "gateway-user"
+$env:COLLECTOR_REPORT_MQTT_PASSWORD = "replace-with-device-secret"
+$env:COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY = "gateway-product-key"
+$env:COLLECTOR_REPORT_GATEWAY_DEVICE_NAME = "gateway-device-name"
+```
+
+##### 11.3 Docker Compose
+
+先复制环境变量模板并替换所有空值和 `change-me`：
+
+```bash
+cp .env.example .env
+```
+
+当前仓库的基础 `docker-compose.yml` 只显式传入 Profile 和 JVM 参数，不会自动把所有 `.env` 变量注入应用容器。生产部署应增加不提交仓库的 `docker-compose.override.yml`：
+
+```yaml
+services:
+  app:
+    env_file:
+      - .env
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/opt/app/config/application-secrets.yml
+    volumes:
+      - ./config/application-secrets.yml:/opt/app/config/application-secrets.yml:ro
+  redis:
+    env_file:
+      - .env
+    command:
+      - sh
+      - -c
+      - exec redis-server --save 60 1 --loglevel warning --requirepass "$${COLLECTOR_REDIS_PASSWORD}"
+```
+
+然后启动：
+
+```bash
+docker compose up -d --build
 docker compose logs -f app
 ```
+
+容器内的 `127.0.0.1` 指向容器自身。Redis 应配置为 `redis` 服务名；TDengine 和 MQTT 如果不在同一容器，必须填写容器网络可访问的地址。应用使用的 Redis 密码必须和 Redis 服务的 `requirepass` 完全一致。
+
+#### 12. 健康检查与配置验证
+
+常用检查入口：
+
+| 地址 | 鉴权 | 说明 |
+| --- | --- | --- |
+| `/collector/health` | 默认放行 | 应用自定义健康摘要 |
+| `/collector/actuator/health` | 默认放行 | Spring Boot 健康状态 |
+| `/collector/actuator/prometheus` | 默认放行 | Prometheus 指标 |
+| `/collector/monitor/system` | 需要 `VIEW` | JVM、CPU、线程池、Outbox 指标 |
+| `/collector/monitor/report` | 需要 `VIEW` | 云上报链路状态 |
+| `/collector/api/cache/stats` | 需要 `VIEW` | 缓存统计 |
+
+新增健康项：
+
+- `cloudOutbox`：隔离消息大于 0 时为 `DOWN`；Redis 指标不可读时为 `UNKNOWN`。
+- `historyBuffer`：历史隔离消息存在或本地队列达到 90% 时为 `DOWN`。
+- `alarmState`：告警状态待重试积压用于判断 Redis 持久化是否正常。
+- `configSync`：用于识别配置中心同步失败和最后有效配置状态。
+
+查看受保护接口：
+
+```bash
+curl -H "X-Collector-Token: your-token" \
+  http://127.0.0.1:9090/collector/monitor/system
+
+curl -H "X-Collector-Token: your-token" \
+  http://127.0.0.1:9090/collector/monitor/report
+```
+
+发布前建议执行：
+
+```bash
+mvn -B -ntp verify
+mvn -B -ntp -Pp0-regression test
+node --check src/main/resources/static/admin/app.js
+node scripts/verify-admin-console.mjs
+node scripts/scan-config-secrets.mjs
+```
+
+已经启动 Modbus TCP Slave 时，可执行真实从站变化验收：
+
+```powershell
+.\scripts\run-modbus-real-acceptance.ps1 -ServerHost 127.0.0.1 -Port 502 -UnitId 1 -StartRegister 4001 -PointCount 10
+```
+
+Slave 显示的保持寄存器 `4001` 到 `4010`，在控制台点位地址中应填写为 `44001` 到 `44010`。
+
+#### 13. 常见配置问题
+
+| 现象 | 重点检查 |
+| --- | --- |
+| 控制台能打开但列表全部报错 | 控制台是否保存了正确的 `X-Collector-Token` |
+| 接口返回 `401 invalid ops token` | `ops-tokens` 的 Key 是否等于请求 Token |
+| 接口返回 `403 权限不足` | Token 标签对应的 `ops-scopes` 是否包含目标规则所需权限 |
+| 服务签名返回 `request replayed` | nonce 是否重复，Redis 是否保留了相同 nonce |
+| 服务签名返回 `signature mismatch` | URI 是否含 context path、查询串顺序、请求体摘要和密钥版本是否一致 |
+| `prod` 启动失败并提示未安全配置 | 检查 TDengine、Redis、运维 Token，以及启用 MQTT 后的 MQTT 秘密和网关身份 |
+| 线程池一直显示 0 | 同时观察完成数和队列；短任务采样时显示 0 通常正常 |
+| 当前值有但 Redis Stream 没数据 | `spring.data.redis.stream.enabled`、Redis 连接和 Stream Key |
+| 历史查询无数据 | `COLLECTOR_TDENGINE_ENABLED`、数据源、超级表及历史线程池拒绝数 |
+| 历史缓冲持续增长 | TDengine 是否恢复、`processing-key` 是否卡住、隔离队列是否有坏消息 |
+| 本地设备重启后消失 | 控制台创建的是内存临时配置，需导出到正式配置源 |
+| MQTT 已连接但设备不上报 | 检查设备 `cloudTarget`、点位 `reportEnabled/reportField` 和三层总开关 |
+| 上报频率不符合预期 | 同时检查采集周期、`interval-ms`、`min-report-interval-ms`、批量等待和 Outbox 扫描 |
+| Outbox 长期 `WAITING_ACK` | ACK Topic、消息 ID、平台成功码、ACL 和 `commit-on` |
+| Outbox 出现 `ISOLATED` | 先导出消息和错误原因，修复配置或平台后再决定重放，禁止直接删 Redis Key |
 
 ## 常用接口
 
@@ -398,10 +1324,12 @@ docker compose logs -f app
 | `DeviceController` | `/api/device/{deviceId}/stop` | 停止设备采集 |
 | `DataController` | `/api/data/device/{deviceId}` | 查询设备缓存数据 |
 | `DataController` | `/api/data/device/{deviceId}/point/{pointId}` | 查询单点 |
-| `DataController` | `/collector/api/data/history/device/{deviceId}/point/{pointId}` | 查询历史 |
+| `DataController` | `/api/data/history/device/{deviceId}/point/{pointId}` | 查询历史 |
 | `ConfigController` | `/api/config/**` | 配置治理、导入导出、同步 |
 | `MonitorController` | `/monitor/**` | 性能、缓存、系统、异常监控 |
 | `HealthController` | `/health` | 健康检查 |
+
+表内路径均为应用相对路径，默认访问时需要在前面加 `/collector`。
 
 ## 文档导航
 
@@ -416,7 +1344,13 @@ docker compose logs -f app
 7. [历史数据与TDengine存储](./docs/06-历史数据与TDengine存储.md)
 8. [配置治理接口](./docs/07-配置治理接口.md)
 9. [访问日志治理](./docs/08-访问日志治理.md)
-10. [问题与未完成功能清单](./docs/99-问题与未完成功能清单.md)
+10. [访问鉴权与服务令牌](./docs/09-访问鉴权与服务令牌.md)
+11. [上下行消息协议与实现状态](./docs/11-上下行消息协议与实现状态.md)
+12. [设备影子](./docs/12-设备影子.md)
+13. [P0/P1实施任务单与改造方案](./docs/16-P0_P1实施任务单与改造方案.md)
+14. [云平台上报链路性能优化方案](./docs/27-云平台上报链路性能优化方案.md)
+15. [采集网关云平台上报架构落地方案](./docs/28-采集网关云平台上报架构落地方案.md)
+16. [问题与未完成功能清单](./docs/99-问题与未完成功能清单.md)
 
 协议专项：
 
