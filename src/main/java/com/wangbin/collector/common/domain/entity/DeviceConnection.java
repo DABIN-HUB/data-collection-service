@@ -19,7 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 璁惧杩炴帴淇℃伅
+ * 设备连接信息。
  */
 @Data
 public class DeviceConnection {
@@ -50,7 +50,7 @@ public class DeviceConnection {
     private Integer timeout = 30000;
     private Integer heartbeatInterval = 30000;
     private Integer heartbeatTimeout = 90000;
-    private Integer subscriptionInterval = 1000; // 璁㈤槄闂撮殧
+    private Integer subscriptionInterval = 1000; // 订阅间隔
     private Integer maxFrameLength = 65535;
     private Integer reconnectDelay = 5000;
     private Integer maxReconnectTimes = 3;
@@ -62,7 +62,7 @@ public class DeviceConnection {
     private String productKey;
     private String deviceSecret;
     private String authToken;
-    //瀹夊叏绛栫暐
+    // 安全策略
     private String securityPolicy;
     @JsonDeserialize(using = StringStringMapDeserializer.class)
     private Map<String, String> authParams;
@@ -367,7 +367,7 @@ public class DeviceConnection {
     }
 
     /**
-     * 鏀寔 JSON 瀵硅薄鎴?JSON 瀛楃涓茬殑 Map 鍙嶅簭鍒楀寲
+     * 支持 JSON 对象或 JSON 字符串形式的 Map 反序列化。
      */
     public static class StringObjectMapDeserializer extends JsonDeserializer<Map<String, Object>> {
         private static final ObjectMapper MAPPER = new ObjectMapper();

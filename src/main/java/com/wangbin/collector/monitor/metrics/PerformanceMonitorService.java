@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 閲囬泦鎬ц兘鎸囨爣鐩戞帶鏈嶅姟銆?
+ * 采集性能指标监控服务。
  */
 @Service
 @RequiredArgsConstructor
