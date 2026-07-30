@@ -16,6 +16,13 @@
     <appender-ref ref="STDOUT"/>
   </root>
 
-  <logger name="com.wangbin.collector" level="INFO"/>
+  <!-- 业务包默认只输出告警和错误，避免采集、处理、SQL、上报成功路径刷屏。 -->
+  <logger name="com.wangbin.collector" level="WARN"/>
+  <!-- SQL 明细默认只在错误时输出；需要排查 SQL 时临时通过配置打开 DEBUG。 -->
+  <logger name="com.wangbin.collector.mapper" level="ERROR"/>
+  <logger name="com.wangbin.collector.storage.repository" level="ERROR"/>
+  <logger name="org.mybatis" level="ERROR"/>
+  <logger name="org.apache.ibatis" level="ERROR"/>
+  <logger name="com.baomidou.mybatisplus" level="ERROR"/>
 
 </configuration>

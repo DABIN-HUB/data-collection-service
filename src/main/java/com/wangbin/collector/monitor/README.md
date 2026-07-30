@@ -8,7 +8,7 @@
 - **系统资源监控**：聚合 JVM 堆/非堆内存、CPU 使用率、线程池活跃度、磁盘空间与 I/O。
 - **缓存系统监控**：输出多级缓存命中率、容量、更新频率、过期统计，用于评估缓存策略。
 - **异常与错误监控**：采集过程中出现的异常可按类别/设备累计，并保留最近 100 条明细。
-- **统计报告与趋势分析**：`ReportScheduler` 支持实时大盘、历史趋势、设备效率排行、定期报表。
+- **统计报告与趋势分析**：当前仅保留 `ReportScheduler` + `ReportTask/ReportResult` 预留框架，真实报表与趋势任务逻辑尚未完整落地。
 - **告警机制**：`AlertManager` 可配置阈值、级别、通知渠道（可扩展邮件/短信/Webhook），并记录告警历史。
 
 ## 主要包与职责
@@ -26,7 +26,7 @@
 - `PerformanceMonitorService`：基于 `CollectionManager` 里每个 `ProtocolCollector` 的 `getStatistics()` 计算处理速率、成功率、平均延迟、累计点数；对应“性能监控 / 批量任务耗时 / 设备延迟”。
 - `SystemResourceMonitorService`：使用 `MemoryMXBean`、`OperatingSystemMXBean` 与线程池指标给出 JVM、CPU、磁盘、线程池状态。
 - `ExceptionMonitorService`：`record(Throwable, deviceId, pointId)` 记录异常类别，维护分类统计、设备统计、最近 100 条异常列表。
-- `ReportScheduler` + `ReportTask/ReportResult`：用于定期生成实时统计、历史趋势、排行、周期性报表。
+- `ReportScheduler` + `ReportTask/ReportResult`：用于承载定期统计、排行、趋势报表任务的预留框架，当前调度骨架已在，真实报表逻辑仍需补齐。
 - `AlertManager` + `AlertRule/AlertCondition`：定义阈值与通知级别，`evaluate(metric, value)` 返回触发结果，后续可集成通知渠道。
 
 ## REST API
@@ -57,14 +57,14 @@
    - 若新增调度器（例如时间片调度），可在内部补充统计字段或调用 Performance 服务扩展模型。
 
 4. **告警与报表联动**  
-   - 在 `ReportScheduler` 中可注册“设备采集效率排行榜”“历史趋势分析”等任务，生成 `ReportResult` 后再调用 `AlertManager` 对比阈值触发告警。  
+   - 如果后续补齐统计逻辑，可在 `ReportScheduler` 中注册“设备采集效率排行榜”“历史趋势分析”等任务，生成 `ReportResult` 后再调用 `AlertManager` 对比阈值触发告警。  
    - 告警级别 (`AlertLevel`) 支持信息/警告/错误/严重，可按需要扩展到日志、邮件、Webhook 等渠道。
 
 ## 使用建议
 1. **查看实时状态**：部署后访问 `/monitor/performance`、`/monitor/devices`、`/monitor/system`，即可快速了解数据采集、连接、系统健康状况。  
 2. **排查异常**：遇到采集失败，可先查 `/monitor/errors` 获取最近异常，再定位到具体设备/点位。  
 3. **配置阈值**：结合 `AlertManager`，针对“采集成功率低于阈值”“延迟超过阈值”“缓存命中率过低”等场景注册告警规则。  
-4. **定制报表**：在 `monitor.metrics.report` 包下新增 `ReportTask` 实现统计逻辑，注册到 `ReportScheduler` 即可按日/周/月自动生成报表。  
+4. **定制报表**：在 `monitor.metrics.report` 包下新增 `ReportTask` 实现统计逻辑，注册到 `ReportScheduler` 后即可作为后续报表能力扩展入口；当前仍需先补真实执行与输出链路。  
 5. **扩展出口**：若要落地 Prometheus/InfluxDB，可在各 Service 中增加 exporter，将快照写入对应后端；或在 `monitor.log` 中统一输出结构化日志。
 
-通过以上方案，监控模块已经与采集、缓存、连接管理等核心流程完成对接，可直接支撑性能监控、异常追踪、告警、报表等业务需求。如需进一步扩展，只需在现有 Service/Model 基础上追加字段或数据出口即可。
+通过以上方案，监控模块已经与采集、缓存、连接管理等核心流程完成对接，可直接支撑性能监控、异常追踪、告警等业务需求；报表能力目前仍以预留框架为主。如需进一步扩展，只需在现有 Service/Model 基础上追加字段或数据出口即可。

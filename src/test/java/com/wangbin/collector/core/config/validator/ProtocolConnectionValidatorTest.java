@@ -1,0 +1,463 @@
+package com.wangbin.collector.core.config.validator;
+
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.exception.CollectorException;
+import org.junit.jupiter.api.Test;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class ProtocolConnectionValidatorTest {
+
+    private final ProtocolConnectionValidator validator = new ProtocolConnectionValidator();
+
+    @Test
+    void shouldAcceptUrlForNetworkProtocols() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+    }
+
+    @Test
+    void shouldRejectNetworkProtocolWithoutUrlOrHostPort() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+    }
+
+    @Test
+    void shouldRejectOpcUaWithoutEndpoint() {
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), new DeviceConnection()));
+    }
+
+    @Test
+    void shouldRequireOpcUaUsernameWhenUsernameAuthIsSelected() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("authType", "USERNAME"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRequireOpcUaPasswordWhenUsernameIsConfigured() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("username", "collector"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRequireOpcUaKeyStoreForSecurePolicy() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("securityPolicy", "Basic256Sha256"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptOpcUaWithEndpointAndUsernamePassword() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "username", "collector",
+                "password", "secret"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRejectOpcUaTrustAllCompatibilityFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("trustAllServerCert", true));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptOpcUaRawConnectionStringWithoutEndpointFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldRejectMiloRawPlc4xConnectionStringWithoutEndpoint() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-milo", "OPC_UA_MILO"), connection));
+    }
+
+    @Test
+    void shouldAcceptMiloEndpoint() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-milo", "OPC_UA_MILO"), connection));
+    }
+
+    @Test
+    void shouldRejectPlc4xOpcUaWithoutEndpoint() {
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), new DeviceConnection()));
+    }
+
+    @Test
+    void shouldRequirePlc4xOpcUaPasswordWhenUsernameIsConfigured() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("username", "collector"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldRequirePlc4xOpcUaKeyStoreForSecurePolicy() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("securityPolicy", "Basic256Sha256"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaWithEndpointAndUsernamePassword() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "username", "collector",
+                "password", "secret"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaUsernameAuthWithAuthParams() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("authType", "USERNAME"));
+
+        Map<String, String> authParams = new LinkedHashMap<>();
+        authParams.put("username", "collector");
+        authParams.put("password", "secret");
+        connection.setAuthParams(authParams);
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaCertAuthWithClientCertAlias() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext(
+                "authType", "CERT",
+                "clientCertPath", "client.p12"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldRejectPlc4xOpcUaTrustAllCompatibilityFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("opc.tcp://127.0.0.1:4840");
+        connection.setExtJson(ext("trustAllServerCert", true));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldAcceptPlc4xOpcUaRawConnectionStringWithoutEndpointFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-opcua-plc4x", "OPC_UA_PLC4X"), connection));
+    }
+
+    @Test
+    void shouldRequireOpcDaBridgeUrlInHttpBridgeMode() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("bridgeMode", "HTTP"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcda", "OPC_DA"), connection));
+    }
+
+    @Test
+    void shouldRequireMutualTlsForBacnetSc() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("wss://127.0.0.1:443/bacnet/sc");
+        connection.setExtJson(ext("remoteDeviceInstance", 1001));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet-sc", "BACNET_SC"), connection));
+
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "keyStoreFile", "client.p12",
+                "trustStoreFile", "trust.p12"
+        ));
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet-sc", "BACNET_SC"), connection));
+    }
+
+    @Test
+    void shouldRequireSnmpV3SecurityFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("snmpVersion", "3"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-snmp", "SNMP"), connection));
+    }
+
+    @Test
+    void shouldAcceptSnmpV3NoAuthNoPrivWithSecurityName() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "snmpVersion", "3",
+                "snmpSecurityName", "collector",
+                "snmpSecurityLevel", "noAuthNoPriv"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-snmp", "SNMP"), connection));
+    }
+
+    @Test
+    void shouldAcceptKnxNetIpWithHostOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptKnxNetIpWithRawConnectionStringOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "knxnet-ip://127.0.0.1"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRejectKnxNetIpWithInvalidGroupAddressLevels() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("groupAddressNumLevels", 0));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRejectKnxNetIpWithInvalidConnectionType() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("knxConnectionType", "TUNNEL"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-knx", "KNXNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRequireFinsPlcAndLocalNode() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-fins", "OMRON_FINS"), connection));
+    }
+
+    @Test
+    void shouldAcceptFinsWithRequiredFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setPort(9600);
+        connection.setExtJson(ext(
+                "plcNode", 1,
+                "localNode", 10,
+                "batchReadEnabled", true,
+                "maxWordsPerRequest", 120,
+                "maxBitsPerRequest", 256
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-fins", "OMRON_FINS"), connection));
+    }
+
+    @Test
+    void shouldRequireBacnetRemoteDeviceInstance() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldRequireBacnetLocalBindPortWhenCovEnabled() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "covEnabled", true
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptBacnetBasicConnection() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet", "BACNET_IP"), connection));
+    }
+
+    @Test
+    void shouldAcceptBacnetAlias() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "remoteDeviceInstance", 1001,
+                "localBindPort", 47809,
+                "covEnabled", true
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-bacnet", "BACNET/IP"), connection));
+    }
+
+
+    @Test
+    void shouldAcceptS7WithRawConnectionStringOnly() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10?controller-type=S7_1500"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithInvalidControllerType() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("controllerType", "S7_200"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithNonPositiveBatchLimit() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("maxFieldsPerRequest", 0));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectS7WithInvalidSubscriptionFlag() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("subscriptionEnabled", "yes"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldAcceptDlt645SerialConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM3",
+                "baudRate", 2400,
+                "meterAddress", "000000000001"
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-meter", "DLT645"), connection));
+    }
+
+    @Test
+    void shouldRejectDlt645WriteWithoutCredential() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM3",
+                "baudRate", 2400,
+                "meterAddress", "000000000001",
+                "writeEnabled", true
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-meter", "DLT645_2007"), connection));
+    }
+
+    @Test
+    void shouldAcceptIec101UnbalancedConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM4",
+                "baudRate", 9600,
+                "linkMode", "UNBALANCED",
+                "linkAddress", 1,
+                "commonAddress", 1
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-rtu", "IEC_101"), connection));
+    }
+
+    @Test
+    void shouldRejectIec101AddressOverflow() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext(
+                "serialPort", "COM4",
+                "baudRate", 9600,
+                "linkAddressSize", 1,
+                "linkAddress", 256
+        ));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-rtu", "IEC101"), connection));
+    }
+
+    private DeviceInfo device(String deviceId, String protocolType) {
+        DeviceInfo deviceInfo = new DeviceInfo();
+        deviceInfo.setDeviceId(deviceId);
+        deviceInfo.setProtocolType(protocolType);
+        return deviceInfo;
+    }
+
+    private Map<String, Object> ext(Object... entries) {
+        Map<String, Object> extJson = new LinkedHashMap<>();
+        for (int i = 0; i < entries.length; i += 2) {
+            extJson.put(entries[i].toString(), entries[i + 1]);
+        }
+        return extJson;
+    }
+}

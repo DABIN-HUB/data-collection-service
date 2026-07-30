@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
 import com.alibaba.fastjson2.JSON;
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
@@ -20,44 +21,65 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 /**
- * HTTP连接适配器（使用Java 11+ HttpClient）
+ * HTTP连接适配器（基于 Java 11+ HttpClient）
  */
 @Slf4j
 public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient> {
 
+    private static final ExecutorService DEFAULT_HTTP_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()),
+            runnable -> {
+                Thread thread = new Thread(runnable, "http-connection-io-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     private HttpClient httpClient;
     private String baseUrl;
     private Map<String, String> customHeaders;
-    private ExecutorService executorService;
+    private Executor httpExecutor;
 
     public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
+        this(deviceInfo, config, null);
+    }
+
+    public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config, Executor httpExecutor) {
         super(deviceInfo, config);
+        this.httpExecutor = httpExecutor;
         initialize();
     }
 
     private void initialize() {
         this.baseUrl = buildBaseUrl();
         this.customHeaders = getCustomHeaders();
-        this.executorService = Executors.newFixedThreadPool(5);
+        this.httpExecutor = resolveHttpExecutor();
         this.httpClient = createHttpClient();
     }
 
+    Executor resolveHttpExecutor() {
+        return ThreadPoolFallbacks.preferExecutor(
+                httpExecutor,
+                DEFAULT_HTTP_EXECUTOR,
+                "HttpConnectionAdapter",
+                "http-connection-io-shared");
+    }
+
     private String buildBaseUrl() {
-        // 优先使用url字段
+        // 优先使用配置的完整 URL
         if (config.getUrl() != null && !config.getUrl().isEmpty()) {
             return config.getUrl();
         }
 
-        // 否则使用host和port构建
+        // 根据 host/port 构建基础 URL
         String protocol = Boolean.TRUE.equals(config.getSslEnabled()) ? "https" : "http";
         String path = config.getStringConfig("path", "");
 
-        // 确保path以/开头
+        // 确保 path 以 / 开头
         if (!path.startsWith("/") && !path.isEmpty()) {
             path = "/" + path;
         }
@@ -72,7 +94,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private Map<String, String> getCustomHeaders() {
         Map<String, Object> headersMap = config.getMapConfig("headers");
         if (headersMap != null) {
-            // 转换为String,String Map
+            // 转换为 String,String 类型的 Map
             Map<String, String> result = new java.util.HashMap<>();
             for (Map.Entry<String, Object> entry : headersMap.entrySet()) {
                 if (entry.getValue() != null) {
@@ -87,14 +109,14 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()))
-                .executor(executorService);
+                .executor(httpExecutor);
 
-        // 配置SSL
+        // 配置 SSL
         if (Boolean.TRUE.equals(config.getSslEnabled())) {
             builder.sslContext(createTrustAllSSLContext());
         }
 
-        // 配置代理（如果需要）
+        // 配置代理
         String proxyHost = config.getStringConfig("proxyHost", null);
         if (proxyHost != null) {
             int proxyPort = config.getIntConfig("proxyPort", 8080);
@@ -118,44 +140,32 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             sslContext.init(null, trustAllCerts, new SecureRandom());
             return sslContext;
         } catch (Exception e) {
-            log.error("创建SSL上下文失败", e);
+            log.error("创建 SSL 上下文失败", e);
             return null;
         }
     }
 
     @Override
     protected void doConnect() throws Exception {
-        // HTTP连接是短连接，这里检查服务是否可达
+        // HTTP 连接健康检查
         try {
             String healthPath = config.getStringConfig("healthCheckPath", "/health");
             HttpRequest request = buildRequest("GET", healthPath, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.info("HTTP服务可达: {} (状态码: {})", baseUrl, response.statusCode());
+                log.info("HTTP 连接成功: {} (状态码: {})", baseUrl, response.statusCode());
             } else {
-                throw new Exception("HTTP服务不可达: 状态码 " + response.statusCode());
+                throw new Exception("HTTP 连接失败，状态码: " + response.statusCode());
             }
         } catch (Exception e) {
-            throw new Exception("HTTP连接测试失败: " + e.getMessage(), e);
+            throw new Exception("HTTP 连接异常: " + e.getMessage(), e);
         }
     }
 
     @Override
     protected void doDisconnect() throws Exception {
-        // 关闭线程池
-        if (executorService != null && !executorService.isShutdown()) {
-            executorService.shutdown();
-            try {
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executorService.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-        log.info("HTTP连接资源清理完成: {}", connectionId);
+        log.info("HTTP 连接资源清理完成: {}", connectionId);
     }
 
     @Override
@@ -168,13 +178,13 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.debug("HTTP发送成功: {} -> {} ({} bytes)",
+                log.debug("HTTP 发送数据成功: {} -> {} ({} bytes)",
                         baseUrl + endpoint, response.statusCode(), data.length);
             } else {
-                throw new Exception("HTTP发送失败: 状态码 " + response.statusCode());
+                throw new Exception("HTTP 发送数据失败，状态码: " + response.statusCode());
             }
         } catch (Exception e) {
-            throw new UnsupportedOperationException("HTTP发送操作失败: " + e.getMessage(), e);
+            throw new UnsupportedOperationException("HTTP 发送数据异常: " + e.getMessage(), e);
         }
     }
 
@@ -183,7 +193,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         try {
             return doReceive(config.getReadTimeout());
         } catch (Exception e) {
-            throw new UnsupportedOperationException("HTTP接收操作失败: " + e.getMessage(), e);
+            throw new UnsupportedOperationException("HTTP 接收数据失败: " + e.getMessage(), e);
         }
     }
 
@@ -195,7 +205,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
 
             HttpRequest request = buildRequest(method, endpoint, null);
 
-            // 设置自定义超时
+            // 设置读取超时
             HttpClient tempClient = httpClient.newBuilder()
                     .connectTimeout(Duration.ofMillis(timeout))
                     .build();
@@ -205,10 +215,10 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return response.body();
             } else {
-                throw new Exception("HTTP接收失败: 状态码 " + response.statusCode());
+                throw new Exception("HTTP 接收数据失败，状态码: " + response.statusCode());
             }
         } catch (Exception e) {
-            throw new UnsupportedOperationException("HTTP接收操作失败: " + e.getMessage(), e);
+            throw new UnsupportedOperationException("HTTP 接收数据异常: " + e.getMessage(), e);
         }
     }
 
@@ -225,9 +235,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            log.debug("HTTP心跳检测成功: {}", connectionId);
+            log.debug("HTTP 心跳检查成功: {}", connectionId);
         } else {
-            throw new Exception("HTTP心跳检测失败: 状态码 " + response.statusCode());
+            throw new Exception("HTTP 心跳检查失败，状态码: " + response.statusCode());
         }
     }
 
@@ -243,14 +253,14 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            // 提取认证令牌（如果有）
+            // 提取认证 Token
             String authToken = extractAuthToken(response);
             if (authToken != null) {
                 customHeaders.put("Authorization", "Bearer " + authToken);
             }
-            log.info("HTTP认证成功: {}", deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
+            log.info("HTTP 认证成功: {}", deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
         } else {
-            throw new Exception("HTTP认证失败: 状态码 " + response.statusCode());
+            throw new Exception("HTTP 认证失败，状态码: " + response.statusCode());
         }
     }
 
@@ -281,22 +291,22 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
                 builder.method(method, HttpRequest.BodyPublishers.ofByteArray(body != null ? body : new byte[0]));
         }
 
-        // 设置基本认证头
+        // 设置基本认证
         if (config.getUsername() != null && config.getPassword() != null) {
             String auth = config.getUsername() + ":" + config.getPassword();
             String encoded = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
             builder.header("Authorization", "Basic " + encoded);
         }
 
-        // 设置Bearer令牌（如果有）
+        // 设置 Bearer Token
         if (config.getAuthToken() != null) {
             builder.header("Authorization", "Bearer " + config.getAuthToken());
         }
 
-        // 设置自定义头
+        // 添加自定义请求头
         customHeaders.forEach(builder::header);
 
-        // 设置内容类型
+        // 设置默认请求头
         builder.header("Content-Type", "application/json");
         builder.header("User-Agent", "DataCollector/1.0");
 
@@ -304,7 +314,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     }
 
     private String buildFullUrl(String endpoint) {
-        // 确保endpoint以/开头
+        // 确保 endpoint 以 / 开头
         if (!endpoint.startsWith("/")) {
             endpoint = "/" + endpoint;
         }
@@ -343,13 +353,13 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private String buildAuthRequestBody() {
         Map<String, Object> authParams = new java.util.HashMap<>();
 
-        // 添加基本认证信息
+        // 基本认证参数
         if (config.getUsername() != null && config.getPassword() != null) {
             authParams.put("username", config.getUsername());
             authParams.put("password", config.getPassword());
         }
 
-        // 添加设备信息
+        // 添加设备标识
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
             authParams.put("deviceId", deviceInfo.getDeviceId());
         }
@@ -360,16 +370,16 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             authParams.put("deviceSecret", config.getDeviceSecret());
         }
 
-        // 添加额外的认证参数
+        // 合并自定义认证参数
         if (config.getAuthParams() != null) {
             authParams.putAll(config.getAuthParams());
         }
 
-        // 转换为JSON字符串
+        // 转换为 JSON 字符串
         try {
             return JSON.toJSONString(authParams);
         } catch (Exception e) {
-            // 如果JSON转换失败，使用简单格式
+            // JSON 转换失败时使用简单拼接
             StringBuilder sb = new StringBuilder();
             for (Map.Entry<String, Object> entry : authParams.entrySet()) {
                 if (sb.length() > 0) {
@@ -384,7 +394,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private String extractAuthToken(HttpResponse<byte[]> response) {
         try {
             String responseBody = new String(response.body(), StandardCharsets.UTF_8);
-            // 尝试从JSON响应中提取token
+            // 尝试从 JSON 响应中提取 token
             Map<String, Object> jsonResponse = com.alibaba.fastjson2.JSON.parseObject(responseBody, Map.class);
             if (jsonResponse.containsKey("token")) {
                 return jsonResponse.get("token").toString();
@@ -393,10 +403,10 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
                 return jsonResponse.get("access_token").toString();
             }
 
-            // 尝试从Header中提取
+            // 尝试从 Header 中提取
             return response.headers().firstValue("Authorization").orElse(null);
         } catch (Exception e) {
-            log.debug("提取认证令牌失败", e);
+            log.debug("提取认证 Token 失败", e);
             return null;
         }
     }

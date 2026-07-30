@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wangbin.collector.storage.repository.DataRepository">
+
+    <update id="createDatabase">
+        CREATE DATABASE IF NOT EXISTS ${database}
+        <if test="keepDays != null and keepDays > 0">
+            KEEP ${keepDays}
+        </if>
+    </update>
+
+    <update id="createStable">
+        CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
+            ts TIMESTAMP,
+            event_ts BIGINT,
+            point_id NCHAR(128),
+            point_code NCHAR(128),
+            point_name NCHAR(256),
+            value_text NCHAR(1024),
+            unit NCHAR(64),
+            quality INT,
+            success BOOL,
+            message NCHAR(1024),
+            raw_json NCHAR(2048),
+            processed_json NCHAR(2048),
+            metadata_json NCHAR(4096)
+        ) TAGS (
+            device_id NCHAR(128),
+            protocol_type NCHAR(64)
+        )
+    </update>
+
+    <select id="countStable" resultType="java.lang.Long">
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.ins_stables
+        WHERE db_name = #{database}
+          AND stable_name = #{stableName}
+    </select>
+
+    <select id="countColumn" resultType="java.lang.Long">
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.ins_columns
+        WHERE db_name = #{database}
+          AND table_name = #{tableName}
+          AND col_name = #{columnName}
+    </select>
+
+    <update id="addTelemetryUnitColumn">
+        ALTER STABLE ${database}.${superTable} ADD COLUMN unit NCHAR(64)
+    </update>
+
+    <insert id="insertTelemetry">
+        INSERT INTO ${database}.${subTable}
+        (ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+        VALUES
+        (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+    </insert>
+
+    <select id="queryPointHistory" resultType="java.util.Map">
+        SELECT
+            ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json
+        FROM ${database}.${subTable}
+        WHERE 1 = 1
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND ts &lt;= #{endTs}
+        </if>
+        ORDER BY ts DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

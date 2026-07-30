@@ -7,6 +7,7 @@ import lombok.Data;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -222,6 +223,27 @@ public class ProcessResult implements Serializable {
         merged.metadata.putAll(other.metadata);
 
         return merged;
+    }
+
+    /**
+     * 创建当前处理结果的独立快照，防止异步处理读取到后续采集修改。
+     *
+     * @return 独立处理结果
+     */
+    public ProcessResult snapshot() {
+        ProcessResult copy = new ProcessResult();
+        copy.success = success;
+        copy.rawValue = rawValue;
+        copy.processedValue = processedValue;
+        copy.quality = quality;
+        copy.qualityDescription = qualityDescription;
+        copy.processorName = processorName;
+        copy.processingTime = processingTime;
+        copy.message = message;
+        copy.error = error;
+        copy.errorCode = errorCode;
+        copy.metadata = metadata == null ? new LinkedHashMap<>() : new LinkedHashMap<>(metadata);
+        return copy;
     }
 
     /**

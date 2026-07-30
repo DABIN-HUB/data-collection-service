@@ -23,6 +23,7 @@ public class IoTMessage {
     private Map<String, Object> metadata = new HashMap<>();
     private Map<String, String> qualityMap = new HashMap<>();
     private Map<String, Long> propertyTsMap = new HashMap<>();
+    private Map<String, Map<String, Object>> propertyMetadataMap = new HashMap<>();
     private long timestamp;
 
     // 是否为认证消息
@@ -70,5 +71,12 @@ public class IoTMessage {
             propertyTsMap = new HashMap<>();
         }
         propertyTsMap.put(field, value);
+    }
+
+    public void addPropertyMetadata(String field, Map<String, Object> value) {
+        if (propertyMetadataMap == null) {
+            propertyMetadataMap = new HashMap<>();
+        }
+        propertyMetadataMap.put(field, value);
     }
 }

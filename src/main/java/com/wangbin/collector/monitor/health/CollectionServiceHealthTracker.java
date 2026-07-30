@@ -11,8 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Tracks the runtime state of the collection service so that the health endpoint
- * can expose whether the overall collection workflow is running or stopped.
+ * 跟踪采集服务运行状态，供健康检查判断采集链路是否正在运行。
  */
 @Component
 public class CollectionServiceHealthTracker {
@@ -22,8 +21,7 @@ public class CollectionServiceHealthTracker {
     private final AtomicLong lastStateChange = new AtomicLong(System.currentTimeMillis());
 
     /**
-     * Mark a device as actively collecting. The collection service is considered UP
-     * as soon as at least one device is running.
+     * 标记设备已开始采集。至少存在一个运行设备时，采集服务状态为正常。
      */
     public void markDeviceStarted(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
@@ -36,8 +34,7 @@ public class CollectionServiceHealthTracker {
     }
 
     /**
-     * Mark a device as stopped. When no devices are running the service transitions
-     * to DOWN.
+     * 标记设备已停止采集。没有运行设备时，采集服务状态为停止。
      */
     public void markDeviceStopped(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
@@ -50,7 +47,7 @@ public class CollectionServiceHealthTracker {
     }
 
     /**
-     * Resets the tracker to a fully stopped state.
+     * 将跟踪器重置为完全停止状态。
      */
     public void reset() {
         runningDevices.clear();

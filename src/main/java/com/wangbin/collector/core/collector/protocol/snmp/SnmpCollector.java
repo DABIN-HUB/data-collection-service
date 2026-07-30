@@ -7,7 +7,10 @@ import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpAddress;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpDataType;
 import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpAddressParser;
 import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpUtils;
+import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
+import org.snmp4j.PDU;
+import org.snmp4j.smi.Address;
 import org.snmp4j.smi.Variable;
 import org.snmp4j.smi.VariableBinding;
 
@@ -17,13 +20,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SNMP 采集器。
- *  1. 若需真正订阅 Trap/Inform，可在基类扩展 TrapListener，将 subscribedPoints 的值推送到上层缓存/数据库。
- *   2. 根据现场需要补充 SNMPv3 安全配置（USM 用户、Auth/Priv 参数）并在 initSnmpConfig() 中解析。
+ * 订阅点位会按 OID 建立 Trap/Inform 映射，收到推送后进入统一遥测入口。
  */
 @Slf4j
 public class SnmpCollector extends AbstractSnmpCollector {
 
     private final Map<String, DataPoint> subscribedPoints = new ConcurrentHashMap<>();
+    private final Map<String, DataPoint> subscribedOidIndex = new ConcurrentHashMap<>();
+    private final SnmpConnectionAdapter.SnmpTrapListener trapListener = this::handleTrapOrInform;
 
     @Override
     public String getCollectorType() {
@@ -39,10 +43,17 @@ public class SnmpCollector extends AbstractSnmpCollector {
     protected void doConnect() throws Exception {
         DeviceConnection connectionConfig = initSnmpConfig(deviceInfo);
         initSnmpConnection(connectionConfig);
+        if (snmpConnection != null) {
+            snmpConnection.addTrapListener(trapListener);
+        }
+        subscribedPoints.values().forEach(this::indexSubscribedPoint);
     }
 
     @Override
     protected void doDisconnect() {
+        if (snmpConnection != null) {
+            snmpConnection.removeTrapListener(trapListener);
+        }
         closeSnmpConnection();
     }
 
@@ -106,6 +117,7 @@ public class SnmpCollector extends AbstractSnmpCollector {
     protected void doSubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
             subscribedPoints.put(point.getPointId(), point);
+            indexSubscribedPoint(point);
         }
         log.info("SNMP订阅登记完成, size={}", points.size());
     }
@@ -114,9 +126,11 @@ public class SnmpCollector extends AbstractSnmpCollector {
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             subscribedPoints.clear();
+            subscribedOidIndex.clear();
         } else {
             for (DataPoint point : points) {
                 subscribedPoints.remove(point.getPointId());
+                unindexSubscribedPoint(point);
             }
         }
         log.info("SNMP取消订阅, size={}", points != null ? points.size() : 0);
@@ -131,6 +145,7 @@ public class SnmpCollector extends AbstractSnmpCollector {
         status.put("version", version);
         status.put("connected", snmpConnection != null && snmpConnection.isConnected());
         status.put("subscribedPoints", subscribedPoints.size());
+        status.put("subscribedOids", subscribedOidIndex.size());
         status.put("timeout", timeout);
         status.put("retries", retries);
         return status;
@@ -153,6 +168,69 @@ public class SnmpCollector extends AbstractSnmpCollector {
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         log.info("SNMP加载点位 deviceId={} size={}", deviceId, points.size());
+    }
+
+    void handleTrapBindings(List<VariableBinding> bindings, Address peerAddress) {
+        if (bindings == null || bindings.isEmpty()) {
+            return;
+        }
+        for (VariableBinding binding : bindings) {
+            if (binding == null || binding.getOid() == null) {
+                continue;
+            }
+            String oid = normalizeOid(binding.getOid().toDottedString());
+            DataPoint point = subscribedOidIndex.get(oid);
+            if (point == null) {
+                continue;
+            }
+            try {
+                SnmpAddress address = SnmpAddressParser.parse(point);
+                Object value = convertVariable(binding.getVariable(), address.getDataType());
+                ingestPushedValue(point, value);
+                log.debug("SNMP Trap/Inform 入站: peer={}, oid={}, pointId={}, value={}",
+                        peerAddress, oid, point.getPointId(), value);
+            } catch (Exception e) {
+                log.warn("SNMP Trap/Inform 点位处理失败: oid={}, pointId={}", oid, point.getPointId(), e);
+            }
+        }
+    }
+
+    private void handleTrapOrInform(PDU pdu, List<VariableBinding> bindings, Address peerAddress) {
+        handleTrapBindings(bindings, peerAddress);
+    }
+
+    private void indexSubscribedPoint(DataPoint point) {
+        try {
+            SnmpAddress address = SnmpAddressParser.parse(point);
+            subscribedOidIndex.put(normalizeOid(address.getOid()), point);
+        } catch (Exception e) {
+            log.warn("SNMP订阅点位OID解析失败: pointId={}, address={}",
+                    point != null ? point.getPointId() : null,
+                    point != null ? point.getAddress() : null,
+                    e);
+        }
+    }
+
+    private void unindexSubscribedPoint(DataPoint point) {
+        try {
+            SnmpAddress address = SnmpAddressParser.parse(point);
+            subscribedOidIndex.remove(normalizeOid(address.getOid()));
+        } catch (Exception e) {
+            log.debug("SNMP取消订阅点位OID解析失败: pointId={}",
+                    point != null ? point.getPointId() : null,
+                    e);
+        }
+    }
+
+    private String normalizeOid(String oid) {
+        if (oid == null) {
+            return "";
+        }
+        String normalized = oid.trim();
+        while (normalized.startsWith(".")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
     }
 
     private Object executeGet(Map<String, Object> params) throws IOException {

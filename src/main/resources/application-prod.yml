@@ -1,1 +1,35 @@
-# prod profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${COLLECTOR_TDENGINE_URL}
+    username: ${COLLECTOR_TDENGINE_USERNAME}
+    password: ${COLLECTOR_TDENGINE_PASSWORD}
+  data:
+    redis:
+      host: ${COLLECTOR_REDIS_HOST:127.0.0.1}
+      port: ${COLLECTOR_REDIS_PORT:6379}
+      database: ${COLLECTOR_REDIS_DATABASE:0}
+      timeout: ${COLLECTOR_REDIS_TIMEOUT:3000}
+      password: ${COLLECTOR_REDIS_PASSWORD}
+
+telemetry:
+  tdengine:
+    enabled: ${COLLECTOR_TDENGINE_ENABLED:true}
+
+collector:
+  config:
+    yun-url: ${COLLECTOR_CONFIG_YUN_URL:http://127.0.0.1:48080/admin-api}
+    sync-interval: ${COLLECTOR_CONFIG_SYNC_INTERVAL:30000}
+    service-id: ${COLLECTOR_SERVICE_ID:collector-1}
+    tenant-id: ${COLLECTOR_TENANT_ID:1}
+    api-token: ${COLLECTOR_CONFIG_API_TOKEN:}
+  report:
+    mqtt:
+      broker-url: ${COLLECTOR_REPORT_MQTT_BROKER_URL:tcp://127.0.0.1:1883}
+      client-id: ${COLLECTOR_REPORT_MQTT_CLIENT_ID:collector-1}
+      username: ${COLLECTOR_REPORT_MQTT_USERNAME:}
+      password: ${COLLECTOR_REPORT_MQTT_PASSWORD:}
+      gateway-product-key: ${COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY:}
+      gateway-device-name: ${COLLECTOR_REPORT_GATEWAY_DEVICE_NAME:}

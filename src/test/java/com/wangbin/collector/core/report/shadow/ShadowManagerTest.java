@@ -1,18 +1,35 @@
 package com.wangbin.collector.core.report.shadow;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-class ShadowManagerTest {
+public class ShadowManagerTest {
 
     private ReportProperties properties;
 
@@ -36,12 +53,12 @@ class ShadowManagerTest {
         ProcessResult r1 = buildResult(10d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult first = manager.apply("dev-change", point, r1);
         assertFalse(first.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 10d), Map.of("phaseA", System.currentTimeMillis()));
+        manager.markReportedValuesChunk("dev-change", Map.of("phaseA", 10d));
 
         ProcessResult r2 = buildResult(13d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult second = manager.apply("dev-change", point, r2);
         assertTrue(second.changeTriggered());
-        manager.markReportedValues("dev-change", Map.of("phaseA", 13d), Map.of("phaseA", System.currentTimeMillis()));
+        manager.markReportedValuesChunk("dev-change", Map.of("phaseA", 13d));
 
         ProcessResult r3 = buildResult(16d, QualityEnum.GOOD.getCode());
         ShadowManager.ShadowUpdateResult third = manager.apply("dev-change", point, r3);
@@ -97,6 +114,230 @@ class ShadowManagerTest {
         assertEquals("QUALITY", qualityEvent.eventInfo().eventType());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void bacnetComplexValueMetadataShouldBePersistedInShadowMetadata() {
+        ShadowManager manager = new ShadowManager(properties);
+        DataPoint point = createPoint("dev-bacnet-shadow", "objectList", Map.of(
+                "reportEnabled", true,
+                "reportField", "objectList"
+        ));
+
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(List.of("analogInput:1", "analogOutput:2"));
+        result.setQuality(QualityEnum.GOOD.getCode());
+        result.addMetadata("source", "cov");
+        result.addMetadata("bacnetComplexValue", true);
+        result.addMetadata("bacnetValueType", "OBJECT_LIST");
+        result.addMetadata("bacnetValueMetadata", Map.of("semantic", "objectList", "count", 2));
+        result.addMetadata("covTimeRemaining", 55);
+
+        manager.apply("dev-bacnet-shadow", point, result);
+
+        Map<String, Object> document = manager.getShadowDocument("dev-bacnet-shadow");
+        Map<String, Object> metadata = (Map<String, Object>) document.get("metadata");
+        Map<String, Object> reported = (Map<String, Object>) metadata.get("reported");
+        Map<String, Object> fieldMeta = (Map<String, Object>) reported.get("objectList");
+        Map<String, Object> valueMetadata = (Map<String, Object>) fieldMeta.get("valueMetadata");
+
+        assertEquals("cov", fieldMeta.get("source"));
+        assertEquals(Boolean.TRUE, valueMetadata.get("bacnetComplexValue"));
+        assertEquals("OBJECT_LIST", valueMetadata.get("bacnetValueType"));
+        assertEquals(Map.of("semantic", "objectList", "count", 2), valueMetadata.get("bacnetValueMetadata"));
+        assertFalse(valueMetadata.containsKey("covTimeRemaining"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void desiredStateBuildsDeltaAndClearsWhenReportedMatches() {
+        ShadowManager manager = new ShadowManager(properties);
+        DataPoint point = createPoint("dev-shadow", "temperature", Map.of(
+                "reportEnabled", true,
+                "reportField", "temperature"
+        ));
+
+        Map<String, Object> initial = manager.updateDesired("dev-shadow", Map.of("temperature", 26.0), "test");
+        Map<String, Object> initialState = (Map<String, Object>) initial.get("state");
+        assertEquals(Map.of("temperature", 26.0), initialState.get("desired"));
+        assertEquals(Map.of("temperature", 26.0), initialState.get("delta"));
+
+        manager.apply("dev-shadow", point, buildResult(25.0, QualityEnum.GOOD.getCode()));
+        Map<String, Object> mismatch = manager.getShadowDocument("dev-shadow");
+        Map<String, Object> mismatchState = (Map<String, Object>) mismatch.get("state");
+        assertEquals(Map.of("temperature", 25.0), mismatchState.get("reported"));
+        assertEquals(Map.of("temperature", 26.0), mismatchState.get("desired"));
+        assertEquals(Map.of("temperature", 26.0), mismatchState.get("delta"));
+
+        manager.apply("dev-shadow", point, buildResult(26.0, QualityEnum.GOOD.getCode()));
+        Map<String, Object> matched = manager.getShadowDocument("dev-shadow");
+        Map<String, Object> matchedState = (Map<String, Object>) matched.get("state");
+        assertEquals(Map.of("temperature", 26.0), matchedState.get("reported"));
+        assertEquals(Map.of(), matchedState.get("desired"));
+        assertEquals(Map.of(), matchedState.get("delta"));
+    }
+
+    @Test
+    void desiredUpdateRejectsStaleLocalExpectedVersion() {
+        ShadowManager manager = new ShadowManager(properties);
+
+        manager.updateDesired("dev-version", Map.of("temperature", 26.0), "test");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> manager.updateDesired("dev-version", Map.of("temperature", 27.0), "test", 0L));
+        assertTrue(ex.getMessage().contains("shadow version conflict"));
+    }
+
+    @Test
+    void desiredUpdateUsesRedisCasAndRejectsRemoteConflict() {
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(0L, 7L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> manager.updateDesired("dev-cas", Map.of("temperature", 26.0), "test"));
+
+        assertTrue(ex.getMessage().contains("expected=0"));
+        assertTrue(ex.getMessage().contains("actual=7"));
+    }
+
+    @Test
+    void reportedPersistenceUsesConfiguredTtl() {
+        properties.getShadow().setTtlSeconds(60);
+        properties.getShadow().setCasEnabled(false);
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        @SuppressWarnings("unchecked")
+        SetOperations<String, String> setOperations = mock(SetOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(1L, 1L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+        DataPoint point = createPoint("dev-ttl", "temperature", Map.of(
+                "reportEnabled", true,
+                "reportField", "temperature"
+        ));
+
+        manager.apply("dev-ttl", point, buildResult(25.0, QualityEnum.GOOD.getCode()));
+
+        verify(valueOperations).set(eq("collector:shadow:dev-ttl"), anyString(), eq(60000L), eq(TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void applyAndClearDirtyShouldSynchronizePersistedDirtySet() {
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        @SuppressWarnings("unchecked")
+        SetOperations<String, String> setOperations = mock(SetOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(1L, 1L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+
+        DataPoint point = createPoint("dev-dirty", "pressure", Map.of(
+                "reportEnabled", true,
+                "reportField", "pressure"
+        ));
+
+        manager.apply("dev-dirty", point, buildResult(8.0, QualityEnum.GOOD.getCode()));
+        verify(setOperations).add("collector:shadow:dirty", "dev-dirty");
+
+        manager.clearDirty("dev-dirty");
+        verify(setOperations).remove("collector:shadow:dirty", "dev-dirty");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void desiredUpdateAutoMergesRemoteShadowAfterCasConflict() throws Exception {
+        ShadowManager manager = new ShadowManager(properties);
+        manager.updateDesired("dev-merge", Map.of("localOnly", 1), "seed");
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        ListOperations<String, String> listOperations = mock(ListOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
+        when(valueOperations.get(anyString())).thenReturn(objectMapper.writeValueAsString(
+                remoteDocument("dev-merge", 2L, Map.of("remoteOnly", 2))));
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(0L, 2L), List.of(1L, 3L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", objectMapper);
+
+        Map<String, Object> document = manager.updateDesired("dev-merge", Map.of("localOnly", 3), "test");
+
+        Map<String, Object> state = (Map<String, Object>) document.get("state");
+        Map<String, Object> desired = (Map<String, Object>) state.get("desired");
+        assertEquals(2, desired.get("remoteOnly"));
+        assertEquals(3, desired.get("localOnly"));
+        assertEquals(3L, document.get("version"));
+        verify(stringRedisTemplate, times(2)).execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void reportedStateShouldRestoreLastReportedValuesFromPersistedShadow() throws Exception {
+        ShadowManager manager = new ShadowManager(properties);
+        ObjectMapper objectMapper = new ObjectMapper();
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("collector:shadow:dev-reported")).thenReturn(objectMapper.writeValueAsString(
+                remoteReportedDocument("dev-reported", 2L, Map.of("temperature", 26.0), Map.of("temperature", 25.0))
+        ));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", objectMapper);
+
+        Map<String, Object> document = manager.getShadowDocument("dev-reported");
+        Map<String, Object> state = (Map<String, Object>) document.get("state");
+
+        assertEquals(Map.of("temperature", 26.0), state.get("reported"));
+        assertEquals(Map.of("temperature", 25.0), state.get("lastReported"));
+        assertEquals(25.0, manager.getShadow("dev-reported").getLastReportedValue("temperature"));
+    }
+
+    @Test
+    void successfulDesiredUpdateWritesHistoryAudit() {
+        ShadowManager manager = new ShadowManager(properties);
+        StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        ListOperations<String, String> listOperations = mock(ListOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
+        when(stringRedisTemplate.execute(org.mockito.ArgumentMatchers.<RedisCallback<Object>>any()))
+                .thenReturn(List.of(1L, 1L));
+        ReflectionTestUtils.setField(manager, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(manager, "objectMapper", new ObjectMapper());
+
+        manager.updateDesired("dev-history", Map.of("temperature", 26.0), "test");
+
+        ArgumentCaptor<String> historyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(listOperations).leftPush(eq("collector:shadow:history:dev-history"), historyCaptor.capture());
+        String history = historyCaptor.getValue();
+        Assertions.assertAll(
+                () -> assertTrue(history.contains("\"action\":\"desired_update\"")),
+                () -> assertTrue(history.contains("\"version\":1")),
+                () -> assertTrue(history.contains("\"baseVersion\":0"))
+        );
+        verify(listOperations).trim(eq("collector:shadow:history:dev-history"), eq(0L), eq(99L));
+        verify(stringRedisTemplate).expire(eq("collector:shadow:history:dev-history"),
+                eq(604800L), eq(TimeUnit.SECONDS));
+    }
+
     private DataPoint createPoint(String deviceId, String alias, Map<String, Object> config) {
         DataPoint point = new DataPoint();
         point.setDeviceId(deviceId);
@@ -113,5 +354,48 @@ class ShadowManagerTest {
         result.setProcessedValue(value);
         result.setQuality(quality);
         return result;
+    }
+
+    private Map<String, Object> remoteDocument(String deviceId, long version, Map<String, Object> desired) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("deviceId", deviceId);
+        doc.put("version", version);
+        doc.put("timestamp", System.currentTimeMillis());
+        doc.put("createdAt", System.currentTimeMillis());
+        doc.put("lastReportAt", System.currentTimeMillis());
+        doc.put("lastWindowStart", 0L);
+        doc.put("lastWindowEnd", 0L);
+
+        Map<String, Object> state = new HashMap<>();
+        state.put("reported", Map.of());
+        state.put("desired", desired);
+        state.put("delta", desired);
+        doc.put("state", state);
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("reported", Map.of());
+        metadata.put("desired", Map.of());
+        doc.put("metadata", metadata);
+        return doc;
+    }
+
+    private Map<String, Object> remoteReportedDocument(String deviceId,
+                                                       long version,
+                                                       Map<String, Object> reported,
+                                                       Map<String, Object> lastReported) {
+        Map<String, Object> doc = remoteDocument(deviceId, version, Map.of());
+        Map<String, Object> state = (Map<String, Object>) doc.get("state");
+        state.put("reported", reported);
+        state.put("lastReported", lastReported);
+
+        Map<String, Object> metadata = (Map<String, Object>) doc.get("metadata");
+        metadata.put("reported", Map.of(
+                "temperature", Map.of(
+                        "timestamp", System.currentTimeMillis(),
+                        "updatedAt", System.currentTimeMillis(),
+                        "quality", "GOOD"
+                )
+        ));
+        return doc;
     }
 }

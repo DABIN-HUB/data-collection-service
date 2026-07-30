@@ -4,6 +4,7 @@ import lombok.Getter;
 
 @Getter
 public enum DataType {
+    INT(4),
     INT16(2), UINT16(2),
     INT32(4), UINT32(4),
     FLOAT(4), FLOAT32(4), FLOAT32_SWAP(4), FLOAT32_LITTLE(4),

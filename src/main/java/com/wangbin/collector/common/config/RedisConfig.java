@@ -2,7 +2,8 @@ package com.wangbin.collector.common.config;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -23,20 +24,7 @@ public class RedisConfig {
      */
     @Bean
     public GenericJackson2JsonRedisSerializer genericJackson2JsonRedisSerializer(ObjectMapper objectMapper) {
-        // 创建新的ObjectMapper实例，避免影响全局配置
-        ObjectMapper redisObjectMapper = objectMapper.copy();
-
-        // 启用类型信息，支持多态
-        redisObjectMapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY
-        );
-
-        // 添加一些配置
-        redisObjectMapper.enableDefaultTyping();
-
-        return new GenericJackson2JsonRedisSerializer(redisObjectMapper);
+        return new GenericJackson2JsonRedisSerializer(createRestrictedObjectMapper(objectMapper));
     }
 
     /**
@@ -138,20 +126,31 @@ public class RedisConfig {
         template.setKeySerializer(stringSerializer);
         template.setHashKeySerializer(stringSerializer);
 
-        // 为缓存创建专门的序列化器
-        ObjectMapper cacheObjectMapper = objectMapper.copy();
-        cacheObjectMapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL
-        );
-
         GenericJackson2JsonRedisSerializer cacheSerializer =
-                new GenericJackson2JsonRedisSerializer(cacheObjectMapper);
+                new GenericJackson2JsonRedisSerializer(createRestrictedObjectMapper(objectMapper));
 
         template.setValueSerializer(cacheSerializer);
         template.setHashValueSerializer(cacheSerializer);
 
         template.afterPropertiesSet();
         return template;
+    }
+
+    /**
+     * 创建仅允许项目模型和必要JDK容器类型的Redis序列化器配置。
+     */
+    private ObjectMapper createRestrictedObjectMapper(ObjectMapper objectMapper) {
+        PolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
+                .allowIfSubType("com.wangbin.collector.")
+                .allowIfSubType("java.util.")
+                .allowIfSubType("java.time.")
+                .build();
+        ObjectMapper restrictedObjectMapper = objectMapper.copy();
+        restrictedObjectMapper.activateDefaultTyping(
+                typeValidator,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                JsonTypeInfo.As.PROPERTY
+        );
+        return restrictedObjectMapper;
     }
 }

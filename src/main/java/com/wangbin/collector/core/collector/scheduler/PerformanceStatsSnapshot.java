@@ -8,7 +8,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * 调度与性能监控快照
+ * Scheduler/performance snapshot.
  */
 @Data
 @Builder
@@ -28,6 +28,15 @@ public class PerformanceStatsSnapshot {
 
     @Builder.Default
     private final Map<String, Map<String, Object>> deviceStats = Collections.emptyMap();
+
+    private final double processCpuLoad;
+    private final long batchDispatchRejectedCount;
+    private final long collectRejectedCount;
+    private final long processRejectedCount;
+    private final long reconnectAttemptCount;
+    private final long reconnectSuccessCount;
+    private final long reconnectFailureCount;
+    private final int reconnectingDevices;
 
     @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();

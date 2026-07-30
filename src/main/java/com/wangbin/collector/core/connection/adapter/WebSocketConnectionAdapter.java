@@ -1,12 +1,16 @@
 package com.wangbin.collector.core.connection.adapter;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,7 +18,10 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.security.KeyStore;
 import java.security.cert.X509Certificate;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
@@ -27,6 +34,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSocket> implements AutoCloseable {
 
+    private static final ScheduledExecutorService DEFAULT_HEARTBEAT_SCHEDULER =
+            Executors.newScheduledThreadPool(2, runnable -> {
+                Thread thread = new Thread(runnable, "websocket-heartbeat-shared");
+                thread.setDaemon(true);
+                return thread;
+            });
+
     private WebSocket webSocket;
     private HttpClient httpClient;
     private String wsUrl;
@@ -34,6 +48,8 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private BlockingQueue<byte[]> messageQueue;
     private CompletableFuture<WebSocket> wsFuture;
     private ScheduledExecutorService heartbeatScheduler;
+    private ScheduledFuture<?> heartbeatTask;
+    private Executor httpExecutor;
     private AtomicBoolean closing = new AtomicBoolean(false);
 
     // WebSocket监听器
@@ -81,7 +97,16 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     };
 
     public WebSocketConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
+        this(deviceInfo, config, null, null);
+    }
+
+    public WebSocketConnectionAdapter(DeviceInfo deviceInfo,
+                                      DeviceConnection config,
+                                      Executor httpExecutor,
+                                      ScheduledExecutorService heartbeatScheduler) {
         super(deviceInfo, config);
+        this.httpExecutor = httpExecutor;
+        this.heartbeatScheduler = heartbeatScheduler;
         initialize();
     }
 
@@ -89,12 +114,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         this.wsUrl = buildWebSocketUrl();
         this.customHeaders = getCustomHeaders();
         this.messageQueue = new LinkedBlockingQueue<>();
-        this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            String id = deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
-            Thread thread = new Thread(r, "websocket-heartbeat-" + id);
-            thread.setDaemon(true);
-            return thread;
-        });
+        resolveHeartbeatScheduler();
         this.httpClient = createHttpClient();
     }
 
@@ -166,10 +186,13 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()));
+        if (httpExecutor != null) {
+            builder.executor(httpExecutor);
+        }
 
         // 配置SSL
         if (Boolean.TRUE.equals(config.getSslEnabled())) {
-            builder.sslContext(createTrustAllSSLContext());
+            builder.sslContext(createSslContext());
         }
 
         return builder.build();
@@ -288,6 +311,55 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
                 closing.set(false);
             }
         }
+    }
+
+    private SSLContext createSslContext() {
+        if (config.getBoolConfig("trustAllServerCert", false)) {
+            return createTrustAllSSLContext();
+        }
+        try {
+            KeyManager[] keyManagers = loadKeyManagers();
+            TrustManager[] trustManagers = loadTrustManagers();
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(keyManagers, trustManagers, new SecureRandom());
+            return sslContext;
+        } catch (Exception ex) {
+            throw new IllegalStateException("WebSocket TLS 上下文初始化失败", ex);
+        }
+    }
+
+    private KeyManager[] loadKeyManagers() throws Exception {
+        String keyStoreFile = config.getStringConfig("keyStoreFile", null);
+        if (keyStoreFile == null || keyStoreFile.isBlank()) {
+            return null;
+        }
+        char[] password = config.getStringConfig("keyStorePassword", "").toCharArray();
+        KeyStore keyStore = loadKeyStore(keyStoreFile,
+                config.getStringConfig("keyStoreType", "PKCS12"), password);
+        KeyManagerFactory factory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        factory.init(keyStore, password);
+        return factory.getKeyManagers();
+    }
+
+    private TrustManager[] loadTrustManagers() throws Exception {
+        String trustStoreFile = config.getStringConfig("trustStoreFile", null);
+        if (trustStoreFile == null || trustStoreFile.isBlank()) {
+            return null;
+        }
+        char[] password = config.getStringConfig("trustStorePassword", "").toCharArray();
+        KeyStore trustStore = loadKeyStore(trustStoreFile,
+                config.getStringConfig("trustStoreType", "PKCS12"), password);
+        TrustManagerFactory factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        factory.init(trustStore);
+        return factory.getTrustManagers();
+    }
+
+    private KeyStore loadKeyStore(String file, String type, char[] password) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(type);
+        try (var inputStream = Files.newInputStream(Path.of(file))) {
+            keyStore.load(inputStream, password);
+        }
+        return keyStore;
     }
 
     @Override
@@ -451,7 +523,8 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private void startHeartbeat() {
         int heartbeatInterval = config.getHeartbeatInterval();
         if (heartbeatInterval > 0) {
-            heartbeatScheduler.scheduleAtFixedRate(() -> {
+            stopHeartbeat();
+            heartbeatTask = resolveHeartbeatScheduler().scheduleAtFixedRate(() -> {
                 try {
                     if (isConnected() && !closing.get()) {
                         heartbeat();
@@ -465,17 +538,28 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     }
 
     private void stopHeartbeat() {
-        if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
-            heartbeatScheduler.shutdown();
-            try {
-                if (!heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    heartbeatScheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                heartbeatScheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(true);
+            heartbeatTask = null;
             log.debug("WebSocket心跳任务已停止");
+        }
+    }
+
+    private ScheduledExecutorService resolveHeartbeatScheduler() {
+        if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
+            return heartbeatScheduler;
+        }
+        heartbeatScheduler = ThreadPoolFallbacks.preferScheduler(
+                heartbeatScheduler,
+                DEFAULT_HEARTBEAT_SCHEDULER,
+                "WebSocketConnectionAdapter",
+                "websocket-heartbeat-shared");
+        return heartbeatScheduler;
+    }
+
+    private void shutdownOwnedHeartbeatScheduler() {
+        if (heartbeatScheduler != null && heartbeatScheduler.isShutdown()) {
+            heartbeatScheduler = null;
         }
     }
 

@@ -156,6 +156,7 @@ public class JsonDataPointLoader {
                 //if (map.containsKey("description")) point.setDescription((String) map.get("description"));
                 if (map.containsKey("unit")) point.setUnit((String) map.get("unit"));
                 if (map.containsKey("unitId")) point.setUnitId(toInteger(map.get("unitId")));
+                if (map.containsKey("commonAddress")) point.setCommonAddress(toInteger(map.get("commonAddress")));
                 //if (map.containsKey("defaultValue")) point.setDefaultValue((String) map.get("defaultValue"));
 
                 // 设置数值属性

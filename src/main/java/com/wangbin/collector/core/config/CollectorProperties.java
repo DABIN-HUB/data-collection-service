@@ -53,12 +53,12 @@ public class CollectorProperties {
      * 通用配置
      */
     private CommonConfig common = new CommonConfig();
-    
+
     /**
      * 调度器配置
      */
     private SchedulerConfig scheduler = new SchedulerConfig();
-    
+
     /**
      * 自适应采集配置
      */
@@ -74,6 +74,14 @@ public class CollectorProperties {
         private String version = "2c";
         private int pollingInterval = 5000;
         private Map<String, String> devices;
+        private String securityLevel = "authPriv";
+        private String securityName;
+        private String authProtocol = "SHA";
+        private String authPassword;
+        private String privProtocol = "AES128";
+        private String privPassword;
+        private String contextName;
+        private String contextEngineId;
     }
 
     @Data
@@ -100,6 +108,11 @@ public class CollectorProperties {
         private long dispatchFlushInterval = 0;
         private String overflowStrategy = "BLOCK";
         private int maxGroupConnections = 0;
+        /**
+         * MQTT 建连全局并发上限。
+         * 平台不支持并发创建连接时应配置为 1。
+         */
+        private int maxConcurrentConnects = 1;
     }
 
     @Data
@@ -148,7 +161,7 @@ public class CollectorProperties {
         private boolean enableMonitor = true;
         private boolean enableAlert = true;
     }
-    
+
     /**
      * 调度器配置类
      */
@@ -161,8 +174,13 @@ public class CollectorProperties {
         private int initialTimeSliceIntervalMs = 1000;
         private int dynamicAdjustIntervalMs = 30000;
         private long collectTimeoutMs = 500;
+        private long deviceStartTimeoutMs = 15000;
+        private int deviceStartExecutorSize = 4;
+        private int reconnectExecutorSize = 4;
+        private long reconnectBaseDelayMs = 1000;
+        private long reconnectMaxDelayMs = 30000;
     }
-    
+
     /**
      * 自适应采集配置类
      */

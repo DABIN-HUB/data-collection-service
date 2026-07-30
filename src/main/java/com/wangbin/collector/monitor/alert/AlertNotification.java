@@ -15,6 +15,10 @@ public class AlertNotification {
     String level;
     String message;
     String eventType;
+    String eventId;
+    String relatedEventId;
+    long startedAt;
+    long durationMillis;
     Object value;
     String unit;
     long timestamp;

@@ -2,11 +2,13 @@ package com.wangbin.collector.core.collector.protocol.snmp.util;
 
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpAddress;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpDataType;
+import org.snmp4j.security.*;
 import org.snmp4j.smi.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * SNMP 工具方法。
@@ -116,5 +118,69 @@ public final class SnmpUtils {
             return new Counter64(longValue);
         }
         return new OctetString(value.toString());
+    }
+
+    public static int parseSecurityLevel(String text) {
+        if (text == null) {
+            return SecurityLevel.AUTH_PRIV;
+        }
+        String normalized = text.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "noauthnopriv", "noauth" -> SecurityLevel.NOAUTH_NOPRIV;
+            case "authnopriv" -> SecurityLevel.AUTH_NOPRIV;
+            case "authpriv" -> SecurityLevel.AUTH_PRIV;
+            default -> SecurityLevel.AUTH_PRIV;
+        };
+    }
+
+    public static OID resolveAuthProtocol(String text) {
+        if (text == null || text.isBlank()) {
+            return AuthSHA.ID;
+        }
+        String normalized = text.replace("-", "").trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "MD5" -> AuthMD5.ID;
+            case "SHA", "SHA1", "SHA256", "SHA512", "SHA224", "SHA384" -> AuthSHA.ID;
+            case "NONE" -> null;
+            default -> AuthSHA.ID;
+        };
+    }
+
+    public static OID resolvePrivProtocol(String text) {
+        if (text == null || text.isBlank()) {
+            return PrivAES128.ID;
+        }
+        String normalized = text.replace("-", "").trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "DES" -> PrivDES.ID;
+            case "3DES", "TRIPLEDES" -> Priv3DES.ID;
+            case "AES", "AES128" -> PrivAES128.ID;
+            case "AES192" -> PrivAES192.ID;
+            case "AES256" -> PrivAES256.ID;
+            case "NONE" -> null;
+            default -> PrivAES128.ID;
+        };
+    }
+
+    public static OctetString parseContextEngineId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        String normalized = trimmed.replace(":", "")
+                .replace("-", "")
+                .replace(" ", "");
+        if (!normalized.isEmpty()
+                && normalized.length() % 2 == 0
+                && normalized.chars().allMatch(ch -> Character.digit(ch, 16) >= 0)) {
+            byte[] bytes = new byte[normalized.length() / 2];
+            for (int i = 0; i < bytes.length; i++) {
+                int hi = Character.digit(normalized.charAt(i * 2), 16);
+                int lo = Character.digit(normalized.charAt(i * 2 + 1), 16);
+                bytes[i] = (byte) ((hi << 4) + lo);
+            }
+            return new OctetString(bytes);
+        }
+        return new OctetString(trimmed);
     }
 }

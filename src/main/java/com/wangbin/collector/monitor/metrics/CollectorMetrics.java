@@ -4,6 +4,8 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 
 /**
  * 采集器层面的聚合指标，描述单个设备或任务的运行健康状况。
@@ -36,11 +38,24 @@ public class CollectorMetrics {
     private final double averageLatencyMs;
 
     /**
+     * 协议或驱动特有的附加指标。
+     */
+    @Builder.Default
+    private final Map<String, Object> protocolMetrics = Collections.emptyMap();
+
+    /**
      * 统计生成时间。
      */
     @Builder.Default
     private final long timestamp = Instant.now().toEpochMilli();
 
+    /**
+     * 创建一个空闲（无数据）状态的指标实例。
+     *
+     * @param deviceId 设备ID
+     * @param protocol 协议名称
+     * @return 空闲指标对象
+     */
     public static CollectorMetrics idle(String deviceId, String protocol) {
         return CollectorMetrics.builder()
                 .deviceId(deviceId)
@@ -49,6 +64,7 @@ public class CollectorMetrics {
                 .pointsPerSecond(0.0)
                 .successRate(0.0)
                 .averageLatencyMs(0.0)
+                .protocolMetrics(Collections.emptyMap())
                 .build();
     }
 }

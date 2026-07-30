@@ -48,6 +48,26 @@ public class ReportProperties {
     private int retryTimes = 3;
 
     /**
+     * flush chunk 首次退避毫秒
+     */
+    private long retryBackoffMs = 1000;
+
+    /**
+     * flush chunk 最大退避毫秒
+     */
+    private long maxRetryBackoffMs = 10000;
+
+    /**
+     * 是否启用轻微抖动，避免重试同时打满
+     */
+    private boolean retryJitterEnabled = true;
+
+    /**
+     * 单设备允许同时 pending 的 chunk 数上限
+     */
+    private int maxPendingChunksPerDevice = 32;
+
+    /**
      * 缓存队列最大长度
      */
     private int maxQueueSize = 5000;
@@ -97,6 +117,20 @@ public class ReportProperties {
      */
     private final Mqtt mqtt = new Mqtt();
 
+    /**
+     * 设备影子相关配置
+     */
+    private final Shadow shadow = new Shadow();
+    /**
+     * 云平台上报链路优化配置。
+     */
+    private final Cloud cloud = new Cloud();
+
+    /**
+     * 云端上报持久化发件箱配置。
+     */
+    private final Outbox outbox = new Outbox();
+
     public boolean mqttEnabled() {
         return mqtt.isEnabled() && isProtocolEnabled("MQTT");
     }
@@ -122,15 +156,25 @@ public class ReportProperties {
         private String brokerUrl = "tcp://localhost:1883";
         private String clientId = "data-collector";
         /**
+         * MQTT 建连全局并发上限。
+         * 平台不支持并发创建连接时应配置为 1。
+         */
+        private int maxConcurrentConnects = 1;
+        /**
+         * 断线连接定时扫描重连间隔，单位毫秒。
+         */
+        private long reconnectScanIntervalMs = 30000L;
+        /**
          * 对应云平台的产品 key，用于拼装 topic。
          */
         private String gatewayProductKey = "";
 
         private String gatewayDeviceName = "";
+        private String cloudProvider = "alink";
         /**
-         * topic 前缀，默认 iot/device。
+         * topic 前缀，默认 /sys。
          */
-        private String topicPrefix = "iot/device";
+        private String topicPrefix = "/sys";
         private String ackTopicPrefix = "/sys";
         private String ackTopicSuffix = "_reply";
         /**
@@ -144,14 +188,24 @@ public class ReportProperties {
         private int connectionTimeout = 30;
         private int keepAliveInterval = 60;
         private boolean retained = false;
+        private boolean downlinkEnabled = true;
+        private List<String> subscribeTopics = new ArrayList<>();
+        /**
+         * MQTT 云设备生命周期上报配置。
+         */
+        private Lifecycle lifecycle = new Lifecycle();
         /**
          * 业务自定义主题
          */
         private Map<String, String> topics = new HashMap<>();
+        /**
+         * 平台服务名到协议命令名的映射。
+         */
+        private Map<String, String> serviceCommandMappings = new HashMap<>();
 
         public String getTopicPrefix() {
             if (topicPrefix == null || topicPrefix.isEmpty()) {
-                return "iot/device";
+                return "/sys";
             }
             return topicPrefix.endsWith("/") ? topicPrefix.substring(0, topicPrefix.length() - 1) : topicPrefix;
         }
@@ -186,5 +240,163 @@ public class ReportProperties {
             }
             return value;
         }
+
+        @Data
+        public static class Lifecycle {
+            /**
+             * 是否启用 MQTT 设备生命周期上报。
+             */
+            private boolean enabled = true;
+
+            /**
+             * 网关 MQTT 连接成功后是否主动上报在线状态。
+             */
+            private boolean gatewayOnlineEnabled = true;
+
+            /**
+             * 服务主动关闭或配置移除前是否主动上报离线状态。
+             */
+            private boolean gatewayGracefulOfflineEnabled = true;
+
+            /**
+             * 生命周期状态消息 QoS，只等待 MQTT PUBACK，不等待平台业务 _reply。
+             */
+            private int qos = 1;
+
+            /**
+             * 生命周期状态消息 MQTT publish 等待超时，单位毫秒。
+             */
+            private long publishTimeoutMs = 3000L;
+        }
+    }
+
+    @Data
+    public static class Shadow {
+        /**
+         * 是否启用 Redis 持久化。
+         */
+        private boolean persistenceEnabled = true;
+
+        /**
+         * desired 写入和清理是否启用 Redis 原子 CAS。
+         */
+        private boolean casEnabled = true;
+
+        /**
+         * Redis key 前缀。
+         */
+        private String keyPrefix = "collector:shadow:";
+
+        /**
+         * 影子 Redis 过期时间，单位秒；小于等于 0 表示不过期。
+         */
+        private long ttlSeconds = 24 * 60 * 60;
+
+        /**
+         * CAS 冲突后是否基于 Redis 最新影子自动合并并重试。
+         */
+        private boolean autoMergeEnabled = true;
+
+        /**
+         * CAS 冲突后的最大自动重试次数。
+         */
+        private int mergeRetryTimes = 2;
+
+        /**
+         * 是否记录 desired/clear 操作的影子历史审计。
+         */
+        private boolean historyEnabled = true;
+
+        /**
+         * 历史审计 Redis list key 前缀。
+         */
+        private String historyKeyPrefix = "collector:shadow:history:";
+
+        /**
+         * 每个设备最多保留的历史审计条数；小于等于 0 表示不裁剪。
+         */
+        private int historyMaxRecords = 100;
+
+        /**
+         * 历史审计 Redis 过期时间，单位秒；小于等于 0 表示不过期。
+         */
+        private long historyTtlSeconds = 7 * 24 * 60 * 60;
+    }
+    @Data
+    public static class Cloud {
+
+        /**
+         * 是否允许网关 MQTT 连接代理发布子设备自己的 Topic。
+         * true 表示保持历史兼容逻辑，false 表示子设备必须通过网关 Topic 和 property pack 上报。
+         */
+        private boolean subDeviceTopicProxyEnabled = true;
+
+        /**
+         * payload 精简策略。
+         */
+        private Payload payload = new Payload();
+
+        /**
+         * 平台业务 ACK 处理策略。
+         */
+        private Ack ack = new Ack();
+
+        /**
+         * 网关级批量属性包策略。
+         */
+        private Batch batch = new Batch();
+
+        @Data
+        public static class Payload {
+            private String profile = "compact";
+            private String includeQuality = "on_error";
+            private boolean includePropertyTs = false;
+            private boolean includeMetadata = false;
+            private boolean includeMessageId = true;
+        }
+
+        @Data
+        public static class Ack {
+            private String mode = "async";
+            private long timeoutMs = 5000L;
+            private int maxPending = 10000;
+            private long timeoutScanMs = 500L;
+            private String commitOn = "publish-success";
+        }
+
+        @Data
+        public static class Batch {
+            private boolean enabled = true;
+            private int maxDevicesPerPack = 50;
+            private int maxPropertiesPerPack = 500;
+            private int maxPayloadBytes = 128 * 1024;
+            private long maxDelayMs = 1000L;
+            private boolean highPriorityBypass = true;
+        }
+    }
+
+    @Data
+    public static class Outbox {
+
+        /** 是否启用持久化发件箱。 */
+        private boolean enabled = true;
+
+        /** Redis键前缀，必须包含环境和结构版本。 */
+        private String keyPrefix = "collector:default:cloud:outbox:v1:";
+
+        /** 到期消息扫描间隔。 */
+        private long pollIntervalMs = 1000L;
+
+        /** 单次认领的最大消息数。 */
+        private int claimBatchSize = 100;
+
+        /** 单次发送租约时间。 */
+        private long leaseMs = 15000L;
+
+        /** 配置缺失后的重试间隔。 */
+        private long waitingConfigRetryMs = 10000L;
+
+        /** 持久消息最大重试次数。 */
+        private int maxRetryTimes = 20;
     }
 }

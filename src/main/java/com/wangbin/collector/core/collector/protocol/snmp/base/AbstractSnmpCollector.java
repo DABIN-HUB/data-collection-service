@@ -2,15 +2,15 @@ package com.wangbin.collector.core.collector.protocol.snmp.base;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpAddress;
 import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpDataType;
 import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpUtils;
 import com.wangbin.collector.core.config.CollectorProperties;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.SnmpConnectionAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.snmp4j.PDU;
+import org.snmp4j.ScopedPDU;
 import org.snmp4j.Snmp;
 import org.snmp4j.Target;
 import org.snmp4j.event.ResponseEvent;
@@ -20,6 +20,7 @@ import org.snmp4j.smi.OctetString;
 import org.snmp4j.smi.UdpAddress;
 import org.snmp4j.smi.Variable;
 import org.snmp4j.smi.VariableBinding;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -32,7 +33,7 @@ import java.util.Objects;
  * SNMP 公共能力抽象。
  */
 @Slf4j
-public abstract class AbstractSnmpCollector extends BaseCollector {
+public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
 
     protected SnmpConnectionAdapter snmpConnection;
 
@@ -45,6 +46,15 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
     protected int retries = 1;
     protected int version = SnmpConstants.version2c;
     protected String versionText = "2c";
+    protected String securityLevelText = "authPriv";
+    protected String securityName;
+    protected String authProtocol = "SHA";
+    protected String authPassword;
+    protected String privProtocol = "AES128";
+    protected String privPassword;
+    protected String contextName;
+    protected OctetString contextNameOctet;
+    protected OctetString contextEngineIdOctet;
 
     protected DeviceConnection initSnmpConfig(DeviceInfo deviceInfo) {
         this.snmpConfig = collectorProperties != null
@@ -70,39 +80,50 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
         versionText = connection.getStringConfig("snmpVersion",
                 snmpConfig != null ? snmpConfig.getVersion() : "2c").trim();
 
-        /*props.put("community", community);
-        props.put("snmpVersion", versionText);
-        props.put("snmpRetries", retries);*/
-
         switch (versionText) {
             case "1":
                 version = SnmpConstants.version1;
                 break;
             case "3":
                 version = SnmpConstants.version3;
-                log.warn("SNMPv3暂未实现安全参数，当前默认按照v2c处理");
-                version = SnmpConstants.version2c;
                 break;
             case "2c":
             default:
                 version = SnmpConstants.version2c;
         }
+
+        securityName = connection.getStringConfig("snmpSecurityName",
+                snmpConfig != null ? snmpConfig.getSecurityName() : null);
+        securityLevelText = connection.getStringConfig("snmpSecurityLevel",
+                snmpConfig != null ? snmpConfig.getSecurityLevel() : "authPriv");
+        authProtocol = connection.getStringConfig("snmpAuthProtocol",
+                snmpConfig != null ? snmpConfig.getAuthProtocol() : "SHA");
+        authPassword = connection.getStringConfig("snmpAuthPassword",
+                snmpConfig != null ? snmpConfig.getAuthPassword() : null);
+        privProtocol = connection.getStringConfig("snmpPrivProtocol",
+                snmpConfig != null ? snmpConfig.getPrivProtocol() : "AES128");
+        privPassword = connection.getStringConfig("snmpPrivPassword",
+                snmpConfig != null ? snmpConfig.getPrivPassword() : null);
+        contextName = connection.getStringConfig("snmpContextName",
+                snmpConfig != null ? snmpConfig.getContextName() : null);
+        if (StringUtils.hasText(contextName)) {
+            contextNameOctet = new OctetString(contextName);
+        } else {
+            contextNameOctet = null;
+        }
+        String contextEngineId = connection.getStringConfig("snmpContextEngineId",
+                snmpConfig != null ? snmpConfig.getContextEngineId() : null);
+        contextEngineIdOctet = SnmpUtils.parseContextEngineId(contextEngineId);
+
         return connection;
     }
 
     protected void initSnmpConnection(DeviceConnection connectionConfig) throws Exception {
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo, connectionConfig);
-        connectionManager.connect(deviceInfo.getDeviceId());
-        if (!(adapter instanceof SnmpConnectionAdapter snmpAdapter)) {
-            throw new IllegalStateException("SNMP连接适配器类型不匹配");
-        }
-        this.snmpConnection = snmpAdapter;
+        this.snmpConnection = createAndConnectAdapter(connectionConfig, SnmpConnectionAdapter.class, "SNMP");
     }
 
     protected void closeSnmpConnection() {
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("SNMP");
         snmpConnection = null;
     }
 
@@ -142,7 +163,7 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
                     bindings.add(new VariableBinding(new OID(address.getOid()), variable));
                 }
                 for (List<VariableBinding> chunk : SnmpUtils.partitionBindings(bindings, 10)) {
-                    PDU pdu = new PDU();
+                    PDU pdu = newPduInstance();
                     chunk.forEach(pdu::add);
                     pdu.setType(PDU.SET);
                     ResponseEvent<UdpAddress> event = snmp.send(pdu, target);
@@ -165,7 +186,7 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
                 OID current = currentRoot;
                 int count = 0;
                 while (count < maxNodes) {
-                    PDU pdu = new PDU();
+                    PDU pdu = newPduInstance();
                     pdu.add(new VariableBinding(current));
                     pdu.setType(PDU.GETNEXT);
                     ResponseEvent<UdpAddress> event = snmp.send(pdu, target);
@@ -191,7 +212,7 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
     }
 
     protected PDU createPdu(int type, List<SnmpAddress> addresses) {
-        PDU pdu = new PDU();
+        PDU pdu = newPduInstance();
         for (SnmpAddress address : addresses) {
             pdu.add(new VariableBinding(new OID(address.getOid())));
         }
@@ -254,5 +275,18 @@ public abstract class AbstractSnmpCollector extends BaseCollector {
             }
         }
         return null;
+    }
+
+    private PDU newPduInstance() {
+        PDU pdu = version == SnmpConstants.version3 ? new ScopedPDU() : new PDU();
+        if (pdu instanceof ScopedPDU scoped) {
+            if (contextNameOctet != null) {
+                scoped.setContextName(contextNameOctet);
+            }
+            if (contextEngineIdOctet != null) {
+                scoped.setContextEngineID(contextEngineIdOctet);
+            }
+        }
+        return pdu;
     }
 }

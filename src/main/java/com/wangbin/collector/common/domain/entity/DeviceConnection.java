@@ -19,7 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 设备连接信息
+ * 璁惧杩炴帴淇℃伅
  */
 @Data
 public class DeviceConnection {
@@ -50,7 +50,7 @@ public class DeviceConnection {
     private Integer timeout = 30000;
     private Integer heartbeatInterval = 30000;
     private Integer heartbeatTimeout = 90000;
-    private Integer subscriptionInterval = 1000; // 订阅间隔
+    private Integer subscriptionInterval = 1000; // 璁㈤槄闂撮殧
     private Integer maxFrameLength = 65535;
     private Integer reconnectDelay = 5000;
     private Integer maxReconnectTimes = 3;
@@ -62,7 +62,7 @@ public class DeviceConnection {
     private String productKey;
     private String deviceSecret;
     private String authToken;
-    //安全策略
+    //瀹夊叏绛栫暐
     private String securityPolicy;
     @JsonDeserialize(using = StringStringMapDeserializer.class)
     private Map<String, String> authParams;
@@ -228,24 +228,82 @@ public class DeviceConnection {
     }
 
     public boolean isValid() {
-        if (connectionType == null || connectionType.isEmpty()) {
+        if (!hasText(connectionType)) {
             return false;
         }
-        String type = connectionType.toUpperCase();
-        switch (type) {
-            case "TCP":
-            case "HTTP":
-            case "MODBUS_TCP":
-            case "COAP":
-            case "SNMP":
-            case "MQTT":
-                return host != null && !host.isEmpty() && port != null && port > 0;
-            case "WEBSOCKET":
-                return url != null && !url.isEmpty();
-            case "MODBUS_RTU":
-            default:
-                return true;
+        return switch (normalizeConnectionType(connectionType)) {
+            case "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP", "BACNET_SC" -> hasUrlOrHostPort();
+            case "MODBUS_TCP" -> hasHostPort();
+            case "SNMP", "IEC104", "IEC61850", "SIEMENS_S7", "MITSUBISHI_MC", "OMRON_FINS", "BACNET_IP", "ETHERNET_IP", "ADS" ->
+                    hasHost();
+            case "KNXNET_IP" -> hasText(getStringConfig("plc4xConnectionString", null)) || hasHost();
+            case "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO" -> hasText(url)
+                    || hasText(getStringConfig("endpointUrl", null))
+                    || hasText(getStringConfig("endpoint", null))
+                    || hasHost();
+            case "OPC_DA" -> isOpcDaConnectionValid();
+            case "CUSTOM_TCP", "CUSTOM_UDP" -> hasHostPort();
+            case "MODBUS_RTU", "BACNET_MSTP", "DLT645_2007", "IEC101" -> true;
+            default -> true;
+        };
+    }
+
+    private boolean isOpcDaConnectionValid() {
+        String bridgeMode = getStringConfig("bridgeMode",
+                getStringConfig("bridge-mode",
+                        getStringConfig("opcDaBridgeMode", "INMEMORY")));
+        if (!"HTTP".equalsIgnoreCase(bridgeMode)) {
+            return true;
         }
+        return hasText(url)
+                || hasText(getStringConfig("bridgeBaseUrl", null))
+                || hasText(getStringConfig("bridge-url", null))
+                || hasText(getStringConfig("opcDaBridgeUrl", null));
+    }
+
+    private boolean hasUrlOrHostPort() {
+        return hasText(url) || hasHostPort();
+    }
+
+    private boolean hasHostPort() {
+        return hasHost() && port != null && port > 0;
+    }
+
+    private boolean hasHost() {
+        return hasText(host);
+    }
+
+    private String normalizeConnectionType(String type) {
+        String normalized = type.toUpperCase().replace("-", "_");
+        return switch (normalized) {
+            case "HTTPS" -> "HTTP";
+            case "WEBSOCKET_SSL" -> "WEBSOCKET";
+            case "MQTT_SSL" -> "MQTT";
+            case "COAP_SSL" -> "COAP";
+            case "SNMP_V1", "SNMP_V2C", "SNMP_V3" -> "SNMP";
+            case "MODBUS_ASCII" -> "MODBUS_RTU";
+            case "S7" -> "SIEMENS_S7";
+            case "MC", "MELSEC_MC" -> "MITSUBISHI_MC";
+            case "FINS", "OMRONFINS" -> "OMRON_FINS";
+            case "BACNET", "BACNETIP", "BACNET/IP" -> "BACNET_IP";
+            case "BACNETMSTP", "BACNET_MSTP", "BACNET_MS_TP", "BACNET-MSTP", "BACNET MSTP" -> "BACNET_MSTP";
+            case "BACNETSC", "BACNET_SC", "BACNET/SC", "BACNET-SC" -> "BACNET_SC";
+            case "EIP", "LOGIX", "AB_ETH" -> "ETHERNET_IP";
+            case "AMS" -> "ADS";
+            case "KNX", "KNXNETIP", "KNX_NET_IP", "KNXNET/IP" -> "KNXNET_IP";
+            case "OPCUA" -> "OPC_UA";
+            case "OPCUA_PLC4X" -> "OPC_UA_PLC4X";
+            case "OPCUA_MILO" -> "OPC_UA_MILO";
+            case "IEC_104" -> "IEC104";
+            case "DLT645", "DL_T_645", "DLT_645_2007" -> "DLT645_2007";
+            case "IEC_101", "IEC60870_5_101" -> "IEC101";
+            case "IEC_61850" -> "IEC61850";
+            default -> normalized;
+        };
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     public boolean isActive() {
@@ -309,7 +367,7 @@ public class DeviceConnection {
     }
 
     /**
-     * 支持 JSON 对象或 JSON 字符串的 Map 反序列化
+     * 鏀寔 JSON 瀵硅薄鎴?JSON 瀛楃涓茬殑 Map 鍙嶅簭鍒楀寲
      */
     public static class StringObjectMapDeserializer extends JsonDeserializer<Map<String, Object>> {
         private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -361,3 +419,4 @@ public class DeviceConnection {
         }
     }
 }
+

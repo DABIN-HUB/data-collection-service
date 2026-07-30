@@ -11,13 +11,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FieldUniquenessValidatorTest {
 
-    private DataPoint createPoint(String pointId, String alias) {
+    private DataPoint createPoint(String pointId, String reportField) {
         DataPoint point = new DataPoint();
         point.setDeviceId("dev-1");
         point.setPointId(pointId);
-        point.setPointAlias(alias);
+        point.setPointAlias(reportField);
         Map<String, Object> config = new HashMap<>();
         config.put("reportEnabled", true);
+        config.put("reportField", reportField);
         point.setAdditionalConfig(config);
         return point;
     }

@@ -7,10 +7,12 @@ class DeviceScheduleInfo {
 
     private final String deviceId;
     private final long startTime;
+    private final long generation;
     private volatile boolean running;
 
-    DeviceScheduleInfo(String deviceId, boolean running) {
+    DeviceScheduleInfo(String deviceId, long generation, boolean running) {
         this.deviceId = deviceId;
+        this.generation = generation;
         this.running = running;
         this.startTime = System.currentTimeMillis();
     }
@@ -21,6 +23,10 @@ class DeviceScheduleInfo {
 
     long getStartTime() {
         return startTime;
+    }
+
+    long getGeneration() {
+        return generation;
     }
 
     boolean isRunning() {

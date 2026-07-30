@@ -1,92 +1,231 @@
 package com.wangbin.collector.core.collector.protocol.custom;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.custom.codec.CustomFrameCodec;
+import com.wangbin.collector.core.collector.protocol.custom.codec.CustomRequestEncoder;
+import com.wangbin.collector.core.collector.protocol.custom.codec.CustomValueCodec;
+import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.CustomExchangeAdapter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
- * 自定义TCP采集器的占位实现。
- * <p>
- * 该实现主要用于确保工厂创建时不会出现类型转换异常，
- * 实际采集逻辑需要根据协议要求在此类中补充。
- * </p>
+ * 基于受控帧配置的自定义 TCP/UDP 请求响应采集器。
  */
 @Slf4j
-public class CustomProtocolCollector extends BaseCollector {
+public class CustomProtocolCollector extends ConnectionBackedCollector {
+
+    private CustomExchangeAdapter exchangeAdapter;
+    private ConnectionAdapter<?> connectionAdapter;
+    private DeviceConnection connectionConfig;
+    private long timeoutMs;
 
     @Override
     public String getCollectorType() {
-        return "CUSTOM_PTL";
+        return resolveProtocolType();
     }
 
     @Override
     public String getProtocolType() {
-        return "CUSTOM_PTL";
+        return resolveProtocolType();
     }
 
     @Override
     protected void doConnect() {
-        log.info("Custom TCP collector connected: {}", deviceInfo.getDeviceId());
+        DeviceConnection desiredConfig = requireConnectionConfig();
+        ConnectionAdapter<?> createdAdapter = createManagedConnection(desiredConfig);
+        if (!(createdAdapter instanceof CustomExchangeAdapter customAdapter)) {
+            removeManagedConnection("自定义协议");
+            throw new IllegalStateException("自定义协议连接适配器类型不匹配");
+        }
+        try {
+            connectManagedConnection();
+            connectionAdapter = createdAdapter;
+            exchangeAdapter = customAdapter;
+            connectionConfig = createdAdapter.getConnectionConfig();
+            timeoutMs = resolveTimeout(connectionConfig);
+            log.info("自定义协议采集器已连接: deviceId={}, protocolType={}",
+                    deviceInfo.getDeviceId(), resolveProtocolType());
+        } catch (RuntimeException exception) {
+            removeManagedConnection("自定义协议");
+            throw exception;
+        }
     }
 
     @Override
     protected void doDisconnect() {
-        log.info("Custom TCP collector disconnected: {}", deviceInfo.getDeviceId());
+        removeManagedConnection("自定义协议");
+        exchangeAdapter = null;
+        connectionAdapter = null;
+        connectionConfig = null;
+        log.info("自定义协议采集器已断开: deviceId={}, protocolType={}",
+                deviceInfo.getDeviceId(), resolveProtocolType());
     }
 
     @Override
-    protected Object doReadPoint(DataPoint point) {
-        throw unsupported("readPoint");
+    protected Object doReadPoint(DataPoint point) throws Exception {
+        byte[] request = CustomRequestEncoder.encodeRead(point, requireConfig());
+        byte[] response = requireExchangeAdapter().exchange(request, timeoutMs);
+        return CustomValueCodec.decode(response, point);
     }
 
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-        throw unsupported("readPoints");
+        Map<String, Object> results = new LinkedHashMap<>();
+        if (points == null) {
+            return results;
+        }
+        for (DataPoint point : points) {
+            if (point == null) {
+                continue;
+            }
+            try {
+                results.put(resolvePointCacheKey(point), doReadPoint(point));
+            } catch (Exception exception) {
+                log.warn("自定义协议点位读取失败: deviceId={}, pointId={}",
+                        deviceInfo.getDeviceId(), point.getPointId(), exception);
+                results.put(resolvePointCacheKey(point), null);
+            }
+        }
+        return results;
     }
 
     @Override
-    protected boolean doWritePoint(DataPoint point, Object value) {
-        throw unsupported("writePoint");
+    protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
+        DeviceConnection config = requireConfig();
+        byte[] request = CustomRequestEncoder.encodeWrite(point, value, config);
+        boolean expectResponse = point.getAdditionalConfig("writeExpectResponse",
+                config.getBool("writeExpectResponse", true));
+        if (!expectResponse) {
+            requireExchangeAdapter().sendOnly(request);
+            return true;
+        }
+        byte[] response = requireExchangeAdapter().exchange(request, timeoutMs);
+        String successHex = point.getAdditionalConfig("writeSuccessHex",
+                config.getString("writeSuccessHex", null));
+        if (successHex == null || successHex.isBlank()) {
+            return response != null;
+        }
+        return CustomFrameCodec.encodeHex(response)
+                .startsWith(successHex.replaceAll("[^0-9A-Fa-f]", "").toUpperCase(Locale.ROOT));
     }
 
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
-        throw unsupported("writePoints");
+        Map<String, Boolean> results = new LinkedHashMap<>();
+        if (points == null) {
+            return results;
+        }
+        for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+            DataPoint point = entry.getKey();
+            if (point == null) {
+                continue;
+            }
+            try {
+                results.put(resolvePointCacheKey(point), doWritePoint(point, entry.getValue()));
+            } catch (Exception exception) {
+                log.warn("自定义协议点位写入失败: deviceId={}, pointId={}",
+                        deviceInfo.getDeviceId(), point.getPointId(), exception);
+                results.put(resolvePointCacheKey(point), false);
+            }
+        }
+        return results;
     }
 
     @Override
     protected void doSubscribe(List<DataPoint> points) {
-        throw unsupported("subscribe");
+        throw new UnsupportedOperationException("自定义请求响应协议暂不支持主动订阅");
     }
 
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
-        throw unsupported("unsubscribe");
+        // 当前自定义协议没有主动订阅资源，无需释放额外句柄。
     }
 
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
-        return Collections.emptyMap();
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("protocol", resolveProtocolType());
+        status.put("implemented", true);
+        status.put("writable", true);
+        status.put("subscribable", false);
+        status.put("transport", resolveProtocolType().endsWith("UDP") ? "UDP" : "TCP");
+        status.put("frameMode", connectionConfig != null
+                ? connectionConfig.getString("frameMode", resolveProtocolType().endsWith("UDP") ? "DATAGRAM" : "LENGTH_FIELD")
+                : null);
+        status.put("timeoutMs", timeoutMs);
+        status.put("connectionStatistics", connectionAdapter != null
+                ? connectionAdapter.getStatistics()
+                : Collections.emptyMap());
+        return status;
     }
 
     @Override
-    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
-        throw unsupported("executeCommand");
+    protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
+        if (!"RAW_EXCHANGE".equalsIgnoreCase(command)) {
+            throw new IllegalArgumentException("不支持的自定义协议命令: " + command);
+        }
+        Map<String, Object> safeParams = params != null ? params : Collections.emptyMap();
+        byte[] request = resolveRawCommandRequest(safeParams);
+        byte[] response = requireExchangeAdapter().exchange(request, timeoutMs);
+        return Map.of(
+                "responseHex", CustomFrameCodec.encodeHex(response),
+                "responseText", new String(response, StandardCharsets.UTF_8));
     }
 
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.debug("Custom TCP collector buildReadPlans noop for device {}", deviceId);
+        log.debug("自定义协议按点位请求响应执行，不生成跨点位批量计划: deviceId={}, pointCount={}",
+                deviceId, points == null ? 0 : points.size());
     }
 
-    private UnsupportedOperationException unsupported(String operation) {
-        String message = String.format("CUSTOM_TCP collector does not implement %s yet", operation);
-        log.warn(message);
-        return new UnsupportedOperationException(message);
+    private byte[] resolveRawCommandRequest(Map<String, Object> params) {
+        Object requestHex = params.get("requestHex");
+        if (requestHex != null && !requestHex.toString().isBlank()) {
+            return CustomFrameCodec.decodeHex(requestHex.toString());
+        }
+        Object requestText = params.get("requestText");
+        if (requestText != null) {
+            return requestText.toString().getBytes(StandardCharsets.UTF_8);
+        }
+        throw new IllegalArgumentException("RAW_EXCHANGE必须提供requestHex或requestText");
     }
 
+    private String resolveProtocolType() {
+        if (deviceInfo != null && deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
+            return deviceInfo.getProtocolType().trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        }
+        return "CUSTOM_TCP";
+    }
+
+    private CustomExchangeAdapter requireExchangeAdapter() {
+        if (exchangeAdapter == null) {
+            throw new IllegalStateException("自定义协议连接尚未建立");
+        }
+        return exchangeAdapter;
+    }
+
+    private DeviceConnection requireConfig() {
+        if (connectionConfig == null) {
+            throw new IllegalStateException("自定义协议连接配置不存在");
+        }
+        return connectionConfig;
+    }
+
+    private long resolveTimeout(DeviceConnection config) {
+        Integer configured = config.getReadTimeout();
+        if (configured != null && configured > 0) {
+            return configured;
+        }
+        configured = config.getTimeout();
+        return configured != null && configured > 0 ? configured : 5_000L;
+    }
 }

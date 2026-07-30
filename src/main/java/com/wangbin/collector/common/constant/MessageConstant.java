@@ -14,6 +14,13 @@ public class MessageConstant {
     public static final String MESSAGE_TYPE_CONFIG_PUSH = "thing.config.push";//配置推送
     public static final String MESSAGE_TYPE_OTA_UPGRADE = "thing.ota.upgrade";//OTA升级
     public static final String MESSAGE_TYPE_OTA_PROGRESS = "thing.ota.progress";//OTA进度上报
+    public static final String MESSAGE_TYPE_TOPO_ADD = "thing.topo.add";//添加拓扑
+    public static final String MESSAGE_TYPE_TOPO_DELETE = "thing.topo.delete";//删除拓扑
+    public static final String MESSAGE_TYPE_TOPO_GET = "thing.topo.get";//获取拓扑
+    public static final String MESSAGE_TYPE_TOPO_CHANGE = "thing.topo.change";//拓扑变更
+    public static final String MESSAGE_TYPE_AUTH_REGISTER = "thing.auth.register";//设备动态注册
+    public static final String MESSAGE_TYPE_AUTH_REGISTER_SUB = "thing.auth.register.sub";//子设备动态注册
+    public static final String MESSAGE_TYPE_PROPERTY_PACK_POST = "thing.event.property.pack.post";//网关批量上报
     public static final String MESSAGE_TYPE_AUTH = "auth";//设备认证
 
     // 消息版本
@@ -29,6 +36,7 @@ public class MessageConstant {
     public static final String FIELD_PASSWORD = "password";
     public static final String FIELD_PARAMS = "params";
     public static final String FIELD_MESSAGE_ID = "messageId";
+    public static final String FIELD_REQUEST_ID = "requestId";
     public static final String FIELD_VERSION = "version";
     public static final String FIELD_METHOD = "method";
 
@@ -38,14 +46,20 @@ public class MessageConstant {
     public static final int MAX_QUEUE_SIZE = 10000;
 
     private static final List<String> ACK_METHODS = List.of(
-            MESSAGE_TYPE_STATE_UPDATE,
             MESSAGE_TYPE_PROPERTY_POST,
             MESSAGE_TYPE_PROPERTY_SET,
             MESSAGE_TYPE_EVENT_POST,
             MESSAGE_TYPE_SERVICE_INVOKE,
             MESSAGE_TYPE_CONFIG_PUSH,
             MESSAGE_TYPE_OTA_UPGRADE,
-            MESSAGE_TYPE_OTA_PROGRESS
+            MESSAGE_TYPE_OTA_PROGRESS,
+            MESSAGE_TYPE_TOPO_ADD,
+            MESSAGE_TYPE_TOPO_DELETE,
+            MESSAGE_TYPE_TOPO_GET,
+            MESSAGE_TYPE_TOPO_CHANGE,
+            MESSAGE_TYPE_AUTH_REGISTER,
+            MESSAGE_TYPE_AUTH_REGISTER_SUB,
+            MESSAGE_TYPE_PROPERTY_PACK_POST
     );
 
     /**
@@ -67,3 +81,5 @@ public class MessageConstant {
                 .collect(Collectors.joining());
     }
 }
+
+

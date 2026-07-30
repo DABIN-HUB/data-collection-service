@@ -4,9 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONPath;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.config.CollectorProperties;
-import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttReceivedMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +29,7 @@ import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUt
 import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUtils.asInt;
 
 @Slf4j
-public class MqttCollector extends BaseCollector {
+public class MqttCollector extends ConnectionBackedCollector {
 
     private CollectorProperties.MqttConfig defaultConfig;
     private MqttConnectionAdapter mqttConnection;
@@ -57,15 +56,7 @@ public class MqttCollector extends BaseCollector {
     @Override
     protected void doConnect() throws Exception {
         initConfig();
-        if (connectionManager == null) {
-            throw new IllegalStateException("连接管理器未初始化");
-        }
-        ConnectionAdapter adapter = connectionManager.createConnection(deviceInfo);
-        connectionManager.connect(deviceInfo.getDeviceId());
-        if (!(adapter instanceof MqttConnectionAdapter mqttAdapter)) {
-            throw new IllegalStateException("MQTT连接适配器类型不匹配");
-        }
-        this.mqttConnection = mqttAdapter;
+        this.mqttConnection = createAndConnectAdapter(MqttConnectionAdapter.class, "MQTT");
         this.mqttConnection.addMessageListener(inboundListener);
         for (MqttTopicSubscription subscription : getDefaultSubscriptions()) {
             ensureTopicSubscription(subscription.getTopic(), subscription.getQos());
@@ -78,9 +69,7 @@ public class MqttCollector extends BaseCollector {
         if (mqttConnection != null) {
             mqttConnection.removeMessageListener(inboundListener);
         }
-        if (connectionManager != null && deviceInfo != null) {
-            connectionManager.removeConnection(deviceInfo.getDeviceId());
-        }
+        removeManagedConnection("MQTT");
         mqttConnection = null;
         topicBindings.clear();
         topicRefCount.clear();
@@ -477,6 +466,7 @@ public class MqttCollector extends BaseCollector {
                 if (converted != null) {
                     latestValues.put(pointId, converted);
                     latestTimestamps.put(pointId, System.currentTimeMillis());
+                    ingestPushedValue(point, converted);
                 }
             } catch (Exception ex) {
                 log.warn("解析 MQTT 消息失败，pointId={}, topic={}", pointId, topic, ex);

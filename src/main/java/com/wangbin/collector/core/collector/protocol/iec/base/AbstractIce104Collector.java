@@ -1,26 +1,29 @@
 package com.wangbin.collector.core.collector.protocol.iec.base;
 
+import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.iec.util.Iec104Utils;
 import com.wangbin.collector.core.config.CollectorProperties;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.*;
 import org.openmuc.j60870.ie.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 抽象的IEC 104采集器
+ * IEC 104 protocol collector base class.
  */
 @Slf4j
-public abstract class AbstractIce104Collector extends BaseCollector {
+public abstract class AbstractIce104Collector extends ConnectionBackedCollector {
 
     @Getter
     protected Connection connection;
@@ -38,20 +41,23 @@ public abstract class AbstractIce104Collector extends BaseCollector {
     protected final Map<Iec104Key, CacheEntry> valueCache = new ConcurrentHashMap<>();
     protected final Map<InterrogationKey, CompletableFuture<Void>> pendingInterrogations = new ConcurrentHashMap<>();
     protected ScheduledExecutorService interrogationScheduler;
+    private ScheduledFuture<?> generalInterrogationTask;
 
     private static final AtomicInteger TIMEOUT_THREAD_COUNTER = new AtomicInteger(0);
-    private final ScheduledExecutorService timeoutScheduler = Executors.newScheduledThreadPool(1, r -> {
-        Thread thread = new Thread(r, "iec104-timeout-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
-        thread.setDaemon(true);
-        thread.setUncaughtExceptionHandler((t, e) ->
-                log.warn("IEC104 timeout scheduler thread {} failed", t.getName(), e));
-        return thread;
-    });
-    private final long defaultTimeout = 5000;
-
+    private static final ScheduledExecutorService DEFAULT_PROTOCOL_SCHEDULER =
+            Executors.newScheduledThreadPool(2, r -> {
+                Thread thread = new Thread(r, "iec104-protocol-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
+                thread.setDaemon(true);
+                thread.setUncaughtExceptionHandler((t, e) ->
+                        log.warn("IEC104 protocol scheduler thread {} failed", t.getName(), e));
+                return thread;
+            });
+    @Autowired(required = false)
+    @Qualifier("timeSliceScheduler")
+    private ScheduledExecutorService protocolScheduler;
     @PreDestroy
     protected void shutdownSchedulers() {
-        timeoutScheduler.shutdownNow();
+        cancelGeneralInterrogationTask();
     }
 
     protected void initIec104Config(DeviceInfo deviceInfo) {
@@ -63,64 +69,30 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         this.port = deviceInfo.getPort() != null ? deviceInfo.getPort() : 2404;
 
         DeviceConnection connectionConfig = requireConnectionConfig();
-        this.commonAddress = (Integer) connectionConfig.getProperty("slaveId");
-        this.timeout = connectionConfig.getTimeout();
+        this.commonAddress = resolveCommonAddress(connectionConfig);
+        this.timeout = resolveTimeout(connectionConfig);
         this.timeTag = true;
         if (interrogationScheduler == null) {
-            interrogationScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "iec104-interrogation");
-                t.setDaemon(true);
-                return t;
-            });
-        }
-    }
-
-    public Connection connect(ConnectionEventListener listener) throws Exception {
-        try {
-            InetAddress address = InetAddress.getByName(host);
-            ClientConnectionBuilder builder = new ClientConnectionBuilder(address);
-
-            connection = builder
-                    .setPort(port)
-                    .setConnectionTimeout(timeout)
-                    .setConnectionEventListener(listener)
-                    .build();
-            Thread.sleep(200);
-            connection.startDataTransfer();
-            log.info("IEC 104连接建立成功: {}:{}", host, port);
-
-            maybeTriggerGeneralInterrogation("connect");
-            startGeneralInterrogationLoop();
-            return connection;
-        } catch (Exception e) {
-            log.error("IEC 104连接失败: {}:{}", host, port, e);
-            throw new Exception("IEC 104连接失败: " + e.getMessage(), e);
+            interrogationScheduler = resolveProtocolScheduler();
         }
     }
 
     @Override
     public void doDisconnect() {
-        if (connection != null) {
-            try {
-                if (!connection.isStopped()) {
-                    connection.stopDataTransfer();
-                }
-                connection.close();
-                log.info("IEC 104连接已断开");
-            } catch (Exception e) {
-                log.error("断开IEC 104连接失败", e);
-            } finally {
-                connection = null;
-            }
-        }
+        clearProtocolState();
+    }
+
+    protected void clearProtocolState() {
+        dataTransferStopped = true;
         valueCache.clear();
+        pendingRequests.values()
+                .forEach(list -> list.forEach(f -> f.completeExceptionally(new IOException("connection closed"))));
+        pendingRequests.clear();
         pendingInterrogations.values()
                 .forEach(f -> f.completeExceptionally(new IOException("connection closed")));
         pendingInterrogations.clear();
-        if (interrogationScheduler != null) {
-            interrogationScheduler.shutdownNow();
-            interrogationScheduler = null;
-        }
+        cancelGeneralInterrogationTask();
+        interrogationScheduler = null;
     }
 
     protected Map<String, Object> handleResponse(Connection conn, ASdu asdu) {
@@ -150,9 +122,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                 return result;
             }
 
-            boolean isResponse =
-                    cot == CauseOfTransmission.REQUEST ||
-                            cot == CauseOfTransmission.INTERROGATED_BY_STATION;
+            boolean isResponse = isResponseCause(cot);
 
             for (InformationObject io : ios) {
                 int ioa = io.getInformationObjectAddress();
@@ -162,12 +132,13 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                 if (elements != null && elements.length > 0) {
                     value = parseValue(type, elements[0]);
                 }
+                Integer typeId = Iec104Utils.resolveTypeId(type);
                 Object normalized = normalizeValue(value);
-                cacheValue(commonAddr, ioa, normalized);
+                cacheValue(commonAddr, typeId, ioa, normalized);
 
-                completeRequest(commonAddr, ioa, normalized);
+                completeRequest(commonAddr, typeId, ioa, normalized);
                 if (!isResponse) {
-                    handleSpontaneous(commonAddr, ioa, type, normalized, asdu);
+                    handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
                 }
 
                 result.put(String.valueOf(ioa), normalized);
@@ -185,18 +156,45 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         pendingRequests.clear();
     }
 
-    private void cacheValue(int commonAddress, int ioa, Object value) {
+    private void cacheValue(int commonAddress, Integer typeId, int ioa, Object value) {
         if (value == null) {
             return;
         }
-        valueCache.put(new Iec104Key(commonAddress, ioa), new CacheEntry(value, System.currentTimeMillis()));
+        CacheEntry entry = new CacheEntry(value, System.currentTimeMillis());
+        if (typeId != null) {
+            valueCache.put(new Iec104Key(commonAddress, typeId, ioa), entry);
+        }
+        valueCache.put(new Iec104Key(commonAddress, null, ioa), entry);
     }
 
-    protected Object getCachedValue(int commonAddress, int ioa) {
-        CacheEntry entry = valueCache.get(new Iec104Key(commonAddress, ioa));
+    protected Object getCachedValue(int commonAddress, Integer typeId, int ioa) {
+        CacheEntry entry = getCacheEntry(commonAddress, typeId, ioa);
         if (entry == null) {
             return null;
         }
+        return resolveCacheValue(commonAddress, typeId, ioa, entry);
+    }
+
+    @Override
+    protected void checkConnection() {
+        super.checkConnection();
+        if (connection == null) {
+            throw new IllegalStateException("IEC104 connection client is unavailable");
+        }
+        if (dataTransferStopped) {
+            String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
+            throw new IllegalStateException("IEC104 data transfer is stopped: " + deviceId);
+        }
+    }
+
+    private CacheEntry getCacheEntry(int commonAddress, Integer typeId, int ioa) {
+        if (typeId != null) {
+            return valueCache.get(new Iec104Key(commonAddress, typeId, ioa));
+        }
+        return valueCache.get(new Iec104Key(commonAddress, null, ioa));
+    }
+
+    private Object resolveCacheValue(int commonAddress, Integer typeId, int ioa, CacheEntry entry) {
         long ttl = iec104Config != null ? iec104Config.getCacheTtl() : 0;
         if (ttl <= 0) {
             return entry.value();
@@ -204,7 +202,10 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         if (System.currentTimeMillis() - entry.timestamp() <= ttl) {
             return entry.value();
         }
-        valueCache.remove(new Iec104Key(commonAddress, ioa), entry);
+        if (typeId != null) {
+            valueCache.remove(new Iec104Key(commonAddress, typeId, ioa), entry);
+        }
+        valueCache.remove(new Iec104Key(commonAddress, null, ioa), entry);
         return null;
     }
 
@@ -212,11 +213,11 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         if (asdu.getTypeIdentification() == ASduType.C_IC_NA_1 &&
                 asdu.getCauseOfTransmission() == CauseOfTransmission.ACTIVATION_TERMINATION) {
 
-            log.info("IEC104 总召完成");
+            log.info("IEC104 interrogation finished");
         }
     }
 
-    protected void handleSpontaneous(int commonAddress, int ioa, ASduType type, Object value, ASdu asdu) {
+    protected void handleSpontaneous(int commonAddress, Integer typeId, int ioa, ASduType type, Object value, ASdu asdu) {
         log.debug("IEC104 spontaneous: ioa={}, type={}, value={}",
                 ioa, type, value);
     }
@@ -229,14 +230,17 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         InformationElement ie = ies[0];
 
         return switch (type) {
-            case M_SP_NA_1, M_SP_TB_1 -> ((IeSinglePointWithQuality) ie).isOn();
-            case M_DP_NA_1, M_DP_TB_1 -> ((IeDoublePointWithQuality) ie)
+            case M_SP_NA_1, M_SP_TA_1, M_SP_TB_1 -> ((IeSinglePointWithQuality) ie).isOn();
+            case M_DP_NA_1, M_DP_TA_1, M_DP_TB_1 -> ((IeDoublePointWithQuality) ie)
                     .getDoublePointInformation();
-            case M_ME_NA_1, M_ME_TA_1 -> ((IeNormalizedValue) ie)
+            case M_ST_NA_1, M_ST_TA_1, M_ST_TB_1 -> ((IeValueWithTransientState) ie).getValue();
+            case M_BO_NA_1, M_BO_TA_1, M_BO_TB_1 -> ((IeBinaryStateInformation) ie).getValue();
+            case M_ME_NA_1, M_ME_TA_1, M_ME_TD_1, M_ME_ND_1 -> ((IeNormalizedValue) ie)
                     .getUnnormalizedValue();
-            case M_ME_NB_1, M_ME_TB_1 -> ((IeScaledValue) ie)
+            case M_ME_NB_1, M_ME_TB_1, M_ME_TE_1 -> ((IeScaledValue) ie)
                     .getUnnormalizedValue();
-            case M_ME_NC_1, M_ME_TC_1 -> ((IeShortFloat) ie).getValue();
+            case M_ME_NC_1, M_ME_TC_1, M_ME_TF_1 -> ((IeShortFloat) ie).getValue();
+            case M_IT_NA_1, M_IT_TA_1, M_IT_TB_1 -> ((IeBinaryCounterReading) ie).getCounterReading();
             default -> {
                 log.debug("Unsupported ASDU type: {}", type);
                 yield ie.toString();
@@ -251,17 +255,34 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                 cot == CauseOfTransmission.UNKNOWN_CAUSE_OF_TRANSMISSION;
     }
 
-    private void completeRequest(int commonAddress, int ioAddress, Object value) {
-        Iec104Key key = new Iec104Key(commonAddress, ioAddress);
+    private boolean isResponseCause(CauseOfTransmission cot) {
+        if (cot == null) {
+            return false;
+        }
+        if (cot == CauseOfTransmission.REQUEST || cot == CauseOfTransmission.INTERROGATED_BY_STATION) {
+            return true;
+        }
+        String name = cot.name();
+        return name.startsWith("INTERROGATED_BY_GROUP_") || name.startsWith("REQUESTED_BY_");
+    }
+
+    private void completeRequest(int commonAddress, Integer typeId, int ioAddress, Object value) {
+        if (typeId != null) {
+            completePendingKey(new Iec104Key(commonAddress, typeId, ioAddress), value);
+        }
+        completePendingKey(new Iec104Key(commonAddress, null, ioAddress), value);
+    }
+
+    private void completePendingKey(Iec104Key key, Object value) {
         CopyOnWriteArrayList<CompletableFuture<Object>> futures = pendingRequests.remove(key);
         if (futures != null) {
             futures.forEach(f -> f.complete(value));
         }
     }
 
-    protected CompletableFuture<Object> registerPendingRequest(int commonAddress, int ioAddress) {
+    protected CompletableFuture<Object> registerPendingRequest(int commonAddress, Integer typeId, int ioAddress) {
         CompletableFuture<Object> future = new CompletableFuture<>();
-        Iec104Key key = new Iec104Key(commonAddress, ioAddress);
+        Iec104Key key = new Iec104Key(commonAddress, typeId, ioAddress);
         pendingRequests.compute(key, (k, list) -> {
             if (list == null) {
                 list = new CopyOnWriteArrayList<>();
@@ -270,12 +291,13 @@ public abstract class AbstractIce104Collector extends BaseCollector {
             return list;
         });
 
-        timeoutScheduler.schedule(() -> {
+        resolveProtocolScheduler().schedule(() -> {
             if (future.completeExceptionally(
-                    new TimeoutException("IEC104 wait timeout for ca/ioa=" + commonAddress + "/" + ioAddress))) {
+                    new TimeoutException("IEC104 wait timeout for ca/type/ioa="
+                            + commonAddress + "/" + (typeId != null ? typeId : "*") + "/" + ioAddress))) {
                 removePendingFuture(key, future);
             }
-        }, defaultTimeout, TimeUnit.MILLISECONDS);
+        }, requestTimeoutMillis(), TimeUnit.MILLISECONDS);
         return future;
     }
 
@@ -313,7 +335,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
                     future.complete(null);
                     pendingInterrogations.remove(key);
                 }
-                log.info("IEC104 interrogation qualifier {} finished for CA {}", qualifier, commonAddr);
+                log.info("IEC104 interrogation finished");
                 break;
             default:
                 log.debug("IEC104 interrogation cot={} qualifier={} ca={}", cot, qualifier, commonAddr);
@@ -336,13 +358,19 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         return 20;
     }
 
-    private void maybeTriggerGeneralInterrogation(String reason) {
+    protected void onConnectionReady() {
+        dataTransferStopped = false;
+        maybeTriggerGeneralInterrogation("connect");
+        startGeneralInterrogationLoop();
+    }
+
+    protected void maybeTriggerGeneralInterrogation(String reason) {
         if (iec104Config != null && iec104Config.isGeneralInterrogationOnConnect()) {
             triggerInterrogation(commonAddress, 20, reason);
         }
     }
 
-    private void startGeneralInterrogationLoop() {
+    protected void startGeneralInterrogationLoop() {
         if (iec104Config == null || interrogationScheduler == null) {
             return;
         }
@@ -350,8 +378,9 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         if (interval <= 0) {
             return;
         }
-        interrogationScheduler.scheduleAtFixedRate(() -> {
-            if (!isConnected()) {
+        cancelGeneralInterrogationTask();
+        generalInterrogationTask = interrogationScheduler.scheduleAtFixedRate(() -> {
+            if (!isConnected() || connection == null || dataTransferStopped) {
                 return;
             }
             triggerInterrogation(commonAddress, 20, "scheduled");
@@ -367,7 +396,7 @@ public abstract class AbstractIce104Collector extends BaseCollector {
     }
 
     private void triggerInterrogation(int targetCommonAddress, int qualifier, String reason) {
-        if (connection == null) {
+        if (connection == null || dataTransferStopped) {
             return;
         }
         InterrogationKey key = new InterrogationKey(targetCommonAddress, qualifier);
@@ -386,6 +415,21 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         });
     }
 
+    private ScheduledExecutorService resolveProtocolScheduler() {
+        return ThreadPoolFallbacks.preferScheduler(
+                protocolScheduler,
+                DEFAULT_PROTOCOL_SCHEDULER,
+                "AbstractIce104Collector",
+                "iec104-protocol-shared");
+    }
+
+    private void cancelGeneralInterrogationTask() {
+        if (generalInterrogationTask != null) {
+            generalInterrogationTask.cancel(true);
+            generalInterrogationTask = null;
+        }
+    }
+
     protected Optional<Integer> resolveSingleInterrogationQualifier(String raw) {
         if (raw == null || raw.isEmpty()) {
             return Optional.empty();
@@ -397,9 +441,41 @@ public abstract class AbstractIce104Collector extends BaseCollector {
         }
     }
 
-    public static record Iec104Key(int commonAddress, int ioAddress) {}
+    private int resolveCommonAddress(DeviceConnection connectionConfig) {
+        Integer configured = connectionConfig != null ? connectionConfig.getInt("commonAddress", null) : null;
+        if (configured == null && connectionConfig != null) {
+            configured = connectionConfig.getInt("slaveId", null);
+        }
+        if (configured != null && configured > 0) {
+            return configured;
+        }
+        return iec104Config != null && iec104Config.getCommonAddress() > 0
+                ? iec104Config.getCommonAddress()
+                : 1;
+    }
+
+    private int resolveTimeout(DeviceConnection connectionConfig) {
+        Integer configuredTimeout = connectionConfig != null ? connectionConfig.getTimeout() : null;
+        if (configuredTimeout == null || configuredTimeout <= 0) {
+            configuredTimeout = connectionConfig != null ? connectionConfig.getReadTimeout() : null;
+        }
+        if (configuredTimeout != null && configuredTimeout > 0) {
+            return configuredTimeout;
+        }
+        return iec104Config != null && iec104Config.getTimeout() > 0
+                ? iec104Config.getTimeout()
+                : 5000;
+    }
+
+    protected long requestTimeoutMillis() {
+        return timeout > 0 ? timeout : 5000L;
+    }
+
+    public static record Iec104Key(int commonAddress, Integer typeId, int ioAddress) {}
 
     protected record CacheEntry(Object value, long timestamp) {}
 
     public static record InterrogationKey(int commonAddress, int qualifier) {}
 }
+
+

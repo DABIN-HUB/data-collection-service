@@ -35,7 +35,8 @@ public class CacheConfiguration {
      * 本地缓存管理器（可选，如果你还需要Spring的CacheManager）
      */
     @Bean("springLocalCacheManager")
-    @ConditionalOnProperty(name = "collector.cache.type", havingValue = "redis", matchIfMissing = true)
+    @ConditionalOnProperty(name = "collector.cache.type",
+            havingValue = CacheMode.LOCAL_VALUE, matchIfMissing = true)
     public CacheManager springLocalCacheManager() {
         com.github.benmanes.caffeine.cache.Cache<Object, Object> cache = Caffeine.newBuilder()
                 .initialCapacity(100)
@@ -56,7 +57,7 @@ public class CacheConfiguration {
      * Redis缓存管理器（可选，如果你还需要Spring的CacheManager）
      */
     @Bean("springRedisCacheManager")
-    @ConditionalOnProperty(name = "collector.cache.type", havingValue = "local")
+    @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.REDIS_VALUE)
     public CacheManager springRedisCacheManager(
             RedisConnectionFactory connectionFactory,
             ObjectMapper objectMapper) {
@@ -76,6 +77,12 @@ public class CacheConfiguration {
                 .cacheDefaults(defaultConfig)
                 .transactionAware()
                 .build();
+    }
+
+    @Bean("springMultiLevelCacheManager")
+    @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.MULTI_LEVEL_VALUE)
+    public CacheManager springMultiLevelCacheManager() {
+        return springLocalCacheManager();
     }
 }
 

@@ -2,6 +2,7 @@ package com.wangbin.collector.core.cache.manager;
 
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,7 @@ import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -17,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("redisCacheManager")
+@ConditionalOnExpression("'${collector.cache.type:local}' != 'local'")
 public class RedisCacheManager extends AbstractCacheManager {
 
     @Autowired
@@ -115,13 +118,15 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected int doDeleteByPattern(String pattern) throws Exception {
         try {
-            Set<String> keys = redisTemplate.keys(buildRedisPattern(pattern));
-            if (keys == null || keys.isEmpty()) {
-                return 0;
-            }
-
-            Long deleted = redisTemplate.delete(keys);
-            return deleted != null ? deleted.intValue() : 0;
+            String redisPattern = buildRedisPattern(pattern);
+            final int[] deletedCount = {0};
+            scanKeysBatch(redisPattern, batchKeys -> {
+                Long deleted = redisTemplate.delete(batchKeys);
+                if (deleted != null) {
+                    deletedCount[0] += deleted.intValue();
+                }
+            });
+            return deletedCount[0];
         } catch (Exception e) {
             log.error("Redis模式删除失败: pattern={}", pattern, e);
             throw e;
@@ -193,10 +198,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     protected void doClear() throws Exception {
         try {
             String pattern = keyPrefix + "*";
-            Set<String> keys = redisTemplate.keys(pattern);
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-            }
+            scanKeysBatch(pattern, redisTemplate::delete);
         } catch (Exception e) {
             log.error("Redis清空缓存失败", e);
             throw e;
@@ -207,8 +209,9 @@ public class RedisCacheManager extends AbstractCacheManager {
     protected long doSize() throws Exception {
         try {
             String pattern = keyPrefix + "*";
-            Set<String> keys = redisTemplate.keys(pattern);
-            return keys != null ? keys.size() : 0;
+            final long[] count = {0L};
+            scanKeysBatch(pattern, keys -> count[0] += keys.size());
+            return count[0];
         } catch (Exception e) {
             log.error("Redis获取缓存大小失败", e);
             throw e;
@@ -223,19 +226,13 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected Set<CacheKey> doKeys(String pattern) throws Exception {
         try {
-            Set<String> redisKeys = redisTemplate.keys(buildRedisPattern(pattern));
-            if (redisKeys == null || redisKeys.isEmpty()) {
-                return Collections.emptySet();
-            }
-
             Set<CacheKey> cacheKeys = new HashSet<>();
-            for (String redisKey : redisKeys) {
-                // 移除前缀，还原为原始key
-                String originalKey = redisKey.substring(keyPrefix.length());
-                CacheKey cacheKey = new CacheKey(originalKey, 0);
-                cacheKeys.add(cacheKey);
-            }
-
+            scanKeysBatch(buildRedisPattern(pattern), redisKeys -> {
+                for (String redisKey : redisKeys) {
+                    String originalKey = redisKey.substring(keyPrefix.length());
+                    cacheKeys.add(new CacheKey(originalKey, 0));
+                }
+            });
             return cacheKeys;
         } catch (Exception e) {
             log.error("Redis获取缓存键失败: pattern={}", pattern, e);
@@ -289,15 +286,12 @@ public class RedisCacheManager extends AbstractCacheManager {
             return Collections.emptyMap();
         }
 
+        List<T> values = pipelineGet(keys, type);
         Map<String, T> result = new HashMap<>();
-        for (String key : keys) {
-            try {
-                T value = (T) redisTemplate.opsForValue().get(buildRedisKey(new CacheKey(key)));
-                if (value != null) {
-                    result.put(key, value);
-                }
-            } catch (Exception e) {
-                log.error("Redis批量获取失败: key={}", key, e);
+        for (int i = 0; i < keys.size() && i < values.size(); i++) {
+            T value = values.get(i);
+            if (value != null) {
+                result.put(keys.get(i), value);
             }
         }
 
@@ -360,6 +354,27 @@ public class RedisCacheManager extends AbstractCacheManager {
         }
 
         return typedResults;
+    }
+
+    public <T> Map<CacheKey, T> pipelineGetAll(List<CacheKey> keys, Class<T> type) {
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<String> rawKeys = new ArrayList<>(keys.size());
+        for (CacheKey key : keys) {
+            rawKeys.add(key.getFullKey());
+        }
+
+        List<T> values = pipelineGet(rawKeys, type);
+        Map<CacheKey, T> result = new LinkedHashMap<>();
+        for (int i = 0; i < keys.size() && i < values.size(); i++) {
+            T value = values.get(i);
+            if (value != null) {
+                result.put(keys.get(i), value);
+            }
+        }
+        return result;
     }
 
     /**
@@ -519,6 +534,35 @@ public class RedisCacheManager extends AbstractCacheManager {
             return keyPrefix + "*";
         }
         return keyPrefix + pattern;
+    }
+
+    void scanKeysBatch(String pattern, Consumer<List<String>> batchConsumer) {
+        if (pattern == null || pattern.isEmpty() || batchConsumer == null) {
+            return;
+        }
+        redisTemplate.execute((RedisCallback<Void>) connection -> {
+            List<String> batch = new ArrayList<>(1000);
+            ScanOptions options = ScanOptions.scanOptions()
+                    .match(pattern)
+                    .count(1000)
+                    .build();
+            try (Cursor<byte[]> cursor = connection.scan(options)) {
+                while (cursor.hasNext()) {
+                    byte[] next = cursor.next();
+                    if (next != null) {
+                        batch.add(new String(next));
+                    }
+                    if (batch.size() >= 1000) {
+                        batchConsumer.accept(List.copyOf(batch));
+                        batch.clear();
+                    }
+                }
+                if (!batch.isEmpty()) {
+                    batchConsumer.accept(List.copyOf(batch));
+                }
+            }
+            return null;
+        });
     }
 
     /**

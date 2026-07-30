@@ -1,47 +1,55 @@
 package com.wangbin.collector.common.domain.enums;
 
 /**
- * 协议类型枚举
+ * Supported collection protocol types.
  */
 public enum ProtocolType {
 
-    // Modbus协议
-    MODBUS_TCP("MODBUS_TCP", "Modbus TCP协议", 502),
-    MODBUS_RTU("MODBUS_RTU", "Modbus RTU协议", null),
-    MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII协议", null),
+    // Modbus
+    MODBUS_TCP("MODBUS_TCP", "Modbus TCP", 502),
+    MODBUS_RTU("MODBUS_RTU", "Modbus RTU", null),
+    MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII", null),
+    SIEMENS_S7("SIEMENS_S7", "Siemens S7", 102),
+    BACNET_IP("BACNET_IP", "BACnet/IP", 47808),
+    BACNET_MSTP("BACNET_MSTP", "BACnet MS/TP", null),
+    BACNET_SC("BACNET_SC", "BACnet/SC", 443),
+    ETHERNET_IP("ETHERNET_IP", "EtherNet/IP", 44818),
+    ADS("ADS", "Beckhoff ADS", 48898),
+    KNXNET_IP("KNXNET_IP", "KNXnet/IP", 3671),
 
-    // OPC协议
-    OPC_DA("OPC_DA", "OPC DA协议", null),
-    OPC_UA("OPC_UA", "OPC UA协议", 4840),
+    // OPC
+    OPC_DA("OPC_DA", "OPC DA", null),
+    OPC_UA("OPC_UA", "OPC UA", 4840),
+    OPC_UA_PLC4X("OPC_UA_PLC4X", "OPC UA (PLC4X Alias)", 4840),
 
-    // SNMP协议
-    SNMP_V1("SNMP_V1", "SNMP v1协议", 161),
-    SNMP_V2C("SNMP_V2C", "SNMP v2c协议", 161),
-    SNMP_V3("SNMP_V3", "SNMP v3协议", 161),
+    // SNMP
+    SNMP_V1("SNMP_V1", "SNMP v1", 161),
+    SNMP_V2C("SNMP_V2C", "SNMP v2c", 161),
+    SNMP_V3("SNMP_V3", "SNMP v3", 161),
 
-    // MQTT协议
-    MQTT("MQTT", "MQTT协议", 1883),
-    MQTT_SSL("MQTT_SSL", "MQTT SSL协议", 8883),
+    // MQTT
+    MQTT("MQTT", "MQTT", 1883),
+    MQTT_SSL("MQTT_SSL", "MQTT SSL", 8883),
 
-    // CoAP协议
-    COAP("COAP", "CoAP协议", 5683),
-    COAP_SSL("COAP_SSL", "CoAP SSL协议", 5684),
+    // CoAP
+    COAP("COAP", "CoAP", 5683),
+    COAP_SSL("COAP_SSL", "CoAP SSL", 5684),
 
-    // IEC协议
-    IEC104("IEC104", "IEC 104协议", 2404),
-    IEC61850("IEC61850", "IEC 61850协议", 102),
+    // IEC
+    IEC104("IEC104", "IEC 60870-5-104", 2404),
+    IEC61850("IEC61850", "IEC 61850", 102),
 
-    // HTTP协议
-    HTTP("HTTP", "HTTP协议", 80),
-    HTTPS("HTTPS", "HTTPS协议", 443),
+    // HTTP
+    HTTP("HTTP", "HTTP", 80),
+    HTTPS("HTTPS", "HTTPS", 443),
 
-    // WebSocket协议
-    WEBSOCKET("WEBSOCKET", "WebSocket协议", 80),
-    WEBSOCKET_SSL("WEBSOCKET_SSL", "WebSocket SSL协议", 443),
+    // WebSocket
+    WEBSOCKET("WEBSOCKET", "WebSocket", 80),
+    WEBSOCKET_SSL("WEBSOCKET_SSL", "WebSocket SSL", 443),
 
-    // 自定义协议
-    CUSTOM_TCP("CUSTOM_TCP", "自定义TCP协议", null),
-    CUSTOM_UDP("CUSTOM_UDP", "自定义UDP协议", null);
+    // Custom
+    CUSTOM_TCP("CUSTOM_TCP", "Custom TCP", null),
+    CUSTOM_UDP("CUSTOM_UDP", "Custom UDP", null);
 
     private final String code;
     private final String description;
@@ -65,8 +73,10 @@ public enum ProtocolType {
         return defaultPort;
     }
 
-    // 根据code获取枚举
     public static ProtocolType fromCode(String code) {
+        if (code == null) {
+            return null;
+        }
         for (ProtocolType type : values()) {
             if (type.getCode().equals(code)) {
                 return type;
@@ -75,43 +85,45 @@ public enum ProtocolType {
         return null;
     }
 
-    // 判断是否为TCP协议
     public boolean isTcpProtocol() {
-        return this == MODBUS_TCP || this == OPC_UA || this == IEC104 ||
-                this == HTTP || this == HTTPS || this == WEBSOCKET ||
-                this == WEBSOCKET_SSL || this == CUSTOM_TCP;
+        return this == MODBUS_TCP
+                || this == SIEMENS_S7
+                || this == ETHERNET_IP
+                || this == ADS
+                || this == OPC_UA
+                || this == OPC_UA_PLC4X
+                || this == IEC104
+                || this == HTTP
+                || this == HTTPS
+                || this == WEBSOCKET
+                || this == WEBSOCKET_SSL
+                || this == CUSTOM_TCP
+                || this == BACNET_SC;
     }
 
-    // 判断是否为串口协议
     public boolean isSerialProtocol() {
-        return this == MODBUS_RTU || this == MODBUS_ASCII;
+        return this == MODBUS_RTU || this == MODBUS_ASCII || this == BACNET_MSTP;
     }
 
-    // 判断是否需要加密
     public boolean needEncryption() {
-        return this == HTTPS || this == MQTT_SSL ||
-                this == COAP_SSL || this == WEBSOCKET_SSL;
+        return this == HTTPS
+                || this == MQTT_SSL
+                || this == COAP_SSL
+                || this == WEBSOCKET_SSL
+                || this == BACNET_SC;
     }
 
-    // 获取建议的超时时间
     public int getDefaultTimeout() {
-        switch (this) {
-            case MODBUS_TCP:
-            case MODBUS_RTU:
-                return 3000;
-            case OPC_UA:
-                return 10000;
-            case SNMP_V1:
-            case SNMP_V2C:
-            case SNMP_V3:
-                return 5000;
-            case MQTT:
-            case MQTT_SSL:
-                return 10000;
-            case IEC104:
-                return 15000;
-            default:
-                return 5000;
-        }
+        return switch (this) {
+            case MODBUS_TCP, MODBUS_RTU, MODBUS_ASCII -> 3000;
+            case BACNET_IP, BACNET_MSTP, BACNET_SC -> 5000;
+            case SIEMENS_S7, ETHERNET_IP, ADS -> 5000;
+            case KNXNET_IP -> 10000;
+            case OPC_UA, OPC_UA_PLC4X -> 10000;
+            case SNMP_V1, SNMP_V2C, SNMP_V3 -> 5000;
+            case MQTT, MQTT_SSL -> 10000;
+            case IEC104 -> 15000;
+            default -> 5000;
+        };
     }
 }

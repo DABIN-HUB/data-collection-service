@@ -2,20 +2,36 @@ package com.wangbin.collector.core.connection.adapter;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.protocol.snmp.util.SnmpUtils;
 import com.wangbin.collector.core.connection.dispatch.MessageBatchDispatcher;
 import com.wangbin.collector.core.connection.dispatch.OverflowStrategy;
 import lombok.extern.slf4j.Slf4j;
+import org.snmp4j.CommandResponder;
+import org.snmp4j.CommandResponderEvent;
 import org.snmp4j.CommunityTarget;
+import org.snmp4j.PDU;
 import org.snmp4j.Snmp;
 import org.snmp4j.Target;
 import org.snmp4j.TransportMapping;
+import org.snmp4j.UserTarget;
+import org.snmp4j.mp.MPv3;
 import org.snmp4j.mp.SnmpConstants;
+import org.snmp4j.security.SecurityLevel;
+import org.snmp4j.security.SecurityModels;
+import org.snmp4j.security.SecurityProtocols;
+import org.snmp4j.security.USM;
+import org.snmp4j.security.UsmUser;
+import org.snmp4j.smi.Address;
+import org.snmp4j.smi.OID;
 import org.snmp4j.smi.OctetString;
 import org.snmp4j.smi.UdpAddress;
+import org.snmp4j.smi.VariableBinding;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -30,6 +46,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
     private TransportMapping<UdpAddress> transport;
     private Target<UdpAddress> target;
     private MessageBatchDispatcher<SnmpOperation<?>> dispatcher;
+    private int snmpVersion = SnmpConstants.version2c;
+    private final CopyOnWriteArrayList<SnmpTrapListener> trapListeners = new CopyOnWriteArrayList<>();
+    private final CommandResponder trapResponder = this::handleCommandResponderEvent;
 
     public SnmpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
@@ -37,10 +56,13 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
 
     @Override
     protected void doConnect() throws Exception {
-        transport = new DefaultUdpTransportMapping();
+        transport = createTransportMapping();
         transport.listen();
         snmp = new Snmp(transport);
-        target = buildTarget();
+        snmp.addCommandResponder(trapResponder);
+        snmpVersion = parseVersion(config.getStringConfig("snmpVersion", "2c"));
+        configureSecurityModels(snmpVersion);
+        target = buildTarget(snmpVersion);
         startDispatcher();
         log.info("SNMP 会话已建立 host={} port={}", config.getHost(), config.getPort());
     }
@@ -50,6 +72,7 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         stopDispatcher();
         if (snmp != null) {
             try {
+                snmp.removeCommandResponder(trapResponder);
                 snmp.close();
             } catch (Exception e) {
                 log.warn("关闭 SNMP 会话异常", e);
@@ -103,6 +126,18 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return target;
     }
 
+    public void addTrapListener(SnmpTrapListener listener) {
+        if (listener != null) {
+            trapListeners.addIfAbsent(listener);
+        }
+    }
+
+    public void removeTrapListener(SnmpTrapListener listener) {
+        if (listener != null) {
+            trapListeners.remove(listener);
+        }
+    }
+
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("SNMP 适配器不支持裸数据发送");
@@ -143,11 +178,33 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return 3000;
     }
 
-    private Target<UdpAddress> buildTarget() {
+    private TransportMapping<UdpAddress> createTransportMapping() throws java.io.IOException {
+        int trapPort = firstPositive(
+                config.getIntConfig("snmpTrapPort", null),
+                config.getIntConfig("trapPort", null),
+                config.getIntConfig("listenPort", null),
+                0);
+        if (trapPort <= 0) {
+            return new DefaultUdpTransportMapping();
+        }
+        String listenHost = config.getStringConfig("snmpTrapHost",
+                config.getStringConfig("listenHost", "0.0.0.0"));
+        log.info("SNMP Trap/Inform 监听地址 {}:{}", listenHost, trapPort);
+        return new DefaultUdpTransportMapping(new UdpAddress(listenHost + "/" + trapPort));
+    }
+
+    private Target<UdpAddress> buildTarget(int version) {
+        if (version == SnmpConstants.version3) {
+            return buildUserTarget();
+        }
+        return buildCommunityTarget(version);
+    }
+
+    private Target<UdpAddress> buildCommunityTarget(int version) {
         CommunityTarget<UdpAddress> communityTarget = new CommunityTarget<>();
         String community = config.getStringConfig("community", "public");
         communityTarget.setCommunity(new OctetString(community));
-        communityTarget.setVersion(parseVersion(config.getStringConfig("snmpVersion", "2c")));
+        communityTarget.setVersion(version);
         communityTarget.setRetries(config.getIntConfig("snmpRetries", 1));
         long timeoutMillis = config.getReadTimeout() != null ? config.getReadTimeout() : getDefaultTimeout();
         communityTarget.setTimeout(timeoutMillis);
@@ -155,6 +212,20 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         int port = config.getPort() != null ? config.getPort() : 161;
         communityTarget.setAddress(new UdpAddress(host + "/" + port));
         return communityTarget;
+    }
+
+    private Target<UdpAddress> buildUserTarget() {
+        UserTarget<UdpAddress> userTarget = new UserTarget<>();
+        userTarget.setVersion(SnmpConstants.version3);
+        userTarget.setSecurityLevel(resolveSecurityLevel());
+        userTarget.setSecurityName(new OctetString(getRequiredSecurityName()));
+        userTarget.setRetries(config.getIntConfig("snmpRetries", 1));
+        long timeoutMillis = config.getReadTimeout() != null ? config.getReadTimeout() : getDefaultTimeout();
+        userTarget.setTimeout(timeoutMillis);
+        String host = config.getHost() != null ? config.getHost() : "127.0.0.1";
+        int port = config.getPort() != null ? config.getPort() : 161;
+        userTarget.setAddress(new UdpAddress(host + "/" + port));
+        return userTarget;
     }
 
     private int parseVersion(String versionText) {
@@ -167,6 +238,96 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
             case "2", "v2", "2c", "v2c" -> SnmpConstants.version2c;
             default -> SnmpConstants.version2c;
         };
+    }
+
+    private void configureSecurityModels(int version) {
+        if (version != SnmpConstants.version3) {
+            return;
+        }
+        SecurityProtocols securityProtocols = SecurityProtocols.getInstance();
+        securityProtocols.addDefaultProtocols();
+        USM usm = snmp.getUSM();
+        if (usm == null) {
+            usm = new USM(securityProtocols, new OctetString(MPv3.createLocalEngineID()), 0);
+            SecurityModels.getInstance().addSecurityModel(usm);
+        }
+        OctetString securityName = new OctetString(getRequiredSecurityName());
+        int securityLevel = resolveSecurityLevel();
+        OID authProtocol = null;
+        OctetString authPass = null;
+        if (securityLevel == SecurityLevel.AUTH_NOPRIV || securityLevel == SecurityLevel.AUTH_PRIV) {
+            authProtocol = SnmpUtils.resolveAuthProtocol(config.getStringConfig("snmpAuthProtocol", "SHA"));
+            if (authProtocol != null) {
+                String password = config.getStringConfig("snmpAuthPassword", null);
+                if (!StringUtils.hasText(password)) {
+                    throw new IllegalStateException("SNMPv3 需要配置 snmpAuthPassword");
+                }
+                authPass = new OctetString(password);
+            }
+        }
+        OID privProtocol = null;
+        OctetString privPass = null;
+        if (securityLevel == SecurityLevel.AUTH_PRIV) {
+            privProtocol = SnmpUtils.resolvePrivProtocol(config.getStringConfig("snmpPrivProtocol", "AES128"));
+            if (privProtocol != null) {
+                String password = config.getStringConfig("snmpPrivPassword", null);
+                if (!StringUtils.hasText(password)) {
+                    throw new IllegalStateException("SNMPv3 需要配置 snmpPrivPassword");
+                }
+                privPass = new OctetString(password);
+            }
+        }
+        UsmUser user = new UsmUser(securityName, authProtocol, authPass, privProtocol, privPass);
+        usm.addUser(securityName, user);
+    }
+
+    private int resolveSecurityLevel() {
+        return SnmpUtils.parseSecurityLevel(config.getStringConfig("snmpSecurityLevel", "authPriv"));
+    }
+
+    private String getRequiredSecurityName() {
+        String securityName = config.getStringConfig("snmpSecurityName", null);
+        if (!StringUtils.hasText(securityName)) {
+            throw new IllegalStateException("SNMPv3 需要配置 snmpSecurityName");
+        }
+        return securityName;
+    }
+
+    private void handleCommandResponderEvent(CommandResponderEvent<?> event) {
+        if (event == null || event.getPDU() == null || trapListeners.isEmpty()) {
+            return;
+        }
+        PDU pdu = event.getPDU();
+        if (!isTrapOrInform(pdu)) {
+            return;
+        }
+        List<VariableBinding> bindings = pdu.getVariableBindings() != null
+                ? new java.util.ArrayList<>(pdu.getVariableBindings())
+                : List.of();
+        for (SnmpTrapListener listener : trapListeners) {
+            try {
+                listener.onTrap(pdu, bindings, event.getPeerAddress());
+            } catch (Exception e) {
+                log.warn("SNMP Trap/Inform 监听处理失败", e);
+            }
+        }
+    }
+
+    private boolean isTrapOrInform(PDU pdu) {
+        int type = pdu.getType();
+        return type == PDU.TRAP || type == PDU.V1TRAP || type == PDU.INFORM;
+    }
+
+    private int firstPositive(Integer... values) {
+        if (values == null) {
+            return 0;
+        }
+        for (Integer value : values) {
+            if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return 0;
     }
 
     private void startDispatcher() {
@@ -205,6 +366,11 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
     @FunctionalInterface
     public interface SnmpCallable<T> {
         T apply(Snmp snmp, Target<UdpAddress> target) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface SnmpTrapListener {
+        void onTrap(PDU pdu, List<VariableBinding> bindings, Address peerAddress);
     }
 
     private static final class SnmpOperation<T> {

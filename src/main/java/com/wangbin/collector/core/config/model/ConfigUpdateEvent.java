@@ -162,7 +162,7 @@ public class ConfigUpdateEvent {
     public static ConfigUpdateEvent createDeviceUpdateEvent(String deviceId, boolean connectionChanged) {
         return ConfigUpdateEvent.builder()
                 .eventId(generateEventId())
-                .configType("device")
+                .configType(ConfigUpdateType.DEVICE.getValue())
                 .deviceId(deviceId)
                 .source("config-sync")
                 .createTime(new Date())
@@ -181,7 +181,7 @@ public class ConfigUpdateEvent {
     public static ConfigUpdateEvent createPointsUpdateEvent(String deviceId, int pointCountChange) {
         return ConfigUpdateEvent.builder()
                 .eventId(generateEventId())
-                .configType("points")
+                .configType(ConfigUpdateType.POINTS.getValue())
                 .deviceId(deviceId)
                 .source("config-sync")
                 .createTime(new Date())
@@ -199,7 +199,7 @@ public class ConfigUpdateEvent {
     public static ConfigUpdateEvent createConnectionUpdateEvent(String deviceId) {
         return ConfigUpdateEvent.builder()
                 .eventId(generateEventId())
-                .configType("connection")
+                .configType(ConfigUpdateType.CONNECTION.getValue())
                 .deviceId(deviceId)
                 .source("config-sync")
                 .createTime(new Date())
@@ -217,7 +217,7 @@ public class ConfigUpdateEvent {
     public static ConfigUpdateEvent createCollectionUpdateEvent(String deviceId) {
         return ConfigUpdateEvent.builder()
                 .eventId(generateEventId())
-                .configType("collection")
+                .configType(ConfigUpdateType.COLLECTION.getValue())
                 .deviceId(deviceId)
                 .source("config-sync")
                 .createTime(new Date())
@@ -233,7 +233,7 @@ public class ConfigUpdateEvent {
     public static ConfigUpdateEvent createAllUpdateEvent() {
         return ConfigUpdateEvent.builder()
                 .eventId(generateEventId())
-                .configType("all")
+                .configType(ConfigUpdateType.ALL.getValue())
                 .source("system")
                 .createTime(new Date())
                 .status("pending")

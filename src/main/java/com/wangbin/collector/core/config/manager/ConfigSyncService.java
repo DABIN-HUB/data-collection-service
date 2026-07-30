@@ -1,330 +1,215 @@
 package com.wangbin.collector.core.config.manager;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.common.domain.entity.ApiResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.loader.ConfigLoader;
+import com.wangbin.collector.core.config.model.ConfigDiff;
+import com.wangbin.collector.core.config.model.ConfigLoadResult;
+import com.wangbin.collector.core.config.model.ConfigLoadStatus;
+import com.wangbin.collector.core.config.model.ConfigSnapshot;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.*;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import java.io.InputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * 配置同步服务 - 负责与远程配置中心同步配置
- *
- * 主要功能：
- * 1. 定时从RuoYi管理平台同步配置
- * 2. 配置版本管理
- * 3. 配置变更通知
- * 4. 配置缓存管理
+ * Coordinates config sync and delegates actual loading to ConfigLoader implementations.
  */
 @Slf4j
 @Service
 public class ConfigSyncService {
 
-    /**
-     * RuoYi管理平台地址
-     */
     @Value("${collector.config.yun-url:http://localhost:8080/admin-api}")
     private String runUrl;
 
-    @Value("${collector.config.tenant-id:1}")
-    private String tenantId;
-
-    /**
-     * 配置同步间隔（毫秒）
-     */
     @Value("${collector.config.sync-interval:30000}")
     private long syncInterval;
 
-    /**
-     * 采集服务实例ID
-     */
     @Value("${collector.config.service-id:collector-1}")
     private String serviceId;
 
-    /**
-     * API认证Token
-     */
-    @Value("${collector.config.api-token:}")
-    private String apiToken;
+    private final ConfigLoader configLoader;
+    private final Executor syncExecutor;
+    private final AtomicBoolean syncing = new AtomicBoolean(false);
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
+    private final Object cacheLock = new Object();
 
-    private final RestTemplate restTemplate;
-
-    /**
-     * 配置变更监听器列表
-     */
-    private final List<Consumer<ConfigUpdateEvent>> configListeners = new ArrayList<>();
-
-    /**
-     * 设备配置缓存 key:设备编码 value:设备信息
-     */
+    private final List<Consumer<ConfigUpdateEvent>> configListeners = new CopyOnWriteArrayList<>();
     private final Map<String, DeviceInfo> deviceConfigs = new ConcurrentHashMap<>();
-
-    /**
-     * 数据点配置缓存 key:设备编码 value:数据点列表
-     */
     private final Map<String, List<DataPoint>> pointConfigs = new ConcurrentHashMap<>();
+    private final Map<String, DeviceConnection> connectionConfigs = new ConcurrentHashMap<>();
 
-    /**
-     * 构造函数
-     */
-    public ConfigSyncService() {
-        this.restTemplate = new RestTemplate();
+    private volatile long lastSyncTime;
+    private volatile long lastFailureTime;
+    private volatile String sourceVersion;
+
+    public ConfigSyncService(ConfigLoader configLoader,
+                             @Qualifier("ioIntensiveExecutor") Executor syncExecutor) {
+        this.configLoader = configLoader;
+        this.syncExecutor = syncExecutor;
     }
 
-    /**
-     * 初始化方法
-     */
     @PostConstruct
     public void init() {
-        log.info("配置同步服务初始化，服务ID: {}, RuoYi地址: {}", serviceId, runUrl);
+        log.info("配置同步服务初始化，serviceId={}, source={}", serviceId, configLoader.getClass().getSimpleName());
     }
 
-    /**
-     * 启动定时同步任务
-     */
     public void startSyncTask() {
-        // 首次同步
         try {
             syncAllConfig();
             log.info("首次配置同步完成");
         } catch (Exception e) {
             log.error("首次配置同步失败", e);
         }
-
-        log.info("配置同步任务已启动，同步间隔: {}ms", syncInterval);
+        log.info("配置同步任务已启动，同步间隔: {}ms, source={}", syncInterval, runUrl);
     }
 
-    /**
-     * 注册配置变更监听器
-     *
-     * @param listener 配置变更监听器
-     */
+    @Scheduled(fixedDelayString = "${collector.config.sync-interval:30000}",
+            initialDelayString = "${collector.config.sync-initial-delay:30000}")
+    public void scheduledSync() {
+        syncAllConfig();
+    }
+
     public void registerConfigListener(Consumer<ConfigUpdateEvent> listener) {
         if (listener != null) {
             configListeners.add(listener);
-            log.debug("配置监听器注册成功，当前监听器数量: {}", configListeners.size());
+            log.debug("注册配置监听器成功，当前监听器数量={}", configListeners.size());
         }
     }
 
-    /**
-     * 取消注册配置变更监听器
-     *
-     * @param listener 要移除的监听器
-     */
     public void unregisterConfigListener(Consumer<ConfigUpdateEvent> listener) {
         if (listener != null) {
             configListeners.remove(listener);
-            log.debug("配置监听器取消注册，当前监听器数量: {}", configListeners.size());
+            log.debug("注销配置监听器成功，当前监听器数量={}", configListeners.size());
         }
     }
 
-    /**
-     * 定时同步所有配置
-     */
     public void syncAllConfig() {
+        if (!syncing.compareAndSet(false, true)) {
+            log.debug("配置同步正在执行，跳过本次触发");
+            return;
+        }
         try {
-            log.debug("开始执行手动配置同步任务...");
-            syncConfigByType("all");
-            log.info("配置同步完成（手动触发）");
+            log.debug("开始执行配置同步");
+            ConfigSnapshot previousSnapshot = snapshotCurrentConfig();
+            ConfigLoadResult loadResult = configLoader.loadSnapshotResult();
+            if (loadResult == null || loadResult.status() == ConfigLoadStatus.FAILED) {
+                recordSyncFailure(loadResult == null ? "配置加载结果为空" : loadResult.errorMessage());
+                return;
+            }
+            if (loadResult.status() == ConfigLoadStatus.NOT_MODIFIED) {
+                recordSyncSuccess();
+                log.debug("配置同步完成，远端配置未发生变化");
+                return;
+            }
+            ConfigSnapshot latestSnapshot = loadResult.snapshot();
+            if (latestSnapshot == null) {
+                recordSyncFailure("配置加载成功但快照为空");
+                return;
+            }
+            applySnapshot(latestSnapshot);
+            sourceVersion = loadResult.sourceVersion();
+
+            ConfigDiff diff = ConfigDiff.between(previousSnapshot, latestSnapshot);
+            recordSyncSuccess();
+            if (!diff.hasChanges()) {
+                log.debug("配置同步完成，未检测到增量变更");
+                return;
+            }
+
+            publishIncrementalEvents(diff, previousSnapshot, latestSnapshot);
+            log.info("配置同步完成: added={}, removed={}, deviceChanged={}, pointChanged={}, connectionChanged={}",
+                    diff.addedDevices().size(),
+                    diff.removedDevices().size(),
+                    diff.changedDevices().size(),
+                    diff.changedPoints().size(),
+                    diff.changedConnections().size());
         } catch (Exception e) {
+            recordSyncFailure(e.getMessage());
             log.error("配置定时同步失败", e);
+        } finally {
+            syncing.set(false);
         }
     }
 
-    /**
-     * 加载所有设备配置
-     *
-     * @return 设备信息列表
-     */
     public List<DeviceInfo> loadAllDevices() {
-        try {
-            String url = runUrl + "/iot/collector/config/devices?serviceId=" + serviceId;
-
-            ResponseEntity<ApiResponse<List<DeviceInfo>>> response = restTemplate.exchange(
-                    url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
-                    });
-
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                List<DeviceInfo> devices = response.getBody().getData();
-
-                // 更新本地缓存
-                for (DeviceInfo device : devices) {
-                    deviceConfigs.put(device.getDeviceId(), device);
-                }
-
-                log.info("成功加载 {} 个设备配置", devices.size());
-                return devices;
-            } else {
-                log.warn("加载设备配置失败，HTTP状态码: {}", response.getStatusCode());
+        List<DeviceInfo> devices = sanitizeDevices(configLoader.loadAllDevices());
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            Set<String> activeDeviceIds = new LinkedHashSet<>();
+            for (DeviceInfo device : devices) {
+                deviceConfigs.put(device.getDeviceId(), device);
+                activeDeviceIds.add(device.getDeviceId());
             }
-        } catch (Exception e) {
-            log.error("加载设备配置失败", e);
+            pruneStaleDeviceState(activeDeviceIds);
         }
-
-        return Collections.emptyList();
+        log.info("成功加载 {} 个设备配置", devices.size());
+        return devices;
     }
 
-    /**
-     * 获取文件里面设置的数据
-     * 这是一个测试方法 后续可以删除
-     * @return
-     */
-    private List<DeviceInfo> loadMockDevicesFromFile() {
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-            // 从文件读取
-            InputStream inputStream = getClass().getClassLoader()
-                    .getResourceAsStream("mock/devices.json");
-
-            if (inputStream != null) {
-                DeviceInfo[] devices = mapper.readValue(inputStream, DeviceInfo[].class);
-                List<DeviceInfo> deviceList = Arrays.asList(devices);
-
-                log.info("从文件加载 {} 个模拟设备配置", deviceList.size());
-                return deviceList;
-            }
-        } catch (Exception e) {
-            log.error("从文件加载模拟设备配置失败", e);
-        }
-
-        // 如果文件加载失败，返回硬编码数据
-        return Collections.emptyList();
-    }
-
-    /**
-     * 加载单个设备配置
-     *
-     * @param deviceId 设备ID
-     * @return 设备信息，加载失败返回null
-     */
     public DeviceInfo loadDevice(String deviceId) {
-        try {
-            String url = runUrl + "/iot/collector/config/device/" + deviceId;
-
-            ResponseEntity<ApiResponse<DeviceInfo>> response = restTemplate.exchange(
-                    url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {});
-
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                DeviceInfo device = response.getBody().getData();
+        DeviceInfo device = configLoader.loadDevice(deviceId);
+        synchronized (cacheLock) {
+            if (device != null) {
                 deviceConfigs.put(deviceId, device);
                 log.debug("成功加载设备配置: {}", deviceId);
-                return device;
             } else {
-                log.warn("加载设备配置失败: {}，HTTP状态码: {}", deviceId, response.getStatusCode());
+                removeDeviceState(deviceId);
             }
-        } catch (Exception e) {
-            log.error("加载设备配置失败: {}", deviceId, e);
         }
-
-        return null;
+        return device;
     }
 
-    /**
-     * 加载数据点配置
-     *
-     * @param deviceId 设备ID
-     * @return 数据点列表
-     */
     public List<DataPoint> loadDataPoints(String deviceId) {
-        try {
-            String url = runUrl + "/iot/collector/config/points/" + deviceId;
-
-            ResponseEntity<ApiResponse<List<DataPoint>>> response = restTemplate.exchange(
-                    url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
-                    });
-
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                List<DataPoint> points =  response.getBody().getData();
-                pointConfigs.put(deviceId, points);
-                log.debug("成功加载设备 {} 的数据点配置，共 {} 个点", deviceId, points.size());
-                return points;
-            } else {
-                log.warn("加载数据点配置失败: {}，HTTP状态码: {}", deviceId, response.getStatusCode());
-            }
-        } catch (Exception e) {
-            log.error("加载数据点配置失败: {}", deviceId, e);
+        List<DataPoint> points = sanitizePoints(configLoader.loadDataPoints(deviceId));
+        synchronized (cacheLock) {
+            pointConfigs.put(deviceId, points);
         }
-
-        return Collections.emptyList();
-        //return DataUtils.createMockDataPoints(deviceId);
+        log.debug("成功加载设备 {} 的数据点配置，共 {} 个点", deviceId, points.size());
+        return points;
     }
 
-    /**
-     * 加载连接配置
-     *
-     * @param deviceId 设备ID
-     * @return 连接信息，加载失败返回null
-     */
     public DeviceConnection loadConnectionConfig(String deviceId) {
-        try {
-            String url = runUrl + "/iot/collector/config/connection/" + deviceId;
-
-            ResponseEntity<ApiResponse<DeviceConnection>> response = restTemplate.exchange(
-                    url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
-                    });
-
-            if (response.getStatusCode() == HttpStatus.OK) {
+        DeviceConnection connection = configLoader.loadConnectionConfig(deviceId);
+        synchronized (cacheLock) {
+            if (connection != null) {
+                connectionConfigs.put(deviceId, connection);
                 log.debug("成功加载连接配置: {}", deviceId);
-                return Objects.requireNonNull(response.getBody()).getData();
             } else {
-                log.warn("加载连接配置失败: {}，HTTP状态码: {}", deviceId, response.getStatusCode());
+                connectionConfigs.remove(deviceId);
             }
-        } catch (Exception e) {
-            log.error("加载连接配置失败: {}", deviceId, e);
         }
-
-        return null;
+        return connection;
     }
 
-
-
-    /**
-     * 根据配置类型同步配置
-     *
-     * @param configType 配置类型（device/points/connection/collection/all）
-     */
-    private void syncConfigByType(String configType) {
-        log.info("开始同步配置类型: {}", configType);
-
-        ConfigUpdateEvent event = ConfigUpdateEvent.builder()
-                .configType(configType)
-                .updateTime(new Date())
-                .build();
-
-        // 根据配置类型设置设备ID
-        if (!"all".equals(configType)) {
-            // 这里可以根据具体业务逻辑获取受影响的设备ID
-            // 暂时设置为null，由监听器自己处理
-            event.setDeviceId(null);
-        }
-
-        // 通知所有监听器
-        notifyConfigListeners(event);
-
+    public void notifyConfigUpdate(String configType, String deviceId) {
+        log.info("开始同步配置类型 {}", configType);
+        publishConfigEvent(createManualEvent(configType, deviceId));
+        lastSyncTime = System.currentTimeMillis();
         log.info("配置类型 {} 同步完成", configType);
     }
 
-    /**
-     * 通知所有配置监听器
-     *
-     * @param event 配置更新事件
-     */
-    private void notifyConfigListeners(ConfigUpdateEvent event) {
+    private void publishConfigEvent(ConfigUpdateEvent event) {
         if (configListeners.isEmpty()) {
             log.debug("没有配置监听器需要通知");
             return;
@@ -332,7 +217,6 @@ public class ConfigSyncService {
 
         int successCount = 0;
         int failCount = 0;
-
         for (Consumer<ConfigUpdateEvent> listener : configListeners) {
             try {
                 listener.accept(event);
@@ -342,82 +226,242 @@ public class ConfigSyncService {
                 failCount++;
             }
         }
-
-        log.debug("配置变更通知完成，成功: {}，失败: {}", successCount, failCount);
+        log.debug("配置变更通知完成，成功={}, 失败={}", successCount, failCount);
     }
 
-    /**
-     * 创建认证请求头
-     *
-     * @return 包含认证头的HttpEntity
-     */
-    private HttpEntity<String> createAuthRequest() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-API-Token", getApiToken());
-        headers.set("tenant-id", tenantId);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
-        return new HttpEntity<>(headers);
-    }
-
-    /**
-     * 获取API Token
-     *
-     * @return API Token
-     */
-    private String getApiToken() {
-        if (apiToken != null && !apiToken.trim().isEmpty()) {
-            return apiToken.trim();
-        }
-
-        // 可以从环境变量、配置文件或认证服务获取
-        String envToken = System.getenv("COLLECTOR_API_TOKEN");
-        if (envToken != null && !envToken.trim().isEmpty()) {
-            return envToken.trim();
-        }
-
-        log.warn("API Token未配置，使用默认空字符串");
-        return "";
-    }
-
-    /**
-     * 获取设备配置缓存
-     *
-     * @return 设备配置缓存映射
-     */
     public Map<String, DeviceInfo> getDeviceConfigs() {
-        return Collections.unmodifiableMap(deviceConfigs);
+        return snapshotCurrentConfig().devices();
     }
 
-    /**
-     * 获取数据点配置缓存
-     *
-     * @return 数据点配置缓存映射
-     */
     public Map<String, List<DataPoint>> getPointConfigs() {
-        return Collections.unmodifiableMap(pointConfigs);
+        return snapshotCurrentConfig().points();
     }
 
-    /**
-     * 清空配置缓存
-     */
+    public Map<String, DeviceConnection> getConnectionConfigs() {
+        return snapshotCurrentConfig().connections();
+    }
+
+    public long getLastSyncTime() {
+        return lastSyncTime;
+    }
+
+    public long getLastFailureTime() {
+        return lastFailureTime;
+    }
+
+    public String getSourceVersion() {
+        return sourceVersion;
+    }
+
+    public int getSnapshotDeviceCount() {
+        synchronized (cacheLock) {
+            return deviceConfigs.size();
+        }
+    }
+
+    public int getConsecutiveFailures() {
+        return consecutiveFailures.get();
+    }
+
+    public long getSyncInterval() {
+        return syncInterval;
+    }
+
+    public String getServiceId() {
+        return serviceId;
+    }
+
+    public int getListenerCount() {
+        return configListeners.size();
+    }
+
     public void clearCache() {
-        deviceConfigs.clear();
-        pointConfigs.clear();
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            pointConfigs.clear();
+            connectionConfigs.clear();
+        }
         log.info("配置缓存已清空");
     }
 
-    /**
-     * 手动触发配置同步
-     */
     public void triggerManualSync() {
         log.info("手动触发配置同步");
-        new Thread(() -> {
-            try {
-                syncAllConfig();
-            } catch (Exception e) {
-                log.error("手动配置同步失败", e);
+        try {
+            syncExecutor.execute(this::safeSyncAllConfig);
+        } catch (RejectedExecutionException e) {
+            log.warn("手动配置同步任务提交失败，回退当前线程执行", e);
+            safeSyncAllConfig();
+        }
+    }
+
+    private void safeSyncAllConfig() {
+        try {
+            syncAllConfig();
+        } catch (Exception e) {
+            log.error("手动配置同步失败", e);
+        }
+    }
+
+    private void recordSyncSuccess() {
+        lastSyncTime = System.currentTimeMillis();
+        consecutiveFailures.set(0);
+    }
+
+    private void recordSyncFailure(String errorMessage) {
+        lastFailureTime = System.currentTimeMillis();
+        int failureCount = consecutiveFailures.incrementAndGet();
+        log.warn("配置同步失败，保留最后有效快照，连续失败次数={}，原因={}",
+                failureCount, errorMessage);
+    }
+
+    private void publishIncrementalEvents(ConfigDiff diff,
+                                          ConfigSnapshot previousSnapshot,
+                                          ConfigSnapshot latestSnapshot) {
+        for (String deviceId : diff.deviceEventIds()) {
+            boolean connectionChanged = diff.changedConnections().contains(deviceId);
+            publishConfigEvent(createDeviceEvent(deviceId, connectionChanged));
+        }
+
+        Set<String> connectionEvents = new LinkedHashSet<>(diff.changedConnections());
+        connectionEvents.removeAll(diff.removedDevices());
+        for (String deviceId : connectionEvents) {
+            publishConfigEvent(createConnectionEvent(deviceId));
+        }
+
+        Set<String> pointEvents = new LinkedHashSet<>(diff.changedPoints());
+        pointEvents.removeAll(diff.removedDevices());
+        for (String deviceId : pointEvents) {
+            int pointCountChange = latestSnapshot.points(deviceId).size() - previousSnapshot.points(deviceId).size();
+            publishConfigEvent(createPointsEvent(deviceId, pointCountChange));
+        }
+    }
+
+    private ConfigSnapshot snapshotCurrentConfig() {
+        synchronized (cacheLock) {
+            return new ConfigSnapshot(deviceConfigs, pointConfigs, connectionConfigs);
+        }
+    }
+
+    private void applySnapshot(ConfigSnapshot snapshot) {
+        synchronized (cacheLock) {
+            deviceConfigs.clear();
+            deviceConfigs.putAll(snapshot.devices());
+            pointConfigs.clear();
+            pointConfigs.putAll(snapshot.points());
+            connectionConfigs.clear();
+            connectionConfigs.putAll(snapshot.connections());
+        }
+    }
+
+    private void pruneStaleDeviceState(Set<String> activeDeviceIds) {
+        List<String> stalePointDeviceIds = new ArrayList<>();
+        for (String deviceId : pointConfigs.keySet()) {
+            if (!activeDeviceIds.contains(deviceId)) {
+                stalePointDeviceIds.add(deviceId);
             }
-        }, "manual-sync-thread").start();
+        }
+        for (String deviceId : stalePointDeviceIds) {
+            pointConfigs.remove(deviceId);
+        }
+
+        List<String> staleConnectionDeviceIds = new ArrayList<>();
+        for (String deviceId : connectionConfigs.keySet()) {
+            if (!activeDeviceIds.contains(deviceId)) {
+                staleConnectionDeviceIds.add(deviceId);
+            }
+        }
+        for (String deviceId : staleConnectionDeviceIds) {
+            connectionConfigs.remove(deviceId);
+        }
+    }
+
+    private void removeDeviceState(String deviceId) {
+        if (!hasText(deviceId)) {
+            return;
+        }
+        deviceConfigs.remove(deviceId);
+        pointConfigs.remove(deviceId);
+        connectionConfigs.remove(deviceId);
+    }
+
+    private List<DeviceInfo> sanitizeDevices(List<DeviceInfo> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DeviceInfo> safeDevices = new ArrayList<>();
+        for (DeviceInfo device : devices) {
+            if (device != null && hasText(device.getDeviceId())) {
+                safeDevices.add(device);
+            }
+        }
+        return Collections.unmodifiableList(safeDevices);
+    }
+
+    private List<DataPoint> sanitizePoints(List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DataPoint> safePoints = new ArrayList<>();
+        for (DataPoint point : points) {
+            if (point != null) {
+                safePoints.add(point);
+            }
+        }
+        return Collections.unmodifiableList(safePoints);
+    }
+
+    private ConfigUpdateEvent createManualEvent(String configType, String deviceId) {
+        ConfigUpdateType updateType = ConfigUpdateType.fromValue(configType).orElse(null);
+        ConfigUpdateEvent event;
+        if (updateType == null) {
+            event = ConfigUpdateEvent.builder()
+                    .configType(configType)
+                    .deviceId(deviceId)
+                    .createTime(new Date())
+                    .status("pending")
+                    .build();
+        } else {
+            event = switch (updateType) {
+                case DEVICE -> createDeviceEvent(deviceId, false);
+                case POINTS -> createPointsEvent(deviceId, 0);
+                case CONNECTION -> createConnectionEvent(deviceId);
+                case COLLECTION -> ConfigUpdateEvent.createCollectionUpdateEvent(deviceId);
+                case ALL -> ConfigUpdateEvent.createAllUpdateEvent();
+                default -> ConfigUpdateEvent.builder()
+                        .configType(updateType.getValue())
+                        .deviceId(deviceId)
+                        .createTime(new Date())
+                        .status("pending")
+                        .build();
+            };
+        }
+        event.setSource("manual");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createDeviceEvent(String deviceId, boolean connectionChanged) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createDeviceUpdateEvent(deviceId, connectionChanged);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createPointsEvent(String deviceId, int pointCountChange) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createPointsUpdateEvent(deviceId, pointCountChange);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private ConfigUpdateEvent createConnectionEvent(String deviceId) {
+        ConfigUpdateEvent event = ConfigUpdateEvent.createConnectionUpdateEvent(deviceId);
+        event.setSource("config-sync");
+        event.setUpdateTime(new Date());
+        return event;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

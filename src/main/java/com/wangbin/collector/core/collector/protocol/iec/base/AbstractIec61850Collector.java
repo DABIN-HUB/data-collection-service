@@ -3,7 +3,7 @@ package com.wangbin.collector.core.collector.protocol.iec.base;
 import com.beanit.iec61850bean.*;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.iec.domain.Iec61850Address;
 import com.wangbin.collector.core.config.CollectorProperties;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * IEC 61850 采集公共逻辑。
  */
 @Slf4j
-public abstract class AbstractIec61850Collector extends BaseCollector {
+public abstract class AbstractIec61850Collector extends ConnectionBackedCollector {
 
     protected ClientSap clientSap;
     protected ClientAssociation association;

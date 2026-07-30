@@ -1,187 +1,11 @@
-spring:
-  application:
-    name: data-collection-service
-  profiles:
-    active: dev
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/data_collection?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: wangbin@123
-    hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-  data:
-    redis:
-      host: 127.0.0.1
-      port: 6379
-      database: 0
-      timeout: 3000
-      password: 123456
-      lettuce:
-        pool:
-          max-active: 20
-          max-idle: 10
-          min-idle: 5
-          max-wait: -1
-        shutdown-timeout: 100ms
-  jackson:
-    date-format: yyyy-MM-dd HH:mm:ss
-    time-zone: Asia/Shanghai
-    serialization:
-      write-dates-as-timestamps: false
-  task:
-    execution:
-      pool:
-        core-size: 10
-        max-size: 50
-        queue-capacity: 1000
-        keep-alive: 60s
-      thread-name-prefix: async-task-
-
-collector:
-  #自适应采集配置
-  adaptive-collection:
-    enabled: true          # 自适应采集开关，默认开启
-    adjust-window-ms: 60000 # 调整窗口，默认1分钟
-  #采集任务调度配置
-  scheduler:
-    # 初始时间片数量：调度器启动时分配给每个任务的时间片数量
-    initial-time-slice-count: 4
-    # 最大时间片数量：每个任务最多可以获得的时间片数量上限
-    max-time-slice-count: 12
-    # 最小时间片间隔（毫秒）：两个时间片之间的最小时间间隔，防止过度频繁调度
-    min-time-slice-interval-ms: 300
-    # 默认时间片间隔（毫秒）：默认情况下时间片的时间长度
-    default-time-slice-interval-ms: 1500
-    # 初始时间片间隔（毫秒）：调度器启动时使用的时间片间隔
-    initial-time-slice-interval-ms: 1500
-    # 动态调整间隔（毫秒）：调度器动态调整时间片分配策略的时间间隔
-    dynamic-adjust-interval-ms: 60000
-    # 收集超时时间（毫秒）：等待任务执行结果或状态收集的最大等待时间
-    collect-timeout-ms: 800
-
-  config:
-    yun-url: http://localhost:48080/admin-api
-    sync-interval: 30000
-    service-id: collector-1
-    tenant-id: 1
-    api-token: ""
-
-  cache:
-    type: local
-    local:
-      max-size: 10000
-      expire-after-write: 300
-      expire-after-access: 60
-      initial-capacity: 1000
-    redis:
-      key-prefix: "collector:cache:"
-      default-expire: 3600
-      connection-timeout: 3000
-
-  report:
-    enabled: true
-    mode: mqtt
-    batch-size: 100
-    intervalMs: 1000
-    timeout: 3000
-    retry-times: 3
-    max-queue-size: 5000
-    flush-interval: 1000
-    mqtt:
-      enabled: true
-      broker-url: tcp://127.0.0.1:1883
-      client-id: byxuTQjqn6TCDwJ0.collector-1
-      username: collector-1&byxuTQjqn6TCDwJ0
-      password: 99689a00383882f4566ab8dc5e49dc895d6c5afb56055c860e6774aa2e14bab8
-      topic-prefix: iot/device
-      ack-topic-prefix: /sys
-      gateway-product-key: byxuTQjqn6TCDwJ0
-      gateway-device-name: collector-1
-      ack-topic-suffix: _reply
-      ack-timeout-seconds: 5
-      qos: 1
-      clean-session: true
-      connection-timeout: 30
-      keep-alive-interval: 60
-      topics:
-        property: thing/property/post
-        event: thing/event/post
-        state: thing/state/update
-
-
-  modbus:
-    timeout: 3000
-    retries: 2
-    pool-size: 10
-
-  opc-ua:
-    security-policy: None
-    message-mode: Binary
-    request-timeout: 5000
-    subscription-interval: 1000
-    endpoints:
-      server1: opc.tcp://localhost:4840
-      server2: opc.tcp://192.168.1.200:4840
-
-  iec104:
-    timeout: 5000
-    retries: 3
-    common-address: 1
-    general-interrogation-on-connect: true
-    general-interrogation-interval: 600000
-    single-interrogation-on-read-miss: true
-    single-interrogation-group-field: groupId
-    cache-ttl: 5000
-
-  snmp:
-    community: public
-    timeout: 3000
-    retries: 2
-    version: 2c
-    polling-interval: 5000
-    devices:
-      device1: 192.168.1.100
-      device2: 192.168.1.101
-
-  mqtt:
-    broker-url: tcp://localhost:1883
-    client-id: data-collector
-    username: admin
-    password: password
-    qos: 1
-    clean-session: true
-    connection-timeout: 30
-    keep-alive-interval: 60
-
-mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.wangbin.collector.common.domain.entity
-  configuration:
-    map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-
-logging:
-  level:
-    com.wangbin.collector: INFO
-    org.springframework: INFO
-    org.springframework.web: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-  file:
-    name: logs/collector.log
-    max-size: 10MB
-    max-history: 30
-
 server:
   port: 9090
   servlet:
     context-path: /collector
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
   shutdown: graceful
   compression:
     enabled: true
@@ -201,8 +25,330 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:never}
   prometheus:
     metrics:
       export:
         enabled: true
+spring:
+  application:
+    name: data-collection-service
+  profiles:
+    active: dev
+  lifecycle:
+    timeout-per-shutdown-phase: 35s
+  datasource:
+    driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
+    url: ${TDENGINE_DATASOURCE_URL:jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector}
+    username: ${TDENGINE_USERNAME:root}
+    password: ${TDENGINE_PASSWORD:taosdata}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 3000
+      password: ${REDIS_PASSWORD:123456888wb}
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: -1
+        shutdown-timeout: 100ms
+      # 采集实时数据 Redis Stream 配置
+      stream:
+        enabled: true
+        key: collector:telemetry:stream
+        retention-mode: COUNT  # 可选 COUNT（最近 max-length 条数据）或 TIME（最近 max-seconds 秒数据）
+        max-length: 200
+        max-seconds: 60
+        approximate-trim: true  # 为 true 时使用近似裁剪
+        trim-task-enabled: true # 为 true 时启用 TIME 模式定时裁剪
+        trim-interval-ms: 5000  # 裁剪周期
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+  task:
+    execution:
+      pool:
+        core-size: 10
+        max-size: 50
+        queue-capacity: 1000
+        keep-alive: 60s
+      thread-name-prefix: async-task-
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.wangbin.collector.common.domain.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    # 默认只输出业务告警和错误；排查问题时可临时设置 COLLECTOR_LOG_APP_LEVEL=DEBUG。
+    com.wangbin.collector: ${COLLECTOR_LOG_APP_LEVEL:WARN}
+    org.springframework: INFO
+    org.springframework.web: INFO
+    # SQL 明细和参数日志量很大，默认只在错误时输出。
+    org.mybatis: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    org.mybatis.spring: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    org.apache.ibatis: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    com.baomidou.mybatisplus: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    com.zaxxer.hikari: WARN
+    com.wangbin.collector.mapper: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+    com.wangbin.collector.storage.repository: ${COLLECTOR_LOG_SQL_LEVEL:ERROR}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/collector.log
+    max-size: 10MB
+    max-history: 30
+  access:
+    enabled: true
+    include-paths:
+      - /api/**
+    exclude-paths:
+      - /health
+      - /actuator/**
+    high-risk-rules:
+      - method: POST
+        pattern: /api/config/import
+      - method: POST
+        pattern: /api/config/device/**/clear
+      - method: POST
+        pattern: /api/config/sync/**
+    token-header: X-Collector-Token
+    request-id-header: X-Request-Id
+    max-query-length: 512
+
+telemetry:
+  tdengine:
+    enabled: ${COLLECTOR_TDENGINE_ENABLED:false}
+    database: wangbin_collector
+    super-table: wangbin_super
+    sub-table-prefix: d_
+    alarm-super-table: alarm_super
+    alarm-sub-table-prefix: d_alarm_
+    auto-create: true
+    keep-days: 30
+    query-default-limit: 500
+    buffer:
+      enabled: true
+      pending-key: "collector:${spring.profiles.active:default}:history:pending:v1"
+      processing-key: "collector:${spring.profiles.active:default}:history:processing:v1"
+      dead-letter-key: "collector:${spring.profiles.active:default}:history:dead:v1"
+      replay-interval-ms: 3000
+      replay-batch-size: 200
+      local-queue-capacity: 10000
+    query-max-limit: 5000
+
+collector:
+  auth:
+    permit-all-paths:
+      - /health
+      - /actuator/**
+      - /admin/**
+      - /v3/api-docs/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+    ops-tokens: {ops-token: dev}
+    default-required-scope: VIEW
+    default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE]
+    ops-scopes: {}
+    access-rules:
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/device/**, /api/data/device/*/reset-adaptive]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/config/**]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/config/export]
+        required-scope: CONFIG_MANAGE
+      - methods: [GET]
+        paths: [/api/**, /monitor/**]
+        required-scope: VIEW
+    allow-ip-authentication: false
+    trusted-proxy-ranges: []
+  # 自适应采集配置
+  adaptive-collection:
+    enabled: true          # 自适应采集开关，默认开启
+    adjust-window-ms: 60000 # 调整窗口，默认 1 分钟
+  # 采集任务调度配置
+  scheduler:
+    # 初始时间片数量：调度器启动时分配给每个任务的时间片数量
+    initial-time-slice-count: 4
+    # 最大时间片数量：每个任务最多可以获得的时间片数量上限
+    max-time-slice-count: 12
+    # 最小时间片间隔（毫秒）：防止过度频繁调度
+    min-time-slice-interval-ms: 300
+    # 默认时间片间隔（毫秒）：默认情况下时间片长度
+    default-time-slice-interval-ms: 1500
+    # 初始时间片间隔（毫秒）：调度器启动时使用的时间片间隔
+    initial-time-slice-interval-ms: 1500
+    # 动态调整间隔（毫秒）：调度器动态调整时间片分配策略的周期
+    dynamic-adjust-interval-ms: 60000
+    # 收集超时时间（毫秒）：等待任务执行结果或状态收集的最大等待时间
+    collect-timeout-ms: 800
+  # 数据采集后各处理阶段使用独立线程池，避免单个下游阻塞整条链路。
+  telemetry-executors:
+    cache:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    stream:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 2000
+    history:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
+    report:
+      core-size: 2
+      max-size: 4
+      queue-capacity: 5000
+
+  ## 从云端获取配置数据地址，配套服务
+  config:
+    yun-url: http://127.0.0.1:48080/admin-api
+    sync-interval: 300000
+    service-id: collector-1
+    tenant-id: 1
+    api-token: ""
+  cache:
+    type: local
+    local:
+      max-size: 10000
+      expire-after-write: 300
+      expire-after-access: 60
+      initial-capacity: 1000
+    redis:
+      key-prefix: "collector:cache:"
+      default-expire: 3600
+      connection-timeout: 3000
+
+  # 数据上报配置
+  alarm:
+    state:
+      enabled: true
+      key-prefix: "collector:${spring.profiles.active:default}:alarm:state:v1:"
+      ttl-seconds: 2592000
+      retry-interval-ms: 5000
+      retry-batch-size: 500
+
+  report:
+    enabled: true
+    mode: mqtt
+    batch-size: 100
+    intervalMs: 1000
+    timeout: 3000
+    retry-times: 3
+    max-queue-size: 5000
+    flush-interval: 1000
+    shadow:
+      persistence-enabled: true
+      cas-enabled: true
+      key-prefix: "collector:shadow:"
+      ttl-seconds: 86400
+      auto-merge-enabled: true
+      merge-retry-times: 2
+      history-enabled: true
+      history-key-prefix: "collector:shadow:history:"
+      history-max-records: 100
+      history-ttl-seconds: 604800
+    cloud:
+      # 是否允许网关 MQTT 连接代理发布子设备自己的 Topic。
+      # true：子设备数据发布到 /sys/{子设备productKey}/{子设备deviceName}/thing/property/post，保持历史兼容逻辑。
+      # false：子设备数据必须发布到网关 Topic，并在 payload 的 subDevices 中声明子设备身份，适配严格网关模型平台。
+      sub-device-topic-proxy-enabled: false
+      payload:
+        profile: compact
+        include-quality: on_error
+        include-property-ts: false
+        include-metadata: false
+        include-message-id: true
+      ack:
+        mode: async
+        timeout-ms: 5000
+        max-pending: 10000
+        timeout-scan-ms: 500
+        commit-on: ack-success
+      batch:
+        enabled: true
+        max-devices-per-pack: 50
+        max-properties-per-pack: 500
+        max-payload-bytes: 131072
+        max-delay-ms: 1000
+        high-priority-bypass: true
+    outbox:
+      enabled: true
+      key-prefix: "collector:${spring.profiles.active:default}:cloud:outbox:v1:"
+      poll-interval-ms: 1000
+      claim-batch-size: 100
+      lease-ms: 15000
+      waiting-config-retry-ms: 10000
+      max-retry-times: 20
+    # 云端上报与平台 MQTT 下行配置（ReportHandler / ACK / 统一下行入口）
+    mqtt:
+      enabled: ${COLLECTOR_REPORT_MQTT_ENABLED:false}
+      broker-url: ${COLLECTOR_REPORT_MQTT_BROKER_URL:tcp://127.0.0.1:1883}
+      client-id: ${COLLECTOR_REPORT_MQTT_CLIENT_ID:}
+      username: ${COLLECTOR_REPORT_MQTT_USERNAME:}
+      password: ${COLLECTOR_REPORT_MQTT_PASSWORD:}
+      topic-prefix: /sys
+      ack-topic-prefix: /sys
+      gateway-product-key: ${COLLECTOR_REPORT_GATEWAY_PRODUCT_KEY:}
+      gateway-device-name: ${COLLECTOR_REPORT_GATEWAY_DEVICE_NAME:}
+      cloud-provider: alink
+      ack-topic-suffix: _reply
+      ack-timeout-seconds: 5
+      qos: 1
+      clean-session: true
+      connection-timeout: 30
+      keep-alive-interval: 60
+      # MQTT 建连全局并发上限；平台不支持并发创建连接时必须配置为 1。
+      max-concurrent-connects: 1
+      # MQTT 断线连接定时扫描重连间隔，单位毫秒。
+      reconnect-scan-interval-ms: 30000
+      lifecycle:
+        # 是否启用 MQTT 设备生命周期状态上报。
+        enabled: true
+        # 网关 MQTT 连接成功后主动上报在线状态 state=1。
+        gateway-online-enabled: true
+        # 服务主动关闭或配置移除前主动上报离线状态 state=2；异常断线由平台 MQTT 连接状态兜底。
+        gateway-graceful-offline-enabled: true
+        # 生命周期状态消息 QoS，只等待 MQTT PUBACK，不等待平台业务 _reply。
+        qos: 1
+        # 生命周期状态消息 MQTT publish 等待超时，单位毫秒。
+        publish-timeout-ms: 3000
+      topics:
+        property: thing/property/post
+        event: thing/event/post
+        state: thing/state/update
+      service-command-mappings: {}  # 平台服务名 -> 协议命令名映射，未配置时直接使用原 service/identifier
+
+  # MQTT 采集协议默认连接兜底配置（MqttCollector）
+  mqtt:
+    broker-url: tcp://127.0.0.1:1883
+    client-id: data-collector
+    username:
+    password:
+    qos: 1
+    clean-session: true
+    connection-timeout: 30
+    keep-alive-interval: 60
+    # MQTT 采集协议建连全局并发上限；平台不支持并发创建连接时必须配置为 1。
+    max-concurrent-connects: 1

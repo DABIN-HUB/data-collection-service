@@ -1,5 +1,16 @@
 target/
 *.log
 .idea/
+.m2/
+.m2repo
+m2repo2
+m2
 *.iml
 .vscode/
+tmp
+.tmp
+.external
+.env
+.env.*
+!.env.example
+logs/

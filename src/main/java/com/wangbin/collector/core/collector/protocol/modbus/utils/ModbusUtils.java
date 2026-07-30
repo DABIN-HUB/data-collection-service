@@ -173,7 +173,7 @@ public class ModbusUtils {
             return switch (typeEnum) {
                 case INT16 -> parseInt16(raw);
                 case UINT16 -> parseUInt16(raw);
-                case INT32 -> parseInt32(raw);
+                case INT,INT32 -> parseInt32(raw);
                 case UINT32 -> parseUInt32(raw);
                 case FLOAT, FLOAT32 -> parseFloat32(raw);
                 case FLOAT32_SWAP -> parseFloat32WordSwap(raw);

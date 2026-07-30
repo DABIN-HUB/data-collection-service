@@ -35,6 +35,9 @@
     <commons-lang3.version>3.14.0</commons-lang3.version>
     <commons-pool2.version>2.12.0</commons-pool2.version>
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
+    <tdengine.jdbc.version>3.7.1</tdengine.jdbc.version>
+    <plc4x.version>0.13.0</plc4x.version>
+    <springdoc.version>2.3.0</springdoc.version>
   </properties>
 
   <dependencies>
@@ -67,6 +70,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-websocket</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
 
     <!-- 数据库 -->
     <dependency>
@@ -78,7 +86,7 @@
       <artifactId>mybatis-spring-boot-starter</artifactId>
       <version>${mybatis.version}</version>
     </dependency>
-    <dependency>
+    <!--<dependency>
       <groupId>com.mysql</groupId>
       <artifactId>mysql-connector-j</artifactId>
       <scope>runtime</scope>
@@ -87,7 +95,7 @@
       <groupId>com.alibaba</groupId>
       <artifactId>druid-spring-boot-3-starter</artifactId>
       <version>1.2.20</version>
-    </dependency>
+    </dependency>-->
 
     <!-- 网络通信 -->
     <dependency>
@@ -110,6 +118,11 @@
       <groupId>redis.clients</groupId>
       <artifactId>jedis</artifactId>
       <version>${jedis.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.taosdata.jdbc</groupId>
+      <artifactId>taos-jdbcdriver</artifactId>
+      <version>${tdengine.jdbc.version}</version>
     </dependency>
 
     <!-- 工具类 -->
@@ -153,6 +166,11 @@
       <artifactId>modbus-serial</artifactId>
       <version>2.1.3</version>
     </dependency>
+    <dependency>
+      <groupId>com.fazecast</groupId>
+      <artifactId>jSerialComm</artifactId>
+      <version>2.11.2</version>
+    </dependency>
     <!--104协议 https://mvnrepository.com/artifact/org.openmuc/j60870 -->
     <dependency>
       <groupId>org.openmuc</groupId>
@@ -160,6 +178,36 @@
       <version>1.7.2</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-modbus</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-s7</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-eip</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-ads</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-knxnetip</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.plc4x</groupId>
+      <artifactId>plc4j-driver-opcua</artifactId>
+      <version>${plc4x.version}</version>
+    </dependency>
     <!--IEC 61850 https://mvnrepository.com/artifact/com.beanit/iec61850bean -->
     <dependency>
       <groupId>com.beanit</groupId>
@@ -219,6 +267,11 @@
       <groupId>org.mybatis.spring.boot</groupId>
       <artifactId>mybatis-spring-boot-starter-test</artifactId>
       <version>${mybatis.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -298,6 +351,25 @@
       <properties>
         <spring.profiles.active>prod</spring.profiles.active>
       </properties>
+    </profile>
+    <profile>
+      <id>p0-regression</id>
+      <properties>
+        <spring.profiles.active>test</spring.profiles.active>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>**/P0RegressionSuite.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 </project>

@@ -125,8 +125,9 @@ public class IoTProtocolService {
             if (!data.getPropertyTs().isEmpty()) {
                 propertyMessage.addParam("propertyTs", data.getPropertyTs());
             }
-        } else {
-            propertyParams.put(data.getPointCode(), data.getValue());
+            if (!data.getPropertyMetadata().isEmpty()) {
+                propertyMessage.addParam("propertyMetadata", data.getPropertyMetadata());
+            }
         }
         propertyMessage.setParams(propertyParams);
         propertyMessage.setDeviceId(data.getDeviceId());
@@ -137,6 +138,9 @@ public class IoTProtocolService {
         }
         if (!data.getPropertyTs().isEmpty()) {
             propertyMessage.getPropertyTsMap().putAll(data.getPropertyTs());
+        }
+        if (!data.getPropertyMetadata().isEmpty()) {
+            propertyMessage.getPropertyMetadataMap().putAll(data.getPropertyMetadata());
         }
         String batchId = data.getBatchId();
         if (batchId != null) {

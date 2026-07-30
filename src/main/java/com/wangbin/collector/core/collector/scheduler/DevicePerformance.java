@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 设备性能统计
+ * Per-device performance statistics.
  */
 class DevicePerformance {
 
@@ -21,25 +21,31 @@ class DevicePerformance {
     final AtomicLong successfulBatches = new AtomicLong(0);
     final AtomicLong failedBatches = new AtomicLong(0);
     final AtomicLong totalExecutionTime = new AtomicLong(0);
-    int currentBatchSize = 30;
+    volatile int currentBatchSize = 30;
+    volatile int minBatchSize = 10;
+    volatile int maxBatchSize = 100;
     long lastAdjustTime = System.currentTimeMillis();
 
-    // 设备健康度相关
     double healthScore = 100.0;
     long lastHealthCheckTime = System.currentTimeMillis();
     int consecutiveFailureCount = 0;
-    long lastSuccessTime = System.currentTimeMillis();
+    long lastSuccessTime;
 
-    // 响应时间趋势
     final List<Long> recentResponseTimes = new ArrayList<>();
     static final int MAX_RESPONSE_TIME_HISTORY = 10;
 
-    // 数据变化率
     final Map<String, Double> pointChangeRates = new ConcurrentHashMap<>();
     final Map<String, Object> lastValues = new ConcurrentHashMap<>();
 
     DevicePerformance(String deviceId) {
         this.deviceId = deviceId;
+    }
+
+    void initializeBatchWindow(int initialBatchSize, int protocolMaxBatchSize) {
+        int normalizedMax = Math.max(10, protocolMaxBatchSize);
+        int normalizedInitial = Math.max(10, Math.min(initialBatchSize, normalizedMax));
+        this.maxBatchSize = normalizedMax;
+        this.currentBatchSize = normalizedInitial;
     }
 
     void recordSuccess(int pointCount, long executionTime) {
@@ -129,11 +135,11 @@ class DevicePerformance {
         }
 
         int oldSize = currentBatchSize;
-        currentBatchSize = Math.max(10, Math.min(100,
+        currentBatchSize = Math.max(minBatchSize, Math.min(maxBatchSize,
                 currentBatchSize * (100 + percentChange) / 100));
 
         if (oldSize != currentBatchSize) {
-            log.debug("设备 {} 批量大小从 {} 调整为 {}", deviceId, oldSize, currentBatchSize);
+            log.debug("device {} batch size adjusted {} -> {}", deviceId, oldSize, currentBatchSize);
             lastAdjustTime = now;
         }
     }
@@ -147,6 +153,7 @@ class DevicePerformance {
         stats.put("averageBatchTime", successfulBatches.get() > 0 ?
                 totalExecutionTime.get() / successfulBatches.get() : 0);
         stats.put("currentBatchSize", currentBatchSize);
+        stats.put("maxBatchSize", maxBatchSize);
         stats.put("successRate", (successfulBatches.get() + failedBatches.get()) > 0 ?
                 successfulBatches.get() * 100.0 / (successfulBatches.get() + failedBatches.get()) : 0);
         stats.put("healthScore", calculateHealthScore());

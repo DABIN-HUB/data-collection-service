@@ -1,5 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
+import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.BeanFactory;
@@ -13,19 +15,19 @@ import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.ThreadMXBean;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.ToDoubleFunction;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 /**
- * JVM/系统资源监控服务。
+ * JVM 与系统资源监控服务。
  */
 @Service
 @RequiredArgsConstructor
 public class SystemResourceMonitorService {
 
     private final BeanFactory beanFactory;
+    private final CloudOutboxService cloudOutboxService;
 
     private MemoryMXBean memoryMXBean;
     private ThreadMXBean threadMXBean;
@@ -61,25 +63,16 @@ public class SystemResourceMonitorService {
                 .systemCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getSystemCpuLoad))
                 .threadCount(threadMXBean != null ? threadMXBean.getThreadCount() : -1)
                 .daemonThreadCount(threadMXBean != null ? threadMXBean.getDaemonThreadCount() : -1)
+                .outboxPendingCount(cloudOutboxService.getPendingCount())
+                .outboxIsolatedCount(cloudOutboxService.getIsolatedCount())
+                .outboxOldestMessageAgeMillis(cloudOutboxService.getOldestMessageAgeMillis())
                 .threadPools(threadPools)
                 .build();
     }
 
     private Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> collectThreadPoolStats() {
         Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> result = new LinkedHashMap<>();
-        String[] poolBeanNames = new String[]{
-                "batchDispatcherExecutor",
-                "asyncCollectorExecutor",
-                "dataProcessorExecutor",
-                "cacheAsyncExecutor",
-                "reportExecutor",
-                "timeSliceScheduler",
-                "monitorExecutor",
-                "taskScheduler",
-                "ioIntensiveExecutor",
-                "cpuIntensiveExecutor"
-        };
-        for (String beanName : poolBeanNames) {
+        for (String beanName : MonitorThreadPoolNames.ALL) {
             result.put(beanName, inspectThreadPool(beanName));
         }
         return result;
@@ -93,12 +86,16 @@ public class SystemResourceMonitorService {
         Object bean = beanFactory.getBean(beanName);
         if (bean instanceof ThreadPoolTaskExecutor executor) {
             ThreadPoolExecutor threadPoolExecutor = executor.getThreadPoolExecutor();
+            if (threadPoolExecutor == null) {
+                return emptyThreadPoolSnapshot();
+            }
             return buildSnapshot(
                     executor.getCorePoolSize(),
                     executor.getMaxPoolSize(),
                     executor.getActiveCount(),
                     threadPoolExecutor.getQueue().size(),
-                    threadPoolExecutor.getCompletedTaskCount()
+                    threadPoolExecutor.getCompletedTaskCount(),
+                    rejectedCount(threadPoolExecutor)
             );
         }
 
@@ -108,31 +105,42 @@ public class SystemResourceMonitorService {
                     executor.getMaximumPoolSize(),
                     executor.getActiveCount(),
                     executor.getQueue().size(),
-                    executor.getCompletedTaskCount()
+                    executor.getCompletedTaskCount(),
+                    rejectedCount(executor)
             );
         }
 
         if (bean instanceof ThreadPoolTaskScheduler scheduler) {
             ScheduledThreadPoolExecutor executor = scheduler.getScheduledThreadPoolExecutor();
+            if (executor == null) {
+                return emptyThreadPoolSnapshot();
+            }
             return buildSnapshot(
                     executor.getCorePoolSize(),
                     executor.getMaximumPoolSize(),
                     executor.getActiveCount(),
                     executor.getQueue().size(),
-                    executor.getCompletedTaskCount()
+                    executor.getCompletedTaskCount(),
+                    rejectedCount(executor)
             );
         }
 
         return emptyThreadPoolSnapshot();
     }
 
-    private SystemResourceSnapshot.ThreadPoolSnapshot buildSnapshot(int core, int max, int active, int queue, long completed) {
+    private SystemResourceSnapshot.ThreadPoolSnapshot buildSnapshot(int core,
+                                                                    int max,
+                                                                    int active,
+                                                                    int queue,
+                                                                    long completed,
+                                                                    long rejected) {
         return SystemResourceSnapshot.ThreadPoolSnapshot.builder()
                 .corePoolSize(core)
                 .maxPoolSize(max)
                 .activeCount(active)
                 .queueSize(queue)
                 .completedTaskCount(completed)
+                .rejectedCount(rejected)
                 .build();
     }
 
@@ -143,7 +151,18 @@ public class SystemResourceMonitorService {
                 .activeCount(-1)
                 .queueSize(-1)
                 .completedTaskCount(-1)
+                .rejectedCount(-1)
                 .build();
+    }
+
+    private long rejectedCount(ThreadPoolExecutor executor) {
+        if (executor == null) {
+            return -1L;
+        }
+        if (executor.getRejectedExecutionHandler() instanceof ObservedRejectedExecutionHandler observed) {
+            return observed.getRejectedCount();
+        }
+        return -1L;
     }
 
     private double readCpuLoad(ToDoubleFunction<com.sun.management.OperatingSystemMXBean> reader) {

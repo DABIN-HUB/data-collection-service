@@ -31,6 +31,9 @@ public final class SnmpAddressParser {
     }
 
     private static SnmpDataType resolveDataType(DataPoint point) {
+        if (point.getAdditionalConfig("driverDataType") != null) {
+            return SnmpDataType.fromText(point.getAdditionalConfig("driverDataType").toString());
+        }
         if (point.getAdditionalConfig("snmpType") != null) {
             return SnmpDataType.fromText(point.getAdditionalConfig("snmpType").toString());
         }

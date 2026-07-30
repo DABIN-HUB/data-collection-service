@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>采集器管理控制台</title>
+  <link rel="stylesheet" href="./styles.css?v=20260715-home-layout">
+  <link rel="stylesheet" href="./admin-redesign.css?v=20260706-p0b">
+  <link rel="stylesheet" href="./design-lab.css?v=20260702c">
+</head>
+<body class="theme-anchor">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div class="brand-copy">
+            <strong>采集器管理控制台</strong>
+            <small>采集器运维管理台</small>
+          </div>
+        </div>
+
+        <nav class="section-nav">
+          <a href="#overview" class="is-active" data-nav="overview"><span class="nav-glyph" aria-hidden="true">总</span><span>概览</span></a>
+          <a href="#devices" data-nav="devices"><span class="nav-glyph" aria-hidden="true">设</span><span>设备管理</span></a>
+          <a href="#protocols" data-nav="protocols"><span class="nav-glyph" aria-hidden="true">协</span><span>协议配置</span></a>
+          <a href="#realtime" data-nav="realtime"><span class="nav-glyph" aria-hidden="true">实</span><span>实时数据</span></a>
+          <a href="#control" data-nav="control"><span class="nav-glyph" aria-hidden="true">控</span><span>手动控制</span></a>
+          <a href="#shadow" data-nav="shadow"><span class="nav-glyph" aria-hidden="true">影</span><span>设备影子</span></a>
+          <a href="#monitor" data-nav="monitor"><span class="nav-glyph" aria-hidden="true">监</span><span>监控诊断</span></a>
+        </nav>
+      </div>
+
+      <div class="sidebar-bottom">
+        <details class="token-drawer">
+          <summary>访问令牌</summary>
+          <div class="token-body">
+            <label for="tokenInput">接口令牌（X-Collector-Token）</label>
+            <input id="tokenInput" type="password" placeholder="请输入接口令牌" autocomplete="off">
+            <p>静态页面免鉴权，接口请求仍会携带这里保存的令牌。</p>
+            <button id="saveTokenBtn" type="button">保存令牌</button>
+          </div>
+        </details>
+        <button type="button" class="sidebar-ghost">收起菜单</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div class="topbar-site">
+          <span class="topbar-label">当前节点：</span>
+          <strong>本机采集节点</strong>
+        </div>
+
+        <div class="topbar-actions">
+          <span id="runtimeIndicator" class="run-indicator"><i></i>状态检测中</span>
+          <span id="liveClock" class="clock">--:--:--</span>
+        </div>
+      </header>
+
+      <section id="designLabBar" class="design-lab-bar hidden" aria-label="主题实验室">
+        <div class="design-lab-copy">
+          <span class="design-lab-kicker">主题实验室</span>
+          <strong>控制台视觉方案预览</strong>
+          <p>预览模式使用本地模拟数据，并保持当前信息架构不变。</p>
+        </div>
+        <div id="designLabThemes" class="design-lab-themes" role="group" aria-label="主题选项"></div>
+        <div class="design-lab-current">
+          <span class="design-lab-meta-label">当前方案</span>
+          <strong id="designLabCurrentName">-</strong>
+          <p id="designLabCurrentNote">-</p>
+        </div>
+      </section>
+
+      <section id="overview" class="overview-section">
+        <div class="section-heading">
+          <div>
+            <h1>工业采集控制台</h1>
+            <p>统一查看采集设备、协议配置、实时数据、设备影子和运行诊断。</p>
+          </div>
+          <div class="heading-actions">
+            <span id="lastRefresh" class="heading-note">等待刷新</span>
+            <button id="refreshAllBtn" type="button" class="primary">刷新全部</button>
+            <button id="reloadDevicesBtn" type="button">重载设备</button>
+          </div>
+        </div>
+        <div id="overviewCards" class="overview-cards"></div>
+        <div class="home-dashboard" aria-label="首页运行总览">
+          <div class="home-dashboard-row home-dashboard-primary">
+            <section class="home-panel home-panel-large">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">告警中心</span>
+                  <h2>全局告警最近记录</h2>
+                </div>
+                <span id="homeAlarmSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homeAlarmRows" class="home-event-list">
+                <div class="empty-state compact">正在加载告警记录...</div>
+              </div>
+            </section>
+            <section class="home-panel">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">风险设备</span>
+                  <h2>设备与异常风险</h2>
+                </div>
+                <span id="homeRiskSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homeRiskRows" class="home-risk-list">
+                <div class="empty-state compact">正在分析设备健康状态...</div>
+              </div>
+            </section>
+          </div>
+          <div class="home-dashboard-row home-dashboard-observability">
+            <section class="home-panel home-panel-report">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">上报链路</span>
+                  <h2>数据上报链路</h2>
+                </div>
+                <span id="homeReportSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homePipeline" class="pipeline-steps">
+                <div class="empty-state compact">正在加载链路指标...</div>
+              </div>
+            </section>
+            <section class="home-panel home-panel-runtime">
+              <div class="home-panel-head">
+                <div>
+                  <span class="panel-kicker">运行状态</span>
+                  <h2>系统资源与线程池</h2>
+                </div>
+                <span id="homeResourceSummary" class="home-panel-badge">加载中</span>
+              </div>
+              <div id="homeResourceRows" class="home-resource-list">
+                <div class="empty-state compact">正在加载资源指标...</div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <div class="workspace-column workspace-left">
+          <section id="devices" class="panel device-panel">
+            <div class="panel-head">
+              <div class="panel-head-main">
+                <span class="panel-kicker">主工作流</span>
+                <h2>设备列表</h2>
+              </div>
+              <div class="mini-actions">
+                <button type="button" class="icon-button small plus" aria-label="新增"></button>
+              </div>
+            </div>
+
+            <div class="search-row">
+              <input id="deviceSearchInput" type="search" placeholder="搜索设备 / 协议 / 地址">
+              <span id="deviceSearchMeta" class="search-meta">等待加载</span>
+            </div>
+            <div id="deviceListState" class="panel-state hidden" role="status"></div>
+
+            <div class="device-tree-shell">
+              <table class="device-tree-table">
+                <tbody id="deviceRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="localDeviceWorkspace" class="panel local-device-panel hidden">
+            <div class="panel-head local-device-head hidden">
+              <div class="panel-head-main">
+                <span class="panel-kicker">临时建模</span>
+                <h2>本地临时设备编辑器</h2>
+              </div>
+              <div class="inline-actions local-device-actions">
+                <span class="field-help panel-help">
+                  <button type="button" class="field-help-trigger" aria-label="本地编辑器说明" title="本地编辑器说明">?</button>
+                  <span class="field-help-popover local-device-help" role="tooltip">
+                    <p class="field-help-title">本地临时设备编辑器</p>
+                    <p>只写入当前采集服务内存，不回写远端配置源。</p>
+                    <ul class="field-help-list">
+                      <li>适合协议联调、点位试配和临时验证</li>
+                      <li>保存后可以直接本地启动当前临时设备</li>
+                    </ul>
+                  </span>
+                </span>
+                <button id="openLocalDeviceBtn" type="button" class="primary">新建设备</button>
+              </div>
+            </div>
+
+            <div class="local-editor-placeholder hidden">
+              <div class="placeholder-hero">
+                <strong>临时编辑器已就绪</strong>
+                <span class="placeholder-badge">内存态</span>
+              </div>
+              <p>点击右侧“新建设备”，快速创建临时采集对象并保存测试。</p>
+            </div>
+
+            <div id="localDevicePanel" class="local-editor hidden">
+              <div class="local-editor-title">
+                <div>
+                  <span class="label-chip">配置编辑器</span>
+                  <h3 id="localEditorTitle">新增本地临时设备</h3>
+                  <p>按任务分区完成设备、连接、点位和云平台上报配置，保存操作始终可见。</p>
+                </div>
+                <div class="local-editor-title-actions">
+                  <div class="local-editor-stats">
+                    <div class="local-editor-stat">
+                      <strong id="localEditorProtocolText">-</strong>
+                      <span>当前协议</span>
+                    </div>
+                    <div class="local-editor-stat">
+                      <strong id="localEditorPointCount">0</strong>
+                      <span>点位数</span>
+                    </div>
+                  </div>
+                  <button id="cancelLocalDeviceBtn" type="button">关闭</button>
+                </div>
+              </div>
+
+              <div class="local-editor-tabs" role="tablist" aria-label="新增设备配置分区">
+                <button type="button" class="local-editor-tab is-active" data-local-editor-section="setup">
+                  <span>01</span>
+                  <strong>基础连接</strong>
+                </button>
+                <button type="button" class="local-editor-tab" data-local-editor-section="points">
+                  <span>02</span>
+                  <strong>点位建模</strong>
+                </button>
+                <button type="button" class="local-editor-tab" data-local-editor-section="cloud">
+                  <span>03</span>
+                  <strong>云平台上报</strong>
+                </button>
+                <button type="button" class="local-editor-tab" data-local-editor-section="json">
+                  <span>04</span>
+                  <strong>JSON 高级</strong>
+                </button>
+              </div>
+
+              <div class="local-editor-layout">
+                <aside class="local-editor-rail">
+                  <div>
+                    <span class="label-chip">配置进度</span>
+                    <strong id="localEditorValidationSummary">待填写设备信息</strong>
+                    <p>红色项需要处理；切换分区不会丢失当前编辑内容。</p>
+                  </div>
+                  <ol id="localEditorChecklist" class="local-checklist"></ol>
+                </aside>
+
+                <div class="local-editor-body">
+                  <section class="local-editor-pane is-active" data-local-editor-pane="setup">
+                    <div class="local-setup-cluster">
+                      <section class="local-section-card local-setup-card">
+                        <div class="local-section-head">
+                          <div>
+                            <span class="label-chip">设备基础</span>
+                            <h3>设备与调度参数</h3>
+                          </div>
+                          <p>设备标识、协议和采集节奏集中放在这里，减少来回滚动。</p>
+                        </div>
+
+                        <div class="form-grid compact-form-grid">
+                          <label>
+                            设备 ID *
+                            <input id="localDeviceId" type="text" placeholder="local-modbus-1">
+                          </label>
+                          <label>
+                            设备名称 *
+                            <input id="localDeviceName" type="text" placeholder="本地测试设备">
+                          </label>
+                          <label>
+                            <span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span>
+                            <select id="localProtocolSelect"></select>
+                          </label>
+                          <label>
+                            基础采集周期 (ms)
+                            <input id="localCollectionInterval" type="number" value="2000">
+                          </label>
+                          <label>
+                            最小采集周期 (ms)
+                            <input id="localMinCollectionInterval" type="number" value="100">
+                          </label>
+                          <label>
+                            最大采集周期 (ms)
+                            <input id="localMaxCollectionInterval" type="number" value="3600000">
+                          </label>
+                          <label>
+                            点位变化阈值
+                            <input id="localPointChangeThreshold" type="number" step="0.01" value="1">
+                          </label>
+                        </div>
+                      </section>
+
+                      <section class="local-section-card local-connection-card">
+                        <div class="local-section-head">
+                          <div>
+                            <span class="label-chip">连接参数</span>
+                            <h3>协议对应字段</h3>
+                          </div>
+                          <p>切换协议后，这里会自动刷新到对应的连接参数表单。</p>
+                        </div>
+
+                        <form id="localConnectionForm" class="dynamic-form"></form>
+                      </section>
+
+                      <section class="local-section-card local-cloud-target-card">
+                        <div class="local-section-head">
+                          <div>
+                            <span class="label-chip">云平台身份</span>
+                            <h3>设备级云目标（cloudTarget）</h3>
+                          </div>
+                          <p>这里决定该采集设备上报到哪个云设备；点位只维护云端属性（reportField）。</p>
+                        </div>
+
+                        <div class="form-grid compact-form-grid">
+                          <label>
+                            启用云上报
+                            <select id="localCloudEnabled">
+                              <option value="false">否</option>
+                              <option value="true">是</option>
+                            </select>
+                          </label>
+                          <label>
+                            云设备类型
+                            <select id="localCloudDeviceType">
+                              <option value="SUB_DEVICE">子设备</option>
+                              <option value="GATEWAY">网关设备</option>
+                              <option value="DIRECT">直连设备</option>
+                              <option value="LOGICAL_SUB_DEVICE">逻辑子设备</option>
+                            </select>
+                          </label>
+                          <label>
+                            云端产品标识（productKey）
+                            <input id="localCloudProductKey" type="text" placeholder="pk_xxx">
+                          </label>
+                          <label>
+                            云端设备名称（deviceName）
+                            <input id="localCloudDeviceName" type="text" placeholder="sub_device_001">
+                          </label>
+                          <label>
+                            启用拓扑注册
+                            <select id="localCloudTopologyEnabled">
+                              <option value="true">是</option>
+                              <option value="false">否</option>
+                            </select>
+                          </label>
+                          <label class="wide-field">
+                            上报主题示例（Topic）
+                            <input id="localCloudTopicPreview" type="text" readonly>
+                          </label>
+                        </div>
+                      </section>
+                    </div>
+                  </section>
+
+                  <section class="local-editor-pane" data-local-editor-pane="points">
+                    <section class="point-editor local-section-card">
+                      <div class="point-editor-head">
+                        <div>
+                          <span class="label-chip">点位建模</span>
+                          <strong>本地点位列表</strong>
+                        </div>
+                        <div class="inline-actions">
+                          <input id="localPointSearch" type="search" placeholder="搜索点位编码 / 名称 / 地址">
+                          <button id="addLocalPointBtn" type="button">新增点位</button>
+                          <button id="duplicateLocalPointBtn" type="button">复制</button>
+                          <button id="deleteLocalPointBtn" type="button" class="danger">删除</button>
+                        </div>
+                      </div>
+
+                      <div class="point-workspace">
+                        <section class="point-list-panel">
+                          <div class="point-list-meta">
+                            <strong id="localPointCount">0 个点位</strong>
+                            <span id="localPointSelectionMeta">未选择点位</span>
+                          </div>
+                          <div class="table-wrap compact point-table-wrap">
+                            <table class="point-table">
+                              <thead>
+                                <tr>
+                                  <th>点位</th>
+                                  <th>地址</th>
+                                  <th>类型</th>
+                                  <th>读写</th>
+                                  <th>状态</th>
+                                </tr>
+                              </thead>
+                              <tbody id="localPointRows">
+                                <tr><td colspan="5">暂无点位</td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+
+                        <section class="point-detail-panel">
+                          <div id="localPointEmpty" class="empty-state hidden">
+                            <strong>暂无选中的点位</strong>
+                            <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                          </div>
+                          <div id="localPointDetail"></div>
+                        </section>
+                      </div>
+                    </section>
+                  </section>
+
+                  <section class="local-editor-pane" data-local-editor-pane="cloud">
+                    <section class="local-section-card local-cloud-panel">
+                      <div class="local-section-head">
+                        <div>
+                          <span class="label-chip">云平台上报</span>
+                          <h3>设备级目标与云端属性（reportField）</h3>
+                        </div>
+                        <p>云设备身份在设备级云目标（cloudTarget）维护；点位只配置云属性（reportField）。</p>
+                      </div>
+                      <div class="local-cloud-workspace">
+                        <section class="point-list-panel">
+                          <div class="point-list-meta">
+                            <strong id="localCloudTargetCount">0 个可上报点位</strong>
+                            <span id="localCloudPointMeta">未选择点位</span>
+                          </div>
+                          <div class="table-wrap compact point-table-wrap">
+                            <table class="point-table cloud-point-table">
+                              <thead>
+                                <tr>
+                                  <th>点位</th>
+                                  <th>云端目标</th>
+                                  <th>字段</th>
+                                  <th>状态</th>
+                                </tr>
+                              </thead>
+                              <tbody id="localCloudRows">
+                                <tr><td colspan="4">暂无点位</td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                        <section class="point-detail-panel">
+                          <div id="localCloudEmpty" class="empty-state hidden">
+                            <strong>暂无选中的点位</strong>
+                            <span>先新增一个点位，或从左侧列表选择已有点位。</span>
+                          </div>
+                          <div id="localCloudDetail"></div>
+                        </section>
+                      </div>
+                    </section>
+                  </section>
+
+                  <section class="local-editor-pane" data-local-editor-pane="json">
+                    <section class="point-json-panel local-section-card">
+                      <div class="local-section-head">
+                        <div>
+                          <span class="label-chip">JSON 高级</span>
+                          <h3>点位配置 JSON 数组</h3>
+                        </div>
+                        <p>保留原始点位数组 JSON，适合批量粘贴或补充界面暂未可视化的字段。</p>
+                      </div>
+                      <label>
+                        点位配置 JSON 数组
+                        <textarea id="localPointsJson" spellcheck="false"></textarea>
+                      </label>
+                      <div class="inline-actions point-json-actions">
+                        <button id="formatLocalPointsBtn" type="button">格式化 JSON</button>
+                        <button id="applyLocalPointsJsonBtn" type="button">应用 JSON 到列表</button>
+                      </div>
+                    </section>
+                  </section>
+                </div>
+              </div>
+
+              <div class="inline-actions local-options">
+                <label class="check-line"><input id="localOverwrite" type="checkbox"> 覆盖已有本地临时设备</label>
+                <label class="check-line"><input id="localStartAfterSave" type="checkbox"> 保存后立即本地启动</label>
+                <div class="local-step-actions">
+                  <button id="localEditorPrevBtn" type="button">上一步</button>
+                  <button id="localEditorNextBtn" type="button">下一步</button>
+                  <button id="saveLocalDeviceBtn" type="button" class="primary">保存并测试</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="workspace-column workspace-center">
+          <section class="panel workbench-panel">
+            <div class="workbench-topbar workbench-topbar-compact">
+              <div class="device-summary">
+                <div class="summary-primary">
+                  <span id="selectedDeviceStatusDot" class="status-dot online"></span>
+                  <strong id="selectedDeviceName">请选择设备</strong>
+                  <span id="selectedDeviceStatus" class="summary-status">待连接</span>
+                </div>
+                <div class="summary-meta">
+                  <span>协议：<strong id="selectedDeviceProtocol">-</strong></span>
+                  <span>地址：<strong id="selectedDeviceAddress">-</strong></span>
+                  <span>采集周期：<strong id="selectedDeviceInterval">-</strong></span>
+                </div>
+              </div>
+
+              <div class="workbench-tabs">
+                <button type="button" class="is-active" data-workbench-tab="points">点位工作台</button>
+                <button type="button" data-workbench-tab="protocol">协议连接</button>
+              </div>
+            </div>
+
+            <section class="workbench-stage console-module-active" data-workbench-panel="points">
+              <div class="runtime-stage-shell">
+                <div class="stage-section-head">
+                  <div>
+                    <span class="panel-kicker">点位工作区</span>
+                    <h2>实时点位工作台</h2>
+                  </div>
+                  <span id="realtimeStageNote" class="stage-note">选择设备后查看当前点位快照</span>
+                </div>
+
+                <div class="workbench-toolbar workbench-toolbar-compact">
+                  <div class="inline-actions workbench-primary-actions">
+                    <button id="toggleRealtimeBtn" type="button" class="primary">自动刷新</button>
+                    <button id="resetAdaptiveBtn" type="button">重置自适应</button>
+                    <button id="exportConfigBtn" type="button">导出配置</button>
+                    <button id="syncConfigBtn" type="button">触发同步</button>
+                  </div>
+
+                  <div class="inline-actions workbench-filters">
+                    <select id="realtimeDeviceSelect"></select>
+                    <input id="devicePointSearch" type="search" placeholder="搜索点位名称 / 编码 / 地址">
+                  </div>
+                </div>
+
+                <section id="realtime" class="console-module console-module-active realtime-stage">
+                  <div id="realtimeState" class="panel-state hidden" role="status"></div>
+                  <div class="table-wrap point-runtime-wrap">
+                    <table class="runtime-table realtime-table">
+                      <thead>
+                        <tr>
+                          <th>点位名称</th>
+                          <th>标识符</th>
+                          <th>数据类型</th>
+                          <th>寄存器地址</th>
+                          <th>读写</th>
+                          <th>缩放</th>
+                          <th>当前值</th>
+                          <th>质量</th>
+                          <th>处理耗时</th>
+                        </tr>
+                      </thead>
+                      <tbody id="realtimeRows"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+
+              <section class="action-deck workbench-lower-panel">
+                <div class="stage-section-head action-section-head">
+                  <div>
+                    <span class="panel-kicker">设备工具区</span>
+                    <h2>控制与诊断面板</h2>
+                  </div>
+                  <span class="stage-note">收敛为主操作流，降低切换成本</span>
+                </div>
+
+                <div class="panel-tabs action-tabs">
+                  <button type="button" class="console-tab is-active" data-console-tab="control"><span class="tab-glyph" aria-hidden="true">控</span><span>手动控制</span></button>
+                  <button type="button" class="console-tab" data-console-tab="shadow"><span class="tab-glyph" aria-hidden="true">影</span><span>设备影子</span></button>
+                </div>
+                <div class="capability-note">
+                  历史数据、事件告警、通讯日志暂不放入主工作流，待后端接口补齐后再恢复。
+                </div>
+
+                <section id="control" class="console-module console-module-active" data-console-panel="control">
+                  <div class="console-panel-head">
+                    <h2>手动控制</h2>
+                    <select id="controlDeviceSelect"></select>
+                  </div>
+
+                  <div class="surface-grid two">
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>批量写点位</h3>
+                        <span class="surface-note">写入参数载荷</span>
+                      </div>
+                      <p class="usage-note">云端属性下发按云端属性（reportField）匹配；本地批量写仍支持 pointId、pointCode、pointName、pointAlias。</p>
+                      <textarea id="pointWriteInput" spellcheck="false">{
+  "values": {
+    "temperatureSet": 25
+  }
+}</textarea>
+                      <button id="writePointsBtn" type="button" class="primary wide">批量写入点位</button>
+                    </div>
+
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>执行命令</h3>
+                        <span class="surface-note">采集器命令执行接口</span>
+                      </div>
+                      <p id="commandHelpText" class="usage-note">先选择设备，再填写采集器支持的命令名和参数。</p>
+                      <pre id="commandExample" class="json-view">{
+  "command": "status",
+  "params": {}
+}</pre>
+                      <textarea id="commandInput" spellcheck="false">{
+  "command": "status",
+  "params": {}
+}</textarea>
+                      <button id="executeCommandBtn" type="button" class="primary wide">执行命令</button>
+                      <pre id="controlView" class="json-view">等待执行结果</pre>
+                    </div>
+                  </div>
+                </section>
+
+                <section id="history" class="console-module hidden" data-console-panel="history">
+                  <div class="empty-state">
+                    <strong>历史数据面板待接入</strong>
+                    <span>下一步会接到点位级历史查询；当前先完成主工作台结构和右侧点位配置编辑链路。</span>
+                  </div>
+                </section>
+
+                <section id="shadow" class="console-module hidden" data-console-panel="shadow">
+                  <div id="shadowState" class="panel-state hidden" role="status"></div>
+                  <div class="surface-grid two">
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>当前影子</h3>
+                        <div class="inline-actions">
+                          <select id="shadowDeviceSelect"></select>
+                          <button id="loadShadowBtn" type="button">读取影子</button>
+                        </div>
+                      </div>
+                      <pre id="shadowView" class="json-view">请选择设备读取影子</pre>
+                    </div>
+
+                    <div class="surface-card">
+                      <div class="surface-card-head">
+                        <h3>期望状态更新（desired）</h3>
+                        <button id="clearDesiredBtn" type="button" class="danger">清理期望状态</button>
+                      </div>
+                      <textarea id="desiredInput" spellcheck="false">{
+  "desired": {}
+}</textarea>
+                      <button id="saveDesiredBtn" type="button" class="primary wide">提交期望状态</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="console-module hidden note-panel" data-console-panel="note-alarm">
+                  <div class="empty-state">
+                    <strong>事件告警面板预留</strong>
+                    <span>当前版本保留占位，后续可接入事件流或告警列表。</span>
+                  </div>
+                </section>
+
+                <section class="console-module hidden note-panel" data-console-panel="note-log">
+                  <div class="empty-state">
+                    <strong>通讯日志面板预留</strong>
+                    <span>当前版本保留占位，后续可接入链路日志和调试报文。</span>
+                  </div>
+                </section>
+              </section>
+            </section>
+
+            <section id="protocols" class="workbench-stage hidden protocol-workbench" data-workbench-panel="protocol">
+              <div class="protocol-workbench-head">
+                <div>
+                  <h2>协议与连接设置</h2>
+                  <p>协议选择、连接参数和配置差异在这里统一处理。</p>
+                </div>
+                <span id="protocolCount" class="pill">0 种协议</span>
+              </div>
+
+              <div class="protocol-compact-shell">
+                <div class="protocol-config-column">
+                  <div class="form-grid compact-form-grid protocol-select-grid">
+                    <label>
+                      协议
+                      <select id="protocolSelect"></select>
+                    </label>
+                    <label>
+                      设备
+                      <select id="connectionDeviceSelect"></select>
+                    </label>
+                  </div>
+
+                  <div id="protocolFormState" class="panel-state hidden" role="status"></div>
+                  <form id="connectionForm" class="dynamic-form"></form>
+
+                  <div class="inline-actions protocol-actions">
+                    <button id="loadConnectionBtn" type="button">读取连接配置</button>
+                    <button id="saveConnectionBtn" type="button" class="primary">保存连接配置</button>
+                  </div>
+                </div>
+
+                <aside class="protocol-diff-column">
+                  <div class="protocol-diff-block">
+                    <div class="surface-card-head">
+                      <h3>配置差异</h3>
+                      <span class="surface-note">本地与远端</span>
+                    </div>
+                    <div id="protocolDiffState" class="panel-state hidden" role="status"></div>
+                    <pre id="diffView" class="json-view">请选择设备查看配置差异</pre>
+                  </div>
+                </aside>
+              </div>
+            </section>
+          </section>
+        </div>
+
+        <div class="workspace-column workspace-right">
+          <section id="monitor" class="panel monitor-panel monitor-panel-compact monitor-summary-panel">
+            <div class="panel-head monitor-summary-head">
+              <div class="panel-head-main">
+                <span class="panel-kicker">状态摘要</span>
+                <h2>运行监控</h2>
+                <p>先看四个关键指标，原始诊断 JSON 继续收在折叠区。</p>
+              </div>
+              <span class="pill subtle">系统侧观测</span>
+            </div>
+
+            <div id="monitorState" class="panel-state hidden" role="status"></div>
+            <div id="monitorCards" class="cards monitor-cards monitor-cards-compact"></div>
+            <details class="monitor-details">
+              <summary>查看原始诊断 JSON</summary>
+              <pre id="monitorView" class="json-view">等待刷新监控数据</pre>
+            </details>
+          </section>
+
+          <section class="panel inspector-panel point-config-panel">
+            <div class="panel-head inspector-head inspector-head-compact">
+              <div class="panel-head-main">
+                <h2>采集点详情</h2>
+              </div>
+              <div class="inline-actions inspector-actions">
+                <span class="field-help panel-help">
+                  <button type="button" class="field-help-trigger" aria-label="点位配置说明" title="点位配置说明">?</button>
+                  <span class="field-help-popover inspector-help" role="tooltip">
+                    <p class="field-help-title">点位配置工作区</p>
+                    <p>先在中间点位表选择一条记录，右侧再直接编辑和保存。</p>
+                    <ul class="field-help-list">
+                      <li>“重新加载”会从当前设备重新获取点位配置</li>
+                      <li>表单区默认预留固定工作空间，内部支持滚动</li>
+                    </ul>
+                  </span>
+                </span>
+                <button id="reloadSelectedPointBtn" type="button">重新加载</button>
+                <button id="saveSelectedPointBtn" type="button" class="primary">保存点位</button>
+              </div>
+            </div>
+
+            <div class="inspector-status-row">
+              <span id="inspectorPointTag" class="pill subtle">未选择点位</span>
+              <span id="pointConfigStateText" class="pill subtle">待选择</span>
+            </div>
+
+            <div class="point-config-stage">
+              <div id="selectedPointEmpty" class="empty-state">
+                <strong>暂无选中的点位</strong>
+                <span>先在中间点位表里选择一个点位，这里会切换成可编辑的点位配置工作区。</span>
+              </div>
+
+              <div id="selectedPointPanel" class="inspector-body hidden">
+                <div id="pointConfigWorkspace" class="point-config-workspace"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <div id="localEditorBackdrop" class="modal-backdrop hidden"></div>
+
+      <div id="toast" class="toast"></div>
+    </main>
+  </div>
+
+  <script src="./design-lab.js?v=20260702c"></script>
+  <script src="./app.js?v=20260708-home-dashboard"></script>
+  <script src="./local-point-editor.js?v=20260708-workbench"></script>
+  <script src="./point-config-editor.js?v=20260702e"></script>
+</body>
+</html>
