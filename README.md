@@ -21,16 +21,47 @@
 
 ## 控制台访问
 
-项目内置了静态管理控制台页面，服务启动后可直接访问：
+项目内置了静态管理控制台页面。准备好 Java 17 和 Maven 后，可以通过以下命令完成本地构建和启动：
+
+```bash
+mvn -B -ntp clean package -DskipTests
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+```
+
+应用启动完成后访问：
 
 - 本地默认地址：`http://127.0.0.1:9090/collector/admin/index.html`
 - 如果你修改了 `server.port` 或 `server.servlet.context-path`，请按实际配置调整访问地址
+
+首次打开控制台时，按以下步骤完成本地访问和设备配置：
+
+1. 在页面左下角“访问令牌”区域输入开发令牌 `ops-token` 并保存。
+2. 打开设备管理区域，点击“新增本地临时设备”。
+3. 依次填写设备基础信息、连接参数和云平台身份；不需要上报云端时关闭对应开关。
+4. 添加协议点位并检查地址、数据类型、读写类型和采集周期。
+5. 保存设备后启动采集，在“实时点位工作台”查看当前值、数据质量和处理耗时。
+
+`ops-token` 仅用于本机开发，不能作为生产令牌。本地临时设备只保存在当前进程内存中，应用重启后会丢失；需要长期保存时，应将配置导出并接入文件配置或远程配置源。Redis、TDengine 和云端 MQTT 的启用方式见[配置说明](#配置说明)。
 
 控制台前端资源位置：
 
 - `src/main/resources/static/admin/index.html`
 - `src/main/resources/static/admin/app.js`
 - `src/main/resources/static/admin/styles.css`
+
+## 界面预览
+
+### 运行概览
+
+![控制台运行概览](./images/console-overview.png)
+
+### 本地设备基础配置
+
+![新增本地临时设备](./images/local-device-config.png)
+
+### 点位建模
+
+![本地点位建模](./images/point-modeling.png)
 
 ## 项目优势
 
@@ -333,7 +364,6 @@ src/main/java/com/wangbin/collector
 - Eclipse Milo OPC UA
 - SNMP4J
 - Californium CoAP
-- j60870
 - iec61850bean
 
 ## 协议支持一览
@@ -378,7 +408,7 @@ src/main/java/com/wangbin/collector
 
 ```bash
 mvn clean package -DskipTests
-java -jar target/data-collection-service.jar --spring.profiles.active=dev
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
 ### 配置说明
@@ -410,7 +440,7 @@ Spring Boot 配置优先级遵循“启动参数 > 环境变量 > 外部配置 >
 
 ```bash
 mvn clean package -DskipTests
-java -jar target/data-collection-service.jar \
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --telemetry.tdengine.enabled=false \
   --collector.report.mqtt.enabled=false
@@ -419,7 +449,7 @@ java -jar target/data-collection-service.jar \
 如果本地连 Redis 也不需要，可额外关闭依赖 Redis 的运行分支：
 
 ```bash
-java -jar target/data-collection-service.jar \
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --spring.data.redis.stream.enabled=false \
   --collector.cache.type=local \
@@ -1115,7 +1145,7 @@ collector:
 生产环境使用 `prod` Profile：
 
 ```bash
-java -jar target/data-collection-service.jar --spring.profiles.active=prod
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
 ```
 
 最少需要检查以下环境变量：
@@ -1164,7 +1194,7 @@ collector:
 启动时加载外部文件：
 
 ```bash
-java -jar target/data-collection-service.jar \
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=prod \
   --spring.config.additional-location=file:./config/application-secrets.yml
 ```
