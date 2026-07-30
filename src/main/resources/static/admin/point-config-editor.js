@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   state.devicePointConfigs = state.devicePointConfigs || {};
   state.devicePointConfigDirty = state.devicePointConfigDirty || {};
   state.pointConfigLoadingDeviceId = state.pointConfigLoadingDeviceId || null;

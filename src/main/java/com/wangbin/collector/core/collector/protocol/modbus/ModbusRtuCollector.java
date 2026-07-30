@@ -114,7 +114,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     @Override
     protected void doConnect() throws Exception {
-        log.info("开始建?Modbus RTU 连接: {}", deviceInfo.getDeviceId());
+        log.info("开始建立 Modbus RTU 连接: deviceId={}", deviceInfo.getDeviceId());
         DeviceConnection connectionConfig = requireConnectionConfig();
 
         interFrameDelay = connectionConfig.getInt("interFrameDelay", 5);
@@ -159,13 +159,13 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         ModbusAddress modbusAddress = parseModbusAddress(address);
         int unitId = sanitizeUnitId(resolveUnitId(point));
 
-        // 根据寄存器类型读取数?
+        // 根据寄存器类型读取数据
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> readCoil(unitId, modbusAddress);
             case DISCRETE_INPUT -> readDiscreteInput(unitId, modbusAddress);
             case HOLDING_REGISTER -> readHoldingRegister(unitId, modbusAddress, point.getDataType());
             case INPUT_REGISTER -> readInputRegister(unitId, modbusAddress, point.getDataType());
-            default -> throw new IllegalArgumentException("不支持的Modbus寄存器类? " +
+            default -> throw new IllegalArgumentException("不支持的 Modbus 寄存器类型: " +
                     modbusAddress.getRegisterType());
         };
     }
@@ -183,7 +183,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> writeCoil(unitId, modbusAddress, (Boolean) value);
             case HOLDING_REGISTER -> writeHoldingRegister(unitId, modbusAddress, value, point.getDataType());
-            default -> throw new IllegalArgumentException("该寄存器类型不支持写? " +
+            default -> throw new IllegalArgumentException("该寄存器类型不支持写入: " +
                     modbusAddress.getRegisterType());
         };
     }
@@ -270,7 +270,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
     /**
-     * 读取保持寄存?
+     * 读取保持寄存器。
      */
     private Object readHoldingRegister(int unitId, ModbusAddress address, String dataType) throws Exception {
         // 使用工具类获取寄存器数量
@@ -285,7 +285,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
     /**
-     * 读取输入寄存?
+     * 读取输入寄存器。
      */
     private Object readInputRegister(int unitId, ModbusAddress address, String dataType) throws Exception {
         // 使用工具类获取寄存器数量
@@ -312,15 +312,15 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
     /**
-     * 写入保持寄存?
+     * 写入保持寄存器。
      */
     private boolean writeHoldingRegister(int unitId, ModbusAddress address, Object value, String dataType) throws Exception {
-        // 使用工具类获取寄存器数量和转�?
+        // 使用工具类获取寄存器数量并转换待写入值
         int registerCount = DataType.fromString(dataType).getRegisterCount();
         short[] registers = ModbusUtils.valueToRegisters(value, dataType, byteOrder);
 
         if (registerCount == 1) {
-            // 写入单个寄存?
+            // 写入单个寄存器
             WriteSingleRegisterRequest request = new WriteSingleRegisterRequest(address.getAddress(), registers[0]);
             CompletionStage<WriteSingleRegisterResponse> future = client.writeSingleRegisterAsync(unitId, request);
 
@@ -331,8 +331,8 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
                 ReferenceCountUtil.release(request);
             }
         } else {
-            // 写入多个寄存?
-            // 使用工具类构建请求数?
+            // 写入多个寄存器
+            // 使用工具类构建请求数据
             byte[] registerData = ModbusUtils.buildWriteRegistersData(registers);
             WriteMultipleRegistersRequest request = new WriteMultipleRegistersRequest(
                     address.getAddress(), registerCount, registerData);
@@ -388,13 +388,13 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("values参数不能为空");
         }
 
-        // 构建寄存器数?
+        // 构建寄存器数组
         short[] registers = new short[values.size()];
         for (int i = 0; i < values.size(); i++) {
             registers[i] = values.get(i).shortValue();
         }
 
-        // 使用工具类构建请求数?
+        // 使用工具类构建请求数据
         byte[] registerData = ModbusUtils.buildWriteRegistersData(registers);
         WriteMultipleRegistersRequest request = new WriteMultipleRegistersRequest(
                 address, registers.length, registerData);
@@ -421,8 +421,8 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
         try {
             ReadCoilsResponse response = rtuWait(future);
-            // 使用工具类解析线�?
-        List<Boolean> values = ModbusUtils.getCoilValues(response.coils(), quantity, parity);
+            // 使用工具类解析线圈值
+            List<Boolean> values = ModbusUtils.getCoilValues(response.coils(), quantity, parity);
 
             return Map.of(
                     "success", response != null,
@@ -444,7 +444,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
 
         int quantity = values.size();
-        // 使用工具类构建线圈字节数?
+        // 使用工具类构建线圈字节数组
         byte[] coilBytes = ModbusUtils.buildCoilBytes(values, parity);
 
         WriteMultipleCoilsRequest request = new WriteMultipleCoilsRequest(address, quantity, coilBytes);
@@ -464,10 +464,10 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     private Object executeReadExceptionStatus(int unitId, Map<String, Object> params) throws Exception {
         try {
-            // 使用工具类构建RTU请求?
+            // 使用工具类构建 RTU 请求
             byte[] requestData = ModbusUtils.buildRtuExceptionStatusRequest(unitId);
 
-            // 这里你后面直接走串口?requestData 即可
+            // 预留串口原始请求发送入口
             // serialPort.writeBytes(requestData, requestData.length);
 
             return Map.of(
@@ -475,7 +475,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
                     "request", requestData
             );
         } catch (Exception e) {
-            throw new Exception("读取异常状态失? " + e.getMessage(), e);
+            throw new Exception("读取异常状态失败: " + e.getMessage(), e);
         }
     }
 

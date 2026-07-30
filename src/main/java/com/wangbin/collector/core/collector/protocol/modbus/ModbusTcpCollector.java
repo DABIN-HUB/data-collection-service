@@ -177,7 +177,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> writeCoil(unitId,modbusAddress, (Boolean) value);
             case HOLDING_REGISTER -> writeHoldingRegister(unitId,modbusAddress, value, point.getDataType());
-            default -> throw new IllegalArgumentException("该寄存器类型不支持写�? " + modbusAddress.getRegisterType());
+            default -> throw new IllegalArgumentException("该寄存器类型不支持写入: " + modbusAddress.getRegisterType());
         };
     }
 
@@ -426,7 +426,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return result;
     }
 
-    // =============== 杈呭姪鏂规硶 ===============
+    // =============== 辅助方法 ===============
 
     private boolean testConnection() {
         int unitId = resolveHealthCheckUnitId();

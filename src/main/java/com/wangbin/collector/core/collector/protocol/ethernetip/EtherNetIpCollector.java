@@ -153,7 +153,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     lastProcessResults.put(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
-                    log.error("濠电姷鏁告慨鐑藉极閸涘﹥鍙忓ù鍏兼綑閸ㄥ倿鏌ｉ幘宕囧哺闁哄鐗楃换娑㈠箣閻愯尙鍔伴梺绋款儐閹告悂锝炲┑瀣亗閹兼番鍨昏ぐ搴繆?EtherNet/IP 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜滃ù鏍煏婵炵偓娅嗛柛濠傛健閺屻劑寮崒娑欑彧闂佺粯绻傞悥濂稿蓟濞戙垹鐒洪柛鎰典簼閸Ｑ囨⒑閹肩偛濡界紒璇插閸┾偓妞ゆ巻鍋撶紒鐘茬Ч瀹曟洟鏌嗗畵銉ユ处鐎靛ジ寮堕幋鐙呯串闂備胶绮崹鍏兼叏閵堝鐓曢柟瀵稿亼娴滄粓鏌熼弶鍨暢闁诡喖銈搁弻鏇㈠幢濡櫣顑傜紓浣介哺鐢顕ラ崟顓涘亾閿濆骸浜滈柛鐐差樀濮婃椽宕崟顐У闂佸憡鎸荤换鍫ョ嵁韫囨稑宸濋柡澶嬪灣缁卞爼姊洪崨濠冪闁诲繑鑹捐濠㈣埖鍔栭悡鐔煎箹濞ｎ剙鈧倕顭囬幇鐗堢厵闁告縿鍎遍崢鎾煙椤旀儳浠遍柡浣稿暣閸┾偓妞ゆ帒瀚烽弫瀣煏婢跺棙娅呯紒鈧€ｎ偁浜滈柟鍝勭Х閸忓瞼绱掓径搴㈢【妞ゎ亜鍟存俊鍫曞幢濡も偓椤洭姊? {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    log.error("EtherNet/IP 数组点位处理失败: deviceId={}, pointName={}", deviceInfo.getDeviceId(), point.getPointName(), e);
                     recordException(e, point);
                     results.put(pointId, null);
                 }
@@ -166,7 +166,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("闂傚倸鍊搁崐鎼佸磹妞嬪海鐭嗗ù锝堟缁€濠傗攽閻樻彃浜為柣鎺旀櫕閹叉瓕绠涢弴鐕佹綗闂佺粯鍔曢顓犲姬閳ь剟姊洪幖鐐插妧闁搞儺鐓夌槐顒€鈹戦悩鍨毄闁稿绋戣灒濠电姴鍟伴々鍙夌節闂堟侗鍎忕痪鎯х秺閺岋綁骞嬮敐鍛呮捇鏌嶉柨瀣仸闁靛洤瀚伴獮鍥礈娴ｇ懓浠归梻渚€娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛铏规嫚閳ヨ櫕鐏堢紓鍌氱Т閿曘倝鎮鹃悜钘夐唶闁哄洢鍔嶉弲婊堟倵楠炲灝鍔氶柟鍐茬箻椤㈡瑩宕熼娑氬幗闂佺粯鏌ㄩ幗婊堟儗鐎ｎ偆绡€闁靛繆鍩楅鍡楀疾闂備焦瀵уú宥夊磻閹炬番浜滈柡鍥崝锔锯偓瑙勬礈閸犳牠銆佸Δ浣瑰闁惧繐澧ｉ妶鍡曠箚闁绘劦浜滈埀顒佺墵瀹曟繈骞嬮敃鈧壕? {}", deviceInfo.getDeviceId(), e);
+            log.error("EtherNet/IP 数组点位批量读取失败: deviceId={}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
             throw new CollectorException("批量读取失败", deviceInfo.getDeviceId(),
                     null, e);
@@ -199,7 +199,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("闂傚倸鍊搁崐鎼佸磹閻戣姤鍤勯柛鎾茬閸ㄦ繃銇勯弽顐粶缂佲偓婢跺绠鹃柛鈩兩戠亸顓㈡煟閹烘垹浠涢柕鍥у楠炴帒顓奸崼婵嗗腐闂備線娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛娲传閸曨剚鎷遍梺鐑╂櫓閸ㄥ爼鎮伴鈧畷鍫曨敆婢跺娅嶉梻浣虹帛閿氶柛鐔风仢閳诲秹骞嬮敂瑙ｆ嫽婵炶揪绲介幉锟犲疮閻愮儤鐓熼柣鏃€娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            log.error("EtherNet/IP 数组点位写入失败: deviceId={}, pointName={}", deviceInfo.getDeviceId(), point.getPointName(), e);
             recordException(e, point);
             throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
                     point.getPointId(), e);
@@ -238,7 +238,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     validateArrayPointConfiguration(point, address, "write");
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception e) {
-                    log.error("PLC4X EtherNet/IP 闂傚倸鍊搁崐鎼佸磹瀹勬噴褰掑炊瑜滃ù鏍煏婵炵偓娅嗛柛濠傛健閺屻劑寮崒娑欑彧闂佺粯绻傞悥濂稿蓟濞戙垹鐒洪柛鎰典簼閸Ｑ囨⒑閹肩偛濡界紒璇插閸┾偓妞ゆ巻鍋撶紒鐘茬Ч瀹曟洟鏌嗗畵銉ユ处鐎靛ジ寮堕幋鐙呯串闂備胶绮崹鍏兼叏閵堝鐓曢柟瀵稿亼娴滄粓鏌熼弶鍨暢闁诡喖銈搁弻鏇㈠幢濡櫣顑傜紓浣介哺鐢顕ラ崟顓涘亾閿濆骸浜滈柛鐐差樀濮婃椽宕崟顒佹嫳闂佺儵鏅╅崹鍫曟偘椤曗偓瀹曞爼顢楁径瀣珝闂備胶绮敋闁哥喎鐏濋埢宥夊箣閿旇В鎷绘繛杈剧到閹诧繝宕悙鐑樼厽闁绘梹娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? pointId={}", point.getPointId(), e);
+                    log.error("EtherNet/IP 数组点位批量写入失败: pointId={}", point.getPointId(), e);
                     recordException(e, point);
                     results.put(point.getPointId(), false);
                 }
@@ -251,7 +251,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("闂傚倸鍊搁崐鎼佸磹妞嬪海鐭嗗ù锝堟缁€濠傗攽閻樻彃浜為柣鎺旀櫕閹叉瓕绠涢弴鐕佹綗闂佺粯鍔曢顓犲姬閳ь剟姊洪幖鐐插妧闁搞儺鐓夌槐顒€鈹戦悩鍨毄闁稿绋戣灒濠电姴鍟伴々鍙夌節闂堟侗鍎忕痪鎯х秺閺岋綁骞嬮敐鍛呮捇鏌嶉柨瀣仸闁靛洤瀚伴獮鍥礈娴ｇ懓浠归梻渚€娼уΛ娆戞暜閻愬灚顫曢柟鐑樻尭缁剁偤鎮楅敐搴′簻闁哥偛顦靛娲传閸曨剚鎷遍梺鐑╂櫓閸ㄥ爼鎮伴鈧畷鍫曨敆婢跺娅嶉梻浣虹帛閿氶柛鐔风仢閳诲秹骞嬮敂瑙ｆ嫽婵炶揪绲介幉锟犲疮閻愮儤鐓熼柣鏃€娼欓崝姘舵懚閻愬绠鹃柛鈩冾殕缁傚鏌涢妶鍡╂疁闁哄本鐩鎾Ω閵夈儺娼界紓鍌氬€哥粔鏉懨洪敃鍌毼﹂柛鏇ㄥ灠缁犳盯鏌嶆潪鎵槮濠? {}", deviceInfo.getDeviceId(), e);
+            log.error("EtherNet/IP 数组点位批量写入失败: deviceId={}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
             throw new CollectorException("批量写入失败", deviceInfo.getDeviceId(),
                     null, e);

@@ -14,7 +14,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * CoAP 閲囬泦鍣ㄥ疄鐜般€? * 濡傞渶灏嗚瀵?Trap 鎺ㄩ€佺粰涓婂眰缂撳瓨鎴栦綔杩涗竴姝ュ鐞嗭紝鍙湪 handleNotification() 鎴?SNMP 杞鍥炶皟鍐呮帴鍏ヤ笟鍔＄閬? */
+ * CoAP 协议采集器，支持点位读写、观察订阅和资源发现。
+ */
 @Slf4j
 public class CoapCollector extends AbstractCoapCollector {
 
@@ -55,7 +56,7 @@ public class CoapCollector extends AbstractCoapCollector {
             try {
                 values.put(point.getPointId(), doReadPoint(point));
             } catch (Exception e) {
-                log.error("CoAP鎵归噺璇诲彇澶辫触 point={}", point.getPointName(), e);
+                log.error("CoAP 批量读取失败: point={}", point.getPointName(), e);
                 values.put(point.getPointId(), null);
             }
         }
@@ -78,7 +79,7 @@ public class CoapCollector extends AbstractCoapCollector {
                 boolean success = doWritePoint(entry.getKey(), entry.getValue());
                 results.put(entry.getKey().getPointId(), success);
             } catch (Exception e) {
-                log.error("CoAP鍐欏叆澶辫触 point={}", entry.getKey().getPointName(), e);
+                log.error("CoAP 点位写入失败: point={}", entry.getKey().getPointName(), e);
                 results.put(entry.getKey().getPointId(), false);
             }
         }
@@ -95,7 +96,7 @@ public class CoapCollector extends AbstractCoapCollector {
             observeMapping.put(coapPoint.getObserveKey(), point);
             startObserve(coapPoint, createHandler(coapPoint));
         }
-        log.info("CoAP瑙傚療璁㈤槄瀹屾垚 size={}", observeMapping.size());
+        log.info("CoAP 观察订阅完成: size={}", observeMapping.size());
     }
 
     @Override
@@ -105,7 +106,7 @@ public class CoapCollector extends AbstractCoapCollector {
                 try {
                     relation.proactiveCancel();
                 } catch (Exception e) {
-                    log.debug("鍙栨秷瑙傚療寮傚父", e);
+                    log.debug("取消 CoAP 观察订阅异常", e);
                 }
             });
             observeRelations.clear();
@@ -145,13 +146,13 @@ public class CoapCollector extends AbstractCoapCollector {
             case "discover":
                 return doCommandDiscover();
             default:
-                throw new IllegalArgumentException("涓嶆敮鎸佺殑CoAP鍛戒护: " + command);
+                throw new IllegalArgumentException("不支持的 CoAP 命令: " + command);
         }
     }
 
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.info("CoAP鐐逛綅鍔犺浇瀹屾垚 device={} count={}", deviceId, points.size());
+        log.info("CoAP 点位加载完成: deviceId={}, count={}", deviceId, points.size());
     }
 
     @Override
@@ -162,7 +163,7 @@ public class CoapCollector extends AbstractCoapCollector {
         }
         Object value = convertResponse(response, point);
         ingestPushedValue(dataPoint, value);
-        log.info("CoAP鎺ㄩ€?pointId={} value={}", dataPoint.getPointId(), value);
+        log.info("CoAP 推送数据: pointId={}, value={}", dataPoint.getPointId(), value);
     }
 
     private byte[] buildPayload(Object value, boolean binary) {

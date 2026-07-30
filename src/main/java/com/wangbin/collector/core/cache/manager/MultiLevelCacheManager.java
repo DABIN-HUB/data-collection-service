@@ -692,7 +692,7 @@ public class MultiLevelCacheManager implements CacheManager {
             return;
         }
 
-        log.info("寮€濮嬮鐑紦瀛? key={}", key);
+        log.info("开始预热缓存: key={}", key);
         for (CacheManager manager : cacheManagers) {
             try {
                 manager.put(key, value);
@@ -728,7 +728,7 @@ public class MultiLevelCacheManager implements CacheManager {
             return false;
         }
 
-        log.info("寮€濮嬪埛鏂扮紦瀛? key={}", key);
+        log.info("开始刷新缓存: key={}", key);
         delete(key);
         boolean success = put(key, newValue);
         log.info("缓存刷新完成: key={}, success={}", key, success);
