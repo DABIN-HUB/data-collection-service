@@ -370,6 +370,8 @@ public class DataController {
             }
             List<Map<String, Object>> rows = alarmHistoryService.queryRecentAlarmHistory(
                     deviceId, pointId, pointCode, level, ruleId, startTs, endTs, limit);
+            long total = alarmHistoryService.countRecentAlarmHistory(
+                    deviceId, pointId, pointCode, level, ruleId, startTs, endTs);
             result.put("status", "success");
             result.put("deviceId", deviceId);
             result.put("pointId", pointId);
@@ -377,6 +379,7 @@ public class DataController {
             result.put("level", level);
             result.put("ruleId", ruleId);
             result.put("count", rows.size());
+            result.put("total", total);
             result.put("data", rows);
             result.put("startTs", startTs);
             result.put("endTs", endTs);

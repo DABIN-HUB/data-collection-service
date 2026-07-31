@@ -25,6 +25,7 @@ public class MonitorController {
     private final SystemResourceMonitorService systemResourceMonitorService;
     private final ExceptionMonitorService exceptionMonitorService;
     private final CloudReportMonitorService cloudReportMonitorService;
+    private final TdengineMonitorService tdengineMonitorService;
     private final CollectionScheduler collectionScheduler;
 
     @GetMapping("/cache")
@@ -55,6 +56,11 @@ public class MonitorController {
     @GetMapping("/report")
     public Map<String, Object> cloudReportMetrics() {
         return cloudReportMonitorService.getCloudReportMetrics();
+    }
+
+    @GetMapping("/storage")
+    public StorageMetricsSnapshot storageMetrics() {
+        return tdengineMonitorService.getStorageMetrics();
     }
 
     @GetMapping("/perf/detail")

@@ -177,6 +177,12 @@ collector:
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
         required-scope: CONFIG_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/network/diagnose]
+        required-scope: SECURITY_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/alarms/*/acknowledge]
+        required-scope: DEVICE_CONTROL
       - methods: [GET]
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE

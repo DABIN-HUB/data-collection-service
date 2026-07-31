@@ -165,6 +165,31 @@ public class AlarmHistoryService {
         rows.forEach(this::addCompatibilityKeys);
         return rows;
     }
+
+    public long countRecentAlarmHistory(String deviceId,
+                                        String pointId,
+                                        String pointCode,
+                                        String level,
+                                        String ruleId,
+                                        Long startTs,
+                                        Long endTs) {
+        if (!properties.isEnabled()) {
+            return 0L;
+        }
+        ensureSchema();
+        return alarmRepository.countRecentAlarmHistory(
+                sanitizeIdentifier(properties.getDatabase()),
+                sanitizeIdentifier(properties.getAlarmSuperTable()),
+                blankToNull(deviceId),
+                blankToNull(pointId),
+                blankToNull(pointCode),
+                blankToNull(level),
+                blankToNull(ruleId),
+                startTs,
+                endTs
+        );
+    }
+
     public boolean isEnabled() {
         return properties.isEnabled();
     }

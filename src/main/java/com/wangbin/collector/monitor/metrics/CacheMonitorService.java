@@ -30,7 +30,19 @@ public class CacheMonitorService {
                 .level2HitRate(percentValue(stats, "level2HitRate"))
                 .missRate(percentValue(stats, "missRate"))
                 .levelStatistics(levelStats(stats.get("levelStatistics")))
+                .health(cacheHealth())
                 .build();
+    }
+
+    private Map<String, Object> cacheHealth() {
+        try {
+            return new LinkedHashMap<>(multiLevelCacheManager.getHealthStatus());
+        } catch (RuntimeException exception) {
+            Map<String, Object> health = new LinkedHashMap<>();
+            health.put("overallStatus", "UNKNOWN");
+            health.put("levels", Collections.emptyList());
+            return health;
+        }
     }
 
     private long longValue(Map<String, Object> source, String key) {

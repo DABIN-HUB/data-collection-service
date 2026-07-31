@@ -43,11 +43,16 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 
 `ops-token` 仅用于本机开发，不能作为生产令牌。本地临时设备只保存在当前进程内存中，应用重启后会丢失；需要长期保存时，应将配置导出并接入文件配置或远程配置源。Redis、TDengine 和云端 MQTT 的启用方式见[配置说明](#配置说明)。
 
+控制台按“工作台、资产与配置、操作中心、系统运维”分组，提供运行总览、实时数据、告警中心、设备管理、采集配置、云端上报、手动控制、设备影子、系统诊断、系统日志和网络检测 11 个入口。页面使用真实接口，不包含墨刀原型中的随机设备、随机告警或随机网络结果。
+
 控制台前端资源位置：
 
 - `src/main/resources/static/admin/index.html`
 - `src/main/resources/static/admin/app.js`
 - `src/main/resources/static/admin/styles.css`
+- `src/main/resources/static/admin/modao-console.js`
+- `src/main/resources/static/admin/modao-console.css`
+- `src/main/resources/static/admin/icons/`
 
 ## 界面预览
 
@@ -62,6 +67,14 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 ### 点位建模
 
 ![本地点位建模](./images/point-modeling.png)
+
+### 告警中心
+
+![控制台告警中心](./images/console-alarm-center.png)
+
+### 网络检测
+
+![控制台网络检测](./images/console-network-diagnostic.png)
 
 ## 项目优势
 
@@ -517,6 +530,12 @@ collector:
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
         required-scope: CONFIG_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/network/diagnose]
+        required-scope: SECURITY_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/alarms/*/acknowledge]
+        required-scope: DEVICE_CONTROL
       - methods: [GET]
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE
@@ -886,6 +905,7 @@ collector:
     state:
       enabled: true
       key-prefix: "collector:prod:alarm:state:v1:"
+      acknowledgement-key-prefix: "collector:prod:alarm:ack:v1:"
       ttl-seconds: 2592000
       retry-interval-ms: 5000
       retry-batch-size: 500
@@ -897,9 +917,10 @@ collector:
 - `retry-interval-ms` 控制重试周期。
 - `retry-batch-size` 限制每次重试数量。
 - `ttl-seconds` 默认 30 天，必须覆盖最长告警处理和审计周期。
-- 多环境共用 Redis 时必须修改 `key-prefix`。
+- 控制台告警确认使用 `acknowledgement-key-prefix`，通过 Redis `setIfAbsent` 保证首次确认语义。
+- 多环境共用 Redis 时必须同时修改 `key-prefix` 和 `acknowledgement-key-prefix`。
 
-关闭 `enabled` 后仍可进行当前进程内的告警判定，但状态不能跨重启恢复。
+关闭 `enabled` 后仍可进行当前进程内的告警判定和告警确认，但状态不能跨重启恢复。Redis 临时不可用时，告警确认降级保存在当前进程有界内存中，不阻断采集链路。
 
 #### 9. 云端上报总开关和设备映射
 
@@ -1290,6 +1311,9 @@ docker compose logs -f app
 | `/collector/monitor/system` | 需要 `VIEW` | JVM、CPU、线程池、Outbox 指标 |
 | `/collector/monitor/report` | 需要 `VIEW` | 云上报链路状态 |
 | `/collector/api/cache/stats` | 需要 `VIEW` | 缓存统计 |
+| `/collector/api/ops/logs` | 需要 `VIEW` | 脱敏后的最近运行日志 |
+| `/collector/api/ops/network/diagnose` | 需要 `SECURITY_MANAGE` | 受限 Ping、Traceroute 和 TCP 检测 |
+| `/collector/api/ops/alarms/acknowledgements/query` | 需要 `VIEW` | 批量查询告警确认状态 |
 
 新增健康项：
 
@@ -1357,6 +1381,9 @@ Slave 显示的保持寄存器 `4001` 到 `4010`，在控制台点位地址中�
 | `DataController` | `/api/data/history/device/{deviceId}/point/{pointId}` | 查询历史 |
 | `ConfigController` | `/api/config/**` | 配置治理、导入导出、同步 |
 | `MonitorController` | `/monitor/**` | 性能、缓存、系统、异常监控 |
+| `OpsController` | `/api/ops/logs` | 查询有界、脱敏的运行日志 |
+| `OpsController` | `/api/ops/network/diagnose` | 对本机或已配置设备执行受限网络检测 |
+| `OpsController` | `/api/ops/alarms/**` | 查询和幂等确认告警 |
 | `HealthController` | `/health` | 健康检查 |
 
 表内路径均为应用相对路径，默认访问时需要在前面加 `/collector`。

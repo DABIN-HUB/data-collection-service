@@ -29,5 +29,8 @@ public class CacheMetricsSnapshot {
     private final Map<String, Map<String, Object>> levelStatistics = Collections.emptyMap();
 
     @Builder.Default
+    private final Map<String, Object> health = Collections.emptyMap();
+
+    @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();
 }

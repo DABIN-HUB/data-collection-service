@@ -14,6 +14,7 @@ public class AlarmStateProperties {
 
     private boolean enabled = true;
     private String keyPrefix = "collector:default:alarm:state:v1:";
+    private String acknowledgementKeyPrefix = "collector:default:alarm:ack:v1:";
     private long ttlSeconds = 2_592_000L;
     private int retryBatchSize = 500;
 }

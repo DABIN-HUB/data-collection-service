@@ -15,3 +15,5 @@ tmp
 !.env.example
 logs/
 docs
+scripts
+AGENTS.md

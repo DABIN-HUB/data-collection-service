@@ -6,6 +6,7 @@ import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.report.config.ReportProperties;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import com.wangbin.collector.core.report.service.ReportManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -35,15 +36,18 @@ public class CloudReportMonitorService {
 
     private final ReportProperties reportProperties;
     private final ReportManager reportManager;
+    private final CloudOutboxService cloudOutboxService;
     private final ConfigManager configManager;
     private final Executor reportExecutor;
 
     public CloudReportMonitorService(ReportProperties reportProperties,
                                      ReportManager reportManager,
+                                     CloudOutboxService cloudOutboxService,
                                      ConfigManager configManager,
                                      @Qualifier("reportExecutor") Executor reportExecutor) {
         this.reportProperties = reportProperties;
         this.reportManager = reportManager;
+        this.cloudOutboxService = cloudOutboxService;
         this.configManager = configManager;
         this.reportExecutor = reportExecutor;
     }
@@ -51,8 +55,10 @@ public class CloudReportMonitorService {
     public Map<String, Object> getCloudReportMetrics() {
         Map<String, Object> configured = collectConfiguredMetrics();
         Map<String, Object> executor = inspectReportExecutor();
-        List<String> risks = collectRisks(configured, executor);
-        String status = resolveStatus(executor, risks);
+        Map<String, Map<String, Object>> handlersStatus = safeMap(reportManager.getHandlersStatus());
+        Map<String, Map<String, Object>> handlersStatistics = safeMap(reportManager.getHandlersStatistics());
+        List<String> risks = collectRisks(configured, executor, handlersStatus, handlersStatistics);
+        String status = resolveStatus(configured, executor, risks, handlersStatus, handlersStatistics);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("enabled", reportProperties.isEnabled());
@@ -61,12 +67,13 @@ public class CloudReportMonitorService {
         result.put("mode", reportProperties.getMode());
         result.put("cloudProvider", reportProperties.getMqtt().getCloudProvider());
         result.put("supportedProtocols", safeList(reportManager.getSupportedProtocols()));
-        result.put("handlersStatus", safeMap(reportManager.getHandlersStatus()));
-        result.put("handlersStatistics", safeMap(reportManager.getHandlersStatistics()));
+        result.put("handlersStatus", handlersStatus);
+        result.put("handlersStatistics", handlersStatistics);
         result.put("configured", configured);
         result.put("executor", executor);
         result.put("batch", batchOptions());
         result.put("ack", ackOptions());
+        result.put("outbox", outboxMetrics());
         result.put("payload", payloadOptions());
         result.put("risks", risks);
         result.put("generatedAt", System.currentTimeMillis());
@@ -202,7 +209,10 @@ public class CloudReportMonitorService {
         return -1L;
     }
 
-    private List<String> collectRisks(Map<String, Object> configured, Map<String, Object> executor) {
+    private List<String> collectRisks(Map<String, Object> configured,
+                                      Map<String, Object> executor,
+                                      Map<String, Map<String, Object>> handlersStatus,
+                                      Map<String, Map<String, Object>> handlersStatistics) {
         List<String> risks = new ArrayList<>();
         if (!reportProperties.isEnabled()) {
             risks.add("云上报总开关未启用");
@@ -210,6 +220,12 @@ public class CloudReportMonitorService {
         }
         if (reportManager.getSupportedProtocols() == null || reportManager.getSupportedProtocols().isEmpty()) {
             risks.add("未发现可用上报协议处理器");
+        }
+        Map<String, Object> activeHandler = activeHandler(handlersStatus);
+        if (activeHandler.isEmpty()) {
+            risks.add("当前上报模式没有对应的处理器");
+        } else if (Boolean.FALSE.equals(activeHandler.get("enabled"))) {
+            risks.add("当前上报处理器未启用");
         }
         if (number(configured.get("reportFieldPointCount")) <= 0) {
             risks.add("未配置启用上报且包含 reportField 的点位，云端属性上报无数据来源");
@@ -226,33 +242,86 @@ public class CloudReportMonitorService {
         if (number(executor.get("rejectedCount")) > 0) {
             risks.add("上报线程池发生过拒绝任务");
         }
+        if (requiresPersistentConnection()
+                && number(configured.get("cloudTargetDeviceCount")) > 0
+                && !hasActiveTransport(handlersStatus, handlersStatistics)) {
+            risks.add("当前上报模式没有已连接的云端会话");
+        }
         return risks;
     }
 
-    private String resolveStatus(Map<String, Object> executor, List<String> risks) {
+    private String resolveStatus(Map<String, Object> configured,
+                                 Map<String, Object> executor,
+                                 List<String> risks,
+                                 Map<String, Map<String, Object>> handlersStatus,
+                                 Map<String, Map<String, Object>> handlersStatistics) {
         if (!reportProperties.isEnabled()) {
             return "DISABLED";
         }
-        if (reportManager.getSupportedProtocols() == null || reportManager.getSupportedProtocols().isEmpty()) {
+        if (reportManager.getSupportedProtocols() == null
+                || reportManager.getSupportedProtocols().isEmpty()
+                || activeHandler(handlersStatus).isEmpty()) {
             return "ERROR";
         }
         if (number(executor.get("queueUsage")) >= QUEUE_ERROR_THRESHOLD) {
             return "ERROR";
         }
+        if (requiresPersistentConnection()
+                && number(configured.get("cloudTargetDeviceCount")) > 0
+                && !hasActiveTransport(handlersStatus, handlersStatistics)) {
+            return "ERROR";
+        }
         if (!risks.isEmpty()) {
             return "WARN";
         }
-        return "OK";
+        return requiresPersistentConnection() ? "OK" : "READY";
     }
 
     private String statusText(String status) {
         return switch (status) {
-            case "OK" -> "云上报链路正常";
+            case "OK" -> "云上报链路已连接";
+            case "READY" -> "云上报配置就绪";
             case "WARN" -> "云上报链路存在风险";
             case "ERROR" -> "云上报链路异常";
             case "DISABLED" -> "云上报未启用";
             default -> "云上报状态未知";
         };
+    }
+
+    private Map<String, Object> activeHandler(Map<String, Map<String, Object>> handlers) {
+        String mode = normalizedMode();
+        return handlers.entrySet().stream()
+                .filter(entry -> mode.equalsIgnoreCase(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(Collections.emptyMap());
+    }
+
+    private boolean requiresPersistentConnection() {
+        String mode = normalizedMode();
+        return "MQTT".equals(mode) || "TCP".equals(mode);
+    }
+
+    private boolean hasActiveTransport(Map<String, Map<String, Object>> handlersStatus,
+                                       Map<String, Map<String, Object>> handlersStatistics) {
+        String mode = normalizedMode();
+        Map<String, Object> status = activeHandler(handlersStatus);
+        Map<String, Object> statistics = activeHandler(handlersStatistics);
+        if ("MQTT".equals(mode)) {
+            Object clientManager = statistics.get("clientManager");
+            if (clientManager instanceof Map<?, ?> manager) {
+                return number(manager.get("connectedClients")) > 0;
+            }
+            return false;
+        }
+        if ("TCP".equals(mode)) {
+            return number(status.get("activeConnections")) > 0;
+        }
+        return false;
+    }
+
+    private String normalizedMode() {
+        return String.valueOf(reportProperties.getMode()).trim().toUpperCase();
     }
 
     private Map<String, Object> batchOptions() {
@@ -278,6 +347,14 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    private Map<String, Object> outboxMetrics() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("enabled", cloudOutboxService.isEnabled());
+        result.put("pendingCount", cloudOutboxService.getPendingCount());
+        result.put("isolatedCount", cloudOutboxService.getIsolatedCount());
+        result.put("oldestMessageAgeMs", cloudOutboxService.getOldestMessageAgeMillis());
+        return result;
+    }
     private Map<String, Object> payloadOptions() {
         ReportProperties.Cloud.Payload payload = reportProperties.getCloud().getPayload();
         Map<String, Object> result = new LinkedHashMap<>();

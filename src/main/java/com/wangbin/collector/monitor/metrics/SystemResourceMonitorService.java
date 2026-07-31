@@ -16,6 +16,7 @@ import java.lang.management.ThreadMXBean;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.ToDoubleFunction;
+import java.util.function.ToLongFunction;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
@@ -59,6 +60,8 @@ public class SystemResourceMonitorService {
                 .heapMax(memoryMXBean != null ? memoryMXBean.getHeapMemoryUsage().getMax() : -1L)
                 .nonHeapUsed(memoryMXBean != null ? memoryMXBean.getNonHeapMemoryUsage().getUsed() : -1L)
                 .nonHeapCommitted(memoryMXBean != null ? memoryMXBean.getNonHeapMemoryUsage().getCommitted() : -1L)
+                .totalPhysicalMemorySize(readMemorySize(com.sun.management.OperatingSystemMXBean::getTotalMemorySize))
+                .freePhysicalMemorySize(readMemorySize(com.sun.management.OperatingSystemMXBean::getFreeMemorySize))
                 .processCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getProcessCpuLoad))
                 .systemCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getSystemCpuLoad))
                 .threadCount(threadMXBean != null ? threadMXBean.getThreadCount() : -1)
@@ -174,6 +177,18 @@ public class SystemResourceMonitorService {
             return load >= 0.0 ? load * 100.0 : -1.0;
         } catch (Exception ignored) {
             return -1.0;
+        }
+    }
+
+    private long readMemorySize(ToLongFunction<com.sun.management.OperatingSystemMXBean> reader) {
+        if (extendedOperatingSystemMXBean == null) {
+            return -1L;
+        }
+        try {
+            long value = reader.applyAsLong(extendedOperatingSystemMXBean);
+            return value >= 0L ? value : -1L;
+        } catch (Exception ignored) {
+            return -1L;
         }
     }
 }

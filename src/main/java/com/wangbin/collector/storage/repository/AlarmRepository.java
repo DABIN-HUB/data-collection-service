@@ -58,4 +58,14 @@ public interface AlarmRepository {
                                                       @Param("startTs") Long startTs,
                                                       @Param("endTs") Long endTs,
                                                       @Param("limit") int limit);
+
+    long countRecentAlarmHistory(@Param("database") String database,
+                                 @Param("superTable") String superTable,
+                                 @Param("deviceId") String deviceId,
+                                 @Param("pointId") String pointId,
+                                 @Param("pointCode") String pointCode,
+                                 @Param("alarmLevel") String alarmLevel,
+                                 @Param("ruleId") String ruleId,
+                                 @Param("startTs") Long startTs,
+                                 @Param("endTs") Long endTs);
 }
