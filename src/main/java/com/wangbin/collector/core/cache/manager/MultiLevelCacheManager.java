@@ -9,8 +9,8 @@ import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -33,19 +33,13 @@ import java.util.concurrent.locks.Lock;
 @Component("multiLevelCacheManager")
 public class MultiLevelCacheManager implements CacheManager {
 
-    @Autowired(required = false)
-    @Qualifier("localCacheManager")
-    private LocalCacheManager localCacheManager;
-
-    @Autowired(required = false)
-    @Qualifier("redisCacheManager")
-    private RedisCacheManager redisCacheManager;
-
-    @Autowired(required = false)
-    private ExceptionMonitorService exceptionMonitorService;
-
-    @Autowired
-    private CacheProperties cacheProperties;
+    @Nullable
+    private final LocalCacheManager localCacheManager;
+    @Nullable
+    private final RedisCacheManager redisCacheManager;
+    @Nullable
+    private final ExceptionMonitorService exceptionMonitorService;
+    private final CacheProperties cacheProperties;
 
     private final List<CacheManager> cacheManagers = new CopyOnWriteArrayList<>();
     private volatile boolean enabled = true;
@@ -62,11 +56,24 @@ public class MultiLevelCacheManager implements CacheManager {
     private final AtomicLong level2Hits = new AtomicLong(0);
     private final AtomicLong totalMisses = new AtomicLong(0);
 
-    @Autowired
-    @Qualifier("ioIntensiveExecutor")
-    private ExecutorService asyncExecutor;
+    private final ExecutorService asyncExecutor;
 
     private final Striped<Lock> cacheLocks = Striped.lazyWeakLock(1024);
+
+    /**
+     * 创建多级缓存管理器。
+     */
+    public MultiLevelCacheManager(@Qualifier("localCacheManager") @Nullable LocalCacheManager localCacheManager,
+                                  @Qualifier("redisCacheManager") @Nullable RedisCacheManager redisCacheManager,
+                                  @Nullable ExceptionMonitorService exceptionMonitorService,
+                                  CacheProperties cacheProperties,
+                                  @Qualifier("ioIntensiveExecutor") ExecutorService asyncExecutor) {
+        this.localCacheManager = localCacheManager;
+        this.redisCacheManager = redisCacheManager;
+        this.exceptionMonitorService = exceptionMonitorService;
+        this.cacheProperties = cacheProperties;
+        this.asyncExecutor = asyncExecutor;
+    }
 
     /**
      * 处理组件生命周期。

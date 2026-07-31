@@ -5,11 +5,11 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -24,17 +24,7 @@ import java.util.concurrent.TimeUnit;
 @ConditionalOnExpression("'${collector.cache.type:local}' != 'redis'")
 public class LocalCacheManager extends AbstractCacheManager {
 
-    @Value("${collector.cache.local.max-size:10000}")
-    private long maxSize;
-
-    @Value("${collector.cache.local.expire-after-write:300}")
-    private long expireAfterWrite; // 秒
-
-    @Value("${collector.cache.local.expire-after-access:60}")
-    private long expireAfterAccess; // 秒
-
-    @Value("${collector.cache.local.initial-capacity:1000}")
-    private int initialCapacity;
+    private final CacheProperties.LocalCache localProperties;
 
     private Cache<String, CacheData<?>> cache;
     private final Map<String, CacheKey> keyMapping = new ConcurrentHashMap<>();
@@ -42,8 +32,9 @@ public class LocalCacheManager extends AbstractCacheManager {
     /**
      * 创建当前组件实例。
      */
-    public LocalCacheManager() {
+    public LocalCacheManager(CacheProperties cacheProperties) {
         super("LOCAL_CAFFEINE", 1);
+        this.localProperties = cacheProperties.getLocal();
     }
 
     // 移除监听器声明
@@ -63,17 +54,17 @@ public class LocalCacheManager extends AbstractCacheManager {
     protected void doInit() throws Exception {
         // 使用具体的泛型类型
         Caffeine<String, CacheData<?>> caffeine = Caffeine.newBuilder()
-                .initialCapacity(initialCapacity)
-                .maximumSize(maxSize)
-                .expireAfterWrite(expireAfterWrite, TimeUnit.SECONDS)
-                .expireAfterAccess(expireAfterAccess, TimeUnit.SECONDS)
+                .initialCapacity(localProperties.getInitialCapacity())
+                .maximumSize(localProperties.getMaxSize())
+                .expireAfterWrite(localProperties.getExpireAfterWrite(), TimeUnit.SECONDS)
+                .expireAfterAccess(localProperties.getExpireAfterAccess(), TimeUnit.SECONDS)
                 .recordStats()
                 .removalListener(removalListener);
 
         cache = caffeine.build();
 
         log.info("本地缓存管理器初始化完成: 最大数量={}, 写入后过期秒数={}s, 访问后过期秒数={}s",
-                maxSize, expireAfterWrite, expireAfterAccess);
+                localProperties.getMaxSize(), localProperties.getExpireAfterWrite(), localProperties.getExpireAfterAccess());
     }
 
     /**

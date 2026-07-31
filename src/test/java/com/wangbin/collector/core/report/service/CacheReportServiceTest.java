@@ -50,7 +50,7 @@ public class CacheReportServiceTest {
         props.setMaxPropertiesPerMessage(2);
         props.setMaxPayloadBytes(1024);
         CacheReportService service = new CacheReportService(null, props, null, null, null, null,
-                new CloudPackReportAssembler(), null, null);
+                new CloudPackReportAssembler(), null, null, null, null, null);
 
         ReportData snapshot = new ReportData();
         snapshot.setDeviceId("dev-test");
@@ -88,7 +88,7 @@ public class CacheReportServiceTest {
         props.setMaxPropertiesPerMessage(1);
         props.setMaxPayloadBytes(1024);
         CacheReportService service = new CacheReportService(null, props, null, null, null, null,
-                new CloudPackReportAssembler(), null, null);
+                new CloudPackReportAssembler(), null, null, null, null, null);
 
         ReportData snapshot = new ReportData();
         snapshot.setDeviceId("dev-test");
@@ -374,7 +374,10 @@ public class CacheReportServiceTest {
                 gatewayRateLimiter,
                 new CloudPackReportAssembler(),
                 distributedLock,
-                taskScheduler
+                taskScheduler,
+                null,
+                null,
+                null
         );
     }
 

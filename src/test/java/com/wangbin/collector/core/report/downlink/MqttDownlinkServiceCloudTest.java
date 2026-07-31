@@ -18,7 +18,6 @@ import com.wangbin.collector.core.report.inbound.MqttBusinessReplyService;
 import com.wangbin.collector.core.report.inbound.MqttInboundMessage;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -33,8 +32,7 @@ class MqttDownlinkServiceCloudTest {
     @Test
     void shouldCreateOtaTaskFromStandardTopic() {
         DeviceInfo gateway = device("gateway-local", "pk-gw", "gateway-1", CloudDeviceType.GATEWAY);
-        MqttDownlinkService service = service(List.of(gateway));
-        ReflectionTestUtils.setField(service, "cloudOtaService", new CloudOtaService());
+        MqttDownlinkService service = service(List.of(gateway), new CloudOtaService(), null);
 
         MqttDownlinkResult result = service.handle(
                 "/sys/pk-gw/gateway-1/thing/ota/upgrade",
@@ -48,8 +46,7 @@ class MqttDownlinkServiceCloudTest {
 
     @Test
     void shouldApplyTopologyCreateFromChangeTopic() {
-        MqttDownlinkService service = service();
-        ReflectionTestUtils.setField(service, "cloudTopologyService", new CloudTopologyService());
+        MqttDownlinkService service = service(List.of(), null, new CloudTopologyService());
 
         MqttDownlinkResult result = service.handle(
                 "/sys/pk-gw/gateway-1/thing/topo/change",
@@ -62,9 +59,8 @@ class MqttDownlinkServiceCloudTest {
 
     @Test
     void shouldApplyTopologyDeleteFromChangeTopic() {
-        MqttDownlinkService service = service();
         CloudTopologyService topologyService = new CloudTopologyService();
-        ReflectionTestUtils.setField(service, "cloudTopologyService", topologyService);
+        MqttDownlinkService service = service(List.of(), null, topologyService);
 
         service.handle(
                 "/sys/pk-gw/gateway-1/thing/topo/change",
@@ -80,8 +76,9 @@ class MqttDownlinkServiceCloudTest {
 
     @Test
     void shouldStoreSubDeviceRegisterReply() {
-        MqttBusinessReplyService service = new MqttBusinessReplyService(new ObjectMapper());
-        ReflectionTestUtils.setField(service, "cloudSubDeviceRegisterService", new CloudSubDeviceRegisterService());
+        MqttBusinessReplyService service = new MqttBusinessReplyService(
+                new ObjectMapper(),
+                new CloudSubDeviceRegisterService());
 
         MqttBusinessReplyResult result = service.handle(
                 new MqttInboundMessage(
@@ -101,6 +98,12 @@ class MqttDownlinkServiceCloudTest {
     }
 
     private MqttDownlinkService service(List<DeviceInfo> devices) {
+        return service(devices, null, null);
+    }
+
+    private MqttDownlinkService service(List<DeviceInfo> devices,
+                                        CloudOtaService cloudOtaService,
+                                        CloudTopologyService cloudTopologyService) {
         ConfigManager configManager = mock(ConfigManager.class);
         when(configManager.getDevice(anyString())).thenReturn(null);
         when(configManager.getAllDevices()).thenReturn(devices);
@@ -111,7 +114,11 @@ class MqttDownlinkServiceCloudTest {
                 new ReportProperties(),
                 mock(CollectionManager.class),
                 mock(ShadowManager.class),
-                new CloudDeviceIdentityService(configManager));
+                new CloudDeviceIdentityService(configManager),
+                null,
+                cloudTopologyService,
+                cloudOtaService,
+                null);
     }
 
     private DeviceInfo device(String deviceId, String productKey, String cloudDeviceName, CloudDeviceType deviceType) {

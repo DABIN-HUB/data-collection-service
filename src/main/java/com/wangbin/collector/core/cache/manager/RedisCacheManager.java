@@ -1,11 +1,10 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
@@ -22,24 +21,17 @@ import java.util.concurrent.TimeUnit;
 @ConditionalOnExpression("'${collector.cache.type:local}' != 'local'")
 public class RedisCacheManager extends AbstractCacheManager {
 
-    @Autowired
-    @Qualifier("cacheRedisTemplate")
-    private RedisTemplate<String, Object> redisTemplate;
-
-    @Value("${collector.cache.redis.key-prefix:collector:}")
-    private String keyPrefix;
-
-    @Value("${collector.cache.redis.default-expire:3600}")
-    private long defaultExpire; // 秒
-
-    @Value("${collector.cache.redis.connection-timeout:3000}")
-    private long connectionTimeout;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final CacheProperties.RedisCache redisProperties;
 
     /**
      * 创建当前组件实例。
      */
-    public RedisCacheManager() {
+    public RedisCacheManager(@Qualifier("cacheRedisTemplate") RedisTemplate<String, Object> redisTemplate,
+                             CacheProperties cacheProperties) {
         super("REDIS", 2);
+        this.redisTemplate = redisTemplate;
+        this.redisProperties = cacheProperties.getRedis();
     }
 
     /**
@@ -50,8 +42,8 @@ public class RedisCacheManager extends AbstractCacheManager {
         // 测试Redis连接
         testConnection();
 
-        log.info("Redis缓存管理器初始化完成: keyPrefix={}, defaultExpire={}s",
-                keyPrefix, defaultExpire);
+        log.info("Redis缓存管理器初始化完成: 键前缀={}, 默认过期秒数={}",
+                redisProperties.getKeyPrefix(), redisProperties.getDefaultExpire());
     }
 
     /**
@@ -84,7 +76,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             } else {
                 // 使用默认过期时间
                 redisTemplate.opsForValue().set(redisKey, serializedValue,
-                        defaultExpire, TimeUnit.SECONDS);
+                        redisProperties.getDefaultExpire(), TimeUnit.SECONDS);
             }
 
             return true;
@@ -230,7 +222,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected void doClear() throws Exception {
         try {
-            String pattern = keyPrefix + "*";
+            String pattern = redisProperties.getKeyPrefix() + "*";
             scanKeysBatch(pattern, redisTemplate::delete);
         } catch (Exception e) {
             log.error("Redis清空缓存失败", e);
@@ -244,7 +236,7 @@ public class RedisCacheManager extends AbstractCacheManager {
     @Override
     protected long doSize() throws Exception {
         try {
-            String pattern = keyPrefix + "*";
+            String pattern = redisProperties.getKeyPrefix() + "*";
             final long[] count = {0L};
             scanKeysBatch(pattern, keys -> count[0] += keys.size());
             return count[0];
@@ -271,7 +263,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             Set<CacheKey> cacheKeys = new HashSet<>();
             scanKeysBatch(buildRedisPattern(pattern), redisKeys -> {
                 for (String redisKey : redisKeys) {
-                    String originalKey = redisKey.substring(keyPrefix.length());
+                    String originalKey = redisKey.substring(redisProperties.getKeyPrefix().length());
                     cacheKeys.add(new CacheKey(originalKey, 0));
                 }
             });
@@ -571,7 +563,7 @@ public class RedisCacheManager extends AbstractCacheManager {
      * 构建Redis键
      */
     private String buildRedisKey(CacheKey key) {
-        return keyPrefix + key.getFullKey();
+        return redisProperties.getKeyPrefix() + key.getFullKey();
     }
 
     /**
@@ -579,9 +571,9 @@ public class RedisCacheManager extends AbstractCacheManager {
      */
     private String buildRedisPattern(String pattern) {
         if (pattern == null || pattern.isEmpty()) {
-            return keyPrefix + "*";
+            return redisProperties.getKeyPrefix() + "*";
         }
-        return keyPrefix + pattern;
+        return redisProperties.getKeyPrefix() + pattern;
     }
 
     /**
@@ -637,7 +629,7 @@ public class RedisCacheManager extends AbstractCacheManager {
      */
     private void testConnection() throws Exception {
         try {
-            String testKey = keyPrefix + "test:connection";
+            String testKey = redisProperties.getKeyPrefix() + "test:connection";
             redisTemplate.opsForValue().set(testKey, "test", 10, TimeUnit.SECONDS);
             Object result = redisTemplate.opsForValue().get(testKey);
 

@@ -110,7 +110,7 @@ class ModbusTcpCollectorRealServerIT {
                                                         List<DataPoint> points) throws Exception {
         Plc4xModbusTcpCollector collector = new Plc4xModbusTcpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "connected", true);
         ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);

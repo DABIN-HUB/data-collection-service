@@ -1,7 +1,6 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,9 +15,14 @@ import java.util.Map;
 @RequestMapping("/api/cache")
 public class CacheController {
 
-    @Autowired
-    @Qualifier("multiLevelCacheManager")
-    private MultiLevelCacheManager cacheManager;
+    private final MultiLevelCacheManager cacheManager;
+
+    /**
+     * 创建缓存控制器。
+     */
+    public CacheController(@Qualifier("multiLevelCacheManager") MultiLevelCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
+    }
 
     @GetMapping("/stats")
     public Map<String, Object> getStats() {

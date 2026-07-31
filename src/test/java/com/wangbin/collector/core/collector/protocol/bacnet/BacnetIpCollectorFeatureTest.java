@@ -203,7 +203,7 @@ class BacnetIpCollectorFeatureTest {
 
         BacnetIpCollector collector = new BacnetIpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connected", false);
         ReflectionTestUtils.setField(collector, "connectionStatus", "DISCONNECTED");
@@ -361,7 +361,7 @@ class BacnetIpCollectorFeatureTest {
 
         BacnetIpCollector collector = new BacnetIpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
         ReflectionTestUtils.setField(collector, "connected", true);
@@ -380,7 +380,7 @@ class BacnetIpCollectorFeatureTest {
 
         BacnetIpCollector collector = new BacnetIpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connected", false);
         ReflectionTestUtils.setField(collector, "connectionStatus", "DISCONNECTED");

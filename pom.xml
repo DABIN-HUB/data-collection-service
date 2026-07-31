@@ -251,6 +251,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
+      <exclusions>
+        <!-- 避免测试 classpath 同时存在两套 org.json.JSONObject 实现。 -->
+        <exclusion>
+          <groupId>com.vaadin.external.google</groupId>
+          <artifactId>android-json</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <!-- Spring Boot 3 不再需要显式添加 junit -->
     <dependency>

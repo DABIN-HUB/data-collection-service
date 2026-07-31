@@ -4,6 +4,7 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
@@ -77,12 +78,7 @@ class CollectionThroughputStressIT {
         ThreadPoolExecutor asyncCollectorPool = fixedPool("stress-collect", options.collectThreads(), 40_000);
         ThreadPoolExecutor dataProcessorPool = fixedPool("stress-process", options.processThreads(), 40_000);
 
-        CollectionScheduler scheduler = new CollectionScheduler(
-                timeSliceScheduler,
-                batchDispatcher,
-                asyncCollectorPool,
-                dataProcessorPool
-        );
+        CollectionScheduler scheduler = null;
         CountingCollectedDataProcessor processor = null;
         long usedMemoryBefore = usedMemoryBytes();
 
@@ -104,6 +100,23 @@ class CollectionThroughputStressIT {
                     new ProtocolDescriptorRegistry()
             );
             processor = new CountingCollectedDataProcessor(properties);
+            scheduler = new CollectionScheduler(
+                    collectionManager,
+                    configManager,
+                    collectionStatistics,
+                    properties,
+                    healthTracker,
+                    null,
+                    batchPlanner,
+                    protocolBatchStrategy,
+                    processor,
+                    collectionTaskGuard,
+                    new PointRuntimeStateService(),
+                    timeSliceScheduler,
+                    batchDispatcher,
+                    asyncCollectorPool,
+                    dataProcessorPool
+            );
 
             when(configManager.getDevice(DEVICE_ID)).thenReturn(device);
             when(configManager.getDataPoints(DEVICE_ID)).thenReturn(points);
@@ -129,20 +142,7 @@ class CollectionThroughputStressIT {
                 return values;
             });
 
-            injectSchedulerDependencies(
-                    scheduler,
-                    collectionManager,
-                    configManager,
-                    collectionStatistics,
-                    healthTracker,
-                    batchPlanner,
-                    protocolBatchStrategy,
-                    processor,
-                    collectionTaskGuard,
-                    properties,
-                    options.sliceCount(),
-                    options.sliceWaitMs()
-            );
+            initializeSchedulerBuckets(scheduler, options.sliceCount(), options.sliceWaitMs());
 
             long startBegin = System.nanoTime();
             assertTrue(scheduler.startDevice(DEVICE_ID), "stress device failed to start");
@@ -170,7 +170,9 @@ class CollectionThroughputStressIT {
             );
         } finally {
             try {
-                scheduler.destroy();
+                if (scheduler != null) {
+                    scheduler.destroy();
+                }
             } catch (Exception ignored) {
                 shutdown(timeSliceScheduler);
                 shutdown(batchDispatcher);
@@ -180,28 +182,7 @@ class CollectionThroughputStressIT {
         }
     }
 
-    private void injectSchedulerDependencies(CollectionScheduler scheduler,
-                                             CollectionManager collectionManager,
-                                             ConfigManager configManager,
-                                             CollectionStatistics collectionStatistics,
-                                             CollectionServiceHealthTracker healthTracker,
-                                             DeviceBatchPlanner batchPlanner,
-                                             ProtocolBatchStrategy protocolBatchStrategy,
-                                             CollectedDataProcessor processor,
-                                             CollectionTaskGuard collectionTaskGuard,
-                                             CollectorProperties properties,
-                                             int sliceCount,
-                                             int sliceWaitMs) {
-        ReflectionTestUtils.setField(scheduler, "collectionManager", collectionManager);
-        ReflectionTestUtils.setField(scheduler, "configManager", configManager);
-        ReflectionTestUtils.setField(scheduler, "collectionStatistics", collectionStatistics);
-        ReflectionTestUtils.setField(scheduler, "collectionServiceHealthTracker", healthTracker);
-        ReflectionTestUtils.setField(scheduler, "deviceBatchPlanner", batchPlanner);
-        ReflectionTestUtils.setField(scheduler, "protocolBatchStrategy", protocolBatchStrategy);
-        ReflectionTestUtils.setField(scheduler, "collectedDataProcessor", processor);
-        ReflectionTestUtils.setField(scheduler, "collectionTaskGuard", collectionTaskGuard);
-        ReflectionTestUtils.setField(scheduler, "collectorProperties", properties);
-
+    private void initializeSchedulerBuckets(CollectionScheduler scheduler, int sliceCount, int sliceWaitMs) {
         ((AtomicInteger) ReflectionTestUtils.getField(scheduler, "timeSliceCount")).set(sliceCount);
         ((AtomicInteger) ReflectionTestUtils.getField(scheduler, "timeSliceInterval")).set(sliceWaitMs);
         ((AtomicLong) ReflectionTestUtils.getField(scheduler, "timeSliceRevision")).set(1L);
@@ -388,7 +369,7 @@ class CollectionThroughputStressIT {
         private final LongAdder processCalls = new LongAdder();
 
         private CountingCollectedDataProcessor(CollectorProperties collectorProperties) {
-            super(collectorProperties);
+            super(collectorProperties, new PointRuntimeStateService());
         }
 
         @Override

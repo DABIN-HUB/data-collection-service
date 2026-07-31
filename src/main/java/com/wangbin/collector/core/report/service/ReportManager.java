@@ -9,7 +9,6 @@ import com.wangbin.collector.core.report.model.ReportResult;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +38,6 @@ public class ReportManager {
     /**
      * 创建当前组件实例。
      */
-    @Autowired
     public ReportManager(ReportProperties reportProperties,
                          @Qualifier("reportExecutor") Executor reportExecutor,
                          List<ReportHandler> handlerCandidates) {

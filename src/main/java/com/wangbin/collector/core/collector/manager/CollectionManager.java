@@ -14,8 +14,8 @@ import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -30,13 +30,11 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CollectionManager {
 
-    @Autowired
-    private CollectorFactory collectorFactory;
-
-    @Autowired
-    private ConnectionManager connectionManager;
+    private final CollectorFactory collectorFactory;
+    private final ConnectionManager connectionManager;
 
     @Getter
     private final Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();

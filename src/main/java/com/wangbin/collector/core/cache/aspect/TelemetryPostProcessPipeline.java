@@ -2,7 +2,6 @@ package com.wangbin.collector.core.cache.aspect;
 
 import lombok.extern.slf4j.Slf4j;
 import com.wangbin.collector.core.cache.config.TelemetryExecutorNames;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;
@@ -27,7 +26,6 @@ public class TelemetryPostProcessPipeline {
     /**
      * 创建当前组件实例。
      */
-    @Autowired
     public TelemetryPostProcessPipeline(
             List<TelemetryPostProcessStage> stageCandidates,
             @Qualifier(TelemetryExecutorNames.CACHE_STAGE) Executor cacheExecutor,
@@ -43,17 +41,6 @@ public class TelemetryPostProcessPipeline {
         this.stageExecutors = Map.copyOf(executors);
     }
 
-    /**
-     * 创建当前组件实例。
-     */
-    TelemetryPostProcessPipeline(List<TelemetryPostProcessStage> stageCandidates) {
-        this.stageCandidates = stageCandidates;
-        EnumMap<TelemetryStageType, Executor> executors = new EnumMap<>(TelemetryStageType.class);
-        for (TelemetryStageType stageType : TelemetryStageType.values()) {
-            executors.put(stageType, Runnable::run);
-        }
-        this.stageExecutors = Map.copyOf(executors);
-    }
 
     /**
      * 处理当前业务流程。

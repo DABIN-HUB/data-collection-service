@@ -2,7 +2,6 @@ package com.wangbin.collector.core.alarm;
 
 import com.wangbin.collector.common.domain.entity.AlarmRule;
 import org.springframework.util.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -21,17 +20,10 @@ public class AlarmStateTracker {
     private final ConcurrentMap<String, RuleState> states = new ConcurrentHashMap<>();
     private final AlarmStateRepository stateRepository;
 
-    /**
-     * 创建当前组件实例。
-     */
-    public AlarmStateTracker() {
-        this(new InMemoryAlarmStateRepository());
-    }
 
     /**
      * 创建当前组件实例。
      */
-    @Autowired
     public AlarmStateTracker(AlarmStateRepository stateRepository) {
         this.stateRepository = stateRepository;
     }

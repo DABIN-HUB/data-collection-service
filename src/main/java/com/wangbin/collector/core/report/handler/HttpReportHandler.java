@@ -802,7 +802,6 @@ public class HttpReportHandler extends AbstractReportHandler {
             };
             factory.setConnectTimeout((int) connectTimeout);
             factory.setReadTimeout((int) readTimeout);
-            factory.setBufferRequestBody(false);
             return new RestTemplate(factory);
         }
 

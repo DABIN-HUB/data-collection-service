@@ -11,7 +11,7 @@ import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.service.HistoryDataService;
 import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,21 +29,26 @@ import java.util.Map;
 @RequestMapping("/api/data")
 public class DataController {
 
-    @Autowired
-    @Qualifier("multiLevelCacheManager")
-    private MultiLevelCacheManager cacheManager;
+    private final MultiLevelCacheManager cacheManager;
+    private final ConfigManager configManager;
+    private final HistoryDataService historyDataService;
+    private final AlarmHistoryService alarmHistoryService;
+    private final PointRuntimeStateService pointRuntimeStateService;
 
-    @Autowired
-    private ConfigManager configManager;
-    
-    @Autowired(required = false)
-    private HistoryDataService historyDataService;
-
-    @Autowired(required = false)
-    private AlarmHistoryService alarmHistoryService;
-
-    @Autowired
-    private PointRuntimeStateService pointRuntimeStateService;
+    /**
+     * 创建数据查询控制器。
+     */
+    public DataController(@Qualifier("multiLevelCacheManager") MultiLevelCacheManager cacheManager,
+                          ConfigManager configManager,
+                          ObjectProvider<HistoryDataService> historyDataServiceProvider,
+                          ObjectProvider<AlarmHistoryService> alarmHistoryServiceProvider,
+                          PointRuntimeStateService pointRuntimeStateService) {
+        this.cacheManager = cacheManager;
+        this.configManager = configManager;
+        this.historyDataService = historyDataServiceProvider.getIfAvailable();
+        this.alarmHistoryService = alarmHistoryServiceProvider.getIfAvailable();
+        this.pointRuntimeStateService = pointRuntimeStateService;
+    }
 
     /**
      * 查询指定设备的指定数据点的实时值

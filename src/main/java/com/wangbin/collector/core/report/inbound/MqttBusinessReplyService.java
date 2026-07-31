@@ -5,9 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.cloud.protocol.CloudInboundRoute;
 import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -17,12 +16,20 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MqttBusinessReplyService {
 
     private final ObjectMapper objectMapper;
-    @Autowired(required = false)
-    private CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
+    @Nullable
+    private final CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
+
+    /**
+     * 创建 MQTT 业务回执服务。
+     */
+    public MqttBusinessReplyService(ObjectMapper objectMapper,
+                                    @Nullable CloudSubDeviceRegisterService cloudSubDeviceRegisterService) {
+        this.objectMapper = objectMapper;
+        this.cloudSubDeviceRegisterService = cloudSubDeviceRegisterService;
+    }
 
     /**
      * 处理当前业务流程。

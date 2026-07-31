@@ -3,6 +3,7 @@ package com.wangbin.collector.core.config.manager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.loader.ConfigLoader;
 import com.wangbin.collector.core.config.model.ConfigDiff;
 import com.wangbin.collector.core.config.model.ConfigLoadResult;
@@ -13,7 +14,6 @@ import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -33,21 +33,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * Coordinates 配置 sync and delegates actual loading to ConfigLoader implementations.
+ * 协调配置同步流程，并委托具体 ConfigLoader 执行配置加载。
  */
 @Slf4j
 @Service
 public class ConfigSyncService {
 
-    @Value("${collector.config.yun-url:http://localhost:8080/admin-api}")
-    private String runUrl;
-
-    @Value("${collector.config.sync-interval:30000}")
-    private long syncInterval;
-
-    @Value("${collector.config.service-id:collector-1}")
-    private String serviceId;
-
+    private final CollectorProperties.ConfigConfig configProperties;
     private final ConfigLoader configLoader;
     private final Executor syncExecutor;
     private final AtomicBoolean syncing = new AtomicBoolean(false);
@@ -67,9 +59,11 @@ public class ConfigSyncService {
      * 创建当前组件实例。
      */
     public ConfigSyncService(ConfigLoader configLoader,
-                             @Qualifier("ioIntensiveExecutor") Executor syncExecutor) {
+                             @Qualifier("ioIntensiveExecutor") Executor syncExecutor,
+                             CollectorProperties collectorProperties) {
         this.configLoader = configLoader;
         this.syncExecutor = syncExecutor;
+        this.configProperties = collectorProperties.getConfig();
     }
 
     /**
@@ -77,7 +71,7 @@ public class ConfigSyncService {
      */
     @PostConstruct
     public void init() {
-        log.info("配置同步服务初始化，serviceId={}, source={}", serviceId, configLoader.getClass().getSimpleName());
+        log.info("配置同步服务初始化，服务={}，来源={}", configProperties.getServiceId(), configLoader.getClass().getSimpleName());
     }
 
     /**
@@ -90,7 +84,7 @@ public class ConfigSyncService {
         } catch (Exception e) {
             log.error("首次配置同步失败", e);
         }
-        log.info("配置同步任务已启动，同步间隔: {}ms, source={}", syncInterval, runUrl);
+        log.info("配置同步任务已启动，同步间隔毫秒={}，来源={}", configProperties.getSyncInterval(), configProperties.getYunUrl());
     }
 
     @Scheduled(fixedDelayString = "${collector.config.sync-interval:30000}",
@@ -303,11 +297,11 @@ public class ConfigSyncService {
     }
 
     public long getSyncInterval() {
-        return syncInterval;
+        return configProperties.getSyncInterval();
     }
 
     public String getServiceId() {
-        return serviceId;
+        return configProperties.getServiceId();
     }
 
     public int getListenerCount() {

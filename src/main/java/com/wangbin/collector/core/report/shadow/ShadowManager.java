@@ -6,10 +6,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.data.redis.connection.ReturnType;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -35,7 +34,6 @@ import java.util.function.Function;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ShadowManager {
 
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
@@ -86,16 +84,25 @@ public class ShadowManager {
     private final ReportProperties reportProperties;
     private final Map<String, DeviceShadow> shadows = new ConcurrentHashMap<>();
     private final Set<String> dirtyDevices = ConcurrentHashMap.newKeySet();
+    @Nullable
+    private final RedisTemplate<String, Object> redisTemplate;
+    @Nullable
+    private final StringRedisTemplate stringRedisTemplate;
+    @Nullable
+    private final ObjectMapper objectMapper;
 
-    @Autowired(required = false)
-    @Qualifier("cacheRedisTemplate")
-    private RedisTemplate<String, Object> redisTemplate;
-
-    @Autowired(required = false)
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired(required = false)
-    private ObjectMapper objectMapper;
+    /**
+     * 创建设备影子管理器。
+     */
+    public ShadowManager(ReportProperties reportProperties,
+                         @Qualifier("cacheRedisTemplate") @Nullable RedisTemplate<String, Object> redisTemplate,
+                         @Nullable StringRedisTemplate stringRedisTemplate,
+                         @Nullable ObjectMapper objectMapper) {
+        this.reportProperties = reportProperties;
+        this.redisTemplate = redisTemplate;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 处理当前业务流程。

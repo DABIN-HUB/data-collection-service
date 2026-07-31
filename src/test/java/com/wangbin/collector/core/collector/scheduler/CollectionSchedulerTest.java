@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -80,16 +81,22 @@ public class CollectionSchedulerTest {
         asyncCollectorPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
         dataProcessorPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 
-        scheduler = new CollectionScheduler(timeSliceScheduler, batchDispatcher, asyncCollectorPool, dataProcessorPool);
-        ReflectionTestUtils.setField(scheduler, "collectionManager", collectionManager);
-        ReflectionTestUtils.setField(scheduler, "configManager", configManager);
-        ReflectionTestUtils.setField(scheduler, "collectionStatistics", collectionStatistics);
-        ReflectionTestUtils.setField(scheduler, "collectorProperties", collectorProperties);
-        ReflectionTestUtils.setField(scheduler, "collectionServiceHealthTracker", healthTracker);
-        ReflectionTestUtils.setField(scheduler, "deviceBatchPlanner", deviceBatchPlanner);
-        ReflectionTestUtils.setField(scheduler, "protocolBatchStrategy", protocolBatchStrategy);
-        ReflectionTestUtils.setField(scheduler, "collectedDataProcessor", collectedDataProcessor);
-        ReflectionTestUtils.setField(scheduler, "collectionTaskGuard", collectionTaskGuard);
+        scheduler = new CollectionScheduler(
+                collectionManager,
+                configManager,
+                collectionStatistics,
+                collectorProperties,
+                healthTracker,
+                null,
+                deviceBatchPlanner,
+                protocolBatchStrategy,
+                collectedDataProcessor,
+                collectionTaskGuard,
+                new PointRuntimeStateService(),
+                timeSliceScheduler,
+                batchDispatcher,
+                asyncCollectorPool,
+                dataProcessorPool);
         when(protocolBatchStrategy.defaultBatchSize(anyString())).thenReturn(10);
         when(protocolBatchStrategy.maxBatchSize(anyString())).thenReturn(100);
         ReflectionTestUtils.invokeMethod(scheduler, "resetTimeSliceTaskBuckets", 2);
@@ -127,7 +134,8 @@ public class CollectionSchedulerTest {
         DeviceBatchTask task = firstScheduledTask(0);
 
         CompletableFuture<Void> runFuture = CompletableFuture.runAsync(
-                () -> ReflectionTestUtils.invokeMethod(scheduler, "processDeviceBatch", task)
+                () -> ReflectionTestUtils.invokeMethod(scheduler, "processDeviceBatch", task),
+                batchDispatcher
         );
         TimeUnit.MILLISECONDS.sleep(100);
         scheduler.stopDevice("dev-stop");

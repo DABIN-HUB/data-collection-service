@@ -13,8 +13,8 @@ import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -34,14 +33,10 @@ import java.util.stream.Collectors;
 @Component
 public class ConnectionManager {
 
-    @Autowired
-    private ConnectionFactory connectionFactory;
-
-    @Autowired
-    private ConfigManager configManager;
-
-    @Autowired(required = false)
-    private ExceptionMonitorService exceptionMonitorService;
+    private final ConnectionFactory connectionFactory;
+    private final ConfigManager configManager;
+    @Nullable
+    private final ExceptionMonitorService exceptionMonitorService;
 
     // 连接存储：deviceId -> ConnectionAdapter
     private final Map<String, ConnectionAdapter> connections = new ConcurrentHashMap<>();
@@ -55,15 +50,23 @@ public class ConnectionManager {
     // 连接事件处理器
     private final List<ConnectionEventHandler> eventHandlers = new CopyOnWriteArrayList<>();
 
-    @Autowired
-    @Qualifier("monitorExecutor")
-    private ScheduledExecutorService monitorExecutor;
-
-    @Autowired(required = false)
-    @Qualifier("heartbeatExecutor")
-    private ExecutorService heartbeatExecutor;
+    @Nullable
+    private final ExecutorService heartbeatExecutor;
 
     private final Set<String> heartbeatInProgress = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 创建连接管理器。
+     */
+    public ConnectionManager(ConnectionFactory connectionFactory,
+                             ConfigManager configManager,
+                             @Nullable ExceptionMonitorService exceptionMonitorService,
+                             @Qualifier("heartbeatExecutor") @Nullable ExecutorService heartbeatExecutor) {
+        this.connectionFactory = connectionFactory;
+        this.configManager = configManager;
+        this.exceptionMonitorService = exceptionMonitorService;
+        this.heartbeatExecutor = heartbeatExecutor;
+    }
 
     /**
      * 处理组件生命周期。
@@ -384,7 +387,7 @@ public class ConnectionManager {
             return;
         }
         if (!heartbeatInProgress.add(deviceId)) {
-            log.debug("跳过 duplicated heartbeat 任务:{}", deviceId);
+            log.debug("跳过重复心跳任务:设备={}", deviceId);
             return;
         }
         if (heartbeatExecutor == null) {
@@ -405,7 +408,7 @@ public class ConnectionManager {
             });
         } catch (RejectedExecutionException e) {
             heartbeatInProgress.remove(deviceId);
-            log.warn("heartbeat 任务 被拒绝:设备={}, 队列长度={}", deviceId, heartbeatQueueSize(), e);
+            log.warn("心跳任务被拒绝:设备={}, 队列长度={}", deviceId, heartbeatQueueSize(), e);
         }
     }
 

@@ -1,7 +1,10 @@
 package com.wangbin.collector.core.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -11,6 +14,7 @@ import java.util.Map;
  */
 @Data
 @Component
+@Validated
 @ConfigurationProperties(prefix = "collector")
 public class CollectorProperties {
 
@@ -63,6 +67,12 @@ public class CollectorProperties {
      * 自适应采集配置
      */
     private AdaptiveCollectionConfig adaptiveCollection = new AdaptiveCollectionConfig();
+
+    /**
+     * 配置加载配置。
+     */
+    @Valid
+    private ConfigConfig config = new ConfigConfig();
 
     // =============== 配置类定义 ===============
 
@@ -212,5 +222,36 @@ public class CollectorProperties {
     public static class AdaptiveCollectionConfig {
         private boolean enabled = true;
         private long adjustWindowMs = 60000;
+    }
+
+    /**
+     * 配置加载与同步配置。
+     */
+    @Data
+    public static class ConfigConfig {
+        private String yunUrl = "http://localhost:8080/admin-api";
+
+        @Min(1000)
+        private long syncInterval = 30000;
+
+        @Min(1000)
+        private long syncInitialDelay = 30000;
+
+        private String serviceId = "collector-1";
+        private String tenantId = "1";
+        private String apiToken = "";
+
+        @Valid
+        private FileConfig file = new FileConfig();
+    }
+
+    /**
+     * 本地文件配置加载路径。
+     */
+    @Data
+    public static class FileConfig {
+        private String devices = "";
+        private String pointsDir = "";
+        private String connectionsDir = "";
     }
 }

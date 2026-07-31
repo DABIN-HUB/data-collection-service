@@ -22,6 +22,7 @@ import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.*;
@@ -42,26 +43,31 @@ public abstract class BaseCollector implements ProtocolCollector,
 
     @Getter
     protected DeviceInfo deviceInfo;
-
-    @Autowired
     protected CollectorProperties collectorProperties;
-
-    @Autowired
     protected ConnectionManager connectionManager;
-
-    @Autowired
     protected ConfigManager configManager;
-
-    @Autowired
     protected DataQualityProcessor dataQualityProcessor;
-
-    @Autowired(required = false)
     protected ExceptionMonitorService exceptionMonitorService;
-
-    @Autowired(required = false)
     protected TelemetryIngressService telemetryIngressService;
 
-    protected volatile boolean connected = false;
+    /**
+     * 注入采集器通用依赖。
+     */
+    @Autowired
+    public void setBaseCollectorDependencies(CollectorProperties collectorProperties,
+                                             ConnectionManager connectionManager,
+                                             ConfigManager configManager,
+                                             DataQualityProcessor dataQualityProcessor,
+                                             ObjectProvider<ExceptionMonitorService> exceptionMonitorServiceProvider,
+                                             ObjectProvider<TelemetryIngressService> telemetryIngressServiceProvider) {
+        this.collectorProperties = collectorProperties;
+        this.connectionManager = connectionManager;
+        this.configManager = configManager;
+        this.dataQualityProcessor = dataQualityProcessor;
+        this.exceptionMonitorService = exceptionMonitorServiceProvider.getIfAvailable();
+        this.telemetryIngressService = telemetryIngressServiceProvider.getIfAvailable();
+    }
+protected volatile boolean connected = false;
     protected volatile String connectionStatus = "DISCONNECTED";
     protected volatile String lastError;
     protected volatile long lastConnectTime;

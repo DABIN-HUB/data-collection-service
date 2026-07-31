@@ -46,10 +46,15 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
     // 订阅缓存
     protected final Map<RegisterType, Map<Integer, DataPoint>> registerCache = new ConcurrentHashMap<>();
-
-    @Autowired(required = false)
-    @Qualifier("asyncCollectorExecutor")
     private Executor modbusReadExecutor;
+
+    /**
+     * 注入 Modbus 批量读取线程池。
+     */
+    @Autowired(required = false)
+    public void setModbusReadExecutor(@Qualifier("asyncCollectorExecutor") Executor modbusReadExecutor) {
+        this.modbusReadExecutor = modbusReadExecutor;
+    }
 
     // =============== 公共方法 ===============
 

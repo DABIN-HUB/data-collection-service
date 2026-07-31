@@ -1,11 +1,12 @@
 package com.wangbin.collector.core.cache.config;
 
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -15,7 +16,11 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Configuration
 @EnableAsync
+@RequiredArgsConstructor
+@EnableConfigurationProperties(TelemetryExecutorProperties.class)
 public class CacheAsyncConfig {
+
+    private final TelemetryExecutorProperties telemetryExecutorProperties;
 
     /**
      * 执行当前业务逻辑。
@@ -42,48 +47,40 @@ public class CacheAsyncConfig {
      * 执行当前业务逻辑。
      */
     @Bean(TelemetryExecutorNames.CACHE_STAGE)
-    public Executor telemetryCacheStageExecutor(
-            @Value("${collector.telemetry-executors.cache.core-size:2}") int coreSize,
-            @Value("${collector.telemetry-executors.cache.max-size:4}") int maxSize,
-            @Value("${collector.telemetry-executors.cache.queue-capacity:2000}") int queueCapacity) {
+    public Executor telemetryCacheStageExecutor() {
+        TelemetryExecutorProperties.Stage stage = telemetryExecutorProperties.getCache();
         return createStageExecutor(TelemetryExecutorNames.CACHE_STAGE,
-                "telemetry-cache-", coreSize, maxSize, queueCapacity);
+                "telemetry-cache-", stage.getCoreSize(), stage.getMaxSize(), stage.getQueueCapacity());
     }
 
     /**
      * 执行当前业务逻辑。
      */
     @Bean(TelemetryExecutorNames.STREAM_STAGE)
-    public Executor telemetryStreamStageExecutor(
-            @Value("${collector.telemetry-executors.stream.core-size:2}") int coreSize,
-            @Value("${collector.telemetry-executors.stream.max-size:4}") int maxSize,
-            @Value("${collector.telemetry-executors.stream.queue-capacity:2000}") int queueCapacity) {
+    public Executor telemetryStreamStageExecutor() {
+        TelemetryExecutorProperties.Stage stage = telemetryExecutorProperties.getStream();
         return createStageExecutor(TelemetryExecutorNames.STREAM_STAGE,
-                "telemetry-stream-", coreSize, maxSize, queueCapacity);
+                "telemetry-stream-", stage.getCoreSize(), stage.getMaxSize(), stage.getQueueCapacity());
     }
 
     /**
      * 执行当前业务逻辑。
      */
     @Bean(TelemetryExecutorNames.HISTORY_STAGE)
-    public Executor telemetryHistoryStageExecutor(
-            @Value("${collector.telemetry-executors.history.core-size:2}") int coreSize,
-            @Value("${collector.telemetry-executors.history.max-size:4}") int maxSize,
-            @Value("${collector.telemetry-executors.history.queue-capacity:5000}") int queueCapacity) {
+    public Executor telemetryHistoryStageExecutor() {
+        TelemetryExecutorProperties.Stage stage = telemetryExecutorProperties.getHistory();
         return createStageExecutor(TelemetryExecutorNames.HISTORY_STAGE,
-                "telemetry-history-", coreSize, maxSize, queueCapacity);
+                "telemetry-history-", stage.getCoreSize(), stage.getMaxSize(), stage.getQueueCapacity());
     }
 
     /**
      * 执行当前业务逻辑。
      */
     @Bean(TelemetryExecutorNames.REPORT_STAGE)
-    public Executor telemetryReportStageExecutor(
-            @Value("${collector.telemetry-executors.report.core-size:2}") int coreSize,
-            @Value("${collector.telemetry-executors.report.max-size:4}") int maxSize,
-            @Value("${collector.telemetry-executors.report.queue-capacity:5000}") int queueCapacity) {
+    public Executor telemetryReportStageExecutor() {
+        TelemetryExecutorProperties.Stage stage = telemetryExecutorProperties.getReport();
         return createStageExecutor(TelemetryExecutorNames.REPORT_STAGE,
-                "telemetry-report-", coreSize, maxSize, queueCapacity);
+                "telemetry-report-", stage.getCoreSize(), stage.getMaxSize(), stage.getQueueCapacity());
     }
 
     /**

@@ -15,7 +15,7 @@ import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -36,15 +36,18 @@ public class ReportConfigProvider {
 
     private final ReportProperties reportProperties;
     private final CloudProtocolAdapter fallbackCloudProtocolAdapter = AlinkCloudProtocolAdapter.standalone(new ObjectMapper());
-    @Autowired(required = false)
-    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
+    @Nullable
+    private final CloudProtocolAdapterRegistry cloudProtocolAdapters;
     private final Cache<String, ReportConfig> cache;
 
     /**
      * 创建当前组件实例。
      */
-    public ReportConfigProvider(ConfigManager configManager, ReportProperties reportProperties) {
+    public ReportConfigProvider(ConfigManager configManager,
+                                ReportProperties reportProperties,
+                                @Nullable CloudProtocolAdapterRegistry cloudProtocolAdapters) {
         this.reportProperties = reportProperties;
+        this.cloudProtocolAdapters = cloudProtocolAdapters;
         this.cache = Caffeine.newBuilder()
                 .maximumSize(1000)
                 .expireAfterWrite(Duration.ofMinutes(10))

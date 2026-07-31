@@ -53,9 +53,15 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 public class McCollector extends ConnectionBackedCollector {
-
-    @Autowired(required = false)
     private DevicePointResolver devicePointResolver;
+
+    /**
+     * 注入点位解析辅助组件。
+     */
+    @Autowired(required = false)
+    public void setDevicePointResolver(DevicePointResolver devicePointResolver) {
+        this.devicePointResolver = devicePointResolver;
+    }
 
     private final McReadPlanBuilder readPlanBuilder = new McReadPlanBuilder();
     private final McWritePlanBuilder writePlanBuilder = new McWritePlanBuilder();

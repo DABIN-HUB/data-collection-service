@@ -13,7 +13,6 @@ import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicBuilder;
 import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicParser;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -46,7 +45,6 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
     /**
      * 创建当前组件实例。
      */
-    @Autowired
     public AlinkCloudProtocolAdapter(AlinkTopicBuilder topicBuilder,
                                      AlinkPayloadEncoder payloadEncoder,
                                      AlinkPayloadDecoder payloadDecoder) {

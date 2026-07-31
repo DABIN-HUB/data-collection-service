@@ -52,9 +52,15 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                         log.warn("IEC104 协议 调度器 thread {} 失败", t.getName(), e));
                 return thread;
             });
-    @Autowired(required = false)
-    @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
+
+    /**
+     * 注入协议调度线程池。
+     */
+    @Autowired(required = false)
+    public void setProtocolScheduler(@Qualifier("timeSliceScheduler") ScheduledExecutorService protocolScheduler) {
+        this.protocolScheduler = protocolScheduler;
+    }
     /**
      * 处理组件生命周期。
      */

@@ -3,7 +3,7 @@ package com.wangbin.collector.monitor.alert;
 import com.wangbin.collector.core.report.service.CacheReportService;
 import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -21,9 +21,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class AlertManager {
 
     private final CacheReportService cacheReportService;
-
-    @Autowired(required = false)
-    private AlarmHistoryService alarmHistoryService;
+    @Nullable
+    private final AlarmHistoryService alarmHistoryService;
 
     private final Map<String, AlertRule> rules = new ConcurrentHashMap<>();
     private final Queue<AlertNotification> recentAlerts = new ConcurrentLinkedQueue<>();
@@ -32,8 +31,10 @@ public class AlertManager {
     /**
      * 创建当前组件实例。
      */
-    public AlertManager(CacheReportService cacheReportService) {
+    public AlertManager(CacheReportService cacheReportService,
+                        @Nullable AlarmHistoryService alarmHistoryService) {
         this.cacheReportService = cacheReportService;
+        this.alarmHistoryService = alarmHistoryService;
     }
 
     /**
@@ -76,7 +77,7 @@ public class AlertManager {
         while (recentAlerts.size() > maxHistorySize) {
             recentAlerts.poll();
         }
-        log.warn("告警 triggered:设备={}, 点位={}, 级别={}, 消息={}",
+        log.warn("触发告警:设备={}, 点位={}, 级别={}, 消息={}",
                 notification.getDeviceId(),
                 notification.getPointCode() != null ? notification.getPointCode() : notification.getPointId(),
                 notification.getLevel(),

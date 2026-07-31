@@ -27,7 +27,7 @@ class BaseCollectorReadPointsTest {
         deviceInfo.setDeviceName("test-device");
         collector.init(deviceInfo);
         collector.connected = true;
-        collector.dataQualityProcessor = new DataQualityProcessor(null);
+        collector.dataQualityProcessor = com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create();
 
         Map<String, Object> result = collector.readPoints(List.of(point("p1"), point("p2")));
 
@@ -96,7 +96,7 @@ class BaseCollectorReadPointsTest {
         deviceInfo.setDeviceName("test-device");
         collector.init(deviceInfo);
         collector.connected = true;
-        collector.dataQualityProcessor = new DataQualityProcessor(null);
+        collector.dataQualityProcessor = com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create();
         return collector;
     }
 

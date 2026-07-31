@@ -45,9 +45,15 @@ import java.util.concurrent.TimeUnit;
 public class AdsCollector extends ConnectionBackedCollector {
 
     private static final long DEFAULT_SUBSCRIPTION_INTERVAL_MS = 2000L;
-
-    @Autowired(required = false)
     private DevicePointResolver devicePointResolver;
+
+    /**
+     * 注入点位解析辅助组件。
+     */
+    @Autowired(required = false)
+    public void setDevicePointResolver(DevicePointResolver devicePointResolver) {
+        this.devicePointResolver = devicePointResolver;
+    }
 
     private AdsConnectionAdapter connectionAdapter;
     private final Map<String, AdsAddress> configuredAddresses = new ConcurrentHashMap<>();

@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -21,14 +22,16 @@ class MultiLevelCacheManagerTest {
 
     @Test
     void multiLevelCacheManagerShouldUsePipelineForBulkReads() {
-        MultiLevelCacheManager manager = new MultiLevelCacheManager();
         LocalCacheManager localCacheManager = mock(LocalCacheManager.class);
         RedisCacheManager redisCacheManager = mock(RedisCacheManager.class);
         ExecutorService directExecutor = new DirectExecutorService();
+        MultiLevelCacheManager manager = new MultiLevelCacheManager(
+                localCacheManager,
+                redisCacheManager,
+                null,
+                new CacheProperties(),
+                directExecutor);
 
-        ReflectionTestUtils.setField(manager, "localCacheManager", localCacheManager);
-        ReflectionTestUtils.setField(manager, "redisCacheManager", redisCacheManager);
-        ReflectionTestUtils.setField(manager, "asyncExecutor", directExecutor);
         ReflectionTestUtils.setField(manager, "enabled", true);
         ReflectionTestUtils.setField(manager, "shuttingDown", false);
         ReflectionTestUtils.setField(manager, "maxLevel", 2);

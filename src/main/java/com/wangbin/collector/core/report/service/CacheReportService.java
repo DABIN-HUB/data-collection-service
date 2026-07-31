@@ -33,9 +33,7 @@ import com.wangbin.collector.core.report.shadow.ValueMeta;
 import com.wangbin.collector.monitor.alert.AlertNotification;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
@@ -65,7 +63,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CacheReportService {
 
     private static final String SNAPSHOT_POINT_CODE = "snapshot";
@@ -82,20 +79,48 @@ public class CacheReportService {
     private final CloudPackReportAssembler cloudPackReportAssembler;
     @Nullable
     private final DistributedLock distributedLock;
-    @Qualifier("taskScheduler")
     private final TaskScheduler taskScheduler;
-    @Autowired(required = false)
-    private CloudAggregationService cloudAggregationService;
-    @Autowired(required = false)
-    private CloudBatchAccumulator cloudBatchAccumulator;
-    @Autowired(required = false)
-    private CloudOutboxService cloudOutboxService;
+    @Nullable
+    private final CloudAggregationService cloudAggregationService;
+    @Nullable
+    private final CloudBatchAccumulator cloudBatchAccumulator;
+    @Nullable
+    private final CloudOutboxService cloudOutboxService;
     private final ConcurrentMap<String, String> shadowGatewayMapping = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CloudDeviceIdentity> shadowIdentities = new ConcurrentHashMap<>();
     private final Set<String> flushingDevices = ConcurrentHashMap.newKeySet();
     private final ConcurrentMap<String, FlushTracker> flushTrackers = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, FlushSession> flushSessions = new ConcurrentHashMap<>();
     private ScheduledFuture<?> flushTask;
+
+    /**
+     * 创建缓存上报服务。
+     */
+    public CacheReportService(ReportManager reportManager,
+                              ReportProperties reportProperties,
+                              ShadowManager shadowManager,
+                              CloudDeviceIdentityService cloudDeviceIdentityService,
+                              ReportConfigProvider reportConfigProvider,
+                              GatewayRateLimiter gatewayRateLimiter,
+                              CloudPackReportAssembler cloudPackReportAssembler,
+                              @Nullable DistributedLock distributedLock,
+                              @Qualifier("taskScheduler") TaskScheduler taskScheduler,
+                              @Nullable CloudAggregationService cloudAggregationService,
+                              @Nullable CloudBatchAccumulator cloudBatchAccumulator,
+                              @Nullable CloudOutboxService cloudOutboxService) {
+        this.reportManager = reportManager;
+        this.reportProperties = reportProperties;
+        this.shadowManager = shadowManager;
+        this.cloudDeviceIdentityService = cloudDeviceIdentityService;
+        this.reportConfigProvider = reportConfigProvider;
+        this.gatewayRateLimiter = gatewayRateLimiter;
+        this.cloudPackReportAssembler = cloudPackReportAssembler;
+        this.distributedLock = distributedLock;
+        this.taskScheduler = taskScheduler;
+        this.cloudAggregationService = cloudAggregationService;
+        this.cloudBatchAccumulator = cloudBatchAccumulator;
+        this.cloudOutboxService = cloudOutboxService;
+    }
 
     /**
      * 处理组件生命周期。

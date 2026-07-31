@@ -31,10 +31,15 @@ public class Iec101Collector extends ConnectionBackedCollector {
 
     private final Map<SampleKey, Iec101Sample> sampleCache = new ConcurrentHashMap<>();
     private final Map<SampleKey, DataPoint> subscribedPointIndex = new ConcurrentHashMap<>();
-
-    @Autowired(required = false)
-    @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
+
+    /**
+     * 注入协议调度线程池。
+     */
+    @Autowired(required = false)
+    public void setProtocolScheduler(@Qualifier("timeSliceScheduler") ScheduledExecutorService protocolScheduler) {
+        this.protocolScheduler = protocolScheduler;
+    }
 
     private Iec101Session session;
     private ScheduledFuture<?> classOneTask;

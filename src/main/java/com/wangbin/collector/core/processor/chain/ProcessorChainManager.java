@@ -8,8 +8,8 @@ import com.wangbin.collector.core.processor.manager.DataProcessorManager;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -23,13 +23,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ProcessorChainManager {
 
-    @Autowired
-    private DataProcessorManager dataProcessorManager;
-
-    @Autowired
-    private ApplicationEventPublisher eventPublisher;
+    private final DataProcessorManager dataProcessorManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 处理器链集合

@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConnectionFactoryProtocolAliasMappingTest {
 
-    private final ConnectionFactory factory = new ConnectionFactory(new ProtocolDescriptorRegistry());
+    private final ConnectionFactory factory = new ConnectionFactory(new ProtocolDescriptorRegistry(), null, null, null, null, null);
 
     @Test
     void shouldMapHttpsAliasToHttpAdapterWithSslDefaults() {

@@ -11,7 +11,7 @@ import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
@@ -65,17 +65,25 @@ public class ConfigManager {
      */
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
-    @Autowired
-    private ConfigSyncService configSyncService;
+    private final ConfigSyncService configSyncService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final FieldUniquenessValidator fieldUniquenessValidator;
+    private final ProtocolConnectionValidator protocolConnectionValidator;
 
-    @Autowired
-    private ApplicationEventPublisher eventPublisher;
-
-    @Autowired
-    private FieldUniquenessValidator fieldUniquenessValidator;
-
-    @Autowired(required = false)
-    private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
+    /**
+     * 创建配置管理器。
+     */
+    public ConfigManager(ConfigSyncService configSyncService,
+                         ApplicationEventPublisher eventPublisher,
+                         FieldUniquenessValidator fieldUniquenessValidator,
+                         ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider) {
+        this.configSyncService = configSyncService;
+        this.eventPublisher = eventPublisher;
+        this.fieldUniquenessValidator = fieldUniquenessValidator;
+        this.protocolConnectionValidator = protocolConnectionValidatorProvider != null
+                ? protocolConnectionValidatorProvider.getIfAvailable(ProtocolConnectionValidator::new)
+                : new ProtocolConnectionValidator();
+    }
 
     /**
      * 初始化方法

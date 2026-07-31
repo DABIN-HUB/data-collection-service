@@ -1,7 +1,6 @@
 package com.wangbin.collector.core.report.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.common.enums.QualityEnum;
@@ -31,8 +30,8 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.eclipse.paho.mqttv5.client.*;
 import org.eclipse.paho.mqttv5.client.persist.MemoryPersistence;
@@ -54,49 +53,47 @@ import java.util.regex.Pattern;
 public class MqttReportHandler extends AbstractReportHandler {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final ScheduledExecutorService DEFAULT_MONITOR_EXECUTOR =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread thread = new Thread(r, "mqtt-report-monitor-shared");
-                thread.setDaemon(true);
-                return thread;
-            });
-    private static final ExecutorService DEFAULT_PUBLISH_EXECUTOR =
-            Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors()), r -> {
-                Thread thread = new Thread(r, "mqtt-report-io-shared");
-                thread.setDaemon(true);
-                return thread;
-            });
-
     private MqttClientManager clientManager;
     private MessagePublisher messagePublisher;
     private SubscriptionManager subscriptionManager;
     private final Map<String, MqttConnectionConfig> connectionConfigs = new ConcurrentHashMap<>();
     private final AckManager ackManager = new AckManager();
     private final CloudProtocolAdapter fallbackCloudProtocolAdapter = AlinkCloudProtocolAdapter.standalone(OBJECT_MAPPER);
-    @Autowired(required = false)
-    @Qualifier("monitorExecutor")
-    private ScheduledExecutorService monitorExecutor;
-    @Autowired(required = false)
-    @Qualifier("ioIntensiveExecutor")
-    private ExecutorService ioExecutor;
-    @Autowired(required = false)
-    private MqttDownlinkService downlinkService;
-    @Autowired(required = false)
-    private MqttBusinessReplyService businessReplyService;
-    @Autowired(required = false)
-    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
-    @Autowired(required = false)
-    private ReportProperties reportProperties;
-    @Autowired(required = false)
-    private MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
-    @Autowired(required = false)
-    private MqttAckReplyObserver ackReplyObserver;
+    private final ScheduledExecutorService monitorExecutor;
+    private final ExecutorService ioExecutor;
+    @Nullable
+    private final MqttDownlinkService downlinkService;
+    @Nullable
+    private final MqttBusinessReplyService businessReplyService;
+    @Nullable
+    private final CloudProtocolAdapterRegistry cloudProtocolAdapters;
+    @Nullable
+    private final ReportProperties reportProperties;
+    @Nullable
+    private final MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
+    @Nullable
+    private final MqttAckReplyObserver ackReplyObserver;
 
     /**
-     * 创建当前组件实例。
+     * 创建 MQTT 上报处理器。
      */
-    public MqttReportHandler() {
+    public MqttReportHandler(@Qualifier("monitorExecutor") ScheduledExecutorService monitorExecutor,
+                             @Qualifier("ioIntensiveExecutor") ExecutorService ioExecutor,
+                             @Nullable MqttDownlinkService downlinkService,
+                             @Nullable MqttBusinessReplyService businessReplyService,
+                             @Nullable CloudProtocolAdapterRegistry cloudProtocolAdapters,
+                             @Nullable ReportProperties reportProperties,
+                             @Nullable MqttCloudDeviceLifecyclePublisher lifecyclePublisher,
+                             @Nullable MqttAckReplyObserver ackReplyObserver) {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
+        this.monitorExecutor = monitorExecutor;
+        this.ioExecutor = ioExecutor;
+        this.downlinkService = downlinkService;
+        this.businessReplyService = businessReplyService;
+        this.cloudProtocolAdapters = cloudProtocolAdapters;
+        this.reportProperties = reportProperties;
+        this.lifecyclePublisher = lifecyclePublisher;
+        this.ackReplyObserver = ackReplyObserver;
     }
 
     /**
@@ -106,24 +103,13 @@ public class MqttReportHandler extends AbstractReportHandler {
     protected void doInit() throws Exception {
         log.info("初始化 MQTT v5 报告处理器...");
 
-        ScheduledExecutorService effectiveMonitorExecutor = ThreadPoolFallbacks.preferScheduler(
-                monitorExecutor,
-                DEFAULT_MONITOR_EXECUTOR,
-                "MqttReportHandler",
-                "mqtt-report-monitor-shared");
-        ExecutorService effectivePublishExecutor = ThreadPoolFallbacks.preferExecutorService(
-                ioExecutor,
-                DEFAULT_PUBLISH_EXECUTOR,
-                "MqttReportHandler",
-                "mqtt-report-io-shared");
-
         clientManager = new MqttClientManager(
                 ackManager,
                 downlinkService,
                 businessReplyService,
                 lifecyclePublisher,
                 ackReplyObserver,
-                effectiveMonitorExecutor,
+                monitorExecutor,
                 resolveMaxConcurrentConnects(),
                 resolveReconnectScanIntervalMs()
         );
@@ -131,7 +117,7 @@ public class MqttReportHandler extends AbstractReportHandler {
 
         messagePublisher = new MessagePublisher(
                 clientManager,
-                effectivePublishExecutor
+                ioExecutor
         );
         messagePublisher.init();
 

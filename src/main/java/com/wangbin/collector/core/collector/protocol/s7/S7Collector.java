@@ -62,9 +62,15 @@ public class S7Collector extends ConnectionBackedCollector {
     private static final String READ_PLAN_BLOCK_FIELD_NAME = "__s7_block__";
     private static final List<String> SUPPORTED_COMMANDS = List.of("read", "write", "status", "diagnostic", "connection_info");
     private static final List<String> SUPPORTED_SUBSCRIPTION_MODES = List.of("CYCLIC", "MODE", "SYS", "USR", "ALM");
-
-    @Autowired(required = false)
     private DevicePointResolver devicePointResolver;
+
+    /**
+     * 注入点位解析辅助组件。
+     */
+    @Autowired(required = false)
+    public void setDevicePointResolver(DevicePointResolver devicePointResolver) {
+        this.devicePointResolver = devicePointResolver;
+    }
 
     private final S7ReadPlanBuilder readPlanBuilder = new S7ReadPlanBuilder();
     private final Map<String, S7Address> configuredAddresses = new ConcurrentHashMap<>();

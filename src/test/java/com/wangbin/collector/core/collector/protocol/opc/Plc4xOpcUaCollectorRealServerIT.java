@@ -207,7 +207,7 @@ class Plc4xOpcUaCollectorRealServerIT {
 
             Plc4xOpcUaCollector collector = new Plc4xOpcUaCollector();
             collector.init(deviceInfo);
-            ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+            ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
             ReflectionTestUtils.setField(collector, "connected", true);
             ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
             ReflectionTestUtils.setField(collector, "connectionAdapter", connectionAdapter);

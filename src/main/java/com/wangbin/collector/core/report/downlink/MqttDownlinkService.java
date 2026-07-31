@@ -19,9 +19,8 @@ import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -38,7 +37,6 @@ import java.util.Optional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MqttDownlinkService {
 
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
@@ -59,14 +57,42 @@ public class MqttDownlinkService {
     private final CollectionManager collectionManager;
     private final ShadowManager shadowManager;
     private final CloudDeviceIdentityService cloudDeviceIdentityService;
-    @Autowired(required = false)
-    private AlinkPayloadDecoder alinkPayloadDecoder;
-    @Autowired(required = false)
-    private CloudTopologyService cloudTopologyService;
-    @Autowired(required = false)
-    private CloudOtaService cloudOtaService;
-    @Autowired(required = false)
-    private CloudProtocolAdapterRegistry cloudProtocolAdapters;
+    @Nullable
+    private final AlinkPayloadDecoder alinkPayloadDecoder;
+    @Nullable
+    private final CloudTopologyService cloudTopologyService;
+    @Nullable
+    private final CloudOtaService cloudOtaService;
+    @Nullable
+    private final CloudProtocolAdapterRegistry cloudProtocolAdapters;
+
+    /**
+     * 创建 MQTT 下行服务。
+     */
+    public MqttDownlinkService(ObjectMapper objectMapper,
+                               ConfigManager configManager,
+                               ConfigSyncService configSyncService,
+                               ReportProperties reportProperties,
+                               CollectionManager collectionManager,
+                               ShadowManager shadowManager,
+                               CloudDeviceIdentityService cloudDeviceIdentityService,
+                               @Nullable AlinkPayloadDecoder alinkPayloadDecoder,
+                               @Nullable CloudTopologyService cloudTopologyService,
+                               @Nullable CloudOtaService cloudOtaService,
+                               @Nullable CloudProtocolAdapterRegistry cloudProtocolAdapters) {
+        this.objectMapper = objectMapper;
+        this.configManager = configManager;
+        this.configSyncService = configSyncService;
+        this.reportProperties = reportProperties;
+        this.collectionManager = collectionManager;
+        this.shadowManager = shadowManager;
+        this.cloudDeviceIdentityService = cloudDeviceIdentityService;
+        this.alinkPayloadDecoder = alinkPayloadDecoder;
+        this.cloudTopologyService = cloudTopologyService;
+        this.cloudOtaService = cloudOtaService;
+        this.cloudProtocolAdapters = cloudProtocolAdapters;
+    }
+
     /**
      * 处理当前业务流程。
      */

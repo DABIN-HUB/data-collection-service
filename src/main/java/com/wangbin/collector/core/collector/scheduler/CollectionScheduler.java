@@ -19,9 +19,9 @@ import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -57,38 +57,18 @@ public class CollectionScheduler {
 
     private static final long CONFIG_RESTART_DEBOUNCE_MS = 1000L;
 
-    @Autowired
-    private CollectionManager collectionManager;
-
-    @Autowired
-    private ConfigManager configManager;
-
-    @Autowired
-    private CollectionStatistics collectionStatistics;
-
-    @Autowired
-    private CollectorProperties collectorProperties;
-
-    @Autowired
-    private CollectionServiceHealthTracker collectionServiceHealthTracker;
-
-    @Autowired
-    private SystemResourceMonitorService systemResourceMonitorService;
-
-    @Autowired
-    private DeviceBatchPlanner deviceBatchPlanner;
-
-    @Autowired
-    private ProtocolBatchStrategy protocolBatchStrategy;
-
-    @Autowired
-    private CollectedDataProcessor collectedDataProcessor;
-
-    @Autowired
-    private CollectionTaskGuard collectionTaskGuard;
-
-    @Autowired
-    private PointRuntimeStateService pointRuntimeStateService;
+    private final CollectionManager collectionManager;
+    private final ConfigManager configManager;
+    private final CollectionStatistics collectionStatistics;
+    private final CollectorProperties collectorProperties;
+    private final CollectionServiceHealthTracker collectionServiceHealthTracker;
+    @Nullable
+    private final SystemResourceMonitorService systemResourceMonitorService;
+    private final DeviceBatchPlanner deviceBatchPlanner;
+    private final ProtocolBatchStrategy protocolBatchStrategy;
+    private final CollectedDataProcessor collectedDataProcessor;
+    private final CollectionTaskGuard collectionTaskGuard;
+    private final PointRuntimeStateService pointRuntimeStateService;
 
     private final ScheduledExecutorService timeSliceScheduler;
     private final ExecutorService batchDispatcher;
@@ -124,12 +104,33 @@ public class CollectionScheduler {
     /**
      * 创建当前组件实例。
      */
-    @Autowired
     public CollectionScheduler(
+            CollectionManager collectionManager,
+            ConfigManager configManager,
+            CollectionStatistics collectionStatistics,
+            CollectorProperties collectorProperties,
+            CollectionServiceHealthTracker collectionServiceHealthTracker,
+            @Nullable SystemResourceMonitorService systemResourceMonitorService,
+            DeviceBatchPlanner deviceBatchPlanner,
+            ProtocolBatchStrategy protocolBatchStrategy,
+            CollectedDataProcessor collectedDataProcessor,
+            CollectionTaskGuard collectionTaskGuard,
+            PointRuntimeStateService pointRuntimeStateService,
             @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler,
             @Qualifier("batchDispatcherExecutor") ExecutorService batchDispatcher,
             @Qualifier("asyncCollectorExecutor") ThreadPoolExecutor asyncCollectorPool,
             @Qualifier("dataProcessorExecutor") ThreadPoolExecutor dataProcessorPool) {
+        this.collectionManager = collectionManager;
+        this.configManager = configManager;
+        this.collectionStatistics = collectionStatistics;
+        this.collectorProperties = collectorProperties;
+        this.collectionServiceHealthTracker = collectionServiceHealthTracker;
+        this.systemResourceMonitorService = systemResourceMonitorService;
+        this.deviceBatchPlanner = deviceBatchPlanner;
+        this.protocolBatchStrategy = protocolBatchStrategy;
+        this.collectedDataProcessor = collectedDataProcessor;
+        this.collectionTaskGuard = collectionTaskGuard;
+        this.pointRuntimeStateService = pointRuntimeStateService;
         this.timeSliceScheduler = timeSliceScheduler;
         this.batchDispatcher = batchDispatcher;
         this.asyncCollectorPool = asyncCollectorPool;

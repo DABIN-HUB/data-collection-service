@@ -40,9 +40,15 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 public class EtherNetIpCollector extends ConnectionBackedCollector {
-
-    @Autowired(required = false)
     private DevicePointResolver devicePointResolver;
+
+    /**
+     * 注入点位解析辅助组件。
+     */
+    @Autowired(required = false)
+    public void setDevicePointResolver(DevicePointResolver devicePointResolver) {
+        this.devicePointResolver = devicePointResolver;
+    }
 
     private EtherNetIpConnectionAdapter connectionAdapter;
     private final Map<String, EtherNetIpTagAddress> configuredAddresses = new ConcurrentHashMap<>();

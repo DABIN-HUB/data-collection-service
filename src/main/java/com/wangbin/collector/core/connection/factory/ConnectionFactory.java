@@ -8,10 +8,9 @@ import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.*;
 import com.wangbin.collector.core.connection.serial.SharedSerialChannelManager;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -24,27 +23,38 @@ import java.util.concurrent.ScheduledExecutorService;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ConnectionFactory {
 
-    @Autowired(required = false)
-    @Qualifier("ioIntensiveExecutor")
-    private Executor ioExecutor;
-
-    @Autowired(required = false)
-    @Qualifier("timeSliceScheduler")
-    private ScheduledExecutorService protocolScheduler;
-
-    @Autowired(required = false)
-    private ProtocolConnectionValidator protocolConnectionValidator = new ProtocolConnectionValidator();
-
-    @Autowired(required = false)
-    private CollectorProperties collectorProperties;
-
-    @Autowired(required = false)
-    private SharedSerialChannelManager sharedSerialChannelManager = new SharedSerialChannelManager();
-
+    @Nullable
+    private final Executor ioExecutor;
+    @Nullable
+    private final ScheduledExecutorService protocolScheduler;
+    private final ProtocolConnectionValidator protocolConnectionValidator;
+    @Nullable
+    private final CollectorProperties collectorProperties;
+    private final SharedSerialChannelManager sharedSerialChannelManager;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
+
+    /**
+     * 创建连接工厂。
+     */
+    public ConnectionFactory(ProtocolDescriptorRegistry protocolDescriptorRegistry,
+                             @Qualifier("ioIntensiveExecutor") @Nullable Executor ioExecutor,
+                             @Qualifier("timeSliceScheduler") @Nullable ScheduledExecutorService protocolScheduler,
+                             @Nullable ProtocolConnectionValidator protocolConnectionValidator,
+                             @Nullable CollectorProperties collectorProperties,
+                             @Nullable SharedSerialChannelManager sharedSerialChannelManager) {
+        this.protocolDescriptorRegistry = protocolDescriptorRegistry;
+        this.ioExecutor = ioExecutor;
+        this.protocolScheduler = protocolScheduler;
+        this.protocolConnectionValidator = protocolConnectionValidator != null
+                ? protocolConnectionValidator
+                : new ProtocolConnectionValidator();
+        this.collectorProperties = collectorProperties;
+        this.sharedSerialChannelManager = sharedSerialChannelManager != null
+                ? sharedSerialChannelManager
+                : new SharedSerialChannelManager();
+    }
 
     /**
      * 创建并返回业务对象。

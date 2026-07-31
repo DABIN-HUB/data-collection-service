@@ -6,8 +6,8 @@ import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,13 +15,11 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TelemetryIngressService {
 
-    @Autowired
-    private CollectorDataPostProcessor dataPostProcessor;
-
-    @Autowired
-    private DataQualityProcessor dataQualityProcessor;
+    private final CollectorDataPostProcessor dataPostProcessor;
+    private final DataQualityProcessor dataQualityProcessor;
 
     /**
      * 写入或持久化业务数据。

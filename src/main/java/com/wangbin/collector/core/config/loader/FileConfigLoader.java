@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.CollectorProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -23,24 +23,24 @@ import java.util.List;
 @ConditionalOnProperty(prefix = "collector.config", name = "loader", havingValue = "file")
 public class FileConfigLoader implements ConfigLoader {
 
-    @Value("${collector.config.file.devices:}")
-    private String devicesPath;
-
-    @Value("${collector.config.file.points-dir:}")
-    private String pointsDir;
-
-    @Value("${collector.config.file.connections-dir:}")
-    private String connectionsDir;
+    private final CollectorProperties.FileConfig fileProperties;
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    /**
+     * 创建当前组件实例。
+     */
+    public FileConfigLoader(CollectorProperties collectorProperties) {
+        this.fileProperties = collectorProperties.getConfig().getFile();
+    }
 
     /**
      * 查询并返回业务数据。
      */
     @Override
     public List<DeviceInfo> loadAllDevices() {
-        return readList(devicesPath, DeviceInfo.class);
+        return readList(fileProperties.getDevices(), DeviceInfo.class);
     }
 
     /**
@@ -59,7 +59,7 @@ public class FileConfigLoader implements ConfigLoader {
      */
     @Override
     public List<DataPoint> loadDataPoints(String deviceId) {
-        return readList(resolveChildFile(pointsDir, deviceId), DataPoint.class);
+        return readList(resolveChildFile(fileProperties.getPointsDir(), deviceId), DataPoint.class);
     }
 
     /**
@@ -67,7 +67,7 @@ public class FileConfigLoader implements ConfigLoader {
      */
     @Override
     public DeviceConnection loadConnectionConfig(String deviceId) {
-        String file = resolveChildFile(connectionsDir, deviceId);
+        String file = resolveChildFile(fileProperties.getConnectionsDir(), deviceId);
         if (file == null || file.isBlank()) {
             return null;
         }
@@ -78,7 +78,7 @@ public class FileConfigLoader implements ConfigLoader {
             }
             return objectMapper.readValue(path.toFile(), DeviceConnection.class);
         } catch (Exception e) {
-            log.error("load file 连接 失败, 设备={}, file={}", deviceId, file, e);
+            log.error("加载文件连接失败，设备={}，文件={}", deviceId, file, e);
             return null;
         }
     }
@@ -107,7 +107,7 @@ public class FileConfigLoader implements ConfigLoader {
             }
             return objectMapper.readerForListOf(elementType).readValue(path.toFile());
         } catch (Exception e) {
-            log.error("load file 配置 list 失败, file={}", file, e);
+            log.error("加载文件配置列表失败，文件={}", file, e);
             return Collections.emptyList();
         }
     }

@@ -2,11 +2,13 @@ package com.wangbin.collector.common.exception;
 
 import com.wangbin.collector.common.web.result.ResultCode;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 业务异常
  */
 @Data
+@EqualsAndHashCode(callSuper = false)
 public class BusinessException extends RuntimeException {
 
     private final int code;
