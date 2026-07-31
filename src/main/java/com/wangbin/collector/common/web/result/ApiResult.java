@@ -17,10 +17,16 @@ public class ApiResult<T> {
     private long timestamp;
     private Map<String, Object> extra;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ApiResult() {
         this.timestamp = System.currentTimeMillis();
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ApiResult(int code, String message, T data) {
         this.code = code;
         this.message = message;
@@ -35,6 +41,9 @@ public class ApiResult<T> {
         return success(null);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static <T> ApiResult<T> success(T data) {
         ApiResult<T> result = new ApiResult<>();
         result.setCode(ResultCode.SUCCESS.getCode());
@@ -43,6 +52,9 @@ public class ApiResult<T> {
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static <T> ApiResult<T> success(String message, T data) {
         ApiResult<T> result = new ApiResult<>();
         result.setCode(ResultCode.SUCCESS.getCode());
@@ -58,10 +70,16 @@ public class ApiResult<T> {
         return error(ResultCode.SYSTEM_ERROR.getCode(), ResultCode.SYSTEM_ERROR.getMessage());
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static <T> ApiResult<T> error(String message) {
         return error(ResultCode.SYSTEM_ERROR.getCode(), message);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static <T> ApiResult<T> error(int code, String message) {
         ApiResult<T> result = new ApiResult<>();
         result.setCode(code);
@@ -69,6 +87,9 @@ public class ApiResult<T> {
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static <T> ApiResult<T> error(ResultCode resultCode) {
         return error(resultCode.getCode(), resultCode.getMessage());
     }

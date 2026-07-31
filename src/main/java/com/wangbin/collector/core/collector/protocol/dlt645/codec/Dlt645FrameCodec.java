@@ -17,9 +17,15 @@ public final class Dlt645FrameCodec {
     private static final int END = 0x16;
     private static final int WAKE_UP = 0xFE;
 
+    /**
+     * 创建当前组件实例。
+     */
     private Dlt645FrameCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(Dlt645Frame frame, int wakeUpByteCount) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         for (int index = 0; index < Math.max(0, wakeUpByteCount); index++) {
@@ -42,6 +48,9 @@ public final class Dlt645FrameCodec {
         return output.toByteArray();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Dlt645Frame decode(byte[] bytes) throws Dlt645ProtocolException {
         if (bytes == null || bytes.length < 12) {
             throw new Dlt645ProtocolException("DL/T 645 帧长度不足");
@@ -71,6 +80,9 @@ public final class Dlt645FrameCodec {
         return new Dlt645Frame(Dlt645Address.fromWireBytes(address), bytes[start + 8] & 0xFF, data);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public static Dlt645Frame read(SerialChannel channel, long timeoutMs) throws Exception {
         long deadline = System.currentTimeMillis() + Math.max(1, timeoutMs);
         ByteArrayOutputStream frame = new ByteArrayOutputStream();
@@ -98,6 +110,9 @@ public final class Dlt645FrameCodec {
         throw new Dlt645ProtocolException("等待 DL/T 645 响应超时");
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readExact(SerialChannel channel, int length, long deadline) throws Exception {
         byte[] result = new byte[length];
         int offset = 0;
@@ -114,12 +129,18 @@ public final class Dlt645FrameCodec {
         return result;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static Integer readByte(SerialChannel channel, long deadline) throws Exception {
         byte[] one = new byte[1];
         long remaining = Math.max(1, deadline - System.currentTimeMillis());
         return channel.read(one, 0, 1, remaining) == 1 ? one[0] & 0xFF : null;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static int findStart(byte[] bytes) {
         for (int index = 0; index < bytes.length; index++) {
             if ((bytes[index] & 0xFF) == START) {
@@ -129,6 +150,9 @@ public final class Dlt645FrameCodec {
         return -1;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static int checksum(byte[] bytes) {
         int result = 0;
         for (byte value : bytes) {

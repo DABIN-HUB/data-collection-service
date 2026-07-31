@@ -38,6 +38,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Component
 public class ProtocolDescriptorRegistry {
 
@@ -59,6 +62,9 @@ public class ProtocolDescriptorRegistry {
     private final Map<String, ProtocolDescriptor> descriptors = new LinkedHashMap<>();
     private final Map<String, AliasDescriptor> aliases = new LinkedHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProtocolDescriptorRegistry() {
         registerPrimary(descriptor("MODBUS_TCP", "Modbus TCP", "Modbus TCP register polling over Ethernet.",
                 List.of(), Plc4xModbusTcpCollector.class, "MODBUS_TCP", 502, ProtocolAddressingMode.NUMERIC,
@@ -683,10 +689,16 @@ public class ProtocolDescriptorRegistry {
         registerAlias("SNMP_V3", "SNMP", cfg -> putExtIfAbsent(cfg, "snmpVersion", "3"));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean supports(String protocol) {
         return canonicalProtocol(protocol) != null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String canonicalProtocol(String protocol) {
         if (protocol == null || protocol.isBlank()) {
             return null;
@@ -699,15 +711,24 @@ public class ProtocolDescriptorRegistry {
         return alias != null ? alias.primaryCode() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public ProtocolDescriptor resolve(String protocol) {
         String canonical = canonicalProtocol(protocol);
         return canonical == null ? null : descriptors.get(canonical);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Collection<ProtocolDescriptor> primaryDescriptors() {
         return Collections.unmodifiableCollection(descriptors.values());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Collection<ProtocolDescriptor> allDescriptorsIncludingAliases() {
         LinkedHashMap<String, ProtocolDescriptor> resolved = new LinkedHashMap<>();
         for (ProtocolDescriptor descriptor : descriptors.values()) {
@@ -722,12 +743,18 @@ public class ProtocolDescriptorRegistry {
         return Collections.unmodifiableCollection(resolved.values());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Collection<String> allSupportedCodes() {
         java.util.LinkedHashSet<String> codes = new java.util.LinkedHashSet<>(descriptors.keySet());
         codes.addAll(aliases.keySet());
         return Collections.unmodifiableSet(codes);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public String applyConnectionDefaults(String protocol, DeviceConnection cfg) {
         ProtocolDescriptor descriptor = resolve(protocol);
         String canonical = descriptor != null ? descriptor.connectionType() : normalize(protocol);
@@ -741,6 +768,9 @@ public class ProtocolDescriptorRegistry {
         return canonical;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public ProtocolSchema toSchema(String protocol) {
         ProtocolDescriptor descriptor = resolve(protocol);
         if (descriptor == null) {
@@ -773,6 +803,9 @@ public class ProtocolDescriptorRegistry {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<ProtocolFieldConfig> resolveConnectionFields(ProtocolDescriptor descriptor) {
         if (!descriptor.subscribable()) {
             return descriptor.connectionFields();
@@ -789,6 +822,9 @@ public class ProtocolDescriptorRegistry {
         return List.copyOf(resolved);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> resolveDataTypes(String protocol) {
         return switch (protocol) {
             case "MODBUS_TCP", "MODBUS_RTU" -> MODBUS_DATA_TYPES;
@@ -796,6 +832,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolTypeMode resolveTypeMode(String protocol) {
         return switch (protocol) {
             case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
@@ -804,6 +843,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolvePrimaryTypeField(String protocol) {
         return switch (resolveTypeMode(protocol)) {
             case DRIVER_PRIMARY -> "additionalConfig.driverDataType";
@@ -812,6 +854,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlatformDataTypeMode resolvePlatformDataTypeMode(String protocol) {
         return switch (resolveTypeMode(protocol)) {
             case DRIVER_PRIMARY, PROTOCOL_FIELD_PRIMARY -> PlatformDataTypeMode.DERIVED_EDITABLE;
@@ -819,6 +864,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean resolveDriverTypeEnabled(String protocol) {
         return switch (protocol) {
             case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> true;
@@ -826,6 +874,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveDriverTypeLabel(String protocol) {
         return switch (protocol) {
             case "SIEMENS_S7" -> "S7 driver type";
@@ -841,10 +892,16 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveDriverTypeField(String protocol) {
         return resolveDriverTypeEnabled(protocol) ? "additionalConfig.driverDataType" : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> resolveDriverDataTypes(String protocol) {
         return switch (protocol) {
             case "SIEMENS_S7" -> List.of(
@@ -872,6 +929,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<ProtocolFieldConfig> resolvePointFields(String protocol) {
         return switch (protocol) {
             case "MODBUS_TCP", "MODBUS_RTU" -> modbusPointFields();
@@ -894,6 +954,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> customPointFields() {
         return List.of(
                 pointField("additionalConfig.requestTemplate", "textarea", "读取请求模板", false, "",
@@ -917,6 +980,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> modbusPointFields() {
         return List.of(
                 pointField("additionalConfig.registerType", "select", "Register type", false, "",
@@ -937,6 +1003,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> s7PointFields() {
         return List.of(
                 pointField("additionalConfig.subscriptionMode", "select", "Subscription mode", false, "",
@@ -951,6 +1020,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> mcPointFields() {
         return List.of(
                 pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
@@ -962,6 +1034,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> finsPointFields() {
         return List.of(
                 pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
@@ -976,6 +1051,9 @@ public class ProtocolDescriptorRegistry {
                         List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "Optional per-point word-order override for 32-bit and 64-bit values.", null)
         );
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> bacnetPointFields() {
         return List.of(
                 pointField("additionalConfig.driverDataType", "select", "BACnet driver type", false, "AUTO",
@@ -992,6 +1070,9 @@ public class ProtocolDescriptorRegistry {
                         Collections.emptyList(), "Optional per-point COV increment override for analog objects.", null)
         );
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> etherNetIpPointFields() {
         return List.of(
                 pointField("additionalConfig.arraySize", "number", "Array size", false, "",
@@ -999,6 +1080,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> adsPointFields() {
         return List.of(
                 pointField("additionalConfig.stringLength", "number", "String length", false, "",
@@ -1008,6 +1092,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> knxPointFields() {
         return List.of(
                 pointField("additionalConfig.dptId", "string", "DPT id", false, "",
@@ -1017,6 +1104,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> opcUaPointFields() {
         return List.of(
                 pointField("additionalConfig.nodeId", "string", "NodeId", false, "",
@@ -1043,6 +1133,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> opcDaPointFields() {
         return List.of(
                 pointField("additionalConfig.itemId", "string", "Item ID", false, "",
@@ -1054,6 +1147,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> mqttPointFields() {
         return List.of(
                 pointField("additionalConfig.topic", "string", "Topic", false, "",
@@ -1075,6 +1171,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> iec104PointFields() {
         return List.of(
                 pointField("additionalConfig.typeId", "number", "Type ID", false, "",
@@ -1092,6 +1191,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> dlt645PointFields() {
         return List.of(
                 pointField("additionalConfig.valueType", "select", "原始值类型", false, "BCD",
@@ -1104,6 +1206,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> iec101PointFields() {
         return List.of(
                 pointField("additionalConfig.typeId", "number", "类型标识", false, "",
@@ -1117,6 +1222,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> coapPointFields() {
         return List.of(
                 pointField("additionalConfig.path", "string", "Path", false, "",
@@ -1134,6 +1242,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolFieldConfig pointField(String name,
                                            String type,
                                            String label,
@@ -1156,10 +1267,16 @@ public class ProtocolDescriptorRegistry {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolvePointStorage(String name) {
         return name != null && name.startsWith("additionalConfig.") ? "extJson" : "topLevel";
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static List<String> appendOptions(List<String> base, String... values) {
         java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>(base);
         if (values != null) {
@@ -1168,6 +1285,9 @@ public class ProtocolDescriptorRegistry {
         return List.copyOf(merged);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerPrimary(ProtocolDescriptor descriptor) {
         descriptors.put(descriptor.code(), descriptor);
         for (String alias : descriptor.aliases()) {
@@ -1175,10 +1295,16 @@ public class ProtocolDescriptorRegistry {
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerAlias(String alias, String primaryCode, Consumer<DeviceConnection> customizer) {
         aliases.put(normalize(alias), new AliasDescriptor(primaryCode, customizer));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolDescriptor descriptor(String code,
                                           String title,
                                           String description,
@@ -1210,6 +1336,9 @@ public class ProtocolDescriptorRegistry {
         );
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolCapabilityState resolveImplementationState(String protocol, boolean implemented) {
         if (!implemented) {
             return ProtocolCapabilityState.UNSUPPORTED;
@@ -1221,6 +1350,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolCapabilityState resolveWriteCapability(String protocol, boolean writable) {
         if (!writable) {
             return ProtocolCapabilityState.UNSUPPORTED;
@@ -1231,6 +1363,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolCapabilityState resolveSubscriptionCapability(String protocol, boolean subscribable) {
         if (!subscribable) {
             return ProtocolCapabilityState.UNSUPPORTED;
@@ -1244,6 +1379,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolCapabilityState resolveBrowseCapability(String protocol) {
         return switch (protocol) {
             case "SNMP" -> ProtocolCapabilityState.SUPPORTED;
@@ -1253,6 +1391,9 @@ public class ProtocolDescriptorRegistry {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> customConnectionFields(boolean udp) {
         List<ProtocolFieldConfig> configured = new java.util.ArrayList<>();
         configured.add(field("host", "string", "设备主机", true, "127.0.0.1", null, "connection"));
@@ -1285,6 +1426,9 @@ public class ProtocolDescriptorRegistry {
         return List.copyOf(configured);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> opcUaFields() {
         return fields(
                 field("url", "string", "Endpoint URL", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
@@ -1331,16 +1475,25 @@ public class ProtocolDescriptorRegistry {
                 field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> opcUaMiloFields() {
         return opcUaFields().stream()
                 .filter(field -> !"plc4xConnectionString".equals(field.getName()))
                 .toList();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ProtocolFieldConfig> fields(ProtocolFieldConfig... fields) {
         return Arrays.asList(fields);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolFieldConfig field(String name,
                                       String type,
                                       String label,
@@ -1351,6 +1504,9 @@ public class ProtocolDescriptorRegistry {
         return conditional(name, type, label, required, defaultValue, options, group, null, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolFieldConfig field(String name,
                                       String type,
                                       String label,
@@ -1362,6 +1518,9 @@ public class ProtocolDescriptorRegistry {
         return conditional(name, type, label, required, defaultValue, options, group, null, description);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolFieldConfig conditional(String name,
                                             String type,
                                             String label,
@@ -1373,6 +1532,9 @@ public class ProtocolDescriptorRegistry {
         return conditional(name, type, label, required, defaultValue, options, group, requiredWhen, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ProtocolFieldConfig conditional(String name,
                                             String type,
                                             String label,
@@ -1395,16 +1557,25 @@ public class ProtocolDescriptorRegistry {
                 .storage(resolveStorage(name))
                 .build();
     }
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveStorage(String name) {
         return TOP_LEVEL_CONNECTION_FIELDS.contains(name) ? "topLevel" : "extJson";
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private static void applyDefaultPort(DeviceConnection cfg, Integer defaultPort) {
         if (cfg != null && cfg.getPort() == null && defaultPort != null && defaultPort > 0) {
             cfg.setPort(defaultPort);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void putExtIfAbsent(DeviceConnection cfg, String key, Object value) {
         if (cfg.getExtJson() == null) {
             cfg.setExtJson(new LinkedHashMap<>());
@@ -1412,10 +1583,16 @@ public class ProtocolDescriptorRegistry {
         cfg.getExtJson().putIfAbsent(key, value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String protocol) {
         return protocol.trim().toUpperCase(Locale.ROOT).replace("-", "_");
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record AliasDescriptor(String primaryCode, Consumer<DeviceConnection> customizer) {
     }
 }

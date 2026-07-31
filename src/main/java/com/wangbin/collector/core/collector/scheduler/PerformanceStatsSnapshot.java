@@ -8,7 +8,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * Scheduler/performance snapshot.
+ * 调度器性能快照。
  */
 @Data
 @Builder

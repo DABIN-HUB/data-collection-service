@@ -7,6 +7,9 @@ import lombok.Value;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Value
 @Builder
 public class BacnetCovNotification {
@@ -21,6 +24,9 @@ public class BacnetCovNotification {
     @Singular
     List<PropertyValue> propertyValues;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Value
     @Builder
     public static class PropertyValue {

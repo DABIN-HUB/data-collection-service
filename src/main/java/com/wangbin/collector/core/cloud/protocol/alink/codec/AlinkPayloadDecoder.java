@@ -21,11 +21,17 @@ public class AlinkPayloadDecoder {
     private final ObjectMapper objectMapper;
     private final AlinkTopicParser topicParser;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlinkPayloadDecoder(ObjectMapper objectMapper, AlinkTopicParser topicParser) {
         this.objectMapper = objectMapper;
         this.topicParser = topicParser;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public AlinkMessageEnvelope decode(String topic, byte[] payload) throws IOException {
         JsonNode root = objectMapper.readTree(payload);
         Optional<AlinkTopic> parsedTopic = topicParser.parse(topic);
@@ -42,6 +48,9 @@ public class AlinkPayloadDecoder {
                 root.get(MessageConstant.FIELD_PARAMS));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private AlinkMethod resolveMethod(JsonNode root, Optional<AlinkTopic> parsedTopic) {
         String method = firstText(root, MessageConstant.FIELD_METHOD);
         if (method != null) {
@@ -50,11 +59,17 @@ public class AlinkPayloadDecoder {
         return parsedTopic.map(AlinkTopic::method).orElse(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String text(JsonNode node, String field) {
         JsonNode value = node != null ? node.get(field) : null;
         return value == null || value.isNull() ? "" : value.asText("");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(JsonNode node, String... fields) {
         if (node == null) {
             return null;

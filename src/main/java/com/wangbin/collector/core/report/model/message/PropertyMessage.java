@@ -8,6 +8,9 @@ import lombok.Data;
  */
 @Data
 public class PropertyMessage extends IoTMessage {
+    /**
+     * 创建当前组件实例。
+     */
     public PropertyMessage() {
         setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_POST);
         setTimestamp(System.currentTimeMillis());

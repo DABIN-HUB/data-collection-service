@@ -30,6 +30,9 @@ public class AlarmAcknowledgementService {
     private final AlarmStateProperties properties;
     private final Map<String, AlarmAcknowledgement> records = new LinkedHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlarmAcknowledgementService(StringRedisTemplate redisTemplate,
                                        ObjectMapper objectMapper,
                                        AlarmStateProperties properties) {
@@ -81,6 +84,9 @@ public class AlarmAcknowledgementService {
         return Map.copyOf(result);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private AlarmAcknowledgement findExisting(String alarmId) {
         AlarmAcknowledgement cached = records.get(alarmId);
         if (cached != null || !properties.isEnabled()) {
@@ -101,6 +107,9 @@ public class AlarmAcknowledgementService {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private AlarmAcknowledgement persistIfAbsent(AlarmAcknowledgement acknowledgement) {
         if (!properties.isEnabled()) {
             return null;
@@ -123,6 +132,9 @@ public class AlarmAcknowledgementService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String redisKey(String alarmId) {
         String prefix = properties.getAcknowledgementKeyPrefix();
         if (!StringUtils.hasText(prefix)) {
@@ -131,6 +143,9 @@ public class AlarmAcknowledgementService {
         return prefix.endsWith(":") ? prefix + alarmId : prefix + ":" + alarmId;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private String validateAlarmId(String alarmId) {
         if (!StringUtils.hasText(alarmId)) {
             throw new IllegalArgumentException("告警标识不能为空");
@@ -142,6 +157,9 @@ public class AlarmAcknowledgementService {
         return normalized;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeOldestIfNecessary() {
         while (records.size() > MAX_RECORD_COUNT) {
             String oldestKey = records.keySet().iterator().next();

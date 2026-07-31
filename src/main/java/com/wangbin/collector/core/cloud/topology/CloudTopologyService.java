@@ -23,6 +23,9 @@ public class CloudTopologyService {
 
     private final ConcurrentMap<String, Set<CloudDeviceIdentity>> gatewayTopologies = new ConcurrentHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Object> addSubDevices(CloudDeviceIdentity gateway, List<CloudDeviceIdentity> subDevices) {
         if (gateway == null || !gateway.valid() || subDevices == null || subDevices.isEmpty()) {
             return result(gateway, 0, "empty topology add request");
@@ -38,6 +41,9 @@ public class CloudTopologyService {
         return result(gateway, changed, "topology added");
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public Map<String, Object> deleteSubDevices(CloudDeviceIdentity gateway, List<CloudDeviceIdentity> subDevices) {
         if (gateway == null || !gateway.valid() || subDevices == null || subDevices.isEmpty()) {
             return result(gateway, 0, "empty topology delete request");
@@ -54,12 +60,18 @@ public class CloudTopologyService {
         return result(gateway, changed, "topology deleted");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public Map<String, Object> applyChange(CloudDeviceIdentity gateway, JsonNode params) {
         List<CloudDeviceIdentity> subDevices = parseSubDevices(params);
         boolean online = resolveOnline(params);
         return online ? addSubDevices(gateway, subDevices) : deleteSubDevices(gateway, subDevices);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<CloudDeviceIdentity> listSubDevices(CloudDeviceIdentity gateway) {
         if (gateway == null || !gateway.valid()) {
             return Collections.emptyList();
@@ -71,6 +83,9 @@ public class CloudTopologyService {
         return new ArrayList<>(topology);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public List<CloudDeviceIdentity> parseSubDevices(JsonNode node) {
         if (node == null || node.isNull()) {
             return Collections.emptyList();
@@ -96,6 +111,9 @@ public class CloudTopologyService {
         return result;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, Object> snapshot(CloudDeviceIdentity gateway) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("gateway", gateway != null ? gateway.key() : null);
@@ -110,6 +128,9 @@ public class CloudTopologyService {
         return data;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity parseIdentity(JsonNode node) {
         if (node == null || node.isNull()) {
             return CloudDeviceIdentity.of("", "");
@@ -117,6 +138,9 @@ public class CloudTopologyService {
         return CloudDeviceIdentity.of(firstText(node, "productKey", "pk"), firstText(node, "deviceName", "dn"));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean resolveOnline(JsonNode params) {
         String status = firstText(params, "status", "topoStatus", "action", "operation");
         if (!StringUtils.hasText(status)) {
@@ -134,6 +158,9 @@ public class CloudTopologyService {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private JsonNode firstNode(JsonNode node, String... fields) {
         if (node == null) {
             return null;
@@ -147,11 +174,17 @@ public class CloudTopologyService {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(JsonNode node, String... fields) {
         JsonNode value = firstNode(node, fields);
         return value == null ? null : value.asText(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> result(CloudDeviceIdentity gateway, int changed, String message) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("gateway", gateway != null ? gateway.key() : null);

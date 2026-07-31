@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Scheduler performance monitor.
+ * 调度器性能监控器。
  */
 @Slf4j
 public class PerformanceMonitor {
@@ -30,6 +30,9 @@ public class PerformanceMonitor {
 
     private long lastStatisticsTime = System.currentTimeMillis();
 
+    /**
+     * 处理组件生命周期。
+     */
     void initializeDeviceBatchSize(String deviceId, int initialBatchSize, int maxBatchSize) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -38,6 +41,9 @@ public class PerformanceMonitor {
                 .initializeBatchWindow(initialBatchSize, maxBatchSize);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordTimeSliceExecution(int sliceIndex, long executionTime, AtomicInteger timeSliceInterval) {
         timeSliceExecutionTimes.put(sliceIndex, executionTime);
         if (executionTime > timeSliceInterval.get()) {
@@ -46,6 +52,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
         totalProcessedPoints.addAndGet(pointCount);
         totalSuccessfulBatches.incrementAndGet();
@@ -60,6 +69,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordBatchFailure(String deviceId) {
         totalFailedBatches.incrementAndGet();
 
@@ -69,6 +81,9 @@ public class PerformanceMonitor {
         perf.recordFailure();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordDataProcessed(String deviceId) {
         DevicePerformance perf = devicePerformance.get(deviceId);
         if (perf != null) {
@@ -76,6 +91,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void adjustBatchSize(String deviceId, int percentChange) {
         DevicePerformance perf = devicePerformance.get(deviceId);
         if (perf != null) {
@@ -83,6 +101,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void logStatistics(AtomicInteger timeSliceInterval) {
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - lastStatisticsTime;
@@ -96,7 +117,7 @@ public class PerformanceMonitor {
         double batchSuccessRate = successfulBatches + failedBatches > 0 ?
                 successfulBatches * 100.0 / (successfulBatches + failedBatches) : 0;
 
-        log.info("performance stats - points={}, pointsPerSecond={}, batchSuccessRate={}%, activeDevices={}",
+        log.info("performance stats - 点位={}, pointsPerSecond={}, batchSuccessRate={}%, activeDevices={}",
                 totalPoints,
                 String.format("%.2f", pointsPerSecond),
                 String.format("%.2f", batchSuccessRate),
@@ -119,6 +140,9 @@ public class PerformanceMonitor {
         reportDeviceHealth();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void analyzeBottlenecks() {
         if (!slowestDevices.isEmpty()) {
             List<Map.Entry<String, Long>> sortedSlowest = slowestDevices.entrySet().stream()
@@ -151,12 +175,15 @@ public class PerformanceMonitor {
             peakMemoryUsage.set(currentMemory);
         }
 
-        log.debug("system resources: heapUsed={}MB, peakHeap={}MB, processors={}",
+        log.debug("系统资源快照：堆已用={}MB，峰值堆={}MB，处理器数量={}",
                 currentMemory / (1024 * 1024),
                 peakMemoryUsage.get() / (1024 * 1024),
                 Runtime.getRuntime().availableProcessors());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void reportDeviceHealth() {
         long healthyDevices = 0;
         long warningDevices = 0;
@@ -175,7 +202,7 @@ public class PerformanceMonitor {
             }
 
             if ("HIGH".equals(risk) || healthScore < 50) {
-                log.warn("device {} health degraded: score={}%, risk={}, consecutiveFailures={}",
+                log.warn("设备 {} 健康状态 degraded:score={}%, 风险={}, consecutiveFailures={}",
                         perf.deviceId,
                         String.format("%.1f", healthScore),
                         risk,
@@ -183,7 +210,7 @@ public class PerformanceMonitor {
             }
         }
 
-        log.info("device health summary: healthy={}, warning={}, critical={}", healthyDevices, warningDevices, criticalDevices);
+        log.info("设备 健康状态 summary:健康={}, 警告={}, 严重={}", healthyDevices, warningDevices, criticalDevices);
     }
 
     Map<String, Object> getDevicePerformance(String deviceId) {
@@ -209,6 +236,9 @@ public class PerformanceMonitor {
         return count == 0 ? 0 : sum / count;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     boolean consumeTimeSliceTimeout() {
         return recentTimeSliceTimeout.getAndSet(false);
     }

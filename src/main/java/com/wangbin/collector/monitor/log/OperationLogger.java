@@ -63,6 +63,9 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
         stop();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     protected void append(ILoggingEvent event) {
         if (event == null) {
@@ -115,6 +118,9 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
         return List.copyOf(result);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int size() {
         lock.lock();
         try {
@@ -124,6 +130,9 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matches(OperationLogEntry entry,
                             String level,
                             String loggerName,
@@ -140,6 +149,9 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
                 || normalize(entry.thread()).contains(keyword);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int normalizeLimit(Integer limit) {
         if (limit == null) {
             return DEFAULT_QUERY_LIMIT;
@@ -147,6 +159,9 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
         return Math.max(1, Math.min(MAX_QUERY_LIMIT, limit));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String sanitize(String message) {
         String safeMessage = safeText(message);
         safeMessage = SENSITIVE_FIELD_PATTERN.matcher(safeMessage).replaceAll("$1$2***");
@@ -157,10 +172,16 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
         return safeMessage.substring(0, MAX_MESSAGE_LENGTH) + "...";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         return safeText(value).trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String safeText(String value) {
         return value == null ? "" : value;
     }

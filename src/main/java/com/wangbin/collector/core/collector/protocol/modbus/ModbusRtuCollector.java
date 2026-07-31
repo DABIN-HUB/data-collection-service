@@ -40,6 +40,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     private ByteOrder byteOrder = ByteOrder.BIG_ENDIAN;
     private int interFrameDelay = 5; // 帧间延时(ms)\r\n
     private final ModbusTransport transport = new ModbusTransport() {
+        /**
+         * 查询并返回业务数据。
+         */
         @Override
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
             return switch (registerType) {
@@ -74,6 +77,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             };
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleCoils(int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
             WriteMultipleCoilsRequest request = new WriteMultipleCoilsRequest(startAddress, quantity, coilBytes);
@@ -86,6 +92,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             }
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleRegisters(int unitId, int startAddress, short[] registers) throws Exception {
             WriteMultipleRegistersRequest request = ModbusRequestBuilder.buildWriteMultipleRegisters(
@@ -112,9 +121,12 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return "MODBUS_RTU";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
-        log.info("开始建立 Modbus RTU 连接: deviceId={}", deviceInfo.getDeviceId());
+        log.info("开始建立 Modbus RTU 连接: 设备={}", deviceInfo.getDeviceId());
         DeviceConnection connectionConfig = requireConnectionConfig();
 
         interFrameDelay = connectionConfig.getInt("interFrameDelay", 5);
@@ -142,12 +154,18 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
                 serialPort, baudRate, dataBits, stopBits, parity.name());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         removeConnectionSilently();
         registerCache.clear();
         log.info("Modbus RTU连接已断开");
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         String address = point.getAddress();
@@ -170,6 +188,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String address = point.getAddress();
@@ -188,6 +209,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -226,6 +250,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId,String command, Map<String, Object> params) throws Exception {
         Map<String, Object> safeParams = params != null ? params : Collections.emptyMap();
@@ -348,6 +375,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     // =============== 命令执行方法 ===============
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         int quantity = (int) params.getOrDefault("quantity", 1);
@@ -380,6 +410,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         @SuppressWarnings("unchecked")
@@ -412,6 +445,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         int quantity = (int) params.getOrDefault("quantity", 1);
@@ -435,6 +471,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         @SuppressWarnings("unchecked")
@@ -462,13 +501,15 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadExceptionStatus(int unitId, Map<String, Object> params) throws Exception {
         try {
             // 使用工具类构建 RTU 请求
             byte[] requestData = ModbusUtils.buildRtuExceptionStatusRequest(unitId);
 
             // 预留串口原始请求发送入口
-            // serialPort.writeBytes(requestData, requestData.length);
 
             return Map.of(
                     "success", true,
@@ -479,6 +520,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeDiagnostics(int unitId, Map<String, Object> params) throws Exception {
         try {
             int subFunction = (int) params.getOrDefault("subFunction", 0x0000);
@@ -486,8 +530,6 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
             // 使用工具类构建RTU诊断请求
             byte[] requestData = ModbusUtils.buildRtuDiagnosticRequest(unitId, subFunction, data);
-
-            // serialPort.writeBytes(requestData, requestData.length);
 
             return Map.of(
                     "success", true,
@@ -498,6 +540,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeGetCommEventCounter(int unitId, Map<String, Object> params) throws Exception {
         return Map.of(
                 "success", false,
@@ -505,6 +550,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         );
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeGetCommEventLog(int unitId, Map<String, Object> params) throws Exception {
         return Map.of(
                 "success", false,
@@ -512,6 +560,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         );
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeDiagnostic(int unitId, Map<String, Object> params) {
         Map<String, Object> result = new HashMap<>();
         result.put("protocol", getProtocolType());
@@ -543,6 +594,9 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
 
     // =============== 辅助方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int sanitizeUnitId(Integer unitIdValue) {
         return unitIdValue != null && unitIdValue > 0 ? unitIdValue : slaveId;
     }
@@ -554,9 +608,15 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         return testConnection(slaveId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean testConnection(int unitId) throws Exception {
         try {
             CompletionStage<ReadHoldingRegistersResponse> future = client.readHoldingRegistersAsync(
+                    /**
+                     * 执行当前业务逻辑。
+                     */
                     unitId, new ReadHoldingRegistersRequest(0, 1));
             rtuWait(future);
             return true;
@@ -581,12 +641,18 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("Modbus RTU");
         connectionAdapter = null;
         client = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     protected int resolveBatchUnitId(DataPoint point) {
         return sanitizeUnitId(resolveUnitId(point));

@@ -15,6 +15,9 @@ import java.util.Map;
 @Component
 public class FieldUniquenessValidator {
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public void validate(String deviceId, List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return;
@@ -39,10 +42,10 @@ public class FieldUniquenessValidator {
             StringBuilder sb = new StringBuilder();
             for (DataPoint point : list) {
                 point.setReportFieldConflict(true);
-                sb.append(String.format("[pointId=%s, pointCode=%s, reportField=%s] ",
+                sb.append(String.format("[点位=%s, 点位编码=%s, 上报字段=%s] ",
                         point.getPointId(), point.getPointCode(), point.getReportField()));
             }
-            log.error("设备 {} 的报告字段 '{}' 存在冲突，以下点位被降级为 raw-only：{}", deviceId, field, sb);
+            log.error("设备 {} 的报告字段 '{}' 存在冲突，以下点位被降级为原始字段上报：{}", deviceId, field, sb);
         }
     }
 }

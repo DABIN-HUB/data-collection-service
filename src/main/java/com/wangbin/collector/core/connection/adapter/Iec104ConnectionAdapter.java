@@ -10,7 +10,7 @@ import org.openmuc.j60870.ConnectionEventListener;
 import java.net.InetAddress;
 
 /**
- * IEC104 connection adapter.
+ * IEC104 连接 适配器.
  */
 public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connection> {
 
@@ -18,10 +18,16 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
     @Setter
     private ConnectionEventListener connectionEventListener;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec104ConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -46,6 +52,9 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         connectionParams.put("timeout", timeout);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (connection == null) {
@@ -64,6 +73,9 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || connection.isStopped()) {
@@ -71,9 +83,12 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // IEC104 has no separate authentication phase in current implementation.
+        // IEC104 has no separate 认证 phase in 当前 implementation.
     }
 
     @Override
@@ -81,6 +96,9 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         return connection;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveTimeout() {
         if (config.getConnectTimeout() != null && config.getConnectTimeout() > 0) {
             return config.getConnectTimeout();

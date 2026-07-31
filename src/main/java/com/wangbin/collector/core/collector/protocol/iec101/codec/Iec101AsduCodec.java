@@ -22,9 +22,15 @@ public final class Iec101AsduCodec {
     public static final int COT_ACTIVATION_CONFIRMATION = 7;
     public static final int COT_ACTIVATION_TERMINATION = 10;
 
+    /**
+     * 创建当前组件实例。
+     */
     private Iec101AsduCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec101Asdu decode(byte[] bytes, Iec101LinkConfig config) {
         if (bytes == null || bytes.length < 2 + config.causeOfTransmissionSize()
                 + config.commonAddressSize()) {
@@ -60,6 +66,9 @@ public final class Iec101AsduCodec {
                 commonAddress, sequence, objects);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeInterrogation(int commonAddress,
                                              int qualifier,
                                              Iec101LinkConfig config) {
@@ -67,6 +76,9 @@ public final class Iec101AsduCodec {
                 new byte[]{(byte) qualifier}, config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeCounterInterrogation(int commonAddress,
                                                     int qualifier,
                                                     Iec101LinkConfig config) {
@@ -74,6 +86,9 @@ public final class Iec101AsduCodec {
                 new byte[]{(byte) qualifier}, config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeRead(int commonAddress,
                                     int informationObjectAddress,
                                     Iec101LinkConfig config) {
@@ -81,6 +96,9 @@ public final class Iec101AsduCodec {
                 new byte[0], config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeClockSynchronization(int commonAddress,
                                                     long timestamp,
                                                     Iec101LinkConfig config) {
@@ -88,6 +106,9 @@ public final class Iec101AsduCodec {
                 encodeCp56Time(timestamp), config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeCommand(int typeId,
                                        int commonAddress,
                                        int informationObjectAddress,
@@ -100,6 +121,9 @@ public final class Iec101AsduCodec {
                 informationObjectAddress, element, config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeSingleObject(int typeId,
                                              int cause,
                                              int commonAddress,
@@ -119,6 +143,9 @@ public final class Iec101AsduCodec {
         return output.toByteArray();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Iec101InformationObject decodeInformationObject(int typeId,
                                                                    int address,
                                                                    Cursor cursor) {
@@ -259,6 +286,9 @@ public final class Iec101AsduCodec {
         return new Iec101InformationObject(address, value, qualityScore(rawQuality), rawQuality, timestamp);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeCommandElement(int typeId,
                                                Object value,
                                                boolean select,
@@ -295,6 +325,9 @@ public final class Iec101AsduCodec {
         return output.toByteArray();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int qualityScore(int rawQuality) {
         if ((rawQuality & 0x80) != 0) {
             return 0;
@@ -308,11 +341,17 @@ public final class Iec101AsduCodec {
         return 100;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int decodeSignedSevenBit(int value) {
         int result = value & 0x7F;
         return (result & 0x40) != 0 ? result - 0x80 : result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Long decodeCp24Time(byte[] bytes) {
         int millisecondsOfMinute = readUnsignedLittleEndian(bytes, 0, 2);
         int minute = bytes[2] & 0x3F;
@@ -327,6 +366,9 @@ public final class Iec101AsduCodec {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Long decodeCp56Time(byte[] bytes) {
         int millisecondsOfMinute = readUnsignedLittleEndian(bytes, 0, 2);
         int minute = bytes[2] & 0x3F;
@@ -345,6 +387,9 @@ public final class Iec101AsduCodec {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeCp56Time(long timestamp) {
         LocalDateTime time = LocalDateTime.ofInstant(
                 java.time.Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
@@ -360,6 +405,9 @@ public final class Iec101AsduCodec {
         };
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static int readUnsignedLittleEndian(byte[] bytes, int offset, int length) {
         int value = 0;
         for (int index = 0; index < length; index++) {
@@ -368,12 +416,18 @@ public final class Iec101AsduCodec {
         return value;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeLittleEndian(ByteArrayOutputStream output, int value, int length) {
         for (int index = 0; index < length; index++) {
             output.write((value >>> (index * 8)) & 0xFF);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean booleanValue(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -381,28 +435,46 @@ public final class Iec101AsduCodec {
         return integerValue(value) != 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int integerValue(Object value) {
         return new java.math.BigDecimal(String.valueOf(value)).intValue();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static double doubleValue(Object value) {
         return Double.parseDouble(String.valueOf(value));
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class Cursor {
 
         private final byte[] bytes;
         private int position;
 
+        /**
+         * 创建当前组件实例。
+         */
         private Cursor(byte[] bytes) {
             this.bytes = bytes;
         }
 
+        /**
+         * 查询并返回业务数据。
+         */
         private int readUnsignedByte() {
             require(1);
             return bytes[position++] & 0xFF;
         }
 
+        /**
+         * 查询并返回业务数据。
+         */
         private int readLittleEndian(int length) {
             require(length);
             int value = readUnsignedLittleEndian(bytes, position, length);
@@ -410,6 +482,9 @@ public final class Iec101AsduCodec {
             return value;
         }
 
+        /**
+         * 查询并返回业务数据。
+         */
         private long readLittleEndianLong(int length) {
             require(length);
             long value = 0;
@@ -420,6 +495,9 @@ public final class Iec101AsduCodec {
             return value;
         }
 
+        /**
+         * 查询并返回业务数据。
+         */
         private long readSignedLittleEndian(int length) {
             long value = readLittleEndianLong(length);
             int bits = length * 8;
@@ -429,6 +507,9 @@ public final class Iec101AsduCodec {
             return value;
         }
 
+        /**
+         * 查询并返回业务数据。
+         */
         private byte[] readBytes(int length) {
             require(length);
             byte[] result = java.util.Arrays.copyOfRange(bytes, position, position + length);
@@ -436,10 +517,16 @@ public final class Iec101AsduCodec {
             return result;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private int remaining() {
             return bytes.length - position;
         }
 
+        /**
+         * 校验业务条件和参数边界。
+         */
         private void require(int length) {
             if (position + length > bytes.length) {
                 throw new IllegalArgumentException("IEC101 ASDU 信息对象长度不足");

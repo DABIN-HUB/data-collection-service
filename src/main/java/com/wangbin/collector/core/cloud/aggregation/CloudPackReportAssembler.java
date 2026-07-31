@@ -17,6 +17,9 @@ import java.util.UUID;
 @Component
 public class CloudPackReportAssembler {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public ReportData assemble(CloudDeviceIdentity gatewayIdentity,
                                String rawGatewayDeviceId,
                                List<CloudAggregateSnapshot> snapshots) {
@@ -63,6 +66,9 @@ public class CloudPackReportAssembler {
         return data;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean sameIdentity(CloudDeviceIdentity left, CloudDeviceIdentity right) {
         if (left == null || right == null || !left.valid() || !right.valid()) {
             return false;

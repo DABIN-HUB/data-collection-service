@@ -61,7 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Aggregates telemetry changes into report snapshots and dispatches them.
+ * 聚合遥测变化并调度上报快照。
  */
 @Slf4j
 @Service
@@ -97,6 +97,9 @@ public class CacheReportService {
     private final ConcurrentMap<String, FlushSession> flushSessions = new ConcurrentHashMap<>();
     private ScheduledFuture<?> flushTask;
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void start() {
         if (!isMqttEnabled()) {
@@ -106,6 +109,9 @@ public class CacheReportService {
         flushTask = taskScheduler.scheduleAtFixedRate(this::flushDirtyDevices, Duration.ofMillis(interval));
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void shutdown() {
         if (flushTask != null) {
@@ -118,6 +124,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void reportPoint(String localDeviceId, String method, DataPoint point, Object cacheValue) {
         if (!isMqttEnabled() || localDeviceId == null || point == null || cacheValue == null) {
             return;
@@ -125,7 +134,7 @@ public class CacheReportService {
         CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(localDeviceId);
         if (cloudTarget == null || !cloudTarget.valid()) {
             if (point.isReportEnabled()) {
-                log.warn("跳过云端上报，设备未配置有效 cloudTarget，deviceId={}, pointCode={}",
+                log.warn("跳过云端上报，设备未配置有效 cloudTarget，设备={}, 点位编码={}",
                         localDeviceId, point.getPointCode());
             }
             return;
@@ -148,6 +157,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProcessResult toProcessResult(Object cacheValue) {
         if (cacheValue instanceof ProcessResult processResult) {
             return processResult;
@@ -160,6 +172,9 @@ public class CacheReportService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String gatewayDeviceId() {
         ReportProperties.Mqtt mqtt = reportProperties.getMqtt();
         if (mqtt == null || mqtt.getGatewayDeviceName() == null || mqtt.getGatewayDeviceName().isBlank()) {
@@ -168,6 +183,9 @@ public class CacheReportService {
         return mqtt.getGatewayDeviceName();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String gatewayProductKey() {
         ReportProperties.Mqtt mqtt = reportProperties.getMqtt();
         if (mqtt == null || mqtt.getGatewayProductKey() == null) {
@@ -196,6 +214,9 @@ public class CacheReportService {
         return gatewayDeviceId;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity resolveShadowIdentity(String localDeviceId) {
         CloudDeviceIdentity identity = shadowIdentities.get(localDeviceId);
         if (identity != null && identity.valid()) {
@@ -207,6 +228,9 @@ public class CacheReportService {
         return shadowIdentities.get(localDeviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void triggerImmediateFlush(String deviceId) {
         DeviceShadow shadow = shadowManager.getShadow(deviceId);
         if (shadow == null) {
@@ -219,6 +243,9 @@ public class CacheReportService {
         taskScheduler.schedule(() -> flushDevice(deviceId), Instant.now());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void flushDirtyDevices() {
         Set<String> dirtyDevices = shadowManager.getDirtyDevices();
         if (dirtyDevices.isEmpty()) {
@@ -232,11 +259,14 @@ public class CacheReportService {
             try {
                 flushDevice(deviceId);
             } catch (Exception e) {
-                log.error("Flush dirty device failed: {}", deviceId, e);
+                log.error("Flush 脏数据 设备 失败:{}", deviceId, e);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Set<String> tryFlushGatewayBatches(Set<String> dirtyDevices) {
         Set<String> batchedDevices = new java.util.LinkedHashSet<>();
         if (cloudBatchAccumulator == null || cloudAggregationService == null || dirtyDevices.size() < 2) {
@@ -259,6 +289,9 @@ public class CacheReportService {
         return batchedDevices;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Set<String> tryFlushGatewayBatch(String gatewayDeviceId, List<String> deviceIds) {
         Set<String> selectedDeviceIds = new java.util.LinkedHashSet<>();
         ReportConfig reportConfig = reportConfigProvider.getConfig(gatewayDeviceId);
@@ -328,7 +361,7 @@ public class CacheReportService {
                 }
                 outboxMessageId = cloudOutboxService.stageBatch(commits, aggregatedData);
             } catch (RuntimeException exception) {
-                log.error("持久化多设备聚合上报失败，本次不发送，gatewayDeviceId={}",
+                log.error("持久化多设备聚合上报失败，本次不发送，网关设备={}",
                         gatewayDeviceId, exception);
                 selectedCandidates.forEach(candidate -> closeFlushSession(candidate.session, false));
                 return selectedDeviceIds;
@@ -350,6 +383,9 @@ public class CacheReportService {
         return selectedDeviceIds;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<BatchFlushCandidate> collectBatchCandidates(String gatewayDeviceId, List<String> deviceIds) {
         List<BatchFlushCandidate> candidates = new ArrayList<>();
         for (String deviceId : deviceIds) {
@@ -388,6 +424,9 @@ public class CacheReportService {
         return candidates;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Optional<CloudReportTargetContext> resolveCloudTargetContext(ReportConfig config) {
         if (config == null) {
             return Optional.empty();
@@ -399,6 +438,9 @@ public class CacheReportService {
         return Optional.empty();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity resolveGatewayCloudIdentity(ReportConfig config, String gatewayDeviceId) {
         String productKey = config.getStringParam("gatewayProductKey");
         if (productKey == null || productKey.isBlank()) {
@@ -411,6 +453,9 @@ public class CacheReportService {
         return CloudDeviceIdentity.of(productKey, deviceName);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleBatchFlushResult(CloudBatchReport batchReport,
                                         List<BatchFlushCandidate> candidates,
                                         ReportResult result,
@@ -423,10 +468,10 @@ public class CacheReportService {
         boolean success = throwable == null && result != null && result.isSuccess();
         long now = System.currentTimeMillis();
         if (throwable != null) {
-            log.error("Send gateway property pack failed: {} -> {}", batchReport.reportData().getPointCode(),
+            log.error("发送网关属性包失败:{} -> {}", batchReport.reportData().getPointCode(),
                     config.getTargetId(), throwable);
         } else if (!success) {
-            log.warn("Gateway property pack rejected: {} -> {}, err={}",
+            log.warn("网关 属性包 被拒绝:{} -> {}, 错误={}",
                     batchReport.reportData().getPointCode(), config.getTargetId(),
                     result != null ? result.getErrorMessage() : "unknown");
         }
@@ -447,10 +492,16 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleBatchFallbackRetry(String deviceId) {
         long delayMillis = computeRetryDelayMillis(0);
         taskScheduler.schedule(() -> flushDevice(deviceId), Instant.now().plusMillis(delayMillis));
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private void flushDevice(String deviceId) {
         if (!flushingDevices.add(deviceId)) {
             return;
@@ -465,7 +516,7 @@ public class CacheReportService {
         String gatewayDeviceId = restoreCloudContext(deviceId);
         DeviceShadow shadow = shadowManager.getShadow(deviceId);
         if (gatewayDeviceId == null) {
-            log.warn("保留待上报影子，设备云身份暂时无法恢复，deviceId={}", deviceId);
+            log.warn("保留待上报影子，设备云身份暂时无法恢复，设备={}", deviceId);
             abortFlush(session);
             return;
         }
@@ -484,7 +535,7 @@ public class CacheReportService {
 
         ReportConfig reportConfig = resolveReportConfig(deviceId);
         if (reportConfig == null || !reportConfig.validate()) {
-            log.warn("Skip flush because report config is invalid, device={}", deviceId);
+            log.warn("跳过 刷新 because 上报 配置 is 无效, 设备={}", deviceId);
             abortFlush(session);
             return;
         }
@@ -492,7 +543,7 @@ public class CacheReportService {
         if (shouldUseGatewayTopicForSubDevice(snapshot, reportConfig, gatewayDeviceId)) {
             ReportData propertyPack = buildSingleSubDevicePack(snapshot, reportConfig, gatewayDeviceId);
             if (propertyPack == null) {
-                log.warn("Skip flush because gateway property pack is invalid, device={}", deviceId);
+                log.warn("跳过 刷新 because 网关 属性包 is 无效, 设备={}", deviceId);
                 abortFlush(session);
                 return;
             }
@@ -522,6 +573,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldUseGatewayTopicForSubDevice(ReportData snapshot,
                                                       ReportConfig reportConfig,
                                                       String gatewayDeviceId) {
@@ -535,6 +589,9 @@ public class CacheReportService {
                 && !gatewayIdentity.equals(reportIdentity);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ReportData buildSingleSubDevicePack(ReportData snapshot,
                                                 ReportConfig reportConfig,
                                                 String gatewayDeviceId) {
@@ -549,6 +606,9 @@ public class CacheReportService {
         );
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private CloudAggregateSnapshot snapshotToAggregateSnapshot(ReportData snapshot) {
         CloudDeviceIdentity identity = resolveReportIdentity(snapshot);
         if (!identity.valid() || (!snapshot.hasProperties() && !snapshot.hasEvents())) {
@@ -570,6 +630,9 @@ public class CacheReportService {
         );
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity resolveReportIdentity(ReportData data) {
         if (data == null) {
             return CloudDeviceIdentity.of(null, null);
@@ -578,6 +641,9 @@ public class CacheReportService {
         return CloudDeviceIdentity.of(productKey != null ? String.valueOf(productKey) : null, data.getDeviceId());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchGatewayPack(String deviceId,
                                      FlushSession session,
                                      ReportData snapshot,
@@ -613,7 +679,7 @@ public class CacheReportService {
                     TimeUnit.MILLISECONDS
             );
             if (acquired.isEmpty()) {
-                log.debug("Skip flush because distributed lock is held, device={}", deviceId);
+                log.debug("跳过 刷新 because distributed lock is held, 设备={}", deviceId);
                 return null;
             }
             lockHandle = acquired.get();
@@ -629,10 +695,16 @@ public class CacheReportService {
         return session;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void abortFlush(FlushSession session) {
         closeFlushSession(session, false);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void completeFlush(FlushTracker tracker) {
         FlushSession session = flushSessions.get(tracker.deviceId);
         if (!tracker.hasFailure()) {
@@ -646,6 +718,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void closeFlushSession(FlushSession session, boolean clearTracker) {
         FlushTracker tracker = session.tracker;
         if (clearTracker && tracker != null) {
@@ -656,10 +731,13 @@ public class CacheReportService {
         flushSessions.remove(session.deviceId, session);
         flushingDevices.remove(session.deviceId);
         if (session.lockHandle != null && !session.lockHandle.unlock()) {
-            log.debug("Distributed flush lock already released or expired, key={}", session.lockKey);
+            log.debug("Distributed 刷新 lock 已存在 released or expired, 键={}", session.lockKey);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ReportData buildSnapshot(DeviceShadow shadow, String gatewayDeviceId) {
         ReportData data = new ReportData();
         String localDeviceId = shadow.getDeviceId();
@@ -695,6 +773,9 @@ public class CacheReportService {
         return data;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     List<ReportData> splitSnapshot(ReportData snapshot) {
         int maxFields = Math.max(1, reportProperties.getMaxPropertiesPerMessage());
         int maxBytes = reportProperties.getMaxPayloadBytes();
@@ -736,6 +817,9 @@ public class CacheReportService {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DeviceShadow.PointInfo resolvePrimaryPointInfo(DeviceShadow shadow, Map<String, ValueMeta> latest) {
         if (shadow == null) {
             return null;
@@ -751,6 +835,9 @@ public class CacheReportService {
         return shadow.snapshotPointInfos().values().stream().findFirst().orElse(null);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatch(ReportData data,
                           ReportConfig config,
                           boolean highPriority,
@@ -758,6 +845,9 @@ public class CacheReportService {
         dispatch(data, config, highPriority, tracker, 0);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatch(ReportData data,
                           ReportConfig config,
                           boolean highPriority,
@@ -766,7 +856,7 @@ public class CacheReportService {
         String chunkKey = tracker != null ? tracker.tryRegisterDispatch(data) : null;
         if (tracker != null && chunkKey == null) {
             tracker.markFailure();
-            log.warn("Skip chunk dispatch due to pending limit, device={}, point={}",
+            log.warn("跳过分片分发，原因=待处理数量达到上限, 设备={}, 点位={}",
                     data.getDeviceId(), data.getPointCode());
             completeIfIdle(tracker);
             return;
@@ -775,7 +865,7 @@ public class CacheReportService {
         try {
             outboxMessageId = stageOutbox(data, tracker);
         } catch (RuntimeException exception) {
-            log.error("持久化云端上报消息失败，本次不发送，deviceId={}, point={}",
+            log.error("持久化云端上报消息失败，本次不发送，设备={}, 点位={}",
                     resolveLocalDeviceId(data, tracker), data.getPointCode(), exception);
             if (tracker != null) {
                 tracker.markFailure();
@@ -786,7 +876,7 @@ public class CacheReportService {
             return;
         }
         if (!gatewayRateLimiter.tryAcquire(highPriority)) {
-            log.warn("Gateway rate limit dropped current report: {} -> {}", data.getPointCode(), config.getTargetId());
+            log.warn("网关限流丢弃本次上报:{} -> {}", data.getPointCode(), config.getTargetId());
             handleChunkResult(data, null, null, tracker, chunkKey, config, highPriority, attempt, outboxMessageId);
             return;
         }
@@ -797,6 +887,9 @@ public class CacheReportService {
                         highPriority, attempt, outboxMessageId));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleChunkResult(ReportData data,
                                    ReportResult result,
                                    Throwable throwable,
@@ -809,6 +902,9 @@ public class CacheReportService {
                 highPriority, attempt, null);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleChunkResult(ReportData data,
                                    ReportResult result,
                                    Throwable throwable,
@@ -831,32 +927,32 @@ public class CacheReportService {
         boolean scheduledRetry = false;
 
         if (throwable != null) {
-            log.error("Send telemetry failed: {} -> {}", data.getPointCode(), config.getTargetId(), throwable);
+            log.error("发送遥测失败:{} -> {}", data.getPointCode(), config.getTargetId(), throwable);
         } else if (result != null && !result.isSuccess() && !deferred) {
-            log.warn("Report rejected: {} -> {}, err={}",
+            log.warn("上报被拒绝:{} -> {}, 错误={}",
                     data.getPointCode(), config.getTargetId(), result.getErrorMessage());
         }
 
         if (deferred) {
             if (chunkKey != null && tracker.shouldRetry(chunkKey)) {
                 scheduledRetry = true;
-                log.warn("Deferred report retry: device={}, key={}, attempt={} / {}",
+                log.warn("延迟上报重试：设备={}, 键={}, 重试次数={} / {}",
                         tracker.deviceId, chunkKey, tracker.getAttemptCount(chunkKey), reportProperties.getRetryTimes());
                 scheduleDeferredRetry(data, config, highPriority, tracker, attempt);
             } else {
                 tracker.markFailure();
-                log.warn("Deferred report retry exhausted: device={}, key={}, maxRetries={}",
+                log.warn("延迟上报重试已耗尽：设备={}, 键={}, 最大重试次数={}",
                         tracker.deviceId, chunkKey, reportProperties.getRetryTimes());
             }
         } else if (success && cloudOutboxService != null && cloudOutboxService.isAwaitingAck(result)) {
             tracker.markFailure();
-            log.debug("云端消息等待平台业务确认，暂不提交影子，deviceId={}, key={}",
+            log.debug("云端消息等待平台业务确认，暂不提交影子，设备={}, 键={}",
                     tracker.deviceId, chunkKey);
         } else if (success) {
             shadowManager.markReportedValuesChunk(tracker.deviceId, data.getProperties());
         } else if (chunkKey != null && retryable && tracker.shouldRetry(chunkKey)) {
             scheduledRetry = true;
-            log.warn("Chunk retry: device={}, key={}, attempt={} / {}",
+            log.warn("分片重试：设备={}, 键={}, 重试次数={} / {}",
                     tracker.deviceId, chunkKey, tracker.getAttemptCount(chunkKey), reportProperties.getRetryTimes());
             scheduleChunkRetry(data, config, highPriority, tracker, attempt + 1);
         } else {
@@ -869,6 +965,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String stageOutbox(ReportData data, FlushTracker tracker) {
         if (cloudOutboxService == null || !cloudOutboxService.isEnabled()) {
             return null;
@@ -880,6 +979,9 @@ public class CacheReportService {
         return cloudOutboxService.stage(localDeviceId, shadowVersion, windowStart, windowEnd, data);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveLocalDeviceId(ReportData data, FlushTracker tracker) {
         if (tracker != null) {
             return tracker.deviceId;
@@ -888,6 +990,9 @@ public class CacheReportService {
         return value == null ? null : String.valueOf(value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long metadataLong(ReportData data, String key) {
         Object value = data.getMetadata().get(key);
         if (value instanceof Number number) {
@@ -900,6 +1005,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void completeIfIdle(FlushTracker tracker) {
         if (tracker != null && !tracker.hasOutstandingWork()) {
             completeFlush(tracker);
@@ -920,6 +1028,9 @@ public class CacheReportService {
         return false;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleDeferredRetry(ReportData data,
                                        ReportConfig config,
                                        boolean highPriority,
@@ -928,10 +1039,13 @@ public class CacheReportService {
         long delayMillis = Math.max(2000L, computeRetryDelayMillis(attempt + 1));
         taskScheduler.schedule(() -> dispatch(data, config, highPriority, tracker, attempt + 1),
                 Instant.now().plusMillis(delayMillis));
-        log.debug("Deferred retry scheduled device={} point={} delay={}ms",
+        log.debug("延迟 重试 已调度 设备={} 点位={} 延迟={}ms",
                 data.getDeviceId(), data.getPointCode(), delayMillis);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleChunkRetry(ReportData data,
                                     ReportConfig config,
                                     boolean highPriority,
@@ -960,6 +1074,9 @@ public class CacheReportService {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long computeRetryDelayMillis(int attempt) {
         long base = Math.max(100L, reportProperties.getRetryBackoffMs());
         long max = Math.max(base, reportProperties.getMaxRetryBackoffMs());
@@ -973,6 +1090,9 @@ public class CacheReportService {
         return delay;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchEvent(String gatewayDeviceId,
                                CloudTargetConfig cloudTarget,
                                String localDeviceId,
@@ -985,7 +1105,7 @@ public class CacheReportService {
         String cloudDeviceName = cloudTarget.getDeviceName();
         ReportConfig reportConfig = resolveReportConfig(localDeviceId);
         if (reportConfig == null || !reportConfig.validate()) {
-            log.warn("Skip event report because config is invalid, device={}", cloudDeviceName);
+            log.warn("跳过 event 上报 because 配置 is 无效, 设备={}", cloudDeviceName);
             return;
         }
         ReportData eventData = new ReportData();
@@ -1031,18 +1151,21 @@ public class CacheReportService {
         dispatch(eventData, reportConfig, true, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void reportAlert(AlertNotification notification) {
         if (!isMqttEnabled() || notification == null) {
             return;
         }
         String localDeviceId = notification.getDeviceId();
         if (localDeviceId == null || localDeviceId.isEmpty()) {
-            log.warn("Skip alert upload, deviceId missing");
+            log.warn("跳过告警上传，原因=设备缺失");
             return;
         }
         CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(localDeviceId);
         if (cloudTarget == null || !cloudTarget.valid()) {
-            log.warn("Skip alert upload, cloudTarget missing for {}", localDeviceId);
+            log.warn("跳过告警上传，原因=云平台目标缺失，设备={}", localDeviceId);
             return;
         }
         String gatewayDeviceId = gatewayDeviceId();
@@ -1050,7 +1173,7 @@ public class CacheReportService {
         shadowIdentities.put(localDeviceId, cloudTarget.identity());
         ReportConfig reportConfig = resolveReportConfig(localDeviceId);
         if (reportConfig == null) {
-            log.warn("Skip alert upload, report config missing for {}", localDeviceId);
+            log.warn("跳过告警上传，原因=上报配置缺失，设备={}", localDeviceId);
             return;
         }
 
@@ -1103,6 +1226,9 @@ public class CacheReportService {
         dispatch(alertData, reportConfig, true, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void addEventPayload(ReportData eventData) {
         if (eventData == null) {
             return;
@@ -1122,6 +1248,9 @@ public class CacheReportService {
         eventData.addEvent(identifier, value, eventData.getTimestamp());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         if (event.getDeviceId() != null) {
@@ -1133,6 +1262,9 @@ public class CacheReportService {
         return reportProperties != null && reportProperties.mqttEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void evictReportMappings(String deviceId, boolean removeShadow) {
         if (deviceId == null) {
             return;
@@ -1162,6 +1294,9 @@ public class CacheReportService {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ReportConfig resolveReportConfig(String deviceId) {
         String gatewayDeviceId = restoreCloudContext(deviceId);
         if (gatewayDeviceId == null) {
@@ -1174,12 +1309,18 @@ public class CacheReportService {
         return null;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class BatchFlushCandidate {
         private final String deviceId;
         private final FlushSession session;
         private final ReportData snapshot;
         private final CloudAggregateSnapshot aggregateSnapshot;
 
+        /**
+         * 创建当前组件实例。
+         */
         private BatchFlushCandidate(String deviceId,
                                     FlushSession session,
                                     ReportData snapshot,
@@ -1190,12 +1331,18 @@ public class CacheReportService {
             this.aggregateSnapshot = aggregateSnapshot;
         }
     }
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class FlushSession {
         private final String deviceId;
         private final String lockKey;
         private final DistributedLock.LockHandle lockHandle;
         private volatile FlushTracker tracker;
 
+        /**
+         * 创建当前组件实例。
+         */
         private FlushSession(String deviceId,
                              String lockKey,
                              @Nullable DistributedLock.LockHandle lockHandle) {
@@ -1204,11 +1351,17 @@ public class CacheReportService {
             this.lockHandle = lockHandle;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void bind(FlushTracker tracker) {
             this.tracker = tracker;
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class FlushTracker {
         private final String deviceId;
         private final AtomicInteger inFlight = new AtomicInteger(0);
@@ -1219,6 +1372,9 @@ public class CacheReportService {
         private final int maxPendingChunks;
         private final ConcurrentMap<String, Integer> attempts = new ConcurrentHashMap<>();
 
+        /**
+         * 创建当前组件实例。
+         */
         private FlushTracker(String deviceId, long windowStart, long windowEnd, int maxRetries, int maxPendingChunks) {
             this.deviceId = deviceId;
             this.windowStart = windowStart;
@@ -1227,6 +1383,9 @@ public class CacheReportService {
             this.maxPendingChunks = Math.max(1, maxPendingChunks);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         String tryRegisterDispatch(ReportData data) {
             while (true) {
                 int current = inFlight.get();
@@ -1242,6 +1401,9 @@ public class CacheReportService {
             return chunkKey;
         }
 
+        /**
+         * 创建并返回业务对象。
+         */
         private String buildChunkKey(ReportData data) {
             Object batchId = data.getMetadata().getOrDefault("batchId", data.getDeviceId());
             Object chunkIndex = data.getMetadata().getOrDefault("chunkIndex", data.getPointCode());
@@ -1249,6 +1411,9 @@ public class CacheReportService {
             return batchId + ":" + chunkIndex + ":" + seq;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         boolean shouldRetry(String chunkKey) {
             if (chunkKey == null) {
                 return false;
@@ -1260,18 +1425,30 @@ public class CacheReportService {
             return attempts.getOrDefault(chunkKey, 0);
         }
 
+        /**
+         * 记录或统计业务状态。
+         */
         void markFailure() {
             failure.set(true);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         boolean hasFailure() {
             return failure.get();
         }
 
+        /**
+         * 记录或统计业务状态。
+         */
         boolean markCompleted() {
             return inFlight.decrementAndGet() == 0;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         boolean hasOutstandingWork() {
             return inFlight.get() > 0;
         }

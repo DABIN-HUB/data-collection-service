@@ -75,7 +75,7 @@ public class DataController {
                 result.put("message", "数据点不存在");
             }
         } catch (Exception e) {
-            log.error("查询数据失败: deviceId={}, pointId={}", deviceId, pointId, e);
+            log.error("查询数据失败: 设备={}, 点位={}", deviceId, pointId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
         }
@@ -137,7 +137,7 @@ public class DataController {
             result.put("status", "success");
             
         } catch (Exception e) {
-            log.error("查询设备数据失败: deviceId={}", deviceId, e);
+            log.error("查询设备数据失败: 设备={}", deviceId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
         }
@@ -209,7 +209,7 @@ public class DataController {
             result.put("status", "success");
             
         } catch (Exception e) {
-            log.error("查询设备数据点失败: deviceId={}", deviceId, e);
+            log.error("查询设备数据点失败: 设备={}", deviceId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
         }
@@ -299,6 +299,9 @@ public class DataController {
     }
 
 
+    /**
+     * 记录或统计业务状态。
+     */
     @PostMapping("/device/{deviceId}/reset-adaptive")
     public Map<String, Object> resetAdaptiveConfig(@PathVariable String deviceId) {
         Map<String, Object> result = new HashMap<>();
@@ -343,7 +346,7 @@ public class DataController {
             result.put("timestamp", System.currentTimeMillis());
             return result;
         } catch (Exception e) {
-            log.error("查询历史数据失败, deviceId={}, pointId={}", deviceId, pointId, e);
+            log.error("查询历史数据失败, 设备={}, 点位={}", deviceId, pointId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
             return result;
@@ -386,7 +389,7 @@ public class DataController {
             result.put("timestamp", System.currentTimeMillis());
             return result;
         } catch (Exception e) {
-            log.error("query recent alarm history failed, deviceId={}, pointId={}, pointCode={}, level={}, ruleId={}",
+            log.error("查询最近告警历史失败, 设备={}, 点位={}, 点位编码={}, 级别={}, ruleId={}",
                     deviceId, pointId, pointCode, level, ruleId, e);
             result.put("status", "error");
             result.put("message", "查询失败: " + e.getMessage());
@@ -428,7 +431,7 @@ public class DataController {
             result.put("timestamp", System.currentTimeMillis());
             return result;
         } catch (Exception e) {
-            log.error("query alarm history failed, deviceId={}, pointId={}, pointCode={}, level={}, ruleId={}",
+            log.error("查询告警历史失败, 设备={}, 点位={}, 点位编码={}, 级别={}, ruleId={}",
                     deviceId, pointId, pointCode, level, ruleId, e);
             result.put("status", "error");
             result.put("message", "query failed: " + e.getMessage());

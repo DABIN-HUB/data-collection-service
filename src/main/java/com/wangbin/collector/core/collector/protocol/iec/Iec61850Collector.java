@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * IEC61850 collector.
+ * IEC61850 采集器.
  */
 @Slf4j
 public class Iec61850Collector extends AbstractIec61850Collector {
@@ -37,6 +37,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         return "IEC61850";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         initIec61850Config(deviceInfo);
@@ -57,19 +60,28 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeConnectionSilently();
         closeAssociation();
-        log.info("IEC61850 connection closed: {}:{}", host, port);
+        log.info("IEC61850 连接 已关闭:{}:{}", host, port);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
         return readAttribute(address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new HashMap<>();
@@ -78,21 +90,27 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Object value = doReadPoint(point);
                 results.put(point.getPointId(), value);
             } catch (Exception e) {
-                log.error("IEC61850 batch read failed, point={}", point.getPointName(), e);
+                log.error("IEC61850 批量 读取 失败, 点位={}", point.getPointName(), e);
                 results.put(point.getPointId(), null);
             }
         }
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
-        log.debug("IEC61850 write: point={}, address={}, value={}",
+        log.debug("IEC61850 写入:点位={}, 地址={}, 值={}",
                 point.getPointName(), address.getObjectReference(), value);
         return writeAttribute(address, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new HashMap<>();
@@ -101,13 +119,16 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 boolean success = doWritePoint(entry.getKey(), entry.getValue());
                 results.put(entry.getKey().getPointId(), success);
             } catch (Exception e) {
-                log.error("IEC61850 write failed, point={}", entry.getKey().getPointName(), e);
+                log.error("IEC61850 写入 失败, 点位={}", entry.getKey().getPointName(), e);
                 results.put(entry.getKey().getPointId(), false);
             }
         }
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
@@ -115,18 +136,21 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
                 subscriptionPoints.put(address.getCacheKey(), point);
             } catch (Exception e) {
-                log.warn("IEC61850 subscribe parse failed, point={}", point.getPointName(), e);
+                log.warn("IEC61850 订阅解析失败, 点位={}", point.getPointName(), e);
             }
             subscribedPointMap.put(point.getPointId(), point);
         }
-        log.info("IEC61850 subscribe done, size={}", points.size());
+        log.info("IEC61850 订阅完成, 数量={}", points.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             subscriptionPoints.clear();
-            log.info("IEC61850 unsubscribe all");
+            log.info("IEC61850 全部取消订阅");
             return;
         }
         for (DataPoint point : points) {
@@ -134,13 +158,16 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 Iec61850Address address = Iec61850AddressParser.parse(point, resolveDefaultFc(point));
                 subscriptionPoints.remove(address.getCacheKey());
             } catch (Exception e) {
-                log.warn("IEC61850 unsubscribe parse failed, point={}", point.getPointName(), e);
+                log.warn("IEC61850 取消订阅解析失败, 点位={}", point.getPointName(), e);
             }
             subscribedPointMap.remove(point.getPointId());
         }
-        log.info("IEC61850 unsubscribe size={}", points.size());
+        log.info("IEC61850 取消订阅数量={}", points.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -153,6 +180,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         switch (command.toLowerCase()) {
@@ -207,11 +237,17 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.info("IEC61850 loaded points size={}", points.size());
+        log.info("IEC61850 点位已加载 数量={}", points.size());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Fc resolveDefaultFc(DataPoint point) {
         String dataType = point.getDataType();
         if (dataType == null) {
@@ -224,6 +260,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         };
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     protected void handleReportValue(BasicDataAttribute attribute, Object value) {
         String key = attribute.getReference() + "@" + attribute.getFc();
@@ -233,9 +272,12 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         }
         ProcessResult processResult = ingestPushedValue(point, value);
         Object finalValue = processResult != null ? processResult.getFinalValue() : value;
-        log.info("IEC61850 report: pointId={} value={}", point.getPointId(), finalValue);
+        log.info("IEC61850 上报:点位={} 值={}", point.getPointId(), finalValue);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec61850Address parseCommandAddress(Map<String, Object> params) {
         Object addr = params.get("address");
         if (addr == null) {
@@ -245,6 +287,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         return Iec61850AddressParser.parse(addr.toString(), fc, Fc.ST);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private FcModelNode resolveFcNode(Iec61850Address address) {
         if (address == null) {
             throw new IllegalArgumentException("address parse failed");
@@ -256,6 +301,9 @@ public class Iec61850Collector extends AbstractIec61850Collector {
         return fcNode;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("IEC61850");
         association = null;

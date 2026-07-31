@@ -7,10 +7,16 @@ public class ConfigLoadException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ConfigLoadException(String message) {
         super(message);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ConfigLoadException(String message, Throwable cause) {
         super(message, cause);
     }

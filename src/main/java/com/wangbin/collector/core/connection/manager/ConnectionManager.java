@@ -65,11 +65,17 @@ public class ConnectionManager {
 
     private final Set<String> heartbeatInProgress = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         log.info("连接管理器初始化完成");
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void destroy() {
         log.info("开始关闭所有连接...");
@@ -85,6 +91,9 @@ public class ConnectionManager {
         return createConnection(deviceInfo, null);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public ConnectionAdapter createConnection(DeviceInfo deviceInfo, DeviceConnection overrideConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new CollectorException("设备信息无效", null, null);
@@ -362,6 +371,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void submitHeartbeat(ConnectionAdapter connection) {
         if (connection == null) {
             return;
@@ -372,7 +384,7 @@ public class ConnectionManager {
             return;
         }
         if (!heartbeatInProgress.add(deviceId)) {
-            log.debug("skip duplicated heartbeat task: {}", deviceId);
+            log.debug("跳过 duplicated heartbeat 任务:{}", deviceId);
             return;
         }
         if (heartbeatExecutor == null) {
@@ -393,10 +405,13 @@ public class ConnectionManager {
             });
         } catch (RejectedExecutionException e) {
             heartbeatInProgress.remove(deviceId);
-            log.warn("heartbeat task rejected: device={}, queueSize={}", deviceId, heartbeatQueueSize(), e);
+            log.warn("heartbeat 任务 被拒绝:设备={}, 队列长度={}", deviceId, heartbeatQueueSize(), e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int heartbeatQueueSize() {
         if (heartbeatExecutor instanceof ThreadPoolExecutor executor) {
             return executor.getQueue().size();
@@ -404,6 +419,9 @@ public class ConnectionManager {
         return -1;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleHeartbeat(ConnectionAdapter connection) {
         try {
             ConnectionMetrics metrics = connection.getMetrics();
@@ -427,6 +445,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveHeartbeatTimeout(ConnectionAdapter connection) {
         DeviceConnection config = connection.getConnectionConfig();
         long interval = Optional.ofNullable(config != null ? config.getHeartbeatInterval() : null)
@@ -483,6 +504,9 @@ public class ConnectionManager {
                 .add(deviceInfo.getDeviceId());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateGroupCapacity(DeviceInfo deviceInfo, DeviceConnection config) {
         if (deviceInfo == null) {
             return;
@@ -501,6 +525,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DeviceConnection resolveConnectionConfig(String deviceId) {
         if (configManager == null || deviceId == null) {
             return null;
@@ -594,6 +621,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordException(String deviceId, Exception e) {
         if (exceptionMonitorService != null) {
             exceptionMonitorService.record(e, deviceId, null);
@@ -604,6 +634,9 @@ public class ConnectionManager {
      * 连接状态监听器接口
      */
     public interface ConnectionStateListener {
+        /**
+         * 执行当前业务逻辑。
+         */
         void onStateChanged(ConnectionAdapter connection, ConnectionStatus newStatus);
     }
 
@@ -611,10 +644,25 @@ public class ConnectionManager {
      * 连接事件处理器接口
      */
     public interface ConnectionEventHandler {
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionCreated(ConnectionAdapter connection);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionStateChanged(ConnectionAdapter connection, ConnectionStatus newStatus);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionError(ConnectionAdapter connection, Exception error);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onHeartbeatTimeout(ConnectionAdapter connection);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionRemoved(ConnectionAdapter connection);
     }
 }

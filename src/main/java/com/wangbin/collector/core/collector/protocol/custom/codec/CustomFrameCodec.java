@@ -18,9 +18,15 @@ public final class CustomFrameCodec {
     private static final int DEFAULT_MAX_FRAME_LENGTH = 65_535;
     private static final int DEFAULT_LENGTH_FIELD_SIZE = 4;
 
+    /**
+     * 创建当前组件实例。
+     */
     private CustomFrameCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(byte[] payload, DeviceConnection config) {
         byte[] safePayload = payload == null ? new byte[0] : payload;
         CustomFrameMode mode = resolveMode(config);
@@ -44,6 +50,9 @@ public final class CustomFrameCodec {
         return safePayload;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] decode(InputStream inputStream, DeviceConnection config) throws IOException {
         return switch (resolveMode(config)) {
             case FIXED_LENGTH -> readFixed(inputStream, requiredPositive(
@@ -54,6 +63,9 @@ public final class CustomFrameCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] decodeHex(String value) {
         if (value == null) {
             return new byte[0];
@@ -69,6 +81,9 @@ public final class CustomFrameCodec {
         return bytes;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String encodeHex(byte[] value) {
         if (value == null || value.length == 0) {
             return "";
@@ -80,6 +95,9 @@ public final class CustomFrameCodec {
         return builder.toString();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readLengthFieldFrame(InputStream inputStream, DeviceConnection config) throws IOException {
         int fieldOffset = Math.max(0, config.getInt("lengthFieldOffset", 0));
         int fieldLength = config.getInt("lengthFieldLength", DEFAULT_LENGTH_FIELD_SIZE);
@@ -104,6 +122,9 @@ public final class CustomFrameCodec {
         return Arrays.copyOfRange(frame, stripLength, frame.length);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readDelimited(InputStream inputStream, DeviceConnection config) throws IOException {
         byte[] delimiter = decodeHex(config.getString("delimiterHex", "0A"));
         if (delimiter.length == 0) {
@@ -133,6 +154,9 @@ public final class CustomFrameCodec {
         throw new IOException("分隔符帧超过最大长度: " + maxFrameLength);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readFixed(InputStream inputStream, int length) throws IOException {
         byte[] data = new byte[length];
         int offset = 0;
@@ -146,6 +170,9 @@ public final class CustomFrameCodec {
         return data;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static long decodeUnsigned(byte[] source, int offset, int length, ByteOrder order) {
         ByteBuffer buffer = ByteBuffer.wrap(source, offset, length).order(order);
         return switch (length) {
@@ -163,6 +190,9 @@ public final class CustomFrameCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeUnsigned(long value, int length, ByteOrder order) {
         if (value < 0) {
             throw new IllegalArgumentException("长度字段不能为负数");
@@ -178,22 +208,34 @@ public final class CustomFrameCodec {
         return buffer.array();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static CustomFrameMode resolveMode(DeviceConnection config) {
         return CustomFrameMode.fromValue(config.getString("frameMode", "LENGTH_FIELD"),
                 CustomFrameMode.LENGTH_FIELD);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static ByteOrder resolveByteOrder(DeviceConnection config) {
         return "LITTLE_ENDIAN".equalsIgnoreCase(config.getString("lengthFieldByteOrder", "BIG_ENDIAN"))
                 ? ByteOrder.LITTLE_ENDIAN
                 : ByteOrder.BIG_ENDIAN;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveMaxFrameLength(DeviceConnection config) {
         Integer configured = config.getMaxFrameLength();
         return configured != null && configured > 0 ? configured : DEFAULT_MAX_FRAME_LENGTH;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static int requiredPositive(int value, String name) {
         if (value <= 0) {
             throw new IllegalArgumentException(name + "必须大于0");
@@ -201,10 +243,16 @@ public final class CustomFrameCodec {
         return value;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class SetHolder {
 
         private static final java.util.Set<Integer> SUPPORTED_LENGTHS = java.util.Set.of(1, 2, 4, 8);
 
+        /**
+         * 创建当前组件实例。
+         */
         private SetHolder() {
         }
     }

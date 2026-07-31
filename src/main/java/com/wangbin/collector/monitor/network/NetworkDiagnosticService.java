@@ -40,6 +40,9 @@ public class NetworkDiagnosticService {
 
     private final ConfigManager configManager;
 
+    /**
+     * 创建当前组件实例。
+     */
     public NetworkDiagnosticService(ConfigManager configManager) {
         this.configManager = configManager;
     }
@@ -82,6 +85,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private NetworkDiagnosticResult trace(NetworkDiagnosticRequest request,
                                           String target,
                                           InetAddress address,
@@ -120,6 +126,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<String> traceCommand(String target, int timeoutMillis) {
         String operatingSystem = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (operatingSystem.contains("win")) {
@@ -131,6 +140,9 @@ public class NetworkDiagnosticService {
                 "-w", String.valueOf(timeoutSeconds), target);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private List<String> readTraceLines(Path outputPath) {
         if (outputPath == null || !Files.exists(outputPath)) {
             return List.of();
@@ -149,6 +161,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void deleteQuietly(Path path) {
         if (path == null) {
             return;
@@ -160,6 +175,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void authorizeTarget(String deviceId, String target) {
         if (LOCAL_TARGETS.contains(target)) {
             return;
@@ -180,6 +198,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Set<String> configuredTargets() {
         List<DeviceInfo> devices = configManager.getAllDevices();
         if (devices == null) {
@@ -192,6 +213,9 @@ public class NetworkDiagnosticService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean testTcp(InetAddress address, Integer port, int timeoutMillis) throws IOException {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(address, port), timeoutMillis);
@@ -199,6 +223,9 @@ public class NetworkDiagnosticService {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Integer validatePort(NetworkDiagnosticType type, Integer port) {
         if (type != NetworkDiagnosticType.TCP) {
             return null;
@@ -209,6 +236,9 @@ public class NetworkDiagnosticService {
         return port;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int normalizeTimeout(Integer timeoutMillis) {
         if (timeoutMillis == null) {
             return DEFAULT_TIMEOUT_MILLIS;
@@ -216,6 +246,9 @@ public class NetworkDiagnosticService {
         return Math.max(MIN_TIMEOUT_MILLIS, Math.min(MAX_TIMEOUT_MILLIS, timeoutMillis));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeTarget(String target) {
         if (!StringUtils.hasText(target)) {
             return "";
@@ -227,6 +260,9 @@ public class NetworkDiagnosticService {
         return normalized;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private NetworkDiagnosticResult result(NetworkDiagnosticRequest request,
                                            String target,
                                            String resolvedAddress,
@@ -241,18 +277,27 @@ public class NetworkDiagnosticService {
                 reachable, durationMillis, message, List.copyOf(details), System.currentTimeMillis());
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private String successMessage(NetworkDiagnosticType type, int timeoutMillis) {
         return type == NetworkDiagnosticType.TCP
                 ? "TCP 端口连接成功"
                 : "目标在 " + timeoutMillis + " 毫秒超时范围内可达";
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private String failureMessage(NetworkDiagnosticType type, int timeoutMillis) {
         return type == NetworkDiagnosticType.TCP
                 ? "TCP 端口无法连接或连接超时"
                 : "目标在 " + timeoutMillis + " 毫秒内不可达；部分系统可能限制 ICMP 检测";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String safeMessage(Exception exception) {
         String message = exception.getMessage();
         return StringUtils.hasText(message) ? message : exception.getClass().getSimpleName();

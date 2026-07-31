@@ -5,6 +5,9 @@ import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 定义当前模块的不可变数据记录。
+ */
 public record ProtocolDescriptor(String code,
                                  String title,
                                  String description,
@@ -30,6 +33,9 @@ public record ProtocolDescriptor(String code,
         pointAddressHints = pointAddressHints == null ? Collections.emptyList() : List.copyOf(pointAddressHints);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProtocolDescriptor(String code,
                               String title,
                               String description,
@@ -48,22 +54,37 @@ public record ProtocolDescriptor(String code,
                 ProtocolCapabilityState.UNSUPPORTED, connectionFields, pointAddressHints);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean implemented() {
         return implementationState.isAvailable();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean writable() {
         return writeCapability.isAvailable();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean subscribable() {
         return subscriptionCapability.isAvailable();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static ProtocolCapabilityState stateOf(boolean available) {
         return available ? ProtocolCapabilityState.SUPPORTED : ProtocolCapabilityState.UNSUPPORTED;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static ProtocolCapabilityState defaultState(ProtocolCapabilityState state) {
         return state == null ? ProtocolCapabilityState.UNSUPPORTED : state;
     }

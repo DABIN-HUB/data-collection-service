@@ -6,11 +6,20 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class BacnetValueEncodingSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetValueEncodingSupport() {
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeApplicationValue(ByteArrayOutputStream out, Object value, String typeHint) {
         String normalized = normalizeType(typeHint);
         if (value == null || "NULL".equals(normalized)) {
@@ -74,11 +83,17 @@ final class BacnetValueEncodingSupport {
         throw new IllegalArgumentException("Unsupported BACnet write value: " + value.getClass().getName());
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeContextReal(ByteArrayOutputStream out, int contextId, double value) {
         BacnetTagSupport.writeTag(out, contextId, true, 4);
         out.writeBytes(ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putFloat((float) value).array());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeType(String typeHint) {
         if (typeHint == null || typeHint.isBlank()) {
             return "AUTO";
@@ -86,6 +101,9 @@ final class BacnetValueEncodingSupport {
         return typeHint.trim().toUpperCase(Locale.ROOT).replace('-', '_');
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean coerceBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -97,6 +115,9 @@ final class BacnetValueEncodingSupport {
         return "true".equals(text) || "1".equals(text) || "on".equals(text) || "active".equals(text);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static double coerceDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -104,6 +125,9 @@ final class BacnetValueEncodingSupport {
         return Double.parseDouble(String.valueOf(value).trim());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static long coerceLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -111,12 +135,18 @@ final class BacnetValueEncodingSupport {
         return Long.parseLong(String.valueOf(value).trim());
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeSignedInteger(ByteArrayOutputStream out, long value) {
         byte[] payload = encodeSigned(value);
         BacnetTagSupport.writeTag(out, 3, false, payload.length);
         out.writeBytes(payload);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeSigned(long value) {
         for (int length = 1; length <= 8; length++) {
             long min = -(1L << (length * 8 - 1));
@@ -132,6 +162,9 @@ final class BacnetValueEncodingSupport {
         throw new IllegalArgumentException("Signed integer is too large: " + value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeBitString(boolean[] bits) {
         int bitLength = bits != null ? bits.length : 0;
         int byteCount = (bitLength + 7) / 8;

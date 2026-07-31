@@ -21,6 +21,9 @@ public class CloudBatchAccumulator {
 
     private final CloudPackReportAssembler packReportAssembler;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Optional<CloudBatchReport> tryAssemble(CloudDeviceIdentity gatewayIdentity,
                                                   String rawGatewayDeviceId,
                                                   List<CloudAggregateSnapshot> snapshots,
@@ -69,6 +72,9 @@ public class CloudBatchAccumulator {
         return Optional.of(new CloudBatchReport(reportData, List.copyOf(selected)));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int estimateBytes(CloudAggregateSnapshot snapshot) {
         int size = 128;
         size += estimate(snapshot.identity().productKey());
@@ -80,10 +86,16 @@ public class CloudBatchAccumulator {
         return size;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean emptySnapshot(CloudAggregateSnapshot snapshot) {
         return snapshot.properties().isEmpty() && snapshot.events().isEmpty();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int estimate(Map<?, ?> values) {
         if (values == null || values.isEmpty()) {
             return 0;
@@ -96,10 +108,16 @@ public class CloudBatchAccumulator {
         return size;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int estimate(Object value) {
         return value == null ? 0 : value.toString().getBytes(StandardCharsets.UTF_8).length;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record CloudBatchReport(ReportData reportData, List<CloudAggregateSnapshot> snapshots) {
     }
 }

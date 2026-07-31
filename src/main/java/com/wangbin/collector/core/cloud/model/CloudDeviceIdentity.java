@@ -12,23 +12,38 @@ public record CloudDeviceIdentity(String productKey, String deviceName) {
         deviceName = normalize(deviceName);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean valid() {
         return productKey != null && !productKey.isBlank()
                 && deviceName != null && !deviceName.isBlank();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String key() {
         return productKey + "/" + deviceName;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudDeviceIdentity of(String productKey, String deviceName) {
         return new CloudDeviceIdentity(productKey, deviceName);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalize(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) {

@@ -28,6 +28,9 @@ class DeviceBatchPlanner {
     private final ProtocolBatchStrategy protocolBatchStrategy;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     List<DeviceBatchTask> plan(String deviceId,
                                List<DataPoint> points,
                                int timeSliceCount,
@@ -44,6 +47,9 @@ class DeviceBatchPlanner {
         return tasks;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<List<DataPoint>> smartBatchGrouping(List<DataPoint> points,
                                                      String deviceId,
                                                      PerformanceMonitor performanceMonitor) {
@@ -72,6 +78,9 @@ class DeviceBatchPlanner {
         return allBatches;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int comparePointsByAddress(DataPoint left,
                                        DataPoint right,
                                        ProtocolAddressingMode addressingMode) {
@@ -91,6 +100,9 @@ class DeviceBatchPlanner {
         return normalizeAddress(addr1).compareTo(normalizeAddress(addr2));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer extractNumberFromAddress(String address) {
         if (address == null) {
             return null;
@@ -106,6 +118,9 @@ class DeviceBatchPlanner {
         return null;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private List<List<DataPoint>> createSmartBatches(List<DataPoint> points,
                                                      String deviceId,
                                                      PerformanceMonitor performanceMonitor,
@@ -144,6 +159,9 @@ class DeviceBatchPlanner {
         return batches;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize, int maxBatchSize) {
         if (batches.size() <= 1) {
             return batches;
@@ -231,16 +249,25 @@ class DeviceBatchPlanner {
         return protocolBatchStrategy.maxBatchSize(protocol);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProtocol(String deviceId) {
         DeviceInfo deviceInfo = configManager.getDevice(deviceId);
         return deviceInfo != null ? deviceInfo.getProtocolType() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolAddressingMode resolveAddressingMode(String protocol) {
         ProtocolDescriptor descriptor = protocolDescriptorRegistry.resolve(protocol);
         return descriptor != null ? descriptor.addressingMode() : ProtocolAddressingMode.NUMERIC;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildGroupingKey(String dataType, String address, ProtocolAddressingMode addressingMode) {
         if (addressingMode == ProtocolAddressingMode.NUMERIC) {
             return dataType;
@@ -249,6 +276,9 @@ class DeviceBatchPlanner {
         return addressKey == null || addressKey.isBlank() ? dataType : dataType + "|" + addressKey;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldSplitBatch(ProtocolAddressingMode addressingMode,
                                      String lastAddress,
                                      String currentAddress,
@@ -271,6 +301,9 @@ class DeviceBatchPlanner {
         return currentNum - lastNum > addressGapThreshold;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String extractSymbolicGroupKey(String address) {
         if (address == null || address.isBlank()) {
             return "";
@@ -299,10 +332,16 @@ class DeviceBatchPlanner {
         return normalized.replaceAll("(\\d+|\\[[^\\]]+])$", "");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeAddress(String address) {
         return address == null ? "" : address.trim().toUpperCase();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int calculateOptimalTimeSlice(String deviceId, int batchIndex, int totalBatches, int timeSliceCount) {
         int sliceCount = Math.max(1, timeSliceCount);
         int deviceHash = Math.abs(deviceId.hashCode());

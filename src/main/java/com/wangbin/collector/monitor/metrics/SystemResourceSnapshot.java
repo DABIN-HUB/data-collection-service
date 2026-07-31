@@ -36,6 +36,9 @@ public class SystemResourceSnapshot {
     @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     @Builder
     public static class ThreadPoolSnapshot {

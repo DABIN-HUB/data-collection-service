@@ -35,6 +35,9 @@ public class ControlController {
     private final CollectionManager collectionManager;
     private final DevicePointResolver devicePointResolver;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @PostMapping("/device/{deviceId}/point/{pointRef}")
     public ApiResult<Map<String, Object>> writePoint(@PathVariable String deviceId,
                                                      @PathVariable String pointRef,
@@ -62,6 +65,9 @@ public class ControlController {
         return ApiResult.success("点位写入成功", data);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @PostMapping("/device/{deviceId}/points")
     public ApiResult<Map<String, Object>> writePoints(@PathVariable String deviceId,
                                                       @Valid @RequestBody PointWriteRequest request) {
@@ -123,6 +129,9 @@ public class ControlController {
         return ApiResult.success("批量点位写入完成", data);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @PostMapping("/device/{deviceId}/command")
     public ApiResult<Map<String, Object>> executeCommand(@PathVariable String deviceId,
                                                          @Valid @RequestBody DeviceCommandRequest request) {
@@ -140,6 +149,9 @@ public class ControlController {
         return ApiResult.success("命令执行完成", data);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyWriteResults(Map<String, Map<String, Object>> fieldResults,
                                    Map<DataPoint, Object> writePlan,
                                    Map<String, Boolean> writeResults) {
@@ -159,6 +171,9 @@ public class ControlController {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveSubmittedField(Map<String, Map<String, Object>> fieldResults, DataPoint point) {
         return fieldResults.entrySet().stream()
                 .filter(entry -> point.getPointId() != null && point.getPointId().equals(entry.getValue().get("pointId")))
@@ -167,6 +182,9 @@ public class ControlController {
                 .orElse(null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean resolveWriteSuccess(Map<String, Boolean> writeResults, DataPoint point) {
         if (writeResults == null || writeResults.isEmpty() || point == null) {
             return false;
@@ -176,6 +194,9 @@ public class ControlController {
                 || Boolean.TRUE.equals(writeResults.get(point.getReportField()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> pointResult(DataPoint point, Object value, boolean success, String error) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pointId", point.getPointId());

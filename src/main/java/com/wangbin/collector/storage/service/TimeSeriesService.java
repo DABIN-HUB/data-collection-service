@@ -23,6 +23,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -48,6 +51,9 @@ public class TimeSeriesService {
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void append(String deviceId,
                        String protocolType,
                        DataPoint point,
@@ -80,6 +86,9 @@ public class TimeSeriesService {
         );
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<Map<String, Object>> query(String deviceId,
                                            String pointId,
                                            Long startTs,
@@ -98,6 +107,9 @@ public class TimeSeriesService {
         );
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSchema() {
         if (schemaReady.get() || !properties.isAutoCreate()) {
             return;
@@ -115,16 +127,22 @@ public class TimeSeriesService {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureTelemetryUnitColumn(String database, String superTable) {
         Long count = dataRepository.countColumn(database, superTable, TELEMETRY_UNIT_COLUMN);
         if (count != null && count > 0) {
             return;
         }
         dataRepository.addTelemetryUnitColumn(database, superTable);
-        log.info("TDengine telemetry stable upgraded with column {}: {}.{}",
+        log.info("TDengine 遥测 超级表 已升级 with 字段 {}:{}.{}",
                 TELEMETRY_UNIT_COLUMN, database, superTable);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSubTable(String database,
                                 String superTable,
                                 String subTable,
@@ -145,10 +163,13 @@ public class TimeSeriesService {
                     escapeTag(protocolTag != null ? protocolTag : "UNKNOWN")
             );
             ensuredTables.put(subTable, true);
-            log.info("TDengine child table ready: {}", subTable);
+            log.info("TDengine 子表 ready:{}", subTable);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private TelemetryPayload buildPayload(String deviceId,
                                           String protocolType,
                                           DataPoint point,
@@ -163,6 +184,9 @@ public class TimeSeriesService {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildRawJson(String protocolType,
                                              DataPoint point,
                                              ProcessResult processResult,
@@ -181,6 +205,9 @@ public class TimeSeriesService {
         return raw;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildProcessedJson(DataPoint point,
                                                    ProcessResult processResult,
                                                    Object finalValue,
@@ -197,6 +224,9 @@ public class TimeSeriesService {
         return processed;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildMetadataJson(String deviceId,
                                                   String protocolType,
                                                   DataPoint point,
@@ -223,6 +253,9 @@ public class TimeSeriesService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> metadataOf(ProcessResult processResult) {
         if (processResult == null || processResult.getMetadata() == null) {
             return Map.of();
@@ -230,6 +263,9 @@ public class TimeSeriesService {
         return processResult.getMetadata();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void copyCustomMetadata(Map<String, Object> target, Map<String, Object> metadata) {
         for (Map.Entry<String, Object> entry : metadata.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null || INTERNAL_METADATA_KEYS.contains(entry.getKey())) {
@@ -239,6 +275,9 @@ public class TimeSeriesService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void mergeMap(Map<String, Object> target, Object value) {
         if (!(value instanceof Map<?, ?> map)) {
             return;
@@ -251,6 +290,9 @@ public class TimeSeriesService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object additionalConfig(DataPoint point, String key) {
         if (point == null || key == null) {
             return null;
@@ -262,6 +304,9 @@ public class TimeSeriesService {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object resolveCollectionInterval(String deviceId, DataPoint point) {
         if (point == null) {
             return null;
@@ -269,6 +314,9 @@ public class TimeSeriesService {
         return pointRuntimeStateService.snapshot(deviceId, point).currentCollectionInterval();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveCollectTime(Map<String, Object> metadata, long eventTs) {
         Object value = metadata.get(ProcessResultMetadataKeys.COLLECT_TIME);
         if (value instanceof Number number) {
@@ -284,6 +332,9 @@ public class TimeSeriesService {
         return eventTs;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProcessedDataType(DataPoint point, Object finalValue) {
         if (finalValue instanceof Double || finalValue instanceof Float) {
             return "double";
@@ -301,6 +352,9 @@ public class TimeSeriesService {
         return dataType != null ? dataType.toLowerCase(Locale.ROOT) : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveQualityText(ProcessResult processResult) {
         if (processResult == null) {
             return null;
@@ -308,21 +362,33 @@ public class TimeSeriesService {
         return QualityEnum.fromCode(processResult.getQuality()).getText();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object firstNonNull(Object first, Object second) {
         return first != null ? first : second;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void putIfAbsent(Map<String, Object> target, String key, Object value) {
         if (value != null && !target.containsKey(key)) {
             target.put(key, value);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveSubTableName(String deviceId) {
         String prefix = sanitizeIdentifier(properties.getSubTablePrefix());
         return prefix + sanitizeIdentifier(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String sanitizeIdentifier(String raw) {
         if (raw == null || raw.isBlank()) {
             return "unknown";
@@ -334,10 +400,16 @@ public class TimeSeriesService {
         return value.toLowerCase();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String escapeTag(String value) {
         return value == null ? "" : value.replace("'", "''");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toJson(Object value) {
         if (value == null) {
             return null;
@@ -345,11 +417,14 @@ public class TimeSeriesService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            log.debug("serialize telemetry payload to json failed", e);
+            log.debug("序列化 遥测 载荷 to json 失败", e);
             return String.valueOf(value);
         }
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record TelemetryPayload(String rawJson, String processedJson, String metadataJson) {
     }
 }

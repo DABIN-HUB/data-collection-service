@@ -15,9 +15,15 @@ import java.util.List;
  */
 final class Plc4xModbusValueExtractor {
 
+    /**
+     * 创建当前组件实例。
+     */
     private Plc4xModbusValueExtractor() {
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     static byte[] registerBytes(PlcReadResponse response, String fieldName, int quantity) {
         List<? extends PlcValue> values = extractValues(response, fieldName, quantity, "register");
 
@@ -29,6 +35,9 @@ final class Plc4xModbusValueExtractor {
         return buffer.array();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static byte[] coilBytes(PlcReadResponse response, String fieldName, int quantity, Parity parity) {
         List<? extends PlcValue> rawValues = extractValues(response, fieldName, quantity, "coil");
 
@@ -39,6 +48,9 @@ final class Plc4xModbusValueExtractor {
         return ModbusUtils.buildCoilBytes(values, parity);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static List<? extends PlcValue> extractValues(
             PlcReadResponse response, String fieldName, int expectedQuantity, String valueType) {
         if (response == null) {
@@ -57,6 +69,9 @@ final class Plc4xModbusValueExtractor {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Number toNumber(PlcValue plcValue, String fieldName, int index) {
         Object value = plcValue.getObject();
         if (value instanceof Number number) {
@@ -69,6 +84,9 @@ final class Plc4xModbusValueExtractor {
                 + fieldName + ", index=" + index + ", value=" + value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Boolean toBoolean(PlcValue plcValue) {
         Object value = plcValue.getObject();
         if (value instanceof Boolean bool) {

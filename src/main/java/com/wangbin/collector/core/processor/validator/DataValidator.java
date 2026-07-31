@@ -16,6 +16,9 @@ import java.util.Map;
 @Component
 public class DataValidator extends AbstractDataProcessor {
 
+    /**
+     * 创建当前组件实例。
+     */
     public DataValidator() {
         this.name = "DataValidator";
         this.type = "VALIDATOR";
@@ -23,11 +26,17 @@ public class DataValidator extends AbstractDataProcessor {
         this.priority = 10;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("数据验证器初始化完成: {}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         if (rawValue == null) {
@@ -53,7 +62,7 @@ public class DataValidator extends AbstractDataProcessor {
             return ProcessResult.success(rawValue, rawValue, "数据验证通过");
 
         } catch (Exception e) {
-            log.error("数据验证异常: point={}, value={}", point.getPointName(), rawValue, e);
+            log.error("数据验证异常: 点位={}, 值={}", point.getPointName(), rawValue, e);
             return ProcessResult.error(rawValue, "数据验证异常: " + e.getMessage());
         }
     }
@@ -82,7 +91,7 @@ public class DataValidator extends AbstractDataProcessor {
 
             return true;
         } catch (Exception e) {
-            log.warn("数据范围验证异常: value={}", value, e);
+            log.warn("数据范围验证异常: 值={}", value, e);
             return false;
         }
     }
@@ -155,6 +164,9 @@ public class DataValidator extends AbstractDataProcessor {
         return Double.NaN;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("数据验证器销毁完成: {}", getName());

@@ -70,6 +70,9 @@ public class CollectionServiceHealthTracker {
         return lastStateChange.get();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateStatus(Status newStatus) {
         Status previous = currentStatus.getAndSet(newStatus);
         if (previous != newStatus) {

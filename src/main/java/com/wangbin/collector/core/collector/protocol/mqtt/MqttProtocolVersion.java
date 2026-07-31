@@ -7,6 +7,9 @@ public enum MqttProtocolVersion {
     V3,
     V5;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static MqttProtocolVersion fromText(String text) {
         if (text == null) {
             return V5;

@@ -11,6 +11,9 @@ import java.util.Optional;
 @Service
 public class CloudAggregationService {
 
+    /**
+     * 查询并返回业务数据。
+     */
     public CloudAggregateSnapshot snapshotOf(ReportData data) {
         if (data == null) {
             return null;

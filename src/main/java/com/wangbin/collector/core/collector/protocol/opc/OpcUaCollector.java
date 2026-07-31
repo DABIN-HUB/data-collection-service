@@ -25,12 +25,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * OPC UA collector implementation aligned with AbstractOpcUaCollector.
- * 当前实现每批读/写都走 client.readValues / writeValues，已经比逐点调用 readValue 成本更低；如果你一次批量的节点太多（几百个以上），可以考虑按命名空间或刷新周期拆批，让单次请求的节点数量维持在 100~200 以内，这样 stack 层序列化
+ * OPC UA 采集器实现，继承通用 OPC UA 采集模板。
+ * 当前实现每批读/写都走 client.readValues / writeValues，已经比逐点调用 readValue 成本更低；如果你一次批量的节点太多（几百个以上），可以考虑按命名空间或刷新周期拆批，让单次请求的节点数量维持在 100~200 以内，这样 协议栈层序列化
  *     和服务器处理压力都更稳。
- *   - 订阅模式下，每个点会创建一个 OpcUaMonitoredItem，但你实际上只建了单个 OpcUaSubscription 来承载所有监控项，Milo 会自动做 keepalive/publish，这种配置适用于“值变化就推送”的场景，延迟低、上行流量小，不过每个监控项都有 sampling/
+ *   - 订阅模式下，每个点会创建一个 OpcUaMonitoredItem，但你实际上只建了单个 OpcUaSubscription 来承载所有监控项，Milo 会自动做 保活和发布，这种配置适用于“值变化就推送”的场景，延迟低、上行流量小，不过每个监控项都有 sampling/
  *     queue 设置，建议根据实际需要调整（比如默认采样间隔用服务器的 publishing interval，必要时降低以减少采样线程压力）。
- *   - 写入和命令都走同步方法，一旦 OPC UA 服务器慢，会阻塞业务线程；如果高并发写入或命令调用比较多，可以按照 Milo 的 async API 把阻塞交给线程池，避免 collector 主循环被拖慢。
+ *   - 写入和命令都走同步方法，一旦 OPC UA 服务器慢，会阻塞业务线程；如果高并发写入或命令调用比较多，可以按照 Milo 的异步接口 把阻塞交给线程池，避免 采集器主循环被拖慢。
  *   - 网络层缺少断线重连/超时处理，现在只在连接失败时抛异常；生产环境最好加上重试与状态监控，否则 OPC UA 服务器重启或网络抖动，采集会长时间中断。
  *
  *   总的来说，代码很简单，适合中等规模设备（几十到一两百个监控点）和秒级刷新。如果要支撑成百上千点或者亚秒级刷新，需要进一步改造批处理策略、并发模型以及连接重用/重连逻辑。下一步可以结合目标点数和期望周期做一次压测，根据实际延迟/
@@ -53,6 +53,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return declaredProtocolType();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String declaredProtocolType() {
         if (deviceInfo == null || deviceInfo.getProtocolType() == null) {
             return "OPC_UA_MILO";
@@ -61,6 +64,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return "OPCUA_MILO".equals(normalized) ? "OPC_UA_MILO" : normalized;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         // 清理监控项和订阅
@@ -71,12 +77,18 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         super.doDisconnect();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         OpcUaAddress address = resolveAddress(point);
         return readValue(address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         Map<String, Object> values = new HashMap<>();
@@ -96,12 +108,18 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return values;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         OpcUaAddress address = resolveAddress(point);
         return writeValue(address, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
         Map<String, Boolean> results = new HashMap<>();
@@ -115,6 +133,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -136,10 +157,13 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             monitoredItems.put(point.getPointId(), item);
             pointSubscriptions.put(point.getPointId(), subscription);
         }
-        log.info("OPC UA subscription registered device={} active={}",
+        log.info("OPC UA 订阅已注册，设备={}，活跃订阅={}",
                 deviceInfo.getDeviceId(), monitoredItems.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -147,7 +171,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
                 try {
                     subscription.delete();
                 } catch (Exception e) {
-                    log.warn("Failed to delete OPC UA subscription", e);
+                    log.warn("删除 OPC UA 订阅失败", e);
                 }
             }
             subscriptions.clear();
@@ -164,6 +188,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -180,6 +207,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = command != null ? command.toLowerCase(Locale.ROOT) : "";
@@ -192,6 +222,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         addressCache.clear();
@@ -202,16 +235,22 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             try {
                 addressCache.put(point.getPointId(), OpcUaAddressParser.parse(point));
             } catch (Exception e) {
-                log.warn("Failed to parse OPC UA point address pointId={}", point.getPointId(), e);
+                log.warn("失败 to parse OPC UA 点位 address 点位={}", point.getPointId(), e);
             }
         }
-        log.info("OPC UA loaded points device={} count={}", deviceId, addressCache.size());
+        log.info("OPC UA 点位已加载 设备={} 数量={}", deviceId, addressCache.size());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private OpcUaAddress resolveAddress(DataPoint point) {
         return addressCache.computeIfAbsent(point.getPointId(), id -> OpcUaAddressParser.parse(point));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private OpcUaSubscription ensureSubscription() throws Exception {
         if (subscriptions.isEmpty()) {
             return createSubscription();
@@ -219,6 +258,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return subscriptions.values().iterator().next();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeMonitoredItem(String pointId, OpcUaMonitoredItem item) {
         OpcUaSubscription subscription = pointSubscriptions.remove(pointId);
         if (subscription == null) {
@@ -234,17 +276,23 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             subscription.removeMonitoredItem(item);
             subscription.deleteMonitoredItems();
         } catch (Exception e) {
-            log.warn("Failed to remove OPC UA monitored item", e);
+            log.warn("失败 to remove OPC UA monitored item", e);
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleNotification(DataPoint point, OpcUaAddress address, DataValue value) {
         Object payload = value != null && value.getValue() != null ? value.getValue().getValue() : null;
         ingestPushedValue(point, payload);
-        log.info("OPC UA push device={} pointId={} value={}",
+        log.info("OPC UA push 设备={} 点位={} 值={}",
                 deviceInfo.getDeviceId(), point.getPointId(), payload);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         List<String> nodeIds = extractNodeIds(params);
         if (nodeIds.isEmpty()) {
@@ -267,6 +315,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return response;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         String nodeIdText = Objects.toString(params.get("nodeId"), "");
         if (nodeIdText.isBlank()) {
@@ -289,6 +340,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return Map.of("nodeId", nodeIdText, "status", success ? "success" : "error");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandBrowse(Map<String, Object> params) throws Exception {
         String nodeIdText = Objects.toString(params.getOrDefault("nodeId", "ns=0;i=84"));
         NodeId nodeId = safeParseNodeId(nodeIdText);
@@ -311,6 +365,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return nodes;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> extractNodeIds(Map<String, Object> params) {
         Object multi = params.get("nodeIds");
         if (multi instanceof Collection<?> collection && !collection.isEmpty()) {
@@ -323,6 +380,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         return Collections.emptyList();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private NodeId safeParseNodeId(String text) {
         try {
             return NodeId.parse(text);

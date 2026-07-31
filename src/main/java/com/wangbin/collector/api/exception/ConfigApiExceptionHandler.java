@@ -14,6 +14,9 @@ import java.util.Map;
 @RestControllerAdvice(assignableTypes = ConfigController.class)
 public class ConfigApiExceptionHandler {
 
+    /**
+     * 处理当前业务流程。
+     */
     @ExceptionHandler(ConfigApiException.class)
     public ResponseEntity<Map<String, Object>> handleConfigApiException(ConfigApiException exception) {
         Map<String, Object> payload = new LinkedHashMap<>();

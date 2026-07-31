@@ -19,6 +19,9 @@ public record Dlt645Address(String value) {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public byte[] toWireBytes() {
         byte[] result = new byte[6];
         for (int index = 0; index < result.length; index++) {
@@ -28,6 +31,9 @@ public record Dlt645Address(String value) {
         return result;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Dlt645Address fromWireBytes(byte[] bytes) {
         if (bytes == null || bytes.length != 6) {
             throw new IllegalArgumentException("电表地址域必须是 6 字节");

@@ -121,6 +121,9 @@ public class CollectionScheduler {
     private final AtomicLong timeSliceRevision = new AtomicLong(0);
     private TimeSliceTuner timeSliceTuner;
 
+    /**
+     * 创建当前组件实例。
+     */
     @Autowired
     public CollectionScheduler(
             @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler,
@@ -165,6 +168,9 @@ public class CollectionScheduler {
                 .build();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         configureAuxiliaryExecutors();
@@ -195,6 +201,9 @@ public class CollectionScheduler {
         timeSliceScheduler.schedule(this::autoStartAllDevices, 5, TimeUnit.SECONDS);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void destroy() {
         stopAllDevices();
@@ -214,6 +223,9 @@ public class CollectionScheduler {
         reconnectStates.clear();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startTimeSliceScheduling() {
         cancelTimeSliceScheduling();
         int sliceCount = Math.max(1, timeSliceCount.get());
@@ -226,18 +238,24 @@ public class CollectionScheduler {
                 try {
                     executeTimeSlice(currentSlice, currentRevision);
                 } catch (Exception e) {
-                    log.error("time slice execute failed, slice={}", currentSlice, e);
+                    log.error("时间片执行失败, 分片={}", currentSlice, e);
                 }
             }, (long) sliceIndex * sliceInterval, (long) sliceInterval * sliceCount, TimeUnit.MILLISECONDS);
             timeSliceScheduleFutures.put(currentSlice, future);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelTimeSliceScheduling() {
         timeSliceScheduleFutures.values().forEach(future -> future.cancel(false));
         timeSliceScheduleFutures.clear();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void resetTimeSliceTaskBuckets(int sliceCount) {
         timeSliceTasks.clear();
         for (int i = 0; i < Math.max(1, sliceCount); i++) {
@@ -245,6 +263,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeTimeSlice(int sliceIndex, long revision) {
         long startTime = System.currentTimeMillis();
         int currentSliceInterval = timeSliceInterval.get();
@@ -273,9 +294,9 @@ public class CollectionScheduler {
                     CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                             .get(Math.max(1, currentSliceInterval - 10L), TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
-                    log.warn("time slice execute timeout, keep periodic tasks active, slice={}", sliceIndex);
+                    log.warn("时间片执行超时，保留周期任务继续运行, 分片={}", sliceIndex);
                 } catch (Exception e) {
-                    log.error("time slice execute failed, slice={}", sliceIndex, e);
+                    log.error("时间片执行失败, 分片={}", sliceIndex, e);
                 }
             }
         } finally {
@@ -284,6 +305,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processDeviceBatch(DeviceBatchTask batchTask) {
         String deviceId = batchTask.deviceId;
         List<DataPoint> points = batchTask.points;
@@ -298,7 +322,7 @@ public class CollectionScheduler {
 
             if (!collectionManager.isDeviceConnected(deviceId)) {
                 scheduleReconnectIfNeeded(deviceId, generation);
-                log.debug("device disconnected, skip batch until async reconnect completes, device={}", deviceId);
+                log.debug("设备已断开，跳过本轮批量任务，等待异步重连完成，设备={}", deviceId);
                 return;
             }
 
@@ -319,15 +343,15 @@ public class CollectionScheduler {
             } catch (TimeoutException e) {
                 collectFuture.cancel(true);
                 batchTask.recordFailure();
-                log.warn("batch collection timeout, device={}, timeoutMs={}", deviceId, collectTimeoutMs);
+                log.warn("批量 采集 超时, 设备={}, 超时毫秒={}", deviceId, collectTimeoutMs);
                 return;
             } catch (CancellationException e) {
-                log.debug("batch collection cancelled, device={}", deviceId);
+                log.debug("批量 采集 已取消, 设备={}", deviceId);
                 return;
             } catch (InterruptedException e) {
                 collectFuture.cancel(true);
                 Thread.currentThread().interrupt();
-                log.warn("batch collection interrupted, device={}", deviceId);
+                log.warn("批量 采集 被中断, 设备={}", deviceId);
                 return;
             } finally {
                 batchTask.unregisterInFlight(collectFuture);
@@ -352,7 +376,7 @@ public class CollectionScheduler {
             batchTask.recordSuccess();
         } catch (Exception e) {
             batchTask.recordFailure();
-            log.error("device batch collect failed, device={}", deviceId, e);
+            log.error("设备 批量 采集 失败, 设备={}", deviceId, e);
         } finally {
             long executionTime = System.currentTimeMillis() - startTime;
             if (success) {
@@ -370,14 +394,20 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void autoStartAllDevices() {
         try {
             startAllDevices();
         } catch (Exception e) {
-            log.error("auto start all devices failed", e);
+            log.error("自动 启动 全部 devices 失败", e);
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public boolean startDevice(String deviceId) {
         DeviceInfo deviceInfo;
         List<DataPoint> dataPoints;
@@ -406,7 +436,7 @@ public class CollectionScheduler {
             reconnectStates.remove(deviceId);
             startingDevices.add(deviceId);
         } catch (Exception e) {
-            log.error("start device failed, device={}", deviceId, e);
+            log.error("启动 设备 失败, 设备={}", deviceId, e);
             return false;
         } finally {
             scheduleLock.unlock();
@@ -416,7 +446,7 @@ public class CollectionScheduler {
             try {
                 collectionManager.registerDevice(deviceInfo);
             } catch (Exception e) {
-                log.debug("register device skipped, device={}", deviceId, e);
+                log.debug("register 设备 skipped, 设备={}", deviceId, e);
             }
 
             long connectTimeoutMs = resolveDeviceStartTimeoutMs(deviceId);
@@ -440,7 +470,7 @@ public class CollectionScheduler {
             collectionServiceHealthTracker.markDeviceStarted(deviceId);
             return true;
         } catch (Exception e) {
-            log.error("start device failed, device={}", deviceId, e);
+            log.error("启动 设备 失败, 设备={}", deviceId, e);
             cleanupFailedStart(deviceId);
             return false;
         } finally {
@@ -448,6 +478,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleDevicePoints(String deviceId, long generation, List<DataPoint> points) {
         List<DataPoint> scheduledPoints = points;
         ProtocolCollector collector = collectionManager.getCollector(deviceId);
@@ -471,6 +504,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void autoSubscribeIfSupported(String deviceId, List<DataPoint> points) {
         ProtocolCollector collector = collectionManager.getCollector(deviceId);
         if (!(collector instanceof BacnetIpCollector bacnetCollector)) {
@@ -483,10 +519,13 @@ public class CollectionScheduler {
         try {
             collectionManager.subscribePoints(deviceId, subscriptionPoints);
         } catch (Exception ex) {
-            log.warn("auto subscribe BACnet points failed, device={}, pointCount={}", deviceId, subscriptionPoints.size(), ex);
+            log.warn("自动订阅 BACnet 点位失败，设备={}，点位数量={}", deviceId, subscriptionPoints.size(), ex);
         }
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     private boolean connectDevice(String deviceId, long timeoutMs) {
         Future<?> connectFuture = null;
         try {
@@ -497,27 +536,30 @@ public class CollectionScheduler {
             connectFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
             return true;
         } catch (RejectedExecutionException e) {
-            log.error("connect device rejected, device={}, queueSize={}", deviceId, deviceStartExecutor.getQueue().size(), e);
+            log.error("连接 设备 被拒绝, 设备={}, 队列长度={}", deviceId, deviceStartExecutor.getQueue().size(), e);
             return false;
         } catch (TimeoutException e) {
             if (connectFuture != null) {
                 connectFuture.cancel(true);
             }
-            log.error("connect device timed out, device={}, timeoutMs={}", deviceId, timeoutMs);
+            log.error("连接 设备 超时, 设备={}, 超时毫秒={}", deviceId, timeoutMs);
             return false;
         } catch (InterruptedException e) {
             if (connectFuture != null) {
                 connectFuture.cancel(true);
             }
             Thread.currentThread().interrupt();
-            log.error("connect device interrupted, device={}", deviceId, e);
+            log.error("连接 设备 被中断, 设备={}", deviceId, e);
             return false;
         } catch (Exception e) {
-            log.error("connect device failed, device={}", deviceId, e);
+            log.error("连接 设备 失败, 设备={}", deviceId, e);
             return false;
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleReconnectIfNeeded(String deviceId, long generation) {
         if (!collectionTaskGuard.isCurrent(deviceId, generation)) {
             return;
@@ -538,7 +580,7 @@ public class CollectionScheduler {
             state.reconnecting.set(false);
             reconnectFailureCount.incrementAndGet();
             long delayMs = scheduleNextReconnectRetry(state);
-            log.warn("reconnect task rejected, device={}, retryAfterMs={}, queueSize={}",
+            log.warn("重连 任务 被拒绝, 设备={}, 重试等待毫秒={}, 队列长度={}",
                     deviceId,
                     delayMs,
                     reconnectExecutor.getQueue().size(),
@@ -546,6 +588,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeReconnect(String deviceId, long generation, ReconnectState state) {
         long startTime = System.currentTimeMillis();
         boolean success = false;
@@ -558,7 +603,7 @@ public class CollectionScheduler {
                 try {
                     collectionManager.disconnectDevice(deviceId);
                 } catch (Exception e) {
-                    log.warn("disconnect after stale reconnect failed, device={}", deviceId, e);
+                    log.warn("旧代次重连后断开失败, 设备={}", deviceId, e);
                 }
                 return;
             }
@@ -569,7 +614,7 @@ public class CollectionScheduler {
         } catch (Exception e) {
             reconnectFailureCount.incrementAndGet();
             long delayMs = scheduleNextReconnectRetry(state);
-            log.warn("async reconnect failed, device={}, retryAfterMs={}", deviceId, delayMs, e);
+            log.warn("异步重连失败, 设备={}, 重试等待毫秒={}", deviceId, delayMs, e);
         } finally {
             state.lastDurationMs.set(System.currentTimeMillis() - startTime);
             state.reconnecting.set(false);
@@ -588,6 +633,9 @@ public class CollectionScheduler {
                 && !startingDevices.contains(deviceId);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private long scheduleNextReconnectRetry(ReconnectState state) {
         int failureCount = Math.max(1, state.consecutiveFailures.incrementAndGet());
         long delayMs = computeReconnectDelayMs(failureCount);
@@ -595,6 +643,9 @@ public class CollectionScheduler {
         return delayMs;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long computeReconnectDelayMs(int failureCount) {
         long baseDelayMs = Math.max(100L, collectorProperties.getScheduler().getReconnectBaseDelayMs());
         long maxDelayMs = Math.max(baseDelayMs, collectorProperties.getScheduler().getReconnectMaxDelayMs());
@@ -608,6 +659,9 @@ public class CollectionScheduler {
         return delayMs;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public boolean stopDevice(String deviceId) {
         scheduleLock.lock();
         try {
@@ -624,7 +678,7 @@ public class CollectionScheduler {
             try {
                 collectionManager.disconnectDevice(deviceId);
             } catch (Exception e) {
-                log.warn("disconnect device failed, device={}", deviceId, e);
+                log.warn("断开 设备 失败, 设备={}", deviceId, e);
             }
             deviceScheduleInfo.remove(deviceId);
             collectionTaskGuard.clearDevice(deviceId);
@@ -633,13 +687,16 @@ public class CollectionScheduler {
             collectionServiceHealthTracker.markDeviceStopped(deviceId);
             return true;
         } catch (Exception e) {
-            log.error("stop device failed, device={}", deviceId, e);
+            log.error("停止 设备 失败, 设备={}", deviceId, e);
             return false;
         } finally {
             scheduleLock.unlock();
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void startAllDevices() {
         List<String> deviceIds = configManager.getAllDeviceIds();
         for (String deviceId : deviceIds) {
@@ -651,38 +708,50 @@ public class CollectionScheduler {
                     startDevice(deviceId);
                 }
             } catch (Exception e) {
-                log.error("start device failed, device={}", deviceId, e);
+                log.error("启动 设备 失败, 设备={}", deviceId, e);
             }
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void stopAllDevices() {
         List<String> runningDevices = new ArrayList<>(deviceScheduleInfo.keySet());
         for (String deviceId : runningDevices) {
             try {
                 stopDevice(deviceId);
             } catch (Exception e) {
-                log.error("stop device failed, device={}", deviceId, e);
+                log.error("停止 设备 失败, 设备={}", deviceId, e);
             }
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void reloadAllDevices() {
         stopAllDevices();
         timeSliceScheduler.schedule(this::startAllDevices, 2, TimeUnit.SECONDS);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processCollectedData(String deviceId,
                                       long generation,
                                       List<DataPoint> points,
                                       Map<String, Object> values) {
         if (!collectionTaskGuard.isCurrent(deviceId, generation)) {
-            log.debug("skip stale collected data, device={}, generation={}", deviceId, generation);
+            log.debug("跳过旧代次采集数据, 设备={}, 运行代次={}", deviceId, generation);
             return;
         }
         collectedDataProcessor.process(deviceId, points, values, performanceMonitor);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task) {
         if (!task.tryStartExecution()) {
             return null;
@@ -692,7 +761,7 @@ public class CollectionScheduler {
                 try {
                     processDeviceBatch(task);
                 } catch (Exception e) {
-                    log.error("device batch execute failed, device={}", task.deviceId, e);
+                    log.error("设备批量执行失败，设备={}", task.deviceId, e);
                 } finally {
                     task.finishExecution();
                 }
@@ -701,7 +770,7 @@ public class CollectionScheduler {
             task.finishExecution();
             batchDispatchRejectedCount.incrementAndGet();
             task.recordFailure();
-            log.warn("batch dispatch rejected, device={}, slice={}, queueSize={}",
+            log.warn("批量 分发 被拒绝, 设备={}, 分片={}, 队列长度={}",
                     task.deviceId,
                     task.timeSliceIndex,
                     executorQueueSize(batchDispatcher),
@@ -710,6 +779,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Future<Map<String, Object>> submitCollectTask(String deviceId,
                                                           long generation,
                                                           List<DataPoint> points) {
@@ -722,7 +794,7 @@ public class CollectionScheduler {
                     ));
         } catch (RejectedExecutionException e) {
             collectRejectedCount.incrementAndGet();
-            log.warn("collect task rejected, device={}, pointCount={}, queueSize={}",
+            log.warn("采集 任务 被拒绝, 设备={}, 点位数量={}, 队列长度={}",
                     deviceId,
                     points != null ? points.size() : 0,
                     asyncCollectorPool.getQueue().size(),
@@ -731,6 +803,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private CompletableFuture<Void> submitProcessTask(String deviceId,
                                                       long generation,
                                                       List<DataPoint> points,
@@ -746,7 +821,7 @@ public class CollectionScheduler {
             );
         } catch (RejectedExecutionException e) {
             processRejectedCount.incrementAndGet();
-            log.warn("process task rejected, device={}, pointCount={}, queueSize={}",
+            log.warn("处理任务被拒绝，设备={}，点位数量={}，队列长度={}",
                     deviceId,
                     points != null ? points.size() : 0,
                     dataProcessorPool.getQueue().size(),
@@ -755,14 +830,23 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateOptimalBatchSize(String deviceId, int newSize) {
-        log.debug("update optimal batch size, device={}, size={}", deviceId, newSize);
+        log.debug("update optimal 批量 数量, 设备={}, 数量={}", deviceId, newSize);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void adjustBatchSize(String deviceId, int percentChange) {
         performanceMonitor.adjustBatchSize(deviceId, percentChange);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startPerformanceMonitoring() {
         timeSliceScheduler.scheduleAtFixedRate(
                 () -> performanceMonitor.logStatistics(timeSliceInterval),
@@ -770,11 +854,17 @@ public class CollectionScheduler {
         );
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startDynamicTimeSliceAdjustment() {
         int interval = collectorProperties.getScheduler().getDynamicAdjustIntervalMs();
         timeSliceScheduler.scheduleAtFixedRate(this::adjustTimeSlicesDynamically, interval, interval, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void adjustTimeSlicesDynamically() {
         try {
             double cpuLoad = getSystemCpuLoad();
@@ -788,10 +878,13 @@ public class CollectionScheduler {
                     : timeSliceInterval.get();
             applyTimeSliceConfigUpdate(newSliceCount, tunedInterval);
         } catch (Exception e) {
-            log.error("adjust time slices failed", e);
+            log.error("调整时间片失败", e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int calculateOptimalSliceCount(int activeDevices, long totalTasks, double cpuLoad) {
         int baseSlices = Math.max(1, Math.min(
                 activeDevices / 5 + 1,
@@ -805,6 +898,9 @@ public class CollectionScheduler {
         return baseSlices;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyTimeSliceConfigUpdate(int newSliceCount, int newSliceInterval) {
         int normalizedSliceCount = Math.max(1, newSliceCount);
         int normalizedSliceInterval = Math.max(
@@ -831,6 +927,9 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rebuildTimeSliceAssignments() {
         resetTimeSliceTaskBuckets(timeSliceCount.get());
         List<String> deviceIds = new ArrayList<>(deviceScheduleInfo.keySet());
@@ -843,15 +942,21 @@ public class CollectionScheduler {
                 }
                 scheduleDevicePoints(deviceId, scheduleInfo.getGeneration(), dataPoints);
             } catch (Exception e) {
-                log.error("rebuild time slice assignments failed, device={}", deviceId, e);
+                log.error("重建时间片分配失败, 设备={}", deviceId, e);
             }
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateTimeSliceConfig(int newSliceCount, int newSliceInterval) {
         applyTimeSliceConfigUpdate(newSliceCount, newSliceInterval);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rescheduleAllDevices() {
         rebuildTimeSliceAssignments();
     }
@@ -866,6 +971,9 @@ public class CollectionScheduler {
         return maxThreads <= 0 ? 0D : Math.min(1.0, (double) activeThreads / maxThreads);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private double resolveProcessCpuLoad() {
         if (systemResourceMonitorService == null) {
             return -1D;
@@ -873,7 +981,7 @@ public class CollectionScheduler {
         try {
             return systemResourceMonitorService.getResources().getProcessCpuLoad();
         } catch (Exception e) {
-            log.debug("read process cpu load failed", e);
+            log.debug("读取进程 CPU 负载失败", e);
             return -1D;
         }
     }
@@ -888,6 +996,9 @@ public class CollectionScheduler {
         return count;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int executorQueueSize(ExecutorService executor) {
         if (executor instanceof ThreadPoolExecutor threadPoolExecutor) {
             return threadPoolExecutor.getQueue().size();
@@ -895,6 +1006,9 @@ public class CollectionScheduler {
         return -1;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ThreadPoolExecutor buildAuxiliaryExecutor(String threadNamePrefix,
                                                       AtomicInteger threadIndex,
                                                       int poolSize,
@@ -914,12 +1028,18 @@ public class CollectionScheduler {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureAuxiliaryExecutors() {
         CollectorProperties.SchedulerConfig schedulerConfig = collectorProperties.getScheduler();
         resizeAuxiliaryExecutor(deviceStartExecutor, Math.max(1, schedulerConfig.getDeviceStartExecutorSize()));
         resizeAuxiliaryExecutor(reconnectExecutor, Math.max(1, schedulerConfig.getReconnectExecutorSize()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void resizeAuxiliaryExecutor(ThreadPoolExecutor executor, int targetSize) {
         if (executor == null || targetSize <= 0) {
             return;
@@ -933,6 +1053,9 @@ public class CollectionScheduler {
         executor.setMaximumPoolSize(targetSize);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initializeBatchSizing(String deviceId, DeviceInfo deviceInfo) {
         String protocol = deviceInfo != null ? deviceInfo.getProtocolType() : null;
         int defaultBatchSize = protocolBatchStrategy.defaultBatchSize(protocol);
@@ -940,6 +1063,9 @@ public class CollectionScheduler {
         performanceMonitor.initializeDeviceBatchSize(deviceId, defaultBatchSize, maxBatchSize);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void shutdownExecutor(String name, ExecutorService executor) {
         if (executor == null || executor.isShutdown()) {
             return;
@@ -981,6 +1107,9 @@ public class CollectionScheduler {
                 .toList();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private DeviceRuntimeSnapshot buildRuntimeSnapshot(String deviceId) {
         DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
         ReconnectState reconnectState = reconnectStates.get(deviceId);
@@ -1045,6 +1174,9 @@ public class CollectionScheduler {
         return info != null && info.isRunning();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveCollectTimeoutMs(String deviceId) {
         long defaultTimeoutMs = Math.max(100L, collectorProperties.getScheduler().getCollectTimeoutMs());
         DeviceConnection connection = configManager.getConnectionConfig(deviceId);
@@ -1065,6 +1197,9 @@ public class CollectionScheduler {
         return Math.max(defaultTimeoutMs, configuredTimeout + bufferMs);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveDeviceStartTimeoutMs(String deviceId) {
         long defaultTimeoutMs = Math.max(1000L, collectorProperties.getScheduler().getDeviceStartTimeoutMs());
         DeviceConnection connection = configManager.getConnectionConfig(deviceId);
@@ -1083,6 +1218,9 @@ public class CollectionScheduler {
         return Math.max(1000L, Math.min(configuredTimeout, defaultTimeoutMs));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long firstPositive(Long... candidates) {
         if (candidates == null) {
             return null;
@@ -1095,15 +1233,21 @@ public class CollectionScheduler {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long toLong(Integer value) {
         return value == null ? null : value.longValue();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void cleanupFailedStart(String deviceId) {
         try {
             collectionManager.cleanupDevice(deviceId);
         } catch (Exception e) {
-            log.warn("cleanup failed after start error, device={}", deviceId, e);
+            log.warn("启动失败后清理资源失败, 设备={}", deviceId, e);
         } finally {
             collectionTaskGuard.clearDevice(deviceId);
             deviceScheduleInfo.remove(deviceId);
@@ -1124,6 +1268,9 @@ public class CollectionScheduler {
                 && collectionTaskGuard.isCurrent(batchTask.deviceId, batchTask.generation);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerCollectFuture(String deviceId, Future<?> future) {
         if (future == null) {
             return;
@@ -1133,10 +1280,16 @@ public class CollectionScheduler {
                 .add(future);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unregisterCollectFuture(String deviceId, Future<?> future) {
         unregisterFuture(deviceInFlightCollectFutures, deviceId, future);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerProcessFuture(String deviceId, CompletableFuture<?> future) {
         if (future == null) {
             return;
@@ -1146,10 +1299,16 @@ public class CollectionScheduler {
                 .add(future);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unregisterProcessFuture(String deviceId, CompletableFuture<?> future) {
         unregisterFuture(deviceInFlightProcessFutures, deviceId, future);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private <T> void unregisterFuture(Map<String, Set<T>> futureRegistry, String deviceId, T future) {
         Set<T> futures = futureRegistry.get(deviceId);
         if (futures == null || future == null) {
@@ -1161,11 +1320,17 @@ public class CollectionScheduler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelDeviceInFlightTasks(String deviceId) {
         cancelFutures(deviceInFlightCollectFutures.remove(deviceId));
         cancelFutures(deviceInFlightProcessFutures.remove(deviceId));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelFutures(Set<? extends Future<?>> futures) {
         if (futures == null || futures.isEmpty()) {
             return;
@@ -1178,6 +1343,9 @@ public class CollectionScheduler {
         futures.clear();
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class ReconnectState {
         private final AtomicBoolean reconnecting = new AtomicBoolean(false);
         private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
@@ -1187,6 +1355,9 @@ public class CollectionScheduler {
         private final AtomicLong lastDurationMs = new AtomicLong(0);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         String deviceId = event.getDeviceId();

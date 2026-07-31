@@ -20,6 +20,9 @@ public class ProductionSecurityValidator {
     private final Environment environment;
     private final AuthProperties authProperties;
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     @PostConstruct
     public void validate() {
         if (Arrays.stream(environment.getActiveProfiles())
@@ -43,10 +46,16 @@ public class ProductionSecurityValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void requireSecret(String propertyName, String description) {
         validateSecret(environment.getProperty(propertyName), description);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSecret(String value, String description) {
         if (value == null || value.isBlank() || DEFAULT_SECRET.equalsIgnoreCase(value.trim())) {
             throw new IllegalStateException("生产环境未安全配置" + description);

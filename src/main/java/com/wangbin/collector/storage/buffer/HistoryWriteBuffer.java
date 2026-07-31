@@ -29,6 +29,9 @@ public class HistoryWriteBuffer {
     private final HistoryBufferProperties properties;
     private final BlockingQueue<HistoryWriteRequest> localQueue;
 
+    /**
+     * 创建当前组件实例。
+     */
     public HistoryWriteBuffer(TimeSeriesService timeSeriesService,
                               StringRedisTemplate redisTemplate,
                               ObjectMapper objectMapper,
@@ -42,6 +45,9 @@ public class HistoryWriteBuffer {
         this.localQueue = new ArrayBlockingQueue<>(Math.max(1, properties.getLocalQueueCapacity()));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writeOrBuffer(HistoryWriteRequest request) {
         try {
             write(request);
@@ -65,11 +71,17 @@ public class HistoryWriteBuffer {
         replayLocalQueue();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void shutdown() {
         replay();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public HistoryBufferMetrics metrics() {
         try {
             return new HistoryBufferMetrics(
@@ -84,22 +96,28 @@ public class HistoryWriteBuffer {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void buffer(HistoryWriteRequest request, RuntimeException writeException) {
         try {
             redisTemplate.opsForList().leftPush(properties.getPendingKey(), serialize(request));
-            log.warn("TDengine写入失败，数据已进入Redis待写队列: deviceId={}, pointId={}",
+            log.warn("TDengine写入失败，数据已进入Redis待写队列: 设备={}, 点位={}",
                     request.getDeviceId(), pointId(request), writeException);
         } catch (RuntimeException redisException) {
             if (!localQueue.offer(request)) {
-                log.error("历史数据本地降级队列已满，无法继续缓冲: deviceId={}, pointId={}",
+                log.error("历史数据本地降级队列已满，无法继续缓冲: 设备={}, 点位={}",
                         request.getDeviceId(), pointId(request), redisException);
                 return;
             }
-            log.warn("TDengine和Redis同时不可用，数据已进入本地降级队列: deviceId={}, pointId={}",
+            log.warn("TDengine和Redis同时不可用，数据已进入本地降级队列: 设备={}, 点位={}",
                     request.getDeviceId(), pointId(request), redisException);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void replayRedisQueue() {
         int batchSize = Math.max(1, properties.getReplayBatchSize());
         for (int index = 0; index < batchSize; index++) {
@@ -125,6 +143,9 @@ public class HistoryWriteBuffer {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String currentOrClaim() {
         String processing = redisTemplate.opsForList().index(properties.getProcessingKey(), 0L);
         if (processing != null) {
@@ -134,6 +155,9 @@ public class HistoryWriteBuffer {
                 properties.getPendingKey(), properties.getProcessingKey());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void moveToDeadLetter(String json, Exception exception) {
         try {
             redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
@@ -144,6 +168,9 @@ public class HistoryWriteBuffer {
         log.error("历史数据待写消息无法反序列化，已转入隔离队列", exception);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void replayLocalQueue() {
         int batchSize = Math.max(1, properties.getReplayBatchSize());
         for (int index = 0; index < batchSize; index++) {
@@ -161,6 +188,9 @@ public class HistoryWriteBuffer {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void write(HistoryWriteRequest request) {
         timeSeriesService.append(
                 request.getDeviceId(),
@@ -170,6 +200,9 @@ public class HistoryWriteBuffer {
                 request.getEventTs());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String serialize(HistoryWriteRequest request) {
         try {
             return objectMapper.writeValueAsString(request);
@@ -178,14 +211,23 @@ public class HistoryWriteBuffer {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private HistoryWriteRequest deserialize(String json) throws JsonProcessingException {
         return objectMapper.readValue(json, HistoryWriteRequest.class);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String pointId(HistoryWriteRequest request) {
         return request.getPoint() == null ? null : request.getPoint().getPointId();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private long listSize(String key) {
         Long size = redisTemplate.opsForList().size(key);
         return size == null ? 0L : size;

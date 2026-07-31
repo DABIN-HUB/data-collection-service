@@ -89,11 +89,17 @@ public class ConfigController {
         return success(data);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @PostMapping("/local/devices")
     public Map<String, Object> createLocalDevice(@Valid @RequestBody LocalDeviceConfigRequest request) {
         return saveLocalDevice(request, null, request != null && request.isOverwrite());
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PutMapping("/local/device/{deviceId}")
     public Map<String, Object> updateLocalDevice(@PathVariable String deviceId,
                                                  @Valid @RequestBody LocalDeviceConfigRequest request) {
@@ -118,6 +124,9 @@ public class ConfigController {
         return success(data);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @DeleteMapping("/local/device/{deviceId}")
     public Map<String, Object> deleteLocalDevice(@PathVariable String deviceId) {
         try {
@@ -171,6 +180,9 @@ public class ConfigController {
         return success(data);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DataPoint withRuntimeState(String deviceId, DataPoint point) {
         DataPoint response = new DataPoint();
         BeanUtils.copyProperties(point, response);
@@ -195,6 +207,9 @@ public class ConfigController {
         return success(data);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/device/{deviceId}/diff")
     public Map<String, Object> diff(@PathVariable String deviceId) {
         DeviceInfo local = configManager.getDevice(deviceId);
@@ -214,6 +229,9 @@ public class ConfigController {
         return success(response);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PutMapping("/device/{deviceId}")
     public Map<String, Object> updateDevice(@PathVariable String deviceId,
                                             @RequestBody DeviceInfo device) {
@@ -226,6 +244,9 @@ public class ConfigController {
                 : error("更新设备配置失败: " + deviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PutMapping("/device/{deviceId}/points")
     public Map<String, Object> updatePoints(@PathVariable String deviceId,
                                             @RequestBody List<DataPoint> points) {
@@ -237,6 +258,9 @@ public class ConfigController {
                 : error("更新数据点配置失败: " + deviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PutMapping("/device/{deviceId}/connection")
     public Map<String, Object> updateConnection(@PathVariable String deviceId,
                                                 @RequestBody DeviceConnection connection) {
@@ -251,6 +275,9 @@ public class ConfigController {
                 : error("更新连接配置失败: " + deviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PostMapping("/device/{deviceId}/refresh")
     public Map<String, Object> refreshDevice(@PathVariable String deviceId) {
         boolean refreshed = configManager.refreshDeviceConfig(deviceId);
@@ -258,6 +285,9 @@ public class ConfigController {
                 : error("刷新失败，设备配置不完整: " + deviceId);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @PostMapping("/device/{deviceId}/clear")
     public Map<String, Object> clearDevice(@PathVariable String deviceId) {
         boolean cleared = configManager.clearDeviceConfig(deviceId);
@@ -265,12 +295,18 @@ public class ConfigController {
                 : error("设备配置不存在或已清空: " + deviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PostMapping("/sync")
     public Map<String, Object> triggerFullSync() {
         configSyncService.triggerManualSync();
         return success("已触发异步全量同步任务", null);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PostMapping("/sync/{type}")
     public Map<String, Object> triggerPartialSync(@PathVariable String type,
                                                   @RequestParam(value = "deviceId", required = false)
@@ -301,6 +337,9 @@ public class ConfigController {
         return success(data);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/export")
     public Map<String, Object> exportConfigs() {
         List<DeviceContext> contexts = configManager.getAllDeviceContexts();
@@ -317,6 +356,9 @@ public class ConfigController {
         return success(response);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @PostMapping("/import")
     public Map<String, Object> importConfigs(@Valid @RequestBody ConfigImportRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getBundles())) {
@@ -370,6 +412,9 @@ public class ConfigController {
         return success("导入完成", result);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConfigDiffResponse buildDiffResponse(DeviceInfo localDevice,
                                                  DeviceInfo remoteDevice,
                                                  DeviceConnection localConn,
@@ -400,6 +445,9 @@ public class ConfigController {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, DataPoint> indexPoints(List<DataPoint> points) {
         if (CollectionUtils.isEmpty(points)) {
             return Collections.emptyMap();
@@ -413,6 +461,9 @@ public class ConfigController {
                         HashMap::new));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveDeviceId(ConfigBundle bundle) {
         if (bundle == null) {
             return null;
@@ -426,6 +477,9 @@ public class ConfigController {
         return null;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private Map<String, Object> saveLocalDevice(LocalDeviceConfigRequest request,
                                                 String pathDeviceId,
                                                 boolean overwrite) {
@@ -469,10 +523,16 @@ public class ConfigController {
         }
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private Map<String, Object> success(Object data) {
         return success("OK", data);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private Map<String, Object> success(String message, Object data) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("status", "success");
@@ -482,14 +542,23 @@ public class ConfigController {
         return payload;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private Map<String, Object> error(String message) {
         return error(message, null);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private Map<String, Object> error(String message, Object data) {
         throw new ConfigApiException(HttpStatus.BAD_REQUEST, message, data);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> notFound(String message) {
         throw new ConfigApiException(HttpStatus.NOT_FOUND, message, null);
     }

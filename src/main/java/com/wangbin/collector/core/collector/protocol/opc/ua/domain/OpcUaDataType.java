@@ -3,7 +3,7 @@ package com.wangbin.collector.core.collector.protocol.opc.ua.domain;
 import java.util.Locale;
 
 /**
- * OPC UA data type definition used when converting Java values to Variant.
+ * OPC UA 数据类型定义，用于将 Java 值转换为 Variant。
  */
 public enum OpcUaDataType {
     AUTO,
@@ -22,6 +22,9 @@ public enum OpcUaDataType {
     DATETIME,
     BYTESTRING;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static OpcUaDataType fromText(String text) {
         if (text == null || text.isBlank()) {
             return AUTO;

@@ -126,6 +126,9 @@ public class AdaptiveCollectionUtil {
         return System.currentTimeMillis() - lastAdjustTime > adjustWindow;
     }
     
+    /**
+     * 解析或转换业务数据。
+     */
     private static long normalizePositive(Long value, long defaultValue) {
         return value != null && value > 0 ? value : defaultValue;
     }

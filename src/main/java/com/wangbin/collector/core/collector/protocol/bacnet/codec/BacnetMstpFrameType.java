@@ -1,5 +1,8 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum BacnetMstpFrameType {
 
     TOKEN(0x00),
@@ -13,6 +16,9 @@ public enum BacnetMstpFrameType {
 
     private final int code;
 
+    /**
+     * 创建当前组件实例。
+     */
     BacnetMstpFrameType(int code) {
         this.code = code;
     }
@@ -27,6 +33,9 @@ public enum BacnetMstpFrameType {
                 || this == REPLY_POSTPONED;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetMstpFrameType fromCode(int code) {
         for (BacnetMstpFrameType value : values()) {
             if (value.code == code) {

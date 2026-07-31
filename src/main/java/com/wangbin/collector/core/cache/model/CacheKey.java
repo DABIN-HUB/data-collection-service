@@ -57,14 +57,23 @@ public class CacheKey implements Serializable {
     private long createTime;
     private long updateTime;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CacheKey(String key) {
         this(key, EXPIRE_1_HOUR, 1);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public CacheKey(String key, long expireTime) {
         this(key, expireTime, 1);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public CacheKey(String key, long expireTime, int cacheLevel) {
         if (key == null || key.trim().isEmpty()) {
             throw new IllegalArgumentException("缓存键不能为空");
@@ -168,6 +177,9 @@ public class CacheKey implements Serializable {
         return new CacheKey(PREFIX_DEVICE + deviceId, EXPIRE_30_MINUTES, 1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CacheKey deviceKey(String deviceId, long expireTime) {
         return new CacheKey(PREFIX_DEVICE + deviceId, expireTime, 1);
     }
@@ -179,6 +191,9 @@ public class CacheKey implements Serializable {
         return new CacheKey(PREFIX_DATA + deviceId + ":" + pointId, EXPIRE_5_SECONDS, 1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CacheKey dataKey(String deviceId, String pointId, long expireTime) {
         return new CacheKey(PREFIX_DATA + deviceId + ":" + pointId, expireTime, 1);
     }
@@ -190,6 +205,9 @@ public class CacheKey implements Serializable {
         return new CacheKey(PREFIX_REALTIME + deviceId, EXPIRE_5_SECONDS, 1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CacheKey realtimeDataKey(String deviceId, String pointId) {
         return new CacheKey(PREFIX_REALTIME + deviceId + ":" + pointId, EXPIRE_5_SECONDS, 1);
     }
@@ -257,6 +275,9 @@ public class CacheKey implements Serializable {
         return keys;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -265,11 +286,17 @@ public class CacheKey implements Serializable {
         return Objects.equals(key, cacheKey.key);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public int hashCode() {
         return Objects.hash(key);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public String toString() {
         return "CacheKey{" +

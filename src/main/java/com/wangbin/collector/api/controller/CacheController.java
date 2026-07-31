@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+/**
+ * 提供当前模块的控制器接口。
+ */
 @RestController
 @RequestMapping("/api/cache")
 public class CacheController {

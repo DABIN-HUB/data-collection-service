@@ -60,6 +60,9 @@ public class JsonProtocolAdapter {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildParams(IoTMessage message) {
         if (message.isAuthMessage()) {
             return buildAuthParams(message);
@@ -93,6 +96,9 @@ public class JsonProtocolAdapter {
         return params;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildAuthParams(IoTMessage message) {
         Map<String, Object> params = new LinkedHashMap<>();
         putIfNotBlank(params, "clientId", message.getClientId());
@@ -103,6 +109,9 @@ public class JsonProtocolAdapter {
         return params;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void putIfNotBlank(Map<String, Object> target, String key, String value) {
         if (value != null && !value.isEmpty()) {
             target.put(key, value);

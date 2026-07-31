@@ -15,6 +15,9 @@ public class CacheProperties {
     private RedisCache redis = new RedisCache();
 
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class LocalCache {
         private long maxSize = 10000;
@@ -23,6 +26,9 @@ public class CacheProperties {
         private int initialCapacity = 1000;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class RedisCache {
         private String keyPrefix = "collector:";

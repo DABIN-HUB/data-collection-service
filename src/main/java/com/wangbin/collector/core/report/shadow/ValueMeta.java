@@ -12,18 +12,30 @@ public class ValueMeta {
     private final long updatedAt;
     private final java.util.Map<String, Object> metadata;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ValueMeta(Object value, long timestamp, String quality) {
         this(value, timestamp, quality, null, System.currentTimeMillis(), null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ValueMeta(Object value, long timestamp, String quality, String source) {
         this(value, timestamp, quality, source, System.currentTimeMillis(), null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ValueMeta(Object value, long timestamp, String quality, String source, long updatedAt) {
         this(value, timestamp, quality, source, updatedAt, null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ValueMeta(Object value,
                      long timestamp,
                      String quality,

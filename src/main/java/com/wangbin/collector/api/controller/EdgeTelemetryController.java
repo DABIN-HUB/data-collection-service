@@ -21,6 +21,9 @@ public class EdgeTelemetryController {
 
     private final EdgeTelemetryIngressService ingressService;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @PostMapping("/telemetry")
     public ApiResponse<EdgeTelemetryIngressResult> ingest(
             @Valid @RequestBody EdgeTelemetryBatchRequest request) {

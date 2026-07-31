@@ -37,14 +37,23 @@ public class ReportData {
     private final Map<String, Map<String, Object>> propertyMetadata = new LinkedHashMap<>();
     private final Map<String, Object> events = new LinkedHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addMetadata(String key, Object v) {
         metadata.put(key, v);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addProperty(String field, Object fieldValue, long fieldTimestamp, String qualityText) {
         addProperty(field, fieldValue, fieldTimestamp, qualityText, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addProperty(String field,
                             Object fieldValue,
                             long fieldTimestamp,
@@ -67,14 +76,23 @@ public class ReportData {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasProperties() {
         return !properties.isEmpty();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addEvent(String identifier, Object value) {
         addEvent(identifier, value, timestamp > 0 ? timestamp : System.currentTimeMillis());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addEvent(String identifier, Object value, long eventTime) {
         if (identifier == null || identifier.trim().isEmpty()) {
             return;
@@ -85,14 +103,23 @@ public class ReportData {
         events.put(identifier, event);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasEvents() {
         return !events.isEmpty();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int size() {
         return properties.size();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int estimatePayloadSize() {
         int size = 0;
         for (Map.Entry<String, Object> entry : properties.entrySet()) {
@@ -125,6 +152,9 @@ public class ReportData {
         return size;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public ReportData shallowCopy() {
         ReportData copy = new ReportData();
         copy.setDeviceId(deviceId);
@@ -163,6 +193,9 @@ public class ReportData {
         return Collections.unmodifiableMap(events);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public void applyChunkMetadata(String batchId, int chunkIndex, int chunkTotal) {
         metadata.put("batchId", batchId == null ? UUID.randomUUID().toString() : batchId);
         metadata.put("chunkIndex", chunkIndex);
@@ -174,6 +207,9 @@ public class ReportData {
         return id != null ? String.valueOf(id) : null;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static ReportData buildReportData(String deviceId, String method, DataPoint point, Object cacheValue) {
         Object value = extractValue(cacheValue);
         if (value == null) {
@@ -219,6 +255,9 @@ public class ReportData {
         return reportData;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public static void applyPointInfo(ReportData target, DataPoint point) {
         if (target == null || point == null) {
             return;
@@ -226,6 +265,9 @@ public class ReportData {
         applyPointInfo(target, point.getPointId(), resolvePointCode(point), point.getPointName());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public static void applyPointInfo(ReportData target, String pointId, String pointCode, String pointName) {
         if (target == null) {
             return;
@@ -235,6 +277,9 @@ public class ReportData {
         target.setPointName(pointName);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolvePointCode(DataPoint point) {
         if (point == null) {
             return null;
@@ -246,6 +291,9 @@ public class ReportData {
         return point.getPointId();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Object extractValue(Object cacheValue) {
         if (cacheValue instanceof ProcessResult processResult) {
             return processResult.getFinalValue();
@@ -253,6 +301,9 @@ public class ReportData {
         return cacheValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Map<String, Object> extractStableValueMetadata(ProcessResult result) {
         if (result == null || result.getMetadata() == null || result.getMetadata().isEmpty()) {
             return Collections.emptyMap();
@@ -270,6 +321,9 @@ public class ReportData {
         return metadata;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void copyIfPresent(ProcessResult result, Map<String, Object> target, String key) {
         Object value = result.getMetadata(key);
         if (value != null) {

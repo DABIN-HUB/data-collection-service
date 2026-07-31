@@ -20,12 +20,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * IEC-60870-5-104 collector.
+ * IEC-60870-5-104 采集器.
  */
 @Slf4j
 public class Iec104Collector extends AbstractIce104Collector {
 
-    private final Map<Iec104Key, DataPoint> spontaneousPointIndex = new ConcurrentHashMap<>();
+    private final Map<Iec104Key, DataPoint> 突发上送PointIndex = new ConcurrentHashMap<>();
 
     @Override
     public String getCollectorType() {
@@ -37,9 +37,12 @@ public class Iec104Collector extends AbstractIce104Collector {
         return "IEC104";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
-        log.info("Connecting IEC 104 device: {}", getDeviceId());
+        log.info("正在连接 IEC 104 设备:{}", getDeviceId());
         initIec104Config(deviceInfo);
         DeviceConnection connectionConfig = requireConnectionConfig();
         try {
@@ -58,20 +61,28 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void doDisconnect() {
         removeConnectionSilently();
         clearProtocolState();
-        spontaneousPointIndex.clear();
-        log.info("IEC104 connection closed");
+        突发上送PointIndex.clear();
+        log.info("IEC104 连接 已关闭");
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionEventListener createConnectionEventListener() {
         return new ConnectionEventListener() {
+            /**
+             * 创建并返回业务对象。
+             */
             @Override
             public void newASdu(Connection conn, ASdu asdu) {
                 try {
-                    //log.debug("Receive ASDU: {}", asdu);
                     handleResponse(conn, asdu);
                     lastActivityTime = System.currentTimeMillis();
                 } catch (Exception e) {
@@ -79,25 +90,34 @@ public class Iec104Collector extends AbstractIce104Collector {
                 }
             }
 
+            /**
+             * 处理连接生命周期。
+             */
             @Override
             public void connectionClosed(Connection conn, IOException e) {
                 handleConnectionClosed(e);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void dataTransferStateChanged(Connection conn, boolean stopped) {
                 dataTransferStopped = stopped;
                 if (stopped) {
                     connectionStatus = "CONNECTED_STOPPED";
-                    log.warn("IEC104 data transfer stopped: {}", conn.getRemoteInetAddress());
+                    log.warn("IEC104 数据传输已停止：{}", conn.getRemoteInetAddress());
                 } else {
                     connectionStatus = connected ? "CONNECTED" : connectionStatus;
-                    log.info("IEC104 data transfer started: {}", conn.getRemoteInetAddress());
+                    log.info("IEC104 数据传输已启动：{}", conn.getRemoteInetAddress());
                 }
             }
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         Iec104Address address = resolveReadAddress(point);
@@ -123,6 +143,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new HashMap<>();
@@ -177,15 +200,21 @@ public class Iec104Collector extends AbstractIce104Collector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         WriteTarget target = resolveWriteTarget(point);
-        log.debug("Write IEC104 point: type={}, typeId={}, ca={}, address={}, value={}",
+        log.debug("写入 IEC104 点位:type={}, typeId={}, ca={}, 地址={}, 值={}",
                 target.type().typeName(), target.type().typeId(),
                 target.address().getCommonAddress(), target.address().getIoAddress(), value);
         return writeValueByType(target, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new HashMap<>();
@@ -194,29 +223,38 @@ public class Iec104Collector extends AbstractIce104Collector {
                 boolean success = doWritePoint(entry.getKey(), entry.getValue());
                 results.put(entry.getKey().getPointId(), success);
             } catch (Exception e) {
-                log.error("Write IEC104 point failed: {}", entry.getKey().getPointName(), e);
+                log.error("写入 IEC104 点位 失败:{}", entry.getKey().getPointName(), e);
                 results.put(entry.getKey().getPointId(), false);
             }
         }
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
             subscribedPointMap.put(point.getPointId(), point);
         }
-        log.info("Subscribed IEC104 points, size={}", points.size());
+        log.info("IEC104 点位订阅完成, 数量={}", points.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
             subscribedPointMap.remove(point.getPointId());
         }
-        log.info("Unsubscribed IEC104 points, size={}", points.size());
+        log.info("IEC104 点位取消订阅完成, 数量={}", points.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -236,6 +274,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         int ca = resolveCommandCommonAddress(unitId, params);
@@ -339,20 +380,26 @@ public class Iec104Collector extends AbstractIce104Collector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        spontaneousPointIndex.clear();
+        突发上送PointIndex.clear();
         for (DataPoint point : points) {
             try {
                 Iec104Address address = resolveReadAddress(point);
-                spontaneousPointIndex.put(resolvePointKey(point, address), point);
+                突发上送PointIndex.put(resolvePointKey(point, address), point);
             } catch (Exception e) {
-                log.debug("Skip IEC104 push index for invalid point: {}", point != null ? point.getPointId() : null, e);
+                log.debug("跳过 IEC104 推送索引 for 无效 点位:{}", point != null ? point.getPointId() : null, e);
             }
         }
-        log.info("IEC104 points loaded, size={}", points.size());
+        log.info("IEC104 点位 已加载，数量={}", points.size());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     protected void handleSpontaneous(int commonAddress, Integer typeId, int ioa, ASduType type, Object value, ASdu asdu) {
         super.handleSpontaneous(commonAddress, typeId, ioa, type, value, asdu);
@@ -362,6 +409,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleConnectionClosed(IOException e) {
         connected = false;
         connectionStatus = "DISCONNECTED";
@@ -372,20 +422,29 @@ public class Iec104Collector extends AbstractIce104Collector {
         if (e != null) {
             handleError("Connection closed with error", e);
         } else {
-            log.info("IEC104 connection closed");
+            log.info("IEC104 连接 已关闭");
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleError(String message, Exception e) {
         totalErrorCount.incrementAndGet();
         lastError = e.getMessage();
         log.error(message, e);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean maybeTriggerSingleInterrogation(DataPoint point, Iec104Address address) {
         return maybeTriggerSingleInterrogation(point, address, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean maybeTriggerSingleInterrogation(DataPoint point,
                                                     Iec104Address address,
                                                     Set<InterrogationKey> triggered) {
@@ -412,6 +471,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveQualifier(DataPoint point) {
         if (point == null || iec104Config == null) {
             return null;
@@ -438,6 +500,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return resolveSingleInterrogationQualifier(raw).orElse(null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveCommonAddress(DataPoint point) {
         Object cfg = point.getAdditionalConfig("commonAddress");
         if (cfg != null) {
@@ -452,10 +517,16 @@ public class Iec104Collector extends AbstractIce104Collector {
         return String.valueOf(commonAddress);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec104Address resolveReadAddress(DataPoint point) {
         return Iec104Utils.parseAddress(resolveCommonAddress(point), point.getAddress());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveWriteCommonAddress(DataPoint point) {
         Object cfg = point.getAdditionalConfig("writeCommonAddress");
         if (cfg != null) {
@@ -464,6 +535,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return resolveCommonAddress(point);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveWriteAddressValue(DataPoint point) {
         Object cfg = point.getAdditionalConfig("writeAddress");
         if (cfg instanceof String text && !text.isBlank()) {
@@ -472,10 +546,16 @@ public class Iec104Collector extends AbstractIce104Collector {
         return point.getAddress();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec104Address resolveWriteAddress(DataPoint point) {
         return Iec104Utils.parseTypedAddress(resolveWriteCommonAddress(point), resolveWriteAddressValue(point), "write");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private WriteTarget resolveWriteTarget(DataPoint point) {
         rejectWriteTimeTagConfig(point);
         Iec104Address address = resolveWriteAddress(point);
@@ -487,6 +567,9 @@ public class Iec104Collector extends AbstractIce104Collector {
                 getAdditionalBoolean(point, "writeSelect", false));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rejectWriteTimeTagConfig(DataPoint point) {
         if (point != null && point.getAdditionalConfig("writeTimeTag") != null) {
             String pointName = point != null ? point.getPointName() : "unknown";
@@ -496,6 +579,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec104Type resolveWriteType(DataPoint point, Iec104Address address) {
         Iec104Type type = Iec104Utils.resolveType(address.getTypeId());
         if (type == null) {
@@ -513,6 +599,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return type;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer extractReadConfiguredTypeId(DataPoint point) {
         if (point == null) {
             return null;
@@ -532,6 +621,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveConfiguredTypeId(Object raw) {
         if (raw == null) {
             return null;
@@ -539,11 +631,14 @@ public class Iec104Collector extends AbstractIce104Collector {
         try {
             return Iec104Utils.resolveTypeIdToken(raw);
         } catch (IllegalArgumentException e) {
-            log.debug("Invalid IEC104 typeId token: {}", raw);
+            log.debug("IEC104 typeId 标记无效：{}", raw);
             return null;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolvePointTypeId(DataPoint point, Iec104Address address) {
         if (address != null && address.getTypeId() != null) {
             return Iec104Type.canonicalTypeId(address.getTypeId());
@@ -551,6 +646,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return extractReadConfiguredTypeId(point);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec104Key resolvePointKey(DataPoint point, Iec104Address address) {
         return new Iec104Key(
                 address.getCommonAddress(),
@@ -558,16 +656,22 @@ public class Iec104Collector extends AbstractIce104Collector {
                 address.getIoAddress());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private DataPoint findSpontaneousPoint(int commonAddress, Integer typeId, int ioa) {
         if (typeId != null) {
-            DataPoint exact = spontaneousPointIndex.get(new Iec104Key(commonAddress, typeId, ioa));
+            DataPoint exact = 突发上送PointIndex.get(new Iec104Key(commonAddress, typeId, ioa));
             if (exact != null) {
                 return exact;
             }
         }
-        return spontaneousPointIndex.get(new Iec104Key(commonAddress, null, ioa));
+        return 突发上送PointIndex.get(new Iec104Key(commonAddress, null, ioa));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveCommandCommonAddress(int unitId, Map<String, Object> params) {
         Integer override = null;
         if (params != null) {
@@ -588,6 +692,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return commonAddress;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer parseInteger(Object raw) {
         if (raw == null) {
             return null;
@@ -595,7 +702,7 @@ public class Iec104Collector extends AbstractIce104Collector {
         try {
             return Iec104Utils.parseIntegerValue(raw);
         } catch (IllegalArgumentException e) {
-            log.debug("Invalid IEC104 integer: {}", raw);
+            log.debug("IEC104 整数值无效：{}", raw);
             return null;
         }
     }
@@ -613,6 +720,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return parsed != null ? parsed : defaultValue;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private int requireIntParameter(Map<String, Object> params, String key) {
         Integer parsed = parseInteger(params.get(key));
         if (parsed == null) {
@@ -640,6 +750,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return Iec104Utils.parseBooleanValue(value);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Object requireValue(Map<String, Object> params, String key) {
         if (!params.containsKey(key) || params.get(key) == null) {
             throw new IllegalArgumentException("Missing IEC104 parameter: " + key);
@@ -647,6 +760,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return params.get(key);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Object requireFirstValue(Map<String, Object> params, String... keys) {
         for (String key : keys) {
             if (params.containsKey(key) && params.get(key) != null) {
@@ -656,10 +772,16 @@ public class Iec104Collector extends AbstractIce104Collector {
         throw new IllegalArgumentException("Missing IEC104 parameter, expected one of: " + String.join(", ", keys));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Iec104Address requireCommandAddress(int commonAddress, Map<String, Object> params) {
         return new Iec104Address(commonAddress, requireIntParameter(params, "address"), null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private WriteTarget commandWriteTarget(int commonAddress,
                                            Map<String, Object> params,
                                            Iec104Type type,
@@ -673,6 +795,9 @@ public class Iec104Collector extends AbstractIce104Collector {
                 select);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeValueByType(WriteTarget target, Object value) throws Exception {
         return switch (target.type().valueKind()) {
             case SINGLE_COMMAND -> writeSingleCommand(target, value);
@@ -685,6 +810,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         };
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeSingleCommand(WriteTarget target, Object value) throws Exception {
         boolean commandValue = Iec104Utils.parseBooleanValue(value);
         IeSingleCommand command = new IeSingleCommand(commandValue, target.ql(), target.select());
@@ -695,6 +823,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeDoubleCommand(WriteTarget target, Object value) throws Exception {
         IeDoubleCommand.DoubleCommandState state = Iec104Utils.parseDoubleCommandState(value);
         IeDoubleCommand command = new IeDoubleCommand(state, target.ql(), target.select());
@@ -705,6 +836,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeSetPointCommand(WriteTarget target, Object value) throws Exception {
         return switch (target.type().valueKind()) {
             case SETPOINT_NORMALIZED -> writeNormalizedSetpoint(target, Iec104Utils.parseFloatValue(value));
@@ -715,6 +849,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         };
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeNormalizedSetpoint(WriteTarget target, float value) throws Exception {
         IeNormalizedValue normalizedValue = new IeNormalizedValue(value);
         IeQualifierOfSetPointCommand qualifier = new IeQualifierOfSetPointCommand(target.ql(), target.select());
@@ -726,6 +863,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeScaledSetPoint(WriteTarget target, int scaledValue) throws Exception {
         IeScaledValue scaled = new IeScaledValue(scaledValue);
         IeQualifierOfSetPointCommand qualifier = new IeQualifierOfSetPointCommand(target.ql(), target.select());
@@ -737,6 +877,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeShortFloatSetPoint(WriteTarget target, float value) throws Exception {
         IeShortFloat shortFloat = new IeShortFloat(value);
         IeQualifierOfSetPointCommand qualifier = new IeQualifierOfSetPointCommand(target.ql(), target.select());
@@ -748,6 +891,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeRegulatingStepCommand(WriteTarget target, Object value) throws Exception {
         IeRegulatingStepCommand.StepCommandState state = Iec104Utils.parseStepCommandState(value);
         IeRegulatingStepCommand command = new IeRegulatingStepCommand(state, target.ql(), target.select());
@@ -759,6 +905,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeBitStringCommand(WriteTarget target, Object value) throws Exception {
         int bitString = Iec104Utils.parseIntegerValue(value);
         IeBinaryStateInformation bits = new IeBinaryStateInformation(bitString);
@@ -770,6 +919,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> void sendPointCommand(Iec104Address address,
                                       T payload,
                                       boolean timeTag,
@@ -782,6 +934,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> void sendSetPointCommand(Iec104Address address,
                                          T payload,
                                          IeQualifierOfSetPointCommand qualifier,
@@ -795,6 +950,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private IeTime56 currentTime() {
         return new IeTime56(System.currentTimeMillis());
     }
@@ -803,28 +961,55 @@ public class Iec104Collector extends AbstractIce104Collector {
         return deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN";
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("IEC104");
         connection = null;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface PlainPointCommand<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         void send(int commonAddress, int ioAddress, T payload) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface TimedPointCommand<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         void send(int commonAddress, int ioAddress, T payload, IeTime56 time) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface PlainSetPointCommand<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         void send(int commonAddress, int ioAddress, T payload, IeQualifierOfSetPointCommand qualifier) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface TimedSetPointCommand<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         void send(int commonAddress,
                   int ioAddress,
                   T payload,
@@ -832,11 +1017,17 @@ public class Iec104Collector extends AbstractIce104Collector {
                   IeTime56 time) throws Exception;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PendingRead(DataPoint point,
                                Iec104Address address,
                                CompletableFuture<Object> future) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record WriteTarget(Iec104Address address, Iec104Type type, int ql, boolean select) {
     }
 }

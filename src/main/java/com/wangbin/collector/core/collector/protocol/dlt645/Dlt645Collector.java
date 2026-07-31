@@ -33,6 +33,9 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return "DLT645_2007";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection connectionConfig = requireConnectionConfig();
@@ -48,18 +51,27 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("DL/T 645");
         session = null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         byte[] payload = requireSession().readData(resolveIdentifier(point));
         return decodePointValue(point, payload);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -76,6 +88,9 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         DeviceConnection connectionConfig = requireConnectionConfig();
@@ -92,6 +107,9 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return requireSession().writeData(resolveIdentifier(point), password, operatorCode, encoded);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -106,17 +124,26 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         throw new UnsupportedOperationException("DL/T 645 不支持原生订阅");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         subscribedPointMap.clear();
         subscribedPointsSet.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
@@ -131,6 +158,9 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = command == null ? "" : command.trim().toLowerCase(Locale.ROOT);
@@ -140,11 +170,17 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         throw new UnsupportedOperationException("不支持的 DL/T 645 命令: " + command);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         // DL/T 645 每个 DI 独立请求，同一批次内由采集器按 DI 复用响应。
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object decodePointValue(DataPoint point, byte[] payload) throws Dlt645ProtocolException {
         String valueType = pointConfig(point, "valueType", "BCD");
         String dataFormat = pointConfig(point, "dataFormat", null);
@@ -152,10 +188,16 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return Dlt645DataCodec.decodeValue(payload, valueType, dataFormat, valueIndex);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveIdentifier(DataPoint point) {
         return Dlt645DataCodec.normalizeDataIdentifier(point.getAddress());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Dlt645Session requireSession() {
         if (session == null || !session.isOpen()) {
             throw new IllegalStateException("DL/T 645 会话尚未连接");
@@ -163,11 +205,17 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         return session;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String pointConfig(DataPoint point, String key, String defaultValue) {
         Object value = pointConfigMap(point).get(key);
         return value == null || value.toString().isBlank() ? defaultValue : value.toString();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int pointIntConfig(DataPoint point, String key, int defaultValue) {
         Object value = pointConfigMap(point).get(key);
         if (value instanceof Number number) {
@@ -180,6 +228,9 @@ public class Dlt645Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> pointConfigMap(DataPoint point) {
         return point.getAdditionalConfig() == null ? Collections.emptyMap() : point.getAdditionalConfig();
     }

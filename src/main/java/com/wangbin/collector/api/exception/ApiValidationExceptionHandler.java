@@ -17,6 +17,9 @@ import java.util.Map;
 @RestControllerAdvice
 public class ApiValidationExceptionHandler {
 
+    /**
+     * 处理当前业务流程。
+     */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleConstraintViolation(
             ConstraintViolationException exception) {
@@ -27,6 +30,9 @@ public class ApiValidationExceptionHandler {
                 .body(ApiResponse.error("请求参数校验失败", errors));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleMethodArgumentNotValid(
             MethodArgumentNotValidException exception) {

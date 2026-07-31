@@ -21,6 +21,9 @@ public enum FinsCommand {
     private final int mainCommand;
     private final int subCommand;
 
+    /**
+     * 创建当前组件实例。
+     */
     FinsCommand(int mainCommand, int subCommand) {
         this.mainCommand = mainCommand;
         this.subCommand = subCommand;
@@ -34,6 +37,9 @@ public enum FinsCommand {
         return subCommand;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Map<String, Object> decode(byte[] payload) {
         byte[] safePayload = payload == null ? new byte[0] : payload;
         Map<String, Object> result = new LinkedHashMap<>();
@@ -50,6 +56,9 @@ public enum FinsCommand {
         return result;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static FinsCommand fromValue(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("FINS命令不能为空");
@@ -63,6 +72,9 @@ public enum FinsCommand {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void decodeControllerData(byte[] payload, Map<String, Object> result) {
         if (payload.length >= 20) {
             result.put("controllerModel", ascii(payload, 0, 20));
@@ -72,6 +84,9 @@ public enum FinsCommand {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void decodeCpuStatus(byte[] payload, Map<String, Object> result) {
         if (payload.length > 0) {
             result.put("status", payload[0] & 0xFF);
@@ -87,6 +102,9 @@ public enum FinsCommand {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void decodeClock(byte[] payload, Map<String, Object> result) {
         if (payload.length < 6) {
             return;
@@ -103,10 +121,16 @@ public enum FinsCommand {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int unsignedShort(byte[] payload, int offset) {
         return ((payload[offset] & 0xFF) << 8) | (payload[offset + 1] & 0xFF);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private int fromBcd(byte value) {
         int unsigned = value & 0xFF;
         int high = (unsigned >> 4) & 0x0F;
@@ -117,6 +141,9 @@ public enum FinsCommand {
         return high * 10 + low;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String ascii(byte[] payload, int offset, int length) {
         byte[] section = Arrays.copyOfRange(payload, offset, Math.min(payload.length, offset + length));
         return new String(section, StandardCharsets.US_ASCII).replace("\0", "").trim();

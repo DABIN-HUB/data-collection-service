@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Diff between two config snapshots.
+ * Diff between two 配置 snapshots.
  */
 public record ConfigDiff(
         Set<String> addedDevices,
@@ -23,6 +23,9 @@ public record ConfigDiff(
         changedConnections = immutableSet(changedConnections);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static ConfigDiff between(ConfigSnapshot previousSnapshot, ConfigSnapshot currentSnapshot) {
         ConfigSnapshot previous = previousSnapshot != null ? previousSnapshot : ConfigSnapshot.empty();
         ConfigSnapshot current = currentSnapshot != null ? currentSnapshot : ConfigSnapshot.empty();
@@ -60,6 +63,9 @@ public record ConfigDiff(
         return new ConfigDiff(addedDevices, removedDevices, changedDevices, changedPoints, changedConnections);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasChanges() {
         return !addedDevices.isEmpty()
                 || !removedDevices.isEmpty()
@@ -68,6 +74,9 @@ public record ConfigDiff(
                 || !changedConnections.isEmpty();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Set<String> deviceEventIds() {
         LinkedHashSet<String> deviceIds = new LinkedHashSet<>(addedDevices);
         deviceIds.addAll(changedDevices);
@@ -75,6 +84,9 @@ public record ConfigDiff(
         return Collections.unmodifiableSet(deviceIds);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Set<String> immutableSet(Set<String> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptySet();

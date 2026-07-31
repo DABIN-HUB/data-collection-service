@@ -13,8 +13,14 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class BacnetWriteRequestBuilder {
 
+    /**
+     * 创建并返回业务对象。
+     */
     public BacnetWritePropertyRequest buildSingle(DataPoint point,
                                                   BacnetAddress address,
                                                   Object value,
@@ -35,6 +41,9 @@ public class BacnetWriteRequestBuilder {
                 .build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public BacnetWritePropertyMultipleRequest buildMultiple(Map<DataPoint, Object> points,
                                                             Function<DataPoint, BacnetAddress> addressResolver,
                                                             BiFunction<DataPoint, BacnetAddress, String> valueTypeResolver,

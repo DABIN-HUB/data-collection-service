@@ -24,19 +24,31 @@ public class AlinkLifecycleCodec {
     private final ObjectMapper objectMapper;
     private final AlinkTopicBuilder topicBuilder;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlinkLifecycleCodec(ObjectMapper objectMapper, AlinkTopicBuilder topicBuilder) {
         this.objectMapper = objectMapper;
         this.topicBuilder = topicBuilder;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public LifecycleMessage encodeGatewayOnline(CloudDeviceIdentity gatewayIdentity) {
         return encodeGatewayState(gatewayIdentity, STATE_ONLINE);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public LifecycleMessage encodeGatewayOffline(CloudDeviceIdentity gatewayIdentity) {
         return encodeGatewayState(gatewayIdentity, STATE_OFFLINE);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public LifecycleMessage encodeGatewayState(CloudDeviceIdentity gatewayIdentity, int state) {
         validateIdentity(gatewayIdentity, "网关身份无效，无法构建设备生命周期消息");
         return new LifecycleMessage(
@@ -44,6 +56,9 @@ public class AlinkLifecycleCodec {
                 encodeBody(Map.of("state", state)));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public LifecycleMessage encodeSubDeviceState(CloudDeviceIdentity gatewayIdentity,
                                                  List<CloudDeviceIdentity> subDeviceIdentities,
                                                  int state) {
@@ -67,6 +82,9 @@ public class AlinkLifecycleCodec {
                 encodeBody(Map.of("subDevices", subDevices)));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private byte[] encodeBody(Map<String, Object> params) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("method", MessageConstant.MESSAGE_TYPE_STATE_UPDATE);
@@ -78,12 +96,18 @@ public class AlinkLifecycleCodec {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateIdentity(CloudDeviceIdentity identity, String message) {
         if (identity == null || !identity.valid()) {
             throw new IllegalArgumentException(message);
         }
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record LifecycleMessage(String topic, byte[] payload) {
     }
 }

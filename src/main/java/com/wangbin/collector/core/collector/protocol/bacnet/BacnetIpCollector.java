@@ -51,6 +51,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class BacnetIpCollector extends ConnectionBackedCollector {
 
@@ -86,6 +89,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return protocolCode();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -100,9 +106,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         configuredAddresses.clear();
         subscriptionBindings.clear();
         deviceSnapshotService.clear();
-        log.info("{} collector connected, deviceId={}, timeoutMs={}", protocolDisplayName(), deviceInfo.getDeviceId(), requestTimeoutMs);
+        log.info("{} 采集器 已连接, 设备={}, 超时毫秒={}", protocolDisplayName(), deviceInfo.getDeviceId(), requestTimeoutMs);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection(protocolDisplayName());
@@ -110,9 +119,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         subscriptionBindings.clear();
         configuredAddresses.clear();
         deviceSnapshotService.clear();
-        log.info("{} collector disconnected, deviceId={}", protocolDisplayName(), deviceInfo.getDeviceId());
+        log.info("{} 采集器 已断开, 设备={}", protocolDisplayName(), deviceInfo.getDeviceId());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
@@ -137,6 +149,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         checkConnection();
@@ -181,7 +196,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                     lastProcessResults.put(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception ex) {
-                    log.error("{} batch point process failed, deviceId={}, pointId={}", protocolDisplayName(),
+                    log.error("{} 批量 点位 处理失败, 设备={}, 点位={}", protocolDisplayName(),
                             deviceInfo.getDeviceId(), pointId, ex);
                     recordException(ex, point);
                     results.put(pointId, null);
@@ -200,12 +215,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         BacnetAddress address = requireAddress(point);
         return exchange(readPropertyRequest(address));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         Map<String, Object> values = new LinkedHashMap<>();
@@ -237,7 +258,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 readPlanByReadPropertyMultiple(plan, values);
             } catch (Exception ex) {
                 readPropertyMultipleFallbackCount.incrementAndGet();
-                log.warn("{} ReadPropertyMultiple failed, fallback to ReadProperty, deviceId={}, planPoints={}, error={}", protocolDisplayName(),
+                log.warn("{} ReadPropertyMultiple 失败, 降级到 ReadProperty, 设备={}, 计划点位数量={}, 错误={}", protocolDisplayName(),
                         deviceInfo.getDeviceId(),
                         plan.getPointPlans() != null ? plan.getPointPlans().size() : 0,
                         ex.getMessage());
@@ -248,6 +269,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
         return values;
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         BacnetAddress address = requireAddress(point);
@@ -263,6 +287,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -282,13 +309,13 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 return results;
             } catch (Exception ex) {
                 writePropertyMultipleFallbackCount.incrementAndGet();
-                log.warn("{} WritePropertyMultiple failed, fallback to WriteProperty, deviceId={}, pointCount={}, error={}",
+                log.warn("{} WritePropertyMultiple 失败, 降级到 WriteProperty, 设备={}, 点位数量={}, 错误={}",
                         protocolDisplayName(),
                         deviceInfo != null ? deviceInfo.getDeviceId() : null,
                         points.size(),
                         ex.getMessage());
                 if ((connectionAdapter == null || !connectionAdapter.isConnected()) && !attemptConnectionRecovery()) {
-                    log.warn("{} connection recovery before WriteProperty fallback failed, deviceId={}",
+                    log.warn("{} 在 WriteProperty 降级前恢复连接失败，设备={}",
                             protocolDisplayName(),
                             deviceInfo != null ? deviceInfo.getDeviceId() : null);
                 }
@@ -302,7 +329,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             try {
                 results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
             } catch (Exception ex) {
-                log.error("{} point write failed, deviceId={}, pointId={}", protocolDisplayName(),
+                log.error("{} 点位 写入 失败, 设备={}, 点位={}", protocolDisplayName(),
                         deviceInfo.getDeviceId(), point.getPointId(), ex);
                 recordException(ex, point);
                 results.put(point.getPointId(), false);
@@ -311,6 +338,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -329,6 +359,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -346,12 +379,15 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 unsubscribeBinding(binding);
                 subscriptionCancelCount.incrementAndGet();
             } catch (Exception ex) {
-                log.warn("{} unsubscribe failed, deviceId={}, pointId={}", protocolDisplayName(),
+                log.warn("{} 取消订阅失败, 设备={}, 点位={}", protocolDisplayName(),
                         deviceInfo.getDeviceId(), point.getPointId(), ex);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -410,6 +446,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = normalizeCommand(command);
@@ -426,6 +465,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         if (points == null) {
@@ -439,7 +481,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             try {
                 configuredAddresses.put(resolvePointCacheKey(point), BacnetAddressParser.parse(point));
             } catch (Exception ex) {
-                log.warn("Cache BACnet address failed, deviceId={}, pointId={}, address={}, error={}",
+                log.warn("缓存 BACnet address 失败, 设备={}, 点位={}, 地址={}, 错误={}",
                         deviceInfo != null ? deviceInfo.getDeviceId() : null,
                         point.getPointId(),
                         point.getAddress(),
@@ -448,6 +490,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     protected Object convertDataForWrite(DataPoint point, Object value) {
         if (value == null) {
@@ -464,6 +509,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return super.convertDataForWrite(point, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
         if (point == null) {
@@ -478,7 +526,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             ProcessResult processResult = buildProcessResult(point, address, rawValue, "cov", resolvedDeviceId);
             lastProcessResults.put(point.getPointId(), processResult);
             if (!processResult.isSuccess()) {
-                log.warn("{} pushed data quality check failed {}.{}, reason: {}", protocolDisplayName(),
+                log.warn("{} 推送数据质量检查失败 {}.{}, 原因:{}", protocolDisplayName(),
                         resolvedDeviceId, point.getPointName(), processResult.getMessage());
             }
             lastActivityTime = System.currentTimeMillis();
@@ -501,6 +549,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildScalarProcessResult(DataPoint point,
                                                    BacnetAddress address,
                                                    Object rawValue,
@@ -508,6 +559,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return buildProcessResult(point, address, rawValue, source, deviceInfo.getDeviceId());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildProcessResult(DataPoint point,
                                              BacnetAddress address,
                                              Object rawValue,
@@ -523,11 +577,14 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 this::convertData
         );
         if (!processResult.isSuccess()) {
-            log.warn("{} data quality check failed {}.{}, reason: {}", protocolDisplayName(),
+            log.warn("{} 数据质量检查失败 {}.{}, 原因:{}", protocolDisplayName(),
                     deviceId, point.getPointName(), processResult.getMessage());
         }
         return processResult;
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetReadPropertyResponse exchange(BacnetReadPropertyRequest request) throws Exception {
         try {
             return requireConnection().readProperty(request, requestTimeoutMs);
@@ -539,6 +596,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetReadPropertyMultipleResponse exchange(BacnetReadPropertyMultipleRequest request) throws Exception {
         try {
             return requireConnection().readPropertyMultiple(request, requestTimeoutMs);
@@ -550,6 +610,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void exchange(BacnetWritePropertyRequest request) throws Exception {
         try {
             requireConnection().writeProperty(request, requestTimeoutMs);
@@ -561,6 +624,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void exchange(BacnetWritePropertyMultipleRequest request) throws Exception {
         try {
             requireConnection().writePropertyMultiple(request, requestTimeoutMs);
@@ -572,6 +638,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void exchange(BacnetSubscribeCovRequest request) throws Exception {
         try {
             requireConnection().subscribeCov(request, requestTimeoutMs);
@@ -583,6 +652,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void exchange(BacnetSubscribeCovPropertyRequest request) throws Exception {
         try {
             requireConnection().subscribeCovProperty(request, requestTimeoutMs);
@@ -594,6 +666,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private BacnetAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
@@ -601,6 +676,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> BacnetAddressParser.parse(point));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private BacnetConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException(protocolDisplayName() + " connection has not been established");
@@ -608,6 +686,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private int requireRemoteDeviceInstance() {
         DeviceConnection runtimeConfig = getCurrentConnectionConfig();
         if (runtimeConfig == null) {
@@ -636,6 +717,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return Boolean.TRUE.equals(runtimeConfig.getBoolConfig("writePropertyMultipleEnabled", false));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private BacnetWritePropertyMultipleRequest buildWritePropertyMultipleRequest(Map<DataPoint, Object> points) {
         return writeRequestBuilder.buildMultiple(
                 points,
@@ -646,12 +730,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 requireRemoteDeviceInstance());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private void readSequentially(List<BacnetReadPointPlan> pointPlans, Map<String, Object> values) throws Exception {
         for (BacnetReadPointPlan pointPlan : pointPlans) {
             values.put(pointPlan.getPoint().getPointId(), doReadPoint(pointPlan.getPoint()));
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private void readPlanByReadPropertyMultiple(BacnetReadPropertyMultiplePlan plan,
                                                 Map<String, Object> values) throws Exception {
         BacnetReadPropertyMultipleRequest.BacnetReadPropertyMultipleRequestBuilder requestBuilder =
@@ -694,6 +784,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int nextInvokeId() {
         return invokeIdSequence.updateAndGet(current -> {
             int next = current + 1;
@@ -704,6 +797,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int nextSubscriberProcessIdentifier() {
         return subscriberProcessSequence.updateAndGet(current -> {
             int next = current + 1;
@@ -714,6 +810,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldInvalidateConnection(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
@@ -733,11 +832,14 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void invalidateConnection(Throwable cause) {
         if (!connected && connectionAdapter == null) {
             return;
         }
-        log.warn("Invalidate {} connection after protocol/transport failure, deviceId={}, error={}", protocolDisplayName(),
+        log.warn("作废{} 连接，原因=协议或传输失败, 设备={}, 错误={}", protocolDisplayName(),
                 deviceInfo != null ? deviceInfo.getDeviceId() : null,
                 cause != null ? cause.getMessage() : null);
         try {
@@ -747,7 +849,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 managedAdapter.disconnect();
             }
         } catch (Exception disconnectError) {
-            log.warn("Disconnect broken {} adapter failed, deviceId={}", protocolDisplayName(),
+            log.warn("断开异常 {} 适配器 失败, 设备={}", protocolDisplayName(),
                     deviceInfo != null ? deviceInfo.getDeviceId() : null, disconnectError);
         } finally {
             removeManagedConnection(protocolDisplayName());
@@ -756,6 +858,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             lastError = cause != null ? cause.getMessage() : lastError;
         }
     }
+    /**
+     * 维护注册或订阅关系。
+     */
     private BacnetSubscriptionService.SubscriptionBinding subscribePoint(DataPoint point, BacnetAddress address) throws Exception {
         return subscriptionService.subscribe(
                 point,
@@ -772,6 +877,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeBinding(BacnetSubscriptionService.SubscriptionBinding binding) throws Exception {
         subscriptionService.unsubscribe(
                 binding,
@@ -782,6 +890,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeIfAlreadyBound(List<DataPoint> points) throws Exception {
         List<DataPoint> existing = new ArrayList<>();
         for (DataPoint point : points) {
@@ -794,6 +905,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureNotificationListenerRegistered() {
         if (connectionAdapter != null) {
             connectionAdapter.setCovNotificationListener(this::handleCovNotification);
@@ -801,6 +915,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     @Override
     protected void checkConnection() {
         if (connected && connectionAdapter != null && connectionAdapter.isConnected()) {
@@ -812,6 +929,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         throw new IllegalStateException("设备未连接:" + (deviceInfo != null ? deviceInfo.getDeviceId() : null));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleCovNotification(BacnetCovNotification notification) {
         covNotificationCount.incrementAndGet();
         if (notification != null && notification.isConfirmed()) {
@@ -837,7 +957,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                         processResult.addMetadata("covTimeRemaining", notification.getTimeRemaining());
                     }
                 } catch (Exception ex) {
-                    log.warn("{} COV notification dispatch failed, deviceId={}, pointId={}", protocolDisplayName(),
+                    log.warn("{} COV 通知 分发 失败, 设备={}, 点位={}", protocolDisplayName(),
                             deviceInfo != null ? deviceInfo.getDeviceId() : null,
                             point != null ? point.getPointId() : null,
                             ex);
@@ -846,6 +966,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matchesNotification(BacnetCovNotification notification,
                                         BacnetCovNotification.PropertyValue propertyValue,
                                         BacnetAddress address) {
@@ -860,6 +983,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldUsePropertySubscription(DataPoint point, BacnetAddress address) {
         DeviceConnection connectionConfig = safeCurrentConnectionConfig();
         return subscriptionService.usePropertySubscription(
@@ -869,6 +995,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildProtocolMetrics() {
         Map<String, Object> protocolMetrics = new LinkedHashMap<>();
         protocolMetrics.put("configuredPointCount", configuredAddresses.size());
@@ -895,6 +1024,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return protocolMetrics;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean resolveConfirmedNotifications(DataPoint point) {
         Boolean pointValue = point.getAdditionalConfig("covConfirmedNotifications", null);
         if (pointValue != null) {
@@ -903,6 +1035,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return Boolean.TRUE.equals(currentOrRequiredConnectionConfig().getBoolConfig("covConfirmedNotifications", false));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveCovLifetimeSeconds(DataPoint point) {
         Integer pointValue = point.getAdditionalConfig("covLifetimeSeconds", null);
         if (pointValue != null && pointValue >= 0) {
@@ -915,6 +1050,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return 60;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Double resolveCovIncrement(DataPoint point) {
         Object value = point.getAdditionalConfig("covIncrement", null);
         if (value == null) {
@@ -933,6 +1071,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return Double.parseDouble(String.valueOf(value));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean shouldAutoSubscribePoint(DataPoint point) {
         if (point == null || !point.isEnabled()) {
             return false;
@@ -948,6 +1089,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return "SUBSCRIPTION".equals(normalized) || "EVENT".equals(normalized);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<DataPoint> filterAutoSubscriptionPoints(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
@@ -955,6 +1099,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return points.stream().filter(this::shouldAutoSubscribePoint).collect(Collectors.toList());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<DataPoint> filterPollingPoints(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
@@ -971,10 +1118,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return isCovEnabled(safeCurrentConnectionConfig());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldResubscribeOnReconnect() {
         return shouldResubscribeOnReconnect(safeCurrentConnectionConfig());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private synchronized boolean attemptConnectionRecovery() {
         if (deviceInfo == null) {
             return false;
@@ -999,6 +1152,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleAdapterReconnect() {
         if (!shouldResubscribeOnReconnect() || subscribedPointMap.isEmpty() || !isCovEnabled()) {
             return;
@@ -1012,13 +1168,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             covResubscribeCount.incrementAndGet();
         } catch (Exception ex) {
             covResubscribeFailureCount.incrementAndGet();
-            log.warn("{} resubscribe on reconnect failed, deviceId={}, pointCount={}",
+            log.warn("{} 重新订阅 on 重连 失败, 设备={}, 点位数量={}",
                     protocolDisplayName(),
                     deviceInfo != null ? deviceInfo.getDeviceId() : null,
                     points.size(),
                     ex);
         }
     }
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveWriteValueType(DataPoint point, BacnetAddress address, Map<String, Object> params) {
         if (params != null && params.containsKey("valueType") && params.get("valueType") != null) {
             return String.valueOf(params.get("valueType"));
@@ -1039,6 +1198,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return "AUTO";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveWritePriority(DataPoint point, Map<String, Object> params) {
         Object candidate = null;
         if (params != null) {
@@ -1056,6 +1218,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return Integer.parseInt(String.valueOf(candidate));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeReadPropertyCommand(Map<String, Object> params) throws Exception {
         BacnetAddress address = parseCommandAddress(params);
         BacnetReadPropertyResponse response = exchange(readPropertyRequest(address));
@@ -1066,6 +1231,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeReadPropertyMultipleCommand(Map<String, Object> params) throws Exception {
         List<String> addresses = parseCommandAddresses(params);
         Map<String, Object> values = new LinkedHashMap<>();
@@ -1080,6 +1248,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return values;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeWritePropertyCommand(Map<String, Object> params) throws Exception {
         BacnetAddress address = parseCommandAddress(params);
         if (!params.containsKey("value")) {
@@ -1105,10 +1276,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeDeviceInfoCommand() {
         return captureDeviceSnapshot().getDeviceInfo();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeWhoIsCommand() {
         Map<String, Object> result = new LinkedHashMap<>();
         BacnetRemoteDevice remoteDevice = connectionAdapter != null ? connectionAdapter.getRemoteDevice() : null;
@@ -1121,10 +1298,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private List<String> executeDiscoverObjectsCommand() {
         return captureDeviceSnapshot().getObjectList();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object safeReadDeviceProperty(BacnetPropertyIdentifier propertyIdentifier, Integer arrayIndex) {
         try {
             BacnetReadPropertyRequest request = BacnetReadPropertyRequest.builder()
@@ -1137,7 +1320,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                     .build();
             return exchange(request).getValue();
         } catch (Exception ex) {
-            log.debug("Read BACnet device property failed, deviceId={}, property={}, arrayIndex={}, error={}",
+            log.debug("读取 BACnet 设备 property 失败, 设备={}, property={}, arrayIndex={}, 错误={}",
                     deviceInfo != null ? deviceInfo.getDeviceId() : null,
                     propertyIdentifier.getName(),
                     arrayIndex,
@@ -1146,18 +1329,30 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Object safeReadDevicePropertyForSnapshot(BacnetPropertyIdentifier propertyIdentifier, Integer arrayIndex) {
         return safeReadDeviceProperty(propertyIdentifier, arrayIndex);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public int requireRemoteDeviceInstanceForSnapshot() {
         return requireRemoteDeviceInstance();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetDeviceSnapshot captureDeviceSnapshot() {
         return deviceSnapshotService.capture(this);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private BacnetReadPropertyRequest readPropertyRequest(BacnetAddress address) {
         return BacnetReadPropertyRequest.builder()
                 .objectType(BacnetObjectType.fromId(address.getObjectTypeId()))
@@ -1169,6 +1364,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private BacnetAddress parseCommandAddress(Map<String, Object> params) {
         Object address = firstPresent(params, "address", "bacnetAddress");
         if (address == null) {
@@ -1177,6 +1375,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return BacnetAddressParser.parse(String.valueOf(address));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> parseCommandAddresses(Map<String, Object> params) {
         Object addresses = firstPresent(params, "addresses", "bacnetAddresses");
         if (addresses instanceof List<?> list) {
@@ -1198,6 +1399,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("BACnet read_property_multiple command requires addresses");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeCommand(String command) {
         if (command == null || command.isBlank()) {
             return "";
@@ -1205,11 +1409,17 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return command.trim().toLowerCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DeviceConnection currentOrRequiredConnectionConfig() {
         DeviceConnection runtimeConfig = getCurrentConnectionConfig();
         return runtimeConfig != null ? runtimeConfig : requireConnectionConfig();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DeviceConnection safeCurrentConnectionConfig() {
         DeviceConnection runtimeConfig = getCurrentConnectionConfig();
         if (runtimeConfig != null) {
@@ -1226,10 +1436,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return connectionConfig != null && Boolean.TRUE.equals(connectionConfig.getBoolConfig("covEnabled", false));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldResubscribeOnReconnect(DeviceConnection connectionConfig) {
         return connectionConfig == null || !Boolean.FALSE.equals(connectionConfig.getBoolConfig("resubscribeOnReconnect", true));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRequestTimeout(DeviceConnection connection) {
         Integer apduTimeout = connection.getIntConfig("apduTimeout", null);
         if (apduTimeout == null || apduTimeout <= 0) {
@@ -1258,6 +1474,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return normalized.equals("BOOL") || normalized.equals("BOOLEAN") || normalized.equals("BINARY");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -1269,6 +1488,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return "true".equals(text) || "1".equals(text) || "on".equals(text) || "active".equals(text);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object firstPresent(Map<String, Object> map, String... keys) {
         if (map == null || keys == null) {
             return null;
@@ -1282,30 +1504,51 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected String protocolCode() {
         return "BACNET_IP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected String protocolDisplayName() {
         return "BACnet/IP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected String defaultTransportName() {
         return "UDP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected String driverName() {
         return "SELF_IMPLEMENTED_MINIMAL_PLUS";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected boolean supportsForeignDeviceRegistration() {
         return true;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected String resolveTransportName() {
         return connectionAdapter != null ? connectionAdapter.getTransportName() : defaultTransportName();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected String capabilityMessage() {
         StringBuilder message = new StringBuilder(protocolDisplayName())
                 .append(" supports polling, segmented APDU assembly, WriteProperty and COV subscriptions over ")
@@ -1316,6 +1559,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         return message.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected BacnetConnectionAdapter createBacnetConnectionAdapter(DeviceConnection desiredConfig) throws Exception {
         ConnectionAdapter<?> adapter = createManagedConnection(desiredConfig);
         if (!(adapter instanceof BacnetConnectionAdapter bacnetAdapter)) {
@@ -1330,6 +1576,9 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             throw ex;
         }
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     protected UnsupportedOperationException unsupported(String operation, String reason) {
         String message = protocolDisplayName() + " collector does not implement " + operation;
         if (reason != null && !reason.isBlank()) {

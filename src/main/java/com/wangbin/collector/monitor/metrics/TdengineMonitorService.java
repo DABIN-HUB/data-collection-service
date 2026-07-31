@@ -44,6 +44,9 @@ public class TdengineMonitorService {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private StorageMetricsSnapshot snapshot(boolean enabled,
                                             StorageMetricsSnapshot.Status status,
                                             String message,
@@ -56,6 +59,9 @@ public class TdengineMonitorService {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long elapsedMillis(long startTime) {
         return Math.max(0L, (System.nanoTime() - startTime) / 1_000_000L);
     }

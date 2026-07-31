@@ -49,6 +49,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
     private int interFrameDelay = 5;
 
     private final ModbusTransport transport = new ModbusTransport() {
+        /**
+         * 查询并返回业务数据。
+         */
         @Override
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
             PlcReadResponse response = await(requireConnection().getClient()
@@ -67,6 +70,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
             };
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleCoils(
                 int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
@@ -83,6 +89,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
             return true;
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleRegisters(int unitId, int startAddress, short[] registers) throws Exception {
             PlcWriteResponse response = await(requireConnection().getClient()
@@ -112,9 +121,12 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return "MODBUS_RTU";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
-        log.info("Starting PLC4X Modbus serial connection: {}", deviceInfo.getDeviceId());
+        log.info("Starting PLC4X Modbus 串口 连接:{}", deviceInfo.getDeviceId());
         DeviceConnection connectionConfig = requireConnectionConfig();
 
         interFrameDelay = connectionConfig.getInt("interFrameDelay", 5);
@@ -138,17 +150,23 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
                 Plc4xModbusRtuConnectionAdapter.class,
                 "PLC4X Modbus Serial");
 
-        log.info("PLC4X Modbus serial connected: port={} baud={} dataBits={} stopBits={} parity={}",
+        log.info("PLC4X Modbus 串口 已连接:端口={} baud={} dataBits={} stopBits={} parity={}",
                 serialPort, baudRate, dataBits, stopBits, parity.name());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         removeConnectionSilently();
         registerCache.clear();
-        log.info("PLC4X Modbus serial disconnected");
+        log.info("PLC4X Modbus 串口 已断开");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         String address = point.getAddress();
@@ -168,6 +186,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String address = point.getAddress();
@@ -193,6 +214,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = getBaseDeviceStatus(getProtocolType());
@@ -217,6 +241,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         Map<String, Object> safeParams = params != null ? params : Map.of();
@@ -234,6 +261,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         int quantity = toInt(params.getOrDefault("quantity", 1), 1);
@@ -252,6 +282,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         List<?> values = (List<?>) params.get("values");
@@ -272,6 +305,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         int quantity = toInt(params.getOrDefault("quantity", 1), 1);
@@ -286,6 +322,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         List<?> values = (List<?>) params.get("values");
@@ -310,11 +349,17 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private UnsupportedOperationException unsupportedSerialCommand(String command) {
         return new UnsupportedOperationException(
                 "PLC4X Modbus RTU串口连接不支持直接执行功能码命令: " + command);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeDiagnostic(int unitId) {
         Map<String, Object> result = new HashMap<>();
         result.put("protocol", getProtocolType());
@@ -342,15 +387,24 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int sanitizeUnitId(Integer unitIdValue) {
         return unitIdValue != null && unitIdValue > 0 ? unitIdValue : slaveId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean testConnection(int unitId) throws Exception {
         transport.read(unitId, RegisterType.HOLDING_REGISTER, 0, 1);
         return true;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveQuantity(RegisterType registerType, String dataType) {
         return switch (registerType) {
             case COIL, DISCRETE_INPUT -> 1;
@@ -358,6 +412,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object[] toRegisterWriteValues(short[] registers) {
         Object[] values = new Object[registers.length];
         for (int i = 0; i < registers.length; i++) {
@@ -366,6 +423,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -376,6 +436,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
             throw new IllegalStateException("PLC4X " + operation + " returned null response");
@@ -386,6 +449,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int toInt(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -396,6 +462,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return Integer.parseInt(String.valueOf(value));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
         T result = future.get(timeout, TimeUnit.MILLISECONDS);
         if (interFrameDelay > 0) {
@@ -404,6 +473,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return result;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Plc4xModbusRtuConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("PLC4X Modbus serial connection has not been established");
@@ -411,6 +483,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return connectionAdapter;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<Integer> collectUnitIds() {
         Set<Integer> unitIds = new LinkedHashSet<>();
         for (ModbusReadPlan plan : readPlans) {
@@ -422,11 +497,17 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         return new ArrayList<>(unitIds);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("PLC4X Modbus Serial");
         connectionAdapter = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     protected int resolveBatchUnitId(DataPoint point) {
         return sanitizeUnitId(resolveUnitId(point));

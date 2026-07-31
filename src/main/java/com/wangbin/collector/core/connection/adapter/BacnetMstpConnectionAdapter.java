@@ -22,6 +22,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<BacnetMstpClient>
         implements BacnetConnectionAdapter {
@@ -33,10 +36,16 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
     private volatile Consumer<BacnetCovNotification> covNotificationListener;
     private volatile Runnable reconnectListener;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetMstpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         serialChannel = createSerialChannel();
@@ -73,11 +82,14 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         statistics.put("implemented", true);
         statistics.put("transport", "MS/TP");
         statistics.put("message", "BACnet MS/TP serial adapter connected");
-        log.info("BACnet MS/TP adapter connected, deviceId={}, serialPort={}, localMac={}, remoteMac={}, baudRate={}",
+        log.info("BACnet MS/TP 适配器 已连接, 设备={}, 串口={}, localMac={}, 远端MAC={}, 波特率={}",
                 getDeviceId(), resolveSerialPort(), resolveLocalMacAddress(), remoteMacAddress, resolveBaudRate());
         notifyReconnectListener();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         BacnetMstpClient existingClient = client;
@@ -96,9 +108,12 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
             existingChannel.close();
         }
         remoteDevice = null;
-        log.info("BACnet MS/TP adapter disconnected, deviceId={}", getDeviceId());
+        log.info("BACnet MS/TP 适配器 已断开, 设备={}", getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (serialChannel == null || !serialChannel.isOpen() || client == null) {
@@ -106,6 +121,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
     }
@@ -133,6 +151,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         this.reconnectListener = listener;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception {
         BacnetReadPropertyResponse response = requireClient().readProperty(request,
@@ -143,6 +164,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return response;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                                 long timeoutMs) throws Exception {
@@ -154,6 +178,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return response;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void writeProperty(BacnetWritePropertyRequest request, long timeoutMs) throws Exception {
         requireClient().writeProperty(request,
@@ -162,6 +189,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         updateActivityTime();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
         requireClient().writePropertyMultiple(request,
@@ -170,6 +200,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCov(request,
@@ -178,6 +211,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public synchronized void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCovProperty(request,
@@ -186,6 +222,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         updateActivityTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         requireClient().acknowledgeConfirmedCovNotification(invokeId);
@@ -225,6 +264,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
     @Override
     public long getCrcErrorCount() { return tokenManager != null ? tokenManager.getCrcErrorCount() : 0L; }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected BacnetSerialChannel createSerialChannel() {
         return new JSerialCommBacnetSerialChannel(resolveSerialPort(),
                 resolveBaudRate(),
@@ -235,6 +277,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
                 resolveWriteTimeout());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected String resolveSerialPort() {
         String serialPort = config.getStringConfig("serialPort", null);
         if (serialPort != null && !serialPort.isBlank()) {
@@ -244,25 +289,40 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return host != null && !host.isBlank() ? host : "COM1";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveBaudRate() {
         Integer baudRate = config.getIntConfig("baudRate", null);
         return baudRate != null && baudRate > 0 ? baudRate : 38400;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveDataBits() {
         Integer dataBits = config.getIntConfig("dataBits", null);
         return dataBits != null && dataBits > 0 ? dataBits : 8;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveStopBits() {
         Integer stopBits = config.getIntConfig("stopBits", null);
         return stopBits != null && stopBits > 0 ? stopBits : 1;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected String resolveParity() {
         return config.getStringConfig("parity", "none");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveLocalMacAddress() {
         Integer localMac = config.getIntConfig("localMacAddress", null);
         if (localMac == null) {
@@ -274,6 +334,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return localMac;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveRemoteMacAddress() {
         Integer remoteMac = config.getIntConfig("remoteMacAddress", null);
         if (remoteMac == null) {
@@ -285,6 +348,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return remoteMac;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveRemoteDeviceInstance() {
         Integer remoteDeviceInstance = config.getIntConfig("remoteDeviceInstance", null);
         if (remoteDeviceInstance == null || remoteDeviceInstance < 0) {
@@ -293,6 +359,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return remoteDeviceInstance;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveReadTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -302,6 +371,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return timeout != null && timeout > 0 ? timeout : 5000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveWriteTimeout() {
         Integer writeTimeout = config.getWriteTimeout();
         if (writeTimeout != null && writeTimeout > 0) {
@@ -310,6 +382,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return resolveReadTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveApduTimeout() {
         Integer apduTimeout = config.getIntConfig("apduTimeout", null);
         if (apduTimeout == null || apduTimeout <= 0) {
@@ -318,6 +393,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return apduTimeout != null && apduTimeout > 0 ? apduTimeout : resolveReadTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveSegmentTimeout() {
         Integer segmentTimeout = config.getIntConfig("segmentTimeout", null);
         if (segmentTimeout == null || segmentTimeout <= 0) {
@@ -326,6 +404,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return segmentTimeout != null && segmentTimeout > 0 ? segmentTimeout : resolveApduTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveRequestRetries() {
         Integer retries = config.getIntConfig("retries", null);
         if (retries == null) {
@@ -334,26 +415,41 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return retries != null && retries >= 0 ? retries : 0;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveMaxMaster() {
         Integer maxMaster = config.getIntConfig("maxMaster", null);
         return maxMaster != null && maxMaster >= 0 ? maxMaster : 127;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveMaxInfoFrames() {
         Integer maxInfoFrames = config.getIntConfig("maxInfoFrames", null);
         return maxInfoFrames != null && maxInfoFrames > 0 ? maxInfoFrames : 1;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveTokenClaimTimeoutMs() {
         Integer timeout = config.getIntConfig("tokenClaimTimeoutMs", null);
         return timeout != null && timeout > 0 ? timeout : 1000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveReplyTimeoutMs() {
         Integer timeout = config.getIntConfig("replyTimeoutMs", null);
         return timeout != null && timeout > 0 ? timeout : resolveApduTimeout();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private BacnetMstpClient requireClient() {
         if (client == null) {
             throw new IllegalStateException("BACnet MS/TP client is not initialized");
@@ -361,6 +457,9 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         return client;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void notifyReconnectListener() {
         Runnable listener = reconnectListener;
         if (listener == null) {
@@ -369,7 +468,7 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         try {
             listener.run();
         } catch (Exception ex) {
-            log.warn("BACnet MS/TP reconnect listener failed, deviceId={}", getDeviceId(), ex);
+            log.warn("BACnet MS/TP 重连 listener 失败, 设备={}", getDeviceId(), ex);
         }
     }
 }

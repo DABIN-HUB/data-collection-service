@@ -24,10 +24,16 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
     private String baseUri;
     private MessageBatchDispatcher<CoapRequest<?>> dispatcher;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CoapConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         this.baseUri = resolveBaseUri();
@@ -37,6 +43,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         log.info("CoAP 客户端已建立: {}", baseUri);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (baseClient != null) {
@@ -67,6 +76,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         return baseClient;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public CoapClient createClient(String uri) {
         String resolved = uri;
         if (resolved == null || resolved.isBlank()) {
@@ -75,6 +87,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         return new CoapClient(resolved);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> CompletableFuture<T> submit(CoapCallable<T> callable) {
         Objects.requireNonNull(callable, "callable");
         if (dispatcher == null) {
@@ -92,6 +107,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         return request.future;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> T execute(CoapCallable<T> callable, long timeoutMillis) throws Exception {
         long effectiveTimeout = timeoutMillis > 0 ? timeoutMillis : getRequestTimeout();
         try {
@@ -101,31 +119,49 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("CoAP 适配器不支持裸数据发送，请使用 execute/submit");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         // 由上层采集器按需探测
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // 默认无认证
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveBaseUri() {
         if (config.getUrl() != null && !config.getUrl().isBlank()) {
             return config.getUrl();
@@ -134,6 +170,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         return scheme + "://" + config.getHost() + ":" + config.getPort();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startDispatcher() {
         if (dispatcher != null) {
             return;
@@ -147,6 +186,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         dispatcher.start();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void stopDispatcher() {
         if (dispatcher != null) {
             dispatcher.stop();
@@ -154,6 +196,9 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processRequests(List<CoapRequest<?>> requests) {
         if (requests == null || requests.isEmpty()) {
             return;
@@ -167,27 +212,48 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
         }
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface CoapCallable<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         T call(CoapConnectionAdapter adapter) throws Exception;
     }
 
+    /**
+     * 承载当前模块的数据传输内容。
+     */
     private static final class CoapRequest<T> {
         private final CoapCallable<T> callable;
         private final CompletableFuture<T> future = new CompletableFuture<>();
 
+        /**
+         * 创建当前组件实例。
+         */
         private CoapRequest(CoapCallable<T> callable) {
             this.callable = callable;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void complete(T value) {
             future.complete(value);
         }
 
+        /**
+         * 构造标准业务结果。
+         */
         private void fail(Throwable throwable) {
             future.completeExceptionally(throwable);
         }
 
+        /**
+         * 处理当前业务流程。
+         */
         private void run(CoapConnectionAdapter adapter) {
             try {
                 complete(callable.call(adapter));

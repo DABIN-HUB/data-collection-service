@@ -10,10 +10,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 public class BacnetDeviceSnapshotService {
 
     private final Map<String, Object> propertyCache = new ConcurrentHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetDeviceSnapshot capture(BacnetIpCollector collector) {
         Map<String, Object> deviceInfo = new LinkedHashMap<>();
         deviceInfo.put("remoteDeviceInstance", collector.requireRemoteDeviceInstanceForSnapshot());
@@ -46,6 +52,9 @@ public class BacnetDeviceSnapshotService {
                 .build();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Object readAndCache(BacnetIpCollector collector,
                                BacnetPropertyIdentifier propertyIdentifier,
                                Integer arrayIndex) {
@@ -55,14 +64,23 @@ public class BacnetDeviceSnapshotService {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Object> currentPropertyCache() {
         return new LinkedHashMap<>(propertyCache);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clear() {
         propertyCache.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String cacheKey(int deviceInstance,
                             BacnetPropertyIdentifier propertyIdentifier,
                             Integer arrayIndex) {

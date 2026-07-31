@@ -9,7 +9,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import java.net.InetAddress;
 
 /**
- * IEC61850 connection adapter.
+ * IEC61850 连接 适配器.
  */
 public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientAssociation> {
 
@@ -17,6 +17,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
     private ClientAssociation association;
     private ClientEventListener clientEventListener;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec61850ConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
@@ -25,6 +28,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         this.clientEventListener = clientEventListener;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -44,6 +50,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         connectionParams.put("timeout", timeout);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (association != null) {
@@ -56,6 +65,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         clientSap = null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (association == null) {
@@ -63,9 +75,12 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // IEC61850 association handshake completes during connect.
+        // IEC61850 association handshake completes during 连接.
     }
 
     @Override
@@ -73,6 +88,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         return association;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveTimeout() {
         if (config.getTimeout() != null && config.getTimeout() > 0) {
             return config.getTimeout();

@@ -8,7 +8,7 @@ import java.io.DataOutputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Binary protocol encoder.
+ * 二进制协议编码器。
  */
 @Slf4j
 public class BinaryProtocolAdapter {
@@ -19,7 +19,7 @@ public class BinaryProtocolAdapter {
     private final JsonProtocolAdapter jsonAdapter = new JsonProtocolAdapter();
 
     /**
-     * Encode report data into the TCP binary packet defined in the mock docs.
+     * 将上报数据编码为 TCP 二进制报文。
      */
     public byte[] encodeToBinary(IoTMessage message) {
         if (message == null) {
@@ -60,11 +60,14 @@ public class BinaryProtocolAdapter {
             return baos.toByteArray();
 
         } catch (Exception e) {
-            log.error("Failed to encode binary message", e);
+            log.error("失败 to encode binary 消息", e);
             return null;
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildBodyBytes(IoTMessage message) {
         String jsonBody = jsonAdapter.encodeToJson(message);
         if (jsonBody == null) {
@@ -73,6 +76,9 @@ public class BinaryProtocolAdapter {
         return jsonBody.getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private byte[] toBytes(String value) {
         if (value == null || value.isEmpty()) {
             return new byte[0];

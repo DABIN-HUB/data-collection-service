@@ -32,10 +32,16 @@ public record SerialEndpoint(String portName,
         writeTimeoutMs = Math.max(1, writeTimeoutMs);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String physicalPortKey() {
         return portName.toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeParity(String value) {
         if (value == null || value.isBlank()) {
             return "NONE";

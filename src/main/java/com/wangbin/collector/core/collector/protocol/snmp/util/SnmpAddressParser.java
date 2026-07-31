@@ -9,9 +9,15 @@ import com.wangbin.collector.core.collector.protocol.snmp.domain.SnmpDataType;
  */
 public final class SnmpAddressParser {
 
+    /**
+     * 创建当前组件实例。
+     */
     private SnmpAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static SnmpAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("数据点不能为空");
@@ -30,6 +36,9 @@ public final class SnmpAddressParser {
         return new SnmpAddress(oid.trim(), dataType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static SnmpDataType resolveDataType(DataPoint point) {
         if (point.getAdditionalConfig("driverDataType") != null) {
             return SnmpDataType.fromText(point.getAdditionalConfig("driverDataType").toString());

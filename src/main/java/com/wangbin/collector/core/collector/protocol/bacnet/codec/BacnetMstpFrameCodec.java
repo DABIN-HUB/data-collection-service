@@ -5,14 +5,23 @@ import com.wangbin.collector.core.collector.protocol.bacnet.transport.BacnetSeri
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetMstpFrameCodec {
 
     public static final int PREAMBLE_FIRST = 0x55;
     public static final int PREAMBLE_SECOND = 0xFF;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetMstpFrameCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(BacnetMstpFrame frame) {
         byte[] payload = frame.data();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -42,6 +51,9 @@ public final class BacnetMstpFrameCodec {
         return out.toByteArray();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetMstpFrame decode(byte[] rawFrame) {
         if (rawFrame == null || rawFrame.length < 8) {
             throw new IllegalArgumentException("BACnet MS/TP frame is too short");
@@ -78,6 +90,9 @@ public final class BacnetMstpFrameCodec {
         return new BacnetMstpFrame(frameType, destinationAddress, sourceAddress, payload);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public static BacnetMstpFrame read(BacnetSerialChannel channel, long timeoutMs) throws Exception {
         long deadline = System.currentTimeMillis() + Math.max(1L, timeoutMs);
         int state = 0;
@@ -116,6 +131,9 @@ public final class BacnetMstpFrameCodec {
         return null;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readExact(BacnetSerialChannel channel, int length, long timeoutMs) throws Exception {
         byte[] buffer = new byte[length];
         int offset = 0;
@@ -131,6 +149,9 @@ public final class BacnetMstpFrameCodec {
         return offset == length ? buffer : null;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static Integer readByte(BacnetSerialChannel channel, long timeoutMs) throws Exception {
         byte[] buffer = new byte[1];
         int count = channel.read(buffer, 0, 1, Math.max(1L, timeoutMs));
@@ -140,8 +161,14 @@ public final class BacnetMstpFrameCodec {
         return Byte.toUnsignedInt(buffer[0]);
     }
 
+    /**
+     * 表示当前模块的异常语义。
+     */
     public static final class CrcException extends IllegalArgumentException {
 
+        /**
+         * 创建当前组件实例。
+         */
         public CrcException(String message) {
             super(message);
         }

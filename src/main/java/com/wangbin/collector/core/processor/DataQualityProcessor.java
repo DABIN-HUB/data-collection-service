@@ -29,10 +29,16 @@ public class DataQualityProcessor extends AbstractDataProcessor {
     private final AlertManager alertManager;
     private final AlarmStateTracker alarmStateTracker;
 
+    /**
+     * 创建当前组件实例。
+     */
     public DataQualityProcessor(AlertManager alertManager) {
         this(alertManager, new AlarmStateTracker());
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     @Autowired
     public DataQualityProcessor(AlertManager alertManager,
                                 AlarmStateTracker alarmStateTracker) {
@@ -44,11 +50,17 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         this.priority = 20;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
-        log.info("DataQualityProcessor initialized: {}", getName());
+        log.info("DataQualityProcessor 已初始化:{}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         if (rawValue == null) {
@@ -77,7 +89,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
             return result;
 
         } catch (Exception e) {
-            log.error("Quality check error: point={}, value={}", point.getPointName(), rawValue, e);
+            log.error("质量 check 错误:点位={}, 值={}", point.getPointName(), rawValue, e);
             ProcessResult error = ProcessResult.error(rawValue,
                     "quality check error: " + e.getMessage(), DataQuality.PROCESS_ERROR);
             applyAlarmMetadata(error, point,
@@ -86,6 +98,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildQualityError(DataPoint point, Object rawValue, String message, DataQuality quality) {
         ProcessResult result = ProcessResult.error(rawValue, message, quality);
         applyAlarmMetadata(result, point,
@@ -93,6 +108,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         return result;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private String validateRange(DataPoint point, Object value) {
         if (point == null || (point.getMinValue() == null && point.getMaxValue() == null)) {
             return null;
@@ -104,13 +122,13 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         }
 
         if (point.getMinValue() != null && doubleValue < point.getMinValue()) {
-            log.warn("Value below min: point={}, value={}, min={}",
+            log.warn("值 低于最小值:点位={}, 值={}, 最小值={}",
                     point.getPointName(), doubleValue, point.getMinValue());
             return "value below configured minimum";
         }
 
         if (point.getMaxValue() != null && doubleValue > point.getMaxValue()) {
-            log.warn("Value above max: point={}, value={}, max={}",
+            log.warn("值 高于最大值:点位={}, 值={}, 最大值={}",
                     point.getPointName(), doubleValue, point.getMaxValue());
             return "value above configured maximum";
         }
@@ -118,6 +136,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         return null;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private AlarmEvent checkAlarmRules(DataPoint point, Object value, ProcessContext context) {
         List<AlarmRule> rules = point.getAlarmRule();
         if (rules == null || rules.isEmpty()) {
@@ -141,7 +162,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
             if (transition.type() == AlarmTransitionType.ACTIVATED) {
                 String level = rule.getLevel() != null ? rule.getLevel() : "WARNING";
                 String message = rule.getDescription() != null ? rule.getDescription() : "alarm triggered";
-                log.warn("Alarm triggered: deviceId={}, point={}, rule={}, value={}",
+                log.warn("告警 triggered:设备={}, 点位={}, 规则={}, 值={}",
                         point.getDeviceId(), point.getPointName(), rule.getRuleName(), doubleValue);
                 return new AlarmEvent(ALARM_EVENT_TYPE, level, message,
                         rule.getRuleId(), rule.getRuleName(), transition.alarmId(), null,
@@ -160,6 +181,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         return null;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyAlarmMetadata(ProcessResult result,
                                     DataPoint point,
                                     AlarmEvent event,
@@ -200,6 +224,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         notifyAlert(point, event, context, result, rawValue);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void notifyAlert(DataPoint point,
                              AlarmEvent event,
                              ProcessContext context,
@@ -239,6 +266,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         alertManager.notifyAlert(notification, false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private double convertToDouble(Object value) {
         if (value == null) {
             return Double.NaN;
@@ -260,11 +290,17 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         return Double.NaN;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
-        log.info("DataQualityProcessor destroyed: {}", getName());
+        log.info("DataQualityProcessor 已销毁:{}", getName());
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class AlarmEvent {
         private final String type;
         private final String level;
@@ -277,6 +313,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         private final long occurredAt;
         private final long durationMillis;
 
+        /**
+         * 创建当前组件实例。
+         */
         private AlarmEvent(String type,
                            String level,
                            String message,
@@ -286,6 +325,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                     null, null, 0L, 0L, 0L);
         }
 
+        /**
+         * 创建当前组件实例。
+         */
         private AlarmEvent(String type,
                            String level,
                            String message,

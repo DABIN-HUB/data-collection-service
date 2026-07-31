@@ -56,6 +56,9 @@ public class ShadowController {
         return ApiResult.success(shadowManager.getShadowHistory(deviceId, limit));
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PostMapping("/{deviceId}/desired")
     public ApiResult<Map<String, Object>> updateDesired(@PathVariable String deviceId,
                                                         @RequestBody Map<String, Object> request) {
@@ -73,6 +76,9 @@ public class ShadowController {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long extractExpectedVersion(Map<String, Object> request) {
         if (request == null) {
             return null;
@@ -94,6 +100,9 @@ public class ShadowController {
         return null;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @DeleteMapping("/{deviceId}/desired")
     public ApiResult<Map<String, Object>> clearDesired(@PathVariable String deviceId,
                                                        @RequestParam(required = false) List<String> fields) {
@@ -104,6 +113,9 @@ public class ShadowController {
         return ApiResult.success(document);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> extractDesired(Map<String, Object> request) {
         if (request == null || request.isEmpty()) {
             return Map.of();
@@ -134,6 +146,9 @@ public class ShadowController {
         return direct;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> extractNestedMap(Object root, String key) {
         Map<String, Object> map = asStringObjectMap(root);
         if (map.isEmpty()) {
@@ -142,6 +157,9 @@ public class ShadowController {
         return asStringObjectMap(map.get(key));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> asStringObjectMap(Object value) {
         if (!(value instanceof Map<?, ?> map)) {
             return Map.of();

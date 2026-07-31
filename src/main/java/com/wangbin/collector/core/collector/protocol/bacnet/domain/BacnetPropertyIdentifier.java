@@ -8,6 +8,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetPropertyIdentifier {
 
     private static final Map<String, BacnetPropertyIdentifier> BY_NAME = new HashMap<>();
@@ -40,6 +43,9 @@ public final class BacnetPropertyIdentifier {
     private final String name;
     private final boolean known;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetPropertyIdentifier(int id, String name, boolean known) {
         this.id = id;
         this.name = name;
@@ -58,10 +64,16 @@ public final class BacnetPropertyIdentifier {
         return known;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Collection<BacnetPropertyIdentifier> knownValues() {
         return Collections.unmodifiableCollection(KNOWN_VALUES.values());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetPropertyIdentifier fromToken(String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("BACnet property identifier cannot be empty");
@@ -82,6 +94,9 @@ public final class BacnetPropertyIdentifier {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetPropertyIdentifier fromId(int id) {
         BacnetPropertyIdentifier value = BY_ID.get(id);
         if (value != null) {
@@ -90,6 +105,9 @@ public final class BacnetPropertyIdentifier {
         return new BacnetPropertyIdentifier(id, "property#" + id, false);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean equals(Object other) {
         if (this == other) {
@@ -101,16 +119,25 @@ public final class BacnetPropertyIdentifier {
         return id == that.id;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public int hashCode() {
         return Objects.hash(id);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public String toString() {
         return name;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private static BacnetPropertyIdentifier registerKnown(int id, String name) {
         BacnetPropertyIdentifier value = new BacnetPropertyIdentifier(id, name, true);
         BY_ID.put(id, value);
@@ -119,6 +146,9 @@ public final class BacnetPropertyIdentifier {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer parseDynamicToken(String normalized, String prefix) {
         if (normalized.startsWith(prefix) && normalized.length() > prefix.length()) {
             return Integer.parseInt(normalized.substring(prefix.length()));
@@ -126,6 +156,9 @@ public final class BacnetPropertyIdentifier {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalize(String token) {
         return token.trim()
                 .replace("-", "")

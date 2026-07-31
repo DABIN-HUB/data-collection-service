@@ -6,6 +6,9 @@ import lombok.Getter;
 
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 @AllArgsConstructor
 public class ModbusReadPlan {

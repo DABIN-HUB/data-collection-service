@@ -4,6 +4,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Configuration
 public class RedisScriptConfig {
 
@@ -33,7 +36,7 @@ public class RedisScriptConfig {
     public DefaultRedisScript<Long> lockScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setScriptText(
-                // SET key value NX PX timeout
+                // Redis SET 命令使用 NX 和 PX 参数实现带超时的互斥写入。
                 "if redis.call('setnx', KEYS[1], ARGV[1]) == 1 then " +
                         "    redis.call('pexpire', KEYS[1], ARGV[2]) " +
                         "    return 1 " +

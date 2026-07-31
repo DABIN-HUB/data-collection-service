@@ -5,6 +5,9 @@ package com.wangbin.collector.core.collector.protocol.iec101.domain;
  */
 public record Iec101PointAddress(Integer typeId, int informationObjectAddress) {
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec101PointAddress parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("IEC101 点位地址不能为空");
@@ -16,6 +19,9 @@ public record Iec101PointAddress(Integer typeId, int informationObjectAddress) {
         return new Iec101PointAddress(Iec101Type.parse(parts[0]).typeId(), parseNumber(parts[1]));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseNumber(String value) {
         String normalized = value.trim();
         int result = normalized.startsWith("0x") || normalized.startsWith("0X")

@@ -32,6 +32,9 @@ public class Iec101Bus {
     private final int interFrameDelayMs;
     private final Iec101LinkStateMachine linkState = new Iec101LinkStateMachine();
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec101Bus(SharedSerialChannelManager.Lease lease,
                      Iec101LinkConfig config,
                      int timeoutMs,
@@ -44,6 +47,9 @@ public class Iec101Bus {
         this.interFrameDelayMs = Math.max(0, interFrameDelayMs);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void resetLink(int linkAddress) throws Exception {
         lease.execute(channel -> {
             Iec101Frame request = fixedRequest(
@@ -55,6 +61,9 @@ public class Iec101Bus {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void requestLinkStatus(int linkAddress) throws Exception {
         lease.execute(channel -> {
             Iec101Frame response = exchange(channel,
@@ -65,6 +74,9 @@ public class Iec101Bus {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<byte[]> sendAsdu(int linkAddress, byte[] asdu, int maxClassPolls) throws Exception {
         return lease.execute(channel -> {
             List<byte[]> responses = new ArrayList<>();
@@ -89,6 +101,9 @@ public class Iec101Bus {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<byte[]> requestClass(int linkAddress, boolean classOne) throws Exception {
         return lease.execute(channel -> {
             List<byte[]> responses = new ArrayList<>();
@@ -102,6 +117,9 @@ public class Iec101Bus {
         return lease.isOpen();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Iec101Frame requestClassLocked(SerialChannel channel,
                                            int linkAddress,
                                            boolean classOne) throws Exception {
@@ -110,6 +128,9 @@ public class Iec101Bus {
         return exchange(channel, request, true);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Iec101Frame exchange(SerialChannel channel,
                                  Iec101Frame request,
                                  boolean frameCountConfirmed) throws Exception {
@@ -136,6 +157,9 @@ public class Iec101Bus {
         throw new Iec101ProtocolException("IEC101 链路请求失败，已达到最大重试次数", lastFailure);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void collectUserData(Iec101Frame response,
                                  int linkAddress,
                                  List<byte[]> target) throws Iec101ProtocolException {
@@ -147,6 +171,9 @@ public class Iec101Bus {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateAcknowledgement(Iec101Frame response,
                                          int linkAddress) throws Iec101ProtocolException {
         validateSecondaryResponse(response, linkAddress);
@@ -156,6 +183,9 @@ public class Iec101Bus {
         throw new Iec101ProtocolException("IEC101 链路复位未收到确认");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSecondaryResponse(Iec101Frame response,
                                            int linkAddress) throws Iec101ProtocolException {
         if (response.type() == Iec101FrameType.SINGLE_ACK) {
@@ -169,6 +199,9 @@ public class Iec101Bus {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Iec101Frame fixedRequest(int control, int linkAddress) {
         return new Iec101Frame(Iec101FrameType.FIXED, control, linkAddress, new byte[0]);
     }

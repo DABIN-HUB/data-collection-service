@@ -41,6 +41,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetIpUdpClient implements AutoCloseable {
 
@@ -65,6 +68,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetIpUdpClient(DatagramSocket socket, InetSocketAddress remoteAddress) throws Exception {
         this.socket = socket;
         this.remoteAddress = remoteAddress;
@@ -78,6 +84,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         this.covNotificationHandler = covNotificationHandler;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request,
                                                    long timeoutMs,
                                                    long segmentTimeoutMs,
@@ -90,6 +99,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
                 frame -> BacnetReadPropertyResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                    long timeoutMs,
                                                                    long segmentTimeoutMs,
@@ -102,6 +114,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
                 frame -> BacnetReadPropertyMultipleResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writeProperty(BacnetWritePropertyRequest request,
                               long timeoutMs,
                               int retries) throws Exception {
@@ -113,6 +128,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writePropertyMultiple(BacnetWritePropertyMultipleRequest request,
                                       long timeoutMs,
                                       int retries) throws Exception {
@@ -124,6 +142,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCov(BacnetSubscribeCovRequest request,
                              long timeoutMs,
                              int retries) throws Exception {
@@ -135,6 +156,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request,
                                      long timeoutMs,
                                      int retries) throws Exception {
@@ -146,10 +170,16 @@ public class BacnetIpUdpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         send(BacnetConfirmedCovNotificationCodec.encodeAck(invokeId), remoteAddress);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void registerForeignDevice(InetSocketAddress bbmdAddress,
                                       int ttlSeconds,
                                       long timeoutMs,
@@ -165,6 +195,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
                 });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetRemoteDevice probeRemoteDevice(int remoteDeviceInstance, int timeoutMs) {
         return BacnetRemoteDevice.builder()
                 .deviceInstance(remoteDeviceInstance)
@@ -192,12 +225,18 @@ public class BacnetIpUdpClient implements AutoCloseable {
         return segmentedResponseCount.get();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         running.set(false);
         receiverThread.interrupt();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T exchange(byte[] requestFrame,
                            InetSocketAddress targetAddress,
                            long timeoutMs,
@@ -206,16 +245,25 @@ public class BacnetIpUdpClient implements AutoCloseable {
                            FrameDecoder<T> decoder) throws Exception {
         String remoteLabel = targetAddress.getHostString() + ":" + targetAddress.getPort();
         return requestSession.execute(new BacnetRequestSession.RequestExchange<>() {
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void beforeAttempt() {
                 responseQueue.clear();
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void sendRequest() throws Exception {
                 send(requestFrame, targetAddress);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public byte[] pollResponse(long timeout, TimeUnit unit, int resolvedSegmentTimeoutMs) throws Exception {
                 byte[] response = responseQueue.poll(timeout, unit);
@@ -233,11 +281,17 @@ public class BacnetIpUdpClient implements AutoCloseable {
                                 send(BacnetSegmentSupport.encodeSegmentAck(invokeId, sequenceNumber, proposedWindowSize), targetAddress));
             }
 
+            /**
+             * 解析或转换业务数据。
+             */
             @Override
             public T decode(byte[] response) throws Exception {
                 return decoder.decode(response);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public String timeoutMessage(int resolvedTimeoutMs) {
                 return "BACnet/IP receive timed out after " + resolvedTimeoutMs + "ms";
@@ -245,15 +299,24 @@ public class BacnetIpUdpClient implements AutoCloseable {
         }, timeoutMs, segmentTimeoutMs, retries, "BACnet/IP request remote=" + remoteLabel);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void send(byte[] frame) throws Exception {
         send(frame, remoteAddress);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void send(byte[] frame, InetSocketAddress targetAddress) throws Exception {
         DatagramPacket packet = new DatagramPacket(frame, frame.length, targetAddress);
         socket.send(packet);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void receiveLoop() {
         while (running.get()) {
             DatagramPacket packet = new DatagramPacket(new byte[MAX_FRAME_SIZE], MAX_FRAME_SIZE);
@@ -263,10 +326,10 @@ public class BacnetIpUdpClient implements AutoCloseable {
                 System.arraycopy(packet.getData(), packet.getOffset(), data, 0, packet.getLength());
                 dispatchIncoming(data);
             } catch (SocketTimeoutException ignored) {
-                // Poll loop.
+                // 轮询循环。
             } catch (Exception ex) {
                 if (running.get() && !socket.isClosed()) {
-                    log.warn("BACnet/IP UDP receive loop stopped unexpectedly, remote={}:{}",
+                    log.warn("BACnet/IP UDP 接收循环 异常停止, 远端={}:{}",
                             remoteAddress.getHostString(), remoteAddress.getPort(), ex);
                 }
                 if (socket.isClosed()) {
@@ -276,6 +339,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchIncoming(byte[] frame) {
         if (frame == null || frame.length == 0) {
             return;
@@ -286,13 +352,16 @@ public class BacnetIpUdpClient implements AutoCloseable {
             return;
         }
         if (isOtherUnconfirmedRequest(frame)) {
-            log.debug("Ignore unrelated BACnet unconfirmed frame, remote={}:{}",
+            log.debug("忽略无关的 BACnet 未确认帧, 远端={}:{}",
                     remoteAddress.getHostString(), remoteAddress.getPort());
             return;
         }
         responseQueue.offer(frame);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleCovNotification(byte[] frame) {
         clientSupport.handleCovNotification(
                 frame,
@@ -341,6 +410,9 @@ public class BacnetIpUdpClient implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void skipNpduAddresses(ByteBuffer buffer, int control) {
         boolean destinationSpecified = (control & 0x20) != 0;
         boolean sourceSpecified = (control & 0x08) != 0;
@@ -366,8 +438,14 @@ public class BacnetIpUdpClient implements AutoCloseable {
             }
         }
     }
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface FrameDecoder<T> {
+        /**
+         * 解析或转换业务数据。
+         */
         T decode(byte[] frame) throws Exception;
     }
 }

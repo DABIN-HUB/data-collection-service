@@ -231,8 +231,8 @@ public class ConfigManager {
 
     /**
      * 获取点位信息并重置数据自适应时间
-     * @param deviceId
-     * @return
+     * @param deviceId 本地设备 ID
+     * @return 点位列表
      */
     public List<DataPoint> getDataPointsAndAdaptiveConfig(String deviceId) {
         List<DataPoint> dataPoints = getDataPoints(deviceId);
@@ -522,16 +522,25 @@ public class ConfigManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String calculateConfigVersion() {
         return Integer.toUnsignedString(Objects.hash(
                 deviceCache, connectionCache, pointCache), 16);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> void restoreCache(Map<String, T> target, Map<String, T> backup) {
         target.clear();
         target.putAll(backup);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateImportContext(DeviceContext context,
                                        Set<String> deviceIds,
                                        Map<String, List<DataPoint>> normalizedPoints) {
@@ -604,7 +613,7 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
-            log.info("Local temporary device config saved: {}, points={}", deviceId, safePoints.size());
+            log.info("本地临时设备配置已保存：{}，点位={}", deviceId, safePoints.size());
             return true;
         } finally {
             lock.writeLock().unlock();
@@ -612,7 +621,7 @@ public class ConfigManager {
     }
 
     /**
-     * Delete only local temporary device configs. Remote-synced configs are protected.
+     * 只删除本地临时设备配置，远端同步配置不允许通过该入口删除。
      */
     public boolean deleteLocalDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
@@ -637,7 +646,7 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
-            log.info("Local temporary device config deleted: {}", deviceId);
+            log.info("本地临时设备配置已删除：{}", deviceId);
             return true;
         } finally {
             lock.writeLock().unlock();
@@ -686,10 +695,10 @@ public class ConfigManager {
     }
 
     /**
-     * Force reload of device-related configs, used before manual start requests.
+     * 强制重新加载设备相关配置，用于手动启动前刷新最新设备信息。
      *
-     * @param deviceId device identifier
-     * @return true if full config is available after refresh, otherwise false
+     * @param deviceId 设备标识
+     * @return 刷新后完整设备配置是否可用
      */
     public boolean refreshDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
@@ -774,6 +783,9 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private List<DeviceContext> snapshotLocalTemporaryContexts() {
         if (deviceContextCache.isEmpty()) {
             return Collections.emptyList();
@@ -787,6 +799,9 @@ public class ConfigManager {
         return snapshots;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void restoreLocalTemporaryContexts(List<DeviceContext> contexts) {
         if (CollectionUtils.isEmpty(contexts)) {
             return;
@@ -799,7 +814,7 @@ public class ConfigManager {
             }
             String deviceId = device.getDeviceId();
             if (deviceCache.containsKey(deviceId)) {
-                log.warn("Skip restoring local temporary device because remote config now exists: {}", deviceId);
+                log.warn("跳过恢复本地临时设备，原因=远端配置已存在：{}", deviceId);
                 continue;
             }
             deviceCache.put(deviceId, device);
@@ -812,10 +827,13 @@ public class ConfigManager {
             restored++;
         }
         if (restored > 0) {
-            log.info("Restored {} local temporary device configs after remote sync", restored);
+            log.info("远端同步后已恢复本地临时设备配置，数量={}", restored);
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateLocalDevice(DeviceInfo device, String deviceId) {
         if (!StringUtils.hasText(deviceId)) {
             throw new IllegalArgumentException("deviceId is required");
@@ -828,6 +846,9 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateLocalPoints(String deviceId, List<DataPoint> points) {
         if (CollectionUtils.isEmpty(points)) {
             throw new IllegalArgumentException("at least one data point is required for local device: " + deviceId);
@@ -848,6 +869,9 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void normalizeLocalDevice(DeviceInfo device, DeviceInfo existing) {
         Date now = new Date();
         device.setDeviceId(normalizeDeviceId(device.getDeviceId()));
@@ -872,6 +896,9 @@ public class ConfigManager {
         device.setTemporaryConfig(true);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void normalizeLocalConnection(DeviceInfo device, DeviceConnection connection) {
         connection.setDeviceId(device.getDeviceId());
         connection.setDeviceName(device.getDeviceName());
@@ -903,6 +930,9 @@ public class ConfigManager {
         connection.setUpdateTime(now);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void normalizeLocalPoints(DeviceInfo device, List<DataPoint> points) {
         Date now = new Date();
         for (DataPoint point : points) {
@@ -939,6 +969,9 @@ public class ConfigManager {
         normalizeDataPointCollectionPolicy(device, points);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removePointCloudIdentity(Map<String, Object> additionalConfig) {
         if (additionalConfig == null || additionalConfig.isEmpty()) {
             return;
@@ -950,6 +983,9 @@ public class ConfigManager {
         additionalConfig.remove("cloudBindings");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void normalizeDataPointCollectionPolicy(DeviceInfo device, List<DataPoint> points) {
         if (CollectionUtils.isEmpty(points)) {
             return;
@@ -987,6 +1023,9 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long normalizePositive(Long value, long defaultValue) {
         return value != null && value > 0 ? value : defaultValue;
     }
@@ -997,6 +1036,9 @@ public class ConfigManager {
                 && Boolean.TRUE.equals(device.getTemporaryConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeDeviceId(String deviceId) {
         return deviceId != null ? deviceId.trim() : null;
     }

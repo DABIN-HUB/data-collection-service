@@ -15,6 +15,9 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "collector.config", name = "loader", havingValue = "file")
@@ -32,11 +35,17 @@ public class FileConfigLoader implements ConfigLoader {
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public List<DeviceInfo> loadAllDevices() {
         return readList(devicesPath, DeviceInfo.class);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public DeviceInfo loadDevice(String deviceId) {
         return loadAllDevices().stream()
@@ -45,11 +54,17 @@ public class FileConfigLoader implements ConfigLoader {
                 .orElse(null);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public List<DataPoint> loadDataPoints(String deviceId) {
         return readList(resolveChildFile(pointsDir, deviceId), DataPoint.class);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public DeviceConnection loadConnectionConfig(String deviceId) {
         String file = resolveChildFile(connectionsDir, deviceId);
@@ -63,11 +78,14 @@ public class FileConfigLoader implements ConfigLoader {
             }
             return objectMapper.readValue(path.toFile(), DeviceConnection.class);
         } catch (Exception e) {
-            log.error("load file connection failed, deviceId={}, file={}", deviceId, file, e);
+            log.error("load file 连接 失败, 设备={}, file={}", deviceId, file, e);
             return null;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveChildFile(String directory, String deviceId) {
         if (directory == null || directory.isBlank() || deviceId == null || deviceId.isBlank()) {
             return null;
@@ -75,6 +93,9 @@ public class FileConfigLoader implements ConfigLoader {
         return Path.of(directory, deviceId + ".json").toString();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private <T> List<T> readList(String file, Class<T> elementType) {
         if (file == null || file.isBlank()) {
             return Collections.emptyList();
@@ -86,7 +107,7 @@ public class FileConfigLoader implements ConfigLoader {
             }
             return objectMapper.readerForListOf(elementType).readValue(path.toFile());
         } catch (Exception e) {
-            log.error("load file config list failed, file={}", file, e);
+            log.error("load file 配置 list 失败, file={}", file, e);
             return Collections.emptyList();
         }
     }

@@ -15,11 +15,17 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Configuration
 public class ThreadPoolConfig {
 
     private final int cpuCores = Runtime.getRuntime().availableProcessors();
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ThreadFactory buildNamedThreadFactory(String prefix, boolean daemon) {
         return new ThreadFactoryBuilder()
                 .setNameFormat(prefix + "-%d")
@@ -28,6 +34,9 @@ public class ThreadPoolConfig {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(name = "timeSliceScheduler", destroyMethod = "shutdown")
     public ScheduledExecutorService timeSliceScheduler() {
         int poolSize = Math.max(2, cpuCores / 4);
@@ -43,6 +52,9 @@ public class ThreadPoolConfig {
         return executor;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(name = "batchDispatcherExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor batchDispatcherExecutor() {
         return new ThreadPoolExecutor(
@@ -55,6 +67,9 @@ public class ThreadPoolConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(name = "asyncCollectorExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor asyncCollectorExecutor() {
         return new ThreadPoolExecutor(
@@ -67,6 +82,9 @@ public class ThreadPoolConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(name = "dataProcessorExecutor", destroyMethod = "shutdown")
     public ThreadPoolExecutor dataProcessorExecutor() {
         return new ThreadPoolExecutor(
@@ -79,6 +97,9 @@ public class ThreadPoolConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("reportExecutor")
     public Executor reportExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -97,6 +118,9 @@ public class ThreadPoolConfig {
         return executor;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("taskScheduler")
     public ThreadPoolTaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
@@ -111,6 +135,9 @@ public class ThreadPoolConfig {
         return scheduler;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("monitorExecutor")
     public ScheduledExecutorService monitorExecutor() {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
@@ -125,6 +152,9 @@ public class ThreadPoolConfig {
         return executor;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(name = "heartbeatExecutor", destroyMethod = "shutdown")
     public ExecutorService heartbeatExecutor() {
         return new ThreadPoolExecutor(
@@ -137,6 +167,9 @@ public class ThreadPoolConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("ioIntensiveExecutor")
     public ExecutorService ioIntensiveExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors() * 2;
@@ -154,6 +187,9 @@ public class ThreadPoolConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("cpuIntensiveExecutor")
     public ExecutorService cpuIntensiveExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors();

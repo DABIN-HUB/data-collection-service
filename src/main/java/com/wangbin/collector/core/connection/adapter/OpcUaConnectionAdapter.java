@@ -54,7 +54,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * OPC UA connection adapter backed by Milo {@link OpcUaClient}.
+ * OPC UA 连接 适配器 backed by Milo {@link OpcUaClient}.
  */
 @Slf4j
 public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClient> {
@@ -71,10 +71,16 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
     private String securityPolicy;
     private MessageSecurityMode securityMode;
 
+    /**
+     * 创建当前组件实例。
+     */
     public OpcUaConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         this.endpointUrl = resolveEndpointUrl();
@@ -117,11 +123,17 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         metrics.setStatus(getStatus());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         cleanupClient();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (client == null) {
@@ -138,9 +150,12 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // OPC UA authentication handled during connection handshake.
+        // OPC UA 认证 handled during 连接 handshake.
     }
 
     @Override
@@ -148,6 +163,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return client;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveEndpointUrl() {
         if (config.getUrl() != null && !config.getUrl().isBlank()) {
             return config.getUrl();
@@ -164,6 +182,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         throw new IllegalArgumentException("OPC UA endpointUrl is required");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveSecurityPolicy() {
         String text = config.getStringConfig("securityPolicy", "None");
         if (text.startsWith(OPC_POLICY_URI_PREFIX)) {
@@ -177,6 +198,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return text;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private MessageSecurityMode resolveSecurityMode() {
         String text = firstNonBlank(
                 config.getStringConfig("securityMode", null),
@@ -189,6 +213,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return MessageSecurityMode.None;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Long timeout = config.getLongConfig("requestTimeoutMs", null);
         if (timeout == null || timeout <= 0) {
@@ -206,6 +233,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return Math.max(MIN_TIMEOUT_MS, timeout);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveConnectTimeout() {
         Long timeout = config.getLongConfig("connectTimeoutMs", null);
         if ((timeout == null || timeout <= 0) && config.getConnectTimeout() != null && config.getConnectTimeout() > 0) {
@@ -217,6 +247,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return Math.max(MIN_TIMEOUT_MS, timeout);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<EndpointDescription> discoverEndpoints(String url) throws Exception {
         long timeout = Math.max(MIN_TIMEOUT_MS, resolveRequestTimeout());
         try {
@@ -229,6 +262,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private EndpointDescription selectEndpoint(List<EndpointDescription> endpoints) {
         if (endpoints == null || endpoints.isEmpty()) {
             String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
@@ -245,6 +281,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return endpoints.get(0);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private IdentityProvider resolveIdentityProvider(EndpointDescription endpoint, ClientKeyMaterial clientKeyMaterial) {
         AuthType authType = resolveAuthType();
         switch (authType) {
@@ -277,6 +316,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean supportsIdentityToken(EndpointDescription endpoint, UserTokenType targetType) {
         UserTokenPolicy[] policies = endpoint.getUserIdentityTokens();
         if (policies == null || policies.length == 0) {
@@ -290,18 +332,24 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return false;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void cleanupClient() {
         if (client != null) {
             try {
                 client.disconnect();
             } catch (Exception e) {
-                log.warn("Failed to disconnect OPC UA client", e);
+                log.warn("失败 to 断开 OPC UA client", e);
             } finally {
                 client = null;
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheNamespaceInfo() {
         if (client == null) {
             return;
@@ -318,6 +366,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         connectionParams.put("namespaceIndex", indexNumber.intValue());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CertificateValidator resolveCertificateValidator() throws IOException {
         boolean trustAll = Boolean.TRUE.equals(config.getBoolConfig("trustAllServerCert", false));
         if (trustAll) {
@@ -341,6 +392,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return new DefaultClientCertificateValidator(trustListManager, quarantine);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Path resolveSecurityBaseDir() throws IOException {
         String key = config.getConnectionId();
         if (key == null || key.isBlank()) {
@@ -352,6 +406,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return baseDir;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyClientCertificates(OpcUaClientConfigBuilder builder, ClientKeyMaterial material) {
         boolean secureChannel = securityPolicy != null &&
                 !SecurityPolicy.None.getUri().equalsIgnoreCase(securityPolicy);
@@ -365,6 +422,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private ClientKeyMaterial loadClientKeyMaterial() throws Exception {
         String pathText = config.getStringConfig("clientCertPath", null);
         if (pathText == null || pathText.isBlank()) {
@@ -384,6 +444,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         throw CollectorException.configException("不支持的客户端证书格式: " + path, currentDeviceId(), null);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private ClientKeyMaterial loadPkcs12Material(Path path, String password) throws Exception {
         char[] pwd = password != null ? password.toCharArray() : new char[0];
         KeyStore keyStore = KeyStore.getInstance("PKCS12");
@@ -416,6 +479,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return new ClientKeyMaterial(new KeyPair(x509Chain[0].getPublicKey(), privateKey), x509Chain);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private ClientKeyMaterial loadPemMaterial(Path path) throws Exception {
         String text = Files.readString(path, StandardCharsets.UTF_8);
         Matcher certMatcher = CERT_PATTERN.matcher(text);
@@ -437,10 +503,16 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return new ClientKeyMaterial(new KeyPair(chain[0].getPublicKey(), privateKey), chain);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String stripWhitespace(String text) {
         return text.replaceAll("\\s+", "");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private AuthType resolveAuthType() {
         String raw = config.getStringConfig("authType", AuthType.ANONYMOUS.name());
         if (raw == null || raw.isBlank()) {
@@ -449,11 +521,14 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         try {
             return AuthType.valueOf(raw.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
-            log.warn("Unknown authType '{}', fallback to ANONYMOUS", raw);
+            log.warn("未知认证类型 '{}', 降级到 ANONYMOUS", raw);
             return AuthType.ANONYMOUS;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Credentials resolveCredentials() {
         String username = config.getUsername();
         String password = config.getPassword();
@@ -465,6 +540,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return new Credentials(username, password);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -477,6 +555,9 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String currentDeviceId() {
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
             return deviceInfo.getDeviceId();
@@ -484,14 +565,26 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         return config.getDeviceId();
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record ClientKeyMaterial(KeyPair keyPair, X509Certificate[] certificateChain) {
+        /**
+         * 执行当前业务逻辑。
+         */
         X509Certificate leafCertificate() {
             return certificateChain[0];
         }
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record Credentials(String username, String password) {}
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     private enum AuthType {
         ANONYMOUS,
         USERNAME,

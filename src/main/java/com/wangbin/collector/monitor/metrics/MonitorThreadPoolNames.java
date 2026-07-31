@@ -25,6 +25,9 @@ public final class MonitorThreadPoolNames {
             "ioIntensiveExecutor",
             "cpuIntensiveExecutor");
 
+    /**
+     * 创建当前组件实例。
+     */
     private MonitorThreadPoolNames() {
     }
 }

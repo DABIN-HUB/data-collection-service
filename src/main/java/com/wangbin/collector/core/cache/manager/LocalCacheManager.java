@@ -39,6 +39,9 @@ public class LocalCacheManager extends AbstractCacheManager {
     private Cache<String, CacheData<?>> cache;
     private final Map<String, CacheKey> keyMapping = new ConcurrentHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public LocalCacheManager() {
         super("LOCAL_CAFFEINE", 1);
     }
@@ -48,11 +51,14 @@ public class LocalCacheManager extends AbstractCacheManager {
             (key, value, cause) -> {
                 if (key != null) {
                     keyMapping.remove(key);
-                    log.debug("本地缓存条目被移除: key={}, cause={}, value={}",
+                    log.debug("本地缓存条目被移除: 键={}, 原因={}, 值={}",
                             key, cause, value != null ? value.getDataSummary() : "null");
                 }
             };
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         // 使用具体的泛型类型
@@ -66,10 +72,13 @@ public class LocalCacheManager extends AbstractCacheManager {
 
         cache = caffeine.build();
 
-        log.info("本地缓存管理器初始化完成: maxSize={}, expireAfterWrite={}s, expireAfterAccess={}s",
+        log.info("本地缓存管理器初始化完成: 最大数量={}, 写入后过期秒数={}s, 访问后过期秒数={}s",
                 maxSize, expireAfterWrite, expireAfterAccess);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         if (cache != null) {
@@ -80,6 +89,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         log.info("本地缓存管理器已销毁");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected <T> boolean doPut(CacheKey key, T value, long expireTime) throws Exception {
         String cacheKey = key.getFullKey();
@@ -96,6 +108,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     @SuppressWarnings("unchecked")
     protected <T> T doGet(CacheKey key) throws Exception {
@@ -119,13 +134,16 @@ public class LocalCacheManager extends AbstractCacheManager {
         try {
             return (T) cacheData.getValue();
         } catch (ClassCastException e) {
-            log.warn("缓存值类型转换失败: key={}, expected={}, actual={}",
+            log.warn("缓存值类型转换失败: 键={}, 期望={}, 实际={}",
                     key.getKey(), cacheData.getValue().getClass().getName(),
                     e.getMessage());
             return null;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doDelete(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -134,6 +152,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected int doDeleteByPattern(String pattern) throws Exception {
         int deletedCount = 0;
@@ -154,6 +175,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return deletedCount;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExists(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -161,6 +185,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return cacheData != null && !cacheData.isExpired();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExpire(CacheKey key, long expireTime) throws Exception {
         String cacheKey = key.getFullKey();
@@ -180,6 +207,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doGetExpire(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -192,22 +222,34 @@ public class LocalCacheManager extends AbstractCacheManager {
         return cacheData.getRemainingTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doClear() throws Exception {
         cache.invalidateAll();
         keyMapping.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doSize() throws Exception {
         return cache.estimatedSize();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys() throws Exception {
         return new HashSet<>(keyMapping.values());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys(String pattern) throws Exception {
         Set<CacheKey> result = new HashSet<>();

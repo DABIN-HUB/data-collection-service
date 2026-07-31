@@ -20,6 +20,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,9 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
     private final TelemetryStreamProperties properties;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public void append(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || processResult == null) {
@@ -47,7 +53,7 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         try {
             fields = TelemetryStreamRecordBuilder.build(objectMapper, deviceId, point, processResult, eventTs);
         } catch (JsonProcessingException e) {
-            log.error("serialize ProcessResult for stream failed, pointId={}", point != null ? point.getPointId() : null, e);
+            log.error("序列化 ProcessResult for 流 失败, 点位={}", point != null ? point.getPointId() : null, e);
             return;
         }
 
@@ -58,10 +64,13 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
             }
             xaddPlain(fields);
         } catch (Exception e) {
-            log.error("append telemetry to redis stream failed, key={}", properties.getKey(), e);
+            log.error("追加 遥测 to redis 流 失败, 键={}", properties.getKey(), e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Scheduled(fixedDelayString = "${spring.data.redis.stream.trim-interval-ms:${telemetry.stream.trim-interval-ms:5000}}")
     public void trimByTimeRetention() {
         if (!properties.isEnabled()
@@ -87,10 +96,13 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         try {
             redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XTRIM, args.toArray(new byte[0][])));
         } catch (Exception e) {
-            log.error("trim telemetry stream by time failed, key={}, minId={}", properties.getKey(), minId, e);
+            log.error("裁剪 遥测 流 by time 失败, 键={}, minId={}", properties.getKey(), minId, e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void xaddWithCountRetention(Map<String, String> fields) {
         if (properties.getMaxLength() <= 0) {
             xaddPlain(fields);
@@ -110,6 +122,9 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XADD, args.toArray(new byte[0][])));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void xaddPlain(Map<String, String> fields) {
         List<byte[]> args = new ArrayList<>();
         args.add(bytes(properties.getKey()));
@@ -119,6 +134,9 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XADD, args.toArray(new byte[0][])));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void appendFields(List<byte[]> args, Map<String, String> fields) {
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             args.add(bytes(entry.getKey()));
@@ -126,6 +144,9 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] bytes(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }

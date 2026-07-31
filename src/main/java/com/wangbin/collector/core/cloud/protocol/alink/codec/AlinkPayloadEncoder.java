@@ -23,14 +23,23 @@ public class AlinkPayloadEncoder {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlinkPayloadEncoder(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public byte[] encodeReportData(ReportData data) {
         return encodeReportData(data, CloudPayloadOptions.defaults());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public byte[] encodeReportData(ReportData data, CloudPayloadOptions options) {
         try {
             return objectMapper.writeValueAsBytes(toReportBody(data, options));
@@ -39,6 +48,9 @@ public class AlinkPayloadEncoder {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public byte[] encodeBody(Map<String, Object> body) {
         try {
             return objectMapper.writeValueAsBytes(body);
@@ -47,10 +59,16 @@ public class AlinkPayloadEncoder {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Map<String, Object> toReportBody(ReportData data) {
         return toReportBody(data, CloudPayloadOptions.defaults());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Map<String, Object> toReportBody(ReportData data, CloudPayloadOptions options) {
         CloudPayloadOptions payloadOptions = options == null ? CloudPayloadOptions.defaults() : options;
         Map<String, Object> body = new LinkedHashMap<>();
@@ -81,10 +99,16 @@ public class AlinkPayloadEncoder {
         return body;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public byte[] encodeUtf8(String text) {
         return text == null ? new byte[0] : text.getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildParams(ReportData data) {
         Map<String, Object> params = new LinkedHashMap<>();
         Object propertyPack = data.getMetadata() != null ? data.getMetadata().get(METADATA_PROPERTY_PACK) : null;
@@ -107,6 +131,9 @@ public class AlinkPayloadEncoder {
         return params;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveEventIdentifier(ReportData data) {
         if (data != null && data.getMetadata() != null) {
             Object configured = data.getMetadata().get("eventIdentifier");
@@ -123,6 +150,9 @@ public class AlinkPayloadEncoder {
         return "event";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object resolveEventValue(ReportData data) {
         Map<String, Object> value = new LinkedHashMap<>();
         if (data != null) {
@@ -137,6 +167,9 @@ public class AlinkPayloadEncoder {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> filterMetadata(ReportData data, CloudPayloadOptions options) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         if (data.getMetadata() == null || data.getMetadata().isEmpty()) {
@@ -154,6 +187,9 @@ public class AlinkPayloadEncoder {
         return metadata;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveCorrelationId(ReportData data) {
         if (data == null) {
             return UUID.randomUUID().toString();

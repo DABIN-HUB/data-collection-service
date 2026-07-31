@@ -29,6 +29,9 @@ public class DeviceData implements Serializable {
     // 数据质量统计（0-100）
     private int qualityScore;
 
+    /**
+     * 创建当前组件实例。
+     */
     public DeviceData() {
         this.pointDataMap = new HashMap<>();
         this.timestamp = System.currentTimeMillis();
@@ -36,6 +39,9 @@ public class DeviceData implements Serializable {
         this.qualityScore = 100;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public DeviceData(String deviceId) {
         this();
         this.deviceId = deviceId;

@@ -34,6 +34,9 @@ public class CacheMonitorService {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> cacheHealth() {
         try {
             return new LinkedHashMap<>(multiLevelCacheManager.getHealthStatus());
@@ -45,6 +48,9 @@ public class CacheMonitorService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long longValue(Map<String, Object> source, String key) {
         Object value = source.get(key);
         if (value instanceof Number number) {
@@ -59,6 +65,9 @@ public class CacheMonitorService {
         return 0L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private double percentValue(Map<String, Object> source, String key) {
         Object value = source.get(key);
         if (value instanceof Number number) {
@@ -74,6 +83,9 @@ public class CacheMonitorService {
         return 0.0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Map<String, Object>> levelStats(Object value) {
         if (!(value instanceof Map<?, ?> map)) {

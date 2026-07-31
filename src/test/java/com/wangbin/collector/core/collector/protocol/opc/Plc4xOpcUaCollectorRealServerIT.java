@@ -127,7 +127,7 @@ class Plc4xOpcUaCollectorRealServerIT {
                         collector.writePoint(point, originalValue);
                     }
                 } catch (Exception ignored) {
-                    // Keep the real-server test best-effort for cleanup.
+                    // 实服测试清理阶段采用尽力清理策略。
                 }
                 collector.unsubscribe(List.of(point));
                 Map<String, Object> unsubscribedStatus = collector.getDeviceStatus();

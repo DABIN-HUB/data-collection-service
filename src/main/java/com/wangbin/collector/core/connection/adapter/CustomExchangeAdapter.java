@@ -5,7 +5,13 @@ package com.wangbin.collector.core.connection.adapter;
  */
 public interface CustomExchangeAdapter {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     byte[] exchange(byte[] request, long timeoutMs) throws Exception;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void sendOnly(byte[] request) throws Exception;
 }

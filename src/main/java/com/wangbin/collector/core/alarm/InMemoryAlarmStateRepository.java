@@ -11,11 +11,17 @@ public class InMemoryAlarmStateRepository implements AlarmStateRepository {
 
     private final ConcurrentMap<String, AlarmStateSnapshot> snapshots = new ConcurrentHashMap<>();
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Optional<AlarmStateSnapshot> find(String stateKey) {
         return Optional.ofNullable(snapshots.get(stateKey));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public void save(AlarmStateSnapshot snapshot) {
         if (snapshot != null && snapshot.getStateKey() != null) {

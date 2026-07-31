@@ -39,10 +39,16 @@ public class ProcessContext {
     // 处理选项
     private Map<String, Object> options = new HashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessContext() {
         this.processTime = System.currentTimeMillis();
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessContext(DeviceInfo deviceInfo, long collectTime) {
         this();
         this.deviceInfo = deviceInfo;

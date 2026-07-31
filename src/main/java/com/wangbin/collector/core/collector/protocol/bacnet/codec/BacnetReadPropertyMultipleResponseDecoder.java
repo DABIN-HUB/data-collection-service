@@ -8,11 +8,20 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetReadPropertyMultipleResponseDecoder {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetReadPropertyMultipleResponseDecoder() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetReadPropertyMultipleResponse decode(byte[] frame, int expectedInvokeId) {
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
@@ -27,6 +36,9 @@ public final class BacnetReadPropertyMultipleResponseDecoder {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetReadPropertyMultipleResponse decodeComplexAck(ByteBuffer buffer,
                                                                        int pduHeader,
                                                                        int expectedInvokeId) {
@@ -136,6 +148,9 @@ public final class BacnetReadPropertyMultipleResponseDecoder {
         return responseBuilder.build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String decodeErrorClassAndCode(ByteBuffer buffer) {
         BacnetTagReader.TagHeader errorClass = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(errorClass, 0);

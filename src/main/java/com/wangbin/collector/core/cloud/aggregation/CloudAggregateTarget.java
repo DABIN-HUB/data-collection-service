@@ -9,6 +9,9 @@ public record CloudAggregateTarget(String aggregateTargetId,
                                    CloudDeviceIdentity cloudIdentity,
                                    CloudAggregationPolicy policy) {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String key() {
         if (aggregateTargetId != null && !aggregateTargetId.isBlank()) {
             return aggregateTargetId;

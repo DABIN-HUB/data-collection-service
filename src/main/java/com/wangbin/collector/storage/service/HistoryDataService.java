@@ -16,6 +16,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -27,6 +30,9 @@ public class HistoryDataService {
     private final ConfigManager configManager;
     private final TdengineProperties properties;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
             return;
@@ -38,12 +44,15 @@ public class HistoryDataService {
                 protocolType = deviceInfo.getProtocolType();
             }
         } catch (Exception e) {
-            log.debug("resolve protocolType from config failed, deviceId={}", deviceId, e);
+            log.debug("resolve protocolType from 配置 失败, 设备={}", deviceId, e);
         }
         historyWriteBuffer.writeOrBuffer(new HistoryWriteRequest(
                 deviceId, protocolType, point, processResult, System.currentTimeMillis()));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<Map<String, Object>> queryPointHistory(String deviceId,
                                                        String pointId,
                                                        Long startTs,

@@ -13,6 +13,9 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+/**
+ * 管理当前模块的生命周期和状态。
+ */
 @Slf4j
 @Component
 public class AlertManager {
@@ -26,23 +29,35 @@ public class AlertManager {
     private final Queue<AlertNotification> recentAlerts = new ConcurrentLinkedQueue<>();
     private final int maxHistorySize = 1000;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlertManager(CacheReportService cacheReportService) {
         this.cacheReportService = cacheReportService;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void register(AlertRule rule) {
         rules.put(rule.getId(), rule);
-        log.info("Registered alert rule {}", rule.getName());
+        log.info("已注册 告警 规则 {}", rule.getName());
     }
 
     public Collection<AlertRule> getRules() {
         return rules.values();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void remove(String ruleId) {
         rules.remove(ruleId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void notifyAlert(AlertNotification notification) {
         notifyAlert(notification, true);
     }
@@ -61,7 +76,7 @@ public class AlertManager {
         while (recentAlerts.size() > maxHistorySize) {
             recentAlerts.poll();
         }
-        log.warn("Alert triggered: device={}, point={}, level={}, message={}",
+        log.warn("告警 triggered:设备={}, 点位={}, 级别={}, 消息={}",
                 notification.getDeviceId(),
                 notification.getPointCode() != null ? notification.getPointCode() : notification.getPointId(),
                 notification.getLevel(),
@@ -77,7 +92,7 @@ public class AlertManager {
     }
 
     /**
-     * Evaluate metric-based rules and push notifications when triggered.
+     * 评估指标类规则，并在触发时推送告警通知。
      */
     public void evaluate(String metric, double value) {
         for (AlertRule rule : rules.values()) {
@@ -97,6 +112,9 @@ public class AlertManager {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void saveAlarmHistory(AlertNotification notification) {
         if (alarmHistoryService == null) {
             return;
@@ -104,11 +122,14 @@ public class AlertManager {
         try {
             alarmHistoryService.saveAsync(notification);
         } catch (Exception e) {
-            log.error("submit alarm history write failed, device={}, point={}",
+            log.error("提交 告警 历史 写入 失败, 设备={}, 点位={}",
                     notification.getDeviceId(), notification.getPointId(), e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean compare(AlertCondition condition, String metric, double value) {
         if (!condition.getMetric().equals(metric)) {
             return true;

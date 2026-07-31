@@ -14,9 +14,15 @@ import java.util.Map;
  */
 public final class CustomRequestEncoder {
 
+    /**
+     * 创建当前组件实例。
+     */
     private CustomRequestEncoder() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeRead(DataPoint point, DeviceConnection connection) {
         String template = point.getAdditionalConfig("requestTemplate",
                 connection.getString("readRequestTemplate", null));
@@ -24,6 +30,9 @@ public final class CustomRequestEncoder {
                 variables(point, null), resolveCharset(point, connection));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeWrite(DataPoint point, Object value, DeviceConnection connection) {
         String template = point.getAdditionalConfig("writeRequestTemplate",
                 connection.getString("writeRequestTemplate", null));
@@ -31,6 +40,9 @@ public final class CustomRequestEncoder {
                 variables(point, value), resolveCharset(point, connection));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeTemplate(String template,
                                          String encoding,
                                          Map<String, String> variables,
@@ -53,6 +65,9 @@ public final class CustomRequestEncoder {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Map<String, String> variables(DataPoint point, Object value) {
         Map<String, String> variables = new LinkedHashMap<>();
         variables.put("pointId", safe(point.getPointId()));
@@ -64,6 +79,9 @@ public final class CustomRequestEncoder {
         return variables;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveAddressHex(DataPoint point) {
         String configured = point.getAdditionalConfig("addressHex", null);
         if (configured != null && !configured.isBlank()) {
@@ -78,17 +96,26 @@ public final class CustomRequestEncoder {
         return String.format("%0" + width + "X", numericAddress);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveEncoding(DataPoint point, DeviceConnection connection, String key) {
         String fallbackKey = "writeRequestEncoding".equals(key) ? "requestEncoding" : key;
         String connectionValue = connection.getString(key, connection.getString(fallbackKey, "HEX"));
         return point.getAdditionalConfig(key, connectionValue);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Charset resolveCharset(DataPoint point, DeviceConnection connection) {
         String connectionCharset = connection.getString("charset", StandardCharsets.UTF_8.name());
         return Charset.forName(point.getAdditionalConfig("charset", connectionCharset));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String safe(String value) {
         return value == null ? "" : value;
     }

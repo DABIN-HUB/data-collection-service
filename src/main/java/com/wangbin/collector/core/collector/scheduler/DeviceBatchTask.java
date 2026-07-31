@@ -30,6 +30,9 @@ class DeviceBatchTask {
     private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
     private volatile long nextAllowedExecutionTime;
 
+    /**
+     * 创建当前组件实例。
+     */
     DeviceBatchTask(String deviceId, List<DataPoint> points, int timeSliceIndex, long generation, long timeSliceRevision) {
         this.deviceId = deviceId;
         this.points = points;
@@ -38,10 +41,16 @@ class DeviceBatchTask {
         this.timeSliceRevision = timeSliceRevision;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     boolean shouldSkip() {
         return cancelled.get() || running.get() || System.currentTimeMillis() < nextAllowedExecutionTime;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     boolean tryStartExecution() {
         if (cancelled.get() || System.currentTimeMillis() < nextAllowedExecutionTime) {
             return false;
@@ -49,10 +58,16 @@ class DeviceBatchTask {
         return running.compareAndSet(false, true);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void finishExecution() {
         running.set(false);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordFailure() {
         int failures = failureCount.incrementAndGet();
         int exponent = Math.min(Math.max(0, failures - 1), MAX_BACKOFF_EXPONENT);
@@ -60,11 +75,17 @@ class DeviceBatchTask {
         nextAllowedExecutionTime = System.currentTimeMillis() + backoffMillis;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordSuccess() {
         failureCount.set(0);
         nextAllowedExecutionTime = 0L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void cancel() {
         cancelled.set(true);
         cancelInFlight();
@@ -78,18 +99,27 @@ class DeviceBatchTask {
         return nextAllowedExecutionTime;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     void registerInFlight(Future<?> future) {
         if (future != null) {
             inFlightFutures.add(future);
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     void unregisterInFlight(Future<?> future) {
         if (future != null) {
             inFlightFutures.remove(future);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void cancelInFlight() {
         for (Future<?> future : inFlightFutures) {
             if (future != null && !future.isDone()) {

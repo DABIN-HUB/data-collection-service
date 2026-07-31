@@ -21,6 +21,9 @@ public class CloudSubDeviceRegisterService {
 
     private final ConcurrentMap<String, RegisteredSubDevice> registeredDevices = new ConcurrentHashMap<>();
 
+    /**
+     * 处理当前业务流程。
+     */
     public Map<String, Object> applyRegisterReply(JsonNode root) {
         List<RegisteredSubDevice> devices = parseRegisteredDevices(root);
         int changed = 0;
@@ -36,6 +39,9 @@ public class CloudSubDeviceRegisterService {
         return data;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, Object> snapshot() {
         List<Map<String, Object>> devices = new ArrayList<>();
         for (RegisteredSubDevice device : registeredDevices.values()) {
@@ -47,6 +53,9 @@ public class CloudSubDeviceRegisterService {
         return data;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public RegisteredSubDevice get(CloudDeviceIdentity identity) {
         if (identity == null || !identity.valid()) {
             return null;
@@ -54,6 +63,9 @@ public class CloudSubDeviceRegisterService {
         return registeredDevices.get(identity.key());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<RegisteredSubDevice> parseRegisteredDevices(JsonNode root) {
         if (root == null || root.isNull()) {
             return Collections.emptyList();
@@ -79,6 +91,9 @@ public class CloudSubDeviceRegisterService {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private RegisteredSubDevice parseRegisteredDevice(JsonNode node) {
         CloudDeviceIdentity identity = CloudDeviceIdentity.of(
                 firstText(node, "productKey", "pk"),
@@ -88,6 +103,9 @@ public class CloudSubDeviceRegisterService {
         return new RegisteredSubDevice(identity, deviceSecret, status, System.currentTimeMillis());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private JsonNode firstNode(JsonNode node, String... fields) {
         if (node == null) {
             return null;
@@ -101,6 +119,9 @@ public class CloudSubDeviceRegisterService {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(JsonNode node, String... fields) {
         JsonNode value = firstNode(node, fields);
         if (value == null) {
@@ -110,12 +131,18 @@ public class CloudSubDeviceRegisterService {
         return StringUtils.hasText(text) ? text : null;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record RegisteredSubDevice(
             CloudDeviceIdentity identity,
             String deviceSecret,
             String status,
             long registeredAt) {
 
+        /**
+         * 解析或转换业务数据。
+         */
         public Map<String, Object> toMap(boolean exposeSecret) {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("productKey", identity.productKey());

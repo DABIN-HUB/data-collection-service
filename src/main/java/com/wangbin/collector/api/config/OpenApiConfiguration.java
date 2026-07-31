@@ -14,6 +14,9 @@ public class OpenApiConfiguration {
 
     public static final String TOKEN_SECURITY_SCHEME = "采集服务令牌";
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean
     public OpenAPI collectorOpenApi() {
         return new OpenAPI()

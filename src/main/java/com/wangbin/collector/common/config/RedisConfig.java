@@ -16,6 +16,9 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Configuration
 public class RedisConfig {
 

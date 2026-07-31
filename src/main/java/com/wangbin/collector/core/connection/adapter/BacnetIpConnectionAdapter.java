@@ -33,8 +33,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * BACnet/IP UDP connection adapter with polling, segmented APDU support,
- * COV notification handling and optional BBMD/Foreign Device lifecycle.
+ * BACnet/IP UDP 连接 适配器 with polling, segmented APDU support,
+ * COV 通知 handling and optional BBMD/Foreign 设备 lifecycle.
  */
 @Slf4j
 public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetIpUdpClient> implements BacnetConnectionAdapter {
@@ -55,10 +55,16 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
     private volatile long foreignDeviceLeaseExpiresAt;
     private volatile ScheduledFuture<?> foreignDeviceRenewTask;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetIpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetIpConnectionAdapter(DeviceInfo deviceInfo,
                                      DeviceConnection config,
                                      ScheduledExecutorService protocolScheduler) {
@@ -66,6 +72,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         this.protocolScheduler = protocolScheduler;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -143,7 +152,7 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         statistics.put("message", useWhoIsDiscovery && remoteDevice.isDiscoveredByWhoIs()
                 ? "BACnet/IP UDP adapter connected and remote device discovered by Who-Is"
                 : "BACnet/IP UDP adapter connected");
-        log.info("BACnet/IP adapter connected, deviceId={}, configuredRemote={}:{}, targetRemote={}:{}, localPort={}, retries={}, apduTimeoutMs={}, bbmd={}"
+        log.info("BACnet/IP 适配器 已连接, 设备={}, 配置远端={}:{}, 目标远端={}:{}, 本地端口={}, 重试次数={}, APDU超时毫秒={}, BBMD={}"
                         + "", getDeviceId(),
                 host,
                 resolvedPort,
@@ -156,6 +165,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         notifyReconnectListener();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         cancelForeignDeviceRenewalTask();
@@ -179,9 +191,12 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
                 remoteDevice = null;
             }
         }
-        log.info("BACnet/IP adapter disconnected, deviceId={}", getDeviceId());
+        log.info("BACnet/IP 适配器 已断开, 设备={}", getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() throws Exception {
         if (socket == null || socket.isClosed()) {
@@ -190,9 +205,12 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         ensureForeignDeviceLease();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // BACnet/IP polling has no separate authentication phase here.
+        // BACnet/IP polling has no separate 认证 phase here.
     }
 
     @Override
@@ -217,6 +235,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         this.reconnectListener = listener;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public synchronized BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -228,6 +249,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return response;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public synchronized BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                                 long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
@@ -240,6 +264,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return response;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public synchronized void writeProperty(BacnetWritePropertyRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -247,6 +274,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         updateActivityTime();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
@@ -255,6 +285,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -262,6 +295,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public synchronized void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs) throws Exception {
         ensureForeignDeviceLease();
         BacnetIpUdpClient activeClient = requireClient();
@@ -271,6 +307,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         updateActivityTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         ensureForeignDeviceLease();
@@ -329,6 +368,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return foreignDeviceLeaseExpiresAt;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetRemoteDevice discoverRemoteDevice(InetSocketAddress targetAddress,
                                                     int remoteDeviceInstance,
                                                     int timeoutMs,
@@ -356,12 +398,12 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
                 try {
                     BacnetRemoteDevice candidate = BacnetIAmDecoder.decode(data, from);
                     if (candidate.getDeviceInstance() == remoteDeviceInstance) {
-                        log.info("BACnet/IP Who-Is discovery resolved remote device, instance={}, address={}",
+                        log.info("BACnet/IP Who-Is discovery resolved 远端 设备, 实例={}, 地址={}",
                                 remoteDeviceInstance, candidate.getSocketAddress());
                         return candidate;
                     }
                 } catch (Exception ignored) {
-                    // Ignore non-I-Am datagrams during discovery window.
+                    // 发现窗口内忽略非 I-Am 数据报。
                 }
             }
         } finally {
@@ -371,6 +413,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
                 + remoteDeviceInstance);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerForeignDeviceIfConfigured() throws Exception {
         if (bbmdAddress == null || foreignDeviceTtlSeconds == null || foreignDeviceTtlSeconds <= 0) {
             return;
@@ -378,6 +423,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         performForeignDeviceRegistration(true);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private synchronized void ensureForeignDeviceLease() throws Exception {
         if (!needsForeignDeviceRenewal(System.currentTimeMillis())) {
             return;
@@ -390,6 +438,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void notifyReconnectListener() {
         Runnable listener = reconnectListener;
         if (listener == null) {
@@ -398,10 +449,13 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         try {
             listener.run();
         } catch (Exception ex) {
-            log.warn("BACnet/IP reconnect listener failed, deviceId={}", getDeviceId(), ex);
+            log.warn("BACnet/IP 重连 listener 失败, 设备={}", getDeviceId(), ex);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private synchronized void performForeignDeviceRegistration(boolean initialRegistration) throws Exception {
         if (bbmdAddress == null || foreignDeviceTtlSeconds == null || foreignDeviceTtlSeconds <= 0) {
             return;
@@ -421,6 +475,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         connectionParams.put("foreignDeviceLeaseExpiresAt", foreignDeviceLeaseExpiresAt);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rawRegisterForeignDevice(InetSocketAddress targetAddress,
                                           int ttlSeconds,
                                           int timeoutMs) throws Exception {
@@ -440,6 +497,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void scheduleForeignDeviceRenewalIfPossible() {
         cancelForeignDeviceRenewalTask();
         if (protocolScheduler == null || bbmdAddress == null || foreignDeviceTtlSeconds == null || foreignDeviceTtlSeconds <= 0) {
@@ -454,12 +514,15 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
                 performForeignDeviceRegistration(false);
             } catch (Exception ex) {
                 foreignDeviceRenewFailureCount.incrementAndGet();
-                log.warn("BACnet/IP Foreign Device renew failed, deviceId={}, bbmd={}",
+                log.warn("BACnet/IP Foreign 设备 续期 失败, 设备={}, BBMD={}",
                         getDeviceId(), bbmdAddress, ex);
             }
         }, intervalMs, intervalMs, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelForeignDeviceRenewalTask() {
         ScheduledFuture<?> task = foreignDeviceRenewTask;
         foreignDeviceRenewTask = null;
@@ -468,6 +531,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean needsForeignDeviceRenewal(long now) {
         if (bbmdAddress == null || foreignDeviceTtlSeconds == null || foreignDeviceTtlSeconds <= 0) {
             return false;
@@ -478,16 +544,25 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return now >= (foreignDeviceLeaseExpiresAt - resolveForeignDeviceRenewLeadMs());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveForeignDeviceRenewIntervalMs() {
         long ttlMs = foreignDeviceTtlSeconds * 1000L;
         return Math.max(500L, ttlMs - resolveForeignDeviceRenewLeadMs());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveForeignDeviceRenewLeadMs() {
         long ttlMs = foreignDeviceTtlSeconds * 1000L;
         return Math.max(250L, Math.min(5000L, ttlMs / 4));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private InetSocketAddress resolveBbmdAddress() {
         String host = config.getStringConfig("bbmdHost", null);
         Integer port = config.getIntConfig("bbmdPort", null);
@@ -497,11 +572,17 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return new InetSocketAddress(host, port);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveForeignDeviceTtlSeconds() {
         Integer ttlSeconds = config.getIntConfig("foreignDeviceTtlSeconds", null);
         return ttlSeconds != null && ttlSeconds > 0 ? ttlSeconds : null;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private BacnetIpUdpClient requireClient() {
         if (client == null) {
             throw new IllegalStateException("BACnet/IP client is not initialized");
@@ -509,6 +590,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return client;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -521,6 +605,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return 5000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveApduTimeout() {
         Integer apduTimeout = config.getIntConfig("apduTimeout", null);
         if (apduTimeout == null || apduTimeout <= 0) {
@@ -532,6 +619,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return resolveReadTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveSegmentTimeout() {
         Integer segmentTimeout = config.getIntConfig("segmentTimeout", null);
         if (segmentTimeout == null || segmentTimeout <= 0) {
@@ -543,6 +633,9 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         return resolveApduTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRequestRetries() {
         Integer retries = config.getIntConfig("retries", null);
         if (retries == null) {

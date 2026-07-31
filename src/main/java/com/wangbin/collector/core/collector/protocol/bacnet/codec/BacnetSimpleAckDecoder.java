@@ -3,11 +3,20 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetSimpleAckDecoder {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetSimpleAckDecoder() {
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public static void verify(byte[] frame, int expectedInvokeId, int expectedServiceChoice) {
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
@@ -21,6 +30,9 @@ public final class BacnetSimpleAckDecoder {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static void decodeSimpleAck(ByteBuffer buffer, int expectedInvokeId, int expectedServiceChoice) {
         int invokeId = Byte.toUnsignedInt(buffer.get());
         if ((expectedInvokeId & 0xFF) != invokeId) {

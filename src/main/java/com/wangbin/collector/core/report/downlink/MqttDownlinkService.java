@@ -67,10 +67,16 @@ public class MqttDownlinkService {
     private CloudOtaService cloudOtaService;
     @Autowired(required = false)
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
+    /**
+     * 处理当前业务流程。
+     */
     public MqttDownlinkResult handle(String topic, byte[] payload) {
         return handle(topic, payload, null);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public MqttDownlinkResult handle(String topic, byte[] payload, String cloudProvider) {
         if (payload == null || payload.length == 0) {
             return MqttDownlinkResult.of(null, null, null, 400, "empty payload", Map.of("topic", topic));
@@ -100,12 +106,15 @@ public class MqttDownlinkService {
             case MessageConstant.MESSAGE_TYPE_OTA_UPGRADE -> handleOtaUpgrade(topic, root, messageId, method);
             case MessageConstant.MESSAGE_TYPE_TOPO_CHANGE -> handleTopology(topic, root, messageId, method);
             default -> {
-                log.trace("忽略非下行命令 MQTT 消息 method={} topic={}", method, topic);
+                log.trace("忽略非下行命令 MQTT 消息 method={} 主题={}", method, topic);
                 yield MqttDownlinkResult.ignored(method);
             }
         };
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private MqttDownlinkResult handlePropertySet(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
         if (!StringUtils.hasText(deviceId)) {
@@ -150,6 +159,9 @@ public class MqttDownlinkService {
         return MqttDownlinkResult.of(messageId, method, deviceId, code, message, data);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private MqttDownlinkResult handleServiceInvoke(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
         if (!StringUtils.hasText(deviceId)) {
@@ -191,6 +203,9 @@ public class MqttDownlinkService {
                     e.getMessage(), Map.of("command", command));
         }
     }
+    /**
+     * 处理当前业务流程。
+     */
     private MqttDownlinkResult handleConfigPush(String topic, JsonNode root, String messageId, String method) {
         String hintedDeviceId = resolveDeviceId(root, topic);
         String explicitDeviceId = resolveExplicitDeviceId(root);
@@ -208,7 +223,7 @@ public class MqttDownlinkService {
                     "missing cloudTarget mapping", Map.of("configType", configType));
         }
 
-        log.info("收到 MQTT 配置推送，deviceId={}, configType={}", deviceId, configType);
+        log.info("收到 MQTT 配置推送，设备={}, 配置类型={}", deviceId, configType);
         try {
             Map<String, Object> data = executeConfigPush(configType, deviceId);
             data.put("topic", topic);
@@ -219,6 +234,9 @@ public class MqttDownlinkService {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private MqttDownlinkResult handleOtaUpgrade(String topic, JsonNode root, String messageId, String method) {
         String deviceId = resolveDeviceId(root, topic);
         JsonNode params = businessNode(root);
@@ -229,6 +247,9 @@ public class MqttDownlinkService {
         return MqttDownlinkResult.success(messageId, method, deviceId, data);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private MqttDownlinkResult handleTopology(String topic, JsonNode root, String messageId, String method) {
         CloudDeviceIdentity gateway = resolveCloudIdentity(root, topic);
         JsonNode params = businessNode(root);
@@ -244,18 +265,24 @@ public class MqttDownlinkService {
         return MqttDownlinkResult.success(messageId, method, deviceId, data);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private JsonNode businessNode(JsonNode root) {
         JsonNode params = root != null ? root.get(MessageConstant.FIELD_PARAMS) : null;
         return params != null && !params.isNull() ? params : root;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudProtocolMessage decodeCloud(String topic, byte[] payload, String cloudProvider) {
         if (cloudProtocolAdapters != null) {
             try {
                 CloudProtocolAdapter adapter = cloudProtocolAdapters.resolve(cloudProvider);
                 return adapter.decode(topic, payload);
             } catch (Exception e) {
-                log.debug("云协议适配器解码失败，回退到兼容解析 provider={} topic={} err={}",
+                log.debug("云协议适配器解码失败，回退到兼容解析 provider={} 主题={} err={}",
                         cloudProvider, topic, e.getMessage());
             }
         }
@@ -272,11 +299,14 @@ public class MqttDownlinkService {
                     envelope.payload(),
                     envelope.params());
         } catch (Exception e) {
-            log.debug("Alink 解码失败，回退到兼容解析 topic={} err={}", topic, e.getMessage());
+            log.debug("Alink 解码失败，回退到兼容解析 主题={} err={}", topic, e.getMessage());
             return null;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity resolveCloudIdentity(JsonNode root, String topic) {
         String productKey = firstText(root, MessageConstant.FIELD_PRODUCT_KEY, "pk");
         String deviceName = firstText(root, MessageConstant.FIELD_DEVICE_NAME, "dn");
@@ -291,6 +321,9 @@ public class MqttDownlinkService {
         }
         return CloudDeviceIdentity.of(productKey, deviceName);
     }
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executeConfigPush(String configType, String deviceId) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("configType", configType);
@@ -319,6 +352,9 @@ public class MqttDownlinkService {
         return data;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveServiceCommand(String requestedCommand) {
         if (!StringUtils.hasText(requestedCommand)) {
             return null;
@@ -343,6 +379,9 @@ public class MqttDownlinkService {
         return requestedCommand;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveConfigPushType(JsonNode root, Map<String, Object> params, String deviceId) {
         String configType = firstText(root, "configType", "type", "scope", "syncType");
         if (!StringUtils.hasText(configType)) {
@@ -354,6 +393,9 @@ public class MqttDownlinkService {
         return normalizeConfigPushType(configType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeConfigPushType(String configType) {
         String normalized = normalize(configType).replace('-', '_');
         return switch (normalized) {
@@ -363,6 +405,9 @@ public class MqttDownlinkService {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private WritePlan buildWritePlan(String deviceId, Map<String, Object> values) {
         WritePlan plan = new WritePlan();
         List<DataPoint> points = configManager.getDataPoints(deviceId);
@@ -395,6 +440,9 @@ public class MqttDownlinkService {
         return plan;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyWriteResults(WritePlan plan, Map<String, Boolean> writeResults) {
         for (Map.Entry<DataPoint, Object> entry : plan.pointsToWrite.entrySet()) {
             DataPoint point = entry.getKey();
@@ -413,6 +461,9 @@ public class MqttDownlinkService {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Boolean resolveWriteSuccess(Map<String, Boolean> writeResults, DataPoint point) {
         if (writeResults == null || writeResults.isEmpty() || point == null) {
             return false;
@@ -423,6 +474,9 @@ public class MqttDownlinkService {
                 .orElse(false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolvePoint(List<DataPoint> points, String field) {
         if (points == null || points.isEmpty() || !StringUtils.hasText(field)) {
             return null;
@@ -434,10 +488,16 @@ public class MqttDownlinkService {
                 .orElse(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matches(DataPoint point, String normalizedField) {
         return normalizedField.equals(normalize(point.getReportField()));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveExplicitDeviceId(JsonNode root) {
         CloudDeviceIdentity identity = resolveCloudIdentity(root, null);
         String mappedByCloud = cloudDeviceIdentityService.resolveLocalDeviceId(identity);
@@ -459,6 +519,9 @@ public class MqttDownlinkService {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveDeviceId(JsonNode root, String topic) {
         CloudDeviceIdentity identity = resolveCloudIdentity(root, topic);
         String mappedByCloud = cloudDeviceIdentityService.resolveLocalDeviceId(identity);
@@ -481,6 +544,9 @@ public class MqttDownlinkService {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveMethod(JsonNode root, String topic) {
         String method = firstText(root, MessageConstant.FIELD_METHOD);
         if (StringUtils.hasText(method)) {
@@ -508,10 +574,16 @@ public class MqttDownlinkService {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveMessageId(JsonNode root) {
         return firstText(root, "id", MessageConstant.FIELD_MESSAGE_ID);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long resolveExpectedVersion(JsonNode root) {
         JsonNode node = root.get("shadowVersion");
         if (node == null || node.isNull()) {
@@ -530,6 +602,9 @@ public class MqttDownlinkService {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> extractBusinessParams(JsonNode root) {
         JsonNode params = root.get(MessageConstant.FIELD_PARAMS);
         if (params != null && params.isObject()) {
@@ -555,6 +630,9 @@ public class MqttDownlinkService {
         return direct;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(JsonNode node, String... fields) {
         if (node == null) {
             return null;
@@ -571,6 +649,9 @@ public class MqttDownlinkService {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstString(Map<String, Object> map, String... fields) {
         if (map == null) {
             return null;
@@ -584,10 +665,16 @@ public class MqttDownlinkService {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public byte[] buildResponsePayload(MqttDownlinkResult result) {
         try {
             return objectMapper.writeValueAsBytes(result.toResponseBody());
@@ -597,10 +684,16 @@ public class MqttDownlinkService {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class WritePlan {
         private final Map<DataPoint, Object> pointsToWrite = new LinkedHashMap<>();
         private final Map<String, Map<String, Object>> fieldResults = new LinkedHashMap<>();
 
+        /**
+         * 解析或转换业务数据。
+         */
         private String resolveField(DataPoint point) {
             for (Map.Entry<String, Map<String, Object>> entry : fieldResults.entrySet()) {
                 Object pointId = entry.getValue().get("pointId");
@@ -612,6 +705,9 @@ public class MqttDownlinkService {
             return point.getPointCode();
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private int responseCode() {
             if (fieldResults.isEmpty()) {
                 return 400;

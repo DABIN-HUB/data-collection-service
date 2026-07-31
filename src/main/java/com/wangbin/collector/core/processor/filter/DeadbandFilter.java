@@ -32,6 +32,9 @@ public class DeadbandFilter extends AbstractDataProcessor {
     private long sampleTtlMs = TimeUnit.MINUTES.toMillis(30);
     private int maxCacheSize = 50000;
 
+    /**
+     * 创建当前组件实例。
+     */
     public DeadbandFilter() {
         this.name = "DeadbandFilter";
         this.type = "FILTER";
@@ -39,11 +42,17 @@ public class DeadbandFilter extends AbstractDataProcessor {
         this.priority = 40;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("死区过滤器初始化完成: {}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         if (rawValue == null) {
@@ -83,7 +92,7 @@ public class DeadbandFilter extends AbstractDataProcessor {
                     String.format("变化量 %.6f 超过死区阈值", change));
 
         } catch (Exception e) {
-            log.error("死区过滤异常: point={}, value={}", point.getPointName(), rawValue, e);
+            log.error("死区过滤异常: 点位={}, 值={}", point.getPointName(), rawValue, e);
             return ProcessResult.error(rawValue, "死区过滤异常: " + e.getMessage());
         }
     }
@@ -162,11 +171,17 @@ public class DeadbandFilter extends AbstractDataProcessor {
         return sample;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheValue(String pointKey, Object rawValue) {
         lastValues.put(pointKey, new LastSample(rawValue, System.currentTimeMillis()));
         trimCacheIfNecessary();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void trimCacheIfNecessary() {
         if (maxCacheSize <= 0) {
             return;
@@ -183,6 +198,9 @@ public class DeadbandFilter extends AbstractDataProcessor {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     protected void loadConfig(Map<String, Object> config) {
         super.loadConfig(config);
@@ -191,16 +209,25 @@ public class DeadbandFilter extends AbstractDataProcessor {
         maxCacheSize = getIntConfig("maxCacheSize", maxCacheSize);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         lastValues.clear();
         log.info("死区过滤器销毁完成: {}", getName());
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class LastSample {
         private final Object value;
         private final long timestamp;
 
+        /**
+         * 创建当前组件实例。
+         */
         private LastSample(Object value, long timestamp) {
             this.value = value;
             this.timestamp = timestamp;

@@ -7,13 +7,22 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetBvlcCodec {
 
     public static final int BVLC_RESULT_CODE_SUCCESSFUL_COMPLETION = 0x0000;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetBvlcCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeRegisterForeignDevice(int ttlSeconds) {
         ByteArrayOutputStream frame = new ByteArrayOutputStream();
         frame.write(BacnetReadPropertyCodec.BVLC_TYPE_IP);
@@ -25,6 +34,9 @@ public final class BacnetBvlcCodec {
         return frame.toByteArray();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public static void verifyResult(byte[] frame, int expectedResultCode) {
         if (frame == null || frame.length < 6) {
             throw new IllegalArgumentException("BACnet BVLC result frame is too short");
@@ -48,6 +60,9 @@ public final class BacnetBvlcCodec {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static InetSocketAddress resolveMessageSource(byte[] frame, InetSocketAddress transportSource) {
         if (frame == null || frame.length < 10) {
             return transportSource;
@@ -73,6 +88,9 @@ public final class BacnetBvlcCodec {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static byte[] wrapWithFunction(byte[] originalFrame, int bvlcFunction) {
         if (originalFrame == null || originalFrame.length < 4) {
             throw new IllegalArgumentException("BACnet frame is too short");

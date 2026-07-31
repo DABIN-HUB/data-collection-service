@@ -19,6 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @EnableConfigurationProperties(AuthProperties.class)
 public class AuthConfiguration {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE + 1)
     @ConditionalOnProperty(prefix = "collector.auth", name = "enabled", havingValue = "true", matchIfMissing = true)

@@ -12,6 +12,9 @@ public enum CustomFrameMode {
     DELIMITER,
     DATAGRAM;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CustomFrameMode fromValue(String value, CustomFrameMode defaultMode) {
         if (value == null || value.isBlank()) {
             return defaultMode;

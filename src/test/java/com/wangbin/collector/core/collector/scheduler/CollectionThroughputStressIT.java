@@ -42,10 +42,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Synthetic throughput benchmark for the scheduler and in-process collection path.
+ * 调度器和进程内采集路径的合成吞吐压测。
  *
- * Run manually:
- * mvn -q "-Dtest=CollectionThroughputStressIT" test
+ * 手动运行方式：
+ * 使用 Maven 指定 CollectionThroughputStressIT 手动运行。
  */
 class CollectionThroughputStressIT {
 

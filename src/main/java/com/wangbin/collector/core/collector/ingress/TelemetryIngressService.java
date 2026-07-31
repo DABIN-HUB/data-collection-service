@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Unified ingress for telemetry produced by protocol callbacks.
+ * Unified ingress for 遥测 produced by 协议 callbacks.
  */
 @Slf4j
 @Service
@@ -23,6 +23,9 @@ public class TelemetryIngressService {
     @Autowired
     private DataQualityProcessor dataQualityProcessor;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void append(String deviceId, DataPoint point, ProcessResult processResult) {
         if (deviceId == null || deviceId.isBlank() || point == null || processResult == null) {
             return;
@@ -30,11 +33,14 @@ public class TelemetryIngressService {
         try {
             dataPostProcessor.savePointAsync(deviceId, point, processResult);
         } catch (Exception e) {
-            log.error("telemetry ingress append failed, device={}, point={}",
+            log.error("遥测 ingress 追加 失败, 设备={}, 点位={}",
                     deviceId, point.getPointId(), e);
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public ProcessResult appendRaw(String deviceId,
                                    DataPoint point,
                                    Object rawValue,
@@ -64,6 +70,9 @@ public class TelemetryIngressService {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object applyLinearTransform(DataPoint point, Object rawValue) {
         if (!(rawValue instanceof Number number)) {
             return rawValue;

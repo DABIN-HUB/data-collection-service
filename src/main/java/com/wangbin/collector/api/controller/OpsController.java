@@ -37,6 +37,9 @@ public class OpsController {
     private final AlarmAcknowledgementService alarmAcknowledgementService;
     private final NetworkDiagnosticService networkDiagnosticService;
 
+    /**
+     * 创建当前组件实例。
+     */
     public OpsController(OperationLogger operationLogger,
                          AlarmAcknowledgementService alarmAcknowledgementService,
                          NetworkDiagnosticService networkDiagnosticService) {
@@ -97,6 +100,9 @@ public class OpsController {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveOperator(HttpServletRequest request) {
         Object principal = request.getAttribute(AuthFilter.ATTR_PRINCIPAL);
         if (principal instanceof AuthFilter.AuthPrincipal authPrincipal) {

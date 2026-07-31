@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetClientSupport {
 
@@ -15,6 +18,9 @@ public class BacnetClientSupport {
     private final AtomicLong covNotificationCount;
     private final AtomicLong segmentedResponseCount;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetClientSupport(AtomicLong invokeIdMismatchCount,
                                AtomicLong covNotificationCount,
                                AtomicLong segmentedResponseCount) {
@@ -28,10 +34,16 @@ public class BacnetClientSupport {
         return message != null && message.contains("invokeId mismatch");
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void recordInvokeIdMismatch() {
         invokeIdMismatchCount.incrementAndGet();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void recordSegmentedResponse() {
         segmentedResponseCount.incrementAndGet();
     }
@@ -40,6 +52,9 @@ public class BacnetClientSupport {
         return BacnetSegmentSupport.isSegmentedComplexAck(frame);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> T handleCovNotification(byte[] frame,
                                        String endpointLabel,
                                        Consumer<Integer> confirmedAckSender,
@@ -55,7 +70,7 @@ public class BacnetClientSupport {
             }
             return null;
         } catch (Exception ex) {
-            log.warn("Decode BACnet COV notification failed, endpoint={}", endpointLabel, ex);
+            log.warn("解码 BACnet COV 通知 失败, end点位={}", endpointLabel, ex);
             return null;
         }
     }

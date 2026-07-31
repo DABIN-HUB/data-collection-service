@@ -97,6 +97,9 @@ public class ShadowManager {
     @Autowired(required = false)
     private ObjectMapper objectMapper;
 
+    /**
+     * 处理当前业务流程。
+     */
     public ShadowUpdateResult apply(String deviceId, DataPoint point, ProcessResult result) {
         if (deviceId == null || point == null || result == null) {
             return ShadowUpdateResult.EMPTY;
@@ -111,6 +114,9 @@ public class ShadowManager {
         return updateResult != null ? updateResult : ShadowUpdateResult.EMPTY;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private ShadowUpdateResult applyToShadow(DeviceShadow shadow,
                                              String deviceId,
                                              DataPoint point,
@@ -142,6 +148,9 @@ public class ShadowManager {
         return new ShadowUpdateResult(changeTriggered, eventInfo);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldTriggerChange(DeviceShadow shadow,
                                         DataPoint point,
                                         ProcessResult result,
@@ -174,6 +183,9 @@ public class ShadowManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private EventInfo evaluateEvent(DeviceShadow shadow,
                                     DataPoint point,
                                     ProcessResult result,
@@ -202,6 +214,9 @@ public class ShadowManager {
         return info;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private EventInfo evaluateProcessResultEvent(ProcessResult result) {
         Map<String, Object> metadata = result.getMetadata();
         if (metadata != null) {
@@ -232,6 +247,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String metadataToString(Map<String, Object> metadata, String key) {
         if (metadata == null) {
             return null;
@@ -240,6 +258,9 @@ public class ShadowManager {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Double toDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -276,6 +297,9 @@ public class ShadowManager {
         return Collections.unmodifiableSet(devices);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clearDirty(String deviceId) {
         if (deviceId != null) {
             dirtyDevices.remove(deviceId);
@@ -283,6 +307,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedWindowCommitted(String deviceId, long windowStart, long windowEnd) {
         mutateReportedShadow(deviceId, shadow -> {
             shadow.markReportedWindowCommitted(System.currentTimeMillis(), windowStart, windowEnd);
@@ -291,6 +318,9 @@ public class ShadowManager {
         clearDirty(deviceId);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedValuesChunk(String deviceId,
                                         Map<String, Object> properties) {
         mutateReportedShadow(deviceId, shadow -> {
@@ -326,6 +356,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeShadow(String deviceId) {
         if (deviceId == null) {
             return;
@@ -375,15 +408,21 @@ public class ShadowManager {
             }
             return history;
         } catch (Exception e) {
-            log.warn("查询设备影子历史失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("查询设备影子历史失败 设备={} err={}", deviceId, e.getMessage());
             return List.of();
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public Map<String, Object> updateDesired(String deviceId, Map<String, Object> desiredValues, String source) {
         return updateDesired(deviceId, desiredValues, source, null);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public Map<String, Object> updateDesired(String deviceId,
                                              Map<String, Object> desiredValues,
                                              String source,
@@ -397,6 +436,9 @@ public class ShadowManager {
         return updateDesiredStrict(deviceId, desiredValues, source, expectedVersion);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private Map<String, Object> updateDesiredStrict(String deviceId,
                                                     Map<String, Object> desiredValues,
                                                     String source,
@@ -430,6 +472,9 @@ public class ShadowManager {
         return document;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public Map<String, Object> clearDesired(String deviceId, Collection<String> fields) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow == null) {
@@ -441,6 +486,9 @@ public class ShadowManager {
         return clearDesiredStrict(deviceId, fields, shadow);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private Map<String, Object> clearDesiredStrict(String deviceId,
                                                    Collection<String> fields,
                                                    DeviceShadow shadow) {
@@ -460,6 +508,9 @@ public class ShadowManager {
         return document;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private Map<String, Object> updateDesiredWithAutoMerge(String deviceId,
                                                            Map<String, Object> desiredValues,
                                                            String source) {
@@ -481,7 +532,7 @@ public class ShadowManager {
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                log.debug("设备影子 desired CAS 冲突，准备自动合并重试 设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -494,6 +545,9 @@ public class ShadowManager {
         return updateDesiredStrict(deviceId, desiredValues, source, null);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private Map<String, Object> clearDesiredWithAutoMerge(String deviceId, Collection<String> fields) {
         IllegalStateException lastConflict = null;
         int attempts = shadowMergeAttempts();
@@ -513,7 +567,7 @@ public class ShadowManager {
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 clear desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                log.debug("设备影子 clear desired CAS 冲突，准备自动合并重试 设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -527,6 +581,9 @@ public class ShadowManager {
         return shadow == null ? null : clearDesiredStrict(deviceId, fields, shadow);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T mutateReportedShadow(String deviceId, Function<DeviceShadow, T> mutator) {
         if (deviceId == null || deviceId.isBlank() || mutator == null) {
             return null;
@@ -560,7 +617,7 @@ public class ShadowManager {
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 reported CAS 冲突，准备重试，deviceId={} attempt={} err={}",
+                log.debug("设备影子 reported CAS 冲突，准备重试，设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -573,6 +630,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DeviceShadow resolveWritableShadow(String deviceId) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow != null) {
@@ -583,6 +643,9 @@ public class ShadowManager {
         return existing != null ? existing : created;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("deviceId", shadow.getDeviceId());
@@ -608,6 +671,9 @@ public class ShadowManager {
         return doc;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> toValueMap(Map<String, ValueMeta> metas) {
         Map<String, Object> values = new LinkedHashMap<>();
         if (metas == null) {
@@ -621,6 +687,9 @@ public class ShadowManager {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> toMetaMap(Map<String, ValueMeta> metas) {
         Map<String, Object> values = new LinkedHashMap<>();
         if (metas == null) {
@@ -647,6 +716,9 @@ public class ShadowManager {
         return values;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocumentCas(String deviceId,
                                     Map<String, Object> document,
                                     long expectedVersion,
@@ -684,6 +756,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistShadow(DeviceShadow shadow) {
         if (shadow == null) {
             return;
@@ -691,10 +766,16 @@ public class ShadowManager {
         persistDocument(shadow.getDeviceId(), buildShadowDocument(shadow));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocument(String deviceId, Map<String, Object> document) {
         persistDocument(deviceId, document, null);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocument(String deviceId, Map<String, Object> document, String action) {
         if (!shadowPersistenceEnabled() || deviceId == null || document == null) {
             return;
@@ -726,10 +807,13 @@ public class ShadowManager {
                 appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
             }
         } catch (Exception e) {
-            log.warn("设备影子持久化失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("设备影子持久化失败 设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private DeviceShadow loadShadow(String deviceId) {
         if (!shadowPersistenceEnabled() || deviceId == null) {
             return null;
@@ -744,7 +828,7 @@ public class ShadowManager {
                     }
                 }
             } catch (Exception e) {
-                log.warn("设备影子字符串格式恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+                log.warn("设备影子字符串格式恢复失败 设备={} err={}", deviceId, e.getMessage());
             }
         }
         if (redisTemplate != null) {
@@ -759,12 +843,15 @@ public class ShadowManager {
                 }
                 return restoreShadow(deviceId, document);
             } catch (Exception e) {
-                log.warn("设备影子恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+                log.warn("设备影子恢复失败 设备={} err={}", deviceId, e.getMessage());
             }
         }
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
         String deviceId = asString(document.get("deviceId"));
         DeviceShadow shadow = new DeviceShadow(deviceId != null ? deviceId : fallbackDeviceId);
@@ -798,6 +885,9 @@ public class ShadowManager {
         return shadow;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void restoreValues(DeviceShadow shadow,
                                Object valuesObject,
                                Map<String, Object> metadata,
@@ -825,6 +915,9 @@ public class ShadowManager {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> stableValueMetadata(ProcessResult result) {
         Map<String, Object> metadata = result != null ? result.getMetadata() : null;
         if (metadata == null || metadata.isEmpty()) {
@@ -839,6 +932,9 @@ public class ShadowManager {
         return stable;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void deletePersistedShadow(String deviceId) {
         if (deviceId == null) {
             return;
@@ -851,10 +947,13 @@ public class ShadowManager {
                 redisTemplate.delete(shadowKey(deviceId));
             }
         } catch (Exception e) {
-            log.warn("删除设备影子持久化数据失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("删除设备影子持久化数据失败 设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String shadowKey(String deviceId) {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX : shadow.getKeyPrefix();
@@ -864,6 +963,9 @@ public class ShadowManager {
         return prefix + deviceId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String historyKey(String deviceId) {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX + "history:" : shadow.getHistoryKeyPrefix();
@@ -873,6 +975,9 @@ public class ShadowManager {
         return prefix + deviceId;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void markDirty(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -895,10 +1000,13 @@ public class ShadowManager {
                 }
             }
         } catch (Exception e) {
-            log.warn("标记影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("标记影子 dirty 设备失败，设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Set<String> loadPersistedDirtyDevices() {
         if (!shadowPersistenceEnabled()) {
             return Collections.emptySet();
@@ -927,6 +1035,9 @@ public class ShadowManager {
         return Collections.emptySet();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removePersistedDirty(String deviceId) {
         try {
             if (stringRedisTemplate != null) {
@@ -936,10 +1047,13 @@ public class ShadowManager {
                 redisTemplate.opsForSet().remove(dirtySetKey(), deviceId);
             }
         } catch (Exception e) {
-            log.warn("移除影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("移除影子 dirty 设备失败，设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String dirtySetKey() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         if (shadow == null || shadow.getKeyPrefix() == null || shadow.getKeyPrefix().isBlank()) {
@@ -948,6 +1062,9 @@ public class ShadowManager {
         return shadow.getKeyPrefix() + "dirty";
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private DeviceShadow refreshLocalShadowIfVersionMismatch(String deviceId,
                                                              DeviceShadow current,
                                                              long expectedVersion) {
@@ -962,6 +1079,9 @@ public class ShadowManager {
         return restored;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void reloadLocalShadow(String deviceId) {
         DeviceShadow restored = loadShadow(deviceId);
         if (restored != null) {
@@ -971,6 +1091,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean redisCasEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadowPersistenceEnabled()
@@ -980,27 +1103,42 @@ public class ShadowManager {
                 && objectMapper != null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowAutoMergeEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null || shadow.isAutoMergeEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int shadowMergeAttempts() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         int retries = shadow == null ? 2 : Math.max(0, shadow.getMergeRetryTimes());
         return retries + 1;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowPersistenceEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null || shadow.isPersistenceEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowHistoryEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow != null && shadow.isHistoryEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldRecordHistory(String action, long baseVersion, Long nextVersion) {
         if (!shadowHistoryEnabled() || action == null || action.isBlank() || nextVersion == null) {
             return false;
@@ -1011,6 +1149,9 @@ public class ShadowManager {
         return nextVersion != baseVersion;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long shadowTtlMillis() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         if (shadow == null || shadow.getTtlSeconds() <= 0) {
@@ -1019,16 +1160,25 @@ public class ShadowManager {
         return TimeUnit.SECONDS.toMillis(shadow.getTtlSeconds());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long shadowHistoryTtlSeconds() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null ? 0 : shadow.getHistoryTtlSeconds();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int shadowHistoryMaxRecords() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null ? 0 : shadow.getHistoryMaxRecords();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendShadowHistory(String deviceId,
                                      String action,
                                      Map<String, Object> document,
@@ -1057,10 +1207,13 @@ public class ShadowManager {
                 stringRedisTemplate.expire(key, ttlSeconds, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
-            log.warn("记录设备影子历史失败 deviceId={} action={} err={}", deviceId, action, e.getMessage());
+            log.warn("记录设备影子历史失败 设备={} action={} err={}", deviceId, action, e.getMessage());
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CasResult parseCasResult(Object value) {
         if (value instanceof List<?> list && !list.isEmpty()) {
             Long success = asRedisLong(list.get(0));
@@ -1071,6 +1224,9 @@ public class ShadowManager {
         return new CasResult(success != null && success == 1, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long asRedisLong(Object value) {
         if (value instanceof byte[] bytes) {
             return asLong(new String(bytes, StandardCharsets.UTF_8));
@@ -1078,6 +1234,9 @@ public class ShadowManager {
         return asLong(value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> toMap(Object value) {
         if (value instanceof Map<?, ?> map) {
@@ -1119,6 +1278,9 @@ public class ShadowManager {
         return Collections.emptyMap();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long asLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -1133,6 +1295,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String asString(Object value) {
         if (value == null) {
             return null;
@@ -1141,10 +1306,16 @@ public class ShadowManager {
         return text.isBlank() ? null : text;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record ShadowUpdateResult(boolean changeTriggered, EventInfo eventInfo) {
         public static final ShadowUpdateResult EMPTY = new ShadowUpdateResult(false, null);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record EventInfo(String ruleId,
                             String ruleName,
                             String level,
@@ -1152,10 +1323,19 @@ public class ShadowManager {
                             String eventType) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record CasResult(boolean success, Long actualVersion) {
     }
 
+    /**
+     * 表示当前模块的异常语义。
+     */
     private static class ShadowVersionConflictException extends IllegalStateException {
+        /**
+         * 创建当前组件实例。
+         */
         ShadowVersionConflictException(long expectedVersion, Long actualVersion) {
             super("shadow version conflict: expected=" + expectedVersion + ", actual=" + actualVersion);
         }

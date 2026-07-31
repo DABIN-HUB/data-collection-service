@@ -34,6 +34,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     private ByteOrder byteOrder = ByteOrder.BIG_ENDIAN;
     private Parity parity = Parity.none;
     private final ModbusTransport transport = new ModbusTransport() {
+        /**
+         * 查询并返回业务数据。
+         */
         @Override
         public byte[] read(int unitId, RegisterType registerType,
                            int startAddress, int quantity) throws Exception {
@@ -69,6 +72,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             };
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleCoils(int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
             WriteMultipleCoilsRequest request = new WriteMultipleCoilsRequest(startAddress, quantity, coilBytes);
@@ -82,6 +88,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             }
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleRegisters(int unitId, int startAddress, short[] registers) throws Exception {
             WriteMultipleRegistersRequest request = ModbusRequestBuilder.buildWriteMultipleRegisters(startAddress, registers);
@@ -107,6 +116,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return "MODBUS_TCP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         log.info("开始建立Modbus TCP连接: {}", deviceInfo.getDeviceId());
@@ -139,6 +151,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
                 parity.name());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         removeConnectionSilently();
@@ -147,6 +162,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         String address = point.getAddress();
@@ -165,6 +183,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String address = point.getAddress();
@@ -181,6 +202,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = getBaseDeviceStatus("Modbus TCP");
@@ -199,6 +223,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId,String command, Map<String, Object> params) throws Exception {
         return switch (command.toUpperCase()) {
@@ -213,6 +240,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
 
     // =============== Modbus操作实现 ===============
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Boolean readCoil(int unitId,ModbusAddress address) throws Exception {
         return executeWithClient(client -> {
             CompletionStage<ReadCoilsResponse> future = client.readCoilsAsync(unitId,
@@ -223,6 +253,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Boolean readDiscreteInput(int unitId,ModbusAddress address) throws Exception {
         return executeWithClient(client -> {
             CompletionStage<ReadDiscreteInputsResponse> future = client.readDiscreteInputsAsync(unitId,
@@ -233,6 +266,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Object readHoldingRegister(int unitId,ModbusAddress address, String dataType) throws Exception {
         int registerCount = DataType.fromString(dataType).getRegisterCount();
         return executeWithClient(client -> {
@@ -246,6 +282,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Object readInputRegister(int unitId,ModbusAddress address, String dataType) throws Exception {
         int registerCount = DataType.fromString(dataType).getRegisterCount();
         return executeWithClient(client -> {
@@ -259,6 +298,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeCoil(int unitId,ModbusAddress address, boolean value) throws Exception {
         return executeWithClient(client -> {
             CompletionStage<WriteSingleCoilResponse> future = client.writeSingleCoilAsync(
@@ -271,6 +313,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeHoldingRegister(int unitId,ModbusAddress address, Object value, String dataType) throws Exception {
         int registerCount = DataType.fromString(dataType).getRegisterCount();
         short[] registers = ModbusUtils.valueToRegisters(value, dataType, byteOrder);
@@ -303,6 +348,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
 
     // =============== 命令执行方法 ===============
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadMultipleRegisters(int unitId,Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         int quantity = (int) params.getOrDefault("quantity", 1);
@@ -337,6 +385,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteMultipleRegisters(int unitId,Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         @SuppressWarnings("unchecked")
@@ -363,6 +414,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadCoils(int unitId,Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         int quantity = (int) params.getOrDefault("quantity", 1);
@@ -382,6 +436,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteCoils(int unitId,Map<String, Object> params) throws Exception {
         int address = (int) params.getOrDefault("address", 0);
         @SuppressWarnings("unchecked")
@@ -403,11 +460,12 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         );
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeDiagnostic(int unitId,Map<String, Object> params) {
         Map<String, Object> result = new HashMap<>();
         result.put("protocol", "Modbus TCP");
-        /*result.put("host", host);
-        result.put("port", port);*/
         result.put("unitId", unitId);
         result.put("timeout", timeout);
         result.put("masterConnected", connectionAdapter != null && connectionAdapter.isConnected());
@@ -428,6 +486,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
 
     // =============== 辅助方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean testConnection() {
         int unitId = resolveHealthCheckUnitId();
         try {
@@ -443,6 +504,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<Integer> collectUnitIds() {
         Set<Integer> unitIds = new LinkedHashSet<>();
         for (ModbusReadPlan plan : readPlans) {
@@ -465,24 +529,39 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         return connection != null ? (Integer) connection.getProperty("slaveId") : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletionStage<T> future) throws Exception {
         return future.toCompletableFuture().get(timeout, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("Modbus TCP");
         connectionAdapter = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveHealthCheckUnitId() {
         List<Integer> unitIds = collectUnitIds();
         return unitIds.isEmpty() ? 1 : unitIds.get(0);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private <T> T executeWithClient(ModbusTcpConnectionAdapter.ModbusCallable<T> callable) throws Exception {
         return requireConnection().execute(callable, timeout);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private ModbusTcpConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("Modbus TCP连接尚未建立");

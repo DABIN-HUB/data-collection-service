@@ -23,6 +23,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implements BacnetConnectionAdapter {
 
@@ -32,10 +35,16 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
     private volatile Runnable reconnectListener;
     private volatile BacnetScSessionState sessionState = BacnetScSessionState.DISCONNECTED;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetScConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null, null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetScConnectionAdapter(DeviceInfo deviceInfo,
                                      DeviceConnection config,
                                      Executor httpExecutor,
@@ -43,6 +52,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         super(deviceInfo, enrichConfig(config), httpExecutor, heartbeatScheduler);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         sessionState = BacnetScSessionState.TRANSPORT_CONNECTING;
@@ -76,6 +88,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         sessionState = BacnetScSessionState.DISCONNECTING;
@@ -105,6 +120,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         this.reconnectListener = listener;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception {
         BacnetReadPropertyResponse response = requireClient().readProperty(request,
@@ -115,6 +133,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return response;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                                 long timeoutMs) throws Exception {
@@ -126,6 +147,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return response;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void writeProperty(BacnetWritePropertyRequest request, long timeoutMs) throws Exception {
         requireClient().writeProperty(request,
@@ -134,6 +158,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         updateActivityTime();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
         requireClient().writePropertyMultiple(request,
@@ -142,6 +169,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public synchronized void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCov(request,
@@ -150,6 +180,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         updateActivityTime();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public synchronized void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs) throws Exception {
         requireClient().subscribeCovProperty(request,
@@ -158,6 +191,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         updateActivityTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         requireClient().acknowledgeConfirmedCovNotification(invokeId);
@@ -191,6 +227,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return sessionState == BacnetScSessionState.STANDARD_SESSION_ACTIVE;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private BacnetScClient requireClient() {
         if (bacnetClient == null) {
             throw new IllegalStateException("BACnet/SC client is not initialized");
@@ -198,6 +237,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return bacnetClient;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void notifyReconnectListener() {
         Runnable listener = reconnectListener;
         if (listener == null) {
@@ -206,10 +248,13 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         try {
             listener.run();
         } catch (Exception ex) {
-            log.warn("BACnet/SC reconnect listener failed, deviceId={}", getDeviceId(), ex);
+            log.warn("BACnet/SC 重连 listener 失败, 设备={}", getDeviceId(), ex);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRemoteDeviceInstance() {
         Integer remoteDeviceInstance = getConnectionConfig().getIntConfig("remoteDeviceInstance", null);
         if (remoteDeviceInstance == null || remoteDeviceInstance < 0) {
@@ -218,6 +263,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return remoteDeviceInstance;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveApduTimeout() {
         Integer apduTimeout = getConnectionConfig().getIntConfig("apduTimeout", null);
         if (apduTimeout == null || apduTimeout <= 0) {
@@ -231,6 +279,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
                 : 5000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveSegmentTimeout() {
         Integer segmentTimeout = getConnectionConfig().getIntConfig("segmentTimeout", null);
         if (segmentTimeout == null || segmentTimeout <= 0) {
@@ -239,6 +290,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return segmentTimeout != null && segmentTimeout > 0 ? segmentTimeout : resolveApduTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRequestRetries() {
         Integer retries = getConnectionConfig().getIntConfig("retries", null);
         if (retries == null) {
@@ -247,6 +301,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return retries != null && retries >= 0 ? retries : 0;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private InetSocketAddress resolveRemoteSocketAddress() {
         String host = getConnectionConfig().getHost();
         if ((host == null || host.isBlank()) && getDeviceInfo() != null) {
@@ -262,6 +319,9 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
         return new InetSocketAddress(host, port != null && port > 0 ? port : 443);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static DeviceConnection enrichConfig(DeviceConnection original) {
         DeviceConnection config = original != null ? original : new DeviceConnection();
         if (config.getExtJson() == null) {

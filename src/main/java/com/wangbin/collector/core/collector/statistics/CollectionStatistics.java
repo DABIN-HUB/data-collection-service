@@ -115,10 +115,16 @@ public class CollectionStatistics {
 
         private int currentTaskPoints = 0;
 
+        /**
+         * 创建当前组件实例。
+         */
         public DeviceStatistics(String deviceId) {
             this.deviceId = deviceId;
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void startTask(int pointCount) {
             this.isRunning = true;
             this.startTime = System.currentTimeMillis();
@@ -126,6 +132,9 @@ public class CollectionStatistics {
             this.totalPoints.addAndGet(pointCount);
         }
 
+        /**
+         * 记录或统计业务状态。
+         */
         public void recordSuccess(long executionTime) {
             totalExecutions.incrementAndGet();
             successfulExecutions.incrementAndGet();
@@ -133,12 +142,18 @@ public class CollectionStatistics {
             lastExecutionTime = System.currentTimeMillis();
         }
 
+        /**
+         * 记录或统计业务状态。
+         */
         public void recordFailed() {
             totalExecutions.incrementAndGet();
             failedExecutions.incrementAndGet();
             lastExecutionTime = System.currentTimeMillis();
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void stopTask() {
             this.isRunning = false;
         }

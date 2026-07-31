@@ -28,41 +28,65 @@ public class MonitorController {
     private final TdengineMonitorService tdengineMonitorService;
     private final CollectionScheduler collectionScheduler;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/cache")
     public CacheMetricsSnapshot cacheMetrics() {
         return cacheMonitorService.getCacheMetrics();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/devices")
     public DeviceStatusSnapshot deviceStatus() {
         return deviceMonitorService.getDeviceStatus();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/performance")
     public List<CollectorMetrics> collectorPerformance() {
         return performanceMonitorService.getCollectorMetrics();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/system")
     public SystemResourceSnapshot systemResources() {
         return systemResourceMonitorService.getResources();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/errors")
     public ExceptionStatsSnapshot exceptionStats() {
         return exceptionMonitorService.getStats();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/report")
     public Map<String, Object> cloudReportMetrics() {
         return cloudReportMonitorService.getCloudReportMetrics();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/storage")
     public StorageMetricsSnapshot storageMetrics() {
         return tdengineMonitorService.getStorageMetrics();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/perf/detail")
     public PerformanceStatsSnapshot performanceDetail() {
         return collectionScheduler.getPerformanceSnapshot();

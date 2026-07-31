@@ -35,6 +35,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class EtherNetIpCollector extends ConnectionBackedCollector {
 
@@ -56,6 +59,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return "ETHERNET_IP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -71,18 +77,24 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 : currentConfig.getTimeout();
         this.timeout = configuredTimeout != null && configuredTimeout > 0 ? configuredTimeout : 5000;
         this.maxFieldsPerRequest = Math.max(1, currentConfig.getInt("maxFieldsPerRequest", 64));
-        log.info("PLC4X EtherNet/IP collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
+        log.info("PLC4X EtherNet/IP 采集器 已连接, 设备={}, 超时={}, 单次最大字段数={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("EtherNet/IP");
         connectionAdapter = null;
         configuredAddresses.clear();
-        log.info("PLC4X EtherNet/IP collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("PLC4X EtherNet/IP 采集器 已断开, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         if (!isArrayPoint(point)) {
@@ -106,13 +118,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("Point read failed {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            log.error("点位 读取 失败 {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
             recordException(e, point);
             throw new CollectorException("点位读取失败", deviceInfo.getDeviceId(),
                     point.getPointId(), e);
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         if (!containsArrayPoint(points)) {
@@ -153,7 +168,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     lastProcessResults.put(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
-                    log.error("EtherNet/IP 数组点位处理失败: deviceId={}, pointName={}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    log.error("EtherNet/IP 数组点位处理失败: 设备={}, 点位名称={}", deviceInfo.getDeviceId(), point.getPointName(), e);
                     recordException(e, point);
                     results.put(pointId, null);
                 }
@@ -166,13 +181,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("EtherNet/IP 数组点位批量读取失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("EtherNet/IP 数组点位批量读取失败: 设备={}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
             throw new CollectorException("批量读取失败", deviceInfo.getDeviceId(),
                     null, e);
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public boolean writePoint(DataPoint point, Object value) throws CollectorException {
         if (!isArrayPoint(point)) {
@@ -199,13 +217,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("EtherNet/IP 数组点位写入失败: deviceId={}, pointName={}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            log.error("EtherNet/IP 数组点位写入失败: 设备={}, 点位名称={}", deviceInfo.getDeviceId(), point.getPointName(), e);
             recordException(e, point);
             throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
                     point.getPointId(), e);
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
         if (!containsArrayPoint(points != null ? points.keySet() : null)) {
@@ -238,7 +259,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     validateArrayPointConfiguration(point, address, "write");
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception e) {
-                    log.error("EtherNet/IP 数组点位批量写入失败: pointId={}", point.getPointId(), e);
+                    log.error("EtherNet/IP 数组点位批量写入失败: 点位={}", point.getPointId(), e);
                     recordException(e, point);
                     results.put(point.getPointId(), false);
                 }
@@ -251,13 +272,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("EtherNet/IP 数组点位批量写入失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("EtherNet/IP 数组点位批量写入失败: 设备={}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
             throw new CollectorException("批量写入失败", deviceInfo.getDeviceId(),
                     null, e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
@@ -272,6 +296,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return extractValue(response, fieldName, point, address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -296,6 +323,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
@@ -310,6 +340,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -339,7 +372,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             }
             return results;
         } catch (Exception ex) {
-            log.warn("PLC4X EtherNet/IP batch write failed, falling back to point-by-point writes: {}", ex.getMessage());
+            log.warn("PLC4X EtherNet/IP 批量 写入 失败, 降级为逐点写入:{}", ex.getMessage());
             for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
                 DataPoint point = entry.getKey();
                 if (point == null) {
@@ -348,7 +381,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 try {
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception singleEx) {
-                    log.error("PLC4X EtherNet/IP point write failed, pointId={}", point.getPointId(), singleEx);
+                    log.error("PLC4X EtherNet/IP 点位 写入 失败, 点位={}", point.getPointId(), singleEx);
                     results.put(point.getPointId(), false);
                 }
             }
@@ -356,12 +389,18 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         cacheAddresses(points);
         throw unsupported("subscribe", "PLC4X Logix driver metadata reports subscribe unsupported for the current connection");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
@@ -373,6 +412,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -401,6 +443,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = normalizeCommand(command);
@@ -413,11 +458,17 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         cacheAddresses(points);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheAddresses(List<DataPoint> points) {
         configuredAddresses.clear();
         if (points == null) {
@@ -431,6 +482,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private EtherNetIpTagAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
@@ -438,10 +492,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> EtherNetIpAddressParser.parse(point));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private UnsupportedOperationException unsupported(String operation) {
         return unsupported(operation, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private UnsupportedOperationException unsupported(String operation, String reason) {
         String message = String.format("PLC4X EtherNet/IP collector does not implement %s", operation);
         if (reason != null && !reason.isBlank()) {
@@ -451,6 +511,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return new UnsupportedOperationException(message);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeReadBatch(List<DataPoint> batch, Map<String, Object> results) {
         try {
             PlcReadResponse response = executeReadBatchRequest(batch);
@@ -466,7 +529,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
             }
         } catch (Exception ex) {
-            log.error("PLC4X EtherNet/IP batch read failed, deviceId={}, batchSize={}", deviceInfo.getDeviceId(), batch.size(), ex);
+            log.error("PLC4X EtherNet/IP 批量 读取 失败, 设备={}, 批量数量={}", deviceInfo.getDeviceId(), batch.size(), ex);
             for (DataPoint point : batch) {
                 if (point != null && point.getPointId() != null) {
                     results.put(point.getPointId(), null);
@@ -475,6 +538,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private PlcReadResponse executeReadBatchRequest(List<DataPoint> batch) throws Exception {
         var builder = requireConnection().getClient().readRequestBuilder();
         for (DataPoint point : batch) {
@@ -487,6 +553,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return await(builder.build().execute());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object extractValue(PlcReadResponse response, String fieldName, DataPoint point, EtherNetIpTagAddress address) {
         PlcValue plcValue = response.getPlcValue(fieldName);
         if (plcValue == null || plcValue.isNull()) {
@@ -506,6 +575,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return coerceScalarValue(plcValue, resolvePointType(point, address));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object coerceScalarValue(PlcValue plcValue, EtherNetIpPlcType plcType) {
         if (plcValue == null) {
             return null;
@@ -513,6 +585,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return plcType != null ? plcType.read(plcValue) : plcValue.getObject();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<Object> extractArrayValue(PlcValue plcValue, DataPoint point, EtherNetIpTagAddress address) {
         List<Object> values = new ArrayList<>();
         EtherNetIpPlcType plcType = resolvePointType(point, address);
@@ -523,10 +598,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private EtherNetIpPlcType resolvePointType(DataPoint point, EtherNetIpTagAddress address) {
         return EtherNetIpPlcTypeResolver.INSTANCE.resolveOrNull(point, address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object coerceWriteValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
         if (!address.isScalar()) {
             return coerceWriteArrayValue(value, address, point);
@@ -534,6 +615,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return coerceWriteScalarValue(value, address, point);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object coerceWriteScalarValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
         if (value == null) {
             return null;
@@ -542,6 +626,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return plcType != null ? plcType.write(value) : value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<Object> coerceWriteArrayValue(Object value, EtherNetIpTagAddress address, DataPoint point) {
         List<Object> sourceValues = toObjectList(value);
         if (sourceValues.isEmpty()) {
@@ -559,6 +646,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return coerced;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<Object> toObjectList(Object value) {
         if (value instanceof List<?> list) {
             return new ArrayList<>(list);
@@ -577,6 +667,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("EtherNet/IP array write requires collection or array value");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
             throw new IllegalStateException("PLC4X EtherNet/IP " + operation + " returned null response");
@@ -587,10 +680,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
         return future.get(timeout, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private EtherNetIpConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("PLC4X EtherNet/IP connection has not been established");
@@ -599,6 +698,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     }
 
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         Object value = readPoint(point);
@@ -608,6 +710,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         if (!params.containsKey("value")) {
@@ -622,6 +727,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveCommandPoint(Map<String, Object> params) {
         List<DataPoint> points = configManager != null && deviceInfo != null
                 ? configManager.getDataPoints(deviceInfo.getDeviceId())
@@ -661,6 +769,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("Unable to resolve EtherNet/IP point from command params");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveConfiguredPoint(List<DataPoint> points, String pointRef) {
         if (devicePointResolver != null) {
             return devicePointResolver.resolve(points, pointRef).orElse(null);
@@ -672,6 +783,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 .orElse(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matchesPointRef(DataPoint point, String normalizedRef) {
         return point != null
                 && (normalizedRef.equals(normalize(point.getReportField()))
@@ -681,6 +795,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 || normalizedRef.equals(normalize(point.getPointName())));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
         target.put("pointId", point.getPointId());
         target.put("pointCode", point.getPointCode());
@@ -690,14 +807,23 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeCommand(String command) {
         return command != null ? command.trim().toLowerCase(Locale.ROOT).replace('-', '_') : "";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -710,10 +836,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String asText(Object value) {
         return value != null ? String.valueOf(value) : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -725,6 +857,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return !requireAddress(point).isScalar();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean containsArrayPoint(Iterable<DataPoint> points) {
         if (points == null) {
             return false;
@@ -737,6 +872,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void partitionPoints(List<DataPoint> points, List<DataPoint> scalarPoints, List<DataPoint> arrayPoints) {
         if (points == null) {
             return;
@@ -753,6 +891,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void partitionPointValues(Map<DataPoint, Object> points,
                                       Map<DataPoint, Object> scalarPoints,
                                       Map<DataPoint, Object> arrayPoints) {
@@ -772,6 +913,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateArrayPointConfiguration(DataPoint point,
                                                  EtherNetIpTagAddress address,
                                                  String operation) {
@@ -800,6 +944,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildArrayProcessResult(DataPoint point,
                                                   EtherNetIpTagAddress address,
                                                   Object rawValue,

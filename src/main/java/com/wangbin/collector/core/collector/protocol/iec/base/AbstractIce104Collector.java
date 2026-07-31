@@ -20,7 +20,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * IEC 104 protocol collector base class.
+ * IEC 104 协议 采集器 base class.
  */
 @Slf4j
 public abstract class AbstractIce104Collector extends ConnectionBackedCollector {
@@ -49,17 +49,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 Thread thread = new Thread(r, "iec104-protocol-" + TIMEOUT_THREAD_COUNTER.incrementAndGet());
                 thread.setDaemon(true);
                 thread.setUncaughtExceptionHandler((t, e) ->
-                        log.warn("IEC104 protocol scheduler thread {} failed", t.getName(), e));
+                        log.warn("IEC104 协议 调度器 thread {} 失败", t.getName(), e));
                 return thread;
             });
     @Autowired(required = false)
     @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     protected void shutdownSchedulers() {
         cancelGeneralInterrogationTask();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void initIec104Config(DeviceInfo deviceInfo) {
         this.iec104Config = collectorProperties != null
                 ? collectorProperties.getIec104()
@@ -77,11 +83,17 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void doDisconnect() {
         clearProtocolState();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     protected void clearProtocolState() {
         dataTransferStopped = true;
         valueCache.clear();
@@ -95,6 +107,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         interrogationScheduler = null;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected Map<String, Object> handleResponse(Connection conn, ASdu asdu) {
         Map<String, Object> result = new HashMap<>();
 
@@ -103,7 +118,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             CauseOfTransmission cot = asdu.getCauseOfTransmission();
             int commonAddr = asdu.getCommonAddress();
 
-            log.debug("IEC104 ASDU: type={}, cot={}, neg={}",
+            log.debug("IEC104 ASDU：类型={}，传送原因={}，否定确认={}",
                     type, cot, asdu.isNegativeConfirm());
 
             if (type == ASduType.C_IC_NA_1) {
@@ -145,17 +160,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             }
 
         } catch (Exception e) {
-            log.error("IEC104 handleResponse failed", e);
+            log.error("IEC104 处理响应失败", e);
         }
 
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private void failAllPending(Exception e) {
         pendingRequests.forEach((k, list) -> list.forEach(f -> f.completeExceptionally(e)));
         pendingRequests.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheValue(int commonAddress, Integer typeId, int ioa, Object value) {
         if (value == null) {
             return;
@@ -175,6 +196,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return resolveCacheValue(commonAddress, typeId, ioa, entry);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     @Override
     protected void checkConnection() {
         super.checkConnection();
@@ -194,6 +218,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return valueCache.get(new Iec104Key(commonAddress, null, ioa));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object resolveCacheValue(int commonAddress, Integer typeId, int ioa, CacheEntry entry) {
         long ttl = iec104Config != null ? iec104Config.getCacheTtl() : 0;
         if (ttl <= 0) {
@@ -209,19 +236,28 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return null;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleEmptyAsdu(ASdu asdu) {
         if (asdu.getTypeIdentification() == ASduType.C_IC_NA_1 &&
                 asdu.getCauseOfTransmission() == CauseOfTransmission.ACTIVATION_TERMINATION) {
 
-            log.info("IEC104 interrogation finished");
+            log.info("IEC104 总召唤已完成");
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void handleSpontaneous(int commonAddress, Integer typeId, int ioa, ASduType type, Object value, ASdu asdu) {
-        log.debug("IEC104 spontaneous: ioa={}, type={}, value={}",
+        log.debug("IEC104 突发上送:ioa={}, type={}, 值={}",
                 ioa, type, value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object parseValue(ASduType type, InformationElement[] ies) {
         if (ies == null || ies.length == 0) {
             return null;
@@ -242,7 +278,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             case M_ME_NC_1, M_ME_TC_1, M_ME_TF_1 -> ((IeShortFloat) ie).getValue();
             case M_IT_NA_1, M_IT_TA_1, M_IT_TB_1 -> ((IeBinaryCounterReading) ie).getCounterReading();
             default -> {
-                log.debug("Unsupported ASDU type: {}", type);
+                log.debug("不支持的 IEC104 ASDU 类型：{}", type);
                 yield ie.toString();
             }
         };
@@ -266,6 +302,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return name.startsWith("INTERROGATED_BY_GROUP_") || name.startsWith("REQUESTED_BY_");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void completeRequest(int commonAddress, Integer typeId, int ioAddress, Object value) {
         if (typeId != null) {
             completePendingKey(new Iec104Key(commonAddress, typeId, ioAddress), value);
@@ -273,6 +312,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         completePendingKey(new Iec104Key(commonAddress, null, ioAddress), value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void completePendingKey(Iec104Key key, Object value) {
         CopyOnWriteArrayList<CompletableFuture<Object>> futures = pendingRequests.remove(key);
         if (futures != null) {
@@ -280,6 +322,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     protected CompletableFuture<Object> registerPendingRequest(int commonAddress, Integer typeId, int ioAddress) {
         CompletableFuture<Object> future = new CompletableFuture<>();
         Iec104Key key = new Iec104Key(commonAddress, typeId, ioAddress);
@@ -301,6 +346,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return future;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removePendingFuture(Iec104Key key, CompletableFuture<Object> future) {
         pendingRequests.computeIfPresent(key, (k, list) -> {
             list.remove(future);
@@ -308,6 +356,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         });
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Object normalizeValue(Object value) {
         if (value instanceof Boolean bool) {
             return bool ? 1 : 0;
@@ -318,6 +369,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return value;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleInterrogationAsdu(ASdu asdu) {
         int qualifier = extractQualifier(asdu);
         int commonAddr = asdu.getCommonAddress();
@@ -328,20 +382,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         switch (cot) {
             case ACTIVATION:
             case ACTIVATION_CON:
-                log.info("IEC104 interrogation qualifier {} ACTIVATION", qualifier);
+                log.info("IEC104 总召唤限定词 {} 激活", qualifier);
                 break;
             case ACTIVATION_TERMINATION:
                 if (future != null) {
                     future.complete(null);
                     pendingInterrogations.remove(key);
                 }
-                log.info("IEC104 interrogation finished");
+                log.info("IEC104 总召唤已完成");
                 break;
             default:
-                log.debug("IEC104 interrogation cot={} qualifier={} ca={}", cot, qualifier, commonAddr);
+                log.debug("IEC104 总召唤：传送原因={}，限定词={}，公共地址={}", cot, qualifier, commonAddr);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int extractQualifier(ASdu asdu) {
         InformationObject[] ios = asdu.getInformationObjects();
         if (ios == null || ios.length == 0) {
@@ -358,18 +415,27 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return 20;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void onConnectionReady() {
         dataTransferStopped = false;
         maybeTriggerGeneralInterrogation("connect");
         startGeneralInterrogationLoop();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void maybeTriggerGeneralInterrogation(String reason) {
         if (iec104Config != null && iec104Config.isGeneralInterrogationOnConnect()) {
             triggerInterrogation(commonAddress, 20, reason);
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void startGeneralInterrogationLoop() {
         if (iec104Config == null || interrogationScheduler == null) {
             return;
@@ -387,14 +453,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         }, interval, interval, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     protected void triggerSingleInterrogation(int qualifier, String reason) {
         triggerSingleInterrogation(commonAddress, qualifier, reason);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     protected void triggerSingleInterrogation(int targetCommonAddress, int qualifier, String reason) {
         triggerInterrogation(targetCommonAddress, qualifier, reason);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void triggerInterrogation(int targetCommonAddress, int qualifier, String reason) {
         if (connection == null || dataTransferStopped) {
             return;
@@ -405,16 +480,19 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             IeQualifierOfInterrogation qoi = new IeQualifierOfInterrogation(qualifier);
             try {
                 connection.interrogation(targetCommonAddress, CauseOfTransmission.ACTIVATION, qoi);
-                log.info("Trigger IEC104 interrogation ca={} qualifier={} reason={}", targetCommonAddress, qualifier, reason);
+                log.info("触发 IEC104 总召唤 ca={} qualifier={} 原因={}", targetCommonAddress, qualifier, reason);
             } catch (Exception e) {
                 future.completeExceptionally(e);
                 pendingInterrogations.remove(mapKey, future);
-                log.error("Failed to trigger interrogation ca={} qualifier={}", targetCommonAddress, qualifier, e);
+                log.error("触发总召唤失败 ca={} qualifier={}", targetCommonAddress, qualifier, e);
             }
             return future;
         });
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ScheduledExecutorService resolveProtocolScheduler() {
         return ThreadPoolFallbacks.preferScheduler(
                 protocolScheduler,
@@ -423,6 +501,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 "iec104-protocol-shared");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelGeneralInterrogationTask() {
         if (generalInterrogationTask != null) {
             generalInterrogationTask.cancel(true);
@@ -430,6 +511,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Optional<Integer> resolveSingleInterrogationQualifier(String raw) {
         if (raw == null || raw.isEmpty()) {
             return Optional.empty();
@@ -441,6 +525,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveCommonAddress(DeviceConnection connectionConfig) {
         Integer configured = connectionConfig != null ? connectionConfig.getInt("commonAddress", null) : null;
         if (configured == null && connectionConfig != null) {
@@ -454,6 +541,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 : 1;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveTimeout(DeviceConnection connectionConfig) {
         Integer configuredTimeout = connectionConfig != null ? connectionConfig.getTimeout() : null;
         if (configuredTimeout == null || configuredTimeout <= 0) {
@@ -467,14 +557,26 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 : 5000;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected long requestTimeoutMillis() {
         return timeout > 0 ? timeout : 5000L;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public static record Iec104Key(int commonAddress, Integer typeId, int ioAddress) {}
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     protected record CacheEntry(Object value, long timestamp) {}
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public static record InterrogationKey(int commonAddress, int qualifier) {}
 }
 

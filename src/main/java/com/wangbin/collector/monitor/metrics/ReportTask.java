@@ -24,6 +24,9 @@ public class ReportTask {
     @Builder.Default
     private final long lastRun = 0L;
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum ReportType {
         DAILY,
         WEEKLY,

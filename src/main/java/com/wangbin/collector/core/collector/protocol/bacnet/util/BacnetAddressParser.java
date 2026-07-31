@@ -11,15 +11,24 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetAddressParser {
 
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
             "^([A-Za-z][A-Za-z0-9_#-]*|\\d+)\\s*:\\s*(\\d+)\\s*\\.\\s*([A-Za-z][A-Za-z0-9_#-]*|\\d+)(?:\\[(\\d+)])?$"
     );
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -32,10 +41,16 @@ public final class BacnetAddressParser {
         return parse(address, point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetAddress parse(String address) {
         return parse(address, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetAddress parse(String address, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("BACnet address cannot be empty");
@@ -73,6 +88,9 @@ public final class BacnetAddressParser {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String canonicalize(String objectType,
                                        int instanceNumber,
                                        String propertyIdentifier,
@@ -89,6 +107,9 @@ public final class BacnetAddressParser {
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolveArrayIndex(String explicitArrayIndex, Map<String, Object> config) {
         String value = explicitArrayIndex;
         if ((value == null || value.isBlank()) && config != null && !config.isEmpty()) {
@@ -107,6 +128,9 @@ public final class BacnetAddressParser {
         return parsed;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveDriverDataType(Map<String, Object> config) {
         Object value = firstPresent(config,
                 "driverDataType",
@@ -119,6 +143,9 @@ public final class BacnetAddressParser {
         return normalized.isEmpty() ? "AUTO" : normalized;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> config, String... keys) {
         if (config == null) {
             return null;
@@ -131,6 +158,9 @@ public final class BacnetAddressParser {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeToken(String token) {
         if (token == null) {
             return null;
@@ -138,6 +168,9 @@ public final class BacnetAddressParser {
         return token.trim();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -150,6 +183,9 @@ public final class BacnetAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

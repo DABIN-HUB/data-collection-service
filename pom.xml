@@ -41,7 +41,7 @@
   </properties>
 
   <dependencies>
-    <!-- Spring Boot Starters -->
+    <!-- Spring Boot 启动器 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter</artifactId>
@@ -86,16 +86,6 @@
       <artifactId>mybatis-spring-boot-starter</artifactId>
       <version>${mybatis.version}</version>
     </dependency>
-    <!--<dependency>
-      <groupId>com.mysql</groupId>
-      <artifactId>mysql-connector-j</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.alibaba</groupId>
-      <artifactId>druid-spring-boot-3-starter</artifactId>
-      <version>1.2.20</version>
-    </dependency>-->
 
     <!-- 网络通信 -->
     <dependency>
@@ -155,7 +145,7 @@
     </dependency>
 
     <!-- 协议库 -->
-    <!--modbus 协议 -->
+    <!-- modbus 协议 -->
     <dependency>
       <groupId>com.digitalpetri.modbus</groupId>
       <artifactId>modbus-tcp</artifactId>
@@ -171,7 +161,7 @@
       <artifactId>jSerialComm</artifactId>
       <version>2.11.2</version>
     </dependency>
-    <!--104协议 https://mvnrepository.com/artifact/org.openmuc/j60870 -->
+    <!-- 104协议 https://mvnrepository.com/artifact/org.openmuc/j60870 -->
     <dependency>
       <groupId>org.openmuc</groupId>
       <artifactId>j60870</artifactId>
@@ -208,14 +198,14 @@
       <artifactId>plc4j-driver-opcua</artifactId>
       <version>${plc4x.version}</version>
     </dependency>
-    <!--IEC 61850 https://mvnrepository.com/artifact/com.beanit/iec61850bean -->
+    <!-- IEC 61850 协议依赖 -->
     <dependency>
       <groupId>com.beanit</groupId>
       <artifactId>iec61850bean</artifactId>
       <version>1.9.0</version>
     </dependency>
 
-    <!--coap 采集 -->
+    <!-- coap 采集 -->
     <dependency>
       <groupId>org.eclipse.californium</groupId>
       <artifactId>californium-core</artifactId>

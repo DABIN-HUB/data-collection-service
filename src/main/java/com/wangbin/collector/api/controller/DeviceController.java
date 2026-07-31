@@ -30,6 +30,9 @@ public class DeviceController {
 
     private final CollectionService collectionService;
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostMapping("/{deviceId}/start")
     public Map<String, Object> startDevice(
             @PathVariable
@@ -53,6 +56,9 @@ public class DeviceController {
         return result;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostMapping("/{deviceId}/start-local")
     public Map<String, Object> startLocalDevice(
             @PathVariable
@@ -76,6 +82,9 @@ public class DeviceController {
         return result;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostMapping("/{deviceId}/stop")
     public Map<String, Object> stopDevice(
             @PathVariable
@@ -99,6 +108,9 @@ public class DeviceController {
         return result;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     @PostMapping("/reload")
     public Map<String, Object> reloadAllDevices() {
         Map<String, Object> result = new HashMap<>();
@@ -195,6 +207,9 @@ public class DeviceController {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> baseResult(String deviceId) {
         Map<String, Object> result = new HashMap<>();
         result.put("deviceId", deviceId);

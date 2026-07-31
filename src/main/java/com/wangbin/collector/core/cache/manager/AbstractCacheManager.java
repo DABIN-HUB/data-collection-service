@@ -30,11 +30,17 @@ public abstract class AbstractCacheManager implements CacheManager {
     // 缓存统计锁
     protected final Object statsLock = new Object();
 
+    /**
+     * 创建当前组件实例。
+     */
     public AbstractCacheManager(String cacheType, int cacheLevel) {
         this.cacheType = cacheType;
         this.cacheLevel = cacheLevel;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void init() {
         if (initialized) {
@@ -52,6 +58,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void destroy() {
         if (!initialized) {
@@ -67,11 +76,17 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value) {
         return put(key, value, key.getExpireTime());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value, long expireTime) {
         checkInitialized();
@@ -106,6 +121,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean putAll(Map<CacheKey, T> dataMap) {
         checkInitialized();
@@ -135,6 +153,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key) {
         checkInitialized();
@@ -169,6 +190,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key, Class<T> type) {
         T value = get(key);
@@ -233,6 +257,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         return result;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean delete(CacheKey key) {
         checkInitialized();
@@ -265,6 +292,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteAll(List<CacheKey> keys) {
         checkInitialized();
@@ -294,6 +324,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteByPattern(String pattern) {
         checkInitialized();
@@ -321,11 +354,14 @@ public abstract class AbstractCacheManager implements CacheManager {
         } finally {
             long cost = System.currentTimeMillis() - startTime;
             if (cost > 1000) {
-                log.warn("模式删除缓存耗时过长: {}ms, pattern: {}", cost, pattern);
+                log.warn("模式删除缓存耗时过长: {}ms, 模式={}", cost, pattern);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean exists(CacheKey key) {
         checkInitialized();
@@ -343,6 +379,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean expire(CacheKey key, long expireTime) {
         checkInitialized();
@@ -357,7 +396,7 @@ public abstract class AbstractCacheManager implements CacheManager {
 
             if (success) {
                 totalExpires.incrementAndGet();
-                log.debug("缓存过期时间设置成功: {}, expireTime={}", key, expireTime);
+                log.debug("缓存过期时间设置成功: {}, 过期时间={}", key, expireTime);
             } else {
                 log.debug("缓存过期时间设置失败: {}", key);
             }
@@ -392,6 +431,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public void clear() {
         checkInitialized();
@@ -411,6 +453,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public long size() {
         checkInitialized();
@@ -424,6 +469,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys() {
         checkInitialized();
@@ -437,6 +485,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys(String pattern) {
         checkInitialized();
@@ -490,6 +541,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public void resetStatistics() {
         synchronized (statsLock) {
@@ -516,18 +570,57 @@ public abstract class AbstractCacheManager implements CacheManager {
 
     // =============== 抽象方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doInit() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doDestroy() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract <T> boolean doPut(CacheKey key, T value, long expireTime) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract <T> T doGet(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doDelete(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract int doDeleteByPattern(String pattern) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doExists(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doExpire(CacheKey key, long expireTime) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract long doGetExpire(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doClear() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract long doSize() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Set<CacheKey> doKeys() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Set<CacheKey> doKeys(String pattern) throws Exception;
 
     /**

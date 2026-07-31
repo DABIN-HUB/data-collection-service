@@ -4,6 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsAddress;
 import lombok.Getter;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 public class FinsReadPlanItem {
 
@@ -14,6 +17,9 @@ public class FinsReadPlanItem {
     private final int payloadByteOffset;
     private final int payloadByteLength;
 
+    /**
+     * 创建当前组件实例。
+     */
     public FinsReadPlanItem(DataPoint point,
                             FinsAddress address,
                             int unitOffset,

@@ -13,6 +13,9 @@ import java.util.Optional;
 @Component
 public class AlinkTopicParser {
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Optional<AlinkTopic> parse(String rawTopic) {
         if (!StringUtils.hasText(rawTopic)) {
             return Optional.empty();
@@ -48,6 +51,9 @@ public class AlinkTopicParser {
                         reply));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private int findPrefixIndex(String[] segments) {
         for (int i = 0; i < segments.length; i++) {
             if ("sys".equals(segments[i])) {

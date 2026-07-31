@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的不可变数据记录。
+ */
 public record BacnetMstpFrame(BacnetMstpFrameType frameType,
                                int destinationAddress,
                                int sourceAddress,
@@ -22,11 +25,17 @@ public record BacnetMstpFrame(BacnetMstpFrameType frameType,
         data = data == null ? new byte[0] : Arrays.copyOf(data, data.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public byte[] data() {
         return Arrays.copyOf(data, data.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int dataLength() {
         return data.length;
     }

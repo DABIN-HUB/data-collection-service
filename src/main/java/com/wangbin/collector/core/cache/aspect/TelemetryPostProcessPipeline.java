@@ -15,7 +15,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Executes post-processing stages with per-stage failure isolation.
+ * 执行遥测后处理阶段，并隔离单阶段失败。
  */
 @Slf4j
 @Component
@@ -24,6 +24,9 @@ public class TelemetryPostProcessPipeline {
     private final List<TelemetryPostProcessStage> stageCandidates;
     private final Map<TelemetryStageType, Executor> stageExecutors;
 
+    /**
+     * 创建当前组件实例。
+     */
     @Autowired
     public TelemetryPostProcessPipeline(
             List<TelemetryPostProcessStage> stageCandidates,
@@ -40,6 +43,9 @@ public class TelemetryPostProcessPipeline {
         this.stageExecutors = Map.copyOf(executors);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     TelemetryPostProcessPipeline(List<TelemetryPostProcessStage> stageCandidates) {
         this.stageCandidates = stageCandidates;
         EnumMap<TelemetryStageType, Executor> executors = new EnumMap<>(TelemetryStageType.class);
@@ -49,6 +55,9 @@ public class TelemetryPostProcessPipeline {
         this.stageExecutors = Map.copyOf(executors);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public void process(TelemetryPostProcessContext context) {
         if (context == null || context.deviceId() == null || context.point() == null || context.processResult() == null) {
             return;
@@ -64,10 +73,13 @@ public class TelemetryPostProcessPipeline {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context) {
         Executor executor = stageExecutors.get(stage.type());
         if (executor == null) {
-            log.error("遥测后处理阶段未配置执行器，stage={}", stage.name());
+            log.error("遥测后处理阶段未配置执行器，阶段={}", stage.name());
             return;
         }
         try {
@@ -75,12 +87,12 @@ public class TelemetryPostProcessPipeline {
                 try {
                     stage.process(context);
                 } catch (Exception exception) {
-                    log.error("遥测后处理阶段执行失败，stage={}，device={}，point={}",
+                    log.error("遥测后处理阶段执行失败，阶段={}，设备={}，点位={}",
                             stage.name(), context.deviceId(), context.point().getPointId(), exception);
                 }
             });
         } catch (RejectedExecutionException exception) {
-            log.warn("遥测后处理阶段任务被拒绝，stage={}，device={}，point={}",
+            log.warn("遥测后处理阶段任务被拒绝，阶段={}，设备={}，点位={}",
                     stage.name(), context.deviceId(), context.point().getPointId());
         }
     }

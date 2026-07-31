@@ -54,11 +54,17 @@ public class ProcessResult implements Serializable {
     // 里提前塞入 eventTriggered=true、eventType、eventMessage 等字段，shadowManager 会识别并生成事件上报
     private Map<String, Object> metadata = new HashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessResult() {
         this.processorName = "Unknown";
         this.processingTime = 0;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessResult(boolean success, Object rawValue, Object processedValue) {
         this();
         this.success = success;
@@ -76,6 +82,9 @@ public class ProcessResult implements Serializable {
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static ProcessResult success(Object rawValue, Object processedValue, String message) {
         ProcessResult result = success(rawValue, processedValue);
         result.setMessage(message);
@@ -93,6 +102,9 @@ public class ProcessResult implements Serializable {
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static ProcessResult error(Object rawValue, String error, DataQuality dataQuality) {
         ProcessResult result = error(rawValue, error);
         result.setQuality(dataQuality.getCode());
@@ -258,6 +270,9 @@ public class ProcessResult implements Serializable {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String formatValue(Object value) {
         if (value == null) return "null";
         if (value instanceof String) {

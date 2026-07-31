@@ -12,6 +12,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -29,16 +32,22 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
     private final AtomicBoolean telemetryStableReady = new AtomicBoolean(false);
     private final AtomicBoolean alarmStableReady = new AtomicBoolean(false);
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     public void run(ApplicationArguments args) {
         if (!properties.isAutoCreate()) {
-            log.info("TDengine auto-create disabled, skip startup schema initialization.");
+            log.info("TDengine 自动-创建 disabled, 跳过 startup schema initialization.");
             return;
         }
         ensureTelemetrySuperTable();
         ensureAlarmSuperTable();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public void ensureTelemetrySuperTable() {
         if (!properties.isAutoCreate()) {
             return;
@@ -56,6 +65,9 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
         ensureTelemetryUnitColumn(database, superTable);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public void ensureAlarmSuperTable() {
         if (!properties.isAutoCreate()) {
             return;
@@ -72,16 +84,19 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
             }
             boolean existed = stableExists(database, superTable);
             if (existed) {
-                log.info("TDengine alarm stable already exists: {}.{}", database, superTable);
+                log.info("TDengine 告警 超级表 已存在 exists:{}.{}", database, superTable);
             } else {
                 alarmRepository.createStable(database, superTable);
-                log.info("TDengine alarm stable initialized: {}.{}", database, superTable);
+                log.info("TDengine 告警 超级表 已初始化:{}.{}", database, superTable);
             }
             ensureAlarmEventTypeColumn(database, superTable);
             alarmStableReady.set(true);
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureDatabase(String database) {
         if (databaseReady.get()) {
             return;
@@ -92,10 +107,13 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
             }
             dataRepository.createDatabase(database, properties.getKeepDays());
             databaseReady.set(true);
-            log.info("TDengine database ready: {}", database);
+            log.info("TDengine 数据库 ready:{}", database);
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureStable(AtomicBoolean readyFlag,
                               String database,
                               String superTable,
@@ -109,44 +127,59 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
                 return;
             }
             if (stableExists(database, superTable)) {
-                log.info("TDengine {} stable already exists: {}.{}", schemaName, database, superTable);
+                log.info("TDengine {} 超级表 已存在 exists:{}.{}", schemaName, database, superTable);
                 readyFlag.set(true);
                 return;
             }
             createAction.run();
             readyFlag.set(true);
-            log.info("TDengine {} stable initialized: {}.{}", schemaName, database, superTable);
+            log.info("TDengine {} 超级表 已初始化:{}.{}", schemaName, database, superTable);
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureTelemetryUnitColumn(String database, String superTable) {
         if (columnExists(database, superTable, TELEMETRY_UNIT_COLUMN)) {
             return;
         }
         dataRepository.addTelemetryUnitColumn(database, superTable);
-        log.info("TDengine telemetry stable upgraded with column {}: {}.{}",
+        log.info("TDengine 遥测 超级表 已升级 with 字段 {}:{}.{}",
                 TELEMETRY_UNIT_COLUMN, database, superTable);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureAlarmEventTypeColumn(String database, String superTable) {
         if (columnExists(database, superTable, ALARM_EVENT_TYPE_COLUMN)) {
             return;
         }
         alarmRepository.addAlarmEventTypeColumn(database, superTable);
-        log.info("TDengine alarm stable upgraded with column {}: {}.{}",
+        log.info("TDengine 告警 超级表 已升级 with 字段 {}:{}.{}",
                 ALARM_EVENT_TYPE_COLUMN, database, superTable);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean stableExists(String database, String stableName) {
         Long count = dataRepository.countStable(database, stableName);
         return count != null && count > 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean columnExists(String database, String tableName, String columnName) {
         Long count = dataRepository.countColumn(database, tableName, columnName);
         return count != null && count > 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String sanitizeIdentifier(String raw) {
         if (raw == null || raw.isBlank()) {
             return "unknown";

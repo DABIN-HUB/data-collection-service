@@ -26,11 +26,14 @@ public class CryptoUtil {
     private static final int AES_KEY_SIZE = 128;
     private static final int RSA_KEY_SIZE = 2048;
 
+    /**
+     * 创建当前组件实例。
+     */
     private CryptoUtil() {
         // 工具类，防止实例化
     }
 
-    // ==================== MD5 ====================
+    // MD5 相关方法。
 
     /**
      * MD5加密
@@ -58,7 +61,7 @@ public class CryptoUtil {
         }
     }
 
-    // ==================== SHA256 ====================
+    // SHA256 相关方法。
 
     /**
      * SHA256加密
@@ -102,7 +105,7 @@ public class CryptoUtil {
         }
     }
 
-    // ==================== Base64 ====================
+    // Base64 相关方法。
 
     /**
      * Base64编码
@@ -153,7 +156,7 @@ public class CryptoUtil {
         }
     }
 
-    // ==================== AES ====================
+    // AES 相关方法。
 
     /**
      * 生成AES密钥
@@ -202,7 +205,7 @@ public class CryptoUtil {
         }
     }
 
-    // ==================== RSA ====================
+    // RSA 相关方法。
 
     /**
      * 生成RSA密钥对

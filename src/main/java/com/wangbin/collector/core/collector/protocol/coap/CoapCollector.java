@@ -31,17 +31,26 @@ public class CoapCollector extends AbstractCoapCollector {
         return "COAP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         initCoapConnection();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         closeCoapConnection();
         observeMapping.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         CoapPoint coapPoint = parsePoint(point);
@@ -49,6 +58,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return convertResponse(response, coapPoint);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         Map<String, Object> values = new HashMap<>();
@@ -56,13 +68,16 @@ public class CoapCollector extends AbstractCoapCollector {
             try {
                 values.put(point.getPointId(), doReadPoint(point));
             } catch (Exception e) {
-                log.error("CoAP 批量读取失败: point={}", point.getPointName(), e);
+                log.error("CoAP 批量读取失败: 点位={}", point.getPointName(), e);
                 values.put(point.getPointId(), null);
             }
         }
         return values;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         CoapPoint coapPoint = parsePoint(point);
@@ -71,6 +86,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return response != null && response.isSuccess();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
         Map<String, Boolean> results = new HashMap<>();
@@ -79,13 +97,16 @@ public class CoapCollector extends AbstractCoapCollector {
                 boolean success = doWritePoint(entry.getKey(), entry.getValue());
                 results.put(entry.getKey().getPointId(), success);
             } catch (Exception e) {
-                log.error("CoAP 点位写入失败: point={}", entry.getKey().getPointName(), e);
+                log.error("CoAP 点位写入失败: 点位={}", entry.getKey().getPointName(), e);
                 results.put(entry.getKey().getPointId(), false);
             }
         }
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
@@ -96,9 +117,12 @@ public class CoapCollector extends AbstractCoapCollector {
             observeMapping.put(coapPoint.getObserveKey(), point);
             startObserve(coapPoint, createHandler(coapPoint));
         }
-        log.info("CoAP 观察订阅完成: size={}", observeMapping.size());
+        log.info("CoAP 观察订阅完成: 数量={}", observeMapping.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
@@ -120,6 +144,9 @@ public class CoapCollector extends AbstractCoapCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -132,6 +159,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         switch (command.toLowerCase()) {
@@ -150,11 +180,17 @@ public class CoapCollector extends AbstractCoapCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.info("CoAP 点位加载完成: deviceId={}, count={}", deviceId, points.size());
+        log.info("CoAP 点位加载完成: 设备={}, 数量={}", deviceId, points.size());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     protected void handleNotification(CoapPoint point, CoapResponse response) {
         DataPoint dataPoint = observeMapping.get(point.getObserveKey());
@@ -163,9 +199,12 @@ public class CoapCollector extends AbstractCoapCollector {
         }
         Object value = convertResponse(response, point);
         ingestPushedValue(dataPoint, value);
-        log.info("CoAP 推送数据: pointId={}, value={}", dataPoint.getPointId(), value);
+        log.info("CoAP 推送数据: 点位={}, 值={}", dataPoint.getPointId(), value);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildPayload(Object value, boolean binary) {
         if (value == null) {
             return new byte[0];
@@ -176,6 +215,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return value.toString().getBytes();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object doCommandGet(Map<String, Object> params) throws Exception {
         String uri = Objects.toString(params.get("uri"), baseUri);
         CoapResponse response = coapConnection.execute(adapter -> {
@@ -196,6 +238,9 @@ public class CoapCollector extends AbstractCoapCollector {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object doCommandWrite(Map<String, Object> params, boolean post) throws Exception {
         String uri = Objects.toString(params.get("uri"), baseUri);
         String payload = Objects.toString(params.get("payload"), "");
@@ -221,6 +266,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return Map.of("status", response.isSuccess() ? "success" : "error", "code", response.getCode());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object doCommandDelete(Map<String, Object> params) throws Exception {
         String uri = Objects.toString(params.get("uri"), baseUri);
         CoapResponse response = coapConnection.execute(adapter -> {
@@ -237,6 +285,9 @@ public class CoapCollector extends AbstractCoapCollector {
         return Map.of("status", response.isSuccess() ? "success" : "error", "code", response.getCode());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object doCommandDiscover() throws Exception {
         Set<WebLink> resources = coapConnection != null
                 ? coapConnection.execute(adapter -> {

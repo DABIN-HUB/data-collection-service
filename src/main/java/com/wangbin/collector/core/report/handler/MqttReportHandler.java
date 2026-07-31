@@ -92,10 +92,16 @@ public class MqttReportHandler extends AbstractReportHandler {
     @Autowired(required = false)
     private MqttAckReplyObserver ackReplyObserver;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttReportHandler() {
         super("MqttReportHandler", "MQTT", "MQTT v5协议上报处理器");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("初始化 MQTT v5 报告处理器...");
@@ -135,6 +141,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         log.info("MQTT v5 上报处理器初始化完成");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ReportResult doReport(ReportData data, ReportConfig config) throws Exception {
         log.debug("开始 MQTT v5 上报：{} -> {}:{}", data.getPointCode(), config.getHost(), config.getPort());
@@ -203,6 +212,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected List<ReportResult> doBatchReport(List<ReportData> dataList, ReportConfig config) throws Exception {
         log.debug("开始批量 MQTT v5 上报：{}:{}，数据量：{}", config.getHost(), config.getPort(), dataList.size());
@@ -293,6 +305,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConfigUpdate(ReportConfig config) throws Exception {
         log.debug("更新 MQTT v5 处理器配置：{}", config.getTargetId());
@@ -314,6 +329,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConfigRemove(ReportConfig config) throws Exception {
         log.debug("删除 MQTT v5 处理器配置：{}", config.getTargetId());
@@ -336,6 +354,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("销毁 MQTT v5 报告处理器...");
@@ -405,10 +426,16 @@ public class MqttReportHandler extends AbstractReportHandler {
 
     // =============== 私有辅助方法 ===============
 
+    /**
+     * 查询并返回业务数据。
+     */
     private void loadMqttConfig() {
         log.debug("加载 MQTT v5 配置完成");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveMaxConcurrentConnects() {
         if (reportProperties == null || reportProperties.getMqtt() == null) {
             return 1;
@@ -416,6 +443,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return Math.max(1, reportProperties.getMqtt().getMaxConcurrentConnects());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveReconnectScanIntervalMs() {
         if (reportProperties == null || reportProperties.getMqtt() == null) {
             return 30000L;
@@ -511,6 +541,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return config.getTargetId() + "@" + config.getHost() + ":" + config.getPort();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyLifecycleConfig(MqttConnectionConfig connConfig) {
         ReportProperties.Mqtt.Lifecycle lifecycle = reportProperties != null && reportProperties.getMqtt() != null
                 ? reportProperties.getMqtt().getLifecycle()
@@ -522,6 +555,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         connConfig.setLifecyclePublishTimeoutMs(Math.max(1000L, lifecycle.getPublishTimeoutMs()));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private MqttPublishOptions buildPublishOptions(ReportData data, ReportConfig config) {
         MqttPublishOptions options = new MqttPublishOptions();
 
@@ -531,6 +567,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return options;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudReportTargetContext resolveCloudReportTargetContext(ReportConfig config) {
         if (config != null) {
             Object raw = config.getParam("cloudTargetContext");
@@ -548,6 +587,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 CloudAckOptions.defaults());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudProtocolAdapter resolveCloudProtocolAdapter(ReportConfig config) {
         String provider = configText(config, "cloudProvider");
         if (cloudProtocolAdapters != null) {
@@ -559,6 +601,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         throw new IllegalArgumentException("unsupported cloud protocol provider: " + provider);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String configText(ReportConfig config, String key) {
         if (config == null || key == null) {
             return null;
@@ -571,6 +616,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return raw == null ? null : String.valueOf(raw);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -600,15 +648,24 @@ public class MqttReportHandler extends AbstractReportHandler {
         return false; // 默认不保留消息
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildMessagePayload(ReportData data, ReportConfig config) {
         return buildJsonPayload(data, config);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildJsonPayload(ReportData data, ReportConfig config) {
         CloudReportTargetContext targetContext = resolveCloudReportTargetContext(config);
         return targetContext.protocolAdapter().encodeReportData(data, targetContext.payloadOptions());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildTextPayload(ReportData data, ReportConfig config) {
         StringBuilder text = new StringBuilder();
         text.append("pointCode=").append(data.getPointCode()).append(";");
@@ -622,6 +679,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildBinaryPayload(ReportData data, ReportConfig config) {
         // 简化的二进制编码格式
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -656,6 +716,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateSubscriptions(MqttConnectionConfig connConfig) {
         List<String> topics = connConfig.getSubscribeTopics();
         if (topics != null && !topics.isEmpty()) {
@@ -663,6 +726,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private AckManager.AckRegistration prepareAckRegistration(MqttConnectionConfig connConfig, ReportData data) {
         if (connConfig == null || data == null) {
             return AckManager.AckRegistration.disabled();
@@ -673,6 +739,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         }
         return ackManager.register(extractMessageId(data), ackOptions);
     }
+    /**
+     * 解析或转换业务数据。
+     */
     private String extractMessageId(ReportData data) {
         if (data == null || data.getMetadata() == null) {
             return null;
@@ -681,6 +750,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return messageId != null ? messageId.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveMessageId(ReportData data) {
         if (data == null) {
             return UUID.randomUUID().toString();
@@ -721,6 +793,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return UUID.randomUUID().toString();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyAckResult(MqttConnectionConfig connConfig,
                                 AckManager.AckRegistration registration,
                                 ReportResult result) {
@@ -756,6 +831,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             result.setErrorMessage("MQTT ack error: " + ack.message);
         }
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private MqttAsyncClient obtainConnectedClient(MqttConnectionConfig connConfig) {
         try {
             MqttAsyncClient client = clientManager.getClient(connConfig);
@@ -781,6 +859,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         return null;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ReportResult buildOfflineResult(ReportData data, ReportConfig config, String message) {
         ReportResult result = ReportResult.error(
                 data != null ? data.getPointCode() : "unknown",
@@ -790,15 +871,21 @@ public class MqttReportHandler extends AbstractReportHandler {
         return result;
     }
 
+    /**
+     * 管理当前模块的生命周期和状态。
+     */
     private static class AckManager {
         private final ConcurrentHashMap<String, AckTicket> pendingAcks = new ConcurrentHashMap<>();
 
+        /**
+         * 维护注册或订阅关系。
+         */
         AckRegistration register(String messageId, CloudAckOptions options) {
             if (options == null || !options.enabled() || messageId == null || messageId.isEmpty()) {
                 return AckRegistration.disabled();
             }
             if (pendingAcks.size() >= options.maxPending()) {
-                log.warn("MQTT ACK pending 已达上限，跳过本次 ACK 等待：messageId={}, maxPending={}",
+                log.warn("MQTT ACK pending 已达上限，跳过本次 ACK 等待：消息={}, maxPending={}",
                         messageId, options.maxPending());
                 return AckRegistration.disabled();
             }
@@ -815,6 +902,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return new AckRegistration(messageId, ticket, true);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         AckMessage await(AckRegistration registration, long timeoutMs) {
             if (registration == null || !registration.isEnabled()) {
                 return null;
@@ -831,6 +921,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         void cancel(AckRegistration registration) {
             if (registration == null || !registration.isEnabled()) {
                 return;
@@ -838,6 +931,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             pendingAcks.remove(registration.messageId, registration.ticket);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         void complete(String messageId, AckMessage ackMessage) {
             if (messageId == null) {
                 return;
@@ -846,10 +942,13 @@ public class MqttReportHandler extends AbstractReportHandler {
             if (ticket != null) {
                 ticket.future.complete(ackMessage);
             } else {
-                log.trace("收到未跟踪的 MQTT ACK：messageId={}", messageId);
+                log.trace("收到未跟踪的 MQTT ACK：消息={}", messageId);
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         void expireTimeouts() {
             long now = System.currentTimeMillis();
             for (Map.Entry<String, AckTicket> entry : pendingAcks.entrySet()) {
@@ -859,12 +958,15 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
                 if (pendingAcks.remove(entry.getKey(), ticket)) {
                     ticket.future.complete(AckMessage.timeout(ticket.messageId));
-                    log.warn("MQTT ACK 等待超时：messageId={}, mode={}, timeoutMs={}",
+                    log.warn("MQTT ACK 等待超时：消息={}, 模式={}, timeoutMs={}",
                             ticket.messageId, ticket.options.mode(), ticket.options.timeoutMs());
                 }
             }
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         private static class AckTicket {
             private final String messageId;
             private final CompletableFuture<AckMessage> future;
@@ -872,6 +974,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             private final long deadlineAt;
             private final CloudAckOptions options;
 
+            /**
+             * 创建当前组件实例。
+             */
             private AckTicket(String messageId,
                               CompletableFuture<AckMessage> future,
                               long createdAt,
@@ -885,17 +990,26 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         private static class AckRegistration {
             private final String messageId;
             private final AckTicket ticket;
             private final boolean enabled;
 
+            /**
+             * 创建当前组件实例。
+             */
             private AckRegistration(String messageId, AckTicket ticket, boolean enabled) {
                 this.messageId = messageId;
                 this.ticket = ticket;
                 this.enabled = enabled;
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             static AckRegistration disabled() {
                 return new AckRegistration(null, null, false);
             }
@@ -917,12 +1031,18 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
     }
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class AckMessage {
         private final String messageId;
         private final int code;
         private final String message;
         private final boolean timeout;
 
+        /**
+         * 创建当前组件实例。
+         */
         private AckMessage(String messageId, int code, String message, boolean timeout) {
             this.messageId = messageId;
             this.code = code;
@@ -930,14 +1050,23 @@ public class MqttReportHandler extends AbstractReportHandler {
             this.timeout = timeout;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private static AckMessage received(String messageId, int code, String message) {
             return new AckMessage(messageId, code, message, false);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private static AckMessage timeout(String messageId) {
             return new AckMessage(messageId, -1, "ACK timeout", true);
         }
 
+        /**
+         * 构造标准业务结果。
+         */
         private static AckMessage failure(String messageId, String message) {
             return new AckMessage(messageId, -1, message != null ? message : "ACK wait failed", false);
         }
@@ -984,6 +1113,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         private int lifecycleQos = 1;
         private long lifecyclePublishTimeoutMs = 3000L;
 
+        /**
+         * 创建当前组件实例。
+         */
         public MqttConnectionConfig(ReportConfig config) {
             this.targetId = config.getTargetId();
             this.host = config.getHost();
@@ -1003,6 +1135,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return CloudDeviceIdentity.of(gatewayProductKey, gatewayDeviceName);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void prepareAckSettings() {
             if (ackTopicSuffix == null || ackTopicSuffix.isEmpty()) {
                 ackSubscriptionTopics = Collections.emptyList();
@@ -1031,6 +1166,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             ackTopicPatterns = Collections.unmodifiableList(patterns);
         }
 
+        /**
+         * 创建并返回业务对象。
+         */
         private Pattern buildAckPattern(String topic) {
             StringBuilder regex = new StringBuilder();
             for (int i = 0; i < topic.length(); i++) {
@@ -1046,10 +1184,16 @@ public class MqttReportHandler extends AbstractReportHandler {
             return Pattern.compile(regex.toString());
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public boolean shouldWaitForAck() {
             return ackOptions != null && ackOptions.enabled() && !ackTopicPatterns.isEmpty() && ackOptions.timeoutMs() > 0;
         }
 
+        /**
+         * 解析或转换业务数据。
+         */
         private String normalizePrefix(String prefix) {
             String value = prefix == null || prefix.isBlank() ? "/sys" : prefix.trim();
             if (!value.startsWith("/")) {
@@ -1114,6 +1258,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final String pointCode;
         private final String targetId;
 
+        /**
+         * 创建当前组件实例。
+         */
         public PublishTask(MqttAsyncClient client, String topic, byte[] payload,
                            MqttPublishOptions options, String pointCode, String targetId) {
             this.client = client;
@@ -1136,6 +1283,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final String pointCode;
         private final String targetId;
 
+        /**
+         * 创建当前组件实例。
+         */
         public PublishResult(boolean success, String errorMessage, int messageId,
                              String pointCode, String targetId) {
             this.success = success;
@@ -1164,6 +1314,9 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final MqttCloudDeviceLifecyclePublisher lifecyclePublisher;
         private final MqttAckReplyObserver ackReplyObserver;
 
+        /**
+         * 创建当前组件实例。
+         */
         public MqttClientManager(AckManager ackManager,
                                  MqttDownlinkService downlinkService,
                                  MqttBusinessReplyService businessReplyService,
@@ -1182,6 +1335,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             this.reconnectScanIntervalMs = Math.max(1000L, reconnectScanIntervalMs);
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void init() {
             if (monitorExecutor != null && !monitorExecutor.isShutdown()) {
                 monitorFuture = monitorExecutor.scheduleAtFixedRate(
@@ -1200,6 +1356,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return holder.getOrConnect(config);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public boolean tryReconnect(MqttConnectionConfig config) {
             if (config == null) {
                 return false;
@@ -1214,6 +1373,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 更新或刷新业务状态。
+         */
         public void updateConnectionConfig(MqttConnectionConfig config) {
             if (config == null) {
                 return;
@@ -1228,6 +1390,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 清理或删除业务数据。
+         */
         public void removeClient(String configKey) {
             MqttClientHolder holder = clients.remove(configKey);
             if (holder != null) {
@@ -1235,6 +1400,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void destroy() {
             if (monitorFuture != null) {
                 monitorFuture.cancel(false);
@@ -1290,6 +1458,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return stats;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private MqttClientHolder holder(MqttConnectionConfig config) {
             String configKey = config.getKey();
             MqttClientHolder holder = clients.computeIfAbsent(configKey, MqttClientHolder::new);
@@ -1297,6 +1468,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return holder;
         }
 
+        /**
+         * 创建并返回业务对象。
+         */
         private MqttAsyncClient createMqttClient(MqttConnectionConfig config) throws MqttException {
             try {
                 String brokerUrl = config.getBrokerUrl();
@@ -1319,7 +1493,7 @@ public class MqttReportHandler extends AbstractReportHandler {
                                 try {
                                     ackReplyObserver.onAck(ackReply);
                                 } catch (RuntimeException exception) {
-                                    log.error("提交MQTT业务确认到持久化发件箱失败，messageId={}",
+                                    log.error("提交MQTT业务确认到持久化发件箱失败，消息={}",
                                             ackReply.messageId(), exception);
                                 }
                             }
@@ -1343,6 +1517,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 处理连接生命周期。
+         */
         private void connectClient(MqttAsyncClient client, MqttConnectionConfig config) throws MqttException {
             try {
                 MqttConnectionOptions options = buildConnectOptions(config);
@@ -1359,6 +1536,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void publishGatewayOnline(MqttAsyncClient client, MqttConnectionConfig config) {
             if (!shouldPublishOnline(config)) {
                 return;
@@ -1374,6 +1554,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                     config.getLifecyclePublishTimeoutMs());
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void publishGatewayOffline(MqttAsyncClient client, MqttConnectionConfig config) {
             if (!shouldPublishOffline(config)) {
                 return;
@@ -1389,14 +1572,23 @@ public class MqttReportHandler extends AbstractReportHandler {
                     config.getLifecyclePublishTimeoutMs());
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private boolean shouldPublishOnline(MqttConnectionConfig config) {
             return config != null && config.isLifecycleEnabled() && config.isGatewayOnlineEnabled();
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private boolean shouldPublishOffline(MqttConnectionConfig config) {
             return config != null && config.isLifecycleEnabled() && config.isGatewayGracefulOfflineEnabled();
         }
 
+        /**
+         * 处理连接生命周期。
+         */
         private void connectWithPermit(MqttAsyncClient client, MqttConnectionOptions options) throws MqttException {
             boolean acquired = false;
             try {
@@ -1418,6 +1610,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void logReconnectFailure(String configKey, String brokerUrl, Exception e) {
             long now = System.currentTimeMillis();
             Long last = lastReconnectErrorLog.get(configKey);
@@ -1429,6 +1624,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 创建并返回业务对象。
+         */
         private MqttConnectionOptions buildConnectOptions(MqttConnectionConfig config) {
             MqttConnectionOptions options = new MqttConnectionOptions();
 
@@ -1461,10 +1659,16 @@ public class MqttReportHandler extends AbstractReportHandler {
             return options;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void configureSsl(MqttConnectionOptions options) {
             // SSL/TLS 配置预留，后续按平台证书要求扩展。
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void monitorClients() {
             for (Map.Entry<String, MqttClientHolder> entry : clients.entrySet()) {
                 String configKey = entry.getKey();
@@ -1483,26 +1687,41 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         private class MqttClientHolder {
             private final String configKey;
             private final ReentrantLock lifecycleLock = new ReentrantLock();
             private volatile MqttConnectionConfig config;
             private volatile MqttAsyncClient client;
 
+            /**
+             * 创建当前组件实例。
+             */
             private MqttClientHolder(String configKey) {
                 this.configKey = configKey;
             }
 
+            /**
+             * 更新或刷新业务状态。
+             */
             private void updateConfig(MqttConnectionConfig latestConfig) {
                 if (latestConfig != null) {
                     this.config = latestConfig;
                 }
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             private MqttConnectionConfig config() {
                 return config;
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             private MqttAsyncClient client() {
                 return client;
             }
@@ -1516,6 +1735,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 return reconnect(config);
             }
 
+            /**
+             * 处理连接生命周期。
+             */
             private MqttAsyncClient reconnect(MqttConnectionConfig latestConfig) throws MqttException {
                 updateConfig(latestConfig);
                 lifecycleLock.lock();
@@ -1539,6 +1761,9 @@ public class MqttReportHandler extends AbstractReportHandler {
                 }
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             private void close() {
                 lifecycleLock.lock();
                 try {
@@ -1572,12 +1797,18 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final MqttConnectionConfig config;
         private final MqttInboundMessageDispatcher inboundDispatcher;
 
+        /**
+         * 创建当前组件实例。
+         */
         private MqttCallbackHandler(MqttConnectionConfig config,
                                     MqttInboundMessageDispatcher inboundDispatcher) {
             this.config = config;
             this.inboundDispatcher = inboundDispatcher;
         }
 
+        /**
+         * 处理连接生命周期。
+         */
         @Override
         public void disconnected(MqttDisconnectResponse disconnectResponse) {
             log.warn("MQTT v5连接已断开：broker={} returnCode={}",
@@ -1585,16 +1816,22 @@ public class MqttReportHandler extends AbstractReportHandler {
                     disconnectResponse != null ? disconnectResponse.getReturnCode() : -1);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void mqttErrorOccurred(MqttException exception) {
             log.error("MQTT v5发生异常：broker={}", config.getBrokerUrl(), exception);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void messageArrived(String topic, MqttMessage message) {
             int payloadLength = message != null && message.getPayload() != null
                     ? message.getPayload().length : 0;
-            log.trace("MQTT v5收到消息：topic={} qos={} bytes={}",
+            log.trace("MQTT v5收到消息：主题={} 服务质量={} 字节数={}",
                     topic, message != null ? message.getQos() : -1, payloadLength);
             inboundDispatcher.dispatch(new MqttInboundMessage(
                     topic,
@@ -1603,16 +1840,25 @@ public class MqttReportHandler extends AbstractReportHandler {
                     config.getCloudProvider()));
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void deliveryComplete(IMqttToken token) {
-            log.trace("MQTT v5消息发布完成：messageId={}", token != null ? token.getMessageId() : -1);
+            log.trace("MQTT v5消息发布完成：消息={}", token != null ? token.getMessageId() : -1);
         }
 
+        /**
+         * 处理连接生命周期。
+         */
         @Override
         public void connectComplete(boolean reconnect, String serverURI) {
             log.info("MQTT v5连接完成：type={} serverURI={}", reconnect ? "重连" : "首次连接", serverURI);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void authPacketArrived(int reasonCode, MqttProperties properties) {
             log.trace("MQTT v5认证包到达：reasonCode={}", reasonCode);
@@ -1629,15 +1875,24 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final AtomicLong successPublishCount = new AtomicLong(0);
         private final AtomicLong failurePublishCount = new AtomicLong(0);
 
+        /**
+         * 创建当前组件实例。
+         */
         public MessagePublisher(MqttClientManager clientManager, ExecutorService publishExecutor) {
             this.clientManager = clientManager;
             this.publishExecutor = publishExecutor;
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void init() {
             log.info("MQTT v5 消息发布管理器初始化完成");
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public PublishResult publish(MqttAsyncClient client, String topic,
                                      byte[] payload, MqttPublishOptions options) {
             totalPublishCount.incrementAndGet();
@@ -1698,6 +1953,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public List<PublishResult> publishBatch(List<PublishTask> tasks) {
             List<PublishResult> results = new ArrayList<>(tasks.size());
             List<Future<PublishResult>> futures = new ArrayList<>(tasks.size());
@@ -1741,6 +1999,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             return results;
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void destroy() {
             log.info("MQTT v5消息发布管理器销毁完成");
         }
@@ -1773,14 +2034,23 @@ public class MqttReportHandler extends AbstractReportHandler {
         private final Map<String, Set<String>> clientSubscriptions = new ConcurrentHashMap<>();
         private final AtomicLong totalSubscribeCount = new AtomicLong(0);
 
+        /**
+         * 创建当前组件实例。
+         */
         public SubscriptionManager(MqttClientManager clientManager) {
             this.clientManager = clientManager;
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void init() {
             log.info("MQTT v5 订阅管理器初始化完成");
         }
 
+        /**
+         * 更新或刷新业务状态。
+         */
         public void updateSubscriptions(MqttConnectionConfig config, List<String> topics) {
             String configKey = config.getKey();
 
@@ -1836,6 +2106,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 清理或删除业务数据。
+         */
         public void removeSubscriptions(String configKey) {
             Set<String> topics = clientSubscriptions.remove(configKey);
             if (topics != null && !topics.isEmpty()) {
@@ -1843,6 +2116,9 @@ public class MqttReportHandler extends AbstractReportHandler {
             }
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void destroy() {
             clientSubscriptions.clear();
             log.info("MQTT v5订阅管理器销毁完成");

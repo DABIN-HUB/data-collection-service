@@ -1,5 +1,6 @@
 package com.wangbin.collector.common.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Configuration;
@@ -10,12 +11,18 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.concurrent.Executor;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Configuration
 @EnableAsync
 public class AsyncConfig implements AsyncConfigurer {
 
     private final Executor asyncExecutor;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AsyncConfig(@Qualifier("asyncCollectorExecutor") Executor asyncExecutor) {
         this.asyncExecutor = asyncExecutor;
     }
@@ -33,20 +40,15 @@ public class AsyncConfig implements AsyncConfigurer {
     /**
      * 自定义异步异常处理器
      */
+    @Slf4j
     static class CustomAsyncExceptionHandler implements AsyncUncaughtExceptionHandler {
 
+        /**
+         * 处理当前业务流程。
+         */
         @Override
         public void handleUncaughtException(Throwable throwable, Method method, Object... params) {
-            // 异步任务异常处理
-            String errorMsg = String.format("异步任务执行异常: method [%s], params %s",
-                    method.getName(), Arrays.toString(params));
-
-            System.err.println(errorMsg);
-            throwable.printStackTrace();
-
-            // 这里可以添加日志记录或告警逻辑
-            // logger.error(errorMsg, throwable);
-            // alertService.sendAsyncErrorAlert(method.getName(), throwable);
+            log.error("异步任务执行异常：方法={}，参数={}", method.getName(), Arrays.toString(params), throwable);
         }
     }
 }

@@ -40,6 +40,9 @@ public class CloudReportMonitorService {
     private final ConfigManager configManager;
     private final Executor reportExecutor;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CloudReportMonitorService(ReportProperties reportProperties,
                                      ReportManager reportManager,
                                      CloudOutboxService cloudOutboxService,
@@ -80,6 +83,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> collectConfiguredMetrics() {
         List<DeviceContext> contexts = safeContexts();
         int deviceCount = contexts.size();
@@ -140,6 +146,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<DeviceContext> safeContexts() {
         try {
             List<DeviceContext> contexts = configManager.getAllDeviceContexts();
@@ -150,6 +159,9 @@ public class CloudReportMonitorService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> inspectReportExecutor() {
         if (reportExecutor instanceof ThreadPoolTaskExecutor taskExecutor) {
             ThreadPoolExecutor executor = taskExecutor.getThreadPoolExecutor();
@@ -162,6 +174,9 @@ public class CloudReportMonitorService {
         return emptyExecutorMetrics(reportExecutor == null ? "unknown" : reportExecutor.getClass().getSimpleName());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildExecutorMetrics(String type, ThreadPoolExecutor executor) {
         BlockingQueue<Runnable> queue = executor.getQueue();
         int queueSize = queue == null ? -1 : queue.size();
@@ -185,6 +200,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> emptyExecutorMetrics(String type) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("type", type);
@@ -202,6 +220,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long rejectedCount(ThreadPoolExecutor executor) {
         if (executor.getRejectedExecutionHandler() instanceof ObservedRejectedExecutionHandler observed) {
             return observed.getRejectedCount();
@@ -209,6 +230,9 @@ public class CloudReportMonitorService {
         return -1L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<String> collectRisks(Map<String, Object> configured,
                                       Map<String, Object> executor,
                                       Map<String, Map<String, Object>> handlersStatus,
@@ -250,6 +274,9 @@ public class CloudReportMonitorService {
         return risks;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveStatus(Map<String, Object> configured,
                                  Map<String, Object> executor,
                                  List<String> risks,
@@ -277,6 +304,9 @@ public class CloudReportMonitorService {
         return requiresPersistentConnection() ? "OK" : "READY";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String statusText(String status) {
         return switch (status) {
             case "OK" -> "云上报链路已连接";
@@ -288,6 +318,9 @@ public class CloudReportMonitorService {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> activeHandler(Map<String, Map<String, Object>> handlers) {
         String mode = normalizedMode();
         return handlers.entrySet().stream()
@@ -297,11 +330,17 @@ public class CloudReportMonitorService {
                 .orElse(Collections.emptyMap());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private boolean requiresPersistentConnection() {
         String mode = normalizedMode();
         return "MQTT".equals(mode) || "TCP".equals(mode);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasActiveTransport(Map<String, Map<String, Object>> handlersStatus,
                                        Map<String, Map<String, Object>> handlersStatistics) {
         String mode = normalizedMode();
@@ -320,10 +359,16 @@ public class CloudReportMonitorService {
         return false;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizedMode() {
         return String.valueOf(reportProperties.getMode()).trim().toUpperCase();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> batchOptions() {
         ReportProperties.Cloud.Batch batch = reportProperties.getCloud().getBatch();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -336,6 +381,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> ackOptions() {
         ReportProperties.Cloud.Ack ack = reportProperties.getCloud().getAck();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -347,6 +395,9 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> outboxMetrics() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("enabled", cloudOutboxService.isEnabled());
@@ -355,6 +406,9 @@ public class CloudReportMonitorService {
         result.put("oldestMessageAgeMs", cloudOutboxService.getOldestMessageAgeMillis());
         return result;
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> payloadOptions() {
         ReportProperties.Cloud.Payload payload = reportProperties.getCloud().getPayload();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -366,14 +420,23 @@ public class CloudReportMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<String> safeList(List<String> source) {
         return source == null ? Collections.emptyList() : new ArrayList<>(source);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Map<String, Object>> safeMap(Map<String, Map<String, Object>> source) {
         return source == null ? Collections.emptyMap() : new LinkedHashMap<>(source);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private double number(Object value) {
         return value instanceof Number number ? number.doubleValue() : 0.0D;
     }

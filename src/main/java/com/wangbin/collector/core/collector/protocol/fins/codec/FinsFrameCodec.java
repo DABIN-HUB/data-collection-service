@@ -6,6 +6,9 @@ import com.wangbin.collector.core.collector.protocol.fins.domain.FinsMemoryArea;
 
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class FinsFrameCodec {
 
     private static final int HEADER_LENGTH = 10;
@@ -14,15 +17,24 @@ public final class FinsFrameCodec {
     private static final int SUBCOMMAND_MEMORY_READ = 0x01;
     private static final int SUBCOMMAND_MEMORY_WRITE = 0x02;
 
+    /**
+     * 创建当前组件实例。
+     */
     private FinsFrameCodec() {
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildReadRequest(FinsConnectionConfig config, int sid, FinsAddress address) {
         return buildMemoryReadRequest(config, sid, address.getMemoryArea(), address.getWordAddress(),
                 address.getBitOffset() != null ? address.getBitOffset() : 0,
                 address.readUnitCount(), address.isBitUnit());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildBatchReadRequest(FinsConnectionConfig config,
                                                int sid,
                                                FinsMemoryArea memoryArea,
@@ -32,6 +44,9 @@ public final class FinsFrameCodec {
         return buildMemoryReadRequest(config, sid, memoryArea, startWord, 0, unitCount, bitUnit);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildWriteRequest(FinsConnectionConfig config,
                                            int sid,
                                            FinsAddress address,
@@ -41,6 +56,9 @@ public final class FinsFrameCodec {
                 address.readUnitCount(), address.isBitUnit(), payload);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildBatchWriteRequest(FinsConnectionConfig config,
                                                 int sid,
                                                 FinsMemoryArea memoryArea,
@@ -51,14 +69,23 @@ public final class FinsFrameCodec {
         return buildMemoryWriteRequest(config, sid, memoryArea, startWord, 0, unitCount, bitUnit, payload);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsResponse parseReadResponse(byte[] frame, int expectedSid) {
         return parseResponse(frame, expectedSid, COMMAND_MEMORY_AREA, SUBCOMMAND_MEMORY_READ);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsResponse parseWriteResponse(byte[] frame, int expectedSid) {
         return parseResponse(frame, expectedSid, COMMAND_MEMORY_AREA, SUBCOMMAND_MEMORY_WRITE);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildCommandRequest(FinsConnectionConfig config,
                                              int sid,
                                              int mainCommand,
@@ -73,6 +100,9 @@ public final class FinsFrameCodec {
         return frame;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsResponse parseResponse(byte[] frame,
                                              int expectedSid,
                                              int expectedMainCommand,
@@ -94,6 +124,9 @@ public final class FinsFrameCodec {
                 Arrays.copyOfRange(frame, RESPONSE_MIN_LENGTH, frame.length));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static byte[] buildMemoryReadRequest(FinsConnectionConfig config,
                                                  int sid,
                                                  FinsMemoryArea memoryArea,
@@ -115,6 +148,9 @@ public final class FinsFrameCodec {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static byte[] buildMemoryWriteRequest(FinsConnectionConfig config,
                                                   int sid,
                                                   FinsMemoryArea memoryArea,
@@ -138,6 +174,9 @@ public final class FinsFrameCodec {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static byte[] buildHeader(FinsConnectionConfig config, int sid) {
         byte[] header = new byte[HEADER_LENGTH];
         header[0] = (byte) 0x80;
@@ -153,11 +192,17 @@ public final class FinsFrameCodec {
         return header;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record FinsResponse(int sid,
                                int mainCommand,
                                int subCommand,
                                int endCode,
                                byte[] payload) {
+        /**
+         * 构造标准业务结果。
+         */
         public boolean success() {
             return endCode == 0;
         }

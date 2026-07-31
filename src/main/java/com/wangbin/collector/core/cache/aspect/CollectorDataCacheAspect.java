@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Captures collector read results and delegates telemetry post-processing asynchronously.
+ * 捕获采集器读取结果，并异步委托遥测后处理链路执行。
  */
 @Slf4j
 @Aspect
@@ -25,14 +25,23 @@ public class CollectorDataCacheAspect {
 
     private final CollectorDataPostProcessor dataPostProcessor;
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Pointcut("execution(* com.wangbin.collector.core.collector.protocol.base.ReadableCollector.readPoint(..))")
     public void readPointPointcut() {
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Pointcut("execution(* com.wangbin.collector.core.collector.protocol.base.ReadableCollector.readPoints(..))")
     public void readPointsPointcut() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @AfterReturning(pointcut = "readPointPointcut()", returning = "result")
     public void afterReadPoint(JoinPoint joinPoint, Object result) {
         try {
@@ -59,10 +68,13 @@ public class CollectorDataCacheAspect {
 
             dataPostProcessor.savePointAsync(deviceId, point, cacheValue);
         } catch (Exception e) {
-            log.error("prepare async cache failed", e);
+            log.error("准备异步缓存失败", e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @AfterReturning(pointcut = "readPointsPointcut()", returning = "result")
     public void afterReadPoints(JoinPoint joinPoint, Map<String, Object> result) {
         try {
@@ -91,7 +103,7 @@ public class CollectorDataCacheAspect {
 
             dataPostProcessor.saveBatchAsync(deviceId, points, result, invocationResults);
         } catch (Exception e) {
-            log.error("prepare async batch cache failed", e);
+            log.error("准备异步批量缓存失败", e);
         }
     }
 }

@@ -13,16 +13,28 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class BacnetValueDecoder {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetValueDecoder() {
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetValue readAnyValue(ByteBuffer buffer) {
         BacnetTagReader.TagHeader tag = BacnetTagReader.readTag(buffer);
         return readValue(buffer, tag);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetValue readValue(ByteBuffer buffer, BacnetTagReader.TagHeader tag) {
         if (tag.contextSpecific() && tag.openingTag()) {
             return readConstructedValue(buffer, tag.tagNumber());
@@ -34,6 +46,9 @@ final class BacnetValueDecoder {
         return readPrimitiveValue(buffer, tag);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetValue readPrimitiveValue(ByteBuffer buffer, BacnetTagReader.TagHeader tag) {
         int type = tag.tagNumber();
         return switch (type) {
@@ -154,6 +169,9 @@ final class BacnetValueDecoder {
         };
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetValue readConstructedValue(ByteBuffer buffer, int openingContextTagNumber) {
         List<Object> items = new ArrayList<>();
         List<String> itemTypes = new ArrayList<>();
@@ -180,6 +198,9 @@ final class BacnetValueDecoder {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     static Object normalizeForProperty(BacnetPropertyIdentifier propertyIdentifier,
                                        Integer arrayIndex,
                                        BacnetValue decodedValue) {
@@ -199,6 +220,9 @@ final class BacnetValueDecoder {
         return decodedValue.getValue();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     static BacnetValue normalizeDecodedPropertyValue(BacnetPropertyIdentifier propertyIdentifier,
                                                      Integer arrayIndex,
                                                      BacnetValue decodedValue) {
@@ -232,6 +256,9 @@ final class BacnetValueDecoder {
         return decodedValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetValue normalizeObjectListValue(Integer arrayIndex, BacnetValue decodedValue) {
         if (arrayIndex != null && arrayIndex > 0) {
             return decodedValue;
@@ -250,6 +277,9 @@ final class BacnetValueDecoder {
         return decodedValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetValue normalizePriorityArrayValue(Integer arrayIndex, BacnetValue decodedValue) {
         if (decodedValue.getValue() instanceof List<?> list) {
             List<Object> priorities = new ArrayList<>(list.size());
@@ -273,6 +303,9 @@ final class BacnetValueDecoder {
         return decodedValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetValue normalizeTextArrayValue(BacnetPropertyIdentifier propertyIdentifier,
                                                        Integer arrayIndex,
                                                        BacnetValue decodedValue) {
@@ -293,12 +326,18 @@ final class BacnetValueDecoder {
         return decodedValue;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object projectComplexValue(BacnetPropertyIdentifier propertyIdentifier,
                                               Integer arrayIndex,
                                               BacnetValue decodedValue) {
         return projectComplexValueAsBacnetValue(propertyIdentifier, arrayIndex, decodedValue).getValue();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static BacnetValue projectComplexValueAsBacnetValue(BacnetPropertyIdentifier propertyIdentifier,
                                                                 Integer arrayIndex,
                                                                 BacnetValue decodedValue) {
@@ -326,12 +365,18 @@ final class BacnetValueDecoder {
                 .build();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readPayload(ByteBuffer buffer, int length) {
         byte[] payload = new byte[length];
         buffer.get(payload);
         return payload;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static long readUnsigned(byte[] payload) {
         long value = 0;
         for (byte item : payload) {
@@ -340,6 +385,9 @@ final class BacnetValueDecoder {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static long readSigned(byte[] payload) {
         long value = 0;
         for (byte item : payload) {
@@ -354,14 +402,23 @@ final class BacnetValueDecoder {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static String readCharacterString(byte[] payload) {
         return BacnetReadPropertyResponseDecoder.readCharacterStringPayload(payload);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static boolean[] readBitString(byte[] payload) {
         return BacnetReadPropertyResponseDecoder.readBitStringPayload(payload);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static ObjectIdentifier readObjectIdentifier(byte[] payload) {
         if (payload.length != 4) {
             throw new IllegalArgumentException("BACnet objectIdentifier payload length must be 4");
@@ -372,6 +429,9 @@ final class BacnetValueDecoder {
         return new ObjectIdentifier(objectType, instance);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Map<String, Object> bitStringMap(boolean[] bits, String... labels) {
         Map<String, Object> map = new LinkedHashMap<>();
         List<Boolean> values = toBitList(bits);
@@ -382,6 +442,9 @@ final class BacnetValueDecoder {
         return map;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static List<Boolean> toBitList(boolean[] bits) {
         List<Boolean> values = new ArrayList<>(bits.length);
         for (boolean bit : bits) {
@@ -390,6 +453,9 @@ final class BacnetValueDecoder {
         return values;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static String readDate(byte[] payload) {
         if (payload.length != 4) {
             return toHex(payload);
@@ -403,6 +469,9 @@ final class BacnetValueDecoder {
                 day >= 0 ? String.format("%02d", day) : "XX");
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static String readTime(byte[] payload) {
         if (payload.length != 4) {
             return toHex(payload);
@@ -418,6 +487,9 @@ final class BacnetValueDecoder {
                 hundredth >= 0 ? String.format("%02d", hundredth) : "XX");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String toHex(byte[] payload) {
         StringBuilder builder = new StringBuilder(payload.length * 2);
         for (byte value : payload) {
@@ -426,6 +498,9 @@ final class BacnetValueDecoder {
         return builder.toString();
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record ObjectIdentifier(BacnetObjectType objectType, int instance) {
     }
 }

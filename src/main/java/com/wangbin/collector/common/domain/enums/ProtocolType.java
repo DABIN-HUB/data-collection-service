@@ -1,11 +1,11 @@
 package com.wangbin.collector.common.domain.enums;
 
 /**
- * Supported collection protocol types.
+ * 支持的采集协议类型。
  */
 public enum ProtocolType {
 
-    // Modbus
+    // Modbus 协议族。
     MODBUS_TCP("MODBUS_TCP", "Modbus TCP", 502),
     MODBUS_RTU("MODBUS_RTU", "Modbus RTU", null),
     MODBUS_ASCII("MODBUS_ASCII", "Modbus ASCII", null),
@@ -17,37 +17,37 @@ public enum ProtocolType {
     ADS("ADS", "Beckhoff ADS", 48898),
     KNXNET_IP("KNXNET_IP", "KNXnet/IP", 3671),
 
-    // OPC
+    // OPC 协议族。
     OPC_DA("OPC_DA", "OPC DA", null),
     OPC_UA("OPC_UA", "OPC UA", 4840),
     OPC_UA_PLC4X("OPC_UA_PLC4X", "OPC UA (PLC4X Alias)", 4840),
 
-    // SNMP
+    // SNMP 协议族。
     SNMP_V1("SNMP_V1", "SNMP v1", 161),
     SNMP_V2C("SNMP_V2C", "SNMP v2c", 161),
     SNMP_V3("SNMP_V3", "SNMP v3", 161),
 
-    // MQTT
+    // MQTT 协议族。
     MQTT("MQTT", "MQTT", 1883),
     MQTT_SSL("MQTT_SSL", "MQTT SSL", 8883),
 
-    // CoAP
+    // CoAP 协议族。
     COAP("COAP", "CoAP", 5683),
     COAP_SSL("COAP_SSL", "CoAP SSL", 5684),
 
-    // IEC
+    // IEC 协议族。
     IEC104("IEC104", "IEC 60870-5-104", 2404),
     IEC61850("IEC61850", "IEC 61850", 102),
 
-    // HTTP
+    // HTTP 协议族。
     HTTP("HTTP", "HTTP", 80),
     HTTPS("HTTPS", "HTTPS", 443),
 
-    // WebSocket
+    // WebSocket 协议族。
     WEBSOCKET("WEBSOCKET", "WebSocket", 80),
     WEBSOCKET_SSL("WEBSOCKET_SSL", "WebSocket SSL", 443),
 
-    // Custom
+    // 自定义协议族。
     CUSTOM_TCP("CUSTOM_TCP", "Custom TCP", null),
     CUSTOM_UDP("CUSTOM_UDP", "Custom UDP", null);
 
@@ -55,6 +55,9 @@ public enum ProtocolType {
     private final String description;
     private final Integer defaultPort;
 
+    /**
+     * 创建当前组件实例。
+     */
     ProtocolType(String code, String description, Integer defaultPort) {
         this.code = code;
         this.description = description;
@@ -73,6 +76,9 @@ public enum ProtocolType {
         return defaultPort;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static ProtocolType fromCode(String code) {
         if (code == null) {
             return null;
@@ -105,6 +111,9 @@ public enum ProtocolType {
         return this == MODBUS_RTU || this == MODBUS_ASCII || this == BACNET_MSTP;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needEncryption() {
         return this == HTTPS
                 || this == MQTT_SSL

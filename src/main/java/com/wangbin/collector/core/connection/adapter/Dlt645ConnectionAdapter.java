@@ -18,6 +18,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
     private final SharedSerialChannelManager serialChannelManager;
     private Dlt645Session session;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Dlt645ConnectionAdapter(DeviceInfo deviceInfo,
                                    DeviceConnection config,
                                    SharedSerialChannelManager serialChannelManager) {
@@ -25,6 +28,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         this.serialChannelManager = serialChannelManager;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         SerialEndpoint endpoint = new SerialEndpoint(
@@ -54,6 +60,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         Dlt645Session current = session;
@@ -63,6 +72,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (session == null || !session.isOpen()) {
@@ -70,6 +82,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // 写操作的密码认证由具体写命令携带，连接阶段不执行独立认证。
@@ -80,6 +95,9 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         return session;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         if (config.getReadTimeout() != null && config.getReadTimeout() > 0) {
             return config.getReadTimeout();
@@ -90,11 +108,17 @@ public class Dlt645ConnectionAdapter extends AbstractConnectionAdapter<Dlt645Ses
         return 3000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveWriteTimeout() {
         return config.getWriteTimeout() != null && config.getWriteTimeout() > 0
                 ? config.getWriteTimeout() : resolveReadTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRetryCount() {
         return config.getRetries() != null && config.getRetries() >= 0 ? config.getRetries() : 2;
     }

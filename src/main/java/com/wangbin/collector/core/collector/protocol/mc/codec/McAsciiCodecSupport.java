@@ -6,15 +6,27 @@ import com.wangbin.collector.core.collector.protocol.mc.domain.McDeviceCode;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class McAsciiCodecSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private McAsciiCodecSupport() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static String formatHex(int value, int width) {
         return String.format(Locale.ROOT, "%0" + width + "X", value & mask(width));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static String formatDeviceNumber(McAddress address) {
         if (address == null) {
             return "000000";
@@ -23,6 +35,9 @@ public final class McAsciiCodecSupport {
         return "0".repeat(Math.max(0, 6 - raw.length())) + raw;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static String deviceCodeText(McDeviceCode deviceCode) {
         return switch (deviceCode) {
             case ZR -> "ZR";
@@ -36,6 +51,9 @@ public final class McAsciiCodecSupport {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McDeviceCode parseDeviceCodeText(String text) {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("MC ASCII device code cannot be empty");
@@ -54,10 +72,16 @@ public final class McAsciiCodecSupport {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int parseHex(byte[] payload, int offset, int width) {
         return Integer.parseInt(new String(payload, offset, width, StandardCharsets.US_ASCII), 16);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeWritePayload(McAddress address, byte[] normalizedPayload) {
         byte[] safePayload = normalizedPayload != null ? normalizedPayload : new byte[0];
         if (address == null) {
@@ -69,6 +93,9 @@ public final class McAsciiCodecSupport {
         return encodeWordPayload(address, safePayload);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] decodeReadPayload(McAddress address, byte[] rawPayload) {
         byte[] safePayload = rawPayload != null ? rawPayload : new byte[0];
         if (address == null) {
@@ -80,6 +107,9 @@ public final class McAsciiCodecSupport {
         return decodeWordPayload(address, safePayload);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static int rawReadPayloadLength(McAddress address) {
         if (address == null) {
             return 0;
@@ -90,6 +120,9 @@ public final class McAsciiCodecSupport {
         return address.getWordCount() * 4;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeWordPayload(McAddress address, byte[] payload) {
         int expected = address.getWordCount() * 2;
         if (payload.length < expected) {
@@ -108,6 +141,9 @@ public final class McAsciiCodecSupport {
         return encoded;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] decodeWordPayload(McAddress address, byte[] payload) {
         int expected = address.getWordCount() * 4;
         if (payload.length < expected) {
@@ -125,6 +161,9 @@ public final class McAsciiCodecSupport {
         return decoded;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeBitPayload(McAddress address, byte[] payload) {
         int expectedBits = address.getReadUnitCount();
         byte[] encoded = new byte[expectedBits];
@@ -136,6 +175,9 @@ public final class McAsciiCodecSupport {
         return encoded;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] decodeBitPayload(McAddress address, byte[] payload) {
         int expectedBits = address.getReadUnitCount();
         if (payload.length < expectedBits) {
@@ -155,6 +197,9 @@ public final class McAsciiCodecSupport {
         return decoded;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int mask(int width) {
         return switch (width) {
             case 2 -> 0xFF;

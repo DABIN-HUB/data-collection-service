@@ -40,6 +40,9 @@ public class ReportConfigProvider {
     private CloudProtocolAdapterRegistry cloudProtocolAdapters;
     private final Cache<String, ReportConfig> cache;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ReportConfigProvider(ConfigManager configManager, ReportProperties reportProperties) {
         this.reportProperties = reportProperties;
         this.cache = Caffeine.newBuilder()
@@ -55,12 +58,18 @@ public class ReportConfigProvider {
         return cache.get(gatewayDeviceId, this::buildReportConfig);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void evict(String gatewayDeviceId) {
         if (gatewayDeviceId != null) {
             cache.invalidate(gatewayDeviceId);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ReportConfig buildReportConfig(String gatewayDeviceId) {
         ReportProperties.Mqtt mqtt = reportProperties.getMqtt();
         BrokerEndpoint endpoint = parseBrokerEndpoint(mqtt.getBrokerUrl());
@@ -122,6 +131,9 @@ public class ReportConfigProvider {
         return config;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private List<String> buildSubscribeTopics(ReportProperties.Mqtt mqtt) {
         LinkedHashSet<String> topics = new LinkedHashSet<>();
         if (mqtt.getSubscribeTopics() != null) {
@@ -149,6 +161,9 @@ public class ReportConfigProvider {
         return new ArrayList<>(topics);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudProtocolAdapter resolveCloudProtocolAdapter(String provider) {
         if (cloudProtocolAdapters != null) {
             return cloudProtocolAdapters.resolve(provider);
@@ -159,6 +174,9 @@ public class ReportConfigProvider {
         }
         throw new IllegalArgumentException("unsupported cloud protocol provider: " + provider);
     }
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeTopicPrefix(String prefix) {
         String value = prefix == null || prefix.isBlank() ? "/sys" : prefix.trim();
         if (value.length() > 1 && value.endsWith("/")) {
@@ -167,6 +185,9 @@ public class ReportConfigProvider {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveClientId(String deviceId, String template) {
         if (template == null || template.isEmpty()) {
             return "collector-" + deviceId;
@@ -176,6 +197,9 @@ public class ReportConfigProvider {
                 .replace("${deviceId}", deviceId);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private BrokerEndpoint parseBrokerEndpoint(String brokerUrl) {
         if (brokerUrl == null || brokerUrl.isEmpty()) {
             return null;
@@ -194,6 +218,9 @@ public class ReportConfigProvider {
         }
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record BrokerEndpoint(String host, int port) {
     }
 }

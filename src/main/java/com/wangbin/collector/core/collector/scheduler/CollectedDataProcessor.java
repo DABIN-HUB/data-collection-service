@@ -18,6 +18,9 @@ class CollectedDataProcessor {
     private final CollectorProperties collectorProperties;
     private final PointRuntimeStateService pointRuntimeStateService;
 
+    /**
+     * 创建当前组件实例。
+     */
     @Autowired
     CollectedDataProcessor(CollectorProperties collectorProperties,
                            PointRuntimeStateService pointRuntimeStateService) {
@@ -25,10 +28,16 @@ class CollectedDataProcessor {
         this.pointRuntimeStateService = pointRuntimeStateService;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     CollectedDataProcessor(CollectorProperties collectorProperties) {
         this(collectorProperties, new PointRuntimeStateService());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     void process(String deviceId,
                  List<DataPoint> points,
                  Map<String, Object> values,

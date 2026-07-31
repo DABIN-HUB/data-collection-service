@@ -6,6 +6,9 @@ import lombok.Value;
 
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Value
 @Builder
 public class BacnetReadPropertyMultiplePlan {
@@ -15,6 +18,9 @@ public class BacnetReadPropertyMultiplePlan {
     @Singular
     List<BacnetReadPointPlan> pointPlans;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Value
     @Builder
     public static class ReadGroup {

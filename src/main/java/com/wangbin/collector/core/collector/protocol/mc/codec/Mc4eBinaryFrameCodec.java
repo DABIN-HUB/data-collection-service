@@ -5,71 +5,113 @@ import com.wangbin.collector.core.collector.protocol.mc.domain.McAddress;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class Mc4eBinaryFrameCodec implements McFrameCodec {
 
     private final AtomicInteger serialCounter = new AtomicInteger();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public String frameType() {
         return "4E_BINARY";
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     public byte[] buildBatchRead(McAddress address, DeviceConnection config) {
         return McFrameBuilder.build4eBatchRead(address, config, nextSerial());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     public byte[] buildBatchWrite(McAddress address, byte[] payload, DeviceConnection config) {
         return McFrameBuilder.build4eBatchWrite(address, payload, config, nextSerial());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     public byte[] buildRandomRead(McRandomReadRequest request, DeviceConnection config) {
         return McFrameBuilder.build4eRandomRead(request, config, nextSerial());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     public byte[] buildRandomWrite(McRandomWriteRequest request, DeviceConnection config) {
         return McFrameBuilder.build4eRandomWrite(request, config, nextSerial());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     @Override
     public byte[] validateResponse(byte[] request, byte[] response) {
         McResponseParser.validate4eBinarySerial(request, response);
         return response;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public byte[] parseReadPayload(byte[] response) {
         return McResponseParser.parse4eBinaryReadPayload(response);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public int rawReadPayloadLength(McAddress address) {
         return address != null ? address.getExpectedPayloadLength() : 0;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public byte[] normalizeReadPayload(McAddress address, byte[] payload) {
         return payload != null ? payload.clone() : new byte[0];
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public byte[] normalizeWritePayload(McAddress address, byte[] payload) {
         return payload != null ? payload.clone() : new byte[0];
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     @Override
     public void ensureWriteSuccess(byte[] response) {
         McResponseParser.ensure4eBinaryWriteSuccess(response);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public int readEndCode(byte[] response) {
         return McResponseParser.read4eBinaryEndCode(response);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int nextSerial() {
         return serialCounter.updateAndGet(current -> (current + 1) & 0xFFFF);
     }

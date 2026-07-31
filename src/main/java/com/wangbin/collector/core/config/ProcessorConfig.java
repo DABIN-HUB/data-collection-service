@@ -1,12 +1,12 @@
 package com.wangbin.collector.core.config;
 
-import com.wangbin.collector.core.processor.DataProcessor;
 import com.wangbin.collector.core.processor.converter.DataConverter;
 import com.wangbin.collector.core.processor.converter.UnitConverter;
 import com.wangbin.collector.core.processor.filter.DeadbandFilter;
 import com.wangbin.collector.core.processor.filter.QualityFilter;
 import com.wangbin.collector.core.processor.validator.DataValidator;
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,6 +16,7 @@ import java.util.Map;
 /**
  * 处理器配置类
  */
+@Slf4j
 @Configuration
 public class ProcessorConfig {
 
@@ -101,48 +102,11 @@ public class ProcessorConfig {
         return filter;
     }
 
-
     /**
-     * 数据计算器
+     * 处理组件生命周期。
      */
-    /*@Bean
-    public DataCalculator dataCalculator() {
-        DataCalculator calculator = new DataCalculator();
-        Map<String, Object> config = new HashMap<>();
-        config.put("name", "DataCalculator");
-        config.put("type", "CALCULATOR");
-        config.put("description", "数据计算器");
-        config.put("priority", 60);
-        config.put("enabled", true);
-        config.put("defaultWindowSize", 10);
-        config.put("enableStatisticalCalculations", true);
-        config.put("enableAggregationCalculations", true);
-        config.put("enableRateCalculations", true);
-        calculator.init(config);
-        return calculator;
-    }
-
-    *//**
-     * 公式计算器
-     *//*
-    @Bean
-    public FormulaCalculator formulaCalculator() {
-        FormulaCalculator calculator = new FormulaCalculator();
-        Map<String, Object> config = new HashMap<>();
-        config.put("name", "FormulaCalculator");
-        config.put("type", "CALCULATOR");
-        config.put("description", "公式计算器");
-        config.put("priority", 70);
-        config.put("enabled", true);
-        config.put("enableFormulaCalculation", true);
-        config.put("cacheExpressions", true);
-        config.put("defaultFormula", "");
-        calculator.init(config);
-        return calculator;
-    }*/
-
     @PostConstruct
     public void init() {
-        System.out.println("处理器配置初始化完成...");
+        log.info("处理器配置初始化完成");
     }
 }

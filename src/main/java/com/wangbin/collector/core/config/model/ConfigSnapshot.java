@@ -29,26 +29,44 @@ public record ConfigSnapshot(
         connections = immutableConnections(connections);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static ConfigSnapshot empty() {
         return EMPTY;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasDevice(String deviceId) {
         return devices.containsKey(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public DeviceInfo device(String deviceId) {
         return devices.get(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<DataPoint> points(String deviceId) {
         return points.getOrDefault(deviceId, List.of());
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     public DeviceConnection connection(String deviceId) {
         return connections.get(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Set<String> deviceIds() {
         LinkedHashSet<String> deviceIds = new LinkedHashSet<>(devices.keySet());
         deviceIds.addAll(points.keySet());
@@ -56,6 +74,9 @@ public record ConfigSnapshot(
         return Collections.unmodifiableSet(deviceIds);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Map<String, DeviceInfo> immutableDevices(Map<String, DeviceInfo> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyMap();
@@ -69,6 +90,9 @@ public record ConfigSnapshot(
         return Collections.unmodifiableMap(copy);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Map<String, List<DataPoint>> immutablePoints(Map<String, List<DataPoint>> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyMap();
@@ -91,6 +115,9 @@ public record ConfigSnapshot(
         return Collections.unmodifiableMap(copy);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Map<String, DeviceConnection> immutableConnections(Map<String, DeviceConnection> source) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyMap();
@@ -104,6 +131,9 @@ public record ConfigSnapshot(
         return Collections.unmodifiableMap(copy);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

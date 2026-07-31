@@ -6,8 +6,14 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetSegmentSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetSegmentSupport() {
     }
 
@@ -21,6 +27,9 @@ public final class BacnetSegmentSupport {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static SegmentedComplexAckSegment decodeSegmentedComplexAck(byte[] frame) {
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         BacnetReadPropertyResponseDecoder.BacnetFrameHeader header = BacnetReadPropertyResponseDecoder.readFrameHeader(buffer);
@@ -46,6 +55,9 @@ public final class BacnetSegmentSupport {
                 payload);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static byte[] assembleComplexAckFrame(List<SegmentedComplexAckSegment> segments) {
         if (segments == null || segments.isEmpty()) {
             throw new IllegalArgumentException("BACnet segmented ComplexACK list cannot be empty");
@@ -75,6 +87,9 @@ public final class BacnetSegmentSupport {
         return BacnetFrameSupport.wrapApdu(apdu.toByteArray(), 0x00, BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeSegmentAck(int invokeId, int sequenceNumber, int actualWindowSize) {
         ByteArrayOutputStream apdu = new ByteArrayOutputStream();
         apdu.write(BacnetReadPropertyCodec.APDU_TYPE_SEGMENT_ACK << 4);
@@ -84,6 +99,9 @@ public final class BacnetSegmentSupport {
         return BacnetFrameSupport.wrapApdu(apdu.toByteArray(), 0x04, BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record SegmentedComplexAckSegment(int invokeId,
                                              int sequenceNumber,
                                              int proposedWindowSize,

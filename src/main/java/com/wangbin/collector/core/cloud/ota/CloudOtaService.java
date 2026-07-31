@@ -18,6 +18,9 @@ public class CloudOtaService {
 
     private final ConcurrentMap<String, OtaTask> tasks = new ConcurrentHashMap<>();
 
+    /**
+     * 创建并返回业务对象。
+     */
     public Map<String, Object> createTask(String deviceId, JsonNode params) {
         String taskId = firstText(params, "taskId", "jobId", "otaJobId");
         if (!StringUtils.hasText(taskId)) {
@@ -37,6 +40,9 @@ public class CloudOtaService {
         return task.toMap();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public Map<String, Object> updateProgress(String taskId, String status, Integer progress, String message) {
         OtaTask existing = tasks.get(taskId);
         if (existing == null) {
@@ -69,6 +75,9 @@ public class CloudOtaService {
         return tasks.get(taskId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(JsonNode node, String... fields) {
         if (node == null) {
             return null;
@@ -82,6 +91,9 @@ public class CloudOtaService {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long longValue(JsonNode node, String... fields) {
         if (node == null) {
             return null;
@@ -103,6 +115,9 @@ public class CloudOtaService {
         return null;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record OtaTask(
             String taskId,
             String deviceId,
@@ -114,6 +129,9 @@ public class CloudOtaService {
             long createdAt,
             Integer progress) {
 
+        /**
+         * 解析或转换业务数据。
+         */
         public Map<String, Object> toMap() {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("taskId", taskId);

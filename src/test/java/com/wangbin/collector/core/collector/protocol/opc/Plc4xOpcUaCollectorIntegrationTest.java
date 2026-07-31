@@ -188,7 +188,7 @@ class Plc4xOpcUaCollectorIntegrationTest {
     private static final class EmbeddedOpcUaTestServer implements AutoCloseable {
 
         private static final String NAMESPACE_URI = "urn:wangbin:data-collection-service:test:opcua:plc4x";
-        // Keep the local embedded endpoint path conservative for the current PLC4X OPC UA parser.
+        // 本地内嵌端点路径保持保守格式，兼容当前 PLC4X OPC UA 解析器。
         private static final String ENDPOINT_PATH = "/plc4x_opcua_test";
 
         private final int port;

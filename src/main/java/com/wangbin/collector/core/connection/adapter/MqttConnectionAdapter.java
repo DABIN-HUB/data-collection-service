@@ -66,11 +66,17 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     private String clientId;
     private boolean useMqttV5;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
         initialize();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initialize() {
         this.clientId = generateClientId();
         String version = config.getStringConfig("version", "v5");
@@ -96,6 +102,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String generateClientId() {
         if (config.getClientId() != null && !config.getClientId().isEmpty()) {
             return config.getClientId();
@@ -106,6 +115,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         return prefix + "_" + UUID.randomUUID().toString().substring(0, 8);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildServerUri() {
         if (config.getUrl() != null && !config.getUrl().isEmpty()) {
             return config.getUrl();
@@ -114,6 +126,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         return String.format("%s://%s:%d", protocol, config.getHost(), config.getPort());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureV5Options() {
         this.connectionOptionsV5 = new MqttConnectionOptions();
         connectionOptionsV5.setCleanStart(config.getBoolConfig("cleanSession", true));
@@ -133,6 +148,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         configureSSL();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureV3Options() {
         this.connectionOptionsV3 = new MqttConnectOptions();
         connectionOptionsV3.setAutomaticReconnect(false);
@@ -149,6 +167,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         configureSSL();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureWillMessageV5() {
         String willTopic = config.getStringConfig("willTopic", null);
         if (willTopic == null) {
@@ -163,6 +184,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         connectionOptionsV5.setWill(willTopic, willMsg);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureWillMessageV3() {
         String willTopic = config.getStringConfig("willTopic", null);
         if (willTopic == null) {
@@ -174,6 +198,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         connectionOptionsV3.setWill(willTopic, willMessage.getBytes(StandardCharsets.UTF_8), willQos, willRetained);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureSSL() {
         if (!Boolean.TRUE.equals(config.getSslEnabled())) {
             return;
@@ -186,10 +213,16 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                             return new X509Certificate[0];
                         }
 
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         @Override
                         public void checkClientTrusted(X509Certificate[] certs, String authType) {
                         }
 
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         @Override
                         public void checkServerTrusted(X509Certificate[] certs, String authType) {
                         }
@@ -208,6 +241,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureDispatcher() {
         if (messageDispatcher != null) {
             return;
@@ -224,6 +260,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         this.messageDispatcher.start();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void shutdownDispatcher() {
         if (messageDispatcher != null) {
             messageDispatcher.stop();
@@ -235,6 +274,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleDispatchedBatch(List<MqttReceivedMessage> batch) {
         if (batch == null || batch.isEmpty()) {
             return;
@@ -260,6 +302,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private void offerReceiveBuffer(MqttReceivedMessage message) {
         if (receiveBuffer == null || message == null) {
             return;
@@ -288,6 +333,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         ensureDispatcher();
@@ -321,6 +369,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Semaphore resolveConnectSemaphore() {
         int permits = Math.max(1, config.getIntConfig("maxConcurrentConnects", 1));
         if (permits == globalConnectPermits) {
@@ -335,6 +386,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void subscribeConfiguredTopics() throws Exception {
         Object topicsObj = config.getConfigValue("subscribeTopics");
         int qos = config.getIntConfig("subscribeQos", 1);
@@ -364,6 +418,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void subscribeTopic(String topic, int qos, boolean track) throws Exception {
         if (topic == null || topic.isEmpty()) {
             return;
@@ -381,6 +438,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.info("MQTT 订阅成功 - Topic: {}, QoS: {}", topic, qos);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void resubscribeAllTopics() {
         if (subscribedTopics.isEmpty()) {
             return;
@@ -394,6 +454,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -419,6 +482,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeAllTopics() throws Exception {
         if (subscribedTopics.isEmpty()) {
             return;
@@ -432,6 +498,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         subscribedTopics.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) throws UnsupportedOperationException {
         try {
@@ -452,6 +521,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                 deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void publishInternal(String topic, byte[] payload, int qos, boolean retained) throws Exception {
         if ((useMqttV5 && (mqttClientV5 == null || !mqttClientV5.isConnected()))
                 || (!useMqttV5 && (mqttClientV3 == null || !mqttClientV3.isConnected()))) {
@@ -484,6 +556,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.debug("MQTT 消息发送成功 - Topic: {}, Qos: {}, Size: {} bytes", topic, qos, body.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() throws UnsupportedOperationException {
         try {
@@ -493,6 +568,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) throws UnsupportedOperationException {
         if (receiveBuffer == null) {
@@ -511,6 +589,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() throws Exception {
         String pingTopic = String.format("$SYS/%s/ping",
@@ -524,6 +605,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.debug("MQTT 心跳消息发送：{}", pingTopic);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() throws Exception {
         String authTopic = config.getStringConfig("authTopic", null);
@@ -542,6 +626,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                 deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildAuthMessage() {
         Map<String, Object> authData = new java.util.HashMap<>();
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
@@ -560,6 +647,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         return com.alibaba.fastjson2.JSON.toJSONString(authData);
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void disconnected(MqttDisconnectResponse disconnectResponse) {
         String reason = disconnectResponse != null ? disconnectResponse.getReasonString() : "未知";
@@ -568,23 +658,35 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.info("MQTT v5 已断开，等待采集调度器统一重连：{}", clientId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void mqttErrorOccurred(MqttException exception) {
         log.error("MQTT 发生错误：{}", clientId, exception);
         errors.incrementAndGet();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         Map<String, String> props = extractProperties(message.getProperties());
         dispatchInboundMessage(topic, message.getPayload(), message.getQos(), message.isRetained(), props);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void messageArrived(String topic, org.eclipse.paho.client.mqttv3.MqttMessage message) {
         dispatchInboundMessage(topic, message.getPayload(), message.getQos(), message.isRetained(), Collections.emptyMap());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchInboundMessage(String topic,
                                         byte[] payload,
                                         int qos,
@@ -592,7 +694,7 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                                         Map<String, String> props) {
         MqttReceivedMessage inbound = new MqttReceivedMessage(topic, payload, qos, retained, props);
         if (messageDispatcher == null) {
-            log.warn("MQTT 消息调度器未初始化，丢弃消息 topic={}", topic);
+            log.warn("MQTT 消息调度器未初始化，丢弃消息 主题={}", topic);
             return;
         }
         try {
@@ -601,15 +703,21 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
             bytesReceived.addAndGet(payload != null ? payload.length : 0L);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("MQTT 消息入队被中断 topic={}", topic);
+            log.warn("MQTT 消息入队被中断 主题={}", topic);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void deliveryComplete(IMqttToken token) {
         log.debug("MQTT v5 消息投递完成：{}", token != null ? token.getMessageId() : -1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
         try {
@@ -619,6 +727,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void connectComplete(boolean reconnect, String serverURI) {
         log.info("MQTT 连接完成 - 重连: {}, 服务端: {}", reconnect, serverURI);
@@ -628,11 +739,17 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void authPacketArrived(int reasonCode, MqttProperties properties) {
         log.debug("MQTT 认证包到达 reasonCode={}", reasonCode);
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void connectionLost(Throwable cause) {
         log.error("MQTT v3 连接丢失：{}", clientId, cause);
@@ -640,10 +757,16 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.info("MQTT v3 已断开，等待采集调度器统一重连：{}", clientId);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribe(String topic, int qos) throws Exception {
         subscribeTopic(topic, qos, true);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void unsubscribe(String topic) throws Exception {
         if (topic == null || topic.isEmpty()) {
             return;
@@ -657,6 +780,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         log.info("取消订阅 MQTT 主题：{}", topic);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void publish(String topic, byte[] payload, int qos, boolean retained) throws Exception {
         publishInternal(topic, payload, qos, retained);
     }
@@ -669,30 +795,45 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         return subscribedTopics.containsKey(topic);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addMessageListener(Consumer<MqttReceivedMessage> listener) {
         if (listener != null) {
             messageListeners.add(listener);
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeMessageListener(Consumer<MqttReceivedMessage> listener) {
         if (listener != null) {
             messageListeners.remove(listener);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addBatchMessageListener(Consumer<List<MqttReceivedMessage>> listener) {
         if (listener != null) {
             batchListeners.add(listener);
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeBatchMessageListener(Consumer<List<MqttReceivedMessage>> listener) {
         if (listener != null) {
             batchListeners.remove(listener);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, String> extractProperties(MqttProperties properties) {
         if (properties == null || properties.getUserProperties() == null || properties.getUserProperties().isEmpty()) {
             return Collections.emptyMap();

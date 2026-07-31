@@ -20,6 +20,9 @@ public class StorageMetricsSnapshot {
     @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum Status {
         OK,
         ERROR,

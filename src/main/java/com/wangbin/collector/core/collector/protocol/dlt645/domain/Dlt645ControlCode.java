@@ -13,14 +13,23 @@ public enum Dlt645ControlCode {
 
     private final int functionCode;
 
+    /**
+     * 创建当前组件实例。
+     */
     Dlt645ControlCode(int functionCode) {
         this.functionCode = functionCode;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int requestCode() {
         return functionCode;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int functionCode() {
         return functionCode & 0x1F;
     }

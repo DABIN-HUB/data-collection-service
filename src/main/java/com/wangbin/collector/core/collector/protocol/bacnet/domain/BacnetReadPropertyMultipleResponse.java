@@ -7,6 +7,9 @@ import lombok.Value;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 承载当前模块的数据传输内容。
+ */
 @Value
 @Builder
 public class BacnetReadPropertyMultipleResponse {
@@ -15,6 +18,9 @@ public class BacnetReadPropertyMultipleResponse {
     List<ReadAccessResult> results;
     int invokeId;
 
+    /**
+     * 承载当前模块的数据传输内容。
+     */
     @Value
     @Builder
     public static class ReadAccessResult {
@@ -24,6 +30,9 @@ public class BacnetReadPropertyMultipleResponse {
         List<PropertyValueResult> propertyResults;
     }
 
+    /**
+     * 承载当前模块的数据传输内容。
+     */
     @Value
     @Builder
     public static class PropertyValueResult {

@@ -14,8 +14,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class BacnetValueMapper {
 
+    /**
+     * 解析或转换业务数据。
+     */
     public ProcessResult map(DataQualityProcessor dataQualityProcessor,
                              DataPoint point,
                              BacnetAddress address,
@@ -33,6 +39,9 @@ public class BacnetValueMapper {
         return processResult;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public BacnetReadValue normalize(DataPoint point,
                                      BacnetAddress address,
                                      Object rawValue,
@@ -88,6 +97,9 @@ public class BacnetValueMapper {
                 Collections.emptyMap());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void enrich(ProcessResult processResult,
                         BacnetAddress address,
                         String source,
@@ -107,6 +119,9 @@ public class BacnetValueMapper {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetValueKind inferValueKind(Object value) {
         if (value instanceof Map<?, ?>) {
             return BacnetValueKind.OBJECT;
@@ -126,10 +141,16 @@ public class BacnetValueMapper {
                 || "CHARACTER_STRING".equalsIgnoreCase(driverType));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetValueKind inferKind(Object value) {
         return inferValueKind(value);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record BacnetReadValue(Object rawValue,
                                   Object processedValue,
                                   String valueType,

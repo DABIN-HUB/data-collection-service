@@ -27,7 +27,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ApiResult<?> handleBusinessException(BusinessException e, HttpServletRequest request) {
         log.error("业务异常: {} - {}", e.getCode(), e.getMessage(), e);
-        //ApiResult.error(e.getCode(), e.getMessage(), e.getData());
         return ApiResult.error(e.getCode(), e.getMessage());
     }
 
@@ -36,7 +35,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(CollectorException.class)
     public ApiResult<?> handleCollectorException(CollectorException e, HttpServletRequest request) {
-        log.error("采集器异常 - Device: {}, Point: {}, Quality: {}",
+        log.error("采集器异常 - 设备={}，点位={}，质量={}",
                 e.getDeviceId(), e.getPointId(), e.getDataQuality(), e);
 
         ApiResult<Object> result = ApiResult.error(e.getCode(), e.getMessage());

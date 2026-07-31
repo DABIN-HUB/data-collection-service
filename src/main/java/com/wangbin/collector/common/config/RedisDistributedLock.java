@@ -10,12 +10,18 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Component
 public class RedisDistributedLock implements DistributedLock {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final DefaultRedisScript<Long> unlockScript;
 
+    /**
+     * 创建当前组件实例。
+     */
     public RedisDistributedLock(
             RedisTemplate<String, Object> redisTemplate,
             DefaultRedisScript<Long> unlockScript) {
@@ -23,6 +29,9 @@ public class RedisDistributedLock implements DistributedLock {
         this.unlockScript = unlockScript;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Optional<LockHandle> tryLock(String lockKey, long expireTime, TimeUnit timeUnit) {
         String lockValue = UUID.randomUUID().toString();
@@ -46,22 +55,34 @@ public class RedisDistributedLock implements DistributedLock {
         return Boolean.TRUE.equals(hasKey);
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private final class RedisLockHandle implements LockHandle {
 
         private final String lockKey;
         private final String lockValue;
         private final AtomicBoolean released = new AtomicBoolean(false);
 
+        /**
+         * 创建当前组件实例。
+         */
         private RedisLockHandle(String lockKey, String lockValue) {
             this.lockKey = lockKey;
             this.lockValue = lockValue;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public String lockKey() {
             return lockKey;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public boolean unlock() {
             if (!released.compareAndSet(false, true)) {

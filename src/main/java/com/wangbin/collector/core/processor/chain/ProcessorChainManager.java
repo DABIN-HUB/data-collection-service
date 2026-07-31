@@ -196,7 +196,7 @@ public class ProcessorChainManager {
             return ProcessResult.skip(rawValue, "处理器链已禁用");
         }
 
-        log.debug("开始执行处理器链: chain={}, point={}", chainName, point.getPointName());
+        log.debug("开始执行处理器链: 处理链={}, 点位={}", chainName, point.getPointName());
 
         try {
             ProcessResult result = chain.execute(context, point, rawValue);
@@ -209,7 +209,7 @@ public class ProcessorChainManager {
 
             return result;
         } catch (Exception e) {
-            log.error("处理器链执行异常: chain={}, point={}", chainName, point.getPointName(), e);
+            log.error("处理器链执行异常: 处理链={}, 点位={}", chainName, point.getPointName(), e);
             return ProcessResult.error(rawValue, "处理器链执行异常: " + e.getMessage());
         }
     }
@@ -470,6 +470,9 @@ class ChainExecutionEvent {
     private final boolean success;
     private final long executionTime;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ChainExecutionEvent(Object source, String chainName, String pointId,
                                boolean success, long executionTime) {
         this.source = source;
@@ -479,7 +482,7 @@ class ChainExecutionEvent {
         this.executionTime = executionTime;
     }
 
-    // getters...
+    // 访问器方法。
 }
 
 /**
@@ -490,12 +493,15 @@ class ChainRegisteredEvent {
     private final Object source;
     private final String chainName;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ChainRegisteredEvent(Object source, String chainName) {
         this.source = source;
         this.chainName = chainName;
     }
 
-    // getters...
+    // 访问器方法。
 }
 
 /**
@@ -506,12 +512,15 @@ class ChainUnregisteredEvent {
     private final Object source;
     private final String chainName;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ChainUnregisteredEvent(Object source, String chainName) {
         this.source = source;
         this.chainName = chainName;
     }
 
-    // getters...
+    // 访问器方法。
 }
 
 /**
@@ -522,6 +531,9 @@ class ChainUpdatedEvent {
     private final Object source;
     private final String chainName;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ChainUpdatedEvent(Object source, String chainName) {
         this.source = source;
         this.chainName = chainName;

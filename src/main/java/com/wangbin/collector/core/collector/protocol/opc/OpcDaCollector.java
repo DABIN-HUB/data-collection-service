@@ -22,14 +22,14 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OPC DA collector.
+ * OPC DA 采集器.
  *
- * Notes:
- * - Follows the same collector lifecycle and method layout as OpcUaCollector.
- * - Current implementation uses an in-memory bridge to keep architecture stable
- *   without introducing extra OPC DA runtime dependencies.
- * - Real OPC DA integration can replace com.wangbin.collector.core.collector.protocol.opc.da.OpcDaBridge implementation
- *   without changing collector-level behavior.
+ * 说明：
+ * - Follows the same 采集器 lifecycle and method layout as OpcUaCollector.
+ * - Current implementation uses an in-memory bridge to keep architecture 超级表
+ * 不额外引入 OPC DA 运行时依赖。
+ * - Real OPC DA integration can replace com.wangbin.采集器.core.采集器.协议.opc.da.OpcDaBridge implementation
+ * without changing 采集器-级别 behavior.
  */
 @Slf4j
 public class OpcDaCollector extends BaseCollector {
@@ -64,6 +64,9 @@ public class OpcDaCollector extends BaseCollector {
         return "OPC_DA";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection connection = requireConnectionConfig();
@@ -83,10 +86,13 @@ public class OpcDaCollector extends BaseCollector {
                 bridgeRetryCount,
                 bridgeRetryBackoffMs
         ));
-        log.info("OPC DA连接建立成功: device={} serverProgId={} host={}",
+        log.info("OPC DA连接建立成功: 设备={} serverProgId={} host={}",
                 deviceInfo.getDeviceId(), serverProgId, host);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -98,6 +104,9 @@ public class OpcDaCollector extends BaseCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         String itemId = resolveItemId(point);
@@ -108,6 +117,9 @@ public class OpcDaCollector extends BaseCollector {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -133,6 +145,9 @@ public class OpcDaCollector extends BaseCollector {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String itemId = resolveItemId(point);
@@ -143,6 +158,9 @@ public class OpcDaCollector extends BaseCollector {
         return success;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -156,6 +174,9 @@ public class OpcDaCollector extends BaseCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -168,9 +189,12 @@ public class OpcDaCollector extends BaseCollector {
             itemIds.add(itemId);
         }
         bridge.subscribe(itemIds);
-        log.info("OPC DA订阅完成: device={} subscribedItems={}", deviceInfo.getDeviceId(), subscribedItems.size());
+        log.info("OPC DA订阅完成: 设备={} subscribedItems={}", deviceInfo.getDeviceId(), subscribedItems.size());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -190,6 +214,9 @@ public class OpcDaCollector extends BaseCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() throws Exception {
         Map<String, Object> status = new HashMap<>();
@@ -207,6 +234,9 @@ public class OpcDaCollector extends BaseCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = command != null ? command.toLowerCase(Locale.ROOT) : "";
@@ -219,6 +249,9 @@ public class OpcDaCollector extends BaseCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         addressCache.clear();
@@ -228,9 +261,12 @@ public class OpcDaCollector extends BaseCollector {
         for (DataPoint point : points) {
             addressCache.put(point.getPointId(), normalizeItemId(point));
         }
-        log.info("OPC DA点位缓存完成: device={} count={}", deviceId, addressCache.size());
+        log.info("OPC DA点位缓存完成: 设备={} 数量={}", deviceId, addressCache.size());
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initOpcDaConfig(DeviceConnection connection) {
         endpoint = connection.getUrl();
         host = firstNonBlank(connection.getHost(), connection.getString("host", null), "localhost");
@@ -276,6 +312,9 @@ public class OpcDaCollector extends BaseCollector {
         bridge = createBridge(bridgeMode);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private OpcDaBridge createBridge(OpcDaBridgeMode mode) {
         if (mode == OpcDaBridgeMode.HTTP) {
             return new RemoteOpcDaBridge();
@@ -283,21 +322,30 @@ public class OpcDaCollector extends BaseCollector {
         return new InMemoryOpcDaBridge();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveItemId(DataPoint point) {
         return addressCache.computeIfAbsent(point.getPointId(), key -> normalizeItemId(point));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeItemId(DataPoint point) {
         String itemId = point.getAddress();
         if (itemId == null || itemId.isBlank()) {
             itemId = firstNonBlank(point.getPointCode(), point.getPointName(), point.getPointId());
         }
         if (itemId == null || itemId.isBlank()) {
-            throw new IllegalArgumentException("OPC DA itemId为空: pointId=" + point.getPointId());
+            throw new IllegalArgumentException("OPC DA 点位项为空，点位=" + point.getPointId());
         }
         return itemId.trim();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadCommand(Map<String, Object> params) throws Exception {
         List<String> itemIds = extractItemIds(params);
         if (itemIds.isEmpty()) {
@@ -314,6 +362,9 @@ public class OpcDaCollector extends BaseCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteCommand(Map<String, Object> params) throws Exception {
         String itemId = Objects.toString(params.get("itemId"), "").trim();
         if (itemId.isBlank()) {
@@ -327,11 +378,17 @@ public class OpcDaCollector extends BaseCollector {
         return Map.of("itemId", itemId, "status", success ? "success" : "failed");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeBrowseCommand(Map<String, Object> params) throws Exception {
         String branch = Objects.toString(params.getOrDefault("branch", ""), "");
         return bridge.browse(branch);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> extractItemIds(Map<String, Object> params) {
         Object multi = params.get("itemIds");
         if (multi instanceof Collection<?> collection && !collection.isEmpty()) {
@@ -350,6 +407,9 @@ public class OpcDaCollector extends BaseCollector {
         return Collections.emptyList();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;

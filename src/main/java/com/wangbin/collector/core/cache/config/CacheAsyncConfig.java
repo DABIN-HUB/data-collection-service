@@ -17,13 +17,16 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class CacheAsyncConfig {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("cacheAsyncExecutor")
     public Executor cacheAsyncExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(8);
         executor.setMaxPoolSize(16);
         executor.setQueueCapacity(1000);
-        executor.setThreadNamePrefix("telemetry-post-process-");
+        executor.setThreadNamePrefix("telemetry-后处理-");
         executor.setKeepAliveSeconds(60);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
@@ -35,6 +38,9 @@ public class CacheAsyncConfig {
         return executor;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(TelemetryExecutorNames.CACHE_STAGE)
     public Executor telemetryCacheStageExecutor(
             @Value("${collector.telemetry-executors.cache.core-size:2}") int coreSize,
@@ -44,6 +50,9 @@ public class CacheAsyncConfig {
                 "telemetry-cache-", coreSize, maxSize, queueCapacity);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(TelemetryExecutorNames.STREAM_STAGE)
     public Executor telemetryStreamStageExecutor(
             @Value("${collector.telemetry-executors.stream.core-size:2}") int coreSize,
@@ -53,6 +62,9 @@ public class CacheAsyncConfig {
                 "telemetry-stream-", coreSize, maxSize, queueCapacity);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(TelemetryExecutorNames.HISTORY_STAGE)
     public Executor telemetryHistoryStageExecutor(
             @Value("${collector.telemetry-executors.history.core-size:2}") int coreSize,
@@ -62,6 +74,9 @@ public class CacheAsyncConfig {
                 "telemetry-history-", coreSize, maxSize, queueCapacity);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean(TelemetryExecutorNames.REPORT_STAGE)
     public Executor telemetryReportStageExecutor(
             @Value("${collector.telemetry-executors.report.core-size:2}") int coreSize,
@@ -71,6 +86,9 @@ public class CacheAsyncConfig {
                 "telemetry-report-", coreSize, maxSize, queueCapacity);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Executor createStageExecutor(String executorName,
                                          String threadPrefix,
                                          int coreSize,

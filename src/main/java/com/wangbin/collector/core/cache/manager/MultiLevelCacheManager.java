@@ -68,6 +68,9 @@ public class MultiLevelCacheManager implements CacheManager {
 
     private final Striped<Lock> cacheLocks = Striped.lazyWeakLock(1024);
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         shuttingDown = false;
@@ -106,6 +109,9 @@ public class MultiLevelCacheManager implements CacheManager {
         log.info("多级缓存管理器初始化完成，层级数: {}", cacheManagers.size());
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void destroy() {
         shuttingDown = true;
@@ -119,19 +125,25 @@ public class MultiLevelCacheManager implements CacheManager {
             try {
                 manager.destroy();
             } catch (Exception e) {
-                log.error("cache manager destroy failed: {}", manager.getCacheType(), e);
+                log.error("缓存 管理器 销毁 失败:{}", manager.getCacheType(), e);
             }
         }
 
         cacheManagers.clear();
-        log.info("multi-level cache manager destroyed");
+        log.info("多级缓存管理器已销毁");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value) {
         return put(key, value, key.getExpireTime());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value, long expireTime) {
         if (!isOperational() || key == null || value == null) {
@@ -178,7 +190,7 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             }
 
-            log.debug("多级缓存写入完成: key={}, levels={}, success={}",
+            log.debug("多级缓存写入完成: 键={}, 层级={}, 成功={}",
                     key, cacheManagers.size(), allSuccess);
             return allSuccess;
         } finally {
@@ -186,6 +198,9 @@ public class MultiLevelCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean putAll(Map<CacheKey, T> dataMap) {
         if (!isOperational() || dataMap == null || dataMap.isEmpty()) {
@@ -204,11 +219,17 @@ public class MultiLevelCacheManager implements CacheManager {
         return allSuccess;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key) {
         return get(key, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key, Class<T> type) {
         if (!isOperational() || key == null) {
@@ -239,7 +260,7 @@ public class MultiLevelCacheManager implements CacheManager {
                         break;
                     }
                 } catch (Exception e) {
-                    log.warn("cache read failed, fallback to next cache level: {} [Level: {}]",
+                    log.warn("缓存 读取 失败, 降级到下一级缓存:{} [Level:{}]",
                             manager.getCacheType(), manager.getCacheLevel(), e);
                     recordCacheException(e, key);
                 }
@@ -247,9 +268,9 @@ public class MultiLevelCacheManager implements CacheManager {
 
             if (value == null) {
                 totalMisses.incrementAndGet();
-                log.debug("多级缓存未命中: key={}", key);
+                log.debug("多级缓存未命中: 键={}", key);
             } else {
-                log.debug("多级缓存命中: key={}, level={}", key, hitLevel);
+                log.debug("多级缓存命中: 键={}, 层级={}", key, hitLevel);
             }
 
             return value;
@@ -301,7 +322,7 @@ public class MultiLevelCacheManager implements CacheManager {
                     redisCandidates.add(key);
                 }
             } catch (Exception e) {
-                log.warn("本地缓存批量读取失败，将回退到 Redis: key={}", key, e);
+                log.warn("本地缓存批量读取失败，将回退到 Redis: 键={}", key, e);
                 recordCacheException(e, key);
                 redisCandidates.add(key);
             }
@@ -323,7 +344,7 @@ public class MultiLevelCacheManager implements CacheManager {
                     }
                 }
             } catch (Exception e) {
-                log.warn("Redis 批量读取失败，将回退到逐个读取: count={}", redisCandidates.size(), e);
+                log.warn("Redis 批量读取失败，将回退到逐个读取: 数量={}", redisCandidates.size(), e);
                 recordCacheException(e, null);
                 populateFromRedisIndividually(redisCandidates, result);
             }
@@ -349,6 +370,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return result;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean delete(CacheKey key) {
         if (!isOperational() || key == null) {
@@ -378,6 +402,9 @@ public class MultiLevelCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteAll(List<CacheKey> keys) {
         if (!isOperational() || keys == null || keys.isEmpty()) {
@@ -389,7 +416,7 @@ public class MultiLevelCacheManager implements CacheManager {
             boolean success = delete(key);
             if (!success) {
                 allSuccess = false;
-                log.warn("批量缓存删除失败: key={}", key);
+                log.warn("批量缓存删除失败: 键={}", key);
                 recordCacheWarning(String.format("批量缓存删除失败: %s", key), key);
             }
         }
@@ -397,6 +424,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return allSuccess;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteByPattern(String pattern) {
         if (!isOperational() || pattern == null || pattern.isEmpty()) {
@@ -420,6 +450,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return allSuccess;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean exists(CacheKey key) {
         if (!isOperational() || key == null) {
@@ -435,6 +468,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean expire(CacheKey key, long expireTime) {
         if (!isOperational() || key == null || expireTime <= 0) {
@@ -474,6 +510,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return -1;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public void clear() {
         if (!isOperational()) {
@@ -490,6 +529,9 @@ public class MultiLevelCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public long size() {
         if (!isOperational()) {
@@ -500,6 +542,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return primaryManager != null ? primaryManager.size() : 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys() {
         if (!isOperational()) {
@@ -510,6 +555,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return primaryManager != null ? primaryManager.keys() : Collections.emptySet();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys(String pattern) {
         if (!isOperational()) {
@@ -556,6 +604,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return stats;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public void resetStatistics() {
         totalReads.set(0);
@@ -592,23 +643,32 @@ public class MultiLevelCacheManager implements CacheManager {
         return cacheManagers.isEmpty() ? null : cacheManagers.get(0);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateHitStatistics(int hitLevel) {
         switch (hitLevel) {
             case 1 -> level1Hits.incrementAndGet();
             case 2 -> level2Hits.incrementAndGet();
-            default -> log.debug("未知的缓存层级命中: level={}", hitLevel);
+            default -> log.debug("未知的缓存层级命中: 层级={}", hitLevel);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean canUseRedisBulkRead() {
         return localCacheManager != null
                 && redisCacheManager != null
                 && maxLevel >= redisCacheManager.getCacheLevel();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void addCacheManager(CacheManager cacheManager, CacheMode cacheMode) {
         if (cacheManager == null) {
-            log.warn("缓存模式缺少对应缓存层，mode={}", cacheMode);
+            log.warn("缓存模式缺少对应缓存层，模式={}", cacheMode);
             return;
         }
         cacheManagers.add(cacheManager);
@@ -625,6 +685,9 @@ public class MultiLevelCacheManager implements CacheManager {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> void populateFromRedisIndividually(List<CacheKey> keys, Map<CacheKey, T> result) {
         for (CacheKey key : keys) {
             try {
@@ -640,12 +703,15 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             } catch (Exception ex) {
                 totalMisses.incrementAndGet();
-                log.warn("Redis 单键补偿读取失败: key={}", key, ex);
+                log.warn("Redis 单键补偿读取失败: 键={}", key, ex);
                 recordCacheException(ex, key);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> void asyncUpdateLowerLevels(CacheKey key, T value, int currentLevel) {
         if (!readThrough || currentLevel <= 1) {
             return;
@@ -656,16 +722,19 @@ public class MultiLevelCacheManager implements CacheManager {
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.put(key, value);
-                        log.debug("缓存回写完成: key={}, level={} -> {}",
+                        log.debug("缓存回写完成: 键={}, 层级={} -> {}",
                                 key, currentLevel, manager.getCacheLevel());
                     }
                 }
             } catch (Exception e) {
-                log.error("缓存回写失败: key={}", key, e);
+                log.error("缓存回写失败: 键={}", key, e);
             }
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void asyncRemoveLowerLevels(CacheKey key, int currentLevel) {
         if (currentLevel <= 1) {
             return;
@@ -676,23 +745,26 @@ public class MultiLevelCacheManager implements CacheManager {
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.delete(key);
-                        log.debug("缓存清除完成: key={}, level={}",
+                        log.debug("缓存清除完成: 键={}, 层级={}",
                                 key, manager.getCacheLevel());
                     }
                 }
             } catch (Exception e) {
-                log.error("缓存清除失败: key={}", key, e);
+                log.error("缓存清除失败: 键={}", key, e);
             }
         });
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public <T> void warmUp(CacheKey key, T value) {
         if (!isOperational() || key == null || value == null) {
             return;
         }
 
-        log.info("开始预热缓存: key={}", key);
+        log.info("开始预热缓存: 键={}", key);
         for (CacheManager manager : cacheManagers) {
             try {
                 manager.put(key, value);
@@ -702,9 +774,12 @@ public class MultiLevelCacheManager implements CacheManager {
                 log.error("缓存预热失败: {}", manager.getCacheType(), e);
             }
         }
-        log.info("缓存预热完成: key={}", key);
+        log.info("缓存预热完成: 键={}", key);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public <T> void warmUpAll(Map<CacheKey, T> dataMap) {
         if (!isOperational() || dataMap == null || dataMap.isEmpty()) {
             return;
@@ -717,21 +792,24 @@ public class MultiLevelCacheManager implements CacheManager {
                 warmUp(entry.getKey(), entry.getValue());
                 successCount++;
             } catch (Exception e) {
-                log.error("批量缓存预热失败: key={}", entry.getKey(), e);
+                log.error("批量缓存预热失败: 键={}", entry.getKey(), e);
             }
         }
         log.info("批量缓存预热完成: 总数={}, 成功={}", dataMap.size(), successCount);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public <T> boolean refresh(CacheKey key, T newValue) {
         if (!isOperational() || key == null) {
             return false;
         }
 
-        log.info("开始刷新缓存: key={}", key);
+        log.info("开始刷新缓存: 键={}", key);
         delete(key);
         boolean success = put(key, newValue);
-        log.info("缓存刷新完成: key={}, success={}", key, success);
+        log.info("缓存刷新完成: 键={}, 成功={}", key, success);
         return success;
     }
 
@@ -809,7 +887,7 @@ public class MultiLevelCacheManager implements CacheManager {
         this.writeThrough = writeThrough;
         this.readThrough = readThrough;
         this.cacheAside = cacheAside;
-        log.info("缓存策略设置完成: writeThrough={}, readThrough={}, cacheAside={}",
+        log.info("缓存策略设置完成: 写穿={}, 读穿={}, 旁路缓存={}",
                 writeThrough, readThrough, cacheAside);
     }
 
@@ -823,6 +901,9 @@ public class MultiLevelCacheManager implements CacheManager {
         log.info("缓存管理器已{}", enabled ? "启用" : "禁用");
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordCacheWarning(String message, CacheKey key) {
         if (exceptionMonitorService == null) {
             return;
@@ -830,6 +911,9 @@ public class MultiLevelCacheManager implements CacheManager {
         recordCacheException(new IllegalStateException(message), key);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordCacheException(Throwable throwable, CacheKey key) {
         if (exceptionMonitorService == null || throwable == null) {
             return;

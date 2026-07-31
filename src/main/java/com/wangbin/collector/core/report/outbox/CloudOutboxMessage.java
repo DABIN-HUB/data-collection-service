@@ -33,10 +33,16 @@ public class CloudOutboxMessage {
     private ReportDataSnapshot reportData;
     private List<CloudOutboxCommit> commits;
 
+    /**
+     * 解析或转换业务数据。
+     */
     public ReportData toReportData() {
         return reportData == null ? null : reportData.toReportData();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public List<CloudOutboxCommit> resolveCommits() {
         if (commits != null && !commits.isEmpty()) {
             return List.copyOf(commits);
@@ -84,6 +90,9 @@ public class CloudOutboxMessage {
         private Map<String, Map<String, Object>> propertyMetadata = new LinkedHashMap<>();
         private Map<String, Object> events = new LinkedHashMap<>();
 
+        /**
+         * 创建并返回业务对象。
+         */
         public static ReportDataSnapshot from(ReportData data) {
             ReportDataSnapshot snapshot = new ReportDataSnapshot();
             snapshot.deviceId = data.getDeviceId();
@@ -104,6 +113,9 @@ public class CloudOutboxMessage {
             return snapshot;
         }
 
+        /**
+         * 解析或转换业务数据。
+         */
         public ReportData toReportData() {
             ReportData data = new ReportData();
             data.setDeviceId(deviceId);

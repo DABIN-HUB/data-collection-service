@@ -25,6 +25,9 @@ public class EdgeTelemetryIngressService {
     private final TelemetryIngressService telemetryIngressService;
     private final ConcurrentMap<String, Long> latestSequences = new ConcurrentHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public EdgeTelemetryIngressResult ingest(EdgeTelemetryBatchRequest request) {
         int acceptedCount = 0;
         int duplicateCount = 0;
@@ -55,6 +58,9 @@ public class EdgeTelemetryIngressService {
                 duplicateCount, errors.size(), List.copyOf(errors));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean acceptSequence(String key, long sequence) {
         AtomicBoolean accepted = new AtomicBoolean(false);
         latestSequences.compute(key, (ignored, current) -> {

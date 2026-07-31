@@ -35,6 +35,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class KnxNetIpCollector extends ConnectionBackedCollector {
 
@@ -60,6 +63,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return "KNXNET_IP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -83,10 +89,13 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         this.writeSupported = currentConfig.getBool("writeEnabled", metadata.isWriteSupported());
         this.subscriptionSupported = currentConfig.getBool("subscriptionEnabled", metadata.isSubscribeSupported());
 
-        log.info("PLC4X KNXnet/IP collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
+        log.info("PLC4X KNXnet/IP 采集器 已连接, 设备={}, 超时={}, 单次最大字段数={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("KNXnet/IP");
@@ -96,9 +105,12 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         readSupported = false;
         writeSupported = false;
         subscriptionSupported = false;
-        log.info("PLC4X KNXnet/IP collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("PLC4X KNXnet/IP 采集器 已断开, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         ensureReadSupported();
@@ -115,6 +127,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return extractValue(response, fieldName, point, address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -140,6 +155,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         ensureWriteSupported();
@@ -156,6 +174,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -181,6 +202,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         cacheAddresses(points);
@@ -210,13 +234,13 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
             String fieldName = resolvePointTagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
-                log.warn("PLC4X KNXnet/IP subscription failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X KNXnet/IP 订阅失败, 设备={}, 点位={}, 响应码={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 continue;
             }
             PlcSubscriptionHandle handle = response.getSubscriptionHandle(fieldName);
             if (handle == null) {
-                log.warn("PLC4X KNXnet/IP subscription returned null handle, deviceId={}, pointId={}",
+                log.warn("PLC4X KNXnet/IP 订阅返回空句柄, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
@@ -227,10 +251,13 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         if (registered == 0) {
             throw new IllegalStateException("PLC4X KNXnet/IP subscribe did not register any point");
         }
-        log.info("PLC4X KNXnet/IP subscriptions registered, deviceId={}, count={}",
+        log.info("PLC4X KNXnet/IP 订阅已注册, 设备={}, 数量={}",
                 deviceInfo.getDeviceId(), registered);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -254,6 +281,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         unsubscribeHandles(handlesToRemove);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -284,6 +314,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = normalizeCommand(command);
@@ -296,11 +329,17 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         cacheAddresses(points);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheAddresses(List<DataPoint> points) {
         configuredAddresses.clear();
         if (points == null) {
@@ -314,6 +353,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private KnxAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
@@ -321,6 +363,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> KnxAddressParser.parse(point));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private UnsupportedOperationException unsupported(String operation, String reason) {
         String message = String.format("PLC4X KNXnet/IP collector does not implement %s", operation);
         if (reason != null && !reason.isBlank()) {
@@ -330,6 +375,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return new UnsupportedOperationException(message);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeReadBatch(List<DataPoint> batch, Map<String, Object> results) {
         try {
             PlcReadResponse response = executeReadBatchRequest(batch);
@@ -345,7 +393,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
             }
         } catch (Exception ex) {
-            log.error("PLC4X KNXnet/IP batch read failed, deviceId={}, batchSize={}",
+            log.error("PLC4X KNXnet/IP 批量 读取 失败, 设备={}, 批量数量={}",
                     deviceInfo.getDeviceId(), batch.size(), ex);
             for (DataPoint point : batch) {
                 if (point != null && point.getPointId() != null) {
@@ -355,6 +403,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private PlcReadResponse executeReadBatchRequest(List<DataPoint> batch) throws Exception {
         var builder = requireConnection().getClient().readRequestBuilder();
         for (DataPoint point : batch) {
@@ -368,6 +419,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return await(builder.build().execute());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeWriteBatch(List<Map.Entry<DataPoint, Object>> batch, Map<String, Boolean> results) {
         try {
             PlcWriteRequest.Builder builder = requireConnection().getClient().writeRequestBuilder();
@@ -390,7 +444,7 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), response != null && response.getResponseCode(fieldName) == PlcResponseCode.OK);
             }
         } catch (Exception ex) {
-            log.warn("PLC4X KNXnet/IP batch write failed, falling back to point-by-point writes: {}", ex.getMessage());
+            log.warn("PLC4X KNXnet/IP 批量 写入 失败, 降级为逐点写入:{}", ex.getMessage());
             for (Map.Entry<DataPoint, Object> entry : batch) {
                 DataPoint point = entry.getKey();
                 if (point == null) {
@@ -399,13 +453,16 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 try {
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception singleEx) {
-                    log.error("PLC4X KNXnet/IP point write failed, pointId={}", point.getPointId(), singleEx);
+                    log.error("PLC4X KNXnet/IP 点位 写入 失败, 点位={}", point.getPointId(), singleEx);
                     results.put(point.getPointId(), false);
                 }
             }
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleSubscriptionEvent(DataPoint point,
                                          String fieldName,
                                          KnxAddress address,
@@ -413,18 +470,21 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         try {
             PlcResponseCode responseCode = event != null ? event.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
-                log.warn("PLC4X KNXnet/IP subscription event failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X KNXnet/IP 订阅事件 失败, 设备={}, 点位={}, 响应码={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 return;
             }
             Object rawValue = extractValue(event, fieldName, point, address);
             ingestPushedValue(point, rawValue);
         } catch (Exception ex) {
-            log.warn("PLC4X KNXnet/IP subscription event process failed, deviceId={}, pointId={}",
+            log.warn("PLC4X KNXnet/IP 订阅事件处理 失败, 设备={}, 点位={}",
                     deviceInfo.getDeviceId(), point.getPointId(), ex);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object extractValue(PlcReadResponse response, String fieldName, DataPoint point, KnxAddress address) {
         PlcValue plcValue = response.getPlcValue(fieldName);
         if (plcValue == null || plcValue.isNull()) {
@@ -464,6 +524,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object coerceWriteValue(Object value, DataPoint point) {
         if (value == null) {
             return null;
@@ -493,6 +556,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Number coerceNumber(Object value) {
         if (value instanceof Number number) {
             return number;
@@ -506,6 +572,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("Cannot convert KNXnet/IP value to number: " + value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -516,6 +585,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureTypedOrProjectConfigured(KnxAddress address, DataPoint point, String operation) {
         if (address.hasDpt() || hasKnxProjectConfiguration()) {
             return;
@@ -525,6 +597,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 + point.getPointId());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
             throw new IllegalStateException("PLC4X KNXnet/IP " + operation + " returned null response");
@@ -535,10 +610,16 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
         return future.get(timeout, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureReadSupported() {
         readSupported = isRuntimeReadSupported();
         if (!readSupported) {
@@ -546,6 +627,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureWriteSupported() {
         writeSupported = isRuntimeWriteSupported();
         if (!writeSupported) {
@@ -553,6 +637,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSubscriptionSupported() {
         subscriptionSupported = isRuntimeSubscriptionSupported();
         if (!subscriptionSupported) {
@@ -587,6 +674,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 && connectionAdapter.getClient().getMetadata().isSubscribeSupported();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeExisting(List<DataPoint> points) throws Exception {
         List<PlcSubscriptionHandle> existingHandles = new ArrayList<>();
         for (DataPoint point : points) {
@@ -601,6 +691,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         unsubscribeHandles(existingHandles);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeHandles(Collection<PlcSubscriptionHandle> handles) throws Exception {
         if (handles == null || handles.isEmpty() || connectionAdapter == null) {
             return;
@@ -610,6 +703,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         await(builder.build().execute());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private KnxNetIpConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("PLC4X KNXnet/IP connection has not been established");
@@ -618,6 +714,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
     }
 
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         Object value = readPoint(point);
@@ -627,6 +726,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         if (!params.containsKey("value")) {
@@ -641,6 +743,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveCommandPoint(Map<String, Object> params) {
         List<DataPoint> points = configManager != null && deviceInfo != null
                 ? configManager.getDataPoints(deviceInfo.getDeviceId())
@@ -680,6 +785,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("Unable to resolve KNXnet/IP point from command params");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveConfiguredPoint(List<DataPoint> points, String pointRef) {
         if (devicePointResolver != null) {
             return devicePointResolver.resolve(points, pointRef).orElse(null);
@@ -691,6 +799,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 .orElse(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matchesPointRef(DataPoint point, String normalizedRef) {
         return point != null
                 && (normalizedRef.equals(normalize(point.getReportField()))
@@ -700,6 +811,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
                 || normalizedRef.equals(normalize(point.getPointName())));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
         target.put("pointId", point.getPointId());
         target.put("pointCode", point.getPointCode());
@@ -709,10 +823,16 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasKnxProjectConfiguration() {
         return hasKnxProjectConfiguration(getCurrentConnectionConfig());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasKnxProjectConfiguration(DeviceConnection connection) {
         String knxprojFilePath = connection != null
                 ? firstNonBlank(
@@ -728,6 +848,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return hasText(connectionString) && connectionString.contains("knxproj-file-path=");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveGroupAddressNumLevels(DeviceConnection connection) {
         Integer levels = firstNonNull(
                 connection.getInt("groupAddressNumLevels", null),
@@ -735,6 +858,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return levels != null ? levels : 3;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveKnxConnectionType(DeviceConnection connection) {
         String value = firstNonBlank(
                 connection.getString("knxConnectionType", null),
@@ -743,14 +869,23 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return hasText(value) ? value.trim().replace('-', '_').toUpperCase(Locale.ROOT) : "LINK_LAYER";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeCommand(String command) {
         return command != null ? command.trim().toLowerCase(Locale.ROOT).replace('-', '_') : "";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -763,6 +898,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstPositive(Integer... values) {
         if (values == null) {
             return null;
@@ -775,6 +913,9 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstNonNull(Integer... values) {
         if (values == null) {
             return null;
@@ -787,10 +928,16 @@ public class KnxNetIpCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String asText(Object value) {
         return value != null ? String.valueOf(value) : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

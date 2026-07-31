@@ -5,6 +5,9 @@ import lombok.Getter;
 
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 public class FinsReadPlan {
 
@@ -15,6 +18,9 @@ public class FinsReadPlan {
     private final int endWordExclusive;
     private final List<FinsReadPlanItem> items;
 
+    /**
+     * 创建当前组件实例。
+     */
     public FinsReadPlan(String segmentKey,
                         FinsMemoryArea memoryArea,
                         boolean bitUnit,
@@ -29,6 +35,9 @@ public class FinsReadPlan {
         this.items = items;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int unitCount() {
         return endWordExclusive - startWord;
     }

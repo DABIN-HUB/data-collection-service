@@ -42,7 +42,6 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
             });
 
     protected int timeout = 3000;
-    /*protected int slaveId = 1;*/
     protected volatile List<ModbusReadPlan> readPlans = List.of();
 
     // 订阅缓存
@@ -56,7 +55,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
     /**
      * 构建执行计划
-     * @param points
+     * @param 点位
      */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
@@ -65,7 +64,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
                 this::resolveUnitId,
                 this::parseModbusAddress
         );
-        log.info("Modbus ReadPlan 构建完成，计划数: {}", readPlans.size());
+        log.info("Modbus 读取计划构建完成，计划数: {}", readPlans.size());
     }
 
     /**
@@ -121,8 +120,8 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
     /**
      * 获取UnitId
-     * @param point
-     * @return
+     * @param 点位
+     * @return 处理结果
      */
     protected int resolveUnitId(DataPoint point) {
         if (point.getUnitId() != null) {
@@ -162,6 +161,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         if (readPlans.isEmpty()) {
@@ -275,6 +277,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processReadPlan(ModbusReadPlan plan, Map<String, Object> results) {
         try {
             byte[] raw = getModbusTransport().read(
@@ -316,6 +321,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processWriteBatch(BatchKey key,List<WriteEntry> entries,Map<String, Boolean> results) {
         int limit = key.registerType == RegisterType.COIL ? MAX_WRITE_COILS : MAX_WRITE_REGISTERS;
         List<WriteEntry> chunk = new ArrayList<>();
@@ -351,6 +359,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void flushWriteChunk(BatchKey key,int startAddress,List<WriteEntry> chunk,Map<String, Boolean> results) {
         if (chunk.isEmpty()) {
             return;
@@ -372,6 +383,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void writeEntriesIndividually(List<WriteEntry> chunk,
                                           Map<String, Boolean> results) {
         for (WriteEntry entry : chunk) {
@@ -385,6 +399,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeCoilChunk(int unitId, int startAddress, List<WriteEntry> chunk) {
         try {
             List<Boolean> values = new ArrayList<>();
@@ -399,6 +416,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeHoldingChunk(int unitId, int startAddress, List<WriteEntry> chunk) {
         try {
             short[] registers = buildRegisterBuffer(chunk);
@@ -409,6 +429,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private short[] buildRegisterBuffer(List<WriteEntry> chunk) {
         int total = chunk.stream().mapToInt(WriteEntry::registerCount).sum();
         short[] buffer = new short[total];
@@ -424,6 +447,9 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         return buffer;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean asBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -437,10 +463,16 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         throw new IllegalArgumentException("无法转换为布尔值: " + value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected int resolveBatchUnitId(DataPoint point) {
         return resolveUnitId(point);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Executor resolveModbusReadExecutor() {
         return ThreadPoolFallbacks.preferExecutor(
                 modbusReadExecutor,
@@ -455,9 +487,15 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
     protected abstract Parity getModbusParity();
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record BatchKey(int unitId, RegisterType registerType) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record WriteEntry(DataPoint point,
                               Object value,
                               int address,

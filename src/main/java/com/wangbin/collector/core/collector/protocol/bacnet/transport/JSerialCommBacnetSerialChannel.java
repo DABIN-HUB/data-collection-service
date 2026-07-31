@@ -4,6 +4,9 @@ import com.fazecast.jSerialComm.SerialPort;
 import com.wangbin.collector.common.enums.Parity;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
 
@@ -17,6 +20,9 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
 
     private volatile SerialPort serialPort;
 
+    /**
+     * 创建当前组件实例。
+     */
     public JSerialCommBacnetSerialChannel(String serialPortName,
                                           int baudRate,
                                           int dataBits,
@@ -33,6 +39,9 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
         this.writeTimeoutMs = writeTimeoutMs;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void open() {
         if (serialPort != null && serialPort.isOpen()) {
@@ -51,7 +60,7 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
             throw new IllegalStateException("Open BACnet MS/TP serial port failed: " + serialPortName);
         }
         serialPort = port;
-        log.info("BACnet MS/TP serial port opened, port={}, baudRate={}", serialPortName, baudRate);
+        log.info("BACnet MS/TP 串口 已打开, 端口={}, 波特率={}", serialPortName, baudRate);
     }
 
     @Override
@@ -59,6 +68,9 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
         return serialPort != null && serialPort.isOpen();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void write(byte[] data) {
         ensureOpen();
@@ -72,6 +84,9 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized int read(byte[] buffer, int offset, int length, long timeoutMs) {
         ensureOpen();
@@ -90,20 +105,29 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
         return read;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void close() {
         SerialPort port = serialPort;
         serialPort = null;
         if (port != null && port.isOpen()) {
             port.closePort();
-            log.info("BACnet MS/TP serial port closed, port={}", serialPortName);
+            log.info("BACnet MS/TP 串口 已关闭, 端口={}", serialPortName);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveStopBits() {
         return stopBits == 2 ? SerialPort.TWO_STOP_BITS : SerialPort.ONE_STOP_BIT;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveParity() {
         if (parity == null || parity.isBlank()) {
             return SerialPort.NO_PARITY;
@@ -115,11 +139,14 @@ public class JSerialCommBacnetSerialChannel implements BacnetSerialChannel {
                 case none -> SerialPort.NO_PARITY;
             };
         } catch (IllegalArgumentException ex) {
-            log.warn("Unknown serial parity '{}', fallback to NO_PARITY", parity);
+            log.warn("未知串口校验位 '{}', 降级到 NO_PARITY", parity);
             return SerialPort.NO_PARITY;
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureOpen() {
         if (!isOpen()) {
             throw new IllegalStateException("BACnet MS/TP serial port is not open");

@@ -14,6 +14,9 @@ public class AuthResult {
     private long expireTime;
     private String clientId;
 
+    /**
+     * 构造标准业务结果。
+     */
     public static AuthResult success(String token, String clientId, long expireTime) {
         AuthResult result = new AuthResult();
         result.setSuccess(true);
@@ -24,6 +27,9 @@ public class AuthResult {
         return result;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static AuthResult error(String errorMessage) {
         AuthResult result = new AuthResult();
         result.setSuccess(false);

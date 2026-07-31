@@ -55,14 +55,23 @@ public enum Iec101Type {
 
     private final int typeId;
 
+    /**
+     * 创建当前组件实例。
+     */
     Iec101Type(int typeId) {
         this.typeId = typeId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int typeId() {
         return typeId;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec101Type parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("IEC101 类型不能为空");
@@ -77,6 +86,9 @@ public enum Iec101Type {
                 .orElseThrow(() -> new IllegalArgumentException("不支持的 IEC101 类型: " + value));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Iec101Type fromTypeId(int typeId) {
         return Arrays.stream(values())
                 .filter(type -> type.typeId == typeId)

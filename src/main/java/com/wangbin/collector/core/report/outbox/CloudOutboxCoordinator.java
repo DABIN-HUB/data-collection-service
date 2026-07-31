@@ -23,6 +23,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
     private final ShadowManager shadowManager;
     private final ReportProperties reportProperties;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CloudOutboxCoordinator(CloudOutboxRepository repository,
                                   ShadowManager shadowManager,
                                   ReportProperties reportProperties) {
@@ -31,6 +34,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         this.reportProperties = reportProperties;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public void handlePublishResult(String messageId, ReportResult result, Throwable throwable) {
         repository.find(messageId).ifPresent(message -> {
             if (throwable == null && result != null && result.isSuccess()) {
@@ -53,6 +59,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         });
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markWaitingConfig(CloudOutboxMessage message) {
         message.setStatus(CloudOutboxStatus.WAITING_CONFIG);
         message.setLastError("上报配置暂不可用");
@@ -71,6 +80,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                 && CloudAckCommitMode.ACK_SUCCESS.name().equalsIgnoreCase(String.valueOf(commitMode));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void onAck(MqttAckReply ackReply) {
         if (ackReply == null || ackReply.messageId() == null) {
@@ -85,6 +97,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void complete(CloudOutboxMessage message) {
         for (CloudOutboxMessage.CloudOutboxCommit commit : message.resolveCommits()) {
             shadowManager.markOutboxReported(
@@ -107,6 +122,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rescheduleFailure(CloudOutboxMessage message, String error) {
         int attempts = message.getAttempts() + 1;
         message.setAttempts(attempts);
@@ -114,7 +132,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         if (attempts >= Math.max(1, reportProperties.getOutbox().getMaxRetryTimes())) {
             message.setStatus(CloudOutboxStatus.ISOLATED);
             repository.reschedule(message);
-            log.error("云端上报消息已进入隔离区，messageId={}, deviceId={}, attempts={}",
+            log.error("云端上报消息已进入隔离区，消息={}, 设备={}, 尝试次数={}",
                     message.getMessageId(), message.getLocalDeviceId(), attempts);
             return;
         }
@@ -123,17 +141,26 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         repository.reschedule(message);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long retryDelay(int attempts) {
         long base = Math.max(100L, reportProperties.getRetryBackoffMs());
         long max = Math.max(base, reportProperties.getMaxRetryBackoffMs());
         return Math.min(max, base * (1L << Math.min(Math.max(0, attempts - 1), 10)));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean metadataBoolean(Map<String, Object> metadata, String key) {
         Object value = metadata.get(key);
         return value instanceof Boolean bool ? bool : Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long metadataLong(Map<String, Object> metadata, String key, long defaultValue) {
         Object value = metadata.get(key);
         if (value instanceof Number number) {

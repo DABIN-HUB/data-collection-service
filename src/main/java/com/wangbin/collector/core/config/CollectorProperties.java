@@ -66,6 +66,9 @@ public class CollectorProperties {
 
     // =============== 配置类定义 ===============
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class SnmpConfig {
         private String community = "public";
@@ -84,6 +87,9 @@ public class CollectorProperties {
         private String contextEngineId;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class OpcUaConfig {
         private String securityPolicy = "None";
@@ -93,6 +99,9 @@ public class CollectorProperties {
         private Map<String, String> endpoints;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class MqttConfig {
         private String brokerUrl = "tcp://localhost:1883";
@@ -115,6 +124,9 @@ public class CollectorProperties {
         private int maxConcurrentConnects = 1;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class ModbusConfig {
         private int timeout = 3000;
@@ -123,6 +135,9 @@ public class CollectorProperties {
         private Map<String, String> connections;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class CoapConfig {
         private int timeout = 3000;
@@ -131,6 +146,9 @@ public class CollectorProperties {
         private Map<String, String> servers;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class Iec104Config {
         private int timeout = 5000;
@@ -144,6 +162,9 @@ public class CollectorProperties {
         private Map<String, String> stations;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class Iec61850Config {
         private int timeout = 5000;
@@ -152,6 +173,9 @@ public class CollectorProperties {
         private Map<String, String> servers;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class CommonConfig {
         private int heartbeatInterval = 30000;

@@ -13,6 +13,9 @@ public class BusinessException extends RuntimeException {
     private final String message;
     private final Object data;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BusinessException(int code, String message) {
         super(message);
         this.code = code;
@@ -20,6 +23,9 @@ public class BusinessException extends RuntimeException {
         this.data = null;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public BusinessException(int code, String message, Object data) {
         super(message);
         this.code = code;
@@ -27,6 +33,9 @@ public class BusinessException extends RuntimeException {
         this.data = data;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public BusinessException(ResultCode resultCode) {
         super(resultCode.getMessage());
         this.code = resultCode.getCode();
@@ -34,6 +43,9 @@ public class BusinessException extends RuntimeException {
         this.data = null;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public BusinessException(ResultCode resultCode, Object data) {
         super(resultCode.getMessage());
         this.code = resultCode.getCode();

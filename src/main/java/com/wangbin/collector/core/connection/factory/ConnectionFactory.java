@@ -46,6 +46,9 @@ public class ConnectionFactory {
 
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public ConnectionAdapter<?> createConnection(DeviceInfo deviceInfo, DeviceConnection connectionConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new IllegalArgumentException("设备信息无效");
@@ -86,6 +89,9 @@ public class ConnectionFactory {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveConnectionType(DeviceInfo deviceInfo, DeviceConnection cfg) {
         String protocolType = null;
         if (deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
@@ -106,42 +112,60 @@ public class ConnectionFactory {
         return "TCP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String canonicalizeConnectionType(String type, DeviceConnection cfg) {
         return protocolDescriptorRegistry.applyConnectionDefaults(type, cfg);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String type) {
         return type.toUpperCase().replace("-", "_");
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new TcpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 TCP 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 TCP 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 TCP 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createHttpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new HttpConnectionAdapter(deviceInfo, cfg, ioExecutor);
         } catch (Exception e) {
-            log.error("创建 HTTP 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 HTTP 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 HTTP 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createMqttConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             applyMqttConnectionDefaults(cfg);
             return new MqttConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 MQTT 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 MQTT 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 MQTT 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyMqttConnectionDefaults(DeviceConnection cfg) {
         if (cfg == null || collectorProperties == null || collectorProperties.getMqtt() == null) {
             return;
@@ -155,158 +179,212 @@ public class ConnectionFactory {
                 Math.max(1, collectorProperties.getMqtt().getMaxConcurrentConnects()));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createWebSocketConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new WebSocketConnectionAdapter(deviceInfo, cfg, ioExecutor, protocolScheduler);
         } catch (Exception e) {
-            log.error("创建 WebSocket 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 WebSocket 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 WebSocket 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createCoapConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new CoapConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 CoAP 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 CoAP 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 CoAP 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createS7Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new S7ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 S7 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 S7 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 S7 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createBacnetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new BacnetIpConnectionAdapter(deviceInfo, cfg, protocolScheduler);
         } catch (Exception e) {
-            log.error("Create BACnet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 BACnet/IP 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create BACnet/IP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createBacnetMstpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new BacnetMstpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create BACnet MS/TP connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 BACnet MS/TP 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create BACnet MS/TP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createBacnetScConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new BacnetScConnectionAdapter(deviceInfo, cfg, ioExecutor, protocolScheduler);
         } catch (Exception e) {
-            log.error("Create BACnet/SC connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 BACnet/SC 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create BACnet/SC connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createMitsubishiMcConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new MitsubishiMcConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create Mitsubishi MC connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 Mitsubishi MC 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create Mitsubishi MC connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createOmronFinsConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new OmronFinsUdpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create OMRON FINS connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 OMRON FINS 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create OMRON FINS connection failed", deviceInfo.getDeviceId(), null);
         }
     }
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createEtherNetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new EtherNetIpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create EtherNet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 EtherNet/IP 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create EtherNet/IP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createAdsConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new AdsConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create ADS connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 ADS 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create ADS connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createKnxNetIpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new KnxNetIpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create KNXnet/IP connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 KNXnet/IP 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create KNXnet/IP connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createModbusTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Plc4xModbusTcpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 Modbus TCP 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 Modbus TCP 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 Modbus TCP 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createModbusRtuConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Plc4xModbusRtuConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 Modbus RTU 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 Modbus RTU 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 Modbus RTU 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createSnmpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new SnmpConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 SNMP 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 SNMP 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 SNMP 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createOpcUaConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new OpcUaConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 OPC UA 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 OPC UA 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 OPC UA 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createPlc4xOpcUaConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Plc4xOpcUaConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("Create PLC4X OPC UA connection failed: {}", deviceInfo.getDeviceId(), e);
+            log.error("创建 PLC4X OPC UA 连接 失败:{}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("Create PLC4X OPC UA connection failed", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createIec104Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Iec104ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 IEC104 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 IEC104 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 IEC104 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createDlt645Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Dlt645ConnectionAdapter(deviceInfo, cfg, sharedSerialChannelManager);
@@ -316,6 +394,9 @@ public class ConnectionFactory {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createIec101Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Iec101ConnectionAdapter(deviceInfo, cfg, sharedSerialChannelManager);
@@ -325,15 +406,21 @@ public class ConnectionFactory {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createIec61850Connection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new Iec61850ConnectionAdapter(deviceInfo, cfg);
         } catch (Exception e) {
-            log.error("创建 IEC61850 连接失败: deviceId={}", deviceInfo.getDeviceId(), e);
+            log.error("创建 IEC61850 连接失败: 设备={}", deviceInfo.getDeviceId(), e);
             throw new CollectorException("创建 IEC61850 连接失败", deviceInfo.getDeviceId(), null);
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createCustomTcpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new CustomTcpConnectionAdapter(deviceInfo, cfg);
@@ -343,6 +430,9 @@ public class ConnectionFactory {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConnectionAdapter<?> createCustomUdpConnection(DeviceInfo deviceInfo, DeviceConnection cfg) {
         try {
             return new CustomUdpConnectionAdapter(deviceInfo, cfg);

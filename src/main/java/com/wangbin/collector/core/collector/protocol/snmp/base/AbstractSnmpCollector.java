@@ -56,6 +56,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
     protected OctetString contextNameOctet;
     protected OctetString contextEngineIdOctet;
 
+    /**
+     * 处理组件生命周期。
+     */
     protected DeviceConnection initSnmpConfig(DeviceInfo deviceInfo) {
         this.snmpConfig = collectorProperties != null
                 ? collectorProperties.getSnmp()
@@ -118,16 +121,25 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         return connection;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void initSnmpConnection(DeviceConnection connectionConfig) throws Exception {
         this.snmpConnection = createAndConnectAdapter(connectionConfig, SnmpConnectionAdapter.class, "SNMP");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void closeSnmpConnection() {
         removeManagedConnection("SNMP");
         snmpConnection = null;
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected Map<String, Variable> performGet(List<SnmpAddress> addresses) throws IOException {
         try {
             return executeSnmp((snmp, target) -> {
@@ -150,6 +162,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void performSet(Map<SnmpAddress, Object> values) throws IOException {
         if (values.isEmpty()) {
             return;
@@ -178,6 +193,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected List<VariableBinding> performWalk(String rootOid, int maxNodes) throws IOException {
         try {
             return executeSnmp((snmp, target) -> {
@@ -211,6 +229,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected PDU createPdu(int type, List<SnmpAddress> addresses) {
         PDU pdu = newPduInstance();
         for (SnmpAddress address : addresses) {
@@ -220,6 +241,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         return pdu;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     protected PDU validateResponse(ResponseEvent<UdpAddress> event) throws IOException {
         if (event == null || event.getResponse() == null) {
             throw new IOException("SNMP请求超时或无响应");
@@ -231,14 +255,23 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         return response;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Object convertVariable(Variable variable, SnmpDataType dataType) {
         return SnmpUtils.variableToJava(variable, dataType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Variable convertForWrite(Object value, SnmpDataType dataType) {
         return SnmpUtils.toVariable(value, dataType);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected <T> T executeSnmp(SnmpConnectionAdapter.SnmpCallable<T> callable) throws Exception {
         if (snmpConnection == null) {
             throw new IllegalStateException("SNMP连接尚未建立");
@@ -254,6 +287,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         return snmpConnection != null ? snmpConnection.getTarget() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int parseInt(Object raw, int defaultValue) {
         if (raw == null) {
             return defaultValue;
@@ -268,6 +304,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -277,6 +316,9 @@ public abstract class AbstractSnmpCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private PDU newPduInstance() {
         PDU pdu = version == SnmpConstants.version3 ? new ScopedPDU() : new PDU();
         if (pdu instanceof ScopedPDU scoped) {

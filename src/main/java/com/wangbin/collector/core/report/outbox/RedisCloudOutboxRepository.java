@@ -34,6 +34,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
     private final ObjectMapper objectMapper;
     private final ReportProperties reportProperties;
 
+    /**
+     * 创建当前组件实例。
+     */
     public RedisCloudOutboxRepository(StringRedisTemplate redisTemplate,
                                       ObjectMapper objectMapper,
                                       ReportProperties reportProperties) {
@@ -42,6 +45,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         this.reportProperties = reportProperties;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public CloudOutboxMessage saveIfAbsent(CloudOutboxMessage message, long leaseUntil) {
         validateMessage(message);
@@ -64,6 +70,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         return message;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Optional<CloudOutboxMessage> find(String messageId) {
         if (messageId == null || messageId.isBlank()) {
@@ -73,6 +82,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         return json == null ? Optional.empty() : Optional.of(deserialize(String.valueOf(json)));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public List<CloudOutboxMessage> claimDue(long now, int limit, long leaseUntil) {
         if (limit <= 0) {
@@ -94,6 +106,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         return messages;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void reschedule(CloudOutboxMessage message) {
         validateMessage(message);
@@ -107,6 +122,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         redisTemplate.opsForZSet().add(dueKey(), message.getMessageId(), message.getNextAttemptAt());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void complete(String messageId) {
         Optional<CloudOutboxMessage> existing = find(messageId);
@@ -122,18 +140,27 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public long countPending() {
         Long count = redisTemplate.opsForZSet().zCard(dueKey());
         return count == null ? 0L : count;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public long countIsolated() {
         Long count = redisTemplate.opsForSet().size(isolatedKey());
         return count == null ? 0L : count;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public long oldestCreatedAt() {
         Set<org.springframework.data.redis.core.ZSetOperations.TypedTuple<String>> values =
@@ -145,37 +172,61 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         return score == null ? 0L : score.longValue();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean hasPendingForDevice(String localDeviceId) {
         Long size = redisTemplate.opsForSet().size(deviceKey(localDeviceId));
         return size != null && size > 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String dataKey() {
         return keyPrefix() + DATA_SUFFIX;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String dueKey() {
         return keyPrefix() + DUE_SUFFIX;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String createdKey() {
         return keyPrefix() + CREATED_SUFFIX;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String isolatedKey() {
         return keyPrefix() + ISOLATED_SUFFIX;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String deviceKey(String localDeviceId) {
         return keyPrefix() + DEVICE_SUFFIX + localDeviceId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String keyPrefix() {
         String configured = reportProperties.getOutbox().getKeyPrefix();
         return configured.endsWith(":") ? configured : configured + ":";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String serialize(CloudOutboxMessage message) {
         try {
             return objectMapper.writeValueAsString(message);
@@ -184,6 +235,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private CloudOutboxMessage deserialize(String json) {
         try {
             return objectMapper.readValue(json, CloudOutboxMessage.class);
@@ -192,6 +246,9 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateMessage(CloudOutboxMessage message) {
         if (message == null || message.getMessageId() == null || message.getMessageId().isBlank()
                 || message.getLocalDeviceId() == null || message.getLocalDeviceId().isBlank()) {

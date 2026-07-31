@@ -14,7 +14,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * Async entrypoint for telemetry post-processing.
+ * 遥测后处理的异步入口。
  */
 @Slf4j
 @Component
@@ -26,6 +26,9 @@ public class CollectorDataPostProcessor {
     private final TelemetryPostProcessPipeline pipeline;
     private final CollectionTaskGuard collectionTaskGuard;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void savePointAsync(String deviceId, DataPoint point, Object value) {
         Long generation = captureGeneration(deviceId);
         submit(deviceId, point, generation, () -> {
@@ -47,6 +50,9 @@ public class CollectorDataPostProcessor {
         });
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void saveBatchAsync(String deviceId,
                                List<DataPoint> points,
                                Map<String, Object> values,
@@ -87,10 +93,13 @@ public class CollectorDataPostProcessor {
                         generation
                 ));
             }
-            log.debug("async batch post-process success, device={}, points={}", deviceId, points.size());
+            log.debug("异步批量后处理成功, 设备={}, 点位={}", deviceId, points.size());
         });
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProcessResult toProcessResult(Object value) {
         if (value == null) {
             return null;
@@ -106,6 +115,9 @@ public class CollectorDataPostProcessor {
         return fallback;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void submit(String deviceId, DataPoint point, Long generation, Runnable task) {
         if (deviceId == null || deviceId.isBlank() || task == null) {
             return;
@@ -118,20 +130,23 @@ public class CollectorDataPostProcessor {
                 try {
                     task.run();
                 } catch (Exception e) {
-                    log.error("async telemetry post-process failed, device={}, point={}",
+                    log.error("异步遥测后处理失败, 设备={}, 点位={}",
                             deviceId,
                             point != null ? point.getPointId() : "batch",
                             e);
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.warn("telemetry post-process rejected, device={}, point={}, reason={}",
+            log.warn("遥测后处理任务被拒绝, 设备={}, 点位={}, 原因={}",
                     deviceId,
                     point != null ? point.getPointId() : "batch",
                     e.getMessage());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldProcess(String deviceId, Long generation) {
         if (generation == null) {
             return true;
@@ -139,6 +154,9 @@ public class CollectorDataPostProcessor {
         return collectionTaskGuard.isCurrent(deviceId, generation);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long captureGeneration(String deviceId) {
         CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
         if (context == null) {

@@ -34,10 +34,16 @@ public class CloudTargetConfig {
      */
     private boolean topologyEnabled = true;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public CloudDeviceIdentity identity() {
         return CloudDeviceIdentity.of(productKey, deviceName);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean valid() {
         return enabled
                 && StringUtils.hasText(productKey)
@@ -45,10 +51,16 @@ public class CloudTargetConfig {
                 && deviceType != null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean gatewayDevice() {
         return deviceType == CloudDeviceType.GATEWAY || deviceType == CloudDeviceType.DIRECT;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean subDevice() {
         return deviceType == CloudDeviceType.SUB_DEVICE || deviceType == CloudDeviceType.LOGICAL_SUB_DEVICE;
     }

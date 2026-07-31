@@ -17,9 +17,15 @@ public final class Iec101Ft12Codec {
     private static final int SINGLE_ACK = 0xE5;
     private static final int END = 0x16;
 
+    /**
+     * 创建当前组件实例。
+     */
     private Iec101Ft12Codec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(Iec101Frame frame, int linkAddressSize) {
         return switch (frame.type()) {
             case SINGLE_ACK -> new byte[]{(byte) SINGLE_ACK};
@@ -28,6 +34,9 @@ public final class Iec101Ft12Codec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec101Frame decode(byte[] bytes, int linkAddressSize) {
         if (bytes == null || bytes.length == 0) {
             throw new IllegalArgumentException("IEC101 帧不能为空");
@@ -48,6 +57,9 @@ public final class Iec101Ft12Codec {
         throw new IllegalArgumentException("不支持的 IEC101 帧启动字符");
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public static Iec101Frame read(SerialChannel channel,
                                    int linkAddressSize,
                                    long timeoutMs) throws Exception {
@@ -84,6 +96,9 @@ public final class Iec101Ft12Codec {
         throw new IllegalStateException("等待 IEC101 链路响应超时");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeFixed(Iec101Frame frame, int addressSize) {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         body.write(frame.control());
@@ -96,6 +111,9 @@ public final class Iec101Ft12Codec {
         return output.toByteArray();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeVariable(Iec101Frame frame, int addressSize) {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         body.write(frame.control());
@@ -116,6 +134,9 @@ public final class Iec101Ft12Codec {
         return output.toByteArray();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Iec101Frame decodeFixed(byte[] bytes, int addressSize) {
         int expectedLength = addressSize + 4;
         if (bytes.length != expectedLength || (bytes[bytes.length - 1] & 0xFF) != END) {
@@ -127,6 +148,9 @@ public final class Iec101Ft12Codec {
                 body[0] & 0xFF, readLittleEndian(body, 1, addressSize), new byte[0]);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Iec101Frame decodeVariable(byte[] bytes, int addressSize) {
         if (bytes.length < 7 || (bytes[3] & 0xFF) != VARIABLE_START) {
             throw new IllegalArgumentException("IEC101 可变帧头无效");
@@ -145,12 +169,18 @@ public final class Iec101Ft12Codec {
                 Arrays.copyOfRange(body, userDataOffset, body.length));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static void validateChecksum(byte[] body, byte actual) {
         if (checksum(body) != (actual & 0xFF)) {
             throw new IllegalArgumentException("IEC101 链路帧校验和错误");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static int checksum(byte[] body) {
         int value = 0;
         for (byte item : body) {
@@ -159,12 +189,18 @@ public final class Iec101Ft12Codec {
         return value;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeLittleEndian(ByteArrayOutputStream output, int value, int length) {
         for (int index = 0; index < length; index++) {
             output.write((value >>> (index * 8)) & 0xFF);
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static int readLittleEndian(byte[] bytes, int offset, int length) {
         int value = 0;
         for (int index = 0; index < length; index++) {
@@ -173,6 +209,9 @@ public final class Iec101Ft12Codec {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static byte[] readExact(SerialChannel channel, int length, long deadline) throws Exception {
         byte[] result = new byte[length];
         int offset = 0;
@@ -189,6 +228,9 @@ public final class Iec101Ft12Codec {
         return result;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static Integer readByte(SerialChannel channel, long deadline) throws Exception {
         byte[] one = new byte[1];
         return channel.read(one, 0, 1, Math.max(1, deadline - System.currentTimeMillis())) == 1

@@ -15,6 +15,9 @@ public class CloudOutboxHealthIndicator implements HealthIndicator {
 
     private final CloudOutboxService cloudOutboxService;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Health health() {
         long pendingCount = cloudOutboxService.getPendingCount();

@@ -11,16 +11,25 @@ import org.apache.plc4x.java.api.PlcConnection;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public AdsConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -29,9 +38,12 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X ADS connection created: {}", connectionString);
+        log.info("PLC4X ADS 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -43,6 +55,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -50,9 +65,12 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // ADS access has no separate authentication phase here.
+        // ADS access has no separate 认证 phase here.
     }
 
     @Override
@@ -69,6 +87,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -98,6 +119,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
                 .toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveRequiredAmsNetId(String primaryKey, String aliasKey) {
         String value = firstNonBlank(
                 config.getString(primaryKey, null),
@@ -109,6 +133,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return AmsNetIdParser.parse(value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveTargetAmsPort() {
         Integer configured = firstPositive(
                 config.getInt("targetAmsPort", null),
@@ -117,6 +144,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return configured != null ? configured : DefaultAmsPorts.RUNTIME_SYSTEM_01.getValue();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRequiredPort(String primaryKey, String aliasKey) {
         Integer value = firstPositive(config.getInt(primaryKey, null), config.getInt(aliasKey, null));
         if (value == null) {
@@ -125,6 +155,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRequestTimeout() {
         Integer timeoutRequest = firstPositive(
                 config.getInt("timeoutRequest", null),
@@ -144,6 +177,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return 4000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean resolveLoadSymbolAndDataTypeTables() {
         return firstBoolean(
                 config.getBool("loadSymbolAndDataTypeTables", null),
@@ -152,6 +188,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstPositive(Integer... values) {
         if (values == null) {
             return null;
@@ -164,6 +203,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean firstBoolean(Boolean... values) {
         if (values == null) {
             return false;
@@ -176,6 +218,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -188,6 +233,9 @@ public class AdsConnectionAdapter extends AbstractConnectionAdapter<PlcConnectio
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

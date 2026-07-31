@@ -13,11 +13,14 @@ public class ReportMessage {
 
     private String reportId;
     private Long timestamp;
-    private String reportType; // REALTIME, HISTORY, ALARM, etc.
-    private String source; // COLLECTOR, PROCESSOR, CACHE, etc.
+    private String reportType; // 上报类型，例如实时、历史或告警。
+    private String source; // 数据来源，例如采集器、处理器或缓存。
     private List<DataItem> dataItems;
     private Map<String, Object> metadata;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class DataItem {
         private String pointId;
@@ -33,6 +36,9 @@ public class ReportMessage {
         private Long processTime;
         private Map<String, Object> tags;
 
+        /**
+         * 创建当前组件实例。
+         */
         public DataItem() {
             this.collectTime = System.currentTimeMillis();
             this.processTime = System.currentTimeMillis();
@@ -40,6 +46,9 @@ public class ReportMessage {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addDataItem(DataItem item) {
         if (dataItems == null) {
             dataItems = new java.util.ArrayList<>();
@@ -47,6 +56,9 @@ public class ReportMessage {
         dataItems.add(item);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addMetadata(String key, Object value) {
         if (metadata == null) {
             metadata = new java.util.HashMap<>();

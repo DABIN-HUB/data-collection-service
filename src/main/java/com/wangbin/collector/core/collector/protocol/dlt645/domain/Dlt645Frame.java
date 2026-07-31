@@ -11,6 +11,9 @@ public final class Dlt645Frame {
     private final int control;
     private final byte[] data;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Dlt645Frame(Dlt645Address address, int control, byte[] data) {
         this.address = address;
         this.control = control & 0xFF;
@@ -20,30 +23,51 @@ public final class Dlt645Frame {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Dlt645Address address() {
         return address;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int control() {
         return control;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public byte[] data() {
         return Arrays.copyOf(data, data.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int functionCode() {
         return control & 0x1F;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean response() {
         return (control & 0x80) != 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean abnormal() {
         return (control & 0x40) != 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasFollowingData() {
         return (control & 0x20) != 0;
     }

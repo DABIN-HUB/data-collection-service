@@ -3,7 +3,7 @@ package com.wangbin.collector.core.collector.protocol.opc.plc4x.domain;
 import lombok.Getter;
 
 /**
- * Parsed PLC4X OPC UA point metadata.
+ * Parsed PLC4X OPC UA 点位 元数据.
  */
 @Getter
 public class Plc4xOpcUaAddress {
@@ -17,6 +17,9 @@ public class Plc4xOpcUaAddress {
     private final boolean subscribe;
     private final int arraySize;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Plc4xOpcUaAddress(String rawAddress,
                              String plc4xAddress,
                              String dataType,
@@ -35,6 +38,9 @@ public class Plc4xOpcUaAddress {
         this.arraySize = Math.max(1, arraySize);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needSubscribe() {
         return subscribe;
     }

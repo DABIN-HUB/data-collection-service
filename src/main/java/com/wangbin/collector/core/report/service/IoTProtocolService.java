@@ -81,6 +81,9 @@ public class IoTProtocolService {
         return message;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildStateUpdateMessage(ReportData data) {
         StateMessage stateMessage = new StateMessage();
         Map<String, Object> state = new HashMap<>();
@@ -91,6 +94,9 @@ public class IoTProtocolService {
         return stateMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildEventMessage(ReportData data) {
         EventMessage eventMessage = new EventMessage();
         eventMessage.setEventCode(data.getPointCode());
@@ -104,6 +110,9 @@ public class IoTProtocolService {
         return eventMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildOtaProgressMessage(ReportData data) {
         IoTMessage otaMessage = new IoTMessage();
         otaMessage.setMethod(MessageConstant.MESSAGE_TYPE_OTA_PROGRESS);
@@ -114,6 +123,9 @@ public class IoTProtocolService {
         return otaMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildPropertyMessage(ReportData data) {
         PropertyMessage propertyMessage = new PropertyMessage();
         Map<String, Object> propertyParams = new HashMap<>();
@@ -218,6 +230,9 @@ public class IoTProtocolService {
         return batchConvert(dataMap, authInfo, MessageConstant.MESSAGE_TYPE_PROPERTY_POST);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String generateMessageId() {
         return System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
     }

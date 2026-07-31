@@ -10,6 +10,9 @@ import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<DatagramSocket> {
 
@@ -17,10 +20,16 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
     private InetSocketAddress remoteAddress;
     private int readBufferSize;
 
+    /**
+     * 创建当前组件实例。
+     */
     public OmronFinsUdpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -38,9 +47,12 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         this.socket.setReuseAddress(true);
         setConnectionParam("host", host);
         setConnectionParam("port", resolvedPort);
-        log.info("OMRON FINS UDP connection created: {}:{}", host, resolvedPort);
+        log.info("OMRON FINS UDP 连接 已创建:{}:{}", host, resolvedPort);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         if (socket != null) {
@@ -50,6 +62,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         remoteAddress = null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (socket == null || socket.isClosed() || !socket.isConnected()) {
@@ -57,11 +72,17 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // FINS/UDP has no extra authentication phase in this collector.
+        // FINS/UDP has no extra 认证 phase in this 采集器.
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         if (socket == null || remoteAddress == null) {
@@ -75,6 +96,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         try {
@@ -84,6 +108,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         try {
@@ -103,11 +130,17 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         return super.isConnected() && socket != null && socket.isConnected() && !socket.isClosed();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public synchronized byte[] exchange(byte[] request, long timeoutMs) throws Exception {
         send(request);
         return receive(timeoutMs);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] readFrame(int timeoutMs) throws Exception {
         if (socket == null) {
             throw new IllegalStateException("OMRON FINS UDP socket is not initialized");
@@ -123,6 +156,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         return Arrays.copyOf(packet.getData(), packet.getLength());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -135,6 +171,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
         return 5000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     protected String resolveHost() {
         return config.getHost() != null && !config.getHost().isBlank()
@@ -142,6 +181,9 @@ public class OmronFinsUdpConnectionAdapter extends AbstractConnectionAdapter<Dat
                 : deviceInfo != null ? deviceInfo.getIpAddress() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     protected Integer resolvePort() {
         if (config.getPort() != null && config.getPort() > 0) {

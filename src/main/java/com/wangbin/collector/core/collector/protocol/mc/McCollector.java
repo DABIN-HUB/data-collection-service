@@ -48,6 +48,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class McCollector extends ConnectionBackedCollector {
 
@@ -86,6 +89,9 @@ public class McCollector extends ConnectionBackedCollector {
         return "MITSUBISHI_MC";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -111,10 +117,13 @@ public class McCollector extends ConnectionBackedCollector {
         this.lastFallbackCount.set(0);
         this.lastMcEndCode = null;
         this.lastRequestUnitCount = null;
-        log.info("Mitsubishi MC collector connected, deviceId={}, timeout={}, maxWordsPerRequest={}, maxBitsPerRequest={}",
+        log.info("Mitsubishi MC 采集器 已连接, 设备={}, 超时={}, 单次最大字数={}, 单次最大位数={}",
                 deviceInfo.getDeviceId(), timeout, maxWordsPerRequest, maxBitsPerRequest);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("Mitsubishi MC");
@@ -126,9 +135,12 @@ public class McCollector extends ConnectionBackedCollector {
         lastFallbackCount.set(0);
         lastMcEndCode = null;
         lastRequestUnitCount = null;
-        log.info("Mitsubishi MC collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("Mitsubishi MC 采集器 已断开, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
@@ -154,6 +166,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         checkConnection();
@@ -187,7 +202,7 @@ public class McCollector extends ConnectionBackedCollector {
                         ProcessResult processResult = buildScalarProcessResult(point, address, rawValue);
                         lastProcessResults.put(pointId, processResult);
                         if (!processResult.isSuccess()) {
-                            log.warn("MC data quality check failed {}.{}, reason: {}",
+                            log.warn("MC 数据质量检查失败 {}.{}, 原因:{}",
                                     deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
                         }
                         results.put(pointId, processResult.getFinalValue());
@@ -198,7 +213,7 @@ public class McCollector extends ConnectionBackedCollector {
                         results.put(pointId, processResult.getFinalValue());
                     }
                 } catch (Exception e) {
-                    log.error("MC batch point process failed, deviceId={}, pointId={}",
+                    log.error("MC 批量 点位 处理失败, 设备={}, 点位={}",
                             deviceInfo.getDeviceId(), pointId, e);
                     recordException(e, point);
                     results.put(pointId, null);
@@ -217,6 +232,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public boolean writePoint(DataPoint point, Object value) throws CollectorException {
         checkConnection();
@@ -249,6 +267,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
         checkConnection();
@@ -277,7 +298,7 @@ public class McCollector extends ConnectionBackedCollector {
                         normalizedValues.put(point, normalizeWriteValue(point, address, entry.getValue()));
                         results.put(point.getPointId(), true);
                     } catch (Exception ex) {
-                        log.error("MC batch write preprocess failed, pointId={}", point.getPointId(), ex);
+                        log.error("MC 批量 写入 pre处理失败, 点位={}", point.getPointId(), ex);
                         recordException(ex, point);
                         results.put(point.getPointId(), false);
                     }
@@ -298,6 +319,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         McAddress address = requireAddress(point);
@@ -314,11 +338,17 @@ public class McCollector extends ConnectionBackedCollector {
         return McByteCodec.decode(address, payload);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         return readPointsByPlan(points);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         McAddress address = requireAddress(point);
@@ -336,6 +366,9 @@ public class McCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -357,7 +390,7 @@ public class McCollector extends ConnectionBackedCollector {
                     }
                 }
             } catch (Exception ex) {
-                log.warn("MC batch write plan failed, fallback to single writes, deviceId={}, segmentKey={}, start={}, unitCount={}, error={}",
+                log.warn("MC 批量 写入 plan 失败, 降级到 单点写入, 设备={}, 分段键={}, 启动={}, 单元数量={}, 错误={}",
                         deviceInfo.getDeviceId(),
                         writePlan.getSegmentKey(),
                         writePlan.getStartDeviceNumber(),
@@ -369,11 +402,17 @@ public class McCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         throw unsupported("subscribe", "Mitsubishi MC P0 only supports polling");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         configuredAddresses.clear();
@@ -382,6 +421,9 @@ public class McCollector extends ConnectionBackedCollector {
         lastFallbackCount.set(0);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
@@ -420,6 +462,9 @@ public class McCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = normalizeCommand(command);
@@ -432,6 +477,9 @@ public class McCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         List<DataPoint> readablePoints = cacheAddresses(points);
@@ -439,6 +487,9 @@ public class McCollector extends ConnectionBackedCollector {
         configuredReadPlanPointKeys = Collections.unmodifiableSet(buildPointKeySet(readablePoints));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Map<String, Object> readPointsByPlan(List<DataPoint> points) {
         Map<String, Object> results = new LinkedHashMap<>();
         List<DataPoint> readablePoints = filterPlanPoints(points);
@@ -453,7 +504,7 @@ public class McCollector extends ConnectionBackedCollector {
         }
         List<McReadPlan> readPlans = resolveReadPlans(readablePoints);
         if (log.isDebugEnabled()) {
-            log.debug("MC read by plan, deviceId={}, planCount={}, pointCount={}",
+            log.debug("MC 读取 by plan, 设备={}, 计划数量={}, 点位数量={}",
                     deviceInfo.getDeviceId(), readPlans.size(), readablePoints.size());
         }
         for (McReadPlan readPlan : readPlans) {
@@ -462,6 +513,9 @@ public class McCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldUseRandomRead(List<DataPoint> points) {
         if (!randomReadEnabled || points == null || points.isEmpty() || points.size() > maxRandomReadPoints) {
             return false;
@@ -498,6 +552,9 @@ public class McCollector extends ConnectionBackedCollector {
                 && address.getDriverType().getWordLength() == 1;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldUseRandomWrite(Map<DataPoint, Object> points) {
         if (!randomWriteEnabled || points == null || points.isEmpty() || points.size() > maxRandomWritePoints) {
             return false;
@@ -525,6 +582,9 @@ public class McCollector extends ConnectionBackedCollector {
         return hasGap;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeRandomRead(List<DataPoint> points, Map<String, Object> results) {
         try {
             List<McAddress> addresses = new ArrayList<>(points.size());
@@ -547,13 +607,13 @@ public class McCollector extends ConnectionBackedCollector {
                 offset += rawLength;
             }
             if (log.isDebugEnabled()) {
-                log.debug("MC random read executed, deviceId={}, pointCount={}", deviceInfo.getDeviceId(), points.size());
+                log.debug("MC 随机读取完成, 设备={}, 点位数量={}", deviceInfo.getDeviceId(), points.size());
             }
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
                 throw new IllegalStateException("MC random read failed", ex);
             }
-            log.warn("MC random read failed, fallback to planned read, deviceId={}, error={}",
+            log.warn("MC 随机读取失败, 降级到 计划读取, 设备={}, 错误={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
             lastFallbackCount.incrementAndGet();
             for (McReadPlan readPlan : resolveReadPlans(points)) {
@@ -562,6 +622,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private boolean executeRandomWrite(Map<DataPoint, Object> points, Map<String, Boolean> results) {
         try {
             McFrameCodec frameCodec = resolveFrameCodec(requireRuntimeConnectionConfig());
@@ -583,20 +646,23 @@ public class McCollector extends ConnectionBackedCollector {
                 }
             }
             if (log.isDebugEnabled()) {
-                log.debug("MC random write executed, deviceId={}, pointCount={}", deviceInfo.getDeviceId(), points.size());
+                log.debug("MC 随机写入完成, 设备={}, 点位数量={}", deviceInfo.getDeviceId(), points.size());
             }
             return true;
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
                 throw new IllegalStateException("MC random write failed", ex);
             }
-            log.warn("MC random write failed, fallback to planned write, deviceId={}, error={}",
+            log.warn("MC 随机写入失败, 降级到 计划写入, 设备={}, 错误={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
             lastFallbackCount.incrementAndGet();
             return false;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<McReadPlan> resolveReadPlans(List<DataPoint> readablePoints) {
         if (readablePoints == null || readablePoints.isEmpty()) {
             return Collections.emptyList();
@@ -609,6 +675,9 @@ public class McCollector extends ConnectionBackedCollector {
         return planReadPoints(readablePoints);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<DataPoint> filterPlanPoints(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
@@ -625,10 +694,16 @@ public class McCollector extends ConnectionBackedCollector {
         return readablePoints;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<McReadPlan> planReadPoints(List<DataPoint> points) {
         return readPlanBuilder.build(points, maxWordsPerRequest, maxBitsPerRequest);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<McReadPlan> selectConfiguredReadPlans(List<DataPoint> readablePoints) {
         List<McReadPlan> plansSnapshot = configuredReadPlans;
         Set<String> configuredPointKeysSnapshot = configuredReadPlanPointKeys;
@@ -661,6 +736,9 @@ public class McCollector extends ConnectionBackedCollector {
         return coveredPointKeys.containsAll(requestedPointKeys) ? selectedPlans : Collections.emptyList();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private McReadPlan rebuildPlanWithItems(McReadPlan sourcePlan, List<McReadPlanItem> matchedItems) {
         int minOffset = matchedItems.stream()
                 .mapToInt(McReadPlanItem::getUnitOffset)
@@ -699,6 +777,9 @@ public class McCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeReadPlan(McReadPlan readPlan, Map<String, Object> results) {
         List<DataPoint> points = readPlan != null ? readPlan.getPoints() : Collections.emptyList();
         if (points.isEmpty()) {
@@ -708,7 +789,7 @@ public class McCollector extends ConnectionBackedCollector {
             byte[] payload = executeBatchReadPayload(readPlan);
             populateBatchReadResults(readPlan, results, payload);
         } catch (Exception ex) {
-            log.warn("MC batch read plan failed, fallback to single reads, deviceId={}, segmentKey={}, start={}, unitCount={}, error={}",
+            log.warn("MC 批量 读取 plan 失败, 降级到 单点读取, 设备={}, 分段键={}, 启动={}, 单元数量={}, 错误={}",
                     deviceInfo.getDeviceId(),
                     readPlan.getSegmentKey(),
                     readPlan.getStartDeviceNumber(),
@@ -718,12 +799,15 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected byte[] executeBatchReadPayload(McReadPlan readPlan) throws Exception {
         McAddress batchAddress = buildBatchAddress(readPlan);
         validateRequestCapacity(batchAddress);
         lastRequestUnitCount = batchAddress.getReadUnitCount();
         if (log.isDebugEnabled()) {
-            log.debug("MC execute batch read, deviceId={}, segmentKey={}, start={}, units={}",
+            log.debug("MC 执行批量读取, 设备={}, 分段键={}, 启动={}, 单元数={}",
                     deviceInfo.getDeviceId(), readPlan.getSegmentKey(),
                     readPlan.getStartDeviceNumber(), batchAddress.getReadUnitCount());
         }
@@ -734,6 +818,9 @@ public class McCollector extends ConnectionBackedCollector {
         return frameCodec.normalizeReadPayload(batchAddress, frameCodec.parseReadPayload(response));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void populateBatchReadResults(McReadPlan readPlan,
                                             Map<String, Object> results,
                                             byte[] payload) {
@@ -766,13 +853,16 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void executeBatchWritePlan(McWritePlan writePlan,
                                          Map<String, Object> valuesByPointKey) throws Exception {
         McAddress batchAddress = buildBatchAddress(writePlan);
         validateRequestCapacity(batchAddress);
         lastRequestUnitCount = batchAddress.getReadUnitCount();
         if (log.isDebugEnabled()) {
-            log.debug("MC execute batch write, deviceId={}, segmentKey={}, start={}, units={}",
+            log.debug("MC 执行批量写入, 设备={}, 分段键={}, 启动={}, 单元数={}",
                     deviceInfo.getDeviceId(), writePlan.getSegmentKey(),
                     writePlan.getStartDeviceNumber(), batchAddress.getReadUnitCount());
         }
@@ -786,6 +876,9 @@ public class McCollector extends ConnectionBackedCollector {
         frameCodec.ensureWriteSuccess(response);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<Boolean> decodeBitPlanValues(McReadPlan readPlan, byte[] payload) {
         Object decoded = McByteCodec.decode(buildBatchAddress(readPlan), payload);
         if (decoded instanceof List<?> list) {
@@ -798,6 +891,9 @@ public class McCollector extends ConnectionBackedCollector {
         return List.of(Boolean.TRUE.equals(decoded));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void fallbackReadPlan(List<DataPoint> points, Map<String, Object> results) {
         int fallbackCount = 0;
         for (DataPoint point : points) {
@@ -808,7 +904,7 @@ public class McCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), doReadPoint(point));
                 fallbackCount++;
             } catch (Exception singleEx) {
-                log.error("MC fallback point read failed, deviceId={}, pointId={}",
+                log.error("MC 降级 点位 读取 失败, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), singleEx);
                 results.put(point.getPointId(), null);
             }
@@ -816,6 +912,9 @@ public class McCollector extends ConnectionBackedCollector {
         lastFallbackCount.addAndGet(fallbackCount);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private McAddress buildBatchAddress(McReadPlan readPlan) {
         return buildBatchAddress(
                 readPlan.getDeviceCode(),
@@ -825,6 +924,9 @@ public class McCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private McAddress buildBatchAddress(McWritePlan writePlan) {
         return buildBatchAddress(
                 writePlan.getDeviceCode(),
@@ -834,6 +936,9 @@ public class McCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private McAddress buildBatchAddress(com.wangbin.collector.core.collector.protocol.mc.domain.McDeviceCode deviceCode,
                                         int startDeviceNumber,
                                         int totalUnitCount,
@@ -855,6 +960,9 @@ public class McCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildSegmentKey(com.wangbin.collector.core.collector.protocol.mc.domain.McDeviceCode deviceCode,
                                    int startDeviceNumber,
                                    int endDeviceNumberExclusive) {
@@ -864,6 +972,9 @@ public class McCollector extends ConnectionBackedCollector {
         return deviceCode.getSymbol() + ":" + start + "-" + endExclusive;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<DataPoint> cacheAddresses(List<DataPoint> points) {
         configuredAddresses.clear();
         List<DataPoint> readablePoints = new ArrayList<>();
@@ -880,7 +991,7 @@ public class McCollector extends ConnectionBackedCollector {
                     readablePoints.add(point);
                 }
             } catch (Exception ex) {
-                log.warn("Cache MC address failed, deviceId={}, pointId={}, error={}",
+                log.warn("缓存 MC address 失败, 设备={}, 点位={}, 错误={}",
                         deviceInfo != null ? deviceInfo.getDeviceId() : null,
                         point.getPointId(),
                         ex.getMessage());
@@ -889,10 +1000,16 @@ public class McCollector extends ConnectionBackedCollector {
         return readablePoints;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<McWritePlan> planWritePoints(Map<DataPoint, Object> pointValues) {
         return writePlanBuilder.build(pointValues, maxWordsPerRequest, maxBitsPerRequest);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Set<String> buildPointKeySet(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptySet();
@@ -907,6 +1024,9 @@ public class McCollector extends ConnectionBackedCollector {
         return pointKeys;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildPointValueLookup(Map<DataPoint, Object> pointValues) {
         Map<String, Object> valuesByPointKey = new LinkedHashMap<>();
         for (Map.Entry<DataPoint, Object> entry : pointValues.entrySet()) {
@@ -919,6 +1039,9 @@ public class McCollector extends ConnectionBackedCollector {
         return valuesByPointKey;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildBatchWritePayload(McWritePlan writePlan,
                                           Map<String, Object> valuesByPointKey) {
         if (writePlan.isBitUnit()) {
@@ -934,6 +1057,9 @@ public class McCollector extends ConnectionBackedCollector {
         return payload;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildBitWritePayload(McWritePlan writePlan,
                                         Map<String, Object> valuesByPointKey) {
         List<Boolean> bitValues = new ArrayList<>(Collections.nCopies(writePlan.getTotalUnitCount(), Boolean.FALSE));
@@ -948,6 +1074,9 @@ public class McCollector extends ConnectionBackedCollector {
         return McByteCodec.encode(buildBatchAddress(writePlan), bitValues);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<Boolean> extractBitValues(McAddress address, Object value) {
         if (address.isScalar()) {
             return List.of(toBooleanValue(value));
@@ -966,6 +1095,9 @@ public class McCollector extends ConnectionBackedCollector {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBooleanValue(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -977,6 +1109,9 @@ public class McCollector extends ConnectionBackedCollector {
         return "true".equals(normalized) || "1".equals(normalized) || "on".equals(normalized);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void fallbackWritePlan(McWritePlan writePlan,
                                    Map<String, Object> valuesByPointKey,
                                    Map<String, Boolean> results) {
@@ -992,7 +1127,7 @@ public class McCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), doWritePoint(point, normalized));
                 fallbackCount++;
             } catch (Exception singleEx) {
-                log.error("MC fallback point write failed, deviceId={}, pointId={}",
+                log.error("MC 降级 点位 写入 失败, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), singleEx);
                 results.put(point.getPointId(), false);
             }
@@ -1000,6 +1135,9 @@ public class McCollector extends ConnectionBackedCollector {
         lastFallbackCount.addAndGet(fallbackCount);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Object readBitOffsetPoint(McAddress address) throws Exception {
         McAddress wordAddress = toWordContainerAddress(address);
         Object rawWord = readWordContainerValue(wordAddress);
@@ -1007,6 +1145,9 @@ public class McCollector extends ConnectionBackedCollector {
         return ((wordValue >> address.getBitIndex()) & 0x01) == 1;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeBitOffsetPoint(McAddress address, Object value) throws Exception {
         McAddress wordAddress = toWordContainerAddress(address);
         boolean targetBit = toBooleanValue(value);
@@ -1026,6 +1167,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private McAddress toWordContainerAddress(McAddress address) {
         return new McAddress(
                 address.getDeviceCode().getSymbol() + Integer.toString(address.getDeviceNumber(), address.getDeviceCode().getRadix()).toUpperCase(Locale.ROOT),
@@ -1039,6 +1183,9 @@ public class McCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private McFrameCodec resolveFrameCodec(DeviceConnection connection) {
         if (connection == null) {
             return defaultFrameCodec;
@@ -1056,11 +1203,14 @@ public class McCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private McAddress safeResolveAddress(DataPoint point) {
         try {
             return requireAddress(point);
         } catch (Exception ex) {
-            log.error("Resolve MC address failed, deviceId={}, pointId={}, address={}, error={}",
+            log.error("解析 MC 地址 失败, 设备={}, 点位={}, 地址={}, 错误={}",
                     deviceInfo != null ? deviceInfo.getDeviceId() : null,
                     point != null ? point.getPointId() : null,
                     point != null ? point.getAddress() : null,
@@ -1069,6 +1219,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private McAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
@@ -1076,6 +1229,9 @@ public class McCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> McAddressParser.parse(point));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private MitsubishiMcConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("Mitsubishi MC connection has not been established");
@@ -1083,11 +1239,17 @@ public class McCollector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private DeviceConnection requireRuntimeConnectionConfig() {
         DeviceConnection current = getCurrentConnectionConfig();
         return current != null ? current : requireConnectionConfig();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     protected Object readWordContainerValue(McAddress wordAddress) throws Exception {
         validateRequestCapacity(wordAddress);
         lastRequestUnitCount = wordAddress.getReadUnitCount();
@@ -1099,6 +1261,9 @@ public class McCollector extends ConnectionBackedCollector {
         return McByteCodec.decode(wordAddress, payload);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     protected void writeWordContainerValue(McAddress wordAddress, int value, McFrameCodec frameCodec) throws Exception {
         byte[] writePayload = McByteCodec.encode(wordAddress, value);
         byte[] writeRequest = frameCodec.buildBatchWrite(wordAddress,
@@ -1109,6 +1274,9 @@ public class McCollector extends ConnectionBackedCollector {
         frameCodec.ensureWriteSuccess(writeResponse);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private byte[] exchange(McFrameCodec frameCodec, byte[] request) throws Exception {
         try {
             byte[] response = requireConnection().exchange(request, timeout);
@@ -1121,6 +1289,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateRequestCapacity(McAddress address) {
         int units = address.getReadUnitCount();
         if (address.isBitDevice() && units > maxBitsPerRequest) {
@@ -1135,6 +1306,9 @@ public class McCollector extends ConnectionBackedCollector {
         return requireAddress(point).isScalar();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateArrayPointConfiguration(DataPoint point, McAddress address, String operation) {
         if (address == null || address.isScalar()) {
             return;
@@ -1153,6 +1327,9 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildScalarProcessResult(DataPoint point,
                                                    McAddress address,
                                                    Object rawValue) {
@@ -1161,7 +1338,7 @@ public class McCollector extends ConnectionBackedCollector {
         context.addAttribute("deviceId", deviceInfo.getDeviceId());
         ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
         if (!processResult.isSuccess()) {
-            log.warn("MC data quality check failed {}.{}, reason: {}",
+            log.warn("MC 数据质量检查失败 {}.{}, 原因:{}",
                     deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
         }
         if (point != null && point.getAddress() != null) {
@@ -1173,6 +1350,9 @@ public class McCollector extends ConnectionBackedCollector {
         return processResult;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildArrayReadProcessResult(DataPoint point,
                                                       McAddress address,
                                                       Object rawValue,
@@ -1181,6 +1361,9 @@ public class McCollector extends ConnectionBackedCollector {
         return buildArrayProcessResult(point, address, rawValue, message);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildWriteValidationResult(DataPoint point,
                                                      McAddress address,
                                                      Object value) {
@@ -1192,6 +1375,9 @@ public class McCollector extends ConnectionBackedCollector {
         return dataQualityProcessor.process(context, point, value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object normalizeReadValue(DataPoint point, McAddress address, Object rawValue) {
         if (address.getDriverType().isStringType()) {
             return rawValue;
@@ -1199,6 +1385,9 @@ public class McCollector extends ConnectionBackedCollector {
         return convertData(point, rawValue);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object normalizeWriteValue(DataPoint point, McAddress address, Object value) {
         if (address.getDriverType().isStringType() || !address.isScalar()) {
             return value;
@@ -1206,6 +1395,9 @@ public class McCollector extends ConnectionBackedCollector {
         return convertDataForWrite(point, value);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildArrayProcessResult(DataPoint point,
                                                   McAddress address,
                                                   Object rawValue,
@@ -1223,6 +1415,9 @@ public class McCollector extends ConnectionBackedCollector {
         return processResult;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldInvalidateConnection(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
@@ -1251,11 +1446,14 @@ public class McCollector extends ConnectionBackedCollector {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void invalidateConnection(Throwable cause) {
         if (!connected && connectionAdapter == null) {
             return;
         }
-        log.warn("Invalidate Mitsubishi MC connection after protocol/transport failure, deviceId={}, error={}",
+        log.warn("作废Mitsubishi MC 连接，原因=协议或传输失败, 设备={}, 错误={}",
                 deviceInfo != null ? deviceInfo.getDeviceId() : null,
                 cause != null ? cause.getMessage() : null);
         try {
@@ -1265,7 +1463,7 @@ public class McCollector extends ConnectionBackedCollector {
                 adapter.disconnect();
             }
         } catch (Exception disconnectError) {
-            log.warn("Disconnect broken Mitsubishi MC adapter failed, deviceId={}",
+            log.warn("断开异常 Mitsubishi MC 适配器 失败, 设备={}",
                     deviceInfo != null ? deviceInfo.getDeviceId() : null, disconnectError);
         } finally {
             removeManagedConnection("Mitsubishi MC");
@@ -1275,10 +1473,16 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String wordLockKey(McAddress address) {
         return deviceInfo.getDeviceId() + ":" + address.getDeviceCode().name() + ":" + address.getDeviceNumber();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private UnsupportedOperationException unsupported(String operation, String reason) {
         String message = String.format("Mitsubishi MC collector does not implement %s", operation);
         if (reason != null && !reason.isBlank()) {
@@ -1288,6 +1492,9 @@ public class McCollector extends ConnectionBackedCollector {
         return new UnsupportedOperationException(message);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         Object value = readPoint(point);
@@ -1297,6 +1504,9 @@ public class McCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
         if (!params.containsKey("value")) {
@@ -1311,6 +1521,9 @@ public class McCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveCommandPoint(Map<String, Object> params) {
         List<DataPoint> points = configManager != null && deviceInfo != null
                 ? configManager.getDataPoints(deviceInfo.getDeviceId())
@@ -1350,6 +1563,9 @@ public class McCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("Unable to resolve MC point from command params");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DataPoint resolveConfiguredPoint(List<DataPoint> points, String pointRef) {
         if (devicePointResolver != null) {
             return devicePointResolver.resolve(points, pointRef).orElse(null);
@@ -1361,6 +1577,9 @@ public class McCollector extends ConnectionBackedCollector {
                 .orElse(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matchesPointRef(DataPoint point, String normalizedRef) {
         return point != null
                 && (normalizedRef.equals(normalize(point.getReportField()))
@@ -1370,6 +1589,9 @@ public class McCollector extends ConnectionBackedCollector {
                 || normalizedRef.equals(normalize(point.getPointName())));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
         target.put("pointId", point.getPointId());
         target.put("pointCode", point.getPointCode());
@@ -1379,14 +1601,23 @@ public class McCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeCommand(String command) {
         return command != null ? command.trim().toLowerCase(Locale.ROOT).replace('-', '_') : "";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -1399,10 +1630,16 @@ public class McCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String asText(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

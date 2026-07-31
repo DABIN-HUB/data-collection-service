@@ -19,6 +19,9 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
     private static final double LOCAL_QUEUE_WARNING_RATIO = 0.9D;
     private final HistoryWriteBuffer historyWriteBuffer;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Health health() {
         HistoryBufferMetrics metrics = historyWriteBuffer.metrics();

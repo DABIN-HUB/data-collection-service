@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * Coordinates config sync and delegates actual loading to ConfigLoader implementations.
+ * Coordinates 配置 sync and delegates actual loading to ConfigLoader implementations.
  */
 @Slf4j
 @Service
@@ -63,17 +63,26 @@ public class ConfigSyncService {
     private volatile long lastFailureTime;
     private volatile String sourceVersion;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ConfigSyncService(ConfigLoader configLoader,
                              @Qualifier("ioIntensiveExecutor") Executor syncExecutor) {
         this.configLoader = configLoader;
         this.syncExecutor = syncExecutor;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         log.info("配置同步服务初始化，serviceId={}, source={}", serviceId, configLoader.getClass().getSimpleName());
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void startSyncTask() {
         try {
             syncAllConfig();
@@ -86,10 +95,16 @@ public class ConfigSyncService {
 
     @Scheduled(fixedDelayString = "${collector.config.sync-interval:30000}",
             initialDelayString = "${collector.config.sync-initial-delay:30000}")
+    /**
+     * 处理当前业务流程。
+     */
     public void scheduledSync() {
         syncAllConfig();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void registerConfigListener(Consumer<ConfigUpdateEvent> listener) {
         if (listener != null) {
             configListeners.add(listener);
@@ -97,6 +112,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void unregisterConfigListener(Consumer<ConfigUpdateEvent> listener) {
         if (listener != null) {
             configListeners.remove(listener);
@@ -104,6 +122,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void syncAllConfig() {
         if (!syncing.compareAndSet(false, true)) {
             log.debug("配置同步正在执行，跳过本次触发");
@@ -152,6 +173,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<DeviceInfo> loadAllDevices() {
         List<DeviceInfo> devices = sanitizeDevices(configLoader.loadAllDevices());
         synchronized (cacheLock) {
@@ -167,6 +191,9 @@ public class ConfigSyncService {
         return devices;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public DeviceInfo loadDevice(String deviceId) {
         DeviceInfo device = configLoader.loadDevice(deviceId);
         synchronized (cacheLock) {
@@ -180,6 +207,9 @@ public class ConfigSyncService {
         return device;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<DataPoint> loadDataPoints(String deviceId) {
         List<DataPoint> points = sanitizePoints(configLoader.loadDataPoints(deviceId));
         synchronized (cacheLock) {
@@ -189,6 +219,9 @@ public class ConfigSyncService {
         return points;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public DeviceConnection loadConnectionConfig(String deviceId) {
         DeviceConnection connection = configLoader.loadConnectionConfig(deviceId);
         synchronized (cacheLock) {
@@ -202,6 +235,9 @@ public class ConfigSyncService {
         return connection;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void notifyConfigUpdate(String configType, String deviceId) {
         log.info("开始同步配置类型 {}", configType);
         publishConfigEvent(createManualEvent(configType, deviceId));
@@ -209,6 +245,9 @@ public class ConfigSyncService {
         log.info("配置类型 {} 同步完成", configType);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void publishConfigEvent(ConfigUpdateEvent event) {
         if (configListeners.isEmpty()) {
             log.debug("没有配置监听器需要通知");
@@ -275,6 +314,9 @@ public class ConfigSyncService {
         return configListeners.size();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clearCache() {
         synchronized (cacheLock) {
             deviceConfigs.clear();
@@ -284,6 +326,9 @@ public class ConfigSyncService {
         log.info("配置缓存已清空");
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void triggerManualSync() {
         log.info("手动触发配置同步");
         try {
@@ -294,6 +339,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void safeSyncAllConfig() {
         try {
             syncAllConfig();
@@ -302,11 +350,17 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordSyncSuccess() {
         lastSyncTime = System.currentTimeMillis();
         consecutiveFailures.set(0);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordSyncFailure(String errorMessage) {
         lastFailureTime = System.currentTimeMillis();
         int failureCount = consecutiveFailures.incrementAndGet();
@@ -314,6 +368,9 @@ public class ConfigSyncService {
                 failureCount, errorMessage);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void publishIncrementalEvents(ConfigDiff diff,
                                           ConfigSnapshot previousSnapshot,
                                           ConfigSnapshot latestSnapshot) {
@@ -336,12 +393,18 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private ConfigSnapshot snapshotCurrentConfig() {
         synchronized (cacheLock) {
             return new ConfigSnapshot(deviceConfigs, pointConfigs, connectionConfigs);
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applySnapshot(ConfigSnapshot snapshot) {
         synchronized (cacheLock) {
             deviceConfigs.clear();
@@ -353,6 +416,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void pruneStaleDeviceState(Set<String> activeDeviceIds) {
         List<String> stalePointDeviceIds = new ArrayList<>();
         for (String deviceId : pointConfigs.keySet()) {
@@ -375,6 +441,9 @@ public class ConfigSyncService {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeDeviceState(String deviceId) {
         if (!hasText(deviceId)) {
             return;
@@ -384,6 +453,9 @@ public class ConfigSyncService {
         connectionConfigs.remove(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<DeviceInfo> sanitizeDevices(List<DeviceInfo> devices) {
         if (devices == null || devices.isEmpty()) {
             return Collections.emptyList();
@@ -397,6 +469,9 @@ public class ConfigSyncService {
         return Collections.unmodifiableList(safeDevices);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<DataPoint> sanitizePoints(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
@@ -410,6 +485,9 @@ public class ConfigSyncService {
         return Collections.unmodifiableList(safePoints);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConfigUpdateEvent createManualEvent(String configType, String deviceId) {
         ConfigUpdateType updateType = ConfigUpdateType.fromValue(configType).orElse(null);
         ConfigUpdateEvent event;
@@ -440,6 +518,9 @@ public class ConfigSyncService {
         return event;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConfigUpdateEvent createDeviceEvent(String deviceId, boolean connectionChanged) {
         ConfigUpdateEvent event = ConfigUpdateEvent.createDeviceUpdateEvent(deviceId, connectionChanged);
         event.setSource("config-sync");
@@ -447,6 +528,9 @@ public class ConfigSyncService {
         return event;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConfigUpdateEvent createPointsEvent(String deviceId, int pointCountChange) {
         ConfigUpdateEvent event = ConfigUpdateEvent.createPointsUpdateEvent(deviceId, pointCountChange);
         event.setSource("config-sync");
@@ -454,6 +538,9 @@ public class ConfigSyncService {
         return event;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ConfigUpdateEvent createConnectionEvent(String deviceId) {
         ConfigUpdateEvent event = ConfigUpdateEvent.createConnectionUpdateEvent(deviceId);
         event.setSource("config-sync");
@@ -461,6 +548,9 @@ public class ConfigSyncService {
         return event;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

@@ -2,6 +2,9 @@ package com.wangbin.collector.common.enums;
 
 import lombok.Getter;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 @Getter
 public enum Parity {
     none(0, "无校验"),
@@ -11,12 +14,18 @@ public enum Parity {
     private final int value;
     private final String description;
 
+    /**
+     * 创建当前组件实例。
+     */
     Parity(int value, String description) {
         this.value = value;
         this.description = description;
     }
 
     // 根据值获取枚举
+    /**
+     * 创建并返回业务对象。
+     */
     public static Parity fromValue(int value) {
         for (Parity parity : values()) {
             if (parity.value == value) {
@@ -27,6 +36,9 @@ public enum Parity {
     }
 
     // 根据名称获取枚举（已经是小写，直接匹配）
+    /**
+     * 创建并返回业务对象。
+     */
     public static Parity fromName(String name) {
         for (Parity parity : values()) {
             if (parity.name().equals(name)) {
@@ -37,6 +49,9 @@ public enum Parity {
     }
 
     // 计算校验位
+    /**
+     * 执行当前业务逻辑。
+     */
     public int calculateParityBit(byte data, int dataBits) {
         if (this == none) {
             return 0;
@@ -52,12 +67,15 @@ public enum Parity {
 
         if (this == even) {
             return (onesCount % 2 == 0) ? 0 : 1;
-        } else { // odd
+        } else { // 奇校验。
             return (onesCount % 2 == 0) ? 1 : 0;
         }
     }
 
     // 添加校验位到数据
+    /**
+     * 执行当前业务逻辑。
+     */
     public byte addParity(byte data, int dataBits) {
         if (this == none) {
             return data;
@@ -69,6 +87,9 @@ public enum Parity {
     }
 
     // 检查数据+校验位是否正确
+    /**
+     * 校验业务条件和参数边界。
+     */
     public boolean verifyParity(byte dataWithParity, int dataBits) {
         if (this == none) {
             return true; // 无校验总是返回true
@@ -82,6 +103,9 @@ public enum Parity {
         return receivedParity == calculatedParity;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public String toString() {
         return name() + "(" + value + ") - " + description;

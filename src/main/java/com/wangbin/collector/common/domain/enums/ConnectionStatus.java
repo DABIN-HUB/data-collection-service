@@ -20,6 +20,9 @@ public enum ConnectionStatus {
     private final String description;
     private final int level;
 
+    /**
+     * 创建当前组件实例。
+     */
     ConnectionStatus(String code, String description, int level) {
         this.code = code;
         this.description = description;
@@ -27,6 +30,9 @@ public enum ConnectionStatus {
     }
 
     // 根据code获取枚举
+    /**
+     * 创建并返回业务对象。
+     */
     public static ConnectionStatus fromCode(String code) {
         for (ConnectionStatus status : values()) {
             if (status.getCode().equals(code)) {
@@ -42,11 +48,17 @@ public enum ConnectionStatus {
     }
 
     // 判断是否可以发送数据
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean canSendData() {
         return this == AUTHENTICATED;
     }
 
     // 判断是否需要重连
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needReconnect() {
         return this == DISCONNECTED || this == ERROR;
     }
