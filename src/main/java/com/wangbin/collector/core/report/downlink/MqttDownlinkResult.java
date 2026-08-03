@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.downlink;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import lombok.Getter;
 
@@ -82,12 +84,12 @@ public class MqttDownlinkResult {
             body.put("method", method);
         }
         if (deviceId != null && !deviceId.isBlank()) {
-            body.put("deviceId", deviceId);
+            body.put(CommonMapKeys.DEVICE_ID, deviceId);
         }
         body.put("code", code);
         body.put("msg", message);
-        body.put("timestamp", System.currentTimeMillis());
-        body.put("data", data);
+        body.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
+        body.put(CommonMapKeys.DATA, data);
         return body;
     }
 }

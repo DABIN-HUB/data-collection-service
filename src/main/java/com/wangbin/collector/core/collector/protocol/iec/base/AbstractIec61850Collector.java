@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec.base;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.beanit.iec61850bean.*;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -341,7 +343,7 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         Map<String, Object> payload = new HashMap<>();
         payload.put("reference", reference);
         payload.put("fc", fc.name());
-        payload.put("value", value);
+        payload.put(CommonMapKeys.VALUE, value);
         log.debug("IEC61850 报告: {}", payload);
     }
 

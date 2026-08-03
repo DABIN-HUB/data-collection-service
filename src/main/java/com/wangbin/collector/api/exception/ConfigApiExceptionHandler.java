@@ -1,12 +1,10 @@
 package com.wangbin.collector.api.exception;
 
 import com.wangbin.collector.api.controller.ConfigController;
+import com.wangbin.collector.api.controller.dto.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * 配置治理接口统一异常响应处理器。
@@ -15,15 +13,14 @@ import java.util.Map;
 public class ConfigApiExceptionHandler {
 
     /**
-     * 处理当前业务流程。
+     * 处理配置接口业务异常。
+     *
+     * @param exception 配置接口异常
+     * @return 统一异常响应
      */
     @ExceptionHandler(ConfigApiException.class)
-    public ResponseEntity<Map<String, Object>> handleConfigApiException(ConfigApiException exception) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("status", "error");
-        payload.put("message", exception.getMessage());
-        payload.put("timestamp", System.currentTimeMillis());
-        payload.put("data", exception.getData());
-        return ResponseEntity.status(exception.getHttpStatus()).body(payload);
+    public ResponseEntity<ApiResponse<Object>> handleConfigApiException(ConfigApiException exception) {
+        return ResponseEntity.status(exception.getHttpStatus())
+                .body(ApiResponse.error(exception.getMessage(), exception.getData()));
     }
 }

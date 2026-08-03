@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.manager;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -310,9 +312,9 @@ public class CollectionManager {
         }
 
         Map<String, Object> info = new HashMap<>();
-        info.put("deviceId", deviceId);
+        info.put(CommonMapKeys.DEVICE_ID, deviceId);
         info.put("collectorType", collector.getCollectorType());
-        info.put("isConnected", collector.isConnected());
+        info.put(CommonMapKeys.IS_CONNECTED, collector.isConnected());
         return info;
     }
 

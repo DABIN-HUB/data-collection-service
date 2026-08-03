@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import lombok.extern.slf4j.Slf4j;
@@ -168,14 +170,14 @@ public abstract class AbstractDataProcessor implements DataProcessor {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        stats.put("name", getName());
-        stats.put("type", getType());
-        stats.put("enabled", enabled);
+        stats.put(CommonMapKeys.NAME, getName());
+        stats.put(CommonMapKeys.TYPE, getType());
+        stats.put(CommonMapKeys.ENABLED, enabled);
         stats.put("priority", priority);
         stats.put("totalProcessed", totalProcessed.get());
         stats.put("successfulProcessed", successfulProcessed.get());
         stats.put("failedProcessed", failedProcessed.get());
-        stats.put("successRate", getSuccessRate());
+        stats.put(CommonMapKeys.SUCCESS_RATE, getSuccessRate());
         stats.put("totalProcessingTime", totalProcessingTime.get());
         stats.put("averageProcessingTime", averageProcessingTime.get());
 
@@ -243,16 +245,16 @@ public abstract class AbstractDataProcessor implements DataProcessor {
             return;
         }
 
-        if (config.containsKey("name")) {
-            name = (String) config.get("name");
+        if (config.containsKey(CommonMapKeys.NAME)) {
+            name = (String) config.get(CommonMapKeys.NAME);
         }
 
-        if (config.containsKey("type")) {
-            type = (String) config.get("type");
+        if (config.containsKey(CommonMapKeys.TYPE)) {
+            type = (String) config.get(CommonMapKeys.TYPE);
         }
 
-        if (config.containsKey("description")) {
-            description = (String) config.get("description");
+        if (config.containsKey(CommonMapKeys.DESCRIPTION)) {
+            description = (String) config.get(CommonMapKeys.DESCRIPTION);
         }
 
         if (config.containsKey("priority")) {
@@ -268,8 +270,8 @@ public abstract class AbstractDataProcessor implements DataProcessor {
             }
         }
 
-        if (config.containsKey("enabled")) {
-            Object enabledObj = config.get("enabled");
+        if (config.containsKey(CommonMapKeys.ENABLED)) {
+            Object enabledObj = config.get(CommonMapKeys.ENABLED);
             if (enabledObj instanceof Boolean) {
                 enabled = (Boolean) enabledObj;
             } else if (enabledObj instanceof String) {

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc.da;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -51,7 +53,7 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
 
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("serverProgId", config.serverProgId());
-        request.put("host", config.host());
+        request.put(CommonMapKeys.HOST, config.host());
         request.put("endpoint", config.endpoint());
         request.put("username", config.username());
         request.put("password", config.password());
@@ -95,7 +97,7 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         ensureConnected();
         JsonNode response = post("/read", Map.of("sessionId", sessionId, "itemId", itemId));
         JsonNode data = readDataNode(response);
-        JsonNode valueNode = data.get("value");
+        JsonNode valueNode = data.get(CommonMapKeys.VALUE);
         if (valueNode != null) {
             return objectMapper.convertValue(valueNode, Object.class);
         }
@@ -134,10 +136,10 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         JsonNode response = post("/write", Map.of("sessionId", sessionId, "itemId", itemId, "value", value));
         JsonNode data = readDataNode(response);
         if (data.has("success")) {
-            return data.get("success").asBoolean(false);
+            return data.get(CommonMapKeys.SUCCESS).asBoolean(false);
         }
         if (data.has("status")) {
-            String status = data.get("status").asText("");
+            String status = data.get(CommonMapKeys.STATUS).asText("");
             return "success".equalsIgnoreCase(status) || "ok".equalsIgnoreCase(status);
         }
         return true;
@@ -235,7 +237,7 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
             throw new IllegalStateException("Bridge response is empty");
         }
         if (response.has("success")) {
-            if (!response.get("success").asBoolean(false)) {
+            if (!response.get(CommonMapKeys.SUCCESS).asBoolean(false)) {
                 throw new IllegalStateException("Bridge request failed: " + readText(response, "message"));
             }
             return;
@@ -253,7 +255,7 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
      */
     private JsonNode readDataNode(JsonNode response) {
         if (response != null && response.has("data")) {
-            JsonNode data = response.get("data");
+            JsonNode data = response.get(CommonMapKeys.DATA);
             if (data != null && !data.isNull()) {
                 return data;
             }

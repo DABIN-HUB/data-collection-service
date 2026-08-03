@@ -1,5 +1,7 @@
 package com.wangbin.collector.common.utils;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -144,16 +146,16 @@ public class JsonDataPointLoader {
 
                 // 设置基本属性
                 if (map.containsKey("id")) point.setId(toLong(map.get("id")));
-                if (map.containsKey("pointId")) point.setPointId((String) map.get("pointId"));
-                if (map.containsKey("pointCode")) point.setPointCode((String) map.get("pointCode"));
-                if (map.containsKey("pointName")) point.setPointName((String) map.get("pointName"));
-                if (map.containsKey("deviceId")) point.setDeviceId((String) map.get("deviceId"));
+                if (map.containsKey(CommonMapKeys.POINT_ID)) point.setPointId((String) map.get(CommonMapKeys.POINT_ID));
+                if (map.containsKey(CommonMapKeys.POINT_CODE)) point.setPointCode((String) map.get(CommonMapKeys.POINT_CODE));
+                if (map.containsKey(CommonMapKeys.POINT_NAME)) point.setPointName((String) map.get(CommonMapKeys.POINT_NAME));
+                if (map.containsKey(CommonMapKeys.DEVICE_ID)) point.setDeviceId((String) map.get(CommonMapKeys.DEVICE_ID));
                 if (map.containsKey("deviceName")) point.setDeviceName((String) map.get("deviceName"));
-                if (map.containsKey("address")) point.setAddress((String) map.get("address"));
+                if (map.containsKey(CommonMapKeys.ADDRESS)) point.setAddress((String) map.get(CommonMapKeys.ADDRESS));
                 if (map.containsKey("dataType")) point.setDataType((String) map.get("dataType"));
                 if (map.containsKey("readWrite")) point.setReadWrite((String) map.get("readWrite"));
                 if (map.containsKey("collectionMode")) point.setCollectionMode((String) map.get("collectionMode"));
-                if (map.containsKey("unit")) point.setUnit((String) map.get("unit"));
+                if (map.containsKey(CommonMapKeys.UNIT)) point.setUnit((String) map.get(CommonMapKeys.UNIT));
                 if (map.containsKey("unitId")) point.setUnitId(toInteger(map.get("unitId")));
                 if (map.containsKey("commonAddress")) point.setCommonAddress(toInteger(map.get("commonAddress")));
 
@@ -166,7 +168,7 @@ public class JsonDataPointLoader {
 
                 // 设置整数属性
                 if (map.containsKey("priority")) point.setPriority(toInteger(map.get("priority")));
-                if (map.containsKey("status")) point.setStatus(toInteger(map.get("status")));
+                if (map.containsKey(CommonMapKeys.STATUS)) point.setStatus(toInteger(map.get(CommonMapKeys.STATUS)));
                 if (map.containsKey("cacheEnabled")) point.setCacheEnabled(toInteger(map.get("cacheEnabled")));
                 if (map.containsKey("cacheDuration")) point.setCacheDuration(toInteger(map.get("cacheDuration")));
                 if (map.containsKey("alarmEnabled")) point.setAlarmEnabled(toInteger(map.get("alarmEnabled")));

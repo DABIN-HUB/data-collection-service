@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -322,15 +324,15 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", isRuntimeSubscriptionSupported());
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, isRuntimeSubscriptionSupported());
         status.put("browseable", isRuntimeBrowseSupported());
         status.put("parallelValidation", true);
-        status.put("isConnected", isConnected());
-        status.put("configuredPointCount", configuredAddresses.size());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
         status.put("activeSubscriptions", subscriptionHandles.size());
         status.put("subscriptionEventCount", subscriptionEventCount.get());
@@ -341,8 +343,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
 
         DeviceConnection connection = getCurrentConnectionConfig();
         if (connection != null) {
-            status.put("host", connection.getHost());
-            status.put("port", connection.getPort());
+            status.put(CommonMapKeys.HOST, connection.getHost());
+            status.put(CommonMapKeys.PORT, connection.getPort());
             status.put("url", firstNonBlank(
                     connection.getUrl(),
                     connection.getString("endpointUrl", null),
@@ -596,8 +598,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             String fieldName = "node" + i;
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("nodeId", nodeIds.get(i));
-            entry.put("value", extractValue(response.getPlcValue(fieldName), null, addresses.get(i)));
-            entry.put("status", response.getResponseCode(fieldName) != null
+            entry.put(CommonMapKeys.VALUE, extractValue(response.getPlcValue(fieldName), null, addresses.get(i)));
+            entry.put(CommonMapKeys.STATUS, response.getResponseCode(fieldName) != null
                     ? response.getResponseCode(fieldName).name()
                     : null);
             results.add(entry);
@@ -611,11 +613,11 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         String nodeId = firstNonBlank(
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null));
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null));
         if (nodeId == null) {
             throw new IllegalArgumentException("nodeId is required");
         }
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
 
@@ -625,14 +627,14 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(nodeId, dataType);
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
-                .addTagAddress("node", address.getPlc4xAddress(), coerceWriteValue(params.get("value"), address, null))
+                .addTagAddress("node", address.getPlc4xAddress(), coerceWriteValue(params.get(CommonMapKeys.VALUE), address, null))
                 .build()
                 .execute());
         ensureResponseOk(response, "node", "write");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("nodeId", nodeId);
-        result.put("status", "success");
+        result.put(CommonMapKeys.STATUS, "success");
         return result;
     }
 
@@ -644,7 +646,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         String query = firstNonBlank(
                 Objects.toString(params.get("query"), null),
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null),
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null),
                 DEFAULT_BROWSE_NODE);
         String normalizedQuery = Plc4xOpcUaAddressParser.parse(query).getPlc4xAddress();
 
@@ -674,11 +676,11 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
      */
     private Map<String, Object> toBrowseNode(PlcBrowseItem item) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("name", item.getName());
+        result.put(CommonMapKeys.NAME, item.getName());
         result.put("tagAddress", item.getTag() != null ? item.getTag().toString() : null);
         result.put("readable", item.isReadable());
-        result.put("writable", item.isWritable());
-        result.put("subscribable", item.isSubscribable());
+        result.put(CommonMapKeys.WRITABLE, item.isWritable());
+        result.put(CommonMapKeys.SUBSCRIBABLE, item.isSubscribable());
         result.put("publishable", item.isPublishable());
         result.put("array", item.isArray());
         result.put("childrenCount", item.getChildren() != null ? item.getChildren().size() : 0);
@@ -865,7 +867,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
         String single = firstNonBlank(
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null));
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null));
         return single != null ? List.of(single) : Collections.emptyList();
     }
 

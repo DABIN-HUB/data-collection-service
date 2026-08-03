@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cloud.register;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import org.springframework.stereotype.Service;
@@ -35,7 +37,7 @@ public class CloudSubDeviceRegisterService {
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("registered", changed);
-        data.put("total", registeredDevices.size());
+        data.put(CommonMapKeys.TOTAL, registeredDevices.size());
         return data;
     }
 
@@ -48,7 +50,7 @@ public class CloudSubDeviceRegisterService {
             devices.add(device.toMap(false));
         }
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("count", devices.size());
+        data.put(CommonMapKeys.COUNT, devices.size());
         data.put("devices", devices);
         return data;
     }
@@ -147,7 +149,7 @@ public class CloudSubDeviceRegisterService {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("productKey", identity.productKey());
             data.put("deviceName", identity.deviceName());
-            data.put("status", status);
+            data.put(CommonMapKeys.STATUS, status);
             data.put("registeredAt", registeredAt);
             if (exposeSecret) {
                 data.put("deviceSecret", deviceSecret);

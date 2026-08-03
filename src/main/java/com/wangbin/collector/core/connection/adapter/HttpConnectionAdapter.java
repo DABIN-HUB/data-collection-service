@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
@@ -421,7 +423,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
 
         // 添加设备标识
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
-            authParams.put("deviceId", deviceInfo.getDeviceId());
+            authParams.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         }
         if (deviceInfo != null && deviceInfo.getProductKey() != null) {
             authParams.put("productKey", deviceInfo.getProductKey());

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.custom.codec;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 
@@ -70,11 +72,11 @@ public final class CustomRequestEncoder {
      */
     private static Map<String, String> variables(DataPoint point, Object value) {
         Map<String, String> variables = new LinkedHashMap<>();
-        variables.put("pointId", safe(point.getPointId()));
-        variables.put("pointCode", safe(point.getPointCode()));
-        variables.put("address", safe(point.getAdditionalConfig("requestAddress", point.getAddress())));
+        variables.put(CommonMapKeys.POINT_ID, safe(point.getPointId()));
+        variables.put(CommonMapKeys.POINT_CODE, safe(point.getPointCode()));
+        variables.put(CommonMapKeys.ADDRESS, safe(point.getAdditionalConfig("requestAddress", point.getAddress())));
         variables.put("addressHex", resolveAddressHex(point));
-        variables.put("value", value == null ? "" : String.valueOf(value));
+        variables.put(CommonMapKeys.VALUE, value == null ? "" : String.valueOf(value));
         variables.put("valueHex", value == null ? "" : CustomFrameCodec.encodeHex(CustomValueCodec.encode(value, point)));
         return variables;
     }

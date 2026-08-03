@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.handler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -584,15 +586,15 @@ public class HttpReportHandler extends AbstractReportHandler {
         Map<String, Object> jsonData = new HashMap<>();
 
         // 添加基本数据
-        jsonData.put("pointCode", data.getPointCode());
-        jsonData.put("pointName", data.getPointName());
-        jsonData.put("value", data.getValue());
-        jsonData.put("timestamp", data.getTimestamp());
-        jsonData.put("quality", data.getQuality() != null ? data.getQuality() : QualityEnum.GOOD.getText());
+        jsonData.put(CommonMapKeys.POINT_CODE, data.getPointCode());
+        jsonData.put(CommonMapKeys.POINT_NAME, data.getPointName());
+        jsonData.put(CommonMapKeys.VALUE, data.getValue());
+        jsonData.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
+        jsonData.put(CommonMapKeys.QUALITY, data.getQuality() != null ? data.getQuality() : QualityEnum.GOOD.getText());
 
         // 添加元数据
         if (data.getMetadata() != null && !data.getMetadata().isEmpty()) {
-            jsonData.put("metadata", data.getMetadata());
+            jsonData.put(CommonMapKeys.METADATA, data.getMetadata());
         }
 
         // 从配置中获取额外的数据

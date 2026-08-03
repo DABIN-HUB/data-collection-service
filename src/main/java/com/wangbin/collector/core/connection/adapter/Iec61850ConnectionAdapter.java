@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.beanit.iec61850bean.ClientAssociation;
 import com.beanit.iec61850bean.ClientEventListener;
 import com.beanit.iec61850bean.ClientSap;
@@ -45,9 +47,9 @@ public class Iec61850ConnectionAdapter extends AbstractConnectionAdapter<ClientA
         InetAddress address = InetAddress.getByName(host);
         association = clientSap.associate(address, port, null, clientEventListener);
         association.setResponseTimeout(timeout);
-        connectionParams.put("host", host);
-        connectionParams.put("port", port);
-        connectionParams.put("timeout", timeout);
+        connectionParams.put(CommonMapKeys.HOST, host);
+        connectionParams.put(CommonMapKeys.PORT, port);
+        connectionParams.put(CommonMapKeys.TIMEOUT, timeout);
     }
 
     /**

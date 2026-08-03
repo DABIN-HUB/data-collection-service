@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.shadow;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -236,13 +238,13 @@ public class ShadowManager {
                         String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
                         String.valueOf(metadata.getOrDefault("eventType", "EVENT")));
             }
-            if (metadata.get("eventType") != null) {
+            if (metadata.get(CommonMapKeys.EVENT_TYPE) != null) {
                 return new EventInfo(
                         metadataToString(metadata, "ruleId"),
                         metadataToString(metadata, "ruleName"),
                         String.valueOf(metadata.getOrDefault("eventLevel", "INFO")),
                         String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
-                        String.valueOf(metadata.get("eventType")));
+                        String.valueOf(metadata.get(CommonMapKeys.EVENT_TYPE)));
             }
         }
 
@@ -386,11 +388,11 @@ public class ShadowManager {
             return null;
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("deviceId", shadow.getDeviceId());
+        result.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
         result.put("version", shadow.currentVersion());
-        result.put("timestamp", shadow.getUpdatedAt());
+        result.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
         result.put("delta", toValueMap(shadow.deltaSnapshot()));
-        result.put("metadata", toMetaMap(shadow.deltaSnapshot()));
+        result.put(CommonMapKeys.METADATA, toMetaMap(shadow.deltaSnapshot()));
         return result;
     }
 
@@ -655,9 +657,9 @@ public class ShadowManager {
      */
     private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("deviceId", shadow.getDeviceId());
+        doc.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
         doc.put("version", shadow.currentVersion());
-        doc.put("timestamp", shadow.getUpdatedAt());
+        doc.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
         doc.put("createdAt", shadow.getCreatedAt());
         doc.put("lastReportAt", shadow.getLastReportAt());
         doc.put("lastWindowStart", shadow.getLastWindowStart());
@@ -673,7 +675,7 @@ public class ShadowManager {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("reported", toMetaMap(shadow.snapshot()));
         metadata.put("desired", toMetaMap(shadow.desiredSnapshot()));
-        doc.put("metadata", metadata);
+        doc.put(CommonMapKeys.METADATA, metadata);
 
         return doc;
     }
@@ -707,13 +709,13 @@ public class ShadowManager {
                 return;
             }
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("timestamp", meta.getTimestamp());
+            metadata.put(CommonMapKeys.TIMESTAMP, meta.getTimestamp());
             metadata.put("updatedAt", meta.getUpdatedAt());
             if (meta.getQuality() != null) {
-                metadata.put("quality", meta.getQuality());
+                metadata.put(CommonMapKeys.QUALITY, meta.getQuality());
             }
             if (meta.getSource() != null) {
-                metadata.put("source", meta.getSource());
+                metadata.put(CommonMapKeys.SOURCE, meta.getSource());
             }
             if (meta.getMetadata() != null && !meta.getMetadata().isEmpty()) {
                 metadata.put("valueMetadata", meta.getMetadata());
@@ -860,7 +862,7 @@ public class ShadowManager {
      * 执行当前业务逻辑。
      */
     private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
-        String deviceId = asString(document.get("deviceId"));
+        String deviceId = asString(document.get(CommonMapKeys.DEVICE_ID));
         DeviceShadow shadow = new DeviceShadow(deviceId != null ? deviceId : fallbackDeviceId);
         Long version = asLong(document.get("version"));
         if (version != null) {
@@ -870,7 +872,7 @@ public class ShadowManager {
         if (createdAt != null) {
             shadow.setCreatedAt(createdAt);
         }
-        Long updatedAt = asLong(document.get("timestamp"));
+        Long updatedAt = asLong(document.get(CommonMapKeys.TIMESTAMP));
         if (updatedAt != null) {
             shadow.setUpdatedAt(updatedAt);
         }
@@ -885,7 +887,7 @@ public class ShadowManager {
         }
 
         Map<String, Object> state = toMap(document.get("state"));
-        Map<String, Object> metadata = toMap(document.get("metadata"));
+        Map<String, Object> metadata = toMap(document.get(CommonMapKeys.METADATA));
         restoreValues(shadow, state.get("reported"), toMap(metadata.get("reported")), true);
         restoreValues(shadow, state.get("desired"), toMap(metadata.get("desired")), false);
         shadow.restoreLastReportedValues(toMap(state.get("lastReported")));
@@ -902,10 +904,10 @@ public class ShadowManager {
         Map<String, Object> values = toMap(valuesObject);
         values.forEach((field, value) -> {
             Map<String, Object> metaMap = toMap(metadata.get(field));
-            long timestamp = Optional.ofNullable(asLong(metaMap.get("timestamp"))).orElse(System.currentTimeMillis());
+            long timestamp = Optional.ofNullable(asLong(metaMap.get(CommonMapKeys.TIMESTAMP))).orElse(System.currentTimeMillis());
             long updatedAt = Optional.ofNullable(asLong(metaMap.get("updatedAt"))).orElse(timestamp);
-            String quality = asString(metaMap.get("quality"));
-            String source = asString(metaMap.get("source"));
+            String quality = asString(metaMap.get(CommonMapKeys.QUALITY));
+            String source = asString(metaMap.get(CommonMapKeys.SOURCE));
             ValueMeta meta = new ValueMeta(
                     value,
                     timestamp,
@@ -1196,11 +1198,11 @@ public class ShadowManager {
         }
         try {
             Map<String, Object> history = new LinkedHashMap<>();
-            history.put("deviceId", deviceId);
+            history.put(CommonMapKeys.DEVICE_ID, deviceId);
             history.put("action", action);
             history.put("baseVersion", baseVersion);
             history.put("version", document.get("version"));
-            history.put("timestamp", System.currentTimeMillis());
+            history.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
             history.put("document", document);
 
             String key = historyKey(deviceId);

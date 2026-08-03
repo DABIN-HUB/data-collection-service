@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.iec.base.AbstractIce104Collector;
@@ -258,18 +260,18 @@ public class Iec104Collector extends AbstractIce104Collector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", "IEC 104");
-        status.put("host", host);
-        status.put("port", port);
+        status.put(CommonMapKeys.PROTOCOL, "IEC 104");
+        status.put(CommonMapKeys.HOST, host);
+        status.put(CommonMapKeys.PORT, port);
         status.put("commonAddress", commonAddress);
-        status.put("timeout", timeout);
-        status.put("connected", isConnected());
+        status.put(CommonMapKeys.TIMEOUT, timeout);
+        status.put(CommonMapKeys.CONNECTED, isConnected());
         status.put("dataTransferStopped", dataTransferStopped);
-        status.put("connectionStatus", connectionStatus);
-        status.put("subscribedPoints", subscribedPointsSet.size());
+        status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointsSet.size());
         status.put("lastConnectTime", lastConnectTime);
-        status.put("lastActivityTime", lastActivityTime);
-        status.put("totalErrorCount", totalErrorCount.get());
+        status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+        status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         status.put("lastError", lastError);
         return status;
     }

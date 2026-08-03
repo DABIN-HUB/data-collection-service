@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetObjectType;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
@@ -266,7 +268,7 @@ final class BacnetValueDecoder {
         if (decodedValue.getValue() instanceof List<?> list) {
             Map<String, Object> metadata = new LinkedHashMap<>(decodedValue.getMetadata());
             metadata.put("semantic", "objectList");
-            metadata.put("count", list.size());
+            metadata.put(CommonMapKeys.COUNT, list.size());
             return BacnetValue.builder()
                     .value(list)
                     .valueType("OBJECT_LIST")
@@ -287,12 +289,12 @@ final class BacnetValueDecoder {
                 Object item = list.get(i);
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("priority", i + 1);
-                entry.put("value", item);
+                entry.put(CommonMapKeys.VALUE, item);
                 priorities.add(entry);
             }
             Map<String, Object> metadata = new LinkedHashMap<>(decodedValue.getMetadata());
             metadata.put("semantic", "priorityArray");
-            metadata.put("count", list.size());
+            metadata.put(CommonMapKeys.COUNT, list.size());
             return BacnetValue.builder()
                     .value(priorities)
                     .valueType("PRIORITY_ARRAY")
@@ -312,7 +314,7 @@ final class BacnetValueDecoder {
         if (decodedValue.getValue() instanceof List<?> list) {
             Map<String, Object> metadata = new LinkedHashMap<>(decodedValue.getMetadata());
             metadata.put("semantic", propertyIdentifier.getName());
-            metadata.put("count", list.size());
+            metadata.put(CommonMapKeys.COUNT, list.size());
             return BacnetValue.builder()
                     .value(list)
                     .valueType(propertyIdentifier.getName().toUpperCase())
@@ -353,9 +355,9 @@ final class BacnetValueDecoder {
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("kind", decodedValue.getKind() != null ? decodedValue.getKind().name() : BacnetValueKind.UNKNOWN.name());
         envelope.put("valueType", decodedValue.getValueType());
-        envelope.put("value", decodedValue.getValue());
+        envelope.put(CommonMapKeys.VALUE, decodedValue.getValue());
         if (!metadata.isEmpty()) {
-            envelope.put("metadata", metadata);
+            envelope.put(CommonMapKeys.METADATA, metadata);
         }
         return BacnetValue.builder()
                 .value(envelope)

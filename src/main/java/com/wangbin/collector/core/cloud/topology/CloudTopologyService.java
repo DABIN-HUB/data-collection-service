@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cloud.topology;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import org.springframework.stereotype.Service;
@@ -124,7 +126,7 @@ public class CloudTopologyService {
                     "deviceName", identity.deviceName()));
         }
         data.put("subDevices", subDevices);
-        data.put("count", subDevices.size());
+        data.put(CommonMapKeys.COUNT, subDevices.size());
         return data;
     }
 
@@ -189,7 +191,7 @@ public class CloudTopologyService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("gateway", gateway != null ? gateway.key() : null);
         data.put("changed", changed);
-        data.put("message", message);
+        data.put(CommonMapKeys.MESSAGE, message);
         if (gateway != null && gateway.valid()) {
             data.put("currentCount", gatewayTopologies.getOrDefault(gateway.key(), new LinkedHashSet<>()).size());
         }

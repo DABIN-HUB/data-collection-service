@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
@@ -220,10 +222,10 @@ public class OpcDaCollector extends BaseCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() throws Exception {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("connected", bridge.isConnected());
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.CONNECTED, bridge.isConnected());
         status.put("serverProgId", serverProgId);
-        status.put("host", host);
+        status.put(CommonMapKeys.HOST, host);
         status.put("endpoint", endpoint);
         status.put("requestTimeout", requestTimeout);
         status.put("updateRate", updateRate);
@@ -370,10 +372,10 @@ public class OpcDaCollector extends BaseCollector {
         if (itemId.isBlank()) {
             throw new IllegalArgumentException("itemId is required");
         }
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         boolean success = bridge.write(itemId, value);
         return Map.of("itemId", itemId, "status", success ? "success" : "failed");
     }

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.snmp;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.snmp.base.AbstractSnmpCollector;
@@ -166,14 +168,14 @@ public class SnmpCollector extends AbstractSnmpCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("host", host);
-        status.put("port", port);
+        status.put(CommonMapKeys.HOST, host);
+        status.put(CommonMapKeys.PORT, port);
         status.put("community", community);
         status.put("version", version);
-        status.put("connected", snmpConnection != null && snmpConnection.isConnected());
-        status.put("subscribedPoints", subscribedPoints.size());
+        status.put(CommonMapKeys.CONNECTED, snmpConnection != null && snmpConnection.isConnected());
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPoints.size());
         status.put("subscribedOids", subscribedOidIndex.size());
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("retries", retries);
         return status;
     }
@@ -318,7 +320,7 @@ public class SnmpCollector extends AbstractSnmpCollector {
      */
     private Object executeSet(Map<String, Object> params) throws IOException {
         Object oid = params.get("oid");
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         String type = params.getOrDefault("type", "").toString();
         if (oid == null || value == null) {
             throw new IllegalArgumentException("缺少oid或value参数");

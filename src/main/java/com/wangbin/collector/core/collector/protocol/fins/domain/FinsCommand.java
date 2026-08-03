@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.fins.domain;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.protocol.custom.codec.CustomFrameCodec;
 
 import java.nio.charset.StandardCharsets;
@@ -43,7 +45,7 @@ public enum FinsCommand {
     public Map<String, Object> decode(byte[] payload) {
         byte[] safePayload = payload == null ? new byte[0] : payload;
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("command", name());
+        result.put(CommonMapKeys.COMMAND, name());
         result.put("payloadHex", CustomFrameCodec.encodeHex(safePayload));
         switch (this) {
             case CONTROLLER_DATA_READ -> decodeControllerData(safePayload, result);
@@ -89,10 +91,10 @@ public enum FinsCommand {
      */
     private void decodeCpuStatus(byte[] payload, Map<String, Object> result) {
         if (payload.length > 0) {
-            result.put("status", payload[0] & 0xFF);
+            result.put(CommonMapKeys.STATUS, payload[0] & 0xFF);
         }
         if (payload.length > 1) {
-            result.put("mode", payload[1] & 0xFF);
+            result.put(CommonMapKeys.MODE, payload[1] & 0xFF);
         }
         if (payload.length >= 4) {
             result.put("fatalErrorData", unsignedShort(payload, 2));

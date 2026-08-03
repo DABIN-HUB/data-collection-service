@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor.chain;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.DataProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
@@ -345,9 +347,9 @@ public class DataProcessorChain {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        stats.put("name", name);
-        stats.put("description", description);
-        stats.put("enabled", enabled);
+        stats.put(CommonMapKeys.NAME, name);
+        stats.put(CommonMapKeys.DESCRIPTION, description);
+        stats.put(CommonMapKeys.ENABLED, enabled);
         stats.put("running", running);
         stats.put("continueOnError", continueOnError);
         stats.put("nodeCount", getNodeCount());
@@ -355,7 +357,7 @@ public class DataProcessorChain {
         stats.put("totalExecutions", totalExecutions.get());
         stats.put("successfulExecutions", successfulExecutions.get());
         stats.put("failedExecutions", failedExecutions.get());
-        stats.put("successRate", getSuccessRate());
+        stats.put(CommonMapKeys.SUCCESS_RATE, getSuccessRate());
         stats.put("totalExecutionTime", totalExecutionTime.get());
         stats.put("averageExecutionTime", getAverageExecutionTime());
         stats.put("currentConcurrency", currentConcurrency.get());
@@ -368,7 +370,7 @@ public class DataProcessorChain {
             nodeInfo.put("processorName", node.getProcessorName());
             nodeInfo.put("alias", node.getAlias());
             nodeInfo.put("priority", node.getPriority());
-            nodeInfo.put("enabled", node.isEnabled());
+            nodeInfo.put(CommonMapKeys.ENABLED, node.isEnabled());
             nodeStats.add(nodeInfo);
         }
         stats.put("nodes", nodeStats);

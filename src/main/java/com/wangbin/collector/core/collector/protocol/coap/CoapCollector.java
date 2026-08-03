@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.coap;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.coap.base.AbstractCoapCollector;
 import com.wangbin.collector.core.collector.protocol.coap.domain.CoapPoint;
@@ -151,10 +153,10 @@ public class CoapCollector extends AbstractCoapCollector {
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("baseUri", baseUri);
-        status.put("connected", coapConnection != null && coapConnection.isConnected());
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.CONNECTED, coapConnection != null && coapConnection.isConnected());
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("observeRelations", observeRelations.size());
-        status.put("subscribedPoints", observeMapping.size());
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, observeMapping.size());
         status.put("connectionStats", coapConnection != null ? coapConnection.getStatistics() : Map.of());
         return status;
     }

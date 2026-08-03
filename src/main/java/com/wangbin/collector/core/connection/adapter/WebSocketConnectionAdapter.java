@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -559,9 +561,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         Map<String, Object> authData = new java.util.HashMap<>();
         authData.put("action", "auth");
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
-            authData.put("deviceId", deviceInfo.getDeviceId());
+            authData.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         }
-        authData.put("timestamp", System.currentTimeMillis());
+        authData.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         if (config.getUsername() != null) {
             authData.put("username", config.getUsername());
@@ -590,7 +592,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private boolean isAuthResponseValid(String response) {
         try {
             Map<String, Object> responseData = com.alibaba.fastjson2.JSON.parseObject(response, Map.class);
-            Object status = responseData.get("status");
+            Object status = responseData.get(CommonMapKeys.STATUS);
             return "success".equals(status) || "ok".equals(status) || "authenticated".equals(status);
         } catch (Exception e) {
             log.debug("解析认证响应失败", e);

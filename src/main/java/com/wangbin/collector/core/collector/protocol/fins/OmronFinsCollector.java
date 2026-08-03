@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.fins;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -515,8 +517,8 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         Map<String, Object> status = new LinkedHashMap<>();
         FinsConnectionConfig config = finsConfig;
         if (config != null) {
-            status.put("host", config.getHost());
-            status.put("port", config.getPort());
+            status.put(CommonMapKeys.HOST, config.getHost());
+            status.put(CommonMapKeys.PORT, config.getPort());
             status.put("plcNetwork", config.getPlcNetwork());
             status.put("plcNode", config.getPlcNode());
             status.put("plcUnit", config.getPlcUnit());
@@ -542,7 +544,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         status.put("lastFinsEndCode", lastFinsEndCode);
         status.put("lastFinsResponseCode", lastFinsEndCode);
         status.put("lastRequestUnitCount", lastRequestUnitCount);
-        status.put("connected", connectionAdapter != null && connectionAdapter.isConnected());
+        status.put(CommonMapKeys.CONNECTED, connectionAdapter != null && connectionAdapter.isConnected());
         status.put("supportedCommands", Arrays.stream(FinsCommand.values()).map(Enum::name).toList());
         return status;
     }
@@ -1068,9 +1070,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     private ProcessResult buildScalarProcessResult(DataPoint point, FinsAddress address, Object rawValue) {
         Object processedValue = normalizeReadValue(point, rawValue);
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("processingMode", address.isStringType() ? "protocol_string_passthrough" : "protocol_scalar_normalized");
         return processResult;
     }
@@ -1088,7 +1090,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
         processResult.addMetadata("arrayValue", true);
         processResult.addMetadata("arraySize", address.getElementCount());
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("processingMode", "protocol_passthrough");
         return processResult;
     }
@@ -1098,7 +1100,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      */
     private ProcessResult buildWriteValidationResult(DataPoint point, Object value) {
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         return dataQualityProcessor.process(context, point, value);
     }
 

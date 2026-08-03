@@ -1,5 +1,7 @@
 package com.wangbin.collector.storage.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.monitor.alert.AlertNotification;
@@ -283,7 +285,7 @@ public class AlarmHistoryService {
             return;
         }
         Object value = row.get("alarm_event_type");
-        row.putIfAbsent("eventType", value);
+        row.putIfAbsent(CommonMapKeys.EVENT_TYPE, value);
         row.putIfAbsent("event_type", value);
     }
 

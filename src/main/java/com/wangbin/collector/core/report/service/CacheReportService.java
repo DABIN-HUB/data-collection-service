@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.DistributedLock;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -773,7 +775,7 @@ public class CacheReportService {
         data.addMetadata("seq", shadow.nextSeq());
         data.addMetadata(CloudOutboxMetadataKeys.SHADOW_VERSION, shadow.currentVersion());
         if (localDeviceId != null) {
-            data.addMetadata("rawDeviceId", localDeviceId);
+            data.addMetadata(CommonMapKeys.RAW_DEVICE_ID, localDeviceId);
         }
         if (gatewayDeviceId != null) {
             data.addMetadata("gatewayDeviceId", gatewayDeviceId);
@@ -1140,12 +1142,12 @@ public class CacheReportService {
         eventData.setMethod(MessageConstant.MESSAGE_TYPE_EVENT_POST);
         eventData.setValue(result.getFinalValue());
         eventData.setQuality(QualityEnum.fromCode(result.getQuality()).getText());
-        eventData.addMetadata("rawDeviceId", localDeviceId);
+        eventData.addMetadata(CommonMapKeys.RAW_DEVICE_ID, localDeviceId);
         eventData.addMetadata("gatewayDeviceId", gatewayDeviceId);
         eventData.addMetadata("productKey", cloudTarget.getProductKey());
         eventData.addMetadata("cloudDeviceName", cloudTarget.getDeviceName());
         eventData.addMetadata("shadowKey", localDeviceId);
-        eventData.addMetadata("eventType", eventInfo.eventType());
+        eventData.addMetadata(CommonMapKeys.EVENT_TYPE, eventInfo.eventType());
         if (eventInfo.level() != null) {
             eventData.addMetadata("eventLevel", eventInfo.level());
         }
@@ -1153,14 +1155,14 @@ public class CacheReportService {
             eventData.addMetadata("eventMessage", eventInfo.message());
         }
         if (eventInfo.ruleId() != null) {
-            eventData.addMetadata("ruleId", eventInfo.ruleId());
+            eventData.addMetadata(CommonMapKeys.RULE_ID, eventInfo.ruleId());
         }
         if (eventInfo.ruleName() != null) {
-            eventData.addMetadata("ruleName", eventInfo.ruleName());
+            eventData.addMetadata(CommonMapKeys.RULE_NAME, eventInfo.ruleName());
         }
         eventData.addMetadata("reportField", point.getReportField());
         if (point.getUnit() != null) {
-            eventData.addMetadata("unit", point.getUnit());
+            eventData.addMetadata(CommonMapKeys.UNIT, point.getUnit());
         }
         if (point.getDeviceName() != null) {
             eventData.addMetadata("deviceName", point.getDeviceName());
@@ -1216,24 +1218,24 @@ public class CacheReportService {
         alertData.setTimestamp(timestamp);
         alertData.setValue(notification.getValue());
         alertData.setQuality(QualityEnum.WARNING.getText());
-        alertData.addMetadata("eventType",
+        alertData.addMetadata(CommonMapKeys.EVENT_TYPE,
                 Optional.ofNullable(notification.getEventType()).orElse("ALARM"));
         alertData.addMetadata("eventLevel",
                 Optional.ofNullable(notification.getLevel()).orElse("WARNING"));
         alertData.addMetadata("eventMessage", notification.getMessage());
         if (notification.getRuleId() != null) {
-            alertData.addMetadata("ruleId", notification.getRuleId());
+            alertData.addMetadata(CommonMapKeys.RULE_ID, notification.getRuleId());
         }
         if (notification.getRuleName() != null) {
-            alertData.addMetadata("ruleName", notification.getRuleName());
+            alertData.addMetadata(CommonMapKeys.RULE_NAME, notification.getRuleName());
         }
         if (notification.getDeviceName() != null) {
             alertData.addMetadata("deviceName", notification.getDeviceName());
         }
         if (notification.getUnit() != null) {
-            alertData.addMetadata("unit", notification.getUnit());
+            alertData.addMetadata(CommonMapKeys.UNIT, notification.getUnit());
         }
-        alertData.addMetadata("rawDeviceId", localDeviceId);
+        alertData.addMetadata(CommonMapKeys.RAW_DEVICE_ID, localDeviceId);
         alertData.addMetadata("gatewayDeviceId", gatewayDeviceId);
         alertData.addMetadata("productKey", cloudTarget.getProductKey());
         alertData.addMetadata("cloudDeviceName", cloudTarget.getDeviceName());
@@ -1258,14 +1260,14 @@ public class CacheReportService {
         if (eventData == null) {
             return;
         }
-        String identifier = Optional.ofNullable(eventData.getMetadata().get("eventType"))
+        String identifier = Optional.ofNullable(eventData.getMetadata().get(CommonMapKeys.EVENT_TYPE))
                 .map(String::valueOf)
                 .filter(value -> !value.isBlank())
                 .orElse(eventData.getPointCode() != null ? eventData.getPointCode() : "event");
         Map<String, Object> value = new LinkedHashMap<>();
-        value.put("value", eventData.getValue());
+        value.put(CommonMapKeys.VALUE, eventData.getValue());
         if (eventData.getQuality() != null) {
-            value.put("quality", eventData.getQuality());
+            value.put(CommonMapKeys.QUALITY, eventData.getQuality());
         }
         if (eventData.getMetadata() != null && !eventData.getMetadata().isEmpty()) {
             value.putAll(eventData.getMetadata());

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.report.adapter.*;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -88,8 +90,8 @@ public class IoTProtocolService {
         StateMessage stateMessage = new StateMessage();
         Map<String, Object> state = new HashMap<>();
         state.put(MessageConstant.FIELD_VERSION, MessageConstant.MESSAGE_VERSION_1_0);
-        state.put("status", data.getValue());
-        state.put("timestamp", data.getTimestamp());
+        state.put(CommonMapKeys.STATUS, data.getValue());
+        state.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
         stateMessage.setState(state);
         return stateMessage;
     }
@@ -101,8 +103,8 @@ public class IoTProtocolService {
         EventMessage eventMessage = new EventMessage();
         eventMessage.setEventCode(data.getPointCode());
         Map<String, Object> eventData = new HashMap<>();
-        eventData.put("value", data.getValue());
-        eventData.put("timestamp", data.getTimestamp());
+        eventData.put(CommonMapKeys.VALUE, data.getValue());
+        eventData.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
         if (data.getMetadata() != null) {
             eventData.putAll(data.getMetadata());
         }

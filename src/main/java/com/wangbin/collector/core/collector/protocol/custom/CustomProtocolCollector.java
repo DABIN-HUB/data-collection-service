@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.custom;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -180,11 +182,11 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", resolveProtocolType());
+        status.put(CommonMapKeys.PROTOCOL, resolveProtocolType());
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", false);
-        status.put("transport", resolveProtocolType().endsWith("UDP") ? "UDP" : "TCP");
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, false);
+        status.put(CommonMapKeys.TRANSPORT, resolveProtocolType().endsWith("UDP") ? "UDP" : "TCP");
         status.put("frameMode", connectionConfig != null
                 ? connectionConfig.getString("frameMode", resolveProtocolType().endsWith("UDP") ? "DATAGRAM" : "LENGTH_FIELD")
                 : null);

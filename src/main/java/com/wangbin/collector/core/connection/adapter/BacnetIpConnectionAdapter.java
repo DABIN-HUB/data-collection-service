@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.bacnet.client.BacnetIpUdpClient;
@@ -126,8 +128,8 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         scheduleForeignDeviceRenewalIfPossible();
 
         Map<String, Object> params = new LinkedHashMap<>();
-        params.put("host", host);
-        params.put("port", resolvedPort);
+        params.put(CommonMapKeys.HOST, host);
+        params.put(CommonMapKeys.PORT, resolvedPort);
         params.put("targetHost", activeRemoteAddress.getHostString());
         params.put("targetPort", activeRemoteAddress.getPort());
         params.put("remoteDeviceInstance", remoteDeviceInstance);
@@ -146,10 +148,10 @@ public class BacnetIpConnectionAdapter extends AbstractConnectionAdapter<BacnetI
         }
         connectionParams.clear();
         connectionParams.putAll(params);
-        statistics.put("protocol", "BACNET_IP");
+        statistics.put(CommonMapKeys.PROTOCOL, "BACNET_IP");
         statistics.put("implemented", true);
-        statistics.put("transport", "UDP");
-        statistics.put("message", useWhoIsDiscovery && remoteDevice.isDiscoveredByWhoIs()
+        statistics.put(CommonMapKeys.TRANSPORT, "UDP");
+        statistics.put(CommonMapKeys.MESSAGE, useWhoIsDiscovery && remoteDevice.isDiscoveredByWhoIs()
                 ? "BACnet/IP UDP adapter connected and remote device discovered by Who-Is"
                 : "BACnet/IP UDP adapter connected");
         log.info("BACnet/IP 适配器 已连接, 设备={}, 配置远端={}:{}, 目标远端={}:{}, 本地端口={}, 重试次数={}, APDU超时毫秒={}, BBMD={}"

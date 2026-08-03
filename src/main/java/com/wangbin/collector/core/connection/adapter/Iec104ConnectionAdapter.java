@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import lombok.Setter;
@@ -47,9 +49,9 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         connection = builder.build();
         Thread.sleep(200L);
         connection.startDataTransfer();
-        connectionParams.put("host", host);
-        connectionParams.put("port", port);
-        connectionParams.put("timeout", timeout);
+        connectionParams.put(CommonMapKeys.HOST, host);
+        connectionParams.put(CommonMapKeys.PORT, port);
+        connectionParams.put(CommonMapKeys.TIMEOUT, timeout);
     }
 
     /**

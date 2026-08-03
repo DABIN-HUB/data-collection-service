@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.ingress;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -54,7 +56,7 @@ public class TelemetryIngressService {
         ProcessContext context = new ProcessContext();
         context.setCollectTime(resolvedCollectTime);
         context.setRawQuality(sourceQuality != null ? sourceQuality : 100);
-        context.addAttribute("deviceId", deviceId);
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         ProcessResult result = dataQualityProcessor.process(context, point, processedValue);
         if (sourceQuality != null) {
             result.setQuality(Math.min(result.getQuality(), Math.max(0, Math.min(100, sourceQuality))));

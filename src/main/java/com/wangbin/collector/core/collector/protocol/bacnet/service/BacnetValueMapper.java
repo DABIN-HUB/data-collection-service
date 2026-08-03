@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetAddress;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
@@ -31,7 +33,7 @@ public class BacnetValueMapper {
                              BiFunction<DataPoint, Object, Object> dataConverter) {
         BacnetReadValue readValue = normalize(point, address, rawValue, dataConverter);
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceId);
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         ProcessResult processResult = readValue.complex()
                 ? ProcessResult.success(readValue.rawValue(), readValue.processedValue(), "BACnet complex value passthrough")
                 : dataQualityProcessor.process(context, point, readValue.processedValue());
@@ -104,11 +106,11 @@ public class BacnetValueMapper {
                         BacnetAddress address,
                         String source,
                         BacnetReadValue readValue) {
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("objectType", address.getObjectType());
         processResult.addMetadata("instanceNumber", address.getInstanceNumber());
         processResult.addMetadata("propertyIdentifier", address.getPropertyIdentifier());
-        processResult.addMetadata("source", source);
+        processResult.addMetadata(CommonMapKeys.SOURCE, source);
         processResult.addMetadata("processingMode", readValue.processingMode());
         if (readValue.valueType() != null) {
             processResult.addMetadata("bacnetValueType", readValue.valueType());

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.s7;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -528,12 +530,12 @@ public class S7Collector extends ConnectionBackedCollector {
         int configuredEventPointCount = countConfiguredEventPoints();
 
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("implemented", true);
-        status.put("writable", true);
+        status.put(CommonMapKeys.WRITABLE, true);
         status.put("browseable", false);
-        status.put("subscribable", isRuntimeSubscriptionSupported());
+        status.put(CommonMapKeys.SUBSCRIBABLE, isRuntimeSubscriptionSupported());
         status.put("subscriptionMode", configuredSubscriptionPointCount == 0
                 ? "DISABLED"
                 : configuredEventPointCount > 0 ? "MIXED" : "CYCLIC");
@@ -542,15 +544,15 @@ public class S7Collector extends ConnectionBackedCollector {
                 : Collections.emptyList());
         status.put("addressingMode", "ABSOLUTE_ONLY");
         status.put("symbolicAddressingSupported", false);
-        status.put("isConnected", isConnected());
-        status.put("configuredPointCount", intValue(pointSummary.get("totalPoints")));
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, intValue(pointSummary.get("totalPoints")));
         status.put("configuredAddressCacheSize", configuredAddresses.size());
         status.put("configuredSubscriptionPoints", configuredSubscriptionPointCount);
         status.put("configuredEventPoints", configuredEventPointCount);
         status.put("invalidConfiguredPoints", intValue(pointSummary.get("invalidPointCount")));
         status.put("arrayConfiguredPoints", intValue(pointSummary.get("arrayPointCount")));
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
-        status.put("plannedReadBatchCount", configuredReadPlans.size());
+        status.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
         status.put("activeSubscriptions", subscriptionHandles.size());
         status.put("subscriptionEventCount", subscriptionEventCount.get());
         status.put("subscriptionRegisterFailureCount", subscriptionRegisterFailureCount.get());
@@ -607,7 +609,7 @@ public class S7Collector extends ConnectionBackedCollector {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new LinkedHashMap<>(super.getStatistics());
         Map<String, Object> protocolMetrics = new LinkedHashMap<>();
-        protocolMetrics.put("plannedReadBatchCount", configuredReadPlans.size());
+        protocolMetrics.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
         protocolMetrics.put("configuredSubscriptionPointCount", configuredSubscriptionModes.size());
         protocolMetrics.put("configuredEventPointCount", countConfiguredEventPoints());
         protocolMetrics.put("activeSubscriptionCount", subscriptionHandles.size());
@@ -621,7 +623,7 @@ public class S7Collector extends ConnectionBackedCollector {
         protocolMetrics.put("lastFailedResponseCode", lastFailedResponseCode);
         protocolMetrics.put("lastFailureTs", lastFailureTs);
 
-        stats.put("plannedReadBatchCount", configuredReadPlans.size());
+        stats.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
         stats.put("subscriptionEventCount", subscriptionEventCount.get());
         stats.put("subscriptionRegisterFailureCount", subscriptionRegisterFailureCount.get());
         stats.put("subscriptionEventErrorCount", subscriptionEventErrorCount.get());
@@ -1170,7 +1172,7 @@ public class S7Collector extends ConnectionBackedCollector {
 
         PlcValue plcValue = event != null ? event.getPlcValue(fieldName) : null;
         if (plcValue == null || plcValue.isNull()) {
-            payload.put("value", null);
+            payload.put(CommonMapKeys.VALUE, null);
             return payload;
         }
 
@@ -1183,7 +1185,7 @@ public class S7Collector extends ConnectionBackedCollector {
         } else if (driverObject instanceof Map<?, ?> map) {
             payload.putAll(copyMap(map));
         } else {
-            payload.put("value", driverObject);
+            payload.put(CommonMapKeys.VALUE, driverObject);
         }
         return payload;
     }
@@ -1209,7 +1211,7 @@ public class S7Collector extends ConnectionBackedCollector {
             ProcessResult processResult = ProcessResult.success(payload, payload,
                     "S7 event " + subscriptionMode + " received");
             processResult.addMetadata("eventTriggered", true);
-            processResult.addMetadata("eventType", "S7_" + subscriptionMode);
+            processResult.addMetadata(CommonMapKeys.EVENT_TYPE, "S7_" + subscriptionMode);
             processResult.addMetadata("eventLevel", "INFO");
             processResult.addMetadata("eventMessage", "S7 event " + subscriptionMode + " received");
             processResult.addMetadata("subscriptionMode", subscriptionMode);
@@ -1222,7 +1224,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 processResult.addMetadata("eventTimestamp", payload.get("eventTs"));
             }
             if (point.getPointCode() != null) {
-                processResult.addMetadata("pointCode", point.getPointCode());
+                processResult.addMetadata(CommonMapKeys.POINT_CODE, point.getPointCode());
             }
 
             lastProcessResults.put(point.getPointId(), processResult);
@@ -1238,7 +1240,7 @@ public class S7Collector extends ConnectionBackedCollector {
             ProcessResult error = ProcessResult.error(payload,
                     "S7 event process failed: " + e.getMessage());
             error.addMetadata("eventTriggered", true);
-            error.addMetadata("eventType", "S7_" + subscriptionMode);
+            error.addMetadata(CommonMapKeys.EVENT_TYPE, "S7_" + subscriptionMode);
             error.addMetadata("subscriptionMode", subscriptionMode);
             error.addMetadata("subscriptionAddress", subscriptionAddress);
             lastProcessResults.put(point.getPointId(), error);
@@ -1471,7 +1473,7 @@ public class S7Collector extends ConnectionBackedCollector {
         processResult.addMetadata("arraySize", address.getArraySize());
         processResult.addMetadata("processingMode", "protocol_passthrough");
         if (point != null && point.getAddress() != null) {
-            processResult.addMetadata("address", point.getAddress());
+            processResult.addMetadata(CommonMapKeys.ADDRESS, point.getAddress());
         }
         return processResult;
     }
@@ -1625,7 +1627,7 @@ public class S7Collector extends ConnectionBackedCollector {
         Object value = readPoint(point);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
+        result.put(CommonMapKeys.VALUE, value);
         return result;
     }
 
@@ -1634,15 +1636,15 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         boolean success = writePoint(point, value);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
-        result.put("success", success);
+        result.put(CommonMapKeys.VALUE, value);
+        result.put(CommonMapKeys.SUCCESS, success);
         return result;
     }
 
@@ -1660,10 +1662,10 @@ public class S7Collector extends ConnectionBackedCollector {
 
         String pointRef = firstNonBlank(
                 asText(params.get("pointRef")),
-                asText(params.get("pointId")),
-                asText(params.get("pointCode")),
-                asText(params.get("pointName")),
-                asText(params.get("field")),
+                asText(params.get(CommonMapKeys.POINT_ID)),
+                asText(params.get(CommonMapKeys.POINT_CODE)),
+                asText(params.get(CommonMapKeys.POINT_NAME)),
+                asText(params.get(CommonMapKeys.FIELD)),
                 asText(params.get("reportField"))
         );
         if (hasText(pointRef)) {
@@ -1673,7 +1675,7 @@ public class S7Collector extends ConnectionBackedCollector {
             }
         }
 
-        String address = asText(params.get("address"));
+        String address = asText(params.get(CommonMapKeys.ADDRESS));
         if (hasText(address)) {
             DataPoint point = points.stream()
                     .filter(candidate -> candidate != null && hasText(candidate.getAddress())
@@ -1718,11 +1720,11 @@ public class S7Collector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
-        target.put("pointId", point.getPointId());
-        target.put("pointCode", point.getPointCode());
-        target.put("pointName", point.getPointName());
+        target.put(CommonMapKeys.POINT_ID, point.getPointId());
+        target.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        target.put(CommonMapKeys.POINT_NAME, point.getPointName());
         if (point.getAddress() != null) {
-            target.put("address", point.getAddress());
+            target.put(CommonMapKeys.ADDRESS, point.getAddress());
         }
     }
 
@@ -1751,8 +1753,8 @@ public class S7Collector extends ConnectionBackedCollector {
     private Map<String, Object> buildConnectionInfo(DeviceConnection connection) {
         Map<String, Object> info = new LinkedHashMap<>();
         if (connection != null) {
-            info.put("host", firstNonBlank(connection.getHost(), deviceInfo != null ? deviceInfo.getIpAddress() : null));
-            info.put("port", resolveConfiguredPort(connection));
+            info.put(CommonMapKeys.HOST, firstNonBlank(connection.getHost(), deviceInfo != null ? deviceInfo.getIpAddress() : null));
+            info.put(CommonMapKeys.PORT, resolveConfiguredPort(connection));
             info.put("rack", connection.getInt("rack", connection.getInt("remoteRack", 0)));
             info.put("slot", connection.getInt("slot", connection.getInt("remoteSlot", 1)));
             info.put("controllerType", resolveControllerType(connection));
@@ -1845,10 +1847,10 @@ public class S7Collector extends ConnectionBackedCollector {
                 invalidCount++;
                 if (invalidPoints.size() < 10) {
                     Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("pointId", point.getPointId());
-                    item.put("pointCode", point.getPointCode());
-                    item.put("address", point.getAddress());
-                    item.put("error", ex.getMessage());
+                    item.put(CommonMapKeys.POINT_ID, point.getPointId());
+                    item.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+                    item.put(CommonMapKeys.ADDRESS, point.getAddress());
+                    item.put(CommonMapKeys.ERROR, ex.getMessage());
                     invalidPoints.add(item);
                 }
             }
@@ -1864,7 +1866,7 @@ public class S7Collector extends ConnectionBackedCollector {
         summary.put("pollPointCount", Math.max(0, points.size() - subscriptionPointCount));
         summary.put("areaCounts", areaCounts);
         summary.put("subscriptionModeCounts", subscriptionModeCounts);
-        summary.put("plannedReadBatchCount", configuredReadPlans.size());
+        summary.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
         summary.put("plannedReadBatches", snapshotReadPlans());
         summary.put("invalidPoints", invalidPoints);
         return summary;
@@ -1925,7 +1927,7 @@ public class S7Collector extends ConnectionBackedCollector {
                     "Configured " + eventPointCount + " S7 event subscription points using MODE/SYS/USR/ALM."));
         }
 
-        int plannedReadBatchCount = intValue(pointSummary.get("plannedReadBatchCount"));
+        int plannedReadBatchCount = intValue(pointSummary.get(CommonMapKeys.PLANNED_READ_BATCH_COUNT));
         if (plannedReadBatchCount > 0) {
             checks.add(check("read-plan", "INFO",
                     "Prepared " + plannedReadBatchCount + " grouped S7 polling batches from the current point layout."));
@@ -1973,9 +1975,9 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private Map<String, Object> check(String name, String status, String message) {
         Map<String, Object> check = new LinkedHashMap<>();
-        check.put("name", name);
-        check.put("status", status);
-        check.put("message", message);
+        check.put(CommonMapKeys.NAME, name);
+        check.put(CommonMapKeys.STATUS, status);
+        check.put(CommonMapKeys.MESSAGE, message);
         return check;
     }
 
@@ -1988,7 +1990,7 @@ public class S7Collector extends ConnectionBackedCollector {
             return 0;
         }
         for (Map<String, Object> check : checks) {
-            if (expectedStatus.equals(check.get("status"))) {
+            if (expectedStatus.equals(check.get(CommonMapKeys.STATUS))) {
                 count++;
             }
         }
@@ -2225,7 +2227,7 @@ public class S7Collector extends ConnectionBackedCollector {
             item.put("startOffset", readPlan.getStartOffset());
             item.put("endOffsetExclusive", readPlan.getEndOffsetExclusive());
             item.put("estimatedByteSpan", readPlan.getEstimatedByteSpan());
-            item.put("pointCount", readPlan.getPointCount());
+            item.put(CommonMapKeys.POINT_COUNT, readPlan.getPointCount());
             item.put("blockOptimizable", readPlan.isBlockOptimizable());
             item.put("blockReadEnabled", readPlan.canUseBlockRead());
             item.put("blockReadAddress", readPlan.getBlockReadAddress());

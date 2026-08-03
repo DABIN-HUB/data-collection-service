@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cloud.ota;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -48,9 +50,9 @@ public class CloudOtaService {
         if (existing == null) {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("taskId", taskId);
-            data.put("status", status);
+            data.put(CommonMapKeys.STATUS, status);
             data.put("progress", progress);
-            data.put("message", message);
+            data.put(CommonMapKeys.MESSAGE, message);
             return data;
         }
         OtaTask updated = new OtaTask(
@@ -66,7 +68,7 @@ public class CloudOtaService {
         tasks.put(taskId, updated);
         Map<String, Object> data = updated.toMap();
         if (StringUtils.hasText(message)) {
-            data.put("message", message);
+            data.put(CommonMapKeys.MESSAGE, message);
         }
         return data;
     }
@@ -135,12 +137,12 @@ public class CloudOtaService {
         public Map<String, Object> toMap() {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("taskId", taskId);
-            data.put("deviceId", deviceId);
+            data.put(CommonMapKeys.DEVICE_ID, deviceId);
             data.put("version", version);
             data.put("fileUrl", fileUrl);
             data.put("digest", digest);
             data.put("fileSize", fileSize);
-            data.put("status", status);
+            data.put(CommonMapKeys.STATUS, status);
             data.put("createdAt", createdAt);
             if (progress != null) {
                 data.put("progress", progress);

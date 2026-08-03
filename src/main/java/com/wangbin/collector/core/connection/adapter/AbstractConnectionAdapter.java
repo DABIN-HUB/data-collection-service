@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
@@ -453,14 +455,14 @@ public abstract class AbstractConnectionAdapter<C> implements ConnectionAdapter<
     public synchronized Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("connectionId", connectionId);
-        stats.put("status", status.name());
+        stats.put(CommonMapKeys.STATUS, status.name());
         stats.put("bytesSent", bytesSent.get());
         stats.put("bytesReceived", bytesReceived.get());
         stats.put("messagesSent", messagesSent.get());
         stats.put("messagesReceived", messagesReceived.get());
         stats.put("errors", errors.get());
         stats.put("heartbeats", heartbeats.get());
-        stats.put("lastActivityTime", lastActivityTime);
+        stats.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
         stats.put("connectionDuration", status == ConnectionStatus.CONNECTED ? System.currentTimeMillis() - metrics.getConnectTime() : 0);
         stats.put("reconnectAttempts", reconnectAttempts);
         stats.put("currentReconnectDelay", currentReconnectDelay);

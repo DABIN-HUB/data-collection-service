@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.beanit.iec61850bean.BasicDataAttribute;
 import com.beanit.iec61850bean.Fc;
 import com.beanit.iec61850bean.FcModelNode;
@@ -171,11 +173,11 @@ public class Iec61850Collector extends AbstractIec61850Collector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("host", host);
-        status.put("port", port);
-        status.put("connected", association != null);
+        status.put(CommonMapKeys.HOST, host);
+        status.put(CommonMapKeys.PORT, port);
+        status.put(CommonMapKeys.CONNECTED, association != null);
         status.put("modelLoaded", serverModel != null);
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("lastError", lastError);
         return status;
     }
@@ -191,7 +193,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
                 reloadServerModel();
                 return "model reloaded";
             case "set_timeout":
-                Object timeoutValue = params.get("timeout");
+                Object timeoutValue = params.get(CommonMapKeys.TIMEOUT);
                 if (timeoutValue == null) {
                     throw new IllegalArgumentException("missing timeout param");
                 }
@@ -209,7 +211,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
             case "write":
             case "write_raw": {
                 Iec61850Address address = parseCommandAddress(params);
-                Object value = params.get("value");
+                Object value = params.get(CommonMapKeys.VALUE);
                 if (value == null) {
                     throw new IllegalArgumentException("missing value param");
                 }
@@ -225,7 +227,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
             case "operate": {
                 Iec61850Address address = parseCommandAddress(params);
                 FcModelNode node = resolveFcNode(address);
-                Object value = params.get("value");
+                Object value = params.get(CommonMapKeys.VALUE);
                 if (value != null && node instanceof BasicDataAttribute attribute) {
                     applyWriteValue(attribute, value);
                 }
@@ -279,7 +281,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
      * 解析或转换业务数据。
      */
     private Iec61850Address parseCommandAddress(Map<String, Object> params) {
-        Object addr = params.get("address");
+        Object addr = params.get(CommonMapKeys.ADDRESS);
         if (addr == null) {
             throw new IllegalArgumentException("missing address param");
         }

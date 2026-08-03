@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
@@ -306,7 +308,7 @@ public class LocalCacheManager extends AbstractCacheManager {
                 info.put("expireTime", cacheData.getExpireTime());
                 info.put("remainingTime", cacheData.getRemainingTime());
                 info.put("cacheLevel", cacheData.getCacheLevel());
-                info.put("quality", cacheData.getQuality());
+                info.put(CommonMapKeys.QUALITY, cacheData.getQuality());
                 info.put("expired", cacheData.isExpired());
 
                 Object value = cacheData.getValue();

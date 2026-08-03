@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.digitalpetri.modbus.pdu.*;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -214,9 +216,9 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
         // 测试连接
         try {
             boolean connected = testConnection();
-            status.put("deviceConnected", connected);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, connected);
         } catch (Exception e) {
-            status.put("deviceConnected", false);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, false);
             status.put("connectionError", e.getMessage());
         }
 
@@ -465,20 +467,20 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
      */
     private Object executeDiagnostic(int unitId,Map<String, Object> params) {
         Map<String, Object> result = new HashMap<>();
-        result.put("protocol", "Modbus TCP");
+        result.put(CommonMapKeys.PROTOCOL, "Modbus TCP");
         result.put("unitId", unitId);
-        result.put("timeout", timeout);
+        result.put(CommonMapKeys.TIMEOUT, timeout);
         result.put("masterConnected", connectionAdapter != null && connectionAdapter.isConnected());
-        result.put("timestamp", System.currentTimeMillis());
+        result.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         try {
             boolean connected = testConnection();
-            result.put("deviceConnected", connected);
-            result.put("connectionTest", "SUCCESS");
+            result.put(CommonMapKeys.DEVICE_CONNECTED, connected);
+            result.put(CommonMapKeys.CONNECTION_TEST, "SUCCESS");
         } catch (Exception e) {
-            result.put("deviceConnected", false);
-            result.put("connectionTest", "FAILED");
-            result.put("error", e.getMessage());
+            result.put(CommonMapKeys.DEVICE_CONNECTED, false);
+            result.put(CommonMapKeys.CONNECTION_TEST, "FAILED");
+            result.put(CommonMapKeys.ERROR, e.getMessage());
         }
 
         return result;

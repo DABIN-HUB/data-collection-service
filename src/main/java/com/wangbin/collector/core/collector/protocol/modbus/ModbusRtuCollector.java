@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.digitalpetri.modbus.client.ModbusRtuClient;
 import com.digitalpetri.modbus.pdu.*;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -215,14 +217,14 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
         status.put("serialPort", serialPort);
         status.put("baudRate", baudRate);
         status.put("dataBits", dataBits);
         status.put("stopBits", stopBits);
         status.put("parity", parity.name());
         status.put("slaveId", slaveId);
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("byteOrder", byteOrder.toString());
         status.put("clientConnected", isConnected());
         status.put("interFrameDelay", interFrameDelay);
@@ -235,15 +237,15 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             subscribedByType.put(entry.getKey().name(), count);
             totalSubscribed += count;
         }
-        status.put("subscribedPoints", totalSubscribed);
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, totalSubscribed);
         status.put("subscribedByType", subscribedByType);
 
         // 测试连接
         try {
             boolean connected = testConnection(slaveId);
-            status.put("deviceConnected", connected);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, connected);
         } catch (Exception e) {
-            status.put("deviceConnected", false);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, false);
             status.put("connectionError", e.getMessage());
         }
 
@@ -565,28 +567,28 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
      */
     private Object executeDiagnostic(int unitId, Map<String, Object> params) {
         Map<String, Object> result = new HashMap<>();
-        result.put("protocol", getProtocolType());
+        result.put(CommonMapKeys.PROTOCOL, getProtocolType());
         result.put("serialPort", serialPort);
         result.put("baudRate", baudRate);
         result.put("dataBits", dataBits);
         result.put("stopBits", stopBits);
         result.put("parity", parity.name());
         result.put("slaveId", unitId);
-        result.put("timeout", timeout);
+        result.put(CommonMapKeys.TIMEOUT, timeout);
         result.put("byteOrder", byteOrder.toString());
         result.put("clientConnected", isConnected());
         result.put("interFrameDelay", interFrameDelay);
-        result.put("timestamp", System.currentTimeMillis());
+        result.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         // 测试连接
         try {
             boolean connected = testConnection(unitId);
-            result.put("deviceConnected", connected);
-            result.put("connectionTest", "SUCCESS");
+            result.put(CommonMapKeys.DEVICE_CONNECTED, connected);
+            result.put(CommonMapKeys.CONNECTION_TEST, "SUCCESS");
         } catch (Exception e) {
-            result.put("deviceConnected", false);
-            result.put("connectionTest", "FAILED");
-            result.put("error", e.getMessage());
+            result.put(CommonMapKeys.DEVICE_CONNECTED, false);
+            result.put(CommonMapKeys.CONNECTION_TEST, "FAILED");
+            result.put(CommonMapKeys.ERROR, e.getMessage());
         }
 
         return result;

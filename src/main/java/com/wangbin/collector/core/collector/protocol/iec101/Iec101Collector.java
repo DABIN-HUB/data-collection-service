@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec101;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -212,16 +214,16 @@ public class Iec101Collector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", "IEC101");
-        status.put("connected", session != null && session.isOpen());
+        status.put(CommonMapKeys.PROTOCOL, "IEC101");
+        status.put(CommonMapKeys.CONNECTED, session != null && session.isOpen());
         status.put("linkAddress", session != null ? session.linkAddress() : null);
         status.put("commonAddress", session != null ? session.commonAddress() : null);
         status.put("cachedPoints", sampleCache.size());
-        status.put("subscribedPoints", subscribedPointMap.size());
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
         status.put("classOnePolling", classOneTask != null && !classOneTask.isCancelled());
         status.put("classTwoPolling", classTwoTask != null && !classTwoTask.isCancelled());
-        status.put("lastActivityTime", lastActivityTime);
-        status.put("totalErrorCount", totalErrorCount.get());
+        status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+        status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         status.put("lastError", lastError);
         return status;
     }

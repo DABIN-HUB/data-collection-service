@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import lombok.Data;
 
@@ -146,7 +148,7 @@ public class ProcessContext {
      */
     public static ProcessContext simpleContext(String deviceId) {
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceId);
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         return context;
     }
 

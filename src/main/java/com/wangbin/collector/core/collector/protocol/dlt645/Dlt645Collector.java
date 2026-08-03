@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.dlt645;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -147,13 +149,13 @@ public class Dlt645Collector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", "DL/T 645-2007");
-        status.put("connected", session != null && session.isOpen());
+        status.put(CommonMapKeys.PROTOCOL, "DL/T 645-2007");
+        status.put(CommonMapKeys.CONNECTED, session != null && session.isOpen());
         status.put("meterAddress", session != null ? session.meterAddress() : null);
-        status.put("lastActivityTime", lastActivityTime);
-        status.put("totalReadCount", totalReadCount.get());
-        status.put("totalWriteCount", totalWriteCount.get());
-        status.put("totalErrorCount", totalErrorCount.get());
+        status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+        status.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+        status.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+        status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         status.put("lastError", lastError);
         return status;
     }

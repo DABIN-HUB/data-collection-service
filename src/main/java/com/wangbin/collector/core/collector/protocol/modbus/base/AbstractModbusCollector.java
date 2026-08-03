@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus.base;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
@@ -142,14 +144,14 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
      */
     protected Map<String, Object> getBaseDeviceStatus(String protocolType) {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", protocolType);
+        status.put(CommonMapKeys.PROTOCOL, protocolType);
         DeviceConnection connection = getCurrentConnectionConfig();
         assert connection != null;
         Object configuredSlaveId = connection.getProperty("slaveId");
-        status.put("host", connection.getHost());
-        status.put("port", connection.getPort());
+        status.put(CommonMapKeys.HOST, connection.getHost());
+        status.put(CommonMapKeys.PORT, connection.getPort());
         status.put("slaveId", configuredSlaveId != null ? String.valueOf(configuredSlaveId) : "1");
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("clientConnected", isConnected());
 
         // 统计订阅信息
@@ -160,7 +162,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
             subscribedByType.put(entry.getKey().name(), count);
             totalSubscribed += count;
         }
-        status.put("subscribedPoints", totalSubscribed);
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, totalSubscribed);
         status.put("subscribedByType", subscribedByType);
 
         return status;

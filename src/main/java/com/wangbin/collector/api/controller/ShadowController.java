@@ -1,5 +1,7 @@
 package com.wangbin.collector.api.controller;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
@@ -66,8 +68,8 @@ public class ShadowController {
         if (desired.isEmpty()) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "desired 属性不能为空");
         }
-        String source = request != null && request.get("source") != null
-                ? String.valueOf(request.get("source"))
+        String source = request != null && request.get(CommonMapKeys.SOURCE) != null
+                ? String.valueOf(request.get(CommonMapKeys.SOURCE))
                 : "api";
         try {
             return ApiResult.success(shadowManager.updateDesired(deviceId, desired, source, extractExpectedVersion(request)));

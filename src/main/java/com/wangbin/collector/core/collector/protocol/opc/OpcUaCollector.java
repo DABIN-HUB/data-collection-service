@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.opc.ua.base.AbstractOpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
@@ -195,11 +197,11 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("endpoint", endpointUrl);
-        status.put("protocol", getProtocolType());
-        status.put("driver", "MILO");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "MILO");
         status.put("implementationState", "EXPERIMENTAL");
         status.put("securityPolicy", securityPolicy);
-        status.put("connected", client != null);
+        status.put(CommonMapKeys.CONNECTED, client != null);
         status.put("subscriptions", subscriptions.size());
         status.put("monitoredItems", monitoredItems.size());
         status.put("requestTimeout", requestTimeout);
@@ -323,7 +325,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         if (nodeIdText.isBlank()) {
             throw new IllegalArgumentException("nodeId is required");
         }
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         if (value == null) {
             throw new IllegalArgumentException("value is required");
         }

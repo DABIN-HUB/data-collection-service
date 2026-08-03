@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.google.common.util.concurrent.Striped;
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
@@ -578,7 +580,7 @@ public class MultiLevelCacheManager implements CacheManager {
     @Override
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("enabled", enabled);
+        stats.put(CommonMapKeys.ENABLED, enabled);
         stats.put("writeThrough", writeThrough);
         stats.put("readThrough", readThrough);
         stats.put("cacheAside", cacheAside);
@@ -822,41 +824,41 @@ public class MultiLevelCacheManager implements CacheManager {
 
     public Map<String, Object> getHealthStatus() {
         Map<String, Object> health = new HashMap<>();
-        health.put("enabled", enabled);
+        health.put(CommonMapKeys.ENABLED, enabled);
         health.put("totalLevels", cacheManagers.size());
         health.put("maxLevel", maxLevel);
 
         List<Map<String, Object>> levelHealth = new ArrayList<>();
         for (CacheManager manager : cacheManagers) {
             Map<String, Object> levelStatus = new HashMap<>();
-            levelStatus.put("type", manager.getCacheType());
+            levelStatus.put(CommonMapKeys.TYPE, manager.getCacheType());
             levelStatus.put("level", manager.getCacheLevel());
             levelStatus.put("size", manager.size());
 
             try {
                 if (manager instanceof LocalCacheManager) {
-                    levelStatus.put("status", "HEALTHY");
+                    levelStatus.put(CommonMapKeys.STATUS, "HEALTHY");
                 } else if (manager instanceof RedisCacheManager redisManager) {
                     try {
                         redisManager.getRedisTemplate().opsForValue().get("health:test");
-                        levelStatus.put("status", "HEALTHY");
+                        levelStatus.put(CommonMapKeys.STATUS, "HEALTHY");
                     } catch (Exception e) {
-                        levelStatus.put("status", "UNHEALTHY");
-                        levelStatus.put("error", e.getMessage());
+                        levelStatus.put(CommonMapKeys.STATUS, "UNHEALTHY");
+                        levelStatus.put(CommonMapKeys.ERROR, e.getMessage());
                     }
                 } else {
-                    levelStatus.put("status", "UNKNOWN");
+                    levelStatus.put(CommonMapKeys.STATUS, "UNKNOWN");
                 }
             } catch (Exception e) {
-                levelStatus.put("status", "ERROR");
-                levelStatus.put("error", e.getMessage());
+                levelStatus.put(CommonMapKeys.STATUS, "ERROR");
+                levelStatus.put(CommonMapKeys.ERROR, e.getMessage());
             }
 
             levelHealth.add(levelStatus);
         }
 
         health.put("levels", levelHealth);
-        boolean allHealthy = levelHealth.stream().allMatch(level -> "HEALTHY".equals(level.get("status")));
+        boolean allHealthy = levelHealth.stream().allMatch(level -> "HEALTHY".equals(level.get(CommonMapKeys.STATUS)));
         health.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
         return health;
     }

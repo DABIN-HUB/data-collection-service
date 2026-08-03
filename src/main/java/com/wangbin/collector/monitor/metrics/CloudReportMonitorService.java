@@ -1,5 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
@@ -64,10 +66,10 @@ public class CloudReportMonitorService {
         String status = resolveStatus(configured, executor, risks, handlersStatus, handlersStatistics);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("enabled", reportProperties.isEnabled());
-        result.put("status", status);
+        result.put(CommonMapKeys.ENABLED, reportProperties.isEnabled());
+        result.put(CommonMapKeys.STATUS, status);
         result.put("statusText", statusText(status));
-        result.put("mode", reportProperties.getMode());
+        result.put(CommonMapKeys.MODE, reportProperties.getMode());
         result.put("cloudProvider", reportProperties.getMqtt().getCloudProvider());
         result.put("supportedProtocols", safeList(reportManager.getSupportedProtocols()));
         result.put("handlersStatus", handlersStatus);
@@ -132,7 +134,7 @@ public class CloudReportMonitorService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("deviceCount", deviceCount);
-        result.put("pointCount", pointCount);
+        result.put(CommonMapKeys.POINT_COUNT, pointCount);
         result.put("reportEnabledPointCount", reportEnabledPointCount);
         result.put("eventEnabledPointCount", eventEnabledPointCount);
         result.put("changeTriggerPointCount", changeTriggerPointCount);
@@ -185,7 +187,7 @@ public class CloudReportMonitorService {
         double queueUsage = queueCapacity > 0 ? (double) queueSize / queueCapacity : 0.0D;
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("type", type);
+        result.put(CommonMapKeys.TYPE, type);
         result.put("corePoolSize", executor.getCorePoolSize());
         result.put("maxPoolSize", executor.getMaximumPoolSize());
         result.put("poolSize", executor.getPoolSize());
@@ -205,7 +207,7 @@ public class CloudReportMonitorService {
      */
     private Map<String, Object> emptyExecutorMetrics(String type) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("type", type);
+        result.put(CommonMapKeys.TYPE, type);
         result.put("corePoolSize", -1);
         result.put("maxPoolSize", -1);
         result.put("poolSize", -1);
@@ -248,7 +250,7 @@ public class CloudReportMonitorService {
         Map<String, Object> activeHandler = activeHandler(handlersStatus);
         if (activeHandler.isEmpty()) {
             risks.add("当前上报模式没有对应的处理器");
-        } else if (Boolean.FALSE.equals(activeHandler.get("enabled"))) {
+        } else if (Boolean.FALSE.equals(activeHandler.get(CommonMapKeys.ENABLED))) {
             risks.add("当前上报处理器未启用");
         }
         if (number(configured.get("reportFieldPointCount")) <= 0) {
@@ -372,7 +374,7 @@ public class CloudReportMonitorService {
     private Map<String, Object> batchOptions() {
         ReportProperties.Cloud.Batch batch = reportProperties.getCloud().getBatch();
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("enabled", batch.isEnabled());
+        result.put(CommonMapKeys.ENABLED, batch.isEnabled());
         result.put("maxDevicesPerPack", batch.getMaxDevicesPerPack());
         result.put("maxPropertiesPerPack", batch.getMaxPropertiesPerPack());
         result.put("maxPayloadBytes", batch.getMaxPayloadBytes());
@@ -387,7 +389,7 @@ public class CloudReportMonitorService {
     private Map<String, Object> ackOptions() {
         ReportProperties.Cloud.Ack ack = reportProperties.getCloud().getAck();
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("mode", ack.getMode());
+        result.put(CommonMapKeys.MODE, ack.getMode());
         result.put("timeoutMs", ack.getTimeoutMs());
         result.put("maxPending", ack.getMaxPending());
         result.put("timeoutScanMs", ack.getTimeoutScanMs());
@@ -400,7 +402,7 @@ public class CloudReportMonitorService {
      */
     private Map<String, Object> outboxMetrics() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("enabled", cloudOutboxService.isEnabled());
+        result.put(CommonMapKeys.ENABLED, cloudOutboxService.isEnabled());
         result.put("pendingCount", cloudOutboxService.getPendingCount());
         result.put("isolatedCount", cloudOutboxService.getIsolatedCount());
         result.put("oldestMessageAgeMs", cloudOutboxService.getOldestMessageAgeMillis());

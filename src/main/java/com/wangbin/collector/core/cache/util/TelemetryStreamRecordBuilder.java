@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.util;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -29,12 +31,12 @@ public final class TelemetryStreamRecordBuilder {
                                             long eventTs) throws JsonProcessingException {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("eventTs", String.valueOf(eventTs));
-        fields.put("deviceId", safe(deviceId));
+        fields.put(CommonMapKeys.DEVICE_ID, safe(deviceId));
 
         if (point != null) {
-            fields.put("pointId", safe(point.getPointId()));
-            fields.put("pointCode", safe(point.getPointCode()));
-            fields.put("pointName", safe(point.getPointName()));
+            fields.put(CommonMapKeys.POINT_ID, safe(point.getPointId()));
+            fields.put(CommonMapKeys.POINT_CODE, safe(point.getPointCode()));
+            fields.put(CommonMapKeys.POINT_NAME, safe(point.getPointName()));
         }
 
         // 保留完整 ProcessResult 载荷，便于下游扩展。

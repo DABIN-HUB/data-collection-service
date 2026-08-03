@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.websocket;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -75,11 +77,11 @@ public class WebSocketCollector extends ConnectionBackedCollector {
 
             JSONObject request = new JSONObject(new LinkedHashMap<>());
             request.put("action", "read");
-            request.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-            request.put("pointId", point.getPointId());
-            request.put("pointCode", point.getPointCode());
-            request.put("address", point.getAddress());
-            request.put("timestamp", System.currentTimeMillis());
+            request.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            request.put(CommonMapKeys.POINT_ID, point.getPointId());
+            request.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+            request.put(CommonMapKeys.ADDRESS, point.getAddress());
+            request.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
             webSocketConnection.send(request.toJSONString().getBytes(StandardCharsets.UTF_8));
 
             byte[] response = receiveOnce();
@@ -106,15 +108,15 @@ public class WebSocketCollector extends ConnectionBackedCollector {
 
             JSONObject request = new JSONObject(new LinkedHashMap<>());
             request.put("action", "batchRead");
-            request.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-            request.put("timestamp", System.currentTimeMillis());
+            request.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            request.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
             JSONArray pointArray = new JSONArray();
             for (DataPoint point : points) {
                 JSONObject p = new JSONObject(new LinkedHashMap<>());
-                p.put("pointId", point.getPointId());
-                p.put("pointCode", point.getPointCode());
-                p.put("address", point.getAddress());
+                p.put(CommonMapKeys.POINT_ID, point.getPointId());
+                p.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+                p.put(CommonMapKeys.ADDRESS, point.getAddress());
                 pointArray.add(p);
             }
             request.put("points", pointArray);
@@ -227,9 +229,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("isConnected", isConnected());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
         status.put("protocolType", getProtocolType());
-        status.put("pointCount", pointDefinitions.size());
+        status.put(CommonMapKeys.POINT_COUNT, pointDefinitions.size());
         status.put("cachedValueCount", latestValues.size());
         status.put("lastTimestamps", latestTimestamps);
         status.put("connectionStats", webSocketConnection != null ? webSocketConnection.getStatistics() : Map.of());
@@ -344,10 +346,10 @@ public class WebSocketCollector extends ConnectionBackedCollector {
             Object parsed = JSON.parse(message);
 
             if (parsed instanceof JSONObject obj) {
-                if (obj.containsKey("pointId") && obj.containsKey("value")) {
-                    String pointId = Objects.toString(obj.get("pointId"), null);
+                if (obj.containsKey(CommonMapKeys.POINT_ID) && obj.containsKey(CommonMapKeys.VALUE)) {
+                    String pointId = Objects.toString(obj.get(CommonMapKeys.POINT_ID), null);
                     if (pointId != null) {
-                        recordInboundValue(pointId, obj.get("value"));
+                        recordInboundValue(pointId, obj.get(CommonMapKeys.VALUE));
                     }
                     return;
                 }
@@ -367,10 +369,10 @@ public class WebSocketCollector extends ConnectionBackedCollector {
                     if (!(item instanceof JSONObject itemObj)) {
                         continue;
                     }
-                    if (itemObj.containsKey("pointId") && itemObj.containsKey("value")) {
-                        String pointId = Objects.toString(itemObj.get("pointId"), null);
+                    if (itemObj.containsKey(CommonMapKeys.POINT_ID) && itemObj.containsKey(CommonMapKeys.VALUE)) {
+                        String pointId = Objects.toString(itemObj.get(CommonMapKeys.POINT_ID), null);
                         if (pointId != null) {
-                            recordInboundValue(pointId, itemObj.get("value"));
+                            recordInboundValue(pointId, itemObj.get(CommonMapKeys.VALUE));
                         }
                     }
                 }
@@ -432,11 +434,11 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         try {
             Object parsed = parseAnyPayload(payload);
             if (parsed instanceof JSONObject obj) {
-                Object success = obj.get("success");
+                Object success = obj.get(CommonMapKeys.SUCCESS);
                 if (success instanceof Boolean bool) {
                     return bool;
                 }
-                Object status = obj.get("status");
+                Object status = obj.get(CommonMapKeys.STATUS);
                 if (status != null) {
                     String text = status.toString().toLowerCase();
                     return Objects.equals(text, "ok") || Objects.equals(text, "success");
@@ -490,11 +492,11 @@ public class WebSocketCollector extends ConnectionBackedCollector {
     private String buildSubscribeMessage(DataPoint point) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "subscribe");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
@@ -504,11 +506,11 @@ public class WebSocketCollector extends ConnectionBackedCollector {
     private String buildUnsubscribeMessage(DataPoint point) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "unsubscribe");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
@@ -518,12 +520,12 @@ public class WebSocketCollector extends ConnectionBackedCollector {
     private String buildWriteMessage(DataPoint point, Object value) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "write");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("value", value);
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.VALUE, value);
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
@@ -533,10 +535,10 @@ public class WebSocketCollector extends ConnectionBackedCollector {
     private String buildCommandMessage(String command, Map<String, Object> params) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "command");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("command", command);
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.COMMAND, command);
         payload.put("params", params != null ? params : Map.of());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 }

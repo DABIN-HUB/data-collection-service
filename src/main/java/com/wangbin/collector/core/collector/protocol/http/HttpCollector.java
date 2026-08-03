@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.http;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -115,12 +117,12 @@ public class HttpCollector extends ConnectionBackedCollector {
         try {
             JSONObject payload = new JSONObject(new LinkedHashMap<>());
             payload.put("action", "write");
-            payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-            payload.put("pointId", point.getPointId());
-            payload.put("pointCode", point.getPointCode());
-            payload.put("address", point.getAddress());
-            payload.put("value", value);
-            payload.put("timestamp", System.currentTimeMillis());
+            payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+            payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+            payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+            payload.put(CommonMapKeys.VALUE, value);
+            payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
             httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
 
@@ -187,9 +189,9 @@ public class HttpCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("isConnected", isConnected());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
         status.put("protocolType", getProtocolType());
-        status.put("pointCount", pointDefinitions.size());
+        status.put(CommonMapKeys.POINT_COUNT, pointDefinitions.size());
         status.put("cachedValueCount", latestValues.size());
         status.put("connectionStats", httpConnection != null ? httpConnection.getStatistics() : Map.of());
         return status;
@@ -203,10 +205,10 @@ public class HttpCollector extends ConnectionBackedCollector {
         try {
             JSONObject payload = new JSONObject(new LinkedHashMap<>());
             payload.put("action", "command");
-            payload.put("command", command);
-            payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            payload.put(CommonMapKeys.COMMAND, command);
+            payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
             payload.put("params", params != null ? params : Map.of());
-            payload.put("timestamp", System.currentTimeMillis());
+            payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
             httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
             byte[] response = tryReceiveResponse();
@@ -240,15 +242,15 @@ public class HttpCollector extends ConnectionBackedCollector {
     private Map<String, Object> requestRead(List<DataPoint> points) throws Exception {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", points.size() == 1 ? "read" : "batchRead");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         JSONArray pointArray = new JSONArray();
         for (DataPoint point : points) {
             JSONObject pointJson = new JSONObject(new LinkedHashMap<>());
-            pointJson.put("pointId", point.getPointId());
-            pointJson.put("pointCode", point.getPointCode());
-            pointJson.put("address", point.getAddress());
+            pointJson.put(CommonMapKeys.POINT_ID, point.getPointId());
+            pointJson.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+            pointJson.put(CommonMapKeys.ADDRESS, point.getAddress());
             pointJson.put("dataType", point.getDataType());
             pointArray.add(pointJson);
         }
@@ -298,9 +300,9 @@ public class HttpCollector extends ConnectionBackedCollector {
                     return result;
                 }
 
-                Object pointId = obj.get("pointId");
-                if (pointId != null && obj.containsKey("value")) {
-                    result.put(pointId.toString(), obj.get("value"));
+                Object pointId = obj.get(CommonMapKeys.POINT_ID);
+                if (pointId != null && obj.containsKey(CommonMapKeys.VALUE)) {
+                    result.put(pointId.toString(), obj.get(CommonMapKeys.VALUE));
                     return result;
                 }
 
@@ -313,9 +315,9 @@ public class HttpCollector extends ConnectionBackedCollector {
                     if (!(item instanceof JSONObject itemObj)) {
                         continue;
                     }
-                    Object pointId = itemObj.get("pointId");
-                    if (pointId != null && itemObj.containsKey("value")) {
-                        result.put(pointId.toString(), itemObj.get("value"));
+                    Object pointId = itemObj.get(CommonMapKeys.POINT_ID);
+                    if (pointId != null && itemObj.containsKey(CommonMapKeys.VALUE)) {
+                        result.put(pointId.toString(), itemObj.get(CommonMapKeys.VALUE));
                     }
                 }
                 return result;
@@ -364,11 +366,11 @@ public class HttpCollector extends ConnectionBackedCollector {
         try {
             Object parsed = JSON.parse(text);
             if (parsed instanceof JSONObject obj) {
-                Object success = obj.get("success");
+                Object success = obj.get(CommonMapKeys.SUCCESS);
                 if (success instanceof Boolean bool) {
                     return bool;
                 }
-                Object status = obj.get("status");
+                Object status = obj.get(CommonMapKeys.STATUS);
                 if (status != null) {
                     String statusText = status.toString().toLowerCase();
                     return Objects.equals(statusText, "success") || Objects.equals(statusText, "ok");
@@ -392,7 +394,7 @@ public class HttpCollector extends ConnectionBackedCollector {
             return JSON.parse(text);
         } catch (Exception e) {
             Map<String, Object> plain = new HashMap<>();
-            plain.put("status", "raw");
+            plain.put(CommonMapKeys.STATUS, "raw");
             plain.put("payload", text);
             return plain;
         }

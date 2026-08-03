@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.config.manager;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -734,7 +736,7 @@ public class ConfigManager {
         try {
             Map<String, Object> stats = new HashMap<>();
             stats.put("deviceCount", deviceCache.size());
-            stats.put("pointCount", pointCache.values().stream()
+            stats.put(CommonMapKeys.POINT_COUNT, pointCache.values().stream()
                     .mapToInt(List::size)
                     .sum());
             stats.put("connectionCount", connectionCache.size());

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.mqtt;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONPath;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -192,7 +194,7 @@ public class MqttCollector extends ConnectionBackedCollector {
         status.put("brokerUrl", getBrokerUrl());
         status.put("clientId", getClientId());
         status.put("protocolVersion", getProtocolVersion());
-        status.put("connected", mqttConnection != null && mqttConnection.isConnected());
+        status.put(CommonMapKeys.CONNECTED, mqttConnection != null && mqttConnection.isConnected());
         status.put("subscriptions", topicBindings.keySet());
         status.put("cachedPoints", latestValues.size());
         status.put("lastTimestamps", latestTimestamps);
@@ -475,7 +477,7 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private Object executePublishCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
@@ -491,7 +493,7 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private Object executeSubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
@@ -505,7 +507,7 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private Object executeUnsubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.core.report.model.message.EventMessage;
 import com.wangbin.collector.core.report.model.message.IoTMessage;
@@ -32,7 +34,7 @@ public class JsonProtocolAdapter {
             putIfNotBlank(jsonMap, "productKey", message.getProductKey());
             putIfNotBlank(jsonMap, "deviceName", message.getDeviceName());
             long timestamp = message.getTimestamp() > 0 ? message.getTimestamp() : System.currentTimeMillis();
-            jsonMap.put("timestamp", timestamp);
+            jsonMap.put(CommonMapKeys.TIMESTAMP, timestamp);
 
             Map<String, Object> params = buildParams(message);
             if (!params.isEmpty()) {
@@ -40,7 +42,7 @@ public class JsonProtocolAdapter {
             }
 
             if (!message.getQualityMap().isEmpty()) {
-                jsonMap.put("quality", message.getQualityMap());
+                jsonMap.put(CommonMapKeys.QUALITY, message.getQualityMap());
             }
             if (!message.getPropertyTsMap().isEmpty()) {
                 jsonMap.put("propertyTs", message.getPropertyTsMap());
@@ -49,7 +51,7 @@ public class JsonProtocolAdapter {
                 jsonMap.put("propertyMetadata", message.getPropertyMetadataMap());
             }
             if (!message.getMetadata().isEmpty()) {
-                jsonMap.put("metadata", message.getMetadata());
+                jsonMap.put(CommonMapKeys.METADATA, message.getMetadata());
             }
 
             return objectMapper.writeValueAsString(jsonMap);

@@ -1,7 +1,11 @@
 package com.wangbin.collector.api.controller;
 
+import com.wangbin.collector.api.controller.dto.BatchPointWriteFieldResponse;
+import com.wangbin.collector.api.controller.dto.BatchPointWriteResponse;
 import com.wangbin.collector.api.controller.dto.DeviceCommandRequest;
+import com.wangbin.collector.api.controller.dto.DeviceCommandResponse;
 import com.wangbin.collector.api.controller.dto.PointWriteRequest;
+import com.wangbin.collector.api.controller.dto.PointWriteResultResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
@@ -31,17 +35,27 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ControlController {
 
+    private static final String ERROR_POINT_NOT_FOUND = "点位不存在";
+    private static final String ERROR_POINT_NOT_WRITABLE = "点位不可写";
+    private static final String ERROR_PENDING = "等待写入";
+    private static final String ERROR_PROTOCOL_WRITE_FALSE = "协议写入返回失败";
+
     private final ConfigManager configManager;
     private final CollectionManager collectionManager;
     private final DevicePointResolver devicePointResolver;
 
     /**
-     * 写入或持久化业务数据。
+     * 写入单个点位。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param pointRef 点位标识、编码或上报字段
+     * @param request 写入请求
+     * @return 写入结果
      */
     @PostMapping("/device/{deviceId}/point/{pointRef}")
-    public ApiResult<Map<String, Object>> writePoint(@PathVariable String deviceId,
-                                                     @PathVariable String pointRef,
-                                                     @Valid @RequestBody PointWriteRequest request) {
+    public ApiResult<PointWriteResultResponse> writePoint(@PathVariable String deviceId,
+                                                          @PathVariable String pointRef,
+                                                          @Valid @RequestBody PointWriteRequest request) {
         if (request == null || request.getValue() == null) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "value 不能为空");
         }
@@ -56,9 +70,10 @@ public class ControlController {
         }
 
         boolean success = collectionManager.writePoint(deviceId, dataPoint, request.getValue());
-        Map<String, Object> data = pointResult(dataPoint, request.getValue(), success, success ? null : "protocol write returned false");
+        PointWriteResultResponse data = pointResult(dataPoint, request.getValue(), success,
+                success ? null : ERROR_PROTOCOL_WRITE_FALSE);
         if (!success) {
-            ApiResult<Map<String, Object>> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "点位写入失败");
+            ApiResult<PointWriteResultResponse> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "点位写入失败");
             result.setData(data);
             return result;
         }
@@ -66,46 +81,49 @@ public class ControlController {
     }
 
     /**
-     * 写入或持久化业务数据。
+     * 批量写入点位。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param request 批量写入请求
+     * @return 批量写入结果
      */
     @PostMapping("/device/{deviceId}/points")
-    public ApiResult<Map<String, Object>> writePoints(@PathVariable String deviceId,
-                                                      @Valid @RequestBody PointWriteRequest request) {
+    public ApiResult<BatchPointWriteResponse> writePoints(@PathVariable String deviceId,
+                                                          @Valid @RequestBody PointWriteRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getValues())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "values 不能为空");
         }
 
         List<DataPoint> points = configManager.getDataPoints(deviceId);
         Map<DataPoint, Object> writePlan = new LinkedHashMap<>();
-        Map<String, Map<String, Object>> fieldResults = new LinkedHashMap<>();
+        Map<String, BatchPointWriteFieldResponse> fieldResults = new LinkedHashMap<>();
 
         for (Map.Entry<String, Object> entry : request.getValues().entrySet()) {
             String field = entry.getKey();
-            Map<String, Object> fieldResult = new LinkedHashMap<>();
+            BatchPointWriteFieldResponse fieldResult = BatchPointWriteFieldResponse.builder()
+                    .mapped(false)
+                    .success(false)
+                    .value(entry.getValue())
+                    .build();
             fieldResults.put(field, fieldResult);
 
             Optional<DataPoint> resolvedPoint = devicePointResolver.resolve(points, field);
             if (resolvedPoint.isEmpty()) {
-                fieldResult.put("mapped", false);
-                fieldResult.put("success", false);
-                fieldResult.put("error", "point not found");
+                fieldResult.setError(ERROR_POINT_NOT_FOUND);
                 continue;
             }
 
             DataPoint point = resolvedPoint.get();
-            fieldResult.put("mapped", true);
-            fieldResult.put("pointId", point.getPointId());
-            fieldResult.put("pointCode", point.getPointCode());
-            fieldResult.put("value", entry.getValue());
+            fieldResult.setMapped(true);
+            fieldResult.setPointId(point.getPointId());
+            fieldResult.setPointCode(point.getPointCode());
             if (!point.isWritable()) {
-                fieldResult.put("success", false);
-                fieldResult.put("error", "point is not writable");
+                fieldResult.setError(ERROR_POINT_NOT_WRITABLE);
                 continue;
             }
 
             writePlan.put(point, entry.getValue());
-            fieldResult.put("success", false);
-            fieldResult.put("error", "pending");
+            fieldResult.setError(ERROR_PENDING);
         }
 
         if (!writePlan.isEmpty()) {
@@ -113,16 +131,17 @@ public class ControlController {
             applyWriteResults(fieldResults, writePlan, writeResults);
         }
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("deviceId", deviceId);
-        data.put("fields", fieldResults);
-        data.put("total", request.getValues().size());
-        data.put("mapped", fieldResults.values().stream().filter(item -> Boolean.TRUE.equals(item.get("mapped"))).count());
-        data.put("success", fieldResults.values().stream().filter(item -> Boolean.TRUE.equals(item.get("success"))).count());
+        BatchPointWriteResponse data = BatchPointWriteResponse.builder()
+                .deviceId(deviceId)
+                .fields(fieldResults)
+                .total(request.getValues().size())
+                .mapped(fieldResults.values().stream().filter(item -> Boolean.TRUE.equals(item.getMapped())).count())
+                .success(fieldResults.values().stream().filter(item -> Boolean.TRUE.equals(item.getSuccess())).count())
+                .build();
 
-        boolean anySuccess = fieldResults.values().stream().anyMatch(item -> Boolean.TRUE.equals(item.get("success")));
+        boolean anySuccess = fieldResults.values().stream().anyMatch(item -> Boolean.TRUE.equals(item.getSuccess()));
         if (!anySuccess) {
-            ApiResult<Map<String, Object>> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "批量点位写入失败");
+            ApiResult<BatchPointWriteResponse> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "批量点位写入失败");
             result.setData(data);
             return result;
         }
@@ -130,29 +149,38 @@ public class ControlController {
     }
 
     /**
-     * 处理当前业务流程。
+     * 执行协议命令。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param request 命令请求
+     * @return 命令执行结果
      */
     @PostMapping("/device/{deviceId}/command")
-    public ApiResult<Map<String, Object>> executeCommand(@PathVariable String deviceId,
-                                                         @Valid @RequestBody DeviceCommandRequest request) {
+    public ApiResult<DeviceCommandResponse> executeCommand(@PathVariable String deviceId,
+                                                           @Valid @RequestBody DeviceCommandRequest request) {
         if (request == null || !StringUtils.hasText(request.getCommand())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "command 不能为空");
         }
         Map<String, Object> params = request.getParams() != null ? request.getParams() : Map.of();
         Object commandResult = collectionManager.executeCommand(deviceId, request.getCommand(), params);
 
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("deviceId", deviceId);
-        data.put("command", request.getCommand());
-        data.put("params", params);
-        data.put("result", commandResult);
+        DeviceCommandResponse data = DeviceCommandResponse.builder()
+                .deviceId(deviceId)
+                .command(request.getCommand())
+                .params(params)
+                .result(commandResult)
+                .build();
         return ApiResult.success("命令执行完成", data);
     }
 
     /**
-     * 处理当前业务流程。
+     * 将协议写入结果回填到提交字段结果。
+     *
+     * @param fieldResults 提交字段结果
+     * @param writePlan 实际写入计划
+     * @param writeResults 协议写入结果
      */
-    private void applyWriteResults(Map<String, Map<String, Object>> fieldResults,
+    private void applyWriteResults(Map<String, BatchPointWriteFieldResponse> fieldResults,
                                    Map<DataPoint, Object> writePlan,
                                    Map<String, Boolean> writeResults) {
         for (DataPoint point : writePlan.keySet()) {
@@ -160,30 +188,34 @@ public class ControlController {
             if (!StringUtils.hasText(field)) {
                 continue;
             }
-            Map<String, Object> fieldResult = fieldResults.get(field);
+            BatchPointWriteFieldResponse fieldResult = fieldResults.get(field);
             boolean success = resolveWriteSuccess(writeResults, point);
-            fieldResult.put("success", success);
-            if (success) {
-                fieldResult.remove("error");
-            } else {
-                fieldResult.put("error", "protocol write returned false");
-            }
+            fieldResult.setSuccess(success);
+            fieldResult.setError(success ? null : ERROR_PROTOCOL_WRITE_FALSE);
         }
     }
 
     /**
-     * 解析或转换业务数据。
+     * 根据点位反查用户提交字段。
+     *
+     * @param fieldResults 提交字段结果
+     * @param point 点位配置
+     * @return 用户提交字段
      */
-    private String resolveSubmittedField(Map<String, Map<String, Object>> fieldResults, DataPoint point) {
+    private String resolveSubmittedField(Map<String, BatchPointWriteFieldResponse> fieldResults, DataPoint point) {
         return fieldResults.entrySet().stream()
-                .filter(entry -> point.getPointId() != null && point.getPointId().equals(entry.getValue().get("pointId")))
+                .filter(entry -> point.getPointId() != null && point.getPointId().equals(entry.getValue().getPointId()))
                 .map(Map.Entry::getKey)
                 .findFirst()
                 .orElse(null);
     }
 
     /**
-     * 解析或转换业务数据。
+     * 解析协议批量写入结果。
+     *
+     * @param writeResults 协议写入结果
+     * @param point 点位配置
+     * @return 是否写入成功
      */
     private boolean resolveWriteSuccess(Map<String, Boolean> writeResults, DataPoint point) {
         if (writeResults == null || writeResults.isEmpty() || point == null) {
@@ -195,18 +227,22 @@ public class ControlController {
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 构造单点写入结果。
+     *
+     * @param point 点位配置
+     * @param value 写入值
+     * @param success 是否写入成功
+     * @param error 错误信息
+     * @return 单点写入结果
      */
-    private Map<String, Object> pointResult(DataPoint point, Object value, boolean success, String error) {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("pointId", point.getPointId());
-        data.put("pointCode", point.getPointCode());
-        data.put("pointName", point.getPointName());
-        data.put("value", value);
-        data.put("success", success);
-        if (StringUtils.hasText(error)) {
-            data.put("error", error);
-        }
-        return data;
+    private PointWriteResultResponse pointResult(DataPoint point, Object value, boolean success, String error) {
+        return PointWriteResultResponse.builder()
+                .pointId(point.getPointId())
+                .pointCode(point.getPointCode())
+                .pointName(point.getPointName())
+                .value(value)
+                .success(success)
+                .error(StringUtils.hasText(error) ? error : null)
+                .build();
     }
 }

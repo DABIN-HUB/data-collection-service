@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -34,7 +36,7 @@ public class CloudPackReportAssembler {
         data.setTimestamp(System.currentTimeMillis());
         data.setMethod(MessageConstant.MESSAGE_TYPE_PROPERTY_PACK_POST);
         data.addMetadata("productKey", gatewayIdentity.productKey());
-        data.addMetadata("rawDeviceId", rawGatewayDeviceId);
+        data.addMetadata(CommonMapKeys.RAW_DEVICE_ID, rawGatewayDeviceId);
         data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, UUID.randomUUID().toString());
 
         Map<String, Object> pack = new LinkedHashMap<>();

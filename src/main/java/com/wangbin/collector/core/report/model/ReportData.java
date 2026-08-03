@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.model;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
@@ -98,7 +100,7 @@ public class ReportData {
             return;
         }
         Map<String, Object> event = new LinkedHashMap<>();
-        event.put("value", value);
+        event.put(CommonMapKeys.VALUE, value);
         event.put("time", eventTime > 0 ? eventTime : System.currentTimeMillis());
         events.put(identifier, event);
     }
@@ -197,13 +199,13 @@ public class ReportData {
      * 处理当前业务流程。
      */
     public void applyChunkMetadata(String batchId, int chunkIndex, int chunkTotal) {
-        metadata.put("batchId", batchId == null ? UUID.randomUUID().toString() : batchId);
+        metadata.put(CommonMapKeys.BATCH_ID, batchId == null ? UUID.randomUUID().toString() : batchId);
         metadata.put("chunkIndex", chunkIndex);
         metadata.put("chunkTotal", chunkTotal);
     }
 
     public String getBatchId() {
-        Object id = metadata.get("batchId");
+        Object id = metadata.get(CommonMapKeys.BATCH_ID);
         return id != null ? String.valueOf(id) : null;
     }
 
@@ -227,22 +229,22 @@ public class ReportData {
         QualityEnum qualityEnum = result != null ? QualityEnum.fromCode(result.getQuality()) : QualityEnum.GOOD;
         reportData.setQuality(qualityEnum.getText());
 
-        reportData.addMetadata("pointId", point.getPointId());
-        reportData.addMetadata("address", point.getAddress());
-        reportData.addMetadata("unit", point.getUnit());
+        reportData.addMetadata(CommonMapKeys.POINT_ID, point.getPointId());
+        reportData.addMetadata(CommonMapKeys.ADDRESS, point.getAddress());
+        reportData.addMetadata(CommonMapKeys.UNIT, point.getUnit());
         reportData.addMetadata("dataType", point.getDataType());
-        reportData.addMetadata("pointCode", resolvePointCode(point));
-        reportData.addMetadata("pointName", point.getPointName());
+        reportData.addMetadata(CommonMapKeys.POINT_CODE, resolvePointCode(point));
+        reportData.addMetadata(CommonMapKeys.POINT_NAME, point.getPointName());
 
         long valueTimestamp = System.currentTimeMillis();
         if (result != null) {
             reportData.addMetadata("val", result.getFinalValue());
-            reportData.addMetadata("quality", qualityEnum.getText());
+            reportData.addMetadata(CommonMapKeys.QUALITY, qualityEnum.getText());
             if (result.getMetadata() != null && !result.getMetadata().isEmpty()) {
                 reportData.getMetadata().putAll(result.getMetadata());
             }
             if (result.getMessage() != null) {
-                reportData.addMetadata("message", result.getMessage());
+                reportData.addMetadata(CommonMapKeys.MESSAGE, result.getMessage());
             }
         }
 

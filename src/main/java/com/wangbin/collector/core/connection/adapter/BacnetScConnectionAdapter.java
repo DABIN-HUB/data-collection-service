@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.bacnet.client.BacnetScClient;
@@ -72,15 +74,15 @@ public class BacnetScConnectionAdapter extends WebSocketConnectionAdapter implem
             sessionState = BacnetScSessionState.SECURE_TUNNEL_ACTIVE;
             Map<String, Object> params = new LinkedHashMap<>(getConnectionParams());
             params.put("remoteDeviceInstance", resolveRemoteDeviceInstance());
-            params.put("transport", "WSS");
+            params.put(CommonMapKeys.TRANSPORT, "WSS");
             params.put("sessionState", sessionState.name());
             params.put("standardSessionEstablished", false);
             connectionParams.clear();
             connectionParams.putAll(params);
-            statistics.put("protocol", "BACNET_SC");
+            statistics.put(CommonMapKeys.PROTOCOL, "BACNET_SC");
             statistics.put("implemented", true);
-            statistics.put("transport", "WSS");
-            statistics.put("message", "BACnet/SC 实验性安全隧道已连接，标准 Hub/Node 会话尚未建立");
+            statistics.put(CommonMapKeys.TRANSPORT, "WSS");
+            statistics.put(CommonMapKeys.MESSAGE, "BACnet/SC 实验性安全隧道已连接，标准 Hub/Node 会话尚未建立");
             notifyReconnectListener();
         } catch (Exception ex) {
             sessionState = BacnetScSessionState.FAILED;

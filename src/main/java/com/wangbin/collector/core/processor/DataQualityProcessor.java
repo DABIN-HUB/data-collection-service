@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.AlarmRule;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.enums.DataQuality;
@@ -198,17 +200,17 @@ public class DataQualityProcessor extends AbstractDataProcessor {
             result.addMetadata(AlarmMetadataKeys.RELATED_EVENT_ID, event.relatedEventId);
         }
         if (event.ruleId != null) {
-            result.addMetadata("ruleId", event.ruleId);
+            result.addMetadata(CommonMapKeys.RULE_ID, event.ruleId);
         }
         if (event.ruleName != null) {
-            result.addMetadata("ruleName", event.ruleName);
+            result.addMetadata(CommonMapKeys.RULE_NAME, event.ruleName);
         }
         if (point != null) {
             if (point.getPointCode() != null) {
-                result.addMetadata("pointCode", point.getPointCode());
+                result.addMetadata(CommonMapKeys.POINT_CODE, point.getPointCode());
             }
             if (point.getDeviceId() != null) {
-                result.addMetadata("rawDeviceId", point.getDeviceId());
+                result.addMetadata(CommonMapKeys.RAW_DEVICE_ID, point.getDeviceId());
             }
         }
         notifyAlert(point, event, context, result, rawValue);

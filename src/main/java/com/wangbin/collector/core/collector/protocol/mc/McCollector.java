@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.mc;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -433,16 +435,16 @@ public class McCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("driver", "SELF_IMPLEMENTED");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "SELF_IMPLEMENTED");
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", false);
-        status.put("transport", "TCP");
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, false);
+        status.put(CommonMapKeys.TRANSPORT, "TCP");
         status.put("frame", resolveFrameCodec(getCurrentConnectionConfig()).frameType());
-        status.put("isConnected", isConnected());
-        status.put("configuredPointCount", configuredAddresses.size());
-        status.put("plannedReadBatchCount", configuredReadPlans.size());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
+        status.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
         status.put("configuredReadBatchCount", configuredReadPlans.size());
         status.put("maxWordsPerRequest", maxWordsPerRequest);
         status.put("maxBitsPerRequest", maxBitsPerRequest);
@@ -456,14 +458,14 @@ public class McCollector extends ConnectionBackedCollector {
 
         DeviceConnection connection = getCurrentConnectionConfig();
         if (connection != null) {
-            status.put("host", connection.getHost());
-            status.put("port", connection.getPort());
+            status.put(CommonMapKeys.HOST, connection.getHost());
+            status.put(CommonMapKeys.PORT, connection.getPort());
             status.put("networkNo", connection.getInt("networkNo", 0));
             status.put("pcNo", connection.getInt("pcNo", 255));
             status.put("ioNo", connection.getInt("ioNo", 1023));
             status.put("stationNo", connection.getInt("stationNo", 0));
             status.put("monitoringTimer", connection.getInt("monitoringTimer", 16));
-            status.put("timeout", connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
+            status.put(CommonMapKeys.TIMEOUT, connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
         }
         return status;
     }
@@ -1341,14 +1343,14 @@ public class McCollector extends ConnectionBackedCollector {
                                                    Object rawValue) {
         Object processedValue = normalizeReadValue(point, address, rawValue);
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
         if (!processResult.isSuccess()) {
             log.warn("MC 数据质量检查失败 {}.{}, 原因:{}",
                     deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
         }
         if (point != null && point.getAddress() != null) {
-            processResult.addMetadata("address", point.getAddress());
+            processResult.addMetadata(CommonMapKeys.ADDRESS, point.getAddress());
         }
         processResult.addMetadata("processingMode", address.getDriverType().isStringType()
                 ? "protocol_string_passthrough"
@@ -1377,7 +1379,7 @@ public class McCollector extends ConnectionBackedCollector {
             validateArrayPointConfiguration(point, address, "write");
         }
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         return dataQualityProcessor.process(context, point, value);
     }
 
@@ -1416,7 +1418,7 @@ public class McCollector extends ConnectionBackedCollector {
         processResult.addMetadata("arraySize", address.getArraySize());
         processResult.addMetadata("processingMode", "protocol_passthrough");
         if (point != null && point.getAddress() != null) {
-            processResult.addMetadata("address", point.getAddress());
+            processResult.addMetadata(CommonMapKeys.ADDRESS, point.getAddress());
         }
         return processResult;
     }
@@ -1506,7 +1508,7 @@ public class McCollector extends ConnectionBackedCollector {
         Object value = readPoint(point);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
+        result.put(CommonMapKeys.VALUE, value);
         return result;
     }
 
@@ -1515,15 +1517,15 @@ public class McCollector extends ConnectionBackedCollector {
      */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         boolean success = writePoint(point, value);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
-        result.put("success", success);
+        result.put(CommonMapKeys.VALUE, value);
+        result.put(CommonMapKeys.SUCCESS, success);
         return result;
     }
 
@@ -1541,10 +1543,10 @@ public class McCollector extends ConnectionBackedCollector {
 
         String pointRef = firstNonBlank(
                 asText(params.get("pointRef")),
-                asText(params.get("pointId")),
-                asText(params.get("pointCode")),
-                asText(params.get("pointName")),
-                asText(params.get("field")),
+                asText(params.get(CommonMapKeys.POINT_ID)),
+                asText(params.get(CommonMapKeys.POINT_CODE)),
+                asText(params.get(CommonMapKeys.POINT_NAME)),
+                asText(params.get(CommonMapKeys.FIELD)),
                 asText(params.get("reportField"))
         );
         if (hasText(pointRef)) {
@@ -1554,7 +1556,7 @@ public class McCollector extends ConnectionBackedCollector {
             }
         }
 
-        String address = asText(params.get("address"));
+        String address = asText(params.get(CommonMapKeys.ADDRESS));
         if (hasText(address)) {
             DataPoint point = points.stream()
                     .filter(candidate -> candidate != null && hasText(candidate.getAddress())
@@ -1599,11 +1601,11 @@ public class McCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
-        target.put("pointId", point.getPointId());
-        target.put("pointCode", point.getPointCode());
-        target.put("pointName", point.getPointName());
+        target.put(CommonMapKeys.POINT_ID, point.getPointId());
+        target.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        target.put(CommonMapKeys.POINT_NAME, point.getPointName());
         if (point.getAddress() != null) {
-            target.put("address", point.getAddress());
+            target.put(CommonMapKeys.ADDRESS, point.getAddress());
         }
     }
 

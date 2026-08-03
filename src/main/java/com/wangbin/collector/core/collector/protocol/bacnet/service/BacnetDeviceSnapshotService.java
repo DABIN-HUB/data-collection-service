@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetDeviceSnapshot;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
@@ -24,7 +26,7 @@ public class BacnetDeviceSnapshotService {
         Map<String, Object> deviceInfo = new LinkedHashMap<>();
         deviceInfo.put("remoteDeviceInstance", collector.requireRemoteDeviceInstanceForSnapshot());
         deviceInfo.put("objectName", readAndCache(collector, BacnetPropertyIdentifier.OBJECT_NAME, null));
-        deviceInfo.put("description", readAndCache(collector, BacnetPropertyIdentifier.DESCRIPTION, null));
+        deviceInfo.put(CommonMapKeys.DESCRIPTION, readAndCache(collector, BacnetPropertyIdentifier.DESCRIPTION, null));
         deviceInfo.put("modelName", readAndCache(collector, BacnetPropertyIdentifier.MODEL_NAME, null));
         deviceInfo.put("vendorIdentifier", readAndCache(collector, BacnetPropertyIdentifier.VENDOR_IDENTIFIER, null));
         deviceInfo.put("protocolVersion", readAndCache(collector, BacnetPropertyIdentifier.PROTOCOL_VERSION, null));

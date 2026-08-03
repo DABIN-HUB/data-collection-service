@@ -1,5 +1,7 @@
 package com.wangbin.collector.common.web.result;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import lombok.Data;
 
 import java.util.HashMap;
@@ -123,7 +125,7 @@ public class ApiResult<T> {
      */
     public void setPageInfo(long total, int page, int size) {
         Map<String, Object> pageInfo = new HashMap<>();
-        pageInfo.put("total", total);
+        pageInfo.put(CommonMapKeys.TOTAL, total);
         pageInfo.put("page", page);
         pageInfo.put("size", size);
         pageInfo.put("pages", (total + size - 1) / size);

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cloud.protocol.alink.codec;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
@@ -81,12 +83,12 @@ public class AlinkPayloadEncoder {
         body.put("version", MessageConstant.MESSAGE_VERSION_1_0);
         body.put("method", data.getMethod());
         if (payloadOptions.includeTimestamp()) {
-            body.put("timestamp", data.getTimestamp());
+            body.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
         }
         body.put("params", buildParams(data));
 
         if (payloadOptions.includeQuality(data.getPropertyQuality())) {
-            body.put("quality", data.getPropertyQuality());
+            body.put(CommonMapKeys.QUALITY, data.getPropertyQuality());
         }
         if ((payloadOptions.includePropertyTs() || payloadOptions.profile() == CloudPayloadProfile.DIAGNOSTIC)
                 && !data.getPropertyTs().isEmpty()) {
@@ -94,7 +96,7 @@ public class AlinkPayloadEncoder {
         }
         Map<String, Object> metadata = filterMetadata(data, payloadOptions);
         if (!metadata.isEmpty()) {
-            body.put("metadata", metadata);
+            body.put(CommonMapKeys.METADATA, metadata);
         }
         return body;
     }
@@ -123,7 +125,7 @@ public class AlinkPayloadEncoder {
             }
         } else if (MessageConstant.MESSAGE_TYPE_EVENT_POST.equals(data.getMethod())) {
             params.put("identifier", resolveEventIdentifier(data));
-            params.put("value", resolveEventValue(data));
+            params.put(CommonMapKeys.VALUE, resolveEventValue(data));
             params.put("time", data.getTimestamp() > 0 ? data.getTimestamp() : System.currentTimeMillis());
         } else if (data.hasProperties()) {
             params.putAll(data.getProperties());
@@ -138,7 +140,7 @@ public class AlinkPayloadEncoder {
         if (data != null && data.getMetadata() != null) {
             Object configured = data.getMetadata().get("eventIdentifier");
             if (configured == null) {
-                configured = data.getMetadata().get("eventType");
+                configured = data.getMetadata().get(CommonMapKeys.EVENT_TYPE);
             }
             if (configured != null && !String.valueOf(configured).isBlank()) {
                 return String.valueOf(configured);
@@ -156,9 +158,9 @@ public class AlinkPayloadEncoder {
     private Object resolveEventValue(ReportData data) {
         Map<String, Object> value = new LinkedHashMap<>();
         if (data != null) {
-            value.put("value", data.getValue());
+            value.put(CommonMapKeys.VALUE, data.getValue());
             if (data.getQuality() != null) {
-                value.put("quality", data.getQuality());
+                value.put(CommonMapKeys.QUALITY, data.getQuality());
             }
             if (data.getMetadata() != null && !data.getMetadata().isEmpty()) {
                 value.putAll(data.getMetadata());

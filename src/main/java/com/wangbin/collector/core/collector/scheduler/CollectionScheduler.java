@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -1084,12 +1086,12 @@ public class CollectionScheduler {
 
     public Map<String, Object> getDeviceScheduleStatus(String deviceId) {
         Map<String, Object> status = new HashMap<>();
-        status.put("deviceId", deviceId);
+        status.put(CommonMapKeys.DEVICE_ID, deviceId);
         DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
         ReconnectState reconnectState = reconnectStates.get(deviceId);
         status.put("isRunning", info != null && info.isRunning());
         status.put("isStarting", startingDevices.contains(deviceId));
-        status.put("connected", collectionManager.isDeviceConnected(deviceId));
+        status.put(CommonMapKeys.CONNECTED, collectionManager.isDeviceConnected(deviceId));
         status.put("reconnecting", reconnectState != null && reconnectState.reconnecting.get());
         status.put("reconnectNextRetryAt", reconnectState != null ? reconnectState.nextRetryAt.get() : 0L);
         status.put("statistics", collectionStatistics.getDeviceStatistics(deviceId));

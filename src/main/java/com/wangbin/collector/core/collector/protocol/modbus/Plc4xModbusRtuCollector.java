@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.enums.DataType;
@@ -226,16 +228,16 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         status.put("stopBits", stopBits);
         status.put("parity", parity.name());
         status.put("slaveId", slaveId);
-        status.put("timeout", timeout);
+        status.put(CommonMapKeys.TIMEOUT, timeout);
         status.put("byteOrder", byteOrder.toString());
         status.put("interFrameDelay", interFrameDelay);
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("connectionString", connectionAdapter != null ? connectionAdapter.getConnectionString() : null);
 
         try {
-            status.put("deviceConnected", testConnection(slaveId));
+            status.put(CommonMapKeys.DEVICE_CONNECTED, testConnection(slaveId));
         } catch (Exception e) {
-            status.put("deviceConnected", false);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, false);
             status.put("connectionError", e.getMessage());
         }
         return status;
@@ -275,9 +277,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("address", address);
-        result.put("quantity", quantity);
+        result.put(CommonMapKeys.SUCCESS, true);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, quantity);
         result.put("values", values);
         return result;
     }
@@ -299,9 +301,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         boolean success = transport.writeMultipleRegisters(unitId, address, registers);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", success);
-        result.put("address", address);
-        result.put("quantity", values.size());
+        result.put(CommonMapKeys.SUCCESS, success);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, values.size());
         return result;
     }
 
@@ -315,9 +317,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
         List<Boolean> values = ModbusUtils.getCoilValues(raw, quantity, parity);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("address", address);
-        result.put("quantity", quantity);
+        result.put(CommonMapKeys.SUCCESS, true);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, quantity);
         result.put("values", values);
         return result;
     }
@@ -343,9 +345,9 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
                 ModbusUtils.buildCoilBytes(coilValues, parity));
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", success);
-        result.put("address", address);
-        result.put("quantity", coilValues.size());
+        result.put(CommonMapKeys.SUCCESS, success);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, coilValues.size());
         return result;
     }
 
@@ -362,27 +364,27 @@ public class Plc4xModbusRtuCollector extends AbstractModbusCollector {
      */
     private Object executeDiagnostic(int unitId) {
         Map<String, Object> result = new HashMap<>();
-        result.put("protocol", getProtocolType());
+        result.put(CommonMapKeys.PROTOCOL, getProtocolType());
         result.put("serialPort", serialPort);
         result.put("baudRate", baudRate);
         result.put("dataBits", dataBits);
         result.put("stopBits", stopBits);
         result.put("parity", parity.name());
         result.put("slaveId", unitId);
-        result.put("timeout", timeout);
+        result.put(CommonMapKeys.TIMEOUT, timeout);
         result.put("byteOrder", byteOrder.toString());
         result.put("clientConnected", isConnected());
         result.put("interFrameDelay", interFrameDelay);
-        result.put("timestamp", System.currentTimeMillis());
+        result.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         try {
             boolean connected = testConnection(unitId);
-            result.put("deviceConnected", connected);
-            result.put("connectionTest", connected ? "SUCCESS" : "FAILED");
+            result.put(CommonMapKeys.DEVICE_CONNECTED, connected);
+            result.put(CommonMapKeys.CONNECTION_TEST, connected ? "SUCCESS" : "FAILED");
         } catch (Exception e) {
-            result.put("deviceConnected", false);
-            result.put("connectionTest", "FAILED");
-            result.put("error", e.getMessage());
+            result.put(CommonMapKeys.DEVICE_CONNECTED, false);
+            result.put(CommonMapKeys.CONNECTION_TEST, "FAILED");
+            result.put(CommonMapKeys.ERROR, e.getMessage());
         }
         return result;
     }

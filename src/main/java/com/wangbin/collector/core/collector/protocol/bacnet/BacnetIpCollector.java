@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.enums.DataQuality;
@@ -391,16 +393,16 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", protocolCode());
-        status.put("driver", driverName());
+        status.put(CommonMapKeys.PROTOCOL, protocolCode());
+        status.put(CommonMapKeys.DRIVER, driverName());
         status.put("implemented", true);
-        status.put("transport", resolveTransportName());
+        status.put(CommonMapKeys.TRANSPORT, resolveTransportName());
         status.put("readPropertyImplemented", true);
         status.put("readPropertyMultipleImplemented", true);
         status.put("writeImplemented", true);
         status.put("subscriptionImplemented", true);
-        status.put("connected", connectionAdapter != null && connectionAdapter.isConnected());
-        status.put("configuredPointCount", configuredAddresses.size());
+        status.put(CommonMapKeys.CONNECTED, connectionAdapter != null && connectionAdapter.isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         status.put("activeSubscriptions", subscriptionBindings.size());
         status.put("requestTimeoutMs", requestTimeoutMs);
         status.put("readPropertyMultipleFallbackCount", readPropertyMultipleFallbackCount.get());
@@ -442,7 +444,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             }
         }
         status.put("protocolMetrics", buildProtocolMetrics());
-        status.put("message", capabilityMessage());
+        status.put(CommonMapKeys.MESSAGE, capabilityMessage());
         return status;
     }
 
@@ -1000,7 +1002,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
      */
     private Map<String, Object> buildProtocolMetrics() {
         Map<String, Object> protocolMetrics = new LinkedHashMap<>();
-        protocolMetrics.put("configuredPointCount", configuredAddresses.size());
+        protocolMetrics.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         protocolMetrics.put("activeSubscriptionCount", subscriptionBindings.size());
         protocolMetrics.put("subscriptionRequestCount", subscriptionRequestCount.get());
         protocolMetrics.put("subscriptionCancelCount", subscriptionCancelCount.get());
@@ -1225,8 +1227,8 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
         BacnetAddress address = parseCommandAddress(params);
         BacnetReadPropertyResponse response = exchange(readPropertyRequest(address));
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("address", address.getCanonicalAddress());
-        result.put("value", response.getValue());
+        result.put(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
+        result.put(CommonMapKeys.VALUE, response.getValue());
         result.put("valueType", response.getValueType());
         return result;
     }
@@ -1241,7 +1243,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             BacnetAddress address = BacnetAddressParser.parse(addressText);
             BacnetReadPropertyResponse response = exchange(readPropertyRequest(address));
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("value", response.getValue());
+            item.put(CommonMapKeys.VALUE, response.getValue());
             item.put("valueType", response.getValueType());
             values.put(address.getCanonicalAddress(), item);
         }
@@ -1253,7 +1255,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
      */
     private Map<String, Object> executeWritePropertyCommand(Map<String, Object> params) throws Exception {
         BacnetAddress address = parseCommandAddress(params);
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("BACnet write_property command requires value");
         }
         BacnetWritePropertyRequest request = BacnetWritePropertyRequest.builder()
@@ -1261,7 +1263,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 .objectInstance(address.getInstanceNumber())
                 .propertyIdentifier(BacnetPropertyIdentifier.fromId(address.getPropertyIdentifierId()))
                 .arrayIndex(address.getArrayIndex())
-                .value(params.get("value"))
+                .value(params.get(CommonMapKeys.VALUE))
                 .valueType(resolveWriteValueType(null, address, params))
                 .priority(resolveWritePriority(null, params))
                 .invokeId(nextInvokeId())
@@ -1269,8 +1271,8 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
                 .build();
         exchange(request);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("address", address.getCanonicalAddress());
-        result.put("success", true);
+        result.put(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
+        result.put(CommonMapKeys.SUCCESS, true);
         result.put("valueType", request.getValueType());
         result.put("priority", request.getPriority());
         return result;
@@ -1393,8 +1395,8 @@ public class BacnetIpCollector extends ConnectionBackedCollector {
             }
             return result;
         }
-        if (params.containsKey("address")) {
-            return List.of(String.valueOf(params.get("address")));
+        if (params.containsKey(CommonMapKeys.ADDRESS)) {
+            return List.of(String.valueOf(params.get(CommonMapKeys.ADDRESS)));
         }
         throw new IllegalArgumentException("BACnet read_property_multiple command requires addresses");
     }

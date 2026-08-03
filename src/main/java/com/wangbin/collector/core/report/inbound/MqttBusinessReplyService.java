@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.inbound;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
@@ -57,7 +59,7 @@ public class MqttBusinessReplyService {
             JsonNode root = objectMapper.readTree(message.payload());
             Map<String, Object> data = cloudSubDeviceRegisterService.applyRegisterReply(root);
             log.info("子设备动态注册回执处理完成：主题={} registered={} total={}",
-                    message.topic(), data.get("registered"), data.get("total"));
+                    message.topic(), data.get("registered"), data.get(CommonMapKeys.TOTAL));
             return MqttBusinessReplyResult.success(method, data);
         } catch (Exception e) {
             log.warn("处理子设备动态注册回执失败：主题={} err={}", message.topic(), e.getMessage());

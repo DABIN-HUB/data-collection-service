@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.statistics;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -160,7 +162,7 @@ public class CollectionStatistics {
 
         public Map<String, Object> getStatistics() {
             Map<String, Object> stats = new HashMap<>();
-            stats.put("deviceId", deviceId);
+            stats.put(CommonMapKeys.DEVICE_ID, deviceId);
             stats.put("isRunning", isRunning);
             stats.put("runningDuration", isRunning ? System.currentTimeMillis() - startTime : 0);
             stats.put("totalExecutions", totalExecutions.get());
@@ -170,7 +172,7 @@ public class CollectionStatistics {
             stats.put("currentTaskPoints", currentTaskPoints);
             stats.put("averageExecutionTime", totalExecutions.get() > 0 ?
                     totalExecutionTime.get() / totalExecutions.get() : 0);
-            stats.put("successRate", totalExecutions.get() > 0 ?
+            stats.put(CommonMapKeys.SUCCESS_RATE, totalExecutions.get() > 0 ?
                     (successfulExecutions.get() * 100.0 / totalExecutions.get()) : 0);
             stats.put("lastExecutionTime", lastExecutionTime);
             return stats;

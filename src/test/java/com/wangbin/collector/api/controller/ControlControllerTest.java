@@ -1,7 +1,10 @@
 package com.wangbin.collector.api.controller;
 
+import com.wangbin.collector.api.controller.dto.BatchPointWriteResponse;
 import com.wangbin.collector.api.controller.dto.DeviceCommandRequest;
+import com.wangbin.collector.api.controller.dto.DeviceCommandResponse;
 import com.wangbin.collector.api.controller.dto.PointWriteRequest;
+import com.wangbin.collector.api.controller.dto.PointWriteResultResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
@@ -38,15 +41,14 @@ class ControlControllerTest {
         PointWriteRequest request = new PointWriteRequest();
         request.setValue(25);
 
-        ApiResult<Map<String, Object>> result = controller.writePoint("dev-1", "temperature", request);
+        ApiResult<PointWriteResultResponse> result = controller.writePoint("dev-1", "temperature", request);
 
         assertEquals(200, result.getCode());
-        assertEquals(true, result.getData().get("success"));
+        assertEquals(true, result.getData().getSuccess());
         verify(collectionManager).writePoint("dev-1", point, 25);
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void shouldWriteBatchPointsByReportField() {
         DataPoint point = point("p1", "temperature", "RW");
         point.setAdditionalConfig(Map.of("reportField", "temp_report"));
@@ -56,16 +58,14 @@ class ControlControllerTest {
         PointWriteRequest request = new PointWriteRequest();
         request.setValues(new LinkedHashMap<>(Map.of("temp_report", 25)));
 
-        ApiResult<Map<String, Object>> result = controller.writePoints("dev-1", request);
+        ApiResult<BatchPointWriteResponse> result = controller.writePoints("dev-1", request);
 
         assertEquals(200, result.getCode());
-        Map<String, Map<String, Object>> fields = (Map<String, Map<String, Object>>) result.getData().get("fields");
-        assertEquals(true, fields.get("temp_report").get("success"));
+        assertEquals(true, result.getData().getFields().get("temp_report").getSuccess());
         verify(collectionManager).writePoints(eq("dev-1"), anyMap());
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void shouldRejectReadOnlyPointBeforeProtocolWrite() {
         DataPoint point = point("p1", "temperature", "R");
         when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
@@ -73,11 +73,10 @@ class ControlControllerTest {
         PointWriteRequest request = new PointWriteRequest();
         request.setValues(new LinkedHashMap<>(Map.of("temperature", 25)));
 
-        ApiResult<Map<String, Object>> result = controller.writePoints("dev-1", request);
+        ApiResult<BatchPointWriteResponse> result = controller.writePoints("dev-1", request);
 
         assertEquals(1004, result.getCode());
-        Map<String, Map<String, Object>> fields = (Map<String, Map<String, Object>>) result.getData().get("fields");
-        assertEquals("point is not writable", fields.get("temperature").get("error"));
+        assertEquals("点位不可写", result.getData().getFields().get("temperature").getError());
         verify(collectionManager, never()).writePoints(eq("dev-1"), anyMap());
     }
 
@@ -89,10 +88,10 @@ class ControlControllerTest {
         when(collectionManager.executeCommand("dev-1", "browse", request.getParams()))
                 .thenReturn(Map.of("accepted", true));
 
-        ApiResult<Map<String, Object>> result = controller.executeCommand("dev-1", request);
+        ApiResult<DeviceCommandResponse> result = controller.executeCommand("dev-1", request);
 
         assertEquals(200, result.getCode());
-        assertTrue(((Map<?, ?>) result.getData().get("result")).containsKey("accepted"));
+        assertTrue(((Map<?, ?>) result.getData().getResult()).containsKey("accepted"));
         verify(collectionManager).executeCommand("dev-1", "browse", request.getParams());
     }
 

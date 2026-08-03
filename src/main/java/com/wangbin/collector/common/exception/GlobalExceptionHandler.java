@@ -1,5 +1,7 @@
 package com.wangbin.collector.common.exception;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
 import lombok.extern.slf4j.Slf4j;
@@ -42,8 +44,8 @@ public class GlobalExceptionHandler {
         result.setData(e.getData());
 
         // 添加额外信息
-        result.addExtra("deviceId", e.getDeviceId());
-        result.addExtra("pointId", e.getPointId());
+        result.addExtra(CommonMapKeys.DEVICE_ID, e.getDeviceId());
+        result.addExtra(CommonMapKeys.POINT_ID, e.getPointId());
         result.addExtra("dataQuality", e.getDataQuality().getCode());
 
         return result;

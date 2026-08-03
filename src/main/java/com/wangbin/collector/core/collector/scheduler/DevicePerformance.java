@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -173,7 +175,7 @@ class DevicePerformance {
 
     Map<String, Object> getStatistics() {
         Map<String, Object> stats = new ConcurrentHashMap<>();
-        stats.put("deviceId", deviceId);
+        stats.put(CommonMapKeys.DEVICE_ID, deviceId);
         stats.put("totalPoints", totalPoints.get());
         stats.put("successfulBatches", successfulBatches.get());
         stats.put("failedBatches", failedBatches.get());
@@ -181,7 +183,7 @@ class DevicePerformance {
                 totalExecutionTime.get() / successfulBatches.get() : 0);
         stats.put("currentBatchSize", currentBatchSize);
         stats.put("maxBatchSize", maxBatchSize);
-        stats.put("successRate", (successfulBatches.get() + failedBatches.get()) > 0 ?
+        stats.put(CommonMapKeys.SUCCESS_RATE, (successfulBatches.get() + failedBatches.get()) > 0 ?
                 successfulBatches.get() * 100.0 / (successfulBatches.get() + failedBatches.get()) : 0);
         stats.put("healthScore", calculateHealthScore());
         stats.put("failureRisk", predictFailureRisk());

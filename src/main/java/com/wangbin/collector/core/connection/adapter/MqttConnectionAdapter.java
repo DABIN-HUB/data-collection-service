@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
@@ -632,9 +634,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     private String buildAuthMessage() {
         Map<String, Object> authData = new java.util.HashMap<>();
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
-            authData.put("deviceId", deviceInfo.getDeviceId());
+            authData.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         }
-        authData.put("timestamp", System.currentTimeMillis());
+        authData.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         if (config.getProductKey() != null) {
             authData.put("productKey", config.getProductKey());
         }

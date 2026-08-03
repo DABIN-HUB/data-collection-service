@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.ads;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
@@ -304,20 +306,20 @@ public class AdsCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", isRuntimeSubscriptionSupported());
-        status.put("isConnected", isConnected());
-        status.put("configuredPointCount", configuredAddresses.size());
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, isRuntimeSubscriptionSupported());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
         status.put("activeSubscriptions", subscriptionHandles.size());
 
         DeviceConnection connection = getCurrentConnectionConfig();
         if (connection != null) {
-            status.put("host", connection.getHost());
-            status.put("port", connection.getPort());
+            status.put(CommonMapKeys.HOST, connection.getHost());
+            status.put(CommonMapKeys.PORT, connection.getPort());
             status.put("targetAmsNetId", firstNonBlank(
                     connection.getString("targetAmsNetId", null),
                     connection.getString("target-ams-net-id", null)));
@@ -334,7 +336,7 @@ public class AdsCollector extends ConnectionBackedCollector {
                     connection.getBool("loadSymbolAndDataTypeTables", null),
                     connection.getBool("load-symbol-and-data-type-tables", null),
                     Boolean.TRUE));
-            status.put("timeout", connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
+            status.put(CommonMapKeys.TIMEOUT, connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
         }
 
         if (connectionAdapter != null) {
@@ -604,7 +606,7 @@ public class AdsCollector extends ConnectionBackedCollector {
         Object value = readPoint(point);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
+        result.put(CommonMapKeys.VALUE, value);
         return result;
     }
 
@@ -613,15 +615,15 @@ public class AdsCollector extends ConnectionBackedCollector {
      */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         DataPoint point = resolveCommandPoint(params);
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
-        Object value = params.get("value");
+        Object value = params.get(CommonMapKeys.VALUE);
         boolean success = writePoint(point, value);
         Map<String, Object> result = new LinkedHashMap<>();
         populatePointMetadata(result, point);
-        result.put("value", value);
-        result.put("success", success);
+        result.put(CommonMapKeys.VALUE, value);
+        result.put(CommonMapKeys.SUCCESS, success);
         return result;
     }
 
@@ -639,10 +641,10 @@ public class AdsCollector extends ConnectionBackedCollector {
 
         String pointRef = firstNonBlank(
                 asText(params.get("pointRef")),
-                asText(params.get("pointId")),
-                asText(params.get("pointCode")),
-                asText(params.get("pointName")),
-                asText(params.get("field")),
+                asText(params.get(CommonMapKeys.POINT_ID)),
+                asText(params.get(CommonMapKeys.POINT_CODE)),
+                asText(params.get(CommonMapKeys.POINT_NAME)),
+                asText(params.get(CommonMapKeys.FIELD)),
                 asText(params.get("reportField"))
         );
         if (hasText(pointRef)) {
@@ -652,7 +654,7 @@ public class AdsCollector extends ConnectionBackedCollector {
             }
         }
 
-        String address = asText(params.get("address"));
+        String address = asText(params.get(CommonMapKeys.ADDRESS));
         if (hasText(address)) {
             DataPoint point = points.stream()
                     .filter(candidate -> candidate != null && hasText(candidate.getAddress())
@@ -697,11 +699,11 @@ public class AdsCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private void populatePointMetadata(Map<String, Object> target, DataPoint point) {
-        target.put("pointId", point.getPointId());
-        target.put("pointCode", point.getPointCode());
-        target.put("pointName", point.getPointName());
+        target.put(CommonMapKeys.POINT_ID, point.getPointId());
+        target.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        target.put(CommonMapKeys.POINT_NAME, point.getPointName());
         if (point.getAddress() != null) {
-            target.put("address", point.getAddress());
+            target.put(CommonMapKeys.ADDRESS, point.getAddress());
         }
     }
 

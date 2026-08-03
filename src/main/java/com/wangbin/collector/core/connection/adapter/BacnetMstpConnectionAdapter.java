@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.bacnet.client.BacnetMstpClient;
@@ -78,10 +80,10 @@ public class BacnetMstpConnectionAdapter extends AbstractConnectionAdapter<Bacne
         params.put("replyTimeoutMs", resolveReplyTimeoutMs());
         connectionParams.clear();
         connectionParams.putAll(params);
-        statistics.put("protocol", "BACNET_MSTP");
+        statistics.put(CommonMapKeys.PROTOCOL, "BACNET_MSTP");
         statistics.put("implemented", true);
-        statistics.put("transport", "MS/TP");
-        statistics.put("message", "BACnet MS/TP serial adapter connected");
+        statistics.put(CommonMapKeys.TRANSPORT, "MS/TP");
+        statistics.put(CommonMapKeys.MESSAGE, "BACnet MS/TP serial adapter connected");
         log.info("BACnet MS/TP 适配器 已连接, 设备={}, 串口={}, localMac={}, 远端MAC={}, 波特率={}",
                 getDeviceId(), resolveSerialPort(), resolveLocalMacAddress(), remoteMacAddress, resolveBaudRate());
         notifyReconnectListener();

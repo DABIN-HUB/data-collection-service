@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.base;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
@@ -207,7 +209,7 @@ protected volatile boolean connected = false;
             Object processedValue = convertData(point, rawValue);
 
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", deviceInfo.getDeviceId());
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
             enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
@@ -285,7 +287,7 @@ protected volatile boolean connected = false;
                     Object processedValue = convertData(point, rawValue);
 
                     ProcessContext context = new ProcessContext();
-                    context.addAttribute("deviceId", deviceInfo.getDeviceId());
+                    context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
                     ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
                     enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
@@ -343,7 +345,7 @@ protected volatile boolean connected = false;
 
             // 数据质量检查
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", deviceInfo.getDeviceId());
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, value);
 
             // 如果数据无效，不允许写入
@@ -404,7 +406,7 @@ protected volatile boolean connected = false;
 
                 // 数据质量检查
                 ProcessContext context = new ProcessContext();
-                context.addAttribute("deviceId", deviceInfo.getDeviceId());
+                context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
                 ProcessResult processResult = dataQualityProcessor.process(context, point, value);
 
                 // 如果数据无效，不允许写入
@@ -546,20 +548,20 @@ protected volatile boolean connected = false;
     public Map<String, Object> getDeviceStatus() throws CollectorException {
         try {
             Map<String, Object> status = new HashMap<>();
-            status.put("deviceId", deviceInfo.getDeviceId());
+            status.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             status.put("deviceName", deviceInfo.getDeviceName());
-            status.put("connected", connected);
-            status.put("connectionStatus", connectionStatus);
+            status.put(CommonMapKeys.CONNECTED, connected);
+            status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
             status.put("lastConnectTime", lastConnectTime);
-            status.put("lastActivityTime", lastActivityTime);
-            status.put("subscribedPoints", subscribedPointMap.size());
+            status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+            status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
             status.put("requestedSubscriptionMode", requestedSubscriptionMode.name());
             status.put("actualSubscriptionMode", actualSubscriptionMode.name());
             status.put("subscriptionDegradedReason", subscriptionDegradedReason);
             status.put("subscriptionFallbackPointCount", subscriptionFallbackPointCount);
-            status.put("totalReadCount", totalReadCount.get());
-            status.put("totalWriteCount", totalWriteCount.get());
-            status.put("totalErrorCount", totalErrorCount.get());
+            status.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+            status.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+            status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
 
             // 获取设备特定状态
             Map<String, Object> deviceSpecificStatus = doGetDeviceStatus();
@@ -623,9 +625,9 @@ protected volatile boolean connected = false;
     @Override
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalReadCount", totalReadCount.get());
-        stats.put("totalWriteCount", totalWriteCount.get());
-        stats.put("totalErrorCount", totalErrorCount.get());
+        stats.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+        stats.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+        stats.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         stats.put("totalBytesRead", totalBytesRead.get());
         stats.put("totalBytesWrite", totalBytesWrite.get());
 
@@ -636,9 +638,9 @@ protected volatile boolean connected = false;
 
         stats.put("averageReadTime", avgReadTime);
         stats.put("averageWriteTime", avgWriteTime);
-        stats.put("lastActivityTime", lastActivityTime);
+        stats.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
         stats.put("connectionDuration", connected ? System.currentTimeMillis() - lastConnectTime : 0);
-        stats.put("subscribedPoints", subscribedPointMap.size());
+        stats.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
 
         return stats;
     }
@@ -929,7 +931,7 @@ protected volatile boolean connected = false;
             Object processedValue = convertData(point, rawValue);
 
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", resolvedDeviceId);
+            context.addAttribute(CommonMapKeys.DEVICE_ID, resolvedDeviceId);
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
             enrichTelemetryMetadata(processResult, rawValue, processedValue, collectTime, "PUSH");
             lastProcessResults.put(point.getPointId(), processResult);

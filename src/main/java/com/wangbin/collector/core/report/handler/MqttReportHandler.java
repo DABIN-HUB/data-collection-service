@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.handler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
@@ -1417,7 +1419,7 @@ public class MqttReportHandler extends AbstractReportHandler {
             for (Map.Entry<String, MqttClientHolder> entry : clients.entrySet()) {
                 MqttAsyncClient client = entry.getValue().client();
                 Map<String, Object> clientInfo = new HashMap<>();
-                clientInfo.put("connected", client != null && client.isConnected());
+                clientInfo.put(CommonMapKeys.CONNECTED, client != null && client.isConnected());
                 clientInfo.put("serverURI", client != null ? client.getServerURI() : null);
                 clientStatus.put(entry.getKey(), clientInfo);
             }

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.downlink;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -172,8 +174,8 @@ public class MqttDownlinkService {
             } catch (Exception e) {
                 plan.fieldResults.forEach((field, fieldResult) -> {
                     if (Boolean.TRUE.equals(fieldResult.get("mapped"))) {
-                        fieldResult.put("success", false);
-                        fieldResult.put("error", e.getMessage());
+                        fieldResult.put(CommonMapKeys.SUCCESS, false);
+                        fieldResult.put(CommonMapKeys.ERROR, e.getMessage());
                     }
                 });
             }
@@ -217,7 +219,7 @@ public class MqttDownlinkService {
         try {
             Object result = collectionManager.executeCommand(deviceId, command, params);
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("command", command);
+            data.put(CommonMapKeys.COMMAND, command);
             if (StringUtils.hasText(requestedCommand) && !Objects.equals(requestedCommand, command)) {
                 data.put("requestedCommand", requestedCommand);
                 data.put("mappingApplied", true);
@@ -252,7 +254,7 @@ public class MqttDownlinkService {
         log.info("收到 MQTT 配置推送，设备={}, 配置类型={}", deviceId, configType);
         try {
             Map<String, Object> data = executeConfigPush(configType, deviceId);
-            data.put("topic", topic);
+            data.put(CommonMapKeys.TOPIC, topic);
             return MqttDownlinkResult.success(messageId, method, deviceId, data);
         } catch (Exception e) {
             return MqttDownlinkResult.of(messageId, method, deviceId, 500,
@@ -269,7 +271,7 @@ public class MqttDownlinkService {
         Map<String, Object> data = cloudOtaService != null
                 ? cloudOtaService.createTask(deviceId, params)
                 : new LinkedHashMap<>();
-        data.put("topic", topic);
+        data.put(CommonMapKeys.TOPIC, topic);
         return MqttDownlinkResult.success(messageId, method, deviceId, data);
     }
 
@@ -282,7 +284,7 @@ public class MqttDownlinkService {
         Map<String, Object> data;
         if (cloudTopologyService == null) {
             data = new LinkedHashMap<>();
-            data.put("topic", topic);
+            data.put(CommonMapKeys.TOPIC, topic);
             data.put("gateway", gateway.valid() ? gateway.key() : null);
         } else {
             data = cloudTopologyService.applyChange(gateway, params);
@@ -354,7 +356,7 @@ public class MqttDownlinkService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("configType", configType);
         if (StringUtils.hasText(deviceId)) {
-            data.put("deviceId", deviceId);
+            data.put(CommonMapKeys.DEVICE_ID, deviceId);
         }
 
         if ("all".equals(configType)) {
@@ -362,18 +364,18 @@ public class MqttDownlinkService {
                 configSyncService.notifyConfigUpdate("device", deviceId);
                 configSyncService.notifyConfigUpdate("points", deviceId);
                 configSyncService.notifyConfigUpdate("connection", deviceId);
-                data.put("mode", "device-bundle");
+                data.put(CommonMapKeys.MODE, "device-bundle");
                 data.put("triggeredTypes", List.of("device", "points", "connection"));
             } else {
                 configSyncService.triggerManualSync();
-                data.put("mode", "global-sync");
+                data.put(CommonMapKeys.MODE, "global-sync");
                 data.put("triggeredTypes", List.of("all"));
             }
             return data;
         }
 
         configSyncService.notifyConfigUpdate(configType, deviceId);
-        data.put("mode", "incremental");
+        data.put(CommonMapKeys.MODE, "incremental");
         data.put("triggeredTypes", List.of(configType));
         return data;
     }
@@ -445,23 +447,23 @@ public class MqttDownlinkService {
             DataPoint point = resolvePoint(points, field);
             if (point == null) {
                 fieldResult.put("mapped", false);
-                fieldResult.put("success", false);
-                fieldResult.put("error", "point not found");
+                fieldResult.put(CommonMapKeys.SUCCESS, false);
+                fieldResult.put(CommonMapKeys.ERROR, "point not found");
                 continue;
             }
 
             fieldResult.put("mapped", true);
-            fieldResult.put("pointId", point.getPointId());
-            fieldResult.put("pointCode", point.getPointCode());
+            fieldResult.put(CommonMapKeys.POINT_ID, point.getPointId());
+            fieldResult.put(CommonMapKeys.POINT_CODE, point.getPointCode());
             if (!point.isWritable()) {
-                fieldResult.put("success", false);
-                fieldResult.put("error", "point is not writable");
+                fieldResult.put(CommonMapKeys.SUCCESS, false);
+                fieldResult.put(CommonMapKeys.ERROR, "point is not writable");
                 continue;
             }
 
             plan.pointsToWrite.put(point, entry.getValue());
-            fieldResult.put("success", false);
-            fieldResult.put("error", "pending");
+            fieldResult.put(CommonMapKeys.SUCCESS, false);
+            fieldResult.put(CommonMapKeys.ERROR, "pending");
         }
         return plan;
     }
@@ -478,11 +480,11 @@ public class MqttDownlinkService {
                 continue;
             }
             Boolean success = resolveWriteSuccess(writeResults, point);
-            fieldResult.put("success", Boolean.TRUE.equals(success));
+            fieldResult.put(CommonMapKeys.SUCCESS, Boolean.TRUE.equals(success));
             if (Boolean.TRUE.equals(success)) {
-                fieldResult.remove("error");
+                fieldResult.remove(CommonMapKeys.ERROR);
             } else {
-                fieldResult.put("error", "protocol write returned false");
+                fieldResult.put(CommonMapKeys.ERROR, "protocol write returned false");
             }
         }
     }
@@ -722,8 +724,8 @@ public class MqttDownlinkService {
          */
         private String resolveField(DataPoint point) {
             for (Map.Entry<String, Map<String, Object>> entry : fieldResults.entrySet()) {
-                Object pointId = entry.getValue().get("pointId");
-                Object pointCode = entry.getValue().get("pointCode");
+                Object pointId = entry.getValue().get(CommonMapKeys.POINT_ID);
+                Object pointCode = entry.getValue().get(CommonMapKeys.POINT_CODE);
                 if (Objects.equals(point.getPointId(), pointId) || Objects.equals(point.getPointCode(), pointCode)) {
                     return entry.getKey();
                 }
@@ -739,7 +741,7 @@ public class MqttDownlinkService {
                 return 400;
             }
             long success = fieldResults.values().stream()
-                    .filter(field -> Boolean.TRUE.equals(field.get("success")))
+                    .filter(field -> Boolean.TRUE.equals(field.get(CommonMapKeys.SUCCESS)))
                     .count();
             if (success == fieldResults.size()) {
                 return 0;
