@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -302,19 +304,19 @@ public class LocalCacheManager extends AbstractCacheManager {
             CacheData<?> cacheData = cache.getIfPresent(entry.getKey());
             if (cacheData != null) {
                 Map<String, Object> info = new HashMap<>();
-                info.put("key", entry.getKey());
-                info.put("cacheKey", cacheData.getKey());
-                info.put("cacheTime", cacheData.getCacheTime());
-                info.put("expireTime", cacheData.getExpireTime());
-                info.put("remainingTime", cacheData.getRemainingTime());
-                info.put("cacheLevel", cacheData.getCacheLevel());
+                info.put(CacheMetricKeys.KEY, entry.getKey());
+                info.put(CacheMetricKeys.CACHE_KEY, cacheData.getKey());
+                info.put(CacheMetricKeys.CACHE_TIME, cacheData.getCacheTime());
+                info.put(CacheMetricKeys.EXPIRE_TIME, cacheData.getExpireTime());
+                info.put(CacheMetricKeys.REMAINING_TIME, cacheData.getRemainingTime());
+                info.put(CacheMetricKeys.CACHE_LEVEL, cacheData.getCacheLevel());
                 info.put(CommonMapKeys.QUALITY, cacheData.getQuality());
-                info.put("expired", cacheData.isExpired());
+                info.put(CacheMetricKeys.EXPIRED, cacheData.isExpired());
 
                 Object value = cacheData.getValue();
                 if (value != null) {
-                    info.put("valueType", value.getClass().getName());
-                    info.put("valueSize", getValueSize(value));
+                    info.put(CacheMetricKeys.VALUE_TYPE, value.getClass().getName());
+                    info.put(CacheMetricKeys.VALUE_SIZE, getValueSize(value));
                 }
 
                 entries.add(info);

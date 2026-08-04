@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
@@ -285,12 +287,12 @@ public class RedisCacheManager extends AbstractCacheManager {
                     redisTemplate.getConnectionFactory()).getConnection()) {
                 Properties info = connection.info();
                 assert info != null;
-                stats.put("redisVersion", info.getProperty("redis_version"));
-                stats.put("usedMemory", info.getProperty("used_memory_human"));
-                stats.put("connectedClients", info.getProperty("connected_clients"));
-                stats.put("totalCommandsProcessed", info.getProperty("total_commands_processed"));
-                stats.put("keyspaceHits", info.getProperty("keyspace_hits"));
-                stats.put("keyspaceMisses", info.getProperty("keyspace_misses"));
+                stats.put(CacheMetricKeys.REDIS_VERSION, info.getProperty("redis_version"));
+                stats.put(CacheMetricKeys.USED_MEMORY, info.getProperty("used_memory_human"));
+                stats.put(CacheMetricKeys.CONNECTED_CLIENTS, info.getProperty("connected_clients"));
+                stats.put(CacheMetricKeys.TOTAL_COMMANDS_PROCESSED, info.getProperty("total_commands_processed"));
+                stats.put(CacheMetricKeys.KEYSPACE_HITS, info.getProperty("keyspace_hits"));
+                stats.put(CacheMetricKeys.KEYSPACE_MISSES, info.getProperty("keyspace_misses"));
 
                 // 计算命中率
                 long hits = Long.parseLong(info.getProperty("keyspace_hits", "0"));
@@ -299,8 +301,8 @@ public class RedisCacheManager extends AbstractCacheManager {
                 double hitRate = total > 0 ? (double) hits / total * 100 : 0.0;
                 double missRate = total > 0 ? (double) misses / total * 100 : 0.0;
 
-                stats.put("redisHitRate", String.format("%.2f%%", hitRate));
-                stats.put("redisMissRate", String.format("%.2f%%", missRate));
+                stats.put(CacheMetricKeys.REDIS_HIT_RATE, String.format("%.2f%%", hitRate));
+                stats.put(CacheMetricKeys.REDIS_MISS_RATE, String.format("%.2f%%", missRate));
             }
 
             return stats;

@@ -126,14 +126,14 @@ public class ApiResult<T> {
     public void setPageInfo(long total, int page, int size) {
         Map<String, Object> pageInfo = new HashMap<>();
         pageInfo.put(CommonMapKeys.TOTAL, total);
-        pageInfo.put("page", page);
-        pageInfo.put("size", size);
-        pageInfo.put("pages", (total + size - 1) / size);
+        pageInfo.put(CommonMapKeys.PAGE, page);
+        pageInfo.put(CommonMapKeys.SIZE, size);
+        pageInfo.put(CommonMapKeys.PAGES, (total + size - 1) / size);
 
         if (this.extra == null) {
             this.extra = new HashMap<>();
         }
-        this.extra.put("pageInfo", pageInfo);
+        this.extra.put(CommonMapKeys.PAGE_INFO, pageInfo);
     }
 
     /**
@@ -143,7 +143,7 @@ public class ApiResult<T> {
         if (this.extra == null) {
             this.extra = new HashMap<>();
         }
-        this.extra.put("requestId", requestId);
+        this.extra.put(CommonMapKeys.REQUEST_ID, requestId);
     }
 
     /**
@@ -153,6 +153,6 @@ public class ApiResult<T> {
         if (this.extra == null) {
             this.extra = new HashMap<>();
         }
-        this.extra.put("processTime", processTime);
+        this.extra.put(CommonMapKeys.PROCESS_TIME, processTime);
     }
 }

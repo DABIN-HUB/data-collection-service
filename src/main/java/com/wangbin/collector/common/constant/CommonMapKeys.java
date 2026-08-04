@@ -306,6 +306,36 @@ public final class CommonMapKeys {
     public static final String SUCCESS_RATE = "successRate";
 
     /**
+     * 分页页码字段。
+     */
+    public static final String PAGE = "page";
+
+    /**
+     * 分页每页大小字段。
+     */
+    public static final String SIZE = "size";
+
+    /**
+     * 分页总页数字段。
+     */
+    public static final String PAGES = "pages";
+
+    /**
+     * 分页信息扩展字段。
+     */
+    public static final String PAGE_INFO = "pageInfo";
+
+    /**
+     * 请求唯一标识字段。
+     */
+    public static final String REQUEST_ID = "requestId";
+
+    /**
+     * 请求处理耗时字段。
+     */
+    public static final String PROCESS_TIME = "processTime";
+
+    /**
      * 创建工具类实例没有业务意义。
      */
     private CommonMapKeys() {

@@ -2,6 +2,7 @@ package com.wangbin.collector.core.config.protocol;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -161,7 +162,7 @@ public class ProtocolSchemaServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertNotNull(s7ControllerType.getDescription());
-        assertTrue(s7ControllerType.getDescription().contains("absolute addresses only"));
+        assertTrue(s7ControllerType.getDescription().contains("绝对地址"));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
 
@@ -254,6 +255,25 @@ public class ProtocolSchemaServiceTest {
     }
 
     @Test
+    void shouldKeepCriticalDynamicFormFieldsForRepresentativeProtocols() {
+        assertSchemaFields("MODBUS_TCP",
+                List.of("host", "port", "slaveId", "byteOrder", "maxRegistersPerRequest", "plc4xConnectionString"),
+                List.of("additionalConfig.registerType", "additionalConfig.byteOrder",
+                        "additionalConfig.wordOrder", "additionalConfig.stringLength"));
+        assertSchemaFields("SIEMENS_S7",
+                List.of("host", "port", "rack", "slot", "controllerType", "plc4xConnectionString"),
+                List.of("additionalConfig.subscriptionMode", "additionalConfig.stringLength",
+                        "additionalConfig.arraySize"));        assertSchemaFields("OPC_UA",
+                List.of("url", "endpointUrl", "host", "port", "authType", "securityPolicy",
+                        "requestTimeoutMs", "plc4xConnectionString"),
+                List.of("additionalConfig.nodeId", "additionalConfig.identifierType",
+                        "additionalConfig.samplingInterval", "additionalConfig.arraySize", "additionalConfig.subscribe"));
+        assertSchemaFields("BACNET_IP",
+                List.of("host", "port", "remoteDeviceInstance", "localDeviceInstance",
+                        "covEnabled", "readPropertyMultipleEnabled"),
+                List.of("additionalConfig.driverDataType", "additionalConfig.writePriority", "additionalConfig.covMode"));
+    }
+    @Test
     void shouldExposeFieldStorageMetadata() {
         ProtocolSchema modbus = service.getSchema("MODBUS_TCP").orElseThrow();
         ProtocolFieldConfig host = modbus.getConnectionFields().stream()
@@ -269,6 +289,25 @@ public class ProtocolSchemaServiceTest {
         assertEquals("extJson", connectionString.getStorage());
     }
 
+    private void assertSchemaFields(String protocol,
+                                    Collection<String> connectionFields,
+                                    Collection<String> pointFields) {
+        ProtocolSchema schema = service.getSchema(protocol).orElseThrow();
+        assertFieldNames(protocol + " 连接字段", schema.getConnectionFields(), connectionFields);
+        assertFieldNames(protocol + " 点位字段", schema.getPointFields(), pointFields);
+    }
+
+    private void assertFieldNames(String scope,
+                                  List<ProtocolFieldConfig> fields,
+                                  Collection<String> expectedNames) {
+        Set<String> names = fields.stream()
+                .map(ProtocolFieldConfig::getName)
+                .collect(Collectors.toSet());
+        assertTrue(names.containsAll(expectedNames), () -> scope + " 缺少字段: "
+                + expectedNames.stream()
+                .filter(name -> !names.contains(name))
+                .toList());
+    }
     private List<String> expectedDataTypes(String protocol) {
         return switch (protocol) {
             case "MODBUS_TCP", "MODBUS_RTU" -> ProtocolDescriptorRegistry.MODBUS_DATA_TYPES;

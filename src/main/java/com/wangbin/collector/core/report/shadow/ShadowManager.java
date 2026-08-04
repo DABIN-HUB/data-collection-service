@@ -43,15 +43,15 @@ public class ShadowManager {
     private static final String DEFAULT_SHADOW_KEY_PREFIX = "collector:shadow:";
     private static final String DEFAULT_DIRTY_SET_KEY = "collector:shadow:dirty";
     private static final Set<String> STABLE_VALUE_METADATA_KEYS = Set.of(
-            "address",
-            "objectType",
-            "instanceNumber",
-            "propertyIdentifier",
-            "processingMode",
-            "bacnetValueType",
-            "bacnetComplexValue",
-            "bacnetValueMetadata",
-            "source"
+            CommonMapKeys.ADDRESS,
+            ShadowDocumentKeys.OBJECT_TYPE,
+            ShadowDocumentKeys.INSTANCE_NUMBER,
+            ShadowDocumentKeys.PROPERTY_IDENTIFIER,
+            ShadowDocumentKeys.PROCESSING_MODE,
+            ShadowDocumentKeys.BACNET_VALUE_TYPE,
+            ShadowDocumentKeys.BACNET_COMPLEX_VALUE,
+            ShadowDocumentKeys.BACNET_VALUE_METADATA,
+            CommonMapKeys.SOURCE
     );
     private static final String SHADOW_CAS_SCRIPT = """
             local current = redis.call('GET', KEYS[1])
@@ -229,21 +229,21 @@ public class ShadowManager {
     private EventInfo evaluateProcessResultEvent(ProcessResult result) {
         Map<String, Object> metadata = result.getMetadata();
         if (metadata != null) {
-            Object eventFlag = metadata.get("eventTriggered");
+            Object eventFlag = metadata.get(ShadowDocumentKeys.EVENT_TRIGGERED);
             if (eventFlag instanceof Boolean bool && bool) {
                 return new EventInfo(
-                        metadataToString(metadata, "ruleId"),
-                        metadataToString(metadata, "ruleName"),
-                        String.valueOf(metadata.getOrDefault("eventLevel", "WARNING")),
-                        String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
-                        String.valueOf(metadata.getOrDefault("eventType", "EVENT")));
+                        metadataToString(metadata, CommonMapKeys.RULE_ID),
+                        metadataToString(metadata, CommonMapKeys.RULE_NAME),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_LEVEL, "WARNING")),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_MESSAGE, result.getMessage())),
+                        String.valueOf(metadata.getOrDefault(CommonMapKeys.EVENT_TYPE, "EVENT")));
             }
             if (metadata.get(CommonMapKeys.EVENT_TYPE) != null) {
                 return new EventInfo(
-                        metadataToString(metadata, "ruleId"),
-                        metadataToString(metadata, "ruleName"),
-                        String.valueOf(metadata.getOrDefault("eventLevel", "INFO")),
-                        String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
+                        metadataToString(metadata, CommonMapKeys.RULE_ID),
+                        metadataToString(metadata, CommonMapKeys.RULE_NAME),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_LEVEL, "INFO")),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_MESSAGE, result.getMessage())),
                         String.valueOf(metadata.get(CommonMapKeys.EVENT_TYPE)));
             }
         }
@@ -389,9 +389,9 @@ public class ShadowManager {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
-        result.put("version", shadow.currentVersion());
+        result.put(ShadowDocumentKeys.VERSION, shadow.currentVersion());
         result.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
-        result.put("delta", toValueMap(shadow.deltaSnapshot()));
+        result.put(ShadowDocumentKeys.DELTA, toValueMap(shadow.deltaSnapshot()));
         result.put(CommonMapKeys.METADATA, toMetaMap(shadow.deltaSnapshot()));
         return result;
     }
@@ -473,7 +473,7 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, casExpectedVersion, "desired_update");
+            persistDocumentCas(deviceId, document, casExpectedVersion, ShadowDocumentKeys.DESIRED_UPDATE_ACTION);
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
@@ -509,7 +509,7 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
+            persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_CLEAR_ACTION);
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
@@ -535,7 +535,7 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "desired_update");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_UPDATE_ACTION);
                 shadows.put(deviceId, shadow);
                 return document;
             } catch (ShadowVersionConflictException e) {
@@ -570,7 +570,7 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_CLEAR_ACTION);
                 shadows.put(deviceId, shadow);
                 return document;
             } catch (ShadowVersionConflictException e) {
@@ -620,7 +620,7 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "reported_update");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.REPORTED_UPDATE_ACTION);
                 shadows.put(deviceId, shadow);
                 return result;
             } catch (ShadowVersionConflictException e) {
@@ -658,23 +658,23 @@ public class ShadowManager {
     private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
-        doc.put("version", shadow.currentVersion());
+        doc.put(ShadowDocumentKeys.VERSION, shadow.currentVersion());
         doc.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
-        doc.put("createdAt", shadow.getCreatedAt());
-        doc.put("lastReportAt", shadow.getLastReportAt());
-        doc.put("lastWindowStart", shadow.getLastWindowStart());
-        doc.put("lastWindowEnd", shadow.getLastWindowEnd());
+        doc.put(ShadowDocumentKeys.CREATED_AT, shadow.getCreatedAt());
+        doc.put(ShadowDocumentKeys.LAST_REPORT_AT, shadow.getLastReportAt());
+        doc.put(ShadowDocumentKeys.LAST_WINDOW_START, shadow.getLastWindowStart());
+        doc.put(ShadowDocumentKeys.LAST_WINDOW_END, shadow.getLastWindowEnd());
 
         Map<String, Object> state = new LinkedHashMap<>();
-        state.put("reported", toValueMap(shadow.snapshot()));
-        state.put("desired", toValueMap(shadow.desiredSnapshot()));
-        state.put("delta", toValueMap(shadow.deltaSnapshot()));
-        state.put("lastReported", new LinkedHashMap<>(shadow.snapshotLastReportedValues()));
-        doc.put("state", state);
+        state.put(ShadowDocumentKeys.REPORTED, toValueMap(shadow.snapshot()));
+        state.put(ShadowDocumentKeys.DESIRED, toValueMap(shadow.desiredSnapshot()));
+        state.put(ShadowDocumentKeys.DELTA, toValueMap(shadow.deltaSnapshot()));
+        state.put(ShadowDocumentKeys.LAST_REPORTED, new LinkedHashMap<>(shadow.snapshotLastReportedValues()));
+        doc.put(ShadowDocumentKeys.STATE, state);
 
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("reported", toMetaMap(shadow.snapshot()));
-        metadata.put("desired", toMetaMap(shadow.desiredSnapshot()));
+        metadata.put(ShadowDocumentKeys.REPORTED, toMetaMap(shadow.snapshot()));
+        metadata.put(ShadowDocumentKeys.DESIRED, toMetaMap(shadow.desiredSnapshot()));
         doc.put(CommonMapKeys.METADATA, metadata);
 
         return doc;
@@ -710,7 +710,7 @@ public class ShadowManager {
             }
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put(CommonMapKeys.TIMESTAMP, meta.getTimestamp());
-            metadata.put("updatedAt", meta.getUpdatedAt());
+            metadata.put(ShadowDocumentKeys.UPDATED_AT, meta.getUpdatedAt());
             if (meta.getQuality() != null) {
                 metadata.put(CommonMapKeys.QUALITY, meta.getQuality());
             }
@@ -718,7 +718,7 @@ public class ShadowManager {
                 metadata.put(CommonMapKeys.SOURCE, meta.getSource());
             }
             if (meta.getMetadata() != null && !meta.getMetadata().isEmpty()) {
-                metadata.put("valueMetadata", meta.getMetadata());
+                metadata.put(ShadowDocumentKeys.VALUE_METADATA, meta.getMetadata());
             }
             values.put(field, metadata);
         });
@@ -740,7 +740,7 @@ public class ShadowManager {
             String key = shadowKey(deviceId);
             String payload = objectMapper.writeValueAsString(document);
             long ttlMs = shadowTtlMillis();
-            long nextVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(expectedVersion);
+            long nextVersion = Optional.ofNullable(asLong(document.get(ShadowDocumentKeys.VERSION))).orElse(expectedVersion);
             Object result = stringRedisTemplate.execute((RedisCallback<Object>) connection -> connection.eval(
                     SHADOW_CAS_SCRIPT.getBytes(StandardCharsets.UTF_8),
                     ReturnType.MULTI,
@@ -790,7 +790,7 @@ public class ShadowManager {
             return;
         }
         long ttlMs = shadowTtlMillis();
-        long baseVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(0L) - 1;
+        long baseVersion = Optional.ofNullable(asLong(document.get(ShadowDocumentKeys.VERSION))).orElse(0L) - 1;
         try {
             if (stringRedisTemplate != null && objectMapper != null) {
                 String payload = objectMapper.writeValueAsString(document);
@@ -799,7 +799,7 @@ public class ShadowManager {
                 } else {
                     stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload);
                 }
-                if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+                if (shouldRecordHistory(action, baseVersion, asLong(document.get(ShadowDocumentKeys.VERSION)))) {
                     appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
                 }
                 return;
@@ -812,7 +812,7 @@ public class ShadowManager {
             } else {
                 redisTemplate.opsForValue().set(shadowKey(deviceId), document);
             }
-            if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+            if (shouldRecordHistory(action, baseVersion, asLong(document.get(ShadowDocumentKeys.VERSION)))) {
                 appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
             }
         } catch (Exception e) {
@@ -864,11 +864,11 @@ public class ShadowManager {
     private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
         String deviceId = asString(document.get(CommonMapKeys.DEVICE_ID));
         DeviceShadow shadow = new DeviceShadow(deviceId != null ? deviceId : fallbackDeviceId);
-        Long version = asLong(document.get("version"));
+        Long version = asLong(document.get(ShadowDocumentKeys.VERSION));
         if (version != null) {
             shadow.restoreVersion(version);
         }
-        Long createdAt = asLong(document.get("createdAt"));
+        Long createdAt = asLong(document.get(ShadowDocumentKeys.CREATED_AT));
         if (createdAt != null) {
             shadow.setCreatedAt(createdAt);
         }
@@ -876,21 +876,21 @@ public class ShadowManager {
         if (updatedAt != null) {
             shadow.setUpdatedAt(updatedAt);
         }
-        Long lastReportAt = asLong(document.get("lastReportAt"));
+        Long lastReportAt = asLong(document.get(ShadowDocumentKeys.LAST_REPORT_AT));
         if (lastReportAt != null) {
             shadow.setLastReportAt(lastReportAt);
         }
-        Long lastWindowStart = asLong(document.get("lastWindowStart"));
-        Long lastWindowEnd = asLong(document.get("lastWindowEnd"));
+        Long lastWindowStart = asLong(document.get(ShadowDocumentKeys.LAST_WINDOW_START));
+        Long lastWindowEnd = asLong(document.get(ShadowDocumentKeys.LAST_WINDOW_END));
         if (lastWindowStart != null && lastWindowEnd != null) {
             shadow.setLastWindow(lastWindowStart, lastWindowEnd);
         }
 
-        Map<String, Object> state = toMap(document.get("state"));
+        Map<String, Object> state = toMap(document.get(ShadowDocumentKeys.STATE));
         Map<String, Object> metadata = toMap(document.get(CommonMapKeys.METADATA));
-        restoreValues(shadow, state.get("reported"), toMap(metadata.get("reported")), true);
-        restoreValues(shadow, state.get("desired"), toMap(metadata.get("desired")), false);
-        shadow.restoreLastReportedValues(toMap(state.get("lastReported")));
+        restoreValues(shadow, state.get(ShadowDocumentKeys.REPORTED), toMap(metadata.get(ShadowDocumentKeys.REPORTED)), true);
+        restoreValues(shadow, state.get(ShadowDocumentKeys.DESIRED), toMap(metadata.get(ShadowDocumentKeys.DESIRED)), false);
+        shadow.restoreLastReportedValues(toMap(state.get(ShadowDocumentKeys.LAST_REPORTED)));
         return shadow;
     }
 
@@ -905,7 +905,7 @@ public class ShadowManager {
         values.forEach((field, value) -> {
             Map<String, Object> metaMap = toMap(metadata.get(field));
             long timestamp = Optional.ofNullable(asLong(metaMap.get(CommonMapKeys.TIMESTAMP))).orElse(System.currentTimeMillis());
-            long updatedAt = Optional.ofNullable(asLong(metaMap.get("updatedAt"))).orElse(timestamp);
+            long updatedAt = Optional.ofNullable(asLong(metaMap.get(ShadowDocumentKeys.UPDATED_AT))).orElse(timestamp);
             String quality = asString(metaMap.get(CommonMapKeys.QUALITY));
             String source = asString(metaMap.get(CommonMapKeys.SOURCE));
             ValueMeta meta = new ValueMeta(
@@ -914,7 +914,7 @@ public class ShadowManager {
                     quality,
                     source,
                     updatedAt,
-                    toMap(metaMap.get("valueMetadata"))
+                    toMap(metaMap.get(ShadowDocumentKeys.VALUE_METADATA))
             );
             if (reported) {
                 shadow.restoreReported(field, meta);
@@ -1152,7 +1152,7 @@ public class ShadowManager {
         if (!shadowHistoryEnabled() || action == null || action.isBlank() || nextVersion == null) {
             return false;
         }
-        if (!"desired_update".equals(action) && !"desired_clear".equals(action)) {
+        if (!ShadowDocumentKeys.DESIRED_UPDATE_ACTION.equals(action) && !ShadowDocumentKeys.DESIRED_CLEAR_ACTION.equals(action)) {
             return false;
         }
         return nextVersion != baseVersion;
@@ -1199,11 +1199,11 @@ public class ShadowManager {
         try {
             Map<String, Object> history = new LinkedHashMap<>();
             history.put(CommonMapKeys.DEVICE_ID, deviceId);
-            history.put("action", action);
-            history.put("baseVersion", baseVersion);
-            history.put("version", document.get("version"));
+            history.put(ShadowDocumentKeys.ACTION, action);
+            history.put(ShadowDocumentKeys.BASE_VERSION, baseVersion);
+            history.put(ShadowDocumentKeys.VERSION, document.get(ShadowDocumentKeys.VERSION));
             history.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
-            history.put("document", document);
+            history.put(ShadowDocumentKeys.DOCUMENT, document);
 
             String key = historyKey(deviceId);
             stringRedisTemplate.opsForList().leftPush(key, objectMapper.writeValueAsString(history));

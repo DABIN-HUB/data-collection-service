@@ -2,12 +2,14 @@ package com.wangbin.collector.storage.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
+import com.wangbin.collector.storage.constant.TelemetryStorageJsonKeys;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,9 +40,9 @@ public class TimeSeriesService {
             ProcessResultMetadataKeys.PROCESSED_VALUE,
             ProcessResultMetadataKeys.RAW_BYTES,
             ProcessResultMetadataKeys.COLLECT_TIME,
-            "rawJson",
-            "processedJson",
-            "metadataJson"
+            TelemetryStorageJsonKeys.RAW_JSON,
+            TelemetryStorageJsonKeys.PROCESSED_JSON,
+            TelemetryStorageJsonKeys.METADATA_JSON
     );
 
     private final DataRepository dataRepository;
@@ -193,15 +195,15 @@ public class TimeSeriesService {
                                              Map<String, Object> metadata,
                                              long eventTs) {
         Map<String, Object> raw = new LinkedHashMap<>();
-        mergeMap(raw, metadata.get("rawJson"));
-        putIfAbsent(raw, "address", point != null ? point.getAddress() : null);
-        putIfAbsent(raw, "dataType", point != null ? point.getDataType() : null);
-        putIfAbsent(raw, "rawValue", firstNonNull(metadata.get(ProcessResultMetadataKeys.RAW_VALUE),
+        mergeMap(raw, metadata.get(TelemetryStorageJsonKeys.RAW_JSON));
+        putIfAbsent(raw, CommonMapKeys.ADDRESS, point != null ? point.getAddress() : null);
+        putIfAbsent(raw, TelemetryStorageJsonKeys.DATA_TYPE, point != null ? point.getDataType() : null);
+        putIfAbsent(raw, TelemetryStorageJsonKeys.RAW_VALUE, firstNonNull(metadata.get(ProcessResultMetadataKeys.RAW_VALUE),
                 processResult != null ? processResult.getRawValue() : null));
-        putIfAbsent(raw, "rawBytes", metadata.get(ProcessResultMetadataKeys.RAW_BYTES));
-        putIfAbsent(raw, "protocol", protocolType != null ? protocolType : "UNKNOWN");
-        putIfAbsent(raw, "unitId", point != null ? point.getUnitId() : null);
-        putIfAbsent(raw, "collectTime", resolveCollectTime(metadata, eventTs));
+        putIfAbsent(raw, TelemetryStorageJsonKeys.RAW_BYTES, metadata.get(ProcessResultMetadataKeys.RAW_BYTES));
+        putIfAbsent(raw, CommonMapKeys.PROTOCOL, protocolType != null ? protocolType : "UNKNOWN");
+        putIfAbsent(raw, TelemetryStorageJsonKeys.UNIT_ID, point != null ? point.getUnitId() : null);
+        putIfAbsent(raw, TelemetryStorageJsonKeys.COLLECT_TIME, resolveCollectTime(metadata, eventTs));
         return raw;
     }
 
@@ -214,13 +216,13 @@ public class TimeSeriesService {
                                                    Map<String, Object> metadata,
                                                    long eventTs) {
         Map<String, Object> processed = new LinkedHashMap<>();
-        mergeMap(processed, metadata.get("processedJson"));
-        putIfAbsent(processed, "pointCode", point != null ? point.getPointCode() : null);
-        putIfAbsent(processed, "pointName", point != null ? point.getPointName() : null);
-        putIfAbsent(processed, "value", firstNonNull(metadata.get(ProcessResultMetadataKeys.PROCESSED_VALUE), finalValue));
-        putIfAbsent(processed, "dataType", resolveProcessedDataType(point, finalValue));
-        putIfAbsent(processed, "quality", resolveQualityText(processResult));
-        putIfAbsent(processed, "timestamp", eventTs);
+        mergeMap(processed, metadata.get(TelemetryStorageJsonKeys.PROCESSED_JSON));
+        putIfAbsent(processed, CommonMapKeys.POINT_CODE, point != null ? point.getPointCode() : null);
+        putIfAbsent(processed, CommonMapKeys.POINT_NAME, point != null ? point.getPointName() : null);
+        putIfAbsent(processed, CommonMapKeys.VALUE, firstNonNull(metadata.get(ProcessResultMetadataKeys.PROCESSED_VALUE), finalValue));
+        putIfAbsent(processed, TelemetryStorageJsonKeys.DATA_TYPE, resolveProcessedDataType(point, finalValue));
+        putIfAbsent(processed, CommonMapKeys.QUALITY, resolveQualityText(processResult));
+        putIfAbsent(processed, CommonMapKeys.TIMESTAMP, eventTs);
         return processed;
     }
 
@@ -233,22 +235,22 @@ public class TimeSeriesService {
                                                   ProcessResult processResult,
                                                   Map<String, Object> metadata) {
         Map<String, Object> result = new LinkedHashMap<>();
-        mergeMap(result, metadata.get("metadataJson"));
-        putIfAbsent(result, "deviceId", firstNonNull(deviceId, point != null ? point.getDeviceId() : null));
-        putIfAbsent(result, "deviceName", firstNonNull(point != null ? point.getDeviceName() : null, metadata.get("deviceName")));
-        putIfAbsent(result, "pointId", point != null ? point.getPointId() : null);
-        putIfAbsent(result, "protocolType", protocolType != null ? protocolType : "UNKNOWN");
-        putIfAbsent(result, "collectorId", firstNonNull(metadata.get(ProcessResultMetadataKeys.COLLECTOR_ID), additionalConfig(point, "collectorId")));
-        putIfAbsent(result, "batchId", firstNonNull(metadata.get(ProcessResultMetadataKeys.BATCH_ID), additionalConfig(point, "batchId")));
-        putIfAbsent(result, "groupId", firstNonNull(point != null ? point.getGroupId() : null, metadata.get(ProcessResultMetadataKeys.GROUP_ID)));
-        putIfAbsent(result, "source", firstNonNull(metadata.get(ProcessResultMetadataKeys.SOURCE), "POLLING"));
-        putIfAbsent(result, "collectionInterval", resolveCollectionInterval(deviceId, point));
-        putIfAbsent(result, "processingVersion", firstNonNull(metadata.get(ProcessResultMetadataKeys.PROCESSING_VERSION), additionalConfig(point, "processingVersion")));
-        putIfAbsent(result, "reportEnabled", point != null ? point.isReportEnabled() : null);
-        putIfAbsent(result, "alarmEnabled", point != null && point.getAlarmEnabled() != null ? point.getAlarmEnabled() == 1 : null);
+        mergeMap(result, metadata.get(TelemetryStorageJsonKeys.METADATA_JSON));
+        putIfAbsent(result, CommonMapKeys.DEVICE_ID, firstNonNull(deviceId, point != null ? point.getDeviceId() : null));
+        putIfAbsent(result, CommonMapKeys.DEVICE_NAME, firstNonNull(point != null ? point.getDeviceName() : null, metadata.get(CommonMapKeys.DEVICE_NAME)));
+        putIfAbsent(result, CommonMapKeys.POINT_ID, point != null ? point.getPointId() : null);
+        putIfAbsent(result, TelemetryStorageJsonKeys.PROTOCOL_TYPE, protocolType != null ? protocolType : "UNKNOWN");
+        putIfAbsent(result, CommonMapKeys.COLLECTOR_ID, firstNonNull(metadata.get(ProcessResultMetadataKeys.COLLECTOR_ID), additionalConfig(point, CommonMapKeys.COLLECTOR_ID)));
+        putIfAbsent(result, CommonMapKeys.BATCH_ID, firstNonNull(metadata.get(ProcessResultMetadataKeys.BATCH_ID), additionalConfig(point, CommonMapKeys.BATCH_ID)));
+        putIfAbsent(result, CommonMapKeys.GROUP_ID, firstNonNull(point != null ? point.getGroupId() : null, metadata.get(ProcessResultMetadataKeys.GROUP_ID)));
+        putIfAbsent(result, CommonMapKeys.SOURCE, firstNonNull(metadata.get(ProcessResultMetadataKeys.SOURCE), "POLLING"));
+        putIfAbsent(result, TelemetryStorageJsonKeys.COLLECTION_INTERVAL, resolveCollectionInterval(deviceId, point));
+        putIfAbsent(result, CommonMapKeys.PROCESSING_VERSION, firstNonNull(metadata.get(ProcessResultMetadataKeys.PROCESSING_VERSION), additionalConfig(point, CommonMapKeys.PROCESSING_VERSION)));
+        putIfAbsent(result, TelemetryStorageJsonKeys.REPORT_ENABLED, point != null ? point.isReportEnabled() : null);
+        putIfAbsent(result, TelemetryStorageJsonKeys.ALARM_ENABLED, point != null && point.getAlarmEnabled() != null ? point.getAlarmEnabled() == 1 : null);
         copyCustomMetadata(result, metadata);
         if (processResult != null && processResult.getProcessorName() != null) {
-            putIfAbsent(result, "processorName", processResult.getProcessorName());
+            putIfAbsent(result, TelemetryStorageJsonKeys.PROCESSOR_NAME, processResult.getProcessorName());
         }
         return result;
     }

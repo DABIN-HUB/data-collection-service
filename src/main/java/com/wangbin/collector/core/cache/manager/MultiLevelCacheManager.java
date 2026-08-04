@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.google.common.util.concurrent.Striped;
@@ -581,16 +583,16 @@ public class MultiLevelCacheManager implements CacheManager {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
         stats.put(CommonMapKeys.ENABLED, enabled);
-        stats.put("writeThrough", writeThrough);
-        stats.put("readThrough", readThrough);
-        stats.put("cacheAside", cacheAside);
-        stats.put("maxLevel", maxLevel);
-        stats.put("totalReads", totalReads.get());
-        stats.put("totalWrites", totalWrites.get());
-        stats.put("totalDeletes", totalDeletes.get());
-        stats.put("level1Hits", level1Hits.get());
-        stats.put("level2Hits", level2Hits.get());
-        stats.put("totalMisses", totalMisses.get());
+        stats.put(CacheMetricKeys.WRITE_THROUGH, writeThrough);
+        stats.put(CacheMetricKeys.READ_THROUGH, readThrough);
+        stats.put(CacheMetricKeys.CACHE_ASIDE, cacheAside);
+        stats.put(CacheMetricKeys.MAX_LEVEL, maxLevel);
+        stats.put(CacheMetricKeys.TOTAL_READS, totalReads.get());
+        stats.put(CacheMetricKeys.TOTAL_WRITES, totalWrites.get());
+        stats.put(CacheMetricKeys.TOTAL_DELETES, totalDeletes.get());
+        stats.put(CacheMetricKeys.LEVEL1_HITS, level1Hits.get());
+        stats.put(CacheMetricKeys.LEVEL2_HITS, level2Hits.get());
+        stats.put(CacheMetricKeys.TOTAL_MISSES, totalMisses.get());
 
         long totalHits = level1Hits.get() + level2Hits.get();
         long totalAccess = totalReads.get();
@@ -599,17 +601,17 @@ public class MultiLevelCacheManager implements CacheManager {
         double level2HitRate = totalHits > 0 ? (double) level2Hits.get() / totalHits * 100 : 0.0;
         double missRate = totalAccess > 0 ? (double) totalMisses.get() / totalAccess * 100 : 0.0;
 
-        stats.put("totalHitRate", String.format("%.2f%%", totalHitRate));
-        stats.put("level1HitRate", String.format("%.2f%%", level1HitRate));
-        stats.put("level2HitRate", String.format("%.2f%%", level2HitRate));
-        stats.put("missRate", String.format("%.2f%%", missRate));
-        stats.put("totalAccess", totalAccess);
+        stats.put(CacheMetricKeys.TOTAL_HIT_RATE, String.format("%.2f%%", totalHitRate));
+        stats.put(CacheMetricKeys.LEVEL1_HIT_RATE, String.format("%.2f%%", level1HitRate));
+        stats.put(CacheMetricKeys.LEVEL2_HIT_RATE, String.format("%.2f%%", level2HitRate));
+        stats.put(CacheMetricKeys.MISS_RATE, String.format("%.2f%%", missRate));
+        stats.put(CacheMetricKeys.TOTAL_ACCESS, totalAccess);
 
         Map<String, Map<String, Object>> levelStats = new HashMap<>();
         for (CacheManager manager : cacheManagers) {
             levelStats.put(manager.getCacheType(), manager.getStatistics());
         }
-        stats.put("levelStatistics", levelStats);
+        stats.put(CacheMetricKeys.LEVEL_STATISTICS, levelStats);
         return stats;
     }
 
@@ -825,15 +827,15 @@ public class MultiLevelCacheManager implements CacheManager {
     public Map<String, Object> getHealthStatus() {
         Map<String, Object> health = new HashMap<>();
         health.put(CommonMapKeys.ENABLED, enabled);
-        health.put("totalLevels", cacheManagers.size());
-        health.put("maxLevel", maxLevel);
+        health.put(CacheMetricKeys.TOTAL_LEVELS, cacheManagers.size());
+        health.put(CacheMetricKeys.MAX_LEVEL, maxLevel);
 
         List<Map<String, Object>> levelHealth = new ArrayList<>();
         for (CacheManager manager : cacheManagers) {
             Map<String, Object> levelStatus = new HashMap<>();
             levelStatus.put(CommonMapKeys.TYPE, manager.getCacheType());
-            levelStatus.put("level", manager.getCacheLevel());
-            levelStatus.put("size", manager.size());
+            levelStatus.put(CacheMetricKeys.LEVEL, manager.getCacheLevel());
+            levelStatus.put(CacheMetricKeys.SIZE, manager.size());
 
             try {
                 if (manager instanceof LocalCacheManager) {
@@ -857,9 +859,9 @@ public class MultiLevelCacheManager implements CacheManager {
             levelHealth.add(levelStatus);
         }
 
-        health.put("levels", levelHealth);
+        health.put(CacheMetricKeys.LEVELS, levelHealth);
         boolean allHealthy = levelHealth.stream().allMatch(level -> "HEALTHY".equals(level.get(CommonMapKeys.STATUS)));
-        health.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
+        health.put(CacheMetricKeys.OVERALL_STATUS, allHealthy ? "HEALTHY" : "DEGRADED");
         return health;
     }
 
@@ -867,17 +869,17 @@ public class MultiLevelCacheManager implements CacheManager {
         Map<String, Object> stats = getStatistics();
         StringBuilder report = new StringBuilder();
         report.append("=== 多级缓存性能报告 ===\n");
-        report.append("总访问次数: ").append(stats.get("totalAccess")).append("\n");
-        report.append("总命中率: ").append(stats.get("totalHitRate")).append("\n");
-        report.append("一级缓存命中率: ").append(stats.get("level1HitRate")).append("\n");
-        report.append("二级缓存命中率: ").append(stats.get("level2HitRate")).append("\n");
-        report.append("未命中率: ").append(stats.get("missRate")).append("\n");
-        report.append("总写入次数: ").append(stats.get("totalWrites")).append("\n");
-        report.append("总删除次数: ").append(stats.get("totalDeletes")).append("\n");
+        report.append("总访问次数: ").append(stats.get(CacheMetricKeys.TOTAL_ACCESS)).append("\n");
+        report.append("总命中率: ").append(stats.get(CacheMetricKeys.TOTAL_HIT_RATE)).append("\n");
+        report.append("一级缓存命中率: ").append(stats.get(CacheMetricKeys.LEVEL1_HIT_RATE)).append("\n");
+        report.append("二级缓存命中率: ").append(stats.get(CacheMetricKeys.LEVEL2_HIT_RATE)).append("\n");
+        report.append("未命中率: ").append(stats.get(CacheMetricKeys.MISS_RATE)).append("\n");
+        report.append("总写入次数: ").append(stats.get(CacheMetricKeys.TOTAL_WRITES)).append("\n");
+        report.append("总删除次数: ").append(stats.get(CacheMetricKeys.TOTAL_DELETES)).append("\n");
 
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> levelStats =
-                (Map<String, Map<String, Object>>) stats.get("levelStatistics");
+                (Map<String, Map<String, Object>>) stats.get(CacheMetricKeys.LEVEL_STATISTICS);
         if (levelStats != null) {
             report.append("\n=== 各级缓存详情 ===\n");
             for (Map.Entry<String, Map<String, Object>> entry : levelStats.entrySet()) {

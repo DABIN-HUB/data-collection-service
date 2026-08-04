@@ -14,15 +14,10 @@ import com.wangbin.collector.core.collector.protocol.iec.Iec104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.Iec61850Collector;
 import com.wangbin.collector.core.collector.protocol.iec101.Iec101Collector;
 import com.wangbin.collector.core.collector.protocol.knx.KnxNetIpCollector;
-import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
-import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
 import com.wangbin.collector.core.collector.protocol.mc.McCollector;
 import com.wangbin.collector.core.collector.protocol.fins.OmronFinsCollector;
 import com.wangbin.collector.core.collector.protocol.mqtt.MqttCollector;
 import com.wangbin.collector.core.collector.protocol.opc.OpcDaCollector;
-import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
-import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
-import com.wangbin.collector.core.collector.protocol.s7.S7Collector;
 import com.wangbin.collector.core.collector.protocol.snmp.SnmpCollector;
 import com.wangbin.collector.core.collector.protocol.websocket.WebSocketCollector;
 import org.springframework.stereotype.Component;
@@ -66,7 +61,11 @@ public class ProtocolDescriptorRegistry {
      * 创建当前组件实例。
      */
     public ProtocolDescriptorRegistry() {
-        this(List.of(new ModbusProtocolDescriptorProvider()));
+        this(List.of(
+                new ModbusProtocolDescriptorProvider(),
+                new S7ProtocolDescriptorProvider(),
+                new OpcUaProtocolDescriptorProvider()
+        ));
     }
 
     /**
@@ -76,52 +75,6 @@ public class ProtocolDescriptorRegistry {
      */
     public ProtocolDescriptorRegistry(List<ProtocolDescriptorProvider> providers) {
         registerProviders(providers);
-        registerPrimary(descriptor("SIEMENS_S7", "Siemens S7", "PLC4X-backed Siemens S7 read/write collector.",
-                List.of("S7"), S7Collector.class, "SIEMENS_S7", 102, ProtocolAddressingMode.MIXED,
-                true, true, true,
-                List.of("DB1.DBX0.0", "DB1.DBW0", "DB1.DBD4", "%DB1:4:REAL", "%DB1.DBX0.0:BOOL", "I0.0", "Q0.0", "M10.0"),
-                fields(
-                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
-                                "PLC IP address. Used together with port/rack/slot/controllerType when plc4xConnectionString is empty."),
-                        field("port", "number", "Port", false, "102", null, "connection",
-                                "S7 TCP port. Leave empty to use the default 102."),
-                        field("rack", "number", "Rack", false, "0", null, "protocol",
-                                "Remote rack used to build the generated PLC4X S7 connection string."),
-                        field("slot", "number", "Slot", false, "1", null, "protocol",
-                                "Remote slot used to build the generated PLC4X S7 connection string."),
-                        field("controllerType", "select", "Controller type", false, "S7_1200",
-                                List.of("S7_300", "S7_400", "S7_1200", "S7_1500", "LOGO"), "protocol",
-                                "Pick the real PLC family. For S7-1200/S7-1500 this collector reads absolute addresses only, so DB optimized block access must be disabled on the PLC side."),
-                        field("pduSize", "number", "PDU size", false, "1024", null, "advanced",
-                                "Optional PLC4X S7 tuning for negotiated PDU size. Leave empty unless you need compatibility tuning."),
-                        field("maxFieldsPerRequest", "number", "Max fields per request", false, "64", null, "advanced",
-                                "Collector-side batch cap for one PLC4X read/write request. Reduce it when a PLC or gateway rejects large mixed batches."),
-                        field("subscriptionEnabled", "select", "Enable subscription", false, "",
-                                List.of("true", "false"), "advanced",
-                                "Current S7 collector supports cyclic subscription as well as MODE/SYS/USR/ALM event subscriptions when points are configured as subscription/event mode."),
-                        field("localTsap", "number", "Local TSAP", false, "", null, "advanced",
-                                "Optional PLC4X TSAP override for installations that require explicit PG/OP routing parameters."),
-                        field("remoteTsap", "number", "Remote TSAP", false, "", null, "advanced",
-                                "Optional PLC4X TSAP override for installations that require explicit PG/OP routing parameters."),
-                        field("localDeviceGroup", "select", "Local device group", false, "",
-                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced",
-                                "Optional PLC4X local device group override used with TSAP-based routing."),
-                        field("remoteDeviceGroup", "select", "Remote device group", false, "",
-                                List.of("PG_OR_PC", "OS", "OTHERS"), "advanced",
-                                "Optional PLC4X remote device group override used with TSAP-based routing."),
-                        field("ping", "boolean", "Enable PLC4X ping", false, "false",
-                                List.of("true", "false"), "advanced",
-                                "Enable PLC4X driver ping/keepalive behavior when the remote route benefits from periodic reachability checks."),
-                        field("pingTime", "number", "Ping interval (s)", false, "", null, "advanced",
-                                "Ping interval in seconds when ping=true."),
-                        field("retryTime", "number", "Retry time (s)", false, "", null, "advanced",
-                                "PLC4X driver reconnect retry delay in seconds."),
-                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced",
-                                "Advanced override. When set, the generated host/port/rack/slot/controllerType fields are no longer the source of truth."),
-                        field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
-                                "Collector read timeout for PLC4X request futures."),
-                        field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
-                                "Fallback protocol timeout used when readTimeout is empty."))));
         registerPrimary(descriptor("BACNET_IP", "BACnet/IP", "BACnet/IP building automation protocol collector.",
                 List.of("BACNET", "BACNETIP", "BACNET/IP"), BacnetIpCollector.class, "BACNET_IP", 47808, ProtocolAddressingMode.MIXED,
                 true, true, true,
@@ -385,23 +338,6 @@ public class ProtocolDescriptorRegistry {
                         field("domain", "string", "Windows domain", false, "", null, "security"),
                         field("requestTimeout", "number", "Request timeout (ms)", false, "5000", null, "advanced"),
                         field("updateRate", "number", "Subscription refresh interval (ms)", false, "1000", null, "advanced"))));
-        registerPrimary(descriptor("OPC_UA", "OPC UA", "PLC4X-backed OPC Unified Architecture collector.",
-                List.of("OPCUA"), Plc4xOpcUaCollector.class, "OPC_UA", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
-                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001", "ns=3;i=1001;REAL"),
-                opcUaFields()));
-        registerPrimary(descriptor("OPC_UA_PLC4X", "OPC UA (PLC4X Alias)",
-                "Legacy alias for the PLC4X OPC UA collector kept for backward compatibility.",
-                List.of("OPCUA_PLC4X"), Plc4xOpcUaCollector.class, "OPC_UA_PLC4X", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
-                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001;REAL"),
-                opcUaFields()));
-        registerPrimary(descriptor("OPC_UA_MILO", "OPC UA（Milo 实验驱动）",
-                "使用 Eclipse Milo 的独立 OPC UA 客户端，需单独完成实服契约测试后再用于生产。",
-                List.of("OPCUA_MILO"), OpcUaCollector.class, "OPC_UA_MILO", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
-                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001"),
-                opcUaMiloFields()));
         registerPrimary(descriptor("SNMP", "SNMP", "SNMP polling protocol.",
                 List.of("SNMP_V1", "SNMP_V2C", "SNMP_V3"), SnmpCollector.class, "SNMP", 161, ProtocolAddressingMode.NUMERIC,
                 true, true, true,
@@ -1420,64 +1356,6 @@ public class ProtocolDescriptorRegistry {
     /**
      * 执行当前业务逻辑。
      */
-    private List<ProtocolFieldConfig> opcUaFields() {
-        return fields(
-                field("url", "string", "Endpoint URL", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
-                field("endpointUrl", "string", "Endpoint URL alias", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
-                field("endpoint", "string", "Endpoint alias", false, "opc.tcp://127.0.0.1:4840", null, "connection"),
-                field("host", "string", "Host", false, "127.0.0.1", null, "connection"),
-                field("port", "number", "Port", false, "4840", null, "connection"),
-                field("discovery", "boolean", "Use discovery endpoint", false, "false",
-                        List.of("true", "false"), "protocol"),
-                field("authType", "select", "Authentication type", false, "ANONYMOUS",
-                        List.of("ANONYMOUS", "USERNAME", "CERT"), "security"),
-                field("securityPolicy", "select", "Security policy", false, "NONE",
-                        List.of("NONE", "Basic128Rsa15", "Basic256", "Basic256Sha256",
-                                "Aes128_Sha256_RsaOaep", "Aes256_Sha256_RsaPss"),
-                        "security"),
-                field("messageSecurity", "select", "Message security", false, "NONE",
-                        List.of("NONE", "SIGN", "SIGN_ENCRYPT"), "security"),
-                field("securityMode", "select", "Security mode alias", false, "NONE",
-                        List.of("NONE", "Sign", "SignAndEncrypt"), "security"),
-                conditional("username", "string", "Username", false, "", null, "security", "authType=USERNAME"),
-                field("password", "password", "Password", false, "", null, "security"),
-                field("authParams", "object", "Authentication params alias", false, "{}", null, "security"),
-                field("keyStoreFile", "string", "Client key store file", false, "", null, "security"),
-                field("keyStoreType", "string", "Client key store type", false, "pkcs12", null, "security"),
-                field("keyStorePassword", "password", "Client key store password", false, "", null, "security"),
-                conditional("clientCertPath", "string", "Client certificate alias", false, "", null,
-                        "security", "authType=CERT or securityPolicy!=NONE"),
-                field("clientCertPassword", "password", "Client certificate password alias", false, "", null, "security"),
-                field("trustStoreFile", "string", "Trust store file", false, "", null, "security"),
-                field("trustStoreType", "string", "Trust store type", false, "pkcs12", null, "security"),
-                field("trustStorePassword", "password", "Trust store password", false, "", null, "security"),
-                field("serverCertificateFile", "string", "Pinned server certificate file", false, "", null, "security"),
-                field("endpointHost", "string", "Endpoint host override", false, "", null, "advanced"),
-                field("endpointPort", "number", "Endpoint port override", false, "", null, "advanced"),
-                field("channelLifetime", "number", "Secure channel lifetime (ms)", false, "3600000", null, "advanced"),
-                field("sessionTimeout", "number", "Session timeout (ms)", false, "120000", null, "advanced"),
-                field("negotiationTimeout", "number", "Negotiation timeout (ms)", false, "5000", null, "advanced"),
-                field("connectTimeoutMs", "number", "Connect timeout alias (ms)", false, "5000", null, "advanced"),
-                field("connectTimeout", "number", "Connect timeout alias (ms)", false, "5000", null, "advanced"),
-                field("requestTimeout", "number", "Request timeout (ms)", false, "5000", null, "advanced"),
-                field("requestTimeoutMs", "number", "Request timeout alias (ms)", false, "5000", null, "advanced"),
-                field("subscriptionInterval", "number", "Subscription interval (ms)", false, "1000", null, "advanced"),
-                field("maxFieldsPerRequest", "number", "Max fields per request", false, "100", null, "advanced"),
-                field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"));
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private List<ProtocolFieldConfig> opcUaMiloFields() {
-        return opcUaFields().stream()
-                .filter(field -> !"plc4xConnectionString".equals(field.getName()))
-                .toList();
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
     List<ProtocolFieldConfig> fields(ProtocolFieldConfig... fields) {
         return Arrays.asList(fields);
     }
@@ -1512,7 +1390,7 @@ public class ProtocolDescriptorRegistry {
     /**
      * 执行当前业务逻辑。
      */
-    private ProtocolFieldConfig conditional(String name,
+    ProtocolFieldConfig conditional(String name,
                                             String type,
                                             String label,
                                             boolean required,
@@ -1526,7 +1404,7 @@ public class ProtocolDescriptorRegistry {
     /**
      * 执行当前业务逻辑。
      */
-    private ProtocolFieldConfig conditional(String name,
+    ProtocolFieldConfig conditional(String name,
                                             String type,
                                             String label,
                                             boolean required,

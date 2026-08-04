@@ -1,5 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,16 +22,16 @@ public class CacheMonitorService {
     public CacheMetricsSnapshot getCacheMetrics() {
         Map<String, Object> stats = multiLevelCacheManager.getStatistics();
         return CacheMetricsSnapshot.builder()
-                .totalReads(longValue(stats, "totalReads"))
-                .totalWrites(longValue(stats, "totalWrites"))
-                .totalDeletes(longValue(stats, "totalDeletes"))
-                .totalMisses(longValue(stats, "totalMisses"))
-                .totalAccess(longValue(stats, "totalAccess"))
-                .totalHitRate(percentValue(stats, "totalHitRate"))
-                .level1HitRate(percentValue(stats, "level1HitRate"))
-                .level2HitRate(percentValue(stats, "level2HitRate"))
-                .missRate(percentValue(stats, "missRate"))
-                .levelStatistics(levelStats(stats.get("levelStatistics")))
+                .totalReads(longValue(stats, CacheMetricKeys.TOTAL_READS))
+                .totalWrites(longValue(stats, CacheMetricKeys.TOTAL_WRITES))
+                .totalDeletes(longValue(stats, CacheMetricKeys.TOTAL_DELETES))
+                .totalMisses(longValue(stats, CacheMetricKeys.TOTAL_MISSES))
+                .totalAccess(longValue(stats, CacheMetricKeys.TOTAL_ACCESS))
+                .totalHitRate(percentValue(stats, CacheMetricKeys.TOTAL_HIT_RATE))
+                .level1HitRate(percentValue(stats, CacheMetricKeys.LEVEL1_HIT_RATE))
+                .level2HitRate(percentValue(stats, CacheMetricKeys.LEVEL2_HIT_RATE))
+                .missRate(percentValue(stats, CacheMetricKeys.MISS_RATE))
+                .levelStatistics(levelStats(stats.get(CacheMetricKeys.LEVEL_STATISTICS)))
                 .health(cacheHealth())
                 .build();
     }
@@ -42,8 +44,8 @@ public class CacheMonitorService {
             return new LinkedHashMap<>(multiLevelCacheManager.getHealthStatus());
         } catch (RuntimeException exception) {
             Map<String, Object> health = new LinkedHashMap<>();
-            health.put("overallStatus", "UNKNOWN");
-            health.put("levels", Collections.emptyList());
+            health.put(CacheMetricKeys.OVERALL_STATUS, "UNKNOWN");
+            health.put(CacheMetricKeys.LEVELS, Collections.emptyList());
             return health;
         }
     }

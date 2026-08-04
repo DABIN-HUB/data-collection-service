@@ -1,9 +1,11 @@
 package com.wangbin.collector.api.application;
 
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.collector.scheduler.PerformanceStatsSnapshot;
 import com.wangbin.collector.monitor.metrics.CacheMetricsSnapshot;
 import com.wangbin.collector.monitor.metrics.CacheMonitorService;
+import com.wangbin.collector.monitor.metrics.CloudReportMetricKeys;
 import com.wangbin.collector.monitor.metrics.CloudReportMonitorService;
 import com.wangbin.collector.monitor.metrics.ConsoleRuntimeStatusSnapshot;
 import com.wangbin.collector.monitor.metrics.DeviceStatusSnapshot;
@@ -203,7 +205,7 @@ public class ConsoleRuntimeStatusApplicationService {
             return component("report-health", "云端上报健康", RuntimeHealthLevel.UNKNOWN,
                     "云端上报状态不可用", Map.of());
         }
-        Object rawStatus = report.get("status");
+        Object rawStatus = report.get(CommonMapKeys.STATUS);
         String status = rawStatus == null ? "UNKNOWN" : String.valueOf(rawStatus);
         RuntimeHealthLevel level = switch (status) {
             case "OK", "READY" -> RuntimeHealthLevel.OK;
@@ -212,12 +214,12 @@ public class ConsoleRuntimeStatusApplicationService {
             case "DISABLED" -> RuntimeHealthLevel.DISABLED;
             default -> RuntimeHealthLevel.UNKNOWN;
         };
-        Object statusText = report.get("statusText");
+        Object statusText = report.get(CloudReportMetricKeys.STATUS_TEXT);
         String message = statusText == null ? "云端上报状态未知" : String.valueOf(statusText);
         if (level == RuntimeHealthLevel.WARN || level == RuntimeHealthLevel.ERROR) {
             risks.add(message);
         }
-        return component("report-health", "云端上报健康", level, message, Map.of("status", status));
+        return component("report-health", "云端上报健康", level, message, Map.of(CommonMapKeys.STATUS, status));
     }
 
     /**

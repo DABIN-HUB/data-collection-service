@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
@@ -510,16 +512,16 @@ public abstract class AbstractCacheManager implements CacheManager {
         synchronized (statsLock) {
             Map<String, Object> stats = new HashMap<>();
 
-            stats.put("cacheType", cacheType);
-            stats.put("cacheLevel", cacheLevel);
-            stats.put("initialized", initialized);
-            stats.put("totalPuts", totalPuts.get());
-            stats.put("totalGets", totalGets.get());
-            stats.put("totalHits", totalHits.get());
-            stats.put("totalMisses", totalMisses.get());
-            stats.put("totalDeletes", totalDeletes.get());
-            stats.put("totalExpires", totalExpires.get());
-            stats.put("totalErrors", totalErrors.get());
+            stats.put(CacheMetricKeys.CACHE_TYPE, cacheType);
+            stats.put(CacheMetricKeys.CACHE_LEVEL, cacheLevel);
+            stats.put(CacheMetricKeys.INITIALIZED, initialized);
+            stats.put(CacheMetricKeys.TOTAL_PUTS, totalPuts.get());
+            stats.put(CacheMetricKeys.TOTAL_GETS, totalGets.get());
+            stats.put(CacheMetricKeys.TOTAL_HITS, totalHits.get());
+            stats.put(CacheMetricKeys.TOTAL_MISSES, totalMisses.get());
+            stats.put(CacheMetricKeys.TOTAL_DELETES, totalDeletes.get());
+            stats.put(CacheMetricKeys.TOTAL_EXPIRES, totalExpires.get());
+            stats.put(CacheMetricKeys.TOTAL_ERRORS, totalErrors.get());
 
             long totalAccess = totalGets.get();
             double hitRate = totalAccess > 0 ?
@@ -527,9 +529,9 @@ public abstract class AbstractCacheManager implements CacheManager {
             double missRate = totalAccess > 0 ?
                     (double) totalMisses.get() / totalAccess * 100 : 0.0;
 
-            stats.put("hitRate", String.format("%.2f%%", hitRate));
-            stats.put("missRate", String.format("%.2f%%", missRate));
-            stats.put("cacheSize", size());
+            stats.put(CacheMetricKeys.HIT_RATE, String.format("%.2f%%", hitRate));
+            stats.put(CacheMetricKeys.MISS_RATE, String.format("%.2f%%", missRate));
+            stats.put(CacheMetricKeys.CACHE_SIZE, size());
 
             // 添加具体实现的统计信息
             Map<String, Object> implStats = getImplementationStatistics();
@@ -671,17 +673,17 @@ public abstract class AbstractCacheManager implements CacheManager {
         Map<String, Object> stats = getStatistics();
         StringBuilder report = new StringBuilder();
         report.append("=== 缓存统计报告 ===\n");
-        report.append("缓存类型: ").append(stats.get("cacheType")).append("\n");
-        report.append("缓存层级: ").append(stats.get("cacheLevel")).append("\n");
-        report.append("缓存大小: ").append(stats.get("cacheSize")).append("\n");
-        report.append("总写入次数: ").append(stats.get("totalPuts")).append("\n");
-        report.append("总读取次数: ").append(stats.get("totalGets")).append("\n");
-        report.append("命中次数: ").append(stats.get("totalHits")).append("\n");
-        report.append("未命中次数: ").append(stats.get("totalMisses")).append("\n");
-        report.append("命中率: ").append(stats.get("hitRate")).append("\n");
-        report.append("未命中率: ").append(stats.get("missRate")).append("\n");
-        report.append("总删除次数: ").append(stats.get("totalDeletes")).append("\n");
-        report.append("总错误次数: ").append(stats.get("totalErrors")).append("\n");
+        report.append("缓存类型: ").append(stats.get(CacheMetricKeys.CACHE_TYPE)).append("\n");
+        report.append("缓存层级: ").append(stats.get(CacheMetricKeys.CACHE_LEVEL)).append("\n");
+        report.append("缓存大小: ").append(stats.get(CacheMetricKeys.CACHE_SIZE)).append("\n");
+        report.append("总写入次数: ").append(stats.get(CacheMetricKeys.TOTAL_PUTS)).append("\n");
+        report.append("总读取次数: ").append(stats.get(CacheMetricKeys.TOTAL_GETS)).append("\n");
+        report.append("命中次数: ").append(stats.get(CacheMetricKeys.TOTAL_HITS)).append("\n");
+        report.append("未命中次数: ").append(stats.get(CacheMetricKeys.TOTAL_MISSES)).append("\n");
+        report.append("命中率: ").append(stats.get(CacheMetricKeys.HIT_RATE)).append("\n");
+        report.append("未命中率: ").append(stats.get(CacheMetricKeys.MISS_RATE)).append("\n");
+        report.append("总删除次数: ").append(stats.get(CacheMetricKeys.TOTAL_DELETES)).append("\n");
+        report.append("总错误次数: ").append(stats.get(CacheMetricKeys.TOTAL_ERRORS)).append("\n");
         return report.toString();
     }
 }
