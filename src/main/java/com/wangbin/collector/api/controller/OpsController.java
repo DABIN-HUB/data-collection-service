@@ -1,18 +1,17 @@
 package com.wangbin.collector.api.controller;
 
+import com.wangbin.collector.api.application.OpsConsoleApplicationService;
 import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.OpsLogResponse;
 import com.wangbin.collector.api.filter.AuthFilter;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgement;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementQueryRequest;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementRequest;
-import com.wangbin.collector.monitor.alert.AlarmAcknowledgementService;
-import com.wangbin.collector.monitor.log.OperationLogger;
 import com.wangbin.collector.monitor.network.NetworkDiagnosticRequest;
 import com.wangbin.collector.monitor.network.NetworkDiagnosticResult;
-import com.wangbin.collector.monitor.network.NetworkDiagnosticService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,34 +22,21 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.Map;
 
 /**
  * 控制台运维接口。
+ *
+ * <p>负责 HTTP 上下文解析和运维接口路由，具体业务编排由应用服务处理。</p>
  */
 @RestController
 @RequestMapping("/api/ops")
+@RequiredArgsConstructor
 public class OpsController {
 
-    private final OperationLogger operationLogger;
-    private final AlarmAcknowledgementService alarmAcknowledgementService;
-    private final NetworkDiagnosticService networkDiagnosticService;
+    private static final String LOCAL_CONSOLE_OPERATOR = "本机控制台";
 
-    /**
-     * 创建控制台运维接口。
-     *
-     * @param operationLogger 操作日志服务
-     * @param alarmAcknowledgementService 告警确认服务
-     * @param networkDiagnosticService 网络诊断服务
-     */
-    public OpsController(OperationLogger operationLogger,
-                         AlarmAcknowledgementService alarmAcknowledgementService,
-                         NetworkDiagnosticService networkDiagnosticService) {
-        this.operationLogger = operationLogger;
-        this.alarmAcknowledgementService = alarmAcknowledgementService;
-        this.networkDiagnosticService = networkDiagnosticService;
-    }
+    private final OpsConsoleApplicationService opsConsoleApplicationService;
 
     /**
      * 查询经过脱敏处理的最近运行日志。
@@ -66,13 +52,7 @@ public class OpsController {
                                             @RequestParam(required = false) String logger,
                                             @RequestParam(required = false) String keyword,
                                             @RequestParam(required = false) Integer limit) {
-        List<OperationLogger.OperationLogEntry> items = operationLogger.query(level, logger, keyword, limit);
-        OpsLogResponse response = OpsLogResponse.builder()
-                .totalBuffered(operationLogger.size())
-                .count(items.size())
-                .items(items)
-                .build();
-        return ApiResponse.success("运行日志查询成功", response);
+        return opsConsoleApplicationService.logs(level, logger, keyword, limit);
     }
 
     /**
@@ -84,8 +64,7 @@ public class OpsController {
     @PostMapping("/alarms/acknowledgements/query")
     public ApiResponse<Map<String, AlarmAcknowledgement>> acknowledgementStates(
             @Valid @RequestBody AlarmAcknowledgementQueryRequest request) {
-        return ApiResponse.success("告警确认状态查询成功",
-                alarmAcknowledgementService.findAll(request.alarmIds()));
+        return opsConsoleApplicationService.acknowledgementStates(request);
     }
 
     /**
@@ -101,8 +80,7 @@ public class OpsController {
                                                          @Valid @RequestBody AlarmAcknowledgementRequest request,
                                                          HttpServletRequest servletRequest) {
         try {
-            return ApiResponse.success("告警确认成功",
-                    alarmAcknowledgementService.acknowledge(alarmId, resolveOperator(servletRequest), request));
+            return opsConsoleApplicationService.acknowledge(alarmId, resolveOperator(servletRequest), request);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
@@ -117,7 +95,7 @@ public class OpsController {
     @PostMapping("/network/diagnose")
     public ApiResponse<NetworkDiagnosticResult> diagnose(@Valid @RequestBody NetworkDiagnosticRequest request) {
         try {
-            return ApiResponse.success("网络检测完成", networkDiagnosticService.diagnose(request));
+            return opsConsoleApplicationService.diagnose(request);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
@@ -134,6 +112,6 @@ public class OpsController {
         if (principal instanceof AuthFilter.AuthPrincipal authPrincipal) {
             return authPrincipal.getType() + ":" + authPrincipal.getId();
         }
-        return "本机控制台";
+        return LOCAL_CONSOLE_OPERATOR;
     }
 }

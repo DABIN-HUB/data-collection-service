@@ -23,7 +23,7 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
-const API_BASE = resolveContextPath();
+const API_BASE = window.CollectorApi.resolveContextPath();
 const HIDDEN_PROTOCOLS = new Set(["OPC_UA_PLC4X"]);
 const THREAD_POOL_LABELS = Object.freeze({
   reportExecutor: "云端发送线程池",
@@ -694,103 +694,65 @@ async function refreshAll() {
 }
 
 async function callApi(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  if (!headers.has("Content-Type") && options.body) {
-    headers.set("Content-Type", "application/json");
-  }
-  if (state.token) {
-    headers.set("X-Collector-Token", state.token);
-  }
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const text = await response.text();
-  let body = {};
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch (error) {
-      body = { message: text.trim() || `HTTP ${response.status}` };
+  return window.CollectorApi.callApi(path, options, {
+    getToken: () => state.token,
+    onUnauthorized: () => {
+      state.token = "";
+      localStorage.removeItem("collectorToken");
+      const tokenInput = $("#tokenInput");
+      if (tokenInput) {
+        tokenInput.value = "";
+      }
     }
-  }
-  if (response.status === 401) {
-    state.token = "";
-    localStorage.removeItem("collectorToken");
-    const tokenInput = $("#tokenInput");
-    if (tokenInput) {
-      tokenInput.value = "";
-    }
-  }
-  if (!response.ok) {
-    throw apiError(body.message || `HTTP ${response.status}`, body, response.status);
-  }
-  if (body.status === "error") {
-    throw apiError(body.message || "请求失败", body, response.status);
-  }
-  if (typeof body.code === "number" && body.code !== 200) {
-    throw apiError(body.message || `业务错误码 ${body.code}`, body, response.status);
-  }
-  return body;
+  });
 }
 
 function apiError(message, body, httpStatus) {
-  const error = new Error(message);
-  error.body = body;
-  error.httpStatus = httpStatus;
-  return error;
+  return window.CollectorApi.apiError(message, body, httpStatus);
 }
 
 function resolveContextPath() {
-  const marker = "/admin/";
-  const pathname = window.location.pathname;
-  const index = pathname.indexOf(marker);
-  if (index <= 0) {
-    return "";
-  }
-  return pathname.substring(0, index);
+  return window.CollectorApi.resolveContextPath();
 }
 
 function dataOf(body) {
-  return body && Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body;
+  return window.CollectorApi.dataOf(body);
 }
 
 async function loadOverview() {
   const alarmStartTs = Date.now() - 24 * 60 * 60 * 1000;
-  const [summaryBody, runningBody, healthBody, cacheBody, deviceBody, errorsBody, systemBody, perfDetailBody, reportBody, storageBody, alarmBody] = await Promise.allSettled([
+  const [summaryBody, runningBody, healthBody, runtimeBody, alarmBody] = await Promise.allSettled([
     callApi("/api/config/summary"),
     callApi("/api/device/running"),
     callApi("/health"),
-    callApi("/monitor/cache"),
-    callApi("/monitor/devices"),
-    callApi("/monitor/errors"),
-    callApi("/monitor/system"),
-    callApi("/monitor/perf/detail"),
-    callApi("/monitor/report"),
-    callApi("/monitor/storage"),
+    callApi("/monitor/runtime"),
     callApi(`/api/data/history/alarms?limit=8&startTs=${alarmStartTs}`)
   ]);
 
+  const runtimeStatus = settledData(runtimeBody, {});
   const availability = {
     summary: isFulfilled(summaryBody),
     running: isFulfilled(runningBody),
-    health: isFulfilled(healthBody),
-    cache: isFulfilled(cacheBody),
-    devices: isFulfilled(deviceBody),
-    errors: isFulfilled(errorsBody),
-    system: isFulfilled(systemBody),
-    performance: isFulfilled(perfDetailBody),
-    report: isFulfilled(reportBody),
-    storage: isFulfilled(storageBody),
+    health: isFulfilled(healthBody) || isFulfilled(runtimeBody),
+    cache: isFulfilled(runtimeBody) && Boolean(runtimeStatus.cache),
+    devices: isFulfilled(runtimeBody) && Boolean(runtimeStatus.devices),
+    errors: isFulfilled(runtimeBody) && Boolean(runtimeStatus.exceptions),
+    system: isFulfilled(runtimeBody) && Boolean(runtimeStatus.system),
+    performance: isFulfilled(runtimeBody) && Boolean(runtimeStatus.performance),
+    report: isFulfilled(runtimeBody) && Boolean(runtimeStatus.report),
+    storage: isFulfilled(runtimeBody) && Boolean(runtimeStatus.storage),
     alarm: isFulfilled(alarmBody)
   };
   const summary = settledData(summaryBody, {});
   const running = settledData(runningBody, []);
   const healthData = settledData(healthBody, {});
-  const cache = settledData(cacheBody, {});
-  const deviceData = settledData(deviceBody, {});
-  const errorData = settledData(errorsBody, {});
-  const systemData = settledData(systemBody, {});
-  const perfDetail = settledData(perfDetailBody, {});
-  const reportData = settledData(reportBody, {});
-  const storageData = settledData(storageBody, {});
+  const cache = runtimeStatus.cache || {};
+  const deviceData = runtimeStatus.devices || {};
+  const errorData = runtimeStatus.exceptions || {};
+  const systemData = runtimeStatus.system || {};
+  const perfDetail = runtimeStatus.performance || {};
+  const reportData = runtimeStatus.report || {};
+  const storageData = runtimeStatus.storage || {};
   const alarmData = normalizeAlarmData(settledBody(alarmBody, { status: "unavailable", data: [] }));
 
   const stats = summary.cacheStats || {};
@@ -801,7 +763,7 @@ async function loadOverview() {
     ? null : Math.max(totalDevices - connectedDevices, 0);
   const pointCount = availability.summary ? numberValue(stats.pointCount ?? summary.pointCount, 0) : null;
   const connectionCount = availability.summary ? numberValue(stats.connectionCount ?? summary.connectionCount, 0) : null;
-  const healthStatus = availability.health ? healthData.status || healthData.overallStatus || "UNKNOWN" : "UNKNOWN";
+  const healthStatus = availability.health ? runtimeStatus.level || healthData.status || healthData.overallStatus || "UNKNOWN" : "UNKNOWN";
   const alarmCount = availability.alarm && alarmData.status === "success"
     ? numberValue(alarmData.total ?? alarmData.count, safeArray(alarmData.data).length)
     : null;
@@ -897,13 +859,11 @@ function updateRuntimeIndicator(healthStatus, runningDeviceCount, available) {
   const indicator = $("#runtimeIndicator");
   const sidebarStatus = $("#systemStatus");
   const normalizedStatus = String(healthStatus || "UNKNOWN").toUpperCase();
+  const okStates = ["UP", "OK", "READY"];
+  const warnStates = ["DEGRADED", "WARN", "WARNING"];
   const tone = !available || normalizedStatus === "UNKNOWN"
-    ? "unknown" : (normalizedStatus === "UP" ? "ok" : (normalizedStatus === "DEGRADED" ? "warning" : "error"));
-  const detail = !available
-    ? "服务状态不可用"
-    : (normalizedStatus === "UP"
-      ? (runningDeviceCount > 0 ? `运行中（${runningDeviceCount} 台设备）` : "服务正常（暂无运行设备）")
-      : (normalizedStatus === "DEGRADED" ? "服务降级" : (normalizedStatus === "UNKNOWN" ? "状态未知" : `服务异常（${normalizedStatus}）`)));
+    ? "unknown" : (okStates.includes(normalizedStatus) ? "ok" : (warnStates.includes(normalizedStatus) ? "warning" : "error"));
+  const detail = resolveRuntimeIndicatorText(normalizedStatus, runningDeviceCount, available);
   if (indicator) {
     indicator.lastChild.textContent = detail;
     setStatusClass(indicator, tone);
@@ -914,6 +874,21 @@ function updateRuntimeIndicator(healthStatus, runningDeviceCount, available) {
   }
 }
 
+function resolveRuntimeIndicatorText(normalizedStatus, runningDeviceCount, available) {
+  if (!available) {
+    return "服务状态不可用";
+  }
+  if (["UP", "OK", "READY"].includes(normalizedStatus)) {
+    return runningDeviceCount > 0 ? `运行中（${runningDeviceCount} 台设备）` : "服务正常（暂无运行设备）";
+  }
+  if (["DEGRADED", "WARN", "WARNING"].includes(normalizedStatus)) {
+    return "服务存在风险";
+  }
+  if (normalizedStatus === "UNKNOWN") {
+    return "状态未知";
+  }
+  return `服务异常（${normalizedStatus}）`;
+}
 function setStatusClass(target, tone) {
   target.classList.remove("is-ok", "is-warning", "is-error", "is-unknown");
   target.classList.add(`is-${tone}`);
@@ -2539,27 +2514,23 @@ async function clearDesired() {
 
 async function loadMonitor() {
   setMonitorState("正在加载监控视图...", "info");
-  const results = await Promise.allSettled([
-    callApi("/monitor/cache"),
-    callApi("/monitor/devices"),
-    callApi("/monitor/performance"),
-    callApi("/monitor/system"),
-    callApi("/monitor/errors")
-  ]);
-  const [cache, devices, performance, system, errors] = results;
-  const cacheData = cache.status === "fulfilled" ? dataOf(cache.value) : {};
-  const deviceData = devices.status === "fulfilled" ? dataOf(devices.value) : {};
-  const performanceData = performance.status === "fulfilled" ? dataOf(performance.value) : {};
-  const systemData = system.status === "fulfilled" ? dataOf(system.value) : {};
-  const errorData = errors.status === "fulfilled" ? dataOf(errors.value) : {};
+  const body = await callApi("/monitor/runtime");
+  const runtimeData = dataOf(body) || {};
+  const cacheData = runtimeData.cache || {};
+  const deviceData = runtimeData.devices || {};
+  const performanceData = runtimeData.performance || {};
+  const systemData = runtimeData.system || {};
+  const errorData = runtimeData.exceptions || {};
 
   renderCards("#monitorCards", [
+    { label: "运行状态", value: runtimeData.level || "-", subtext: runtimeData.message || "统一运行快照" },
     { label: "总访问", value: cacheData.totalAccess ?? "-", subtext: `L1 命中 ${percent(cacheData.level1HitRate)}` },
     { label: "活跃连接", value: deviceData.activeConnections ?? "-", subtext: `缺失 ${Array.isArray(deviceData.missingConnections) ? deviceData.missingConnections.length : "-"}` },
     { label: "堆内存", value: bytes(systemData.heapUsed), subtext: `线程 ${systemData.threadCount ?? "-"}` },
-    { label: "系统 CPU", value: percent(systemData.systemCpuLoad), subtext: `异常 ${errorData.totalCount ?? errorData.totalErrors ?? "-"}` }
+    { label: "系统 CPU", value: percent(systemData.systemCpuLoad), subtext: `异常 ${errorData.totalExceptions ?? errorData.totalCount ?? errorData.totalErrors ?? "-"}` }
   ]);
   $("#monitorView").textContent = JSON.stringify({
+    runtime: runtimeData,
     cache: cacheData,
     devices: deviceData,
     performance: performanceData,
@@ -2567,13 +2538,12 @@ async function loadMonitor() {
     errors: errorData
   }, null, 2);
 
-  const failureCount = results.filter((item) => item.status === "rejected").length;
-  if (failureCount === results.length) {
-    setMonitorState("监控数据全部加载失败", "error");
-    throw new Error("监控数据加载失败");
+  if (runtimeData.level === "ERROR") {
+    setMonitorState(runtimeData.message || "监控发现明确异常", "error");
+    return;
   }
-  if (failureCount) {
-    setMonitorState(`部分监控指标加载失败（${failureCount}/${results.length}）`, "warning");
+  if (runtimeData.level === "WARN") {
+    setMonitorState(runtimeData.message || "监控发现运行风险", "warning");
     return;
   }
   setMonitorState("");

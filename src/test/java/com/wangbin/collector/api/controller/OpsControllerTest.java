@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.api.application.OpsConsoleApplicationService;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgement;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementRequest;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementService;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -29,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(OpsController.class)
+@Import(OpsConsoleApplicationService.class)
 class OpsControllerTest {
 
     @Autowired

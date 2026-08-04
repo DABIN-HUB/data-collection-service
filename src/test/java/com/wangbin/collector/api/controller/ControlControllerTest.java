@@ -1,5 +1,6 @@
 package com.wangbin.collector.api.controller;
 
+import com.wangbin.collector.api.application.ControlCommandApplicationService;
 import com.wangbin.collector.api.controller.dto.BatchPointWriteResponse;
 import com.wangbin.collector.api.controller.dto.DeviceCommandRequest;
 import com.wangbin.collector.api.controller.dto.DeviceCommandResponse;
@@ -29,8 +30,9 @@ class ControlControllerTest {
 
     private final ConfigManager configManager = mock(ConfigManager.class);
     private final CollectionManager collectionManager = mock(CollectionManager.class);
-    private final ControlController controller = new ControlController(
+    private final ControlCommandApplicationService applicationService = new ControlCommandApplicationService(
             configManager, collectionManager, new DevicePointResolver(configManager));
+    private final ControlController controller = new ControlController(applicationService);
 
     @Test
     void shouldWriteSinglePoint() {

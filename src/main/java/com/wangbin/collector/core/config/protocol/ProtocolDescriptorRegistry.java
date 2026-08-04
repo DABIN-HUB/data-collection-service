@@ -66,46 +66,16 @@ public class ProtocolDescriptorRegistry {
      * 创建当前组件实例。
      */
     public ProtocolDescriptorRegistry() {
-        registerPrimary(descriptor("MODBUS_TCP", "Modbus TCP", "Modbus TCP register polling over Ethernet.",
-                List.of(), Plc4xModbusTcpCollector.class, "MODBUS_TCP", 502, ProtocolAddressingMode.NUMERIC,
-                true, true, false,
-                List.of("40001", "HOLDING_REGISTER:1", "COIL:0"),
-                fields(
-                        field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
-                        field("port", "number", "Port", true, "502", null, "connection"),
-                        field("slaveId", "number", "Slave ID", true, "1", null, "protocol"),
-                        field("byteOrder", "select", "Byte order", true, "BIG_ENDIAN",
-                                List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "protocol"),
-                        field("parity", "select", "Parity", false, "none",
-                                List.of("none", "odd", "even"), "advanced"),
-                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
-                        field("pingAddress", "string", "PLC4X ping address", false, "", null, "advanced"),
-                        field("maxRegistersPerRequest", "number", "Max registers per request", false, "125", null, "advanced"),
-                        field("maxCoilsPerRequest", "number", "Max coils per request", false, "2000", null, "advanced"),
-                        field("readTimeout", "number", "Read timeout (ms)", false, "3000", null, "advanced"),
-                        field("timeout", "number", "Protocol timeout (ms)", false, "3000", null, "advanced"))));
-        registerPrimary(descriptor("MODBUS_RTU", "Modbus RTU", "Modbus serial line collection.",
-                List.of("MODBUS_ASCII"), Plc4xModbusRtuCollector.class, "MODBUS_RTU", null, ProtocolAddressingMode.NUMERIC,
-                true, true, false,
-                List.of("40001", "INPUT_REGISTER:0", "COIL:10"),
-                fields(
-                        field("serialPort", "string", "Serial port", true, "COM1", null, "connection"),
-                        field("baudRate", "number", "Baud rate", true, "9600", null, "connection"),
-                        field("dataBits", "number", "Data bits", true, "8", null, "connection"),
-                        field("stopBits", "number", "Stop bits", true, "1", null, "connection"),
-                        field("parity", "select", "Parity", true, "none",
-                                List.of("none", "odd", "even"), "connection"),
-                        field("slaveId", "number", "Slave ID", true, "1", null, "protocol"),
-                        field("byteOrder", "select", "Byte order", true, "BIG_ENDIAN",
-                                List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "protocol"),
-                        field("interFrameDelay", "number", "Inter-frame delay (ms)", true, "5", null, "advanced"),
-                        field("plc4xProtocolCode", "select", "PLC4X protocol code", false, "modbus-rtu",
-                                List.of("modbus-rtu", "modbus-ascii"), "advanced"),
-                        field("plc4xConnectionString", "string", "PLC4X connection string", false, "", null, "advanced"),
-                        field("maxRegistersPerRequest", "number", "Max registers per request", false, "125", null, "advanced"),
-                        field("maxCoilsPerRequest", "number", "Max coils per request", false, "2000", null, "advanced"),
-                        field("readTimeout", "number", "Read timeout (ms)", false, "3000", null, "advanced"),
-                        field("timeout", "number", "Protocol timeout (ms)", false, "3000", null, "advanced"))));
+        this(List.of(new ModbusProtocolDescriptorProvider()));
+    }
+
+    /**
+     * 创建协议元数据注册表。
+     *
+     * @param providers 协议元数据提供者列表
+     */
+    public ProtocolDescriptorRegistry(List<ProtocolDescriptorProvider> providers) {
+        registerProviders(providers);
         registerPrimary(descriptor("SIEMENS_S7", "Siemens S7", "PLC4X-backed Siemens S7 read/write collector.",
                 List.of("S7"), S7Collector.class, "SIEMENS_S7", 102, ProtocolAddressingMode.MIXED,
                 true, true, true,
@@ -1288,7 +1258,28 @@ public class ProtocolDescriptorRegistry {
     /**
      * 维护注册或订阅关系。
      */
-    private void registerPrimary(ProtocolDescriptor descriptor) {
+    /**
+     * 注册外部协议元数据提供者。
+     *
+     * @param providers 协议元数据提供者列表
+     */
+    private void registerProviders(List<ProtocolDescriptorProvider> providers) {
+        if (providers == null) {
+            return;
+        }
+        for (ProtocolDescriptorProvider provider : providers) {
+            if (provider != null) {
+                provider.register(this);
+            }
+        }
+    }
+
+    /**
+     * 注册主协议元数据，并同步注册该协议声明的别名。
+     *
+     * @param descriptor 协议元数据描述
+     */
+    void registerPrimary(ProtocolDescriptor descriptor) {
         descriptors.put(descriptor.code(), descriptor);
         for (String alias : descriptor.aliases()) {
             registerAlias(alias, descriptor.code(), null);
@@ -1305,7 +1296,7 @@ public class ProtocolDescriptorRegistry {
     /**
      * 执行当前业务逻辑。
      */
-    private ProtocolDescriptor descriptor(String code,
+    ProtocolDescriptor descriptor(String code,
                                           String title,
                                           String description,
                                           List<String> aliases,
@@ -1487,34 +1478,34 @@ public class ProtocolDescriptorRegistry {
     /**
      * 执行当前业务逻辑。
      */
-    private List<ProtocolFieldConfig> fields(ProtocolFieldConfig... fields) {
+    List<ProtocolFieldConfig> fields(ProtocolFieldConfig... fields) {
         return Arrays.asList(fields);
     }
 
     /**
      * 执行当前业务逻辑。
      */
-    private ProtocolFieldConfig field(String name,
-                                      String type,
-                                      String label,
-                                      boolean required,
-                                      String defaultValue,
-                                      List<String> options,
-                                      String group) {
+    ProtocolFieldConfig field(String name,
+                              String type,
+                              String label,
+                              boolean required,
+                              String defaultValue,
+                              List<String> options,
+                              String group) {
         return conditional(name, type, label, required, defaultValue, options, group, null, null);
     }
 
     /**
      * 执行当前业务逻辑。
      */
-    private ProtocolFieldConfig field(String name,
-                                      String type,
-                                      String label,
-                                      boolean required,
-                                      String defaultValue,
-                                      List<String> options,
-                                      String group,
-                                      String description) {
+    ProtocolFieldConfig field(String name,
+                              String type,
+                              String label,
+                              boolean required,
+                              String defaultValue,
+                              List<String> options,
+                              String group,
+                              String description) {
         return conditional(name, type, label, required, defaultValue, options, group, null, description);
     }
 
