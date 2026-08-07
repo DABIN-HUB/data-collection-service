@@ -1,6 +1,6 @@
 package com.wangbin.collector.api.exception;
 
-import com.wangbin.collector.api.controller.dto.ApiResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,29 +17,23 @@ import java.util.Map;
 @RestControllerAdvice
 public class ApiValidationExceptionHandler {
 
-    /**
-     * 处理当前业务流程。
-     */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiResponse<Map<String, String>>> handleConstraintViolation(
+    public ResponseEntity<ApiResult<Map<String, String>>> handleConstraintViolation(
             ConstraintViolationException exception) {
         Map<String, String> errors = new LinkedHashMap<>();
         exception.getConstraintViolations().forEach(violation ->
                 errors.put(violation.getPropertyPath().toString(), violation.getMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.error("请求参数校验失败", errors));
+                .body(ApiResult.statusError("请求参数校验失败", errors));
     }
 
-    /**
-     * 处理当前业务流程。
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Map<String, String>>> handleMethodArgumentNotValid(
+    public ResponseEntity<ApiResult<Map<String, String>>> handleMethodArgumentNotValid(
             MethodArgumentNotValidException exception) {
         Map<String, String> errors = new LinkedHashMap<>();
         exception.getBindingResult().getFieldErrors().forEach(error ->
                 errors.putIfAbsent(error.getField(), error.getDefaultMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.error("请求参数校验失败", errors));
+                .body(ApiResult.statusError("请求参数校验失败", errors));
     }
 }

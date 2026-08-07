@@ -1,7 +1,7 @@
 package com.wangbin.collector.api.application;
 
-import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.OpsLogResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgement;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementQueryRequest;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementRequest;
@@ -38,14 +38,14 @@ public class OpsConsoleApplicationService {
      * @param limit 返回数量上限
      * @return 运维日志响应
      */
-    public ApiResponse<OpsLogResponse> logs(String level, String logger, String keyword, Integer limit) {
+    public ApiResult<OpsLogResponse> logs(String level, String logger, String keyword, Integer limit) {
         List<OperationLogger.OperationLogEntry> items = operationLogger.query(level, logger, keyword, limit);
         OpsLogResponse response = OpsLogResponse.builder()
                 .totalBuffered(operationLogger.size())
                 .count(items.size())
                 .items(items)
                 .build();
-        return ApiResponse.success("运行日志查询成功", response);
+        return ApiResult.statusSuccess("运行日志查询成功", response);
     }
 
     /**
@@ -54,9 +54,9 @@ public class OpsConsoleApplicationService {
      * @param request 告警确认查询请求
      * @return 告警确认状态响应
      */
-    public ApiResponse<Map<String, AlarmAcknowledgement>> acknowledgementStates(
+    public ApiResult<Map<String, AlarmAcknowledgement>> acknowledgementStates(
             AlarmAcknowledgementQueryRequest request) {
-        return ApiResponse.success("告警确认状态查询成功",
+        return ApiResult.statusSuccess("告警确认状态查询成功",
                 alarmAcknowledgementService.findAll(request.alarmIds()));
     }
 
@@ -68,10 +68,10 @@ public class OpsConsoleApplicationService {
      * @param request 告警确认请求
      * @return 告警确认结果
      */
-    public ApiResponse<AlarmAcknowledgement> acknowledge(String alarmId,
+    public ApiResult<AlarmAcknowledgement> acknowledge(String alarmId,
                                                          String operator,
                                                          AlarmAcknowledgementRequest request) {
-        return ApiResponse.success("告警确认成功",
+        return ApiResult.statusSuccess("告警确认成功",
                 alarmAcknowledgementService.acknowledge(alarmId, operator, request));
     }
 
@@ -81,7 +81,7 @@ public class OpsConsoleApplicationService {
      * @param request 网络诊断请求
      * @return 网络诊断结果
      */
-    public ApiResponse<NetworkDiagnosticResult> diagnose(NetworkDiagnosticRequest request) {
-        return ApiResponse.success("网络检测完成", networkDiagnosticService.diagnose(request));
+    public ApiResult<NetworkDiagnosticResult> diagnose(NetworkDiagnosticRequest request) {
+        return ApiResult.statusSuccess("网络检测完成", networkDiagnosticService.diagnose(request));
     }
 }

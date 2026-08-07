@@ -1,8 +1,8 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.OpsConsoleApplicationService;
-import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.OpsLogResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.api.filter.AuthFilter;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgement;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementQueryRequest;
@@ -48,7 +48,7 @@ public class OpsController {
      * @return 运维日志响应
      */
     @GetMapping("/logs")
-    public ApiResponse<OpsLogResponse> logs(@RequestParam(required = false) String level,
+    public ApiResult<OpsLogResponse> logs(@RequestParam(required = false) String level,
                                             @RequestParam(required = false) String logger,
                                             @RequestParam(required = false) String keyword,
                                             @RequestParam(required = false) Integer limit) {
@@ -62,7 +62,7 @@ public class OpsController {
      * @return 告警确认状态响应
      */
     @PostMapping("/alarms/acknowledgements/query")
-    public ApiResponse<Map<String, AlarmAcknowledgement>> acknowledgementStates(
+    public ApiResult<Map<String, AlarmAcknowledgement>> acknowledgementStates(
             @Valid @RequestBody AlarmAcknowledgementQueryRequest request) {
         return opsConsoleApplicationService.acknowledgementStates(request);
     }
@@ -76,7 +76,7 @@ public class OpsController {
      * @return 告警确认结果
      */
     @PostMapping("/alarms/{alarmId}/acknowledge")
-    public ApiResponse<AlarmAcknowledgement> acknowledge(@PathVariable String alarmId,
+    public ApiResult<AlarmAcknowledgement> acknowledge(@PathVariable String alarmId,
                                                          @Valid @RequestBody AlarmAcknowledgementRequest request,
                                                          HttpServletRequest servletRequest) {
         try {
@@ -93,7 +93,7 @@ public class OpsController {
      * @return 网络诊断结果
      */
     @PostMapping("/network/diagnose")
-    public ApiResponse<NetworkDiagnosticResult> diagnose(@Valid @RequestBody NetworkDiagnosticRequest request) {
+    public ApiResult<NetworkDiagnosticResult> diagnose(@Valid @RequestBody NetworkDiagnosticRequest request) {
         try {
             return opsConsoleApplicationService.diagnose(request);
         } catch (IllegalArgumentException exception) {

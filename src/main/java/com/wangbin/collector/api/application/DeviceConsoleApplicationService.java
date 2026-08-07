@@ -1,6 +1,6 @@
 package com.wangbin.collector.api.application;
 
-import com.wangbin.collector.api.controller.dto.DeviceControllerResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import lombok.RequiredArgsConstructor;
@@ -20,9 +20,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DeviceConsoleApplicationService {
 
-    private static final String STATUS_SUCCESS = "success";
-    private static final String STATUS_ERROR = "error";
-
     private final CollectionService collectionService;
 
     /**
@@ -31,16 +28,16 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备启动结果
      */
-    public DeviceControllerResponse<Object> startDevice(String deviceId) {
+    public ApiResult<Object> startDevice(String deviceId) {
         try {
             boolean success = collectionService.startDevice(deviceId);
             if (success) {
-                return DeviceControllerResponse.success(deviceId, "设备启动成功");
+                return ApiResult.deviceSuccess(deviceId, "设备启动成功");
             }
-            return DeviceControllerResponse.error(deviceId, "设备已启动或启动失败");
+            return ApiResult.deviceError(deviceId, "设备已启动或启动失败");
         } catch (Exception exception) {
             log.error("启动设备失败，设备={}", deviceId, exception);
-            return DeviceControllerResponse.error(deviceId, "启动异常: " + exception.getMessage());
+            return ApiResult.deviceError(deviceId, "启动异常: " + exception.getMessage());
         }
     }
 
@@ -50,16 +47,16 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备启动结果
      */
-    public DeviceControllerResponse<Object> startLocalDevice(String deviceId) {
+    public ApiResult<Object> startLocalDevice(String deviceId) {
         try {
             boolean success = collectionService.startLocalDevice(deviceId);
             if (success) {
-                return DeviceControllerResponse.success(deviceId, "本地临时设备启动成功");
+                return ApiResult.deviceSuccess(deviceId, "本地临时设备启动成功");
             }
-            return DeviceControllerResponse.error(deviceId, "设备不是本地临时设备，或启动失败");
+            return ApiResult.deviceError(deviceId, "设备不是本地临时设备，或启动失败");
         } catch (Exception exception) {
             log.error("启动本地临时设备失败，设备={}", deviceId, exception);
-            return DeviceControllerResponse.error(deviceId, "启动异常: " + exception.getMessage());
+            return ApiResult.deviceError(deviceId, "启动异常: " + exception.getMessage());
         }
     }
 
@@ -69,16 +66,16 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备停止结果
      */
-    public DeviceControllerResponse<Object> stopDevice(String deviceId) {
+    public ApiResult<Object> stopDevice(String deviceId) {
         try {
             boolean success = collectionService.stopDevice(deviceId);
             if (success) {
-                return DeviceControllerResponse.success(deviceId, "设备已停止");
+                return ApiResult.deviceSuccess(deviceId, "设备已停止");
             }
-            return DeviceControllerResponse.error(deviceId, "设备停止失败或已经停止");
+            return ApiResult.deviceError(deviceId, "设备停止失败或已经停止");
         } catch (Exception exception) {
             log.error("停止设备失败，设备={}", deviceId, exception);
-            return DeviceControllerResponse.error(deviceId, "停止异常: " + exception.getMessage());
+            return ApiResult.deviceError(deviceId, "停止异常: " + exception.getMessage());
         }
     }
 
@@ -87,21 +84,13 @@ public class DeviceConsoleApplicationService {
      *
      * @return 重载结果
      */
-    public DeviceControllerResponse<Object> reloadAllDevices() {
+    public ApiResult<Object> reloadAllDevices() {
         try {
             collectionService.reloadAllDevices();
-            return DeviceControllerResponse.builder()
-                    .status(STATUS_SUCCESS)
-                    .message("已重新加载所有设备")
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusSuccess("已重新加载所有设备", null);
         } catch (Exception exception) {
             log.error("重新加载所有设备失败", exception);
-            return DeviceControllerResponse.builder()
-                    .status(STATUS_ERROR)
-                    .message("重新加载异常: " + exception.getMessage())
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusError("重新加载异常: " + exception.getMessage(), null);
         }
     }
 
@@ -111,18 +100,14 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备状态响应
      */
-    public DeviceControllerResponse<Map<String, Object>> getDeviceStatus(String deviceId) {
+    public ApiResult<Map<String, Object>> getDeviceStatus(String deviceId) {
         try {
             Map<String, Object> status = collectionService.getDeviceStatus(deviceId);
-            return DeviceControllerResponse.successData(deviceId, status);
+            return ApiResult.deviceSuccessData(deviceId, status);
         } catch (Exception exception) {
             log.error("获取设备状态失败，设备={}", deviceId, exception);
-            return DeviceControllerResponse.<Map<String, Object>>builder()
-                    .deviceId(deviceId)
-                    .status(STATUS_ERROR)
-                    .message("获取状态失败: " + exception.getMessage())
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.<Map<String, Object>>statusError("获取状态失败: " + exception.getMessage(), null)
+                    .withDeviceId(deviceId);
         }
     }
 
@@ -131,21 +116,13 @@ public class DeviceConsoleApplicationService {
      *
      * @return 全部采集统计响应
      */
-    public DeviceControllerResponse<Map<String, Map<String, Object>>> getAllStatistics() {
+    public ApiResult<Map<String, Map<String, Object>>> getAllStatistics() {
         try {
             Map<String, Map<String, Object>> stats = collectionService.getAllStatistics();
-            return DeviceControllerResponse.<Map<String, Map<String, Object>>>builder()
-                    .status(STATUS_SUCCESS)
-                    .data(stats)
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusSuccess(null, stats);
         } catch (Exception exception) {
             log.error("获取采集统计失败", exception);
-            return DeviceControllerResponse.<Map<String, Map<String, Object>>>builder()
-                    .status(STATUS_ERROR)
-                    .message("获取统计异常: " + exception.getMessage())
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusError("获取统计异常: " + exception.getMessage(), null);
         }
     }
 
@@ -154,22 +131,13 @@ public class DeviceConsoleApplicationService {
      *
      * @return 正在运行的设备列表响应
      */
-    public DeviceControllerResponse<List<String>> getRunningDevices() {
+    public ApiResult<List<String>> getRunningDevices() {
         try {
             List<String> devices = collectionService.getRunningDevices();
-            return DeviceControllerResponse.<List<String>>builder()
-                    .status(STATUS_SUCCESS)
-                    .data(devices)
-                    .count(devices.size())
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusSuccess(null, devices).withCount(devices.size());
         } catch (Exception exception) {
             log.error("获取运行设备列表失败", exception);
-            return DeviceControllerResponse.<List<String>>builder()
-                    .status(STATUS_ERROR)
-                    .message("获取设备列表异常: " + exception.getMessage())
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.statusError("获取设备列表异常: " + exception.getMessage(), null);
         }
     }
 
@@ -178,14 +146,9 @@ public class DeviceConsoleApplicationService {
      *
      * @return 设备运行快照响应
      */
-    public DeviceControllerResponse<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
+    public ApiResult<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
         List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
-        return DeviceControllerResponse.<List<DeviceRuntimeSnapshot>>builder()
-                .status(STATUS_SUCCESS)
-                .data(snapshots)
-                .count(snapshots.size())
-                .timestamp(System.currentTimeMillis())
-                .build();
+        return ApiResult.statusSuccess(null, snapshots).withCount(snapshots.size());
     }
 
     /**
@@ -194,18 +157,13 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备运行状态响应
      */
-    public DeviceControllerResponse<Object> isDeviceRunning(String deviceId) {
+    public ApiResult<Object> isDeviceRunning(String deviceId) {
         try {
             boolean running = collectionService.isDeviceRunning(deviceId);
-            return DeviceControllerResponse.builder()
-                    .deviceId(deviceId)
-                    .status(STATUS_SUCCESS)
-                    .running(running)
-                    .timestamp(System.currentTimeMillis())
-                    .build();
+            return ApiResult.deviceSuccessData(deviceId, null).withRunning(running);
         } catch (Exception exception) {
             log.error("查询设备运行状态失败，设备={}", deviceId, exception);
-            return DeviceControllerResponse.error(deviceId, "查询运行状态异常: " + exception.getMessage());
+            return ApiResult.deviceError(deviceId, "查询运行状态异常: " + exception.getMessage());
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.wangbin.collector.api.application;
 
-import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigDeviceListResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDiffResponse;
@@ -19,6 +18,7 @@ import com.wangbin.collector.api.exception.ConfigApiException;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
@@ -65,7 +65,7 @@ public class ConfigConsoleApplicationService {
      *
      * @return 配置管理概览响应
      */
-    public ApiResponse<ConfigSummaryResponse> getSummary() {
+    public ApiResult<ConfigSummaryResponse> getSummary() {
         Map<String, Object> stats = configManager.getCacheStats();
         long lastSync = configSyncService.getLastSyncTime();
         long interval = configSyncService.getSyncInterval();
@@ -87,7 +87,7 @@ public class ConfigConsoleApplicationService {
      *
      * @return 设备配置列表响应
      */
-    public ApiResponse<ConfigDeviceListResponse> getAllDevices() {
+    public ApiResult<ConfigDeviceListResponse> getAllDevices() {
         List<DeviceInfo> devices = configManager.getAllDevices();
         ConfigDeviceListResponse response = ConfigDeviceListResponse.builder()
                 .devices(devices)
@@ -102,7 +102,7 @@ public class ConfigConsoleApplicationService {
      * @param request 本地临时设备配置
      * @return 保存结果
      */
-    public ApiResponse<LocalDeviceConfigResponse> createLocalDevice(LocalDeviceConfigRequest request) {
+    public ApiResult<LocalDeviceConfigResponse> createLocalDevice(LocalDeviceConfigRequest request) {
         return saveLocalDevice(request, null, request != null && request.isOverwrite());
     }
 
@@ -113,7 +113,7 @@ public class ConfigConsoleApplicationService {
      * @param request 本地临时设备配置
      * @return 保存结果
      */
-    public ApiResponse<LocalDeviceConfigResponse> updateLocalDevice(String deviceId,
+    public ApiResult<LocalDeviceConfigResponse> updateLocalDevice(String deviceId,
                                                                     LocalDeviceConfigRequest request) {
         return saveLocalDevice(request, deviceId, true);
     }
@@ -124,7 +124,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 本地临时设备配置响应
      */
-    public ApiResponse<LocalDeviceConfigResponse> getLocalDevice(String deviceId) {
+    public ApiResult<LocalDeviceConfigResponse> getLocalDevice(String deviceId) {
         if (!configManager.isLocalTemporaryDevice(deviceId)) {
             return error("只能读取本地临时设备配置: " + deviceId);
         }
@@ -148,7 +148,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 删除结果
      */
-    public ApiResponse<DeviceIdResponse> deleteLocalDevice(String deviceId) {
+    public ApiResult<DeviceIdResponse> deleteLocalDevice(String deviceId) {
         try {
             if (!configManager.isLocalTemporaryDevice(deviceId)) {
                 return error("只能删除本地临时设备配置: " + deviceId);
@@ -175,7 +175,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备配置详情响应
      */
-    public ApiResponse<DeviceConfigDetailResponse> getDevice(String deviceId) {
+    public ApiResult<DeviceConfigDetailResponse> getDevice(String deviceId) {
         DeviceInfo local = configManager.getDevice(deviceId);
         DeviceInfo remote = configSyncService.getDeviceConfigs().get(deviceId);
         if (local == null && remote == null) {
@@ -197,7 +197,7 @@ public class ConfigConsoleApplicationService {
      * @param includeAdaptive 是否包含运行期自适应字段
      * @return 设备点位配置响应
      */
-    public ApiResponse<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
+    public ApiResult<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
         if (!configManager.containsDevice(deviceId)) {
             return notFound("设备不存在: " + deviceId);
         }
@@ -219,7 +219,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 已脱敏的连接配置响应
      */
-    public ApiResponse<DeviceConnectionConfigResponse> getDeviceConnection(String deviceId) {
+    public ApiResult<DeviceConnectionConfigResponse> getDeviceConnection(String deviceId) {
         if (!configManager.containsDevice(deviceId)) {
             return notFound("设备不存在: " + deviceId);
         }
@@ -237,7 +237,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 配置差异响应
      */
-    public ApiResponse<ConfigDiffResponse> diff(String deviceId) {
+    public ApiResult<ConfigDiffResponse> diff(String deviceId) {
         DeviceInfo local = configManager.getDevice(deviceId);
         DeviceInfo remote = configSyncService.getDeviceConfigs().get(deviceId);
         if (local == null && remote == null) {
@@ -261,7 +261,7 @@ public class ConfigConsoleApplicationService {
      * @param device 设备基础配置
      * @return 更新结果
      */
-    public ApiResponse<DeviceIdResponse> updateDevice(String deviceId, DeviceInfo device) {
+    public ApiResult<DeviceIdResponse> updateDevice(String deviceId, DeviceInfo device) {
         if (device == null) {
             return error("请求体不能为空");
         }
@@ -278,7 +278,7 @@ public class ConfigConsoleApplicationService {
      * @param points 点位配置列表
      * @return 更新结果
      */
-    public ApiResponse<DeviceIdResponse> updatePoints(String deviceId, List<DataPoint> points) {
+    public ApiResult<DeviceIdResponse> updatePoints(String deviceId, List<DataPoint> points) {
         if (CollectionUtils.isEmpty(points)) {
             return error("数据点列表不能为空");
         }
@@ -298,7 +298,7 @@ public class ConfigConsoleApplicationService {
      * @param connection 连接配置
      * @return 更新结果
      */
-    public ApiResponse<DeviceIdResponse> updateConnection(String deviceId, DeviceConnection connection) {
+    public ApiResult<DeviceIdResponse> updateConnection(String deviceId, DeviceConnection connection) {
         if (connection == null) {
             return error("连接配置不能为空");
         }
@@ -315,7 +315,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 刷新结果
      */
-    public ApiResponse<DeviceIdResponse> refreshDevice(String deviceId) {
+    public ApiResult<DeviceIdResponse> refreshDevice(String deviceId) {
         boolean refreshed = configManager.refreshDeviceConfig(deviceId);
         return refreshed ? success("设备配置已刷新", DeviceIdResponse.builder().deviceId(deviceId).build())
                 : error("刷新失败，设备配置不完整: " + deviceId);
@@ -327,7 +327,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 清理结果
      */
-    public ApiResponse<DeviceIdResponse> clearDevice(String deviceId) {
+    public ApiResult<DeviceIdResponse> clearDevice(String deviceId) {
         boolean cleared = configManager.clearDeviceConfig(deviceId);
         return cleared ? success("设备配置缓存已清空", DeviceIdResponse.builder().deviceId(deviceId).build())
                 : error("设备配置不存在或已清空: " + deviceId);
@@ -338,7 +338,7 @@ public class ConfigConsoleApplicationService {
      *
      * @return 同步触发结果
      */
-    public ApiResponse<Object> triggerFullSync() {
+    public ApiResult<Object> triggerFullSync() {
         configSyncService.triggerManualSync();
         return success("已触发异步全量同步任务", null);
     }
@@ -350,7 +350,7 @@ public class ConfigConsoleApplicationService {
      * @param deviceId 可选设备标识
      * @return 同步触发结果
      */
-    public ApiResponse<DeviceIdResponse> triggerPartialSync(String type, String deviceId) {
+    public ApiResult<DeviceIdResponse> triggerPartialSync(String type, String deviceId) {
         ConfigUpdateType updateType = ConfigUpdateType.fromValue(type)
                 .filter(value -> value != ConfigUpdateType.LOCAL && value != ConfigUpdateType.LOCAL_DELETE)
                 .orElse(null);
@@ -367,7 +367,7 @@ public class ConfigConsoleApplicationService {
      *
      * @return 配置同步状态响应
      */
-    public ApiResponse<ConfigSyncStatusResponse> getSyncStatus() {
+    public ApiResult<ConfigSyncStatusResponse> getSyncStatus() {
         ConfigSyncStatusResponse response = ConfigSyncStatusResponse.builder()
                 .serviceId(configSyncService.getServiceId())
                 .lastSyncTime(configSyncService.getLastSyncTime())
@@ -386,7 +386,7 @@ public class ConfigConsoleApplicationService {
      *
      * @return 配置导出响应
      */
-    public ApiResponse<ConfigExportResponse> exportConfigs() {
+    public ApiResult<ConfigExportResponse> exportConfigs() {
         List<DeviceContext> contexts = configManager.getAllDeviceContexts();
         List<ConfigBundle> bundles = contexts.stream()
                 .map(ctx -> ConfigBundle.builder()
@@ -407,14 +407,14 @@ public class ConfigConsoleApplicationService {
      * @param request 配置导入请求
      * @return 配置导入结果
      */
-    public ApiResponse<ConfigImportResult> importConfigs(ConfigImportRequest request) {
+    public ApiResult<ConfigImportResult> importConfigs(ConfigImportRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getBundles())) {
             return error("导入内容不能为空");
         }
         List<DeviceContext> importContexts = new ArrayList<>();
         List<String> deviceIds = new ArrayList<>();
         for (ConfigBundle bundle : request.getBundles()) {
-            ApiResponse<ConfigImportResult> invalidResponse = appendImportContext(bundle, importContexts, deviceIds);
+            ApiResult<ConfigImportResult> invalidResponse = appendImportContext(bundle, importContexts, deviceIds);
             if (invalidResponse != null) {
                 return invalidResponse;
             }
@@ -444,7 +444,7 @@ public class ConfigConsoleApplicationService {
     /**
      * 补充导入配置上下文。
      */
-    private ApiResponse<ConfigImportResult> appendImportContext(ConfigBundle bundle,
+    private ApiResult<ConfigImportResult> appendImportContext(ConfigBundle bundle,
                                                                 List<DeviceContext> importContexts,
                                                                 List<String> deviceIds) {
         String deviceId = resolveDeviceId(bundle);
@@ -563,7 +563,7 @@ public class ConfigConsoleApplicationService {
     /**
      * 保存本地临时设备配置。
      */
-    private ApiResponse<LocalDeviceConfigResponse> saveLocalDevice(LocalDeviceConfigRequest request,
+    private ApiResult<LocalDeviceConfigResponse> saveLocalDevice(LocalDeviceConfigRequest request,
                                                                    String pathDeviceId,
                                                                    boolean overwrite) {
         if (request == null || request.getDevice() == null) {
@@ -610,35 +610,35 @@ public class ConfigConsoleApplicationService {
     /**
      * 构建成功响应。
      */
-    private <T> ApiResponse<T> success(T data) {
+    private <T> ApiResult<T> success(T data) {
         return success("OK", data);
     }
 
     /**
      * 构建成功响应。
      */
-    private <T> ApiResponse<T> success(String message, T data) {
-        return ApiResponse.success(message, data);
+    private <T> ApiResult<T> success(String message, T data) {
+        return ApiResult.statusSuccess(message, data);
     }
 
     /**
      * 抛出参数错误响应。
      */
-    private <T> ApiResponse<T> error(String message) {
+    private <T> ApiResult<T> error(String message) {
         return error(message, null);
     }
 
     /**
      * 抛出参数错误响应。
      */
-    private <T> ApiResponse<T> error(String message, Object data) {
+    private <T> ApiResult<T> error(String message, Object data) {
         throw new ConfigApiException(HttpStatus.BAD_REQUEST, message, data);
     }
 
     /**
      * 抛出资源不存在响应。
      */
-    private <T> ApiResponse<T> notFound(String message) {
+    private <T> ApiResult<T> notFound(String message) {
         throw new ConfigApiException(HttpStatus.NOT_FOUND, message, null);
     }
 }

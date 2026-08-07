@@ -1,7 +1,7 @@
 package com.wangbin.collector.api.exception;
 
 import com.wangbin.collector.api.controller.ConfigController;
-import com.wangbin.collector.api.controller.dto.ApiResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -19,8 +19,8 @@ public class ConfigApiExceptionHandler {
      * @return 统一异常响应
      */
     @ExceptionHandler(ConfigApiException.class)
-    public ResponseEntity<ApiResponse<Object>> handleConfigApiException(ConfigApiException exception) {
+    public ResponseEntity<ApiResult<Object>> handleConfigApiException(ConfigApiException exception) {
         return ResponseEntity.status(exception.getHttpStatus())
-                .body(ApiResponse.error(exception.getMessage(), exception.getData()));
+                .body(ApiResult.statusError(exception.getMessage(), exception.getData()));
     }
 }

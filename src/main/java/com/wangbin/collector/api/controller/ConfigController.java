@@ -1,7 +1,6 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.ConfigConsoleApplicationService;
-import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDeviceListResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDiffResponse;
 import com.wangbin.collector.api.controller.dto.ConfigExportResponse;
@@ -18,6 +17,7 @@ import com.wangbin.collector.api.controller.dto.LocalDeviceConfigResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.web.result.ApiResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -50,7 +50,7 @@ public class ConfigController {
      * @return 配置管理概览响应
      */
     @GetMapping("/summary")
-    public ApiResponse<ConfigSummaryResponse> getSummary() {
+    public ApiResult<ConfigSummaryResponse> getSummary() {
         return configConsoleApplicationService.getSummary();
     }
 
@@ -60,7 +60,7 @@ public class ConfigController {
      * @return 设备配置列表响应
      */
     @GetMapping("/devices")
-    public ApiResponse<ConfigDeviceListResponse> getAllDevices() {
+    public ApiResult<ConfigDeviceListResponse> getAllDevices() {
         return configConsoleApplicationService.getAllDevices();
     }
 
@@ -71,7 +71,7 @@ public class ConfigController {
      * @return 保存结果
      */
     @PostMapping("/local/devices")
-    public ApiResponse<LocalDeviceConfigResponse> createLocalDevice(
+    public ApiResult<LocalDeviceConfigResponse> createLocalDevice(
             @Valid @RequestBody LocalDeviceConfigRequest request) {
         return configConsoleApplicationService.createLocalDevice(request);
     }
@@ -84,7 +84,7 @@ public class ConfigController {
      * @return 保存结果
      */
     @PutMapping("/local/device/{deviceId}")
-    public ApiResponse<LocalDeviceConfigResponse> updateLocalDevice(@PathVariable String deviceId,
+    public ApiResult<LocalDeviceConfigResponse> updateLocalDevice(@PathVariable String deviceId,
                                                                     @Valid @RequestBody LocalDeviceConfigRequest request) {
         return configConsoleApplicationService.updateLocalDevice(deviceId, request);
     }
@@ -96,7 +96,7 @@ public class ConfigController {
      * @return 本地临时设备配置响应
      */
     @GetMapping("/local/device/{deviceId}")
-    public ApiResponse<LocalDeviceConfigResponse> getLocalDevice(@PathVariable String deviceId) {
+    public ApiResult<LocalDeviceConfigResponse> getLocalDevice(@PathVariable String deviceId) {
         return configConsoleApplicationService.getLocalDevice(deviceId);
     }
 
@@ -107,7 +107,7 @@ public class ConfigController {
      * @return 删除结果
      */
     @DeleteMapping("/local/device/{deviceId}")
-    public ApiResponse<DeviceIdResponse> deleteLocalDevice(@PathVariable String deviceId) {
+    public ApiResult<DeviceIdResponse> deleteLocalDevice(@PathVariable String deviceId) {
         return configConsoleApplicationService.deleteLocalDevice(deviceId);
     }
 
@@ -118,7 +118,7 @@ public class ConfigController {
      * @return 设备配置详情响应
      */
     @GetMapping("/device/{deviceId}")
-    public ApiResponse<DeviceConfigDetailResponse> getDevice(@PathVariable String deviceId) {
+    public ApiResult<DeviceConfigDetailResponse> getDevice(@PathVariable String deviceId) {
         return configConsoleApplicationService.getDevice(deviceId);
     }
 
@@ -130,7 +130,7 @@ public class ConfigController {
      * @return 设备点位配置响应
      */
     @GetMapping("/device/{deviceId}/points")
-    public ApiResponse<DevicePointConfigResponse> getDevicePoints(@PathVariable String deviceId,
+    public ApiResult<DevicePointConfigResponse> getDevicePoints(@PathVariable String deviceId,
                                                                   @RequestParam(value = "includeAdaptive", defaultValue = "false")
                                                                   boolean includeAdaptive) {
         return configConsoleApplicationService.getDevicePoints(deviceId, includeAdaptive);
@@ -143,7 +143,7 @@ public class ConfigController {
      * @return 已脱敏的连接配置响应
      */
     @GetMapping("/device/{deviceId}/connection")
-    public ApiResponse<DeviceConnectionConfigResponse> getDeviceConnection(@PathVariable String deviceId) {
+    public ApiResult<DeviceConnectionConfigResponse> getDeviceConnection(@PathVariable String deviceId) {
         return configConsoleApplicationService.getDeviceConnection(deviceId);
     }
 
@@ -154,7 +154,7 @@ public class ConfigController {
      * @return 配置差异响应
      */
     @GetMapping("/device/{deviceId}/diff")
-    public ApiResponse<ConfigDiffResponse> diff(@PathVariable String deviceId) {
+    public ApiResult<ConfigDiffResponse> diff(@PathVariable String deviceId) {
         return configConsoleApplicationService.diff(deviceId);
     }
 
@@ -166,7 +166,7 @@ public class ConfigController {
      * @return 更新结果
      */
     @PutMapping("/device/{deviceId}")
-    public ApiResponse<DeviceIdResponse> updateDevice(@PathVariable String deviceId,
+    public ApiResult<DeviceIdResponse> updateDevice(@PathVariable String deviceId,
                                                       @RequestBody DeviceInfo device) {
         return configConsoleApplicationService.updateDevice(deviceId, device);
     }
@@ -179,7 +179,7 @@ public class ConfigController {
      * @return 更新结果
      */
     @PutMapping("/device/{deviceId}/points")
-    public ApiResponse<DeviceIdResponse> updatePoints(@PathVariable String deviceId,
+    public ApiResult<DeviceIdResponse> updatePoints(@PathVariable String deviceId,
                                                       @RequestBody List<DataPoint> points) {
         return configConsoleApplicationService.updatePoints(deviceId, points);
     }
@@ -192,7 +192,7 @@ public class ConfigController {
      * @return 更新结果
      */
     @PutMapping("/device/{deviceId}/connection")
-    public ApiResponse<DeviceIdResponse> updateConnection(@PathVariable String deviceId,
+    public ApiResult<DeviceIdResponse> updateConnection(@PathVariable String deviceId,
                                                           @RequestBody DeviceConnection connection) {
         return configConsoleApplicationService.updateConnection(deviceId, connection);
     }
@@ -204,7 +204,7 @@ public class ConfigController {
      * @return 刷新结果
      */
     @PostMapping("/device/{deviceId}/refresh")
-    public ApiResponse<DeviceIdResponse> refreshDevice(@PathVariable String deviceId) {
+    public ApiResult<DeviceIdResponse> refreshDevice(@PathVariable String deviceId) {
         return configConsoleApplicationService.refreshDevice(deviceId);
     }
 
@@ -215,7 +215,7 @@ public class ConfigController {
      * @return 清理结果
      */
     @PostMapping("/device/{deviceId}/clear")
-    public ApiResponse<DeviceIdResponse> clearDevice(@PathVariable String deviceId) {
+    public ApiResult<DeviceIdResponse> clearDevice(@PathVariable String deviceId) {
         return configConsoleApplicationService.clearDevice(deviceId);
     }
 
@@ -225,7 +225,7 @@ public class ConfigController {
      * @return 同步触发结果
      */
     @PostMapping("/sync")
-    public ApiResponse<Object> triggerFullSync() {
+    public ApiResult<Object> triggerFullSync() {
         return configConsoleApplicationService.triggerFullSync();
     }
 
@@ -237,7 +237,7 @@ public class ConfigController {
      * @return 同步触发结果
      */
     @PostMapping("/sync/{type}")
-    public ApiResponse<DeviceIdResponse> triggerPartialSync(@PathVariable String type,
+    public ApiResult<DeviceIdResponse> triggerPartialSync(@PathVariable String type,
                                                             @RequestParam(value = "deviceId", required = false)
                                                             String deviceId) {
         return configConsoleApplicationService.triggerPartialSync(type, deviceId);
@@ -249,7 +249,7 @@ public class ConfigController {
      * @return 配置同步状态响应
      */
     @GetMapping("/sync/status")
-    public ApiResponse<ConfigSyncStatusResponse> getSyncStatus() {
+    public ApiResult<ConfigSyncStatusResponse> getSyncStatus() {
         return configConsoleApplicationService.getSyncStatus();
     }
 
@@ -259,7 +259,7 @@ public class ConfigController {
      * @return 配置导出响应
      */
     @GetMapping("/export")
-    public ApiResponse<ConfigExportResponse> exportConfigs() {
+    public ApiResult<ConfigExportResponse> exportConfigs() {
         return configConsoleApplicationService.exportConfigs();
     }
 
@@ -270,7 +270,7 @@ public class ConfigController {
      * @return 配置导入结果
      */
     @PostMapping("/import")
-    public ApiResponse<ConfigImportResult> importConfigs(@Valid @RequestBody ConfigImportRequest request) {
+    public ApiResult<ConfigImportResult> importConfigs(@Valid @RequestBody ConfigImportRequest request) {
         return configConsoleApplicationService.importConfigs(request);
     }
 }

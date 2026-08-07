@@ -69,6 +69,7 @@ class ConfigControllerTest {
 
         mockMvc.perform(get("/api/config/summary"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.cacheStats.deviceCount", is(1)))
                 .andExpect(jsonPath("$.data.serviceId", is("collector-1")));
@@ -151,6 +152,7 @@ class ConfigControllerTest {
 
         mockMvc.perform(delete("/api/config/local/device/remote-1"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("error")));
     }
 

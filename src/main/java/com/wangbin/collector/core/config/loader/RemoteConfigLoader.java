@@ -1,9 +1,9 @@
 package com.wangbin.collector.core.config.loader;
 
-import com.wangbin.collector.common.domain.entity.ApiResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.config.CollectorProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 定义当前模块的业务组件。
+ * 通过远程配置接口加载设备、点位和连接配置。
  */
 @Slf4j
 @Service
@@ -39,7 +39,7 @@ public class RemoteConfigLoader implements ConfigLoader {
     private final RestTemplate restTemplate;
 
     /**
-     * 创建当前组件实例。
+     * 创建远程配置加载器并设置接口调用超时。
      */
     public RemoteConfigLoader(RestTemplateBuilder restTemplateBuilder,
                               CollectorProperties collectorProperties) {
@@ -51,16 +51,13 @@ public class RemoteConfigLoader implements ConfigLoader {
     }
 
     /**
-     * 查询并返回业务数据。
+     * 加载全部远程设备配置。
      */
     @Override
     public List<DeviceInfo> loadAllDevices() {
         String url = configProperties.getYunUrl() + "/iot/collector/config/devices?serviceId=" + configProperties.getServiceId();
         try {
-            ResponseEntity<ApiResponse<List<DeviceInfo>>> response = restTemplate.exchange(
-                    /**
-                     * 创建并返回业务对象。
-                     */
+            ResponseEntity<ApiResult<List<DeviceInfo>>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -77,16 +74,13 @@ public class RemoteConfigLoader implements ConfigLoader {
     }
 
     /**
-     * 查询并返回业务数据。
+     * 加载单个远程设备配置。
      */
     @Override
     public DeviceInfo loadDevice(String deviceId) {
         try {
             String url = configProperties.getYunUrl() + "/iot/collector/config/device/" + deviceId;
-            ResponseEntity<ApiResponse<DeviceInfo>> response = restTemplate.exchange(
-                    /**
-                     * 创建并返回业务对象。
-                     */
+            ResponseEntity<ApiResult<DeviceInfo>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -105,16 +99,13 @@ public class RemoteConfigLoader implements ConfigLoader {
     }
 
     /**
-     * 查询并返回业务数据。
+     * 加载远程点位配置。
      */
     @Override
     public List<DataPoint> loadDataPoints(String deviceId) {
         try {
             String url = configProperties.getYunUrl() + "/iot/collector/config/points/" + deviceId;
-            ResponseEntity<ApiResponse<List<DataPoint>>> response = restTemplate.exchange(
-                    /**
-                     * 创建并返回业务对象。
-                     */
+            ResponseEntity<ApiResult<List<DataPoint>>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -132,16 +123,13 @@ public class RemoteConfigLoader implements ConfigLoader {
     }
 
     /**
-     * 查询并返回业务数据。
+     * 加载远程连接配置。
      */
     @Override
     public DeviceConnection loadConnectionConfig(String deviceId) {
         try {
             String url = configProperties.getYunUrl() + "/iot/collector/config/connection/" + deviceId;
-            ResponseEntity<ApiResponse<DeviceConnection>> response = restTemplate.exchange(
-                    /**
-                     * 创建并返回业务对象。
-                     */
+            ResponseEntity<ApiResult<DeviceConnection>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK) {
@@ -158,7 +146,7 @@ public class RemoteConfigLoader implements ConfigLoader {
     }
 
     /**
-     * 创建并返回业务对象。
+     * 创建远程配置接口鉴权请求头。
      */
     private HttpEntity<String> createAuthRequest() {
         HttpHeaders headers = new HttpHeaders();

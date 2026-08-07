@@ -1,7 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
-import com.wangbin.collector.api.controller.dto.DeviceControllerResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.api.validation.ApiValidationConstants;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import jakarta.validation.constraints.Pattern;
@@ -36,7 +36,7 @@ public class DeviceController {
      * @return 设备启动结果
      */
     @PostMapping("/{deviceId}/start")
-    public DeviceControllerResponse<Object> startDevice(
+    public ApiResult<Object> startDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -50,7 +50,7 @@ public class DeviceController {
      * @return 设备启动结果
      */
     @PostMapping("/{deviceId}/start-local")
-    public DeviceControllerResponse<Object> startLocalDevice(
+    public ApiResult<Object> startLocalDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -64,7 +64,7 @@ public class DeviceController {
      * @return 设备停止结果
      */
     @PostMapping("/{deviceId}/stop")
-    public DeviceControllerResponse<Object> stopDevice(
+    public ApiResult<Object> stopDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -77,7 +77,7 @@ public class DeviceController {
      * @return 重载结果
      */
     @PostMapping("/reload")
-    public DeviceControllerResponse<Object> reloadAllDevices() {
+    public ApiResult<Object> reloadAllDevices() {
         return deviceConsoleApplicationService.reloadAllDevices();
     }
 
@@ -88,7 +88,7 @@ public class DeviceController {
      * @return 设备状态响应
      */
     @GetMapping("/{deviceId}/status")
-    public DeviceControllerResponse<Map<String, Object>> getDeviceStatus(
+    public ApiResult<Map<String, Object>> getDeviceStatus(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -101,7 +101,7 @@ public class DeviceController {
      * @return 全部采集统计响应
      */
     @GetMapping("/statistics")
-    public DeviceControllerResponse<Map<String, Map<String, Object>>> getAllStatistics() {
+    public ApiResult<Map<String, Map<String, Object>>> getAllStatistics() {
         return deviceConsoleApplicationService.getAllStatistics();
     }
 
@@ -111,7 +111,7 @@ public class DeviceController {
      * @return 正在运行的设备列表响应
      */
     @GetMapping("/running")
-    public DeviceControllerResponse<List<String>> getRunningDevices() {
+    public ApiResult<List<String>> getRunningDevices() {
         return deviceConsoleApplicationService.getRunningDevices();
     }
 
@@ -121,7 +121,7 @@ public class DeviceController {
      * @return 设备运行快照响应
      */
     @GetMapping("/runtime")
-    public DeviceControllerResponse<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
+    public ApiResult<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
         return deviceConsoleApplicationService.getDeviceRuntimeSnapshots();
     }
 
@@ -132,7 +132,7 @@ public class DeviceController {
      * @return 设备运行状态响应
      */
     @GetMapping("/{deviceId}/running")
-    public DeviceControllerResponse<Object> isDeviceRunning(
+    public ApiResult<Object> isDeviceRunning(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {

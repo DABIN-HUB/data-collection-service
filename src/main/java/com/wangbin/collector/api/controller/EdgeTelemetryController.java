@@ -1,8 +1,8 @@
 package com.wangbin.collector.api.controller;
 
-import com.wangbin.collector.api.controller.dto.ApiResponse;
 import com.wangbin.collector.api.controller.dto.EdgeTelemetryBatchRequest;
 import com.wangbin.collector.api.controller.dto.EdgeTelemetryItem;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.edge.EdgeTelemetryBatch;
 import com.wangbin.collector.core.collector.edge.EdgeTelemetryIngressResult;
 import com.wangbin.collector.core.collector.edge.EdgeTelemetryIngressService;
@@ -25,9 +25,9 @@ public class EdgeTelemetryController {
     private final EdgeTelemetryIngressService ingressService;
 
     @PostMapping("/telemetry")
-    public ApiResponse<EdgeTelemetryIngressResult> ingest(
+    public ApiResult<EdgeTelemetryIngressResult> ingest(
             @Valid @RequestBody EdgeTelemetryBatchRequest request) {
-        return ApiResponse.success("边缘遥测处理完成", ingressService.ingest(toBatch(request)));
+        return ApiResult.statusSuccess("边缘遥测处理完成", ingressService.ingest(toBatch(request)));
     }
 
     private EdgeTelemetryBatch toBatch(EdgeTelemetryBatchRequest request) {
