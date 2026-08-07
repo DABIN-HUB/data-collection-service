@@ -8,8 +8,8 @@ import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
-import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
+import com.wangbin.collector.core.port.CollectionHealthReporter;
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -89,7 +89,7 @@ class CollectionThroughputStressIT {
             CollectionManager collectionManager = mock(CollectionManager.class);
             ConfigManager configManager = mock(ConfigManager.class);
             CollectionStatistics collectionStatistics = mock(CollectionStatistics.class);
-            CollectionServiceHealthTracker healthTracker = mock(CollectionServiceHealthTracker.class);
+            CollectionHealthReporter healthTracker = mock(CollectionHealthReporter.class);
             CollectionTaskGuard collectionTaskGuard = new CollectionTaskGuard();
             SchedulerRuntimeState runtimeState = new SchedulerRuntimeState();
             PerformanceMonitor performanceMonitor = new PerformanceMonitor();

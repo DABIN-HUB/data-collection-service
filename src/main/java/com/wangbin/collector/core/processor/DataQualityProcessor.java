@@ -10,8 +10,8 @@ import com.wangbin.collector.core.alarm.AlarmStateTracker;
 import com.wangbin.collector.core.alarm.AlarmMetadataKeys;
 import com.wangbin.collector.core.alarm.AlarmTransition;
 import com.wangbin.collector.core.alarm.AlarmTransitionType;
-import com.wangbin.collector.monitor.alert.AlertManager;
-import com.wangbin.collector.monitor.alert.AlertNotification;
+import com.wangbin.collector.common.domain.alert.AlertNotification;
+import com.wangbin.collector.core.port.AlertPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -27,14 +27,14 @@ public class DataQualityProcessor extends AbstractDataProcessor {
     private static final String QUALITY_EVENT_TYPE = "QUALITY";
     private static final String ALARM_EVENT_TYPE = "ALARM";
     private static final String ALARM_RECOVERED_EVENT_TYPE = "ALARM_RECOVERED";
-    private final AlertManager alertManager;
+    private final AlertPublisher alertPublisher;
     private final AlarmStateTracker alarmStateTracker;
     /**
      * 创建当前组件实例。
      */
-    public DataQualityProcessor(AlertManager alertManager,
+    public DataQualityProcessor(AlertPublisher alertPublisher,
                                 AlarmStateTracker alarmStateTracker) {
-        this.alertManager = alertManager;
+        this.alertPublisher = alertPublisher;
         this.alarmStateTracker = alarmStateTracker;
         this.name = "DataQualityProcessor";
         this.type = "QUALITY";
@@ -224,7 +224,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                              ProcessContext context,
                              ProcessResult result,
                              Object rawValue) {
-        if (alertManager == null || event == null) {
+        if (alertPublisher == null || event == null) {
             return;
         }
         String contextDeviceId = null;
@@ -255,7 +255,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                         .unit(point != null ? point.getUnit() : null)
                         .timestamp(context != null ? context.getProcessTime() : System.currentTimeMillis())
                         .build();
-        alertManager.notifyAlert(notification, false);
+        alertPublisher.notifyAlert(notification, false);
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
+import com.wangbin.collector.core.port.SystemResourceProbe;
 import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +26,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
  */
 @Service
 @RequiredArgsConstructor
-public class SystemResourceMonitorService {
+public class SystemResourceMonitorService implements SystemResourceProbe {
 
     private final BeanFactory beanFactory;
     private final CloudOutboxService cloudOutboxService;
@@ -74,6 +75,11 @@ public class SystemResourceMonitorService {
                 .outboxOldestMessageAgeMillis(cloudOutboxService.getOldestMessageAgeMillis())
                 .threadPools(threadPools)
                 .build();
+    }
+
+    @Override
+    public double getProcessCpuLoad() {
+        return readCpuLoad(com.sun.management.OperatingSystemMXBean::getProcessCpuLoad);
     }
 
     /**

@@ -1,13 +1,15 @@
-package com.wangbin.collector.monitor.alert;
+package com.wangbin.collector.common.domain.alert;
 
 import lombok.Builder;
 import lombok.Value;
+import lombok.extern.jackson.Jacksonized;
 
 /**
- * 定义当前模块的业务组件。
+ * 告警通知数据，供质量处理、告警监控、历史存储和云端上报共享。
  */
 @Value
 @Builder
+@Jacksonized
 public class AlertNotification {
     String deviceId;
     String deviceName;

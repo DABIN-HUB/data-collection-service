@@ -10,7 +10,7 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
-import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
+import com.wangbin.collector.core.port.CollectionHealthReporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,7 +61,7 @@ class DeviceLifecycleCoordinatorTest {
     private ExecutorService lifecycleCallExecutor;
     private CollectionTaskGuard collectionTaskGuard;
     private CollectionStatistics collectionStatistics;
-    private CollectionServiceHealthTracker healthTracker;
+    private CollectionHealthReporter healthTracker;
     private DeviceBatchExecutor deviceBatchExecutor;
     private ReconnectCoordinator reconnectCoordinator;
     private DeviceLifecycleCoordinator lifecycleCoordinator;
@@ -89,7 +89,7 @@ class DeviceLifecycleCoordinatorTest {
         });
         collectionTaskGuard = new CollectionTaskGuard();
         collectionStatistics = mock(CollectionStatistics.class);
-        healthTracker = mock(CollectionServiceHealthTracker.class);
+        healthTracker = mock(CollectionHealthReporter.class);
         deviceBatchExecutor = mock(DeviceBatchExecutor.class);
         reconnectCoordinator = mock(ReconnectCoordinator.class);
         lifecycleCoordinator = newLifecycleCoordinator(deviceStartExecutor);

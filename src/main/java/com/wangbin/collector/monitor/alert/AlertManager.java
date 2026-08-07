@@ -1,5 +1,7 @@
 package com.wangbin.collector.monitor.alert;
 
+import com.wangbin.collector.common.domain.alert.AlertNotification;
+import com.wangbin.collector.core.port.AlertPublisher;
 import com.wangbin.collector.core.report.service.CacheReportService;
 import com.wangbin.collector.storage.service.AlarmHistoryService;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +20,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 @Slf4j
 @Component
-public class AlertManager {
+public class AlertManager implements AlertPublisher {
 
     private final CacheReportService cacheReportService;
     @Nullable
@@ -69,6 +71,7 @@ public class AlertManager {
      * @param notification 告警通知
      * @param uploadToCloud 是否直接上传云端
      */
+    @Override
     public void notifyAlert(AlertNotification notification, boolean uploadToCloud) {
         if (notification == null) {
             return;

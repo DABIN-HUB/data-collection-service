@@ -2,7 +2,8 @@ package com.wangbin.collector.core.collector.protocol.base;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.Test;
 
@@ -11,8 +12,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class BaseCollectorReadPointsTest {
 
@@ -90,6 +93,19 @@ class BaseCollectorReadPointsTest {
         assertEquals(3, longResult);
     }
 
+    @Test
+    void shouldReportReadExceptionThroughExceptionReporterPort() throws Exception {
+        TestCollector collector = connectedCollector(new TestCollector(Map.of()));
+        ExceptionReporter exceptionReporter = mock(ExceptionReporter.class);
+        collector.exceptionReporter = exceptionReporter;
+        collector.failReadPoint = true;
+        DataPoint point = point("p1");
+
+        assertThrows(CollectorException.class, () -> collector.readPoint(point));
+
+        verify(exceptionReporter).record(collector.readFailure, "dev-1", "p1");
+    }
+
     private TestCollector connectedCollector(TestCollector collector) throws Exception {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId("dev-1");
@@ -113,6 +129,8 @@ class BaseCollectorReadPointsTest {
 
         private final Map<String, Object> rawValues;
         private boolean failUnsubscribe;
+        private boolean failReadPoint;
+        private final RuntimeException readFailure = new RuntimeException("read failed");
         private int disconnectCount;
 
         private TestCollector(Map<String, Object> rawValues) {
@@ -130,6 +148,9 @@ class BaseCollectorReadPointsTest {
 
         @Override
         protected Object doReadPoint(DataPoint point) {
+            if (failReadPoint) {
+                throw readFailure;
+            }
             return rawValues.get(point.getPointId());
         }
 

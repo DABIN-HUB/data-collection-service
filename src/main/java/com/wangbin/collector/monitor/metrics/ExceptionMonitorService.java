@@ -1,5 +1,6 @@
 package com.wangbin.collector.monitor.metrics;
 
+import com.wangbin.collector.core.port.ExceptionReporter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ExceptionMonitorService {
+public class ExceptionMonitorService implements ExceptionReporter {
 
     private static final int MAX_RECENT = 100;
 
@@ -34,6 +35,7 @@ public class ExceptionMonitorService {
     /**
      * 记录或统计业务状态。
      */
+    @Override
     public void record(Throwable throwable, String deviceId, String pointId) {
         String category = categorize(throwable);
         totalCounter.increment();

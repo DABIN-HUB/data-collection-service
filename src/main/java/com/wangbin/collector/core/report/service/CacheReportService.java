@@ -32,7 +32,7 @@ import com.wangbin.collector.core.report.shadow.ShadowManager;
 import com.wangbin.collector.core.report.shadow.ShadowManager.EventInfo;
 import com.wangbin.collector.core.report.shadow.ShadowManager.ShadowUpdateResult;
 import com.wangbin.collector.core.report.shadow.ValueMeta;
-import com.wangbin.collector.monitor.alert.AlertNotification;
+import com.wangbin.collector.common.domain.alert.AlertNotification;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;

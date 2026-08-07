@@ -9,7 +9,7 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.factory.ConnectionFactory;
 import com.wangbin.collector.core.connection.model.ConnectionMetrics;
-import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +36,7 @@ public class ConnectionManager {
     private final ConnectionFactory connectionFactory;
     private final ConfigManager configManager;
     @Nullable
-    private final ExceptionMonitorService exceptionMonitorService;
+    private final ExceptionReporter exceptionReporter;
 
     // 连接存储：deviceId -> ConnectionAdapter
     private final Map<String, ConnectionAdapter> connections = new ConcurrentHashMap<>();
@@ -60,11 +60,11 @@ public class ConnectionManager {
      */
     public ConnectionManager(ConnectionFactory connectionFactory,
                              ConfigManager configManager,
-                             @Nullable ExceptionMonitorService exceptionMonitorService,
+                             @Nullable ExceptionReporter exceptionReporter,
                              @Qualifier("heartbeatExecutor") @Nullable ExecutorService heartbeatExecutor) {
         this.connectionFactory = connectionFactory;
         this.configManager = configManager;
-        this.exceptionMonitorService = exceptionMonitorService;
+        this.exceptionReporter = exceptionReporter;
         this.heartbeatExecutor = heartbeatExecutor;
     }
 
@@ -628,8 +628,8 @@ public class ConnectionManager {
      * 记录或统计业务状态。
      */
     private void recordException(String deviceId, Exception e) {
-        if (exceptionMonitorService != null) {
-            exceptionMonitorService.record(e, deviceId, null);
+        if (exceptionReporter != null) {
+            exceptionReporter.record(e, deviceId, null);
         }
     }
 

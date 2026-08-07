@@ -15,11 +15,11 @@ import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
 import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
-import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -49,7 +49,7 @@ public abstract class BaseCollector implements ProtocolCollector,
     protected ConnectionManager connectionManager;
     protected ConfigManager configManager;
     protected DataQualityProcessor dataQualityProcessor;
-    protected ExceptionMonitorService exceptionMonitorService;
+    protected ExceptionReporter exceptionReporter;
     protected TelemetryIngressService telemetryIngressService;
 
     /**
@@ -60,13 +60,13 @@ public abstract class BaseCollector implements ProtocolCollector,
                                              ConnectionManager connectionManager,
                                              ConfigManager configManager,
                                              DataQualityProcessor dataQualityProcessor,
-                                             ObjectProvider<ExceptionMonitorService> exceptionMonitorServiceProvider,
+                                             ObjectProvider<ExceptionReporter> exceptionReporterProvider,
                                              ObjectProvider<TelemetryIngressService> telemetryIngressServiceProvider) {
         this.collectorProperties = collectorProperties;
         this.connectionManager = connectionManager;
         this.configManager = configManager;
         this.dataQualityProcessor = dataQualityProcessor;
-        this.exceptionMonitorService = exceptionMonitorServiceProvider.getIfAvailable();
+        this.exceptionReporter = exceptionReporterProvider.getIfAvailable();
         this.telemetryIngressService = telemetryIngressServiceProvider.getIfAvailable();
     }
 protected volatile boolean connected = false;
@@ -996,12 +996,12 @@ protected volatile boolean connected = false;
      * 异常监控扩展钩子。
      */
     protected void recordException(Throwable throwable, DataPoint point) {
-        if (exceptionMonitorService == null) {
+        if (exceptionReporter == null) {
             return;
         }
         String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
         String pointId = point != null ? point.getPointId() : null;
-        exceptionMonitorService.record(throwable, deviceId, pointId);
+        exceptionReporter.record(throwable, deviceId, pointId);
     }
 
     protected DeviceContext getDeviceContextSnapshot() {

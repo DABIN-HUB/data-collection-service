@@ -9,7 +9,7 @@ import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.config.CacheMode;
 import com.wangbin.collector.core.cache.config.CacheProperties;
-import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +42,7 @@ public class MultiLevelCacheManager implements CacheManager {
     @Nullable
     private final RedisCacheManager redisCacheManager;
     @Nullable
-    private final ExceptionMonitorService exceptionMonitorService;
+    private final ExceptionReporter exceptionReporter;
     private final CacheProperties cacheProperties;
 
     private final List<CacheManager> cacheManagers = new CopyOnWriteArrayList<>();
@@ -69,12 +69,12 @@ public class MultiLevelCacheManager implements CacheManager {
      */
     public MultiLevelCacheManager(@Qualifier("localCacheManager") @Nullable LocalCacheManager localCacheManager,
                                   @Qualifier("redisCacheManager") @Nullable RedisCacheManager redisCacheManager,
-                                  @Nullable ExceptionMonitorService exceptionMonitorService,
+                                  @Nullable ExceptionReporter exceptionReporter,
                                   CacheProperties cacheProperties,
                                   @Qualifier("ioIntensiveExecutor") ExecutorService asyncExecutor) {
         this.localCacheManager = localCacheManager;
         this.redisCacheManager = redisCacheManager;
-        this.exceptionMonitorService = exceptionMonitorService;
+        this.exceptionReporter = exceptionReporter;
         this.cacheProperties = cacheProperties;
         this.asyncExecutor = asyncExecutor;
     }
@@ -916,7 +916,7 @@ public class MultiLevelCacheManager implements CacheManager {
      * 记录或统计业务状态。
      */
     private void recordCacheWarning(String message, CacheKey key) {
-        if (exceptionMonitorService == null) {
+        if (exceptionReporter == null) {
             return;
         }
         recordCacheException(new IllegalStateException(message), key);
@@ -926,11 +926,11 @@ public class MultiLevelCacheManager implements CacheManager {
      * 记录或统计业务状态。
      */
     private void recordCacheException(Throwable throwable, CacheKey key) {
-        if (exceptionMonitorService == null || throwable == null) {
+        if (exceptionReporter == null || throwable == null) {
             return;
         }
         String resourceId = key != null ? key.getFullKey() : "MULTI_LEVEL_CACHE";
-        exceptionMonitorService.record(throwable, resourceId, null);
+        exceptionReporter.record(throwable, resourceId, null);
     }
 
     private boolean isOperational() {

@@ -9,7 +9,7 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
-import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
+import com.wangbin.collector.core.port.SystemResourceProbe;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +48,7 @@ public class CollectionScheduler {
     private final CollectionStatistics collectionStatistics;
     private final CollectorProperties collectorProperties;
     @Nullable
-    private final SystemResourceMonitorService systemResourceMonitorService;
+    private final SystemResourceProbe systemResourceProbe;
     private final SchedulerRuntimeState runtimeState;
     private final PerformanceMonitor performanceMonitor;
     private final DeviceLifecycleCoordinator deviceLifecycleCoordinator;
@@ -64,7 +64,7 @@ public class CollectionScheduler {
                                ConfigManager configManager,
                                CollectionStatistics collectionStatistics,
                                CollectorProperties collectorProperties,
-                               @Nullable SystemResourceMonitorService systemResourceMonitorService,
+                               @Nullable SystemResourceProbe systemResourceProbe,
                                SchedulerRuntimeState runtimeState,
                                PerformanceMonitor performanceMonitor,
                                DeviceLifecycleCoordinator deviceLifecycleCoordinator,
@@ -75,7 +75,7 @@ public class CollectionScheduler {
         this.configManager = configManager;
         this.collectionStatistics = collectionStatistics;
         this.collectorProperties = collectorProperties;
-        this.systemResourceMonitorService = systemResourceMonitorService;
+        this.systemResourceProbe = systemResourceProbe;
         this.runtimeState = runtimeState;
         this.performanceMonitor = performanceMonitor;
         this.deviceLifecycleCoordinator = deviceLifecycleCoordinator;
@@ -309,11 +309,11 @@ public class CollectionScheduler {
     }
 
     double resolveProcessCpuLoad() {
-        if (systemResourceMonitorService == null) {
+        if (systemResourceProbe == null) {
             return -1D;
         }
         try {
-            return systemResourceMonitorService.getResources().getProcessCpuLoad();
+            return systemResourceProbe.getProcessCpuLoad();
         } catch (Exception e) {
             log.debug("读取进程 CPU 负载失败", e);
             return -1D;

@@ -3,6 +3,7 @@ package com.wangbin.collector.storage.service;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.port.HistoryTelemetrySink;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
@@ -23,7 +24,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
-public class HistoryDataService {
+public class HistoryDataService implements HistoryTelemetrySink {
 
     private final HistoryWriteBuffer historyWriteBuffer;
     private final TimeSeriesService timeSeriesService;
@@ -33,6 +34,7 @@ public class HistoryDataService {
     /**
      * 写入或持久化业务数据。
      */
+    @Override
     public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
             return;
@@ -64,6 +66,7 @@ public class HistoryDataService {
         return timeSeriesService.query(deviceId, pointId, startTs, endTs, limit);
     }
 
+    @Override
     public boolean isEnabled() {
         return properties.isEnabled();
     }

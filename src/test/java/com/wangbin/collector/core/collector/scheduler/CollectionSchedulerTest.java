@@ -5,6 +5,7 @@ import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.port.SystemResourceProbe;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -34,6 +36,7 @@ public class CollectionSchedulerTest {
     private DeviceLifecycleCoordinator lifecycleCoordinator;
     private DeviceBatchExecutor batchExecutor;
     private ReconnectCoordinator reconnectCoordinator;
+    private SystemResourceProbe systemResourceProbe;
     private ScheduledExecutorService timeSliceScheduler;
     private CollectionScheduler scheduler;
 
@@ -52,19 +55,27 @@ public class CollectionSchedulerTest {
         lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         batchExecutor = mock(DeviceBatchExecutor.class);
         reconnectCoordinator = mock(ReconnectCoordinator.class);
+        systemResourceProbe = mock(SystemResourceProbe.class);
         timeSliceScheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler = new CollectionScheduler(
                 collectionManager,
                 configManager,
                 mock(CollectionStatistics.class),
                 collectorProperties,
-                null,
+                systemResourceProbe,
                 runtimeState,
                 performanceMonitor,
                 lifecycleCoordinator,
                 batchExecutor,
                 reconnectCoordinator,
                 timeSliceScheduler);
+    }
+
+    @Test
+    void collectionSchedulerShouldReadCpuLoadThroughSystemResourceProbe() {
+        when(systemResourceProbe.getProcessCpuLoad()).thenReturn(75D);
+
+        assertEquals(75D, scheduler.resolveProcessCpuLoad());
     }
 
     @AfterEach

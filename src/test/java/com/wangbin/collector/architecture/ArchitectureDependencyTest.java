@@ -28,6 +28,16 @@ class ArchitectureDependencyTest {
                     .should().dependOnClassesThat().resideInAPackage("com.wangbin.collector.api..");
 
     @ArchTest
+    static final ArchRule core_should_not_depend_on_monitor =
+            noClasses().that().resideInAPackage("com.wangbin.collector.core..")
+                    .should().dependOnClassesThat().resideInAPackage("com.wangbin.collector.monitor..");
+
+    @ArchTest
+    static final ArchRule core_should_not_depend_on_storage =
+            noClasses().that().resideInAPackage("com.wangbin.collector.core..")
+                    .should().dependOnClassesThat().resideInAPackage("com.wangbin.collector.storage..");
+
+    @ArchTest
     static final ArchRule api_controller_should_not_be_referenced_by_core_or_common =
             noClasses().that().resideInAnyPackage(
                             "com.wangbin.collector.core..",

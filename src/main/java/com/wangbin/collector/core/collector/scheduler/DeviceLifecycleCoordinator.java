@@ -11,7 +11,7 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
-import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
+import com.wangbin.collector.core.port.CollectionHealthReporter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -39,7 +39,7 @@ public class DeviceLifecycleCoordinator {
     private final ConfigManager configManager;
     private final CollectionStatistics collectionStatistics;
     private final CollectorProperties collectorProperties;
-    private final CollectionServiceHealthTracker collectionServiceHealthTracker;
+    private final CollectionHealthReporter collectionHealthReporter;
     private final DeviceBatchPlanner deviceBatchPlanner;
     private final ProtocolBatchStrategy protocolBatchStrategy;
     private final CollectionTaskGuard collectionTaskGuard;
@@ -56,7 +56,7 @@ public class DeviceLifecycleCoordinator {
                                       ConfigManager configManager,
                                       CollectionStatistics collectionStatistics,
                                       CollectorProperties collectorProperties,
-                                      CollectionServiceHealthTracker collectionServiceHealthTracker,
+                                      CollectionHealthReporter collectionHealthReporter,
                                       DeviceBatchPlanner deviceBatchPlanner,
                                       ProtocolBatchStrategy protocolBatchStrategy,
                                       CollectionTaskGuard collectionTaskGuard,
@@ -70,7 +70,7 @@ public class DeviceLifecycleCoordinator {
         this.configManager = configManager;
         this.collectionStatistics = collectionStatistics;
         this.collectorProperties = collectorProperties;
-        this.collectionServiceHealthTracker = collectionServiceHealthTracker;
+        this.collectionHealthReporter = collectionHealthReporter;
         this.deviceBatchPlanner = deviceBatchPlanner;
         this.protocolBatchStrategy = protocolBatchStrategy;
         this.collectionTaskGuard = collectionTaskGuard;
@@ -284,7 +284,7 @@ public class DeviceLifecycleCoordinator {
             runtimeState.removeDevice(deviceId);
             reconnectCoordinator.clear(deviceId);
             collectionStatistics.stopCollection(deviceId);
-            collectionServiceHealthTracker.markDeviceStopped(deviceId);
+            collectionHealthReporter.markDeviceStopped(deviceId);
             disconnectOrCleanupDevice(deviceId, wasRunning, wasStarting);
             return true;
         } catch (Exception e) {
@@ -413,7 +413,7 @@ public class DeviceLifecycleCoordinator {
                 return false;
             }
             collectionStatistics.startCollection(deviceId, preparation.dataPoints().size());
-            collectionServiceHealthTracker.markDeviceStarted(deviceId);
+            collectionHealthReporter.markDeviceStarted(deviceId);
             return true;
         } finally {
             releaseLifecycleLock(deviceId, lifecycleLock);

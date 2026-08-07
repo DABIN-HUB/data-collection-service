@@ -2,6 +2,7 @@ package com.wangbin.collector.core.cache.manager;
 
 import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheKey;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -52,6 +53,33 @@ class MultiLevelCacheManagerTest {
         assertEquals("redis-v2", values.get(key2));
         verify(redisCacheManager).pipelineGetAll(List.of(key2), null);
         verify(redisCacheManager, never()).get(any(CacheKey.class));
+    }
+
+    @Test
+    void multiLevelCacheManagerShouldReportCacheReadExceptionThroughPort() {
+        LocalCacheManager localCacheManager = mock(LocalCacheManager.class);
+        RedisCacheManager redisCacheManager = mock(RedisCacheManager.class);
+        ExceptionReporter exceptionReporter = mock(ExceptionReporter.class);
+        ExecutorService directExecutor = new DirectExecutorService();
+        MultiLevelCacheManager manager = new MultiLevelCacheManager(
+                localCacheManager,
+                redisCacheManager,
+                exceptionReporter,
+                new CacheProperties(),
+                directExecutor);
+        ReflectionTestUtils.setField(manager, "enabled", true);
+        ReflectionTestUtils.setField(manager, "shuttingDown", false);
+        ReflectionTestUtils.setField(manager, "maxLevel", 2);
+        when(localCacheManager.getCacheLevel()).thenReturn(1);
+        when(redisCacheManager.getCacheLevel()).thenReturn(2);
+        CacheKey key = CacheKey.dataKey("dev-1", "p1");
+        RuntimeException failure = new RuntimeException("local cache unavailable");
+        when(localCacheManager.get(key)).thenThrow(failure);
+        when(redisCacheManager.pipelineGetAll(List.of(key), null)).thenReturn(Map.of());
+
+        manager.getAll(List.of(key));
+
+        verify(exceptionReporter).record(failure, key.getFullKey(), null);
     }
 
     private static final class DirectExecutorService extends AbstractExecutorService {
