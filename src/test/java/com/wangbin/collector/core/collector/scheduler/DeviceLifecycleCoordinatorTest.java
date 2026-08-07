@@ -18,19 +18,25 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -59,6 +65,7 @@ class DeviceLifecycleCoordinatorTest {
     private DeviceBatchExecutor deviceBatchExecutor;
     private ReconnectCoordinator reconnectCoordinator;
     private DeviceLifecycleCoordinator lifecycleCoordinator;
+    private ProtocolBatchStrategy protocolBatchStrategy;
 
     @BeforeEach
     void setUp() {
@@ -70,7 +77,7 @@ class DeviceLifecycleCoordinatorTest {
         collectorProperties = new CollectorProperties();
         collectorProperties.getAdaptiveCollection().setEnabled(false);
         collectorProperties.getScheduler().setDeviceStartTimeoutMs(1000);
-        ProtocolBatchStrategy protocolBatchStrategy = mock(ProtocolBatchStrategy.class);
+        protocolBatchStrategy = mock(ProtocolBatchStrategy.class);
         when(protocolBatchStrategy.defaultBatchSize(anyString())).thenReturn(10);
         when(protocolBatchStrategy.maxBatchSize(anyString())).thenReturn(100);
         deviceStartExecutor = fixedPool("lifecycle-start", 2);
@@ -85,21 +92,7 @@ class DeviceLifecycleCoordinatorTest {
         healthTracker = mock(CollectionServiceHealthTracker.class);
         deviceBatchExecutor = mock(DeviceBatchExecutor.class);
         reconnectCoordinator = mock(ReconnectCoordinator.class);
-        lifecycleCoordinator = new DeviceLifecycleCoordinator(
-                collectionManager,
-                configManager,
-                collectionStatistics,
-                collectorProperties,
-                healthTracker,
-                deviceBatchPlanner,
-                protocolBatchStrategy,
-                collectionTaskGuard,
-                new PointRuntimeStateService(),
-                runtimeState,
-                new PerformanceMonitor(),
-                deviceBatchExecutor,
-                reconnectCoordinator,
-                deviceStartExecutor);
+        lifecycleCoordinator = newLifecycleCoordinator(deviceStartExecutor);
     }
 
     @AfterEach
@@ -282,6 +275,140 @@ class DeviceLifecycleCoordinatorTest {
         assertEquals("p2", task.points.get(0).getPointId());
     }
 
+    @Test
+    void stopBetweenConnectSubmitAndFutureRegistrationMustCancelStart() throws Exception {
+        String deviceId = "dev-submit-registration-race";
+        SubmitRegistrationGateExecutor gatedExecutor = new SubmitRegistrationGateExecutor("submit-registration-gate");
+        replaceDeviceStartExecutor(gatedExecutor);
+        setupSingleDevice(deviceId);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        AtomicBoolean connectInterrupted = new AtomicBoolean(false);
+        doAnswer(invocation -> {
+            connectEntered.countDown();
+            try {
+                releaseConnect.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                connectInterrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }).when(collectionManager).connectDevice(deviceId);
+
+        CompletableFuture<Boolean> startFuture = startAsync(deviceId);
+        assertTrue(gatedExecutor.awaitFirstSubmitEntered());
+        assertTrue(connectEntered.await(1, TimeUnit.SECONDS));
+        long generation = runtimeState.getStartingGeneration(deviceId);
+        assertTrue(generation > 0L);
+
+        CompletableFuture<Boolean> stopFuture = CompletableFuture.supplyAsync(
+                () -> lifecycleCoordinator.stopDevice(deviceId),
+                lifecycleCallExecutor);
+        gatedExecutor.allowFirstSubmitReturn();
+
+        assertTrue(stopFuture.get(1, TimeUnit.SECONDS));
+        assertFalse(startFuture.get(1, TimeUnit.SECONDS));
+        releaseConnect.countDown();
+        waitUntil(() -> lifecycleCoordinator.startingFutureCountForTest() == 0);
+        assertTrue(connectInterrupted.get());
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, generation));
+    }
+
+    @Test
+    void staleGenerationMustNotModifyNewCollectorDuringStartCommit() throws Exception {
+        String deviceId = "dev-stale-commit";
+        GateFirstGetExecutor gatedExecutor = new GateFirstGetExecutor("post-connect-gate");
+        replaceDeviceStartExecutor(gatedExecutor);
+        setupBacnetDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(deviceId);
+
+        CompletableFuture<Boolean> oldStartFuture = startAsync(deviceId);
+        assertTrue(gatedExecutor.awaitFirstGetBlocked());
+        long oldGeneration = runtimeState.getStartingGeneration(deviceId);
+        assertTrue(oldGeneration > 0L);
+
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        CompletableFuture<Boolean> newStartFuture = startAsync(deviceId);
+        assertTrue(newStartFuture.get(1, TimeUnit.SECONDS));
+        DeviceScheduleInfo newScheduleInfo = runtimeState.getScheduleInfo(deviceId);
+        assertNotNull(newScheduleInfo);
+        long newGeneration = newScheduleInfo.getGeneration();
+
+        gatedExecutor.allowFirstGetReturn();
+        assertFalse(oldStartFuture.get(1, TimeUnit.SECONDS));
+        assertNotEquals(oldGeneration, newGeneration);
+        assertTrue(runtimeState.isRunning(deviceId));
+        assertEquals(newGeneration, runtimeState.getScheduleInfo(deviceId).getGeneration());
+        assertTrue(runtimeState.getSliceTasks(0).stream().allMatch(task -> task.generation == newGeneration));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, oldGeneration));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, newGeneration));
+        verify(collectionManager, times(1)).rebuildReadPlans(eq(deviceId), anyList());
+        verify(collectionManager, times(1)).subscribePoints(eq(deviceId), anyList());
+        verify(collectionStatistics, times(1)).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, times(1)).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void lifecycleLockHolderMustNotSplitForSameDevice() throws Exception {
+        String deviceId = "dev-lock-holder";
+        Object firstHolder = lifecycleCoordinator.acquireLifecycleLockForTest(deviceId);
+        boolean firstReleased = false;
+        LifecycleLockProbe secondProbe = new LifecycleLockProbe(deviceId);
+        LifecycleLockProbe thirdProbe = new LifecycleLockProbe(deviceId);
+
+        CompletableFuture<Void> secondRun = secondProbe.start();
+        waitUntil(() -> lifecycleCoordinator.lifecycleLockReferenceCountForTest(deviceId) == 2);
+        assertSame(firstHolder, lifecycleCoordinator.lifecycleLockHolderForTest(deviceId));
+
+        lifecycleCoordinator.releaseLifecycleLockForTest(deviceId, firstHolder);
+        firstReleased = true;
+        Object secondHolder = secondProbe.awaitAcquired();
+        assertSame(firstHolder, secondHolder);
+
+        CompletableFuture<Void> thirdRun = thirdProbe.start();
+        waitUntil(() -> lifecycleCoordinator.lifecycleLockReferenceCountForTest(deviceId) == 2);
+        assertSame(firstHolder, lifecycleCoordinator.lifecycleLockHolderForTest(deviceId));
+
+        secondProbe.release();
+        secondRun.get(1, TimeUnit.SECONDS);
+        Object thirdHolder = thirdProbe.awaitAcquired();
+        assertSame(firstHolder, thirdHolder);
+
+        thirdProbe.release();
+        thirdRun.get(1, TimeUnit.SECONDS);
+        waitUntil(() -> lifecycleCoordinator.lifecycleLockHolderCountForTest() == 0);
+
+        if (!firstReleased) {
+            lifecycleCoordinator.releaseLifecycleLockForTest(deviceId, firstHolder);
+        }
+    }
+
+    private DeviceLifecycleCoordinator newLifecycleCoordinator(ThreadPoolExecutor startExecutor) {
+        return new DeviceLifecycleCoordinator(
+                collectionManager,
+                configManager,
+                collectionStatistics,
+                collectorProperties,
+                healthTracker,
+                deviceBatchPlanner,
+                protocolBatchStrategy,
+                collectionTaskGuard,
+                new PointRuntimeStateService(),
+                runtimeState,
+                new PerformanceMonitor(),
+                deviceBatchExecutor,
+                reconnectCoordinator,
+                startExecutor);
+    }
+
+    private void replaceDeviceStartExecutor(ThreadPoolExecutor startExecutor) throws InterruptedException {
+        shutdownExecutor(deviceStartExecutor);
+        deviceStartExecutor = startExecutor;
+        lifecycleCoordinator = newLifecycleCoordinator(deviceStartExecutor);
+    }
+
     private void setupSingleDevice(String deviceId) throws Exception {
         DeviceInfo deviceInfo = device(deviceId, "MODBUS_TCP");
         DeviceConnection connection = connection(deviceId, "MODBUS_TCP");
@@ -296,6 +423,41 @@ class DeviceLifecycleCoordinatorTest {
         doAnswer(invocation -> null).when(collectionManager).cleanupDevice(anyString());
         doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(eq(deviceId), anyList());
         doAnswer(invocation -> null).when(collectionManager).disconnectDevice(deviceId);
+        when(deviceBatchPlanner.plan(eq(deviceId), anyList(), eq(1), org.mockito.ArgumentMatchers.anyLong(), eq(1L)))
+                .thenAnswer(invocation -> List.of(new DeviceBatchTask(
+                        deviceId,
+                        invocation.getArgument(1),
+                        0,
+                        invocation.getArgument(3),
+                        invocation.getArgument(4))));
+    }
+
+    private void setupBacnetDevice(String deviceId) throws Exception {
+        DeviceInfo deviceInfo = device(deviceId, "BACNET_IP");
+        DeviceConnection connection = connection(deviceId, "BACNET_IP");
+        connection.setExtJson(Map.of("covEnabled", true));
+        connection.setConnectTimeout(3000);
+        connection.setTimeout(3000);
+        DataPoint subscriptionPoint = point(deviceId, "p1");
+        subscriptionPoint.setCollectionMode("SUBSCRIPTION");
+        DataPoint pollingPoint = point(deviceId, "p2");
+        pollingPoint.setCollectionMode("POLLING");
+        BacnetIpCollector bacnetCollector = spy(new BacnetIpCollector());
+        bacnetCollector.init(deviceInfo);
+        ReflectionTestUtils.setField(bacnetCollector, "configManager", configManager);
+
+        when(configManager.getDevice(deviceId)).thenReturn(deviceInfo);
+        when(configManager.getDataPoints(deviceId)).thenReturn(List.of(subscriptionPoint, pollingPoint));
+        when(configManager.getDataPointsAndAdaptiveConfig(deviceId)).thenReturn(List.of(subscriptionPoint, pollingPoint));
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection);
+        when(configManager.getDeviceContext(deviceId))
+                .thenReturn(DeviceContext.of(deviceInfo, connection, List.of(subscriptionPoint, pollingPoint)));
+        when(collectionManager.getCollector(deviceId)).thenReturn(bacnetCollector);
+        doAnswer(invocation -> null).when(collectionManager).registerDevice(deviceInfo);
+        doAnswer(invocation -> null).when(collectionManager).cleanupDevice(anyString());
+        doAnswer(invocation -> null).when(collectionManager).disconnectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(eq(deviceId), anyList());
+        doAnswer(invocation -> null).when(collectionManager).subscribePoints(eq(deviceId), anyList());
         when(deviceBatchPlanner.plan(eq(deviceId), anyList(), eq(1), org.mockito.ArgumentMatchers.anyLong(), eq(1L)))
                 .thenAnswer(invocation -> List.of(new DeviceBatchTask(
                         deviceId,
@@ -378,6 +540,17 @@ class DeviceLifecycleCoordinatorTest {
         }
     }
 
+    private void waitUntil(Condition condition) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 2000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.isSatisfied()) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(10);
+        }
+        assertTrue(condition.isSatisfied());
+    }
+
     private ThreadPoolExecutor fixedPool(String namePrefix, int threads) {
         return new ThreadPoolExecutor(
                 threads,
@@ -396,5 +569,178 @@ class DeviceLifecycleCoordinatorTest {
     private void shutdownExecutor(ExecutorService executorService) throws InterruptedException {
         executorService.shutdownNow();
         assertTrue(executorService.awaitTermination(1, TimeUnit.SECONDS));
+    }
+
+    private final class LifecycleLockProbe {
+        private final String deviceId;
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final CompletableFuture<Object> acquired = new CompletableFuture<>();
+
+        private LifecycleLockProbe(String deviceId) {
+            this.deviceId = deviceId;
+        }
+
+        private CompletableFuture<Void> start() {
+            return CompletableFuture.runAsync(() -> {
+                Object lifecycleLock = lifecycleCoordinator.acquireLifecycleLockForTest(deviceId);
+                acquired.complete(lifecycleLock);
+                try {
+                    release.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    lifecycleCoordinator.releaseLifecycleLockForTest(deviceId, lifecycleLock);
+                }
+            }, lifecycleCallExecutor);
+        }
+
+        private Object awaitAcquired() throws Exception {
+            return acquired.get(1, TimeUnit.SECONDS);
+        }
+
+        private void release() {
+            release.countDown();
+        }
+    }
+
+    private static final class SubmitRegistrationGateExecutor extends ThreadPoolExecutor {
+        private final CountDownLatch firstSubmitEntered = new CountDownLatch(1);
+        private final CountDownLatch allowFirstSubmitReturn = new CountDownLatch(1);
+        private final AtomicInteger submitCalls = new AtomicInteger(0);
+
+        private SubmitRegistrationGateExecutor(String namePrefix) {
+            super(
+                    1,
+                    1,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new LinkedBlockingQueue<>(16),
+                    runnable -> {
+                        Thread thread = new Thread(runnable);
+                        thread.setDaemon(true);
+                        thread.setName(namePrefix + "-" + thread.getId());
+                        return thread;
+                    });
+        }
+
+        @Override
+        public Future<?> submit(Runnable task) {
+            Future<?> future = super.submit(task);
+            if (submitCalls.incrementAndGet() == 1) {
+                firstSubmitEntered.countDown();
+                awaitSubmitRelease();
+            }
+            return future;
+        }
+
+        private boolean awaitFirstSubmitEntered() throws InterruptedException {
+            return firstSubmitEntered.await(1, TimeUnit.SECONDS);
+        }
+
+        private void allowFirstSubmitReturn() {
+            allowFirstSubmitReturn.countDown();
+        }
+
+        private void awaitSubmitRelease() {
+            try {
+                if (!allowFirstSubmitReturn.await(2, TimeUnit.SECONDS)) {
+                    throw new RejectedExecutionException("submit gate timeout");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RejectedExecutionException("submit gate interrupted", e);
+            }
+        }
+    }
+
+    private static final class GateFirstGetExecutor extends ThreadPoolExecutor {
+        private final CountDownLatch firstGetBlocked = new CountDownLatch(1);
+        private final CountDownLatch allowFirstGetReturn = new CountDownLatch(1);
+        private final AtomicInteger submitCalls = new AtomicInteger(0);
+
+        private GateFirstGetExecutor(String namePrefix) {
+            super(
+                    2,
+                    2,
+                    0L,
+                    TimeUnit.MILLISECONDS,
+                    new LinkedBlockingQueue<>(16),
+                    runnable -> {
+                        Thread thread = new Thread(runnable);
+                        thread.setDaemon(true);
+                        thread.setName(namePrefix + "-" + thread.getId());
+                        return thread;
+                    });
+        }
+
+        @Override
+        public Future<?> submit(Runnable task) {
+            Future<?> future = super.submit(task);
+            if (submitCalls.incrementAndGet() == 1) {
+                return new GatedFuture(future, firstGetBlocked, allowFirstGetReturn);
+            }
+            return future;
+        }
+
+        private boolean awaitFirstGetBlocked() throws InterruptedException {
+            return firstGetBlocked.await(1, TimeUnit.SECONDS);
+        }
+
+        private void allowFirstGetReturn() {
+            allowFirstGetReturn.countDown();
+        }
+    }
+
+    private static final class GatedFuture implements Future<Object> {
+        private final Future<?> delegate;
+        private final CountDownLatch getBlocked;
+        private final CountDownLatch allowReturn;
+
+        private GatedFuture(Future<?> delegate, CountDownLatch getBlocked, CountDownLatch allowReturn) {
+            this.delegate = delegate;
+            this.getBlocked = getBlocked;
+            this.allowReturn = allowReturn;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return delegate.cancel(mayInterruptIfRunning);
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return delegate.isCancelled();
+        }
+
+        @Override
+        public boolean isDone() {
+            return delegate.isDone();
+        }
+
+        @Override
+        public Object get() throws InterruptedException, ExecutionException {
+            Object result = delegate.get();
+            getBlocked.countDown();
+            allowReturn.await();
+            return result;
+        }
+
+        @Override
+        public Object get(long timeout, TimeUnit unit)
+                throws InterruptedException, ExecutionException, TimeoutException {
+            long deadline = System.nanoTime() + unit.toNanos(timeout);
+            Object result = delegate.get(timeout, unit);
+            getBlocked.countDown();
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0 || !allowReturn.await(remainingNanos, TimeUnit.NANOSECONDS)) {
+                throw new TimeoutException("gated future timeout");
+            }
+            return result;
+        }
+    }
+
+    @FunctionalInterface
+    private interface Condition {
+        boolean isSatisfied();
     }
 }
