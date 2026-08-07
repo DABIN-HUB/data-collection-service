@@ -11,8 +11,6 @@ import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,8 +27,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -77,6 +73,8 @@ class CollectionThroughputStressIT {
         ThreadPoolExecutor batchDispatcher = fixedPool("stress-batch", options.batchThreads(), 20_000);
         ThreadPoolExecutor asyncCollectorPool = fixedPool("stress-collect", options.collectThreads(), 40_000);
         ThreadPoolExecutor dataProcessorPool = fixedPool("stress-process", options.processThreads(), 40_000);
+        ThreadPoolExecutor deviceStartExecutor = fixedPool("stress-start", 2, 256);
+        ThreadPoolExecutor reconnectExecutor = fixedPool("stress-reconnect", 2, 512);
 
         CollectionScheduler scheduler = null;
         CountingCollectedDataProcessor processor = null;
@@ -93,29 +91,65 @@ class CollectionThroughputStressIT {
             CollectionStatistics collectionStatistics = mock(CollectionStatistics.class);
             CollectionServiceHealthTracker healthTracker = mock(CollectionServiceHealthTracker.class);
             CollectionTaskGuard collectionTaskGuard = new CollectionTaskGuard();
+            SchedulerRuntimeState runtimeState = new SchedulerRuntimeState();
+            PerformanceMonitor performanceMonitor = new PerformanceMonitor();
             ProtocolBatchStrategy protocolBatchStrategy = new ProtocolBatchStrategy();
             DeviceBatchPlanner batchPlanner = new DeviceBatchPlanner(
                     configManager,
                     protocolBatchStrategy,
-                    new ProtocolDescriptorRegistry()
+                    new ProtocolDescriptorRegistry(),
+                    performanceMonitor
             );
-            processor = new CountingCollectedDataProcessor(properties);
-            scheduler = new CollectionScheduler(
+            processor = new CountingCollectedDataProcessor(properties, performanceMonitor);
+            ReconnectCoordinator reconnectCoordinator = new ReconnectCoordinator(
+                    collectionManager,
+                    properties,
+                    collectionTaskGuard,
+                    runtimeState,
+                    reconnectExecutor
+            );
+            DeviceBatchExecutor batchExecutor = new DeviceBatchExecutor(
+                    collectionManager,
+                    configManager,
+                    collectionStatistics,
+                    properties,
+                    processor,
+                    collectionTaskGuard,
+                    runtimeState,
+                    performanceMonitor,
+                    reconnectCoordinator,
+                    batchDispatcher,
+                    asyncCollectorPool,
+                    dataProcessorPool
+            );
+            DeviceLifecycleCoordinator lifecycleCoordinator = new DeviceLifecycleCoordinator(
                     collectionManager,
                     configManager,
                     collectionStatistics,
                     properties,
                     healthTracker,
-                    null,
                     batchPlanner,
                     protocolBatchStrategy,
-                    processor,
                     collectionTaskGuard,
                     new PointRuntimeStateService(),
-                    timeSliceScheduler,
-                    batchDispatcher,
-                    asyncCollectorPool,
-                    dataProcessorPool
+                    runtimeState,
+                    performanceMonitor,
+                    batchExecutor,
+                    reconnectCoordinator,
+                    deviceStartExecutor
+            );
+            scheduler = new CollectionScheduler(
+                    collectionManager,
+                    configManager,
+                    collectionStatistics,
+                    properties,
+                    null,
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    batchExecutor,
+                    reconnectCoordinator,
+                    timeSliceScheduler
             );
 
             when(configManager.getDevice(DEVICE_ID)).thenReturn(device);
@@ -142,17 +176,17 @@ class CollectionThroughputStressIT {
                 return values;
             });
 
-            initializeSchedulerBuckets(scheduler, options.sliceCount(), options.sliceWaitMs());
+            initializeSchedulerBuckets(runtimeState, options.sliceCount(), options.sliceWaitMs());
 
             long startBegin = System.nanoTime();
             assertTrue(scheduler.startDevice(DEVICE_ID), "stress device failed to start");
             long startMs = elapsedMillis(startBegin);
-            int batchCount = batchCount(scheduler);
+            int batchCount = batchCount(runtimeState);
 
             long cycleBegin = System.nanoTime();
-            long revision = ((AtomicLong) ReflectionTestUtils.getField(scheduler, "timeSliceRevision")).get();
+            long revision = runtimeState.getTimeSliceRevision();
             for (int slice = 0; slice < options.sliceCount(); slice++) {
-                ReflectionTestUtils.invokeMethod(scheduler, "executeTimeSlice", slice, revision);
+                scheduler.executeTimeSlice(slice, revision);
             }
             waitUntilProcessed(processor, pointCount);
             long cycleMs = Math.max(1L, elapsedMillis(cycleBegin));
@@ -173,20 +207,19 @@ class CollectionThroughputStressIT {
                 if (scheduler != null) {
                     scheduler.destroy();
                 }
-            } catch (Exception ignored) {
+            } finally {
                 shutdown(timeSliceScheduler);
                 shutdown(batchDispatcher);
                 shutdown(asyncCollectorPool);
                 shutdown(dataProcessorPool);
+                shutdown(deviceStartExecutor);
+                shutdown(reconnectExecutor);
             }
         }
     }
 
-    private void initializeSchedulerBuckets(CollectionScheduler scheduler, int sliceCount, int sliceWaitMs) {
-        ((AtomicInteger) ReflectionTestUtils.getField(scheduler, "timeSliceCount")).set(sliceCount);
-        ((AtomicInteger) ReflectionTestUtils.getField(scheduler, "timeSliceInterval")).set(sliceWaitMs);
-        ((AtomicLong) ReflectionTestUtils.getField(scheduler, "timeSliceRevision")).set(1L);
-        ReflectionTestUtils.invokeMethod(scheduler, "resetTimeSliceTaskBuckets", sliceCount);
+    private void initializeSchedulerBuckets(SchedulerRuntimeState runtimeState, int sliceCount, int sliceWaitMs) {
+        runtimeState.initializeTimeSlices(sliceCount, sliceWaitMs);
     }
 
     private void waitUntilProcessed(CountingCollectedDataProcessor processor, int expectedPoints) throws InterruptedException {
@@ -199,11 +232,10 @@ class CollectionThroughputStressIT {
         }
     }
 
-    private int batchCount(CollectionScheduler scheduler) {
-        @SuppressWarnings("unchecked")
-        Map<Integer, List<DeviceBatchTask>> tasks =
-                (Map<Integer, List<DeviceBatchTask>>) ReflectionTestUtils.getField(scheduler, "timeSliceTasks");
-        return tasks.values().stream().mapToInt(List::size).sum();
+    private int batchCount(SchedulerRuntimeState runtimeState) {
+        return runtimeState.getTotalTaskCount() > Integer.MAX_VALUE
+                ? Integer.MAX_VALUE
+                : (int) runtimeState.getTotalTaskCount();
     }
 
     private List<DataPoint> createPoints(int pointCount) {
@@ -368,15 +400,17 @@ class CollectionThroughputStressIT {
         private final LongAdder processedPoints = new LongAdder();
         private final LongAdder processCalls = new LongAdder();
 
-        private CountingCollectedDataProcessor(CollectorProperties collectorProperties) {
-            super(collectorProperties, new PointRuntimeStateService());
+        private final PerformanceMonitor performanceMonitor;
+
+        private CountingCollectedDataProcessor(CollectorProperties collectorProperties, PerformanceMonitor performanceMonitor) {
+            super(collectorProperties, new PointRuntimeStateService(), performanceMonitor);
+            this.performanceMonitor = performanceMonitor;
         }
 
         @Override
         void process(String deviceId,
                      List<DataPoint> points,
-                     Map<String, Object> values,
-                     PerformanceMonitor performanceMonitor) {
+                     Map<String, Object> values) {
             processCalls.increment();
             for (DataPoint point : points) {
                 if (values.containsKey(point.getPointId())) {

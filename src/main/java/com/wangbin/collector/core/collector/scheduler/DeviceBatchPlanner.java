@@ -27,6 +27,7 @@ class DeviceBatchPlanner {
     private final ConfigManager configManager;
     private final ProtocolBatchStrategy protocolBatchStrategy;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
+    private final PerformanceMonitor performanceMonitor;
 
     /**
      * 执行当前业务逻辑。
@@ -35,8 +36,7 @@ class DeviceBatchPlanner {
                                List<DataPoint> points,
                                int timeSliceCount,
                                long generation,
-                               long timeSliceRevision,
-                               PerformanceMonitor performanceMonitor) {
+                               long timeSliceRevision) {
         List<List<DataPoint>> batches = smartBatchGrouping(points, deviceId, performanceMonitor);
         List<DeviceBatchTask> tasks = new ArrayList<>(batches.size());
         for (int i = 0; i < batches.size(); i++) {

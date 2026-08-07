@@ -13,6 +13,8 @@ public final class MonitorThreadPoolNames {
             "batchDispatcherExecutor",
             "asyncCollectorExecutor",
             "dataProcessorExecutor",
+            "deviceStartExecutor",
+            "deviceReconnectExecutor",
             "cacheAsyncExecutor",
             "reportExecutor",
             TelemetryExecutorNames.CACHE_STAGE,

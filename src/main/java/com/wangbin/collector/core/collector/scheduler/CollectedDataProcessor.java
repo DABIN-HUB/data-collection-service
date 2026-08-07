@@ -16,23 +16,22 @@ public class CollectedDataProcessor {
 
     private final CollectorProperties collectorProperties;
     private final PointRuntimeStateService pointRuntimeStateService;
+    private final PerformanceMonitor performanceMonitor;
 
     /**
      * 创建当前组件实例。
      */
     public CollectedDataProcessor(CollectorProperties collectorProperties,
-                                  PointRuntimeStateService pointRuntimeStateService) {
+                                  PointRuntimeStateService pointRuntimeStateService,
+                                  PerformanceMonitor performanceMonitor) {
         this.collectorProperties = collectorProperties;
         this.pointRuntimeStateService = pointRuntimeStateService;
+        this.performanceMonitor = performanceMonitor;
     }
 
-    /**
-     * 处理当前业务流程。
-     */
     void process(String deviceId,
                  List<DataPoint> points,
-                 Map<String, Object> values,
-                 PerformanceMonitor performanceMonitor) {
+                 Map<String, Object> values) {
         for (DataPoint point : points) {
             String pointId = point.getPointId();
             Object value = values.get(pointId);

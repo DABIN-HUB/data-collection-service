@@ -1,19 +1,20 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 调度器性能监控器。
  */
 @Slf4j
+@Component
 public class PerformanceMonitor {
     final Map<String, DevicePerformance> devicePerformance = new ConcurrentHashMap<>();
     private final AtomicLong totalProcessedPoints = new AtomicLong(0);
@@ -44,9 +45,9 @@ public class PerformanceMonitor {
     /**
      * 记录或统计业务状态。
      */
-    void recordTimeSliceExecution(int sliceIndex, long executionTime, AtomicInteger timeSliceInterval) {
+    void recordTimeSliceExecution(int sliceIndex, long executionTime, int timeSliceIntervalMs) {
         timeSliceExecutionTimes.put(sliceIndex, executionTime);
-        if (executionTime > timeSliceInterval.get()) {
+        if (executionTime > timeSliceIntervalMs) {
             overloadedSlices.put(sliceIndex, executionTime);
             recentTimeSliceTimeout.set(true);
         }
@@ -104,7 +105,7 @@ public class PerformanceMonitor {
     /**
      * 执行当前业务逻辑。
      */
-    void logStatistics(AtomicInteger timeSliceInterval) {
+    void logStatistics(int timeSliceIntervalMs) {
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - lastStatisticsTime;
         lastStatisticsTime = currentTime;
@@ -126,7 +127,7 @@ public class PerformanceMonitor {
         StringBuilder sliceInfo = new StringBuilder("time-slice execution: ");
         for (Map.Entry<Integer, Long> entry : timeSliceExecutionTimes.entrySet()) {
             sliceInfo.append(String.format("[%d:%dms]", entry.getKey(), entry.getValue()));
-            if (entry.getValue() > timeSliceInterval.get()) {
+            if (entry.getValue() > timeSliceIntervalMs) {
                 sliceInfo.append("(OVERLOAD)");
             }
             sliceInfo.append(", ");
