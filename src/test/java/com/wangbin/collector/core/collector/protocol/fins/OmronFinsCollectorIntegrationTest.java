@@ -6,7 +6,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsMemoryArea;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
-import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
 import com.wangbin.collector.core.connection.factory.ConnectionFactory;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
@@ -206,7 +206,8 @@ class OmronFinsCollectorIntegrationTest {
         when(configManager.getDeviceContext("dev-fins")).thenReturn(DeviceContext.of(deviceInfo, connection, points));
         when(configManager.getDataPoints("dev-fins")).thenReturn(points);
 
-        ConnectionFactory connectionFactory = new ConnectionFactory(new ProtocolDescriptorRegistry(), null, null, null, null, null);
+        ConnectionFactory connectionFactory = new ConnectionFactory(ProtocolDescriptorTestProviders.registry(),
+                null, null, null, null, null);
         ConnectionManager connectionManager = new ConnectionManager(connectionFactory, configManager, null, null);
 
         OmronFinsCollector collector = new OmronFinsCollector();

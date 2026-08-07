@@ -2,12 +2,17 @@ package com.wangbin.collector.core.config.protocol;
 
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusRtuCollector;
 import com.wangbin.collector.core.collector.protocol.modbus.Plc4xModbusTcpCollector;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Modbus 协议元数据提供者。
  */
+@Component
+@Order(10)
 public class ModbusProtocolDescriptorProvider implements ProtocolDescriptorProvider {
 
     /**
@@ -40,7 +45,10 @@ public class ModbusProtocolDescriptorProvider implements ProtocolDescriptorProvi
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "3000", null,
                                 "advanced"),
                         registry.field("timeout", "number", "Protocol timeout (ms)", false, "3000", null,
-                                "advanced"))));
+                                "advanced")))
+                .withSchema(modbusDataTypes(), ProtocolTypeMode.PLATFORM_ONLY, "dataType",
+                        PlatformDataTypeMode.REQUIRED, false, null, null, Collections.emptyList(),
+                        modbusPointFields(registry)));
         registry.registerPrimary(registry.descriptor("MODBUS_RTU", "Modbus RTU",
                 "Modbus serial line collection.",
                 List.of("MODBUS_ASCII"), Plc4xModbusRtuCollector.class, "MODBUS_RTU", null,
@@ -70,6 +78,37 @@ public class ModbusProtocolDescriptorProvider implements ProtocolDescriptorProvi
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "3000", null,
                                 "advanced"),
                         registry.field("timeout", "number", "Protocol timeout (ms)", false, "3000", null,
-                                "advanced"))));
+                                "advanced")))
+                .withSchema(modbusDataTypes(), ProtocolTypeMode.PLATFORM_ONLY, "dataType",
+                        PlatformDataTypeMode.REQUIRED, false, null, null, Collections.emptyList(),
+                        modbusPointFields(registry)));
+    }
+
+    private List<String> modbusDataTypes() {
+        return ProtocolDescriptor.dataTypesWithExtended(
+                "FLOAT32_SWAP", "FLOAT32_LITTLE", "FLOAT64_SWAP", "FLOAT64_LITTLE", "DOUBLE_SWAP");
+    }
+
+    private List<ProtocolFieldConfig> modbusPointFields(ProtocolDescriptorRegistry registry) {
+        return List.of(
+                registry.pointField("additionalConfig.registerType", "select", "Register type", false, "",
+                        List.of("HOLDING_REGISTER", "INPUT_REGISTER", "COIL", "DISCRETE_INPUT"),
+                        "Optional explicit Modbus register family. Usually inferred from the address format.", null),
+                registry.pointField("additionalConfig.byteOrder", "select", "Byte order", false, "BIG_ENDIAN",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
+                        "Byte order override for multi-byte numeric decoding.", null),
+                registry.pointField("additionalConfig.wordOrder", "select", "Word order", false, "",
+                        List.of("BIG_ENDIAN", "LITTLE_ENDIAN"),
+                        "Word order override for 32-bit and 64-bit register values.", null),
+                registry.pointField("additionalConfig.bitIndex", "number", "Bit index", false, "",
+                        Collections.emptyList(),
+                        "Bit position inside the selected register when a packed bit is addressed.", null),
+                registry.pointField("additionalConfig.functionCode", "number", "Function code", false, "",
+                        Collections.emptyList(),
+                        "Compatibility override for specialized Modbus function-code routing.", null),
+                registry.pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(),
+                        "Used when dataType=STRING to declare the payload length.", "dataType=STRING")
+        );
     }
 }

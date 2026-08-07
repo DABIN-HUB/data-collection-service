@@ -2,7 +2,7 @@ package com.wangbin.collector.core.connection.factory;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
 import com.wangbin.collector.core.connection.adapter.CoapConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.CustomTcpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.CustomUdpConnectionAdapter;
@@ -31,7 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConnectionFactoryProtocolAliasMappingTest {
 
-    private final ConnectionFactory factory = new ConnectionFactory(new ProtocolDescriptorRegistry(), null, null, null, null, null);
+    private final ConnectionFactory factory = new ConnectionFactory(ProtocolDescriptorTestProviders.registry(),
+            null, null, null, null, null);
 
     @Test
     void shouldMapHttpsAliasToHttpAdapterWithSslDefaults() {

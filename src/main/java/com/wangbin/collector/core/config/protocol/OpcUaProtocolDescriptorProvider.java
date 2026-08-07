@@ -2,12 +2,17 @@ package com.wangbin.collector.core.config.protocol;
 
 import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
 import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
  * OPC UA 协议元数据提供者。
  */
+@Component
+@Order(30)
 public class OpcUaProtocolDescriptorProvider implements ProtocolDescriptorProvider {
 
     /**
@@ -20,21 +25,33 @@ public class OpcUaProtocolDescriptorProvider implements ProtocolDescriptorProvid
         registry.registerPrimary(registry.descriptor("OPC_UA", "OPC UA",
                 "基于 PLC4X 的 OPC UA 统一架构采集器。",
                 List.of("OPCUA"), Plc4xOpcUaCollector.class, "OPC_UA", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
                 List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001", "ns=3;i=1001;REAL"),
-                opcUaFields(registry)));
+                opcUaFields(registry))
+                .withDriverPrimarySchema("OPC UA 驱动数据类型", opcUaDriverDataTypes(), opcUaPointFields(registry)));
         registry.registerPrimary(registry.descriptor("OPC_UA_PLC4X", "OPC UA（PLC4X 别名）",
                 "保留的 PLC4X OPC UA 采集器历史别名，用于兼容旧配置。",
                 List.of("OPCUA_PLC4X"), Plc4xOpcUaCollector.class, "OPC_UA_PLC4X", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
                 List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001;REAL"),
-                opcUaFields(registry)));
+                opcUaFields(registry))
+                .withDriverPrimarySchema("OPC UA 驱动数据类型", opcUaDriverDataTypes(), opcUaPointFields(registry)));
         registry.registerPrimary(registry.descriptor("OPC_UA_MILO", "OPC UA（Milo 实验驱动）",
                 "使用 Eclipse Milo 的独立 OPC UA 客户端，需要完成实服契约测试后再用于生产。",
                 List.of("OPCUA_MILO"), OpcUaCollector.class, "OPC_UA_MILO", 4840, ProtocolAddressingMode.SYMBOLIC,
-                true, true, true,
+                ProtocolCapabilityState.EXPERIMENTAL,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
                 List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001"),
-                opcUaMiloFields(registry)));
+                opcUaMiloFields(registry))
+                .withDriverPrimarySchema("OPC UA 驱动数据类型", opcUaDriverDataTypes(), opcUaPointFields(registry)));
     }
 
     /**
@@ -99,5 +116,38 @@ public class OpcUaProtocolDescriptorProvider implements ProtocolDescriptorProvid
         return opcUaFields(registry).stream()
                 .filter(field -> !"plc4xConnectionString".equals(field.getName()))
                 .toList();
+    }
+
+    private List<String> opcUaDriverDataTypes() {
+        return List.of(
+                "BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT",
+                "LINT", "ULINT", "REAL", "LREAL", "CHAR", "WCHAR", "STRING",
+                "TIME", "DATE", "DATE_AND_TIME");
+    }
+
+    private List<ProtocolFieldConfig> opcUaPointFields(ProtocolDescriptorRegistry registry) {
+        return List.of(
+                registry.pointField("additionalConfig.nodeId", "string", "NodeId", false, "",
+                        Collections.emptyList(), "Explicit OPC UA NodeId. When empty, the collector can still use address directly.", null),
+                registry.pointField("additionalConfig.namespace", "number", "Namespace", false, "",
+                        Collections.emptyList(), "Used together with identifier to build a NodeId.", null),
+                registry.pointField("additionalConfig.identifier", "string", "Identifier", false, "",
+                        Collections.emptyList(), "Node identifier used together with namespace.", null),
+                registry.pointField("additionalConfig.identifierType", "select", "Identifier type", false, "STRING",
+                        List.of("STRING", "NUMERIC", "GUID", "OPAQUE"),
+                        "Encoding type for the OPC UA NodeId identifier.", null),
+                registry.pointField("additionalConfig.samplingInterval", "number", "Sampling interval (ms)", false, "",
+                        Collections.emptyList(), "Sampling interval used for subscriptions or monitored items.", null),
+                registry.pointField("additionalConfig.publishingInterval", "number", "Publishing interval (ms)", false, "",
+                        Collections.emptyList(), "Publishing interval used for subscriptions.", null),
+                registry.pointField("additionalConfig.queueSize", "number", "Queue size", false, "",
+                        Collections.emptyList(), "Subscription queue size for buffered notifications.", null),
+                registry.pointField("additionalConfig.arraySize", "number", "数组长度", false, "",
+                        Collections.emptyList(), "OPC UA 一维数组节点的元素数量，标量点位保持为空。", null),
+                registry.pointField("additionalConfig.subscribe", "boolean", "Subscribe", false, "",
+                        List.of("true", "false"), "Whether this point should use subscription mode.", null),
+                registry.pointField("additionalConfig.monitor", "boolean", "Monitor alias", false, "",
+                        List.of("true", "false"), "Compatibility alias for older monitored-item configurations.", null)
+        );
     }
 }

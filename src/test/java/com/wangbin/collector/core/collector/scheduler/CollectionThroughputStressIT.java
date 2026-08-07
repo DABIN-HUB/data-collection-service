@@ -7,7 +7,7 @@ import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
-import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
 import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import org.junit.jupiter.api.Test;
@@ -97,7 +97,7 @@ class CollectionThroughputStressIT {
             DeviceBatchPlanner batchPlanner = new DeviceBatchPlanner(
                     configManager,
                     protocolBatchStrategy,
-                    new ProtocolDescriptorRegistry(),
+                    ProtocolDescriptorTestProviders.registry(),
                     performanceMonitor
             );
             processor = new CountingCollectedDataProcessor(properties, performanceMonitor);

@@ -2,6 +2,7 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
 import com.wangbin.collector.core.config.protocol.ProtocolFieldConfig;
 import com.wangbin.collector.core.config.protocol.ProtocolSchema;
 import com.wangbin.collector.core.config.protocol.ProtocolSchemaService;
@@ -14,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProtocolControllerTest {
 
-    private final ProtocolDescriptorRegistry registry = new ProtocolDescriptorRegistry();
+    private final ProtocolDescriptorRegistry registry = ProtocolDescriptorTestProviders.registry();
     private final ProtocolController controller = new ProtocolController(new ProtocolSchemaService(registry));
 
     @Test

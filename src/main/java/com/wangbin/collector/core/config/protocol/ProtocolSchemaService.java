@@ -20,14 +20,7 @@ public class ProtocolSchemaService {
     private final Map<String, String> aliases;
 
     /**
-     * 创建当前组件实例。
-     */
-    public ProtocolSchemaService() {
-        this(new ProtocolDescriptorRegistry());
-    }
-
-    /**
-     * 创建当前组件实例。
+     * 通过 Spring 注入的 Registry 构建只读 schema 快照。
      */
     public ProtocolSchemaService(ProtocolDescriptorRegistry protocolDescriptorRegistry) {
         this.protocolDescriptorRegistry = protocolDescriptorRegistry;

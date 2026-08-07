@@ -1,12 +1,17 @@
 package com.wangbin.collector.core.config.protocol;
 
 import com.wangbin.collector.core.collector.protocol.s7.S7Collector;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
  * 西门子 S7 协议元数据提供者。
  */
+@Component
+@Order(20)
 public class S7ProtocolDescriptorProvider implements ProtocolDescriptorProvider {
 
     /**
@@ -19,7 +24,10 @@ public class S7ProtocolDescriptorProvider implements ProtocolDescriptorProvider 
         registry.registerPrimary(registry.descriptor("SIEMENS_S7", "西门子 S7",
                 "基于 PLC4X 的西门子 S7 读写采集器。",
                 List.of("S7"), S7Collector.class, "SIEMENS_S7", 102, ProtocolAddressingMode.MIXED,
-                true, true, true,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.SUPPORTED,
+                ProtocolCapabilityState.RUNTIME_DEPENDENT,
+                ProtocolCapabilityState.UNSUPPORTED,
                 List.of("DB1.DBX0.0", "DB1.DBW0", "DB1.DBD4", "%DB1:4:REAL", "%DB1.DBX0.0:BOOL", "I0.0", "Q0.0", "M10.0"),
                 registry.fields(
                         registry.field("host", "string", "设备地址", true, "127.0.0.1", null, "connection",
@@ -62,6 +70,31 @@ public class S7ProtocolDescriptorProvider implements ProtocolDescriptorProvider 
                         registry.field("readTimeout", "number", "读取超时（毫秒）", false, "5000", null, "advanced",
                                 "PLC4X 请求 Future 的采集读取超时时间。"),
                         registry.field("timeout", "number", "协议超时（毫秒）", false, "5000", null, "advanced",
-                                "readTimeout 为空时使用的兜底协议超时时间。"))));
+                                "readTimeout 为空时使用的兜底协议超时时间。")))
+                .withDriverPrimarySchema("S7 driver type", s7DriverDataTypes(), s7PointFields(registry)));
+    }
+
+    private List<String> s7DriverDataTypes() {
+        return List.of(
+                "BOOL", "SINT", "USINT", "INT", "UINT", "DINT", "UDINT", "LINT", "ULINT",
+                "REAL", "LREAL", "CHAR", "WCHAR", "STRING", "WSTRING",
+                "TIME", "LTIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME", "S5TIME");
+    }
+
+    private List<ProtocolFieldConfig> s7PointFields(ProtocolDescriptorRegistry registry) {
+        return List.of(
+                registry.pointField("additionalConfig.subscriptionMode", "select", "Subscription mode", false, "",
+                        List.of("CYCLIC", "MODE", "SYS", "USR", "ALM"),
+                        "Used when collectionMode=SUBSCRIPTION or EVENT. CYCLIC uses the point's absolute address. MODE/SYS/USR/ALM register S7 event subscriptions.", null),
+                registry.pointField("additionalConfig.subscriptionAddress", "string", "Subscription address", false, "",
+                        Collections.emptyList(),
+                        "Optional PLC4X subscription address override. For MODE/SYS/USR/ALM it usually matches the mode token; leave empty to reuse the point address or selected mode.", null),
+                registry.pointField("additionalConfig.stringLength", "number", "String length", false, "",
+                        Collections.emptyList(),
+                        "Used when driverDataType=STRING or WSTRING to declare the PLC string length.", "driverDataType=STRING/WSTRING"),
+                registry.pointField("additionalConfig.arraySize", "number", "Array size", false, "",
+                        Collections.emptyList(),
+                        "Optional one-dimensional array length when the address does not already include [n]. Only full-array read/write is supported.", null)
+        );
     }
 }

@@ -2,7 +2,7 @@ package com.wangbin.collector.core.connection.factory;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorTestProviders;
 import com.wangbin.collector.core.connection.adapter.Iec104ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Iec61850ConnectionAdapter;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,8 @@ class ConnectionFactoryIecMappingTest {
 
     @Test
     void shouldCreateIec104ConnectionAdapter() {
-        ConnectionFactory factory = new ConnectionFactory(new ProtocolDescriptorRegistry(), null, null, null, null, null);
+        ConnectionFactory factory = new ConnectionFactory(ProtocolDescriptorTestProviders.registry(),
+                null, null, null, null, null);
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId("dev-iec104");
         deviceInfo.setProtocolType("IEC104");
@@ -30,7 +31,8 @@ class ConnectionFactoryIecMappingTest {
 
     @Test
     void shouldCreateIec61850ConnectionAdapter() {
-        ConnectionFactory factory = new ConnectionFactory(new ProtocolDescriptorRegistry(), null, null, null, null, null);
+        ConnectionFactory factory = new ConnectionFactory(ProtocolDescriptorTestProviders.registry(),
+                null, null, null, null, null);
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId("dev-iec61850");
         deviceInfo.setProtocolType("IEC61850");
