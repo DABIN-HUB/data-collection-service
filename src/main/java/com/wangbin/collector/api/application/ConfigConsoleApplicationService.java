@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
+import com.wangbin.collector.api.controller.dto.ConfigCacheStatsResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDeviceListResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDiffResponse;
 import com.wangbin.collector.api.controller.dto.ConfigExportResponse;
@@ -72,7 +73,7 @@ public class ConfigConsoleApplicationService {
         Long nextSync = lastSync > 0 && interval > 0 ? lastSync + interval : null;
 
         ConfigSummaryResponse response = ConfigSummaryResponse.builder()
-                .cacheStats(stats)
+                .cacheStats(ConfigCacheStatsResponse.from(stats))
                 .lastSyncTime(lastSync > 0 ? lastSync : null)
                 .nextSyncTime(nextSync)
                 .syncInterval(interval > 0 ? interval : null)

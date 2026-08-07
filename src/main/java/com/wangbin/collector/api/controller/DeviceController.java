@@ -1,6 +1,8 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
+import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
+import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.api.validation.ApiValidationConstants;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
@@ -88,7 +90,7 @@ public class DeviceController {
      * @return 设备状态响应
      */
     @GetMapping("/{deviceId}/status")
-    public ApiResult<Map<String, Object>> getDeviceStatus(
+    public ApiResult<DeviceStatusResponse> getDeviceStatus(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -101,7 +103,7 @@ public class DeviceController {
      * @return 全部采集统计响应
      */
     @GetMapping("/statistics")
-    public ApiResult<Map<String, Map<String, Object>>> getAllStatistics() {
+    public ApiResult<Map<String, DeviceStatisticsResponse>> getAllStatistics() {
         return deviceConsoleApplicationService.getAllStatistics();
     }
 

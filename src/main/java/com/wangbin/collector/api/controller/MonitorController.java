@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.ConsoleRuntimeStatusApplicationService;
+import com.wangbin.collector.api.controller.dto.CloudReportMetricsResponse;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.collector.scheduler.PerformanceStatsSnapshot;
 import com.wangbin.collector.monitor.metrics.CacheMetricsSnapshot;
@@ -109,8 +110,8 @@ public class MonitorController {
      * @return 云端上报链路指标
      */
     @GetMapping("/report")
-    public Map<String, Object> cloudReportMetrics() {
-        return cloudReportMonitorService.getCloudReportMetrics();
+    public CloudReportMetricsResponse cloudReportMetrics() {
+        return CloudReportMetricsResponse.from(cloudReportMonitorService.getCloudReportMetrics());
     }
 
     /**

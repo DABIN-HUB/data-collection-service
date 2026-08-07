@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
-
+import com.wangbin.collector.api.controller.dto.DeviceShadowDeltaResponse;
+import com.wangbin.collector.api.controller.dto.DeviceShadowResponse;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
@@ -35,21 +36,21 @@ public class ShadowController {
     private final ShadowManager shadowManager;
 
     @GetMapping("/{deviceId}")
-    public ApiResult<Map<String, Object>> getShadow(@PathVariable String deviceId) {
+    public ApiResult<DeviceShadowResponse> getShadow(@PathVariable String deviceId) {
         Map<String, Object> document = shadowManager.getShadowDocument(deviceId);
         if (document == null) {
             return ApiResult.error(ResultCode.DATA_NOT_FOUND.getCode(), "设备影子不存在");
         }
-        return ApiResult.success(document);
+        return ApiResult.success(DeviceShadowResponse.from(document));
     }
 
     @GetMapping("/{deviceId}/delta")
-    public ApiResult<Map<String, Object>> getDelta(@PathVariable String deviceId) {
+    public ApiResult<DeviceShadowDeltaResponse> getDelta(@PathVariable String deviceId) {
         Map<String, Object> delta = shadowManager.getShadowDelta(deviceId);
         if (delta == null) {
             return ApiResult.error(ResultCode.DATA_NOT_FOUND.getCode(), "设备影子不存在");
         }
-        return ApiResult.success(delta);
+        return ApiResult.success(DeviceShadowDeltaResponse.from(delta));
     }
 
     @GetMapping("/{deviceId}/history")
@@ -58,12 +59,9 @@ public class ShadowController {
         return ApiResult.success(shadowManager.getShadowHistory(deviceId, limit));
     }
 
-    /**
-     * 更新或刷新业务状态。
-     */
     @PostMapping("/{deviceId}/desired")
-    public ApiResult<Map<String, Object>> updateDesired(@PathVariable String deviceId,
-                                                        @RequestBody Map<String, Object> request) {
+    public ApiResult<DeviceShadowResponse> updateDesired(@PathVariable String deviceId,
+                                                         @RequestBody Map<String, Object> request) {
         Map<String, Object> desired = extractDesired(request);
         if (desired.isEmpty()) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "desired 属性不能为空");
@@ -72,7 +70,8 @@ public class ShadowController {
                 ? String.valueOf(request.get(CommonMapKeys.SOURCE))
                 : "api";
         try {
-            return ApiResult.success(shadowManager.updateDesired(deviceId, desired, source, extractExpectedVersion(request)));
+            return ApiResult.success(DeviceShadowResponse.from(
+                    shadowManager.updateDesired(deviceId, desired, source, extractExpectedVersion(request))));
         } catch (IllegalStateException e) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), e.getMessage());
         }
@@ -102,17 +101,14 @@ public class ShadowController {
         return null;
     }
 
-    /**
-     * 清理或删除业务数据。
-     */
     @DeleteMapping("/{deviceId}/desired")
-    public ApiResult<Map<String, Object>> clearDesired(@PathVariable String deviceId,
-                                                       @RequestParam(required = false) List<String> fields) {
+    public ApiResult<DeviceShadowResponse> clearDesired(@PathVariable String deviceId,
+                                                        @RequestParam(required = false) List<String> fields) {
         Map<String, Object> document = shadowManager.clearDesired(deviceId, fields);
         if (document == null) {
             return ApiResult.error(ResultCode.DATA_NOT_FOUND.getCode(), "设备影子不存在");
         }
-        return ApiResult.success(document);
+        return ApiResult.success(DeviceShadowResponse.from(document));
     }
 
     /**

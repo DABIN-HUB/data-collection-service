@@ -61,7 +61,11 @@ class ConfigControllerTest {
 
     @Test
     void shouldReturnSummary() throws Exception {
-        when(configManager.getCacheStats()).thenReturn(Map.of("deviceCount", 1));
+        when(configManager.getCacheStats()).thenReturn(Map.of(
+                "deviceCount", 1,
+                "pointCount", 2,
+                "connectionCount", 1,
+                "contextCount", 1));
         when(configSyncService.getLastSyncTime()).thenReturn(100L);
         when(configSyncService.getSyncInterval()).thenReturn(1000L);
         when(configSyncService.getServiceId()).thenReturn("collector-1");
@@ -72,6 +76,9 @@ class ConfigControllerTest {
                 .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.cacheStats.deviceCount", is(1)))
+                .andExpect(jsonPath("$.data.cacheStats.pointCount", is(2)))
+                .andExpect(jsonPath("$.data.cacheStats.connectionCount", is(1)))
+                .andExpect(jsonPath("$.data.cacheStats.contextCount", is(1)))
                 .andExpect(jsonPath("$.data.serviceId", is("collector-1")));
     }
 

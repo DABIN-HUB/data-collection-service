@@ -10,8 +10,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -77,5 +80,90 @@ class DeviceControllerTest {
                 .andExpect(jsonPath("$.deviceId", is("dev-1")))
                 .andExpect(jsonPath("$.running", is(true)))
                 .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    void shouldReturnDeviceStatusWithStableDtoData() throws Exception {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("deviceId", "dev-1");
+        status.put("isRunning", true);
+        status.put("isStarting", false);
+        status.put("connected", true);
+        status.put("reconnecting", false);
+        status.put("reconnectNextRetryAt", null);
+        status.put("statistics", statistics("dev-1", true, 10, 8, 2, 30, 3, 25L, 80.0D, 2000L));
+        status.put("performance", performance());
+        when(collectionService.getDeviceStatus("dev-1")).thenReturn(status);
+
+        mockMvc.perform(get("/api/device/dev-1/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.data.deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.data.isRunning", is(true)))
+                .andExpect(jsonPath("$.data.isStarting", is(false)))
+                .andExpect(jsonPath("$.data.connected", is(true)))
+                .andExpect(jsonPath("$.data.reconnecting", is(false)))
+                .andExpect(jsonPath("$.data.reconnectNextRetryAt", nullValue()))
+                .andExpect(jsonPath("$.data.statistics.totalExecutions", is(10)))
+                .andExpect(jsonPath("$.data.statistics.successRate", is(80.0D)))
+                .andExpect(jsonPath("$.data.performance.failureRisk", is("LOW")))
+                .andExpect(jsonPath("$.data.performance.recentResponseTimes[1]", is(30)));
+    }
+
+    @Test
+    void shouldReturnStatisticsWithDynamicDeviceKeysAndStableValueDto() throws Exception {
+        Map<String, Map<String, Object>> allStatistics = new LinkedHashMap<>();
+        allStatistics.put("dev-1", statistics("dev-1", true, 10, 8, 2, 30, 3, 25L, 80.0D, 2000L));
+        allStatistics.put("dev-2", statistics("dev-2", false, 4, 4, 0, 12, 0, 10L, 100.0D, 3000L));
+        when(collectionService.getAllStatistics()).thenReturn(allStatistics);
+
+        mockMvc.perform(get("/api/device/statistics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.data.dev-1.totalExecutions", is(10)))
+                .andExpect(jsonPath("$.data.dev-1.successRate", is(80.0D)))
+                .andExpect(jsonPath("$.data.dev-2.deviceId", is("dev-2")))
+                .andExpect(jsonPath("$.data.dev-2.successRate", is(100.0D)));
+    }
+
+    private Map<String, Object> statistics(String deviceId, boolean running, int totalExecutions,
+                                           int successfulExecutions, int failedExecutions,
+                                           int totalPoints, int currentTaskPoints,
+                                           long averageExecutionTime, double successRate,
+                                           long lastExecutionTime) {
+        Map<String, Object> statistics = new LinkedHashMap<>();
+        statistics.put("deviceId", deviceId);
+        statistics.put("isRunning", running);
+        statistics.put("runningDuration", running ? 1000L : 0L);
+        statistics.put("totalExecutions", totalExecutions);
+        statistics.put("successfulExecutions", successfulExecutions);
+        statistics.put("failedExecutions", failedExecutions);
+        statistics.put("totalPoints", totalPoints);
+        statistics.put("currentTaskPoints", currentTaskPoints);
+        statistics.put("averageExecutionTime", averageExecutionTime);
+        statistics.put("successRate", successRate);
+        statistics.put("lastExecutionTime", lastExecutionTime);
+        return statistics;
+    }
+
+    private Map<String, Object> performance() {
+        Map<String, Object> performance = new LinkedHashMap<>();
+        performance.put("deviceId", "dev-1");
+        performance.put("totalPoints", 30);
+        performance.put("successfulBatches", 8);
+        performance.put("failedBatches", 2);
+        performance.put("averageBatchTime", 25L);
+        performance.put("currentBatchSize", 5);
+        performance.put("maxBatchSize", 20);
+        performance.put("successRate", 80.0D);
+        performance.put("healthScore", 90.0D);
+        performance.put("failureRisk", "LOW");
+        performance.put("consecutiveFailures", 1);
+        performance.put("averageResponseTime", 25L);
+        performance.put("recentResponseTimes", List.of(20L, 30L));
+        return performance;
     }
 }

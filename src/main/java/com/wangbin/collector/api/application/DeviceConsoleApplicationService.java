@@ -1,5 +1,7 @@
 package com.wangbin.collector.api.application;
 
+import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
+import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
@@ -8,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -100,13 +103,13 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备状态响应
      */
-    public ApiResult<Map<String, Object>> getDeviceStatus(String deviceId) {
+    public ApiResult<DeviceStatusResponse> getDeviceStatus(String deviceId) {
         try {
             Map<String, Object> status = collectionService.getDeviceStatus(deviceId);
-            return ApiResult.deviceSuccessData(deviceId, status);
+            return ApiResult.deviceSuccessData(deviceId, DeviceStatusResponse.from(status));
         } catch (Exception exception) {
             log.error("获取设备状态失败，设备={}", deviceId, exception);
-            return ApiResult.<Map<String, Object>>statusError("获取状态失败: " + exception.getMessage(), null)
+            return ApiResult.<DeviceStatusResponse>statusError("获取状态失败: " + exception.getMessage(), null)
                     .withDeviceId(deviceId);
         }
     }
@@ -116,10 +119,10 @@ public class DeviceConsoleApplicationService {
      *
      * @return 全部采集统计响应
      */
-    public ApiResult<Map<String, Map<String, Object>>> getAllStatistics() {
+    public ApiResult<Map<String, DeviceStatisticsResponse>> getAllStatistics() {
         try {
             Map<String, Map<String, Object>> stats = collectionService.getAllStatistics();
-            return ApiResult.statusSuccess(null, stats);
+            return ApiResult.statusSuccess(null, toStatisticsResponses(stats));
         } catch (Exception exception) {
             log.error("获取采集统计失败", exception);
             return ApiResult.statusError("获取统计异常: " + exception.getMessage(), null);
@@ -165,5 +168,14 @@ public class DeviceConsoleApplicationService {
             log.error("查询设备运行状态失败，设备={}", deviceId, exception);
             return ApiResult.deviceError(deviceId, "查询运行状态异常: " + exception.getMessage());
         }
+    }
+
+    private Map<String, DeviceStatisticsResponse> toStatisticsResponses(Map<String, Map<String, Object>> stats) {
+        Map<String, DeviceStatisticsResponse> responses = new LinkedHashMap<>();
+        if (stats == null || stats.isEmpty()) {
+            return responses;
+        }
+        stats.forEach((deviceId, value) -> responses.put(deviceId, DeviceStatisticsResponse.from(value)));
+        return responses;
     }
 }
