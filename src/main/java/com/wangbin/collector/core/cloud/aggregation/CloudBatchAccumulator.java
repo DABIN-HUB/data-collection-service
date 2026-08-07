@@ -1,7 +1,7 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
 import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.report.model.ReportData;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

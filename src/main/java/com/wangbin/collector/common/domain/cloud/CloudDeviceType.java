@@ -1,4 +1,4 @@
-package com.wangbin.collector.core.cloud.model;
+package com.wangbin.collector.common.domain.cloud;
 
 /**
  * 云平台设备类型。

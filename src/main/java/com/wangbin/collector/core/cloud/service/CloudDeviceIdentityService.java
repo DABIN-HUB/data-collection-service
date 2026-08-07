@@ -1,8 +1,8 @@
 package com.wangbin.collector.core.cloud.service;
 
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import lombok.RequiredArgsConstructor;

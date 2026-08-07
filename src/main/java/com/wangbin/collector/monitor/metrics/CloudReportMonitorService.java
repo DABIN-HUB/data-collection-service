@@ -4,7 +4,7 @@ package com.wangbin.collector.monitor.metrics;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.report.config.ReportProperties;

@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.cloud.protocol.alink.topic;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;

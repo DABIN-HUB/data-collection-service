@@ -3,7 +3,7 @@ package com.wangbin.collector.core.cloud.protocol.alink;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkMessageEnvelope;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkPayloadDecoder;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkPayloadEncoder;

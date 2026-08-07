@@ -3,7 +3,7 @@ package com.wangbin.collector.core.cloud.topology;
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 

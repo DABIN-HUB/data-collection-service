@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.report.lifecycle;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.alink.lifecycle.AlinkLifecycleCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.mqttv5.client.IMqttToken;

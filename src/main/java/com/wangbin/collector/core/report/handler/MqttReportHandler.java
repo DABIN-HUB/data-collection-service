@@ -11,7 +11,7 @@ import com.wangbin.collector.core.cloud.config.CloudAckMode;
 import com.wangbin.collector.core.cloud.config.CloudAckOptions;
 import com.wangbin.collector.core.cloud.config.CloudBatchFlushPolicy;
 import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapterRegistry;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkCloudProtocolAdapter;

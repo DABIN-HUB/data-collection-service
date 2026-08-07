@@ -1,7 +1,5 @@
 package com.wangbin.collector.core.collector.edge;
 
-import com.wangbin.collector.api.controller.dto.EdgeTelemetryBatchRequest;
-import com.wangbin.collector.api.controller.dto.EdgeTelemetryItem;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
@@ -25,14 +23,11 @@ public class EdgeTelemetryIngressService {
     private final TelemetryIngressService telemetryIngressService;
     private final ConcurrentMap<String, Long> latestSequences = new ConcurrentHashMap<>();
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    public EdgeTelemetryIngressResult ingest(EdgeTelemetryBatchRequest request) {
+    public EdgeTelemetryIngressResult ingest(EdgeTelemetryBatch request) {
         int acceptedCount = 0;
         int duplicateCount = 0;
         List<String> errors = new ArrayList<>();
-        for (EdgeTelemetryItem item : request.items()) {
+        for (EdgeTelemetrySample item : request.items()) {
             String sequenceKey = request.gatewayId() + ':' + item.deviceId();
             DataPoint point = devicePointResolver.resolve(item.deviceId(), item.pointRef()).orElse(null);
             if (point == null) {
@@ -58,9 +53,6 @@ public class EdgeTelemetryIngressService {
                 duplicateCount, errors.size(), List.copyOf(errors));
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private boolean acceptSequence(String key, long sequence) {
         AtomicBoolean accepted = new AtomicBoolean(false);
         latestSequences.compute(key, (ignored, current) -> {

@@ -3,7 +3,7 @@ package com.wangbin.collector.core.cloud.aggregation;
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.report.model.ReportData;
 import org.springframework.stereotype.Component;
 

@@ -3,7 +3,7 @@ package com.wangbin.collector.core.cloud.protocol.alink.lifecycle;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.alink.AlinkMethod;
 import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicBuilder;
 import org.springframework.stereotype.Component;

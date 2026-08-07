@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;

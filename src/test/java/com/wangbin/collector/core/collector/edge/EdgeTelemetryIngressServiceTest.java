@@ -1,7 +1,5 @@
 package com.wangbin.collector.core.collector.edge;
 
-import com.wangbin.collector.api.controller.dto.EdgeTelemetryBatchRequest;
-import com.wangbin.collector.api.controller.dto.EdgeTelemetryItem;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
@@ -11,7 +9,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -29,8 +26,8 @@ class EdgeTelemetryIngressServiceTest {
         point.setDeviceId("dev-1");
         when(pointResolver.resolve("dev-1", "temperature")).thenReturn(Optional.of(point));
 
-        EdgeTelemetryBatchRequest first = request(1L);
-        EdgeTelemetryBatchRequest duplicate = request(1L);
+        EdgeTelemetryBatch first = request(1L);
+        EdgeTelemetryBatch duplicate = request(1L);
 
         EdgeTelemetryIngressResult accepted = service.ingest(first);
         EdgeTelemetryIngressResult ignored = service.ingest(duplicate);
@@ -39,13 +36,13 @@ class EdgeTelemetryIngressServiceTest {
         assertEquals(0, ignored.acceptedCount());
         assertEquals(1, ignored.duplicateCount());
         verify(telemetryIngressService).appendRaw(
-                eq("dev-1"), eq(point), eq(12.5d), eq(100), any(Long.class), eq("EDGE_PROFINET"));
+                eq("dev-1"), eq(point), eq(12.5d), eq(100), eq(123456789L), eq("EDGE_PROFINET"));
     }
 
-    private EdgeTelemetryBatchRequest request(long sequence) {
-        EdgeTelemetryItem item = new EdgeTelemetryItem(
-                "dev-1", "temperature", 12.5d, 100, System.currentTimeMillis(), sequence);
-        return new EdgeTelemetryBatchRequest(
+    private EdgeTelemetryBatch request(long sequence) {
+        EdgeTelemetrySample item = new EdgeTelemetrySample(
+                "dev-1", "temperature", 12.5d, 100, 123456789L, sequence);
+        return new EdgeTelemetryBatch(
                 "gateway-1", EdgeProtocolType.PROFINET, "v1", List.of(item));
     }
 }

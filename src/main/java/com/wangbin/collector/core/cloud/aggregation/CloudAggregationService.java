@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.report.model.ReportData;
 import org.springframework.stereotype.Service;
 
@@ -11,9 +12,6 @@ import java.util.Optional;
 @Service
 public class CloudAggregationService {
 
-    /**
-     * 查询并返回业务数据。
-     */
     public CloudAggregateSnapshot snapshotOf(ReportData data) {
         if (data == null) {
             return null;
@@ -28,7 +26,7 @@ public class CloudAggregationService {
                         .orElse(data.getDeviceId()));
         return new CloudAggregateSnapshot(
                 aggregateTargetId,
-                com.wangbin.collector.core.cloud.model.CloudDeviceIdentity.of(productKey, data.getDeviceId()),
+                CloudDeviceIdentity.of(productKey, data.getDeviceId()),
                 data.getProperties(),
                 data.getPropertyTs(),
                 data.getPropertyQuality(),

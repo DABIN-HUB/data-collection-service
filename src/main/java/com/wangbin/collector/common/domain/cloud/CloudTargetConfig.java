@@ -1,4 +1,4 @@
-package com.wangbin.collector.core.cloud.model;
+package com.wangbin.collector.common.domain.cloud;
 
 import lombok.Data;
 import org.springframework.util.StringUtils;
@@ -35,14 +35,14 @@ public class CloudTargetConfig {
     private boolean topologyEnabled = true;
 
     /**
-     * 执行当前业务逻辑。
+     * 返回当前设备绑定的云端身份。
      */
     public CloudDeviceIdentity identity() {
         return CloudDeviceIdentity.of(productKey, deviceName);
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 启用云端上报时必须具备完整身份和设备类型。
      */
     public boolean valid() {
         return enabled
@@ -52,14 +52,14 @@ public class CloudTargetConfig {
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 是否按直连设备或网关设备语义上报。
      */
     public boolean gatewayDevice() {
         return deviceType == CloudDeviceType.GATEWAY || deviceType == CloudDeviceType.DIRECT;
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 是否按子设备语义参与上报。
      */
     public boolean subDevice() {
         return deviceType == CloudDeviceType.SUB_DEVICE || deviceType == CloudDeviceType.LOGICAL_SUB_DEVICE;

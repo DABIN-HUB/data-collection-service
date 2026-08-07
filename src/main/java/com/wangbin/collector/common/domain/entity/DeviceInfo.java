@@ -1,7 +1,7 @@
 package com.wangbin.collector.common.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import lombok.Data;
 
 import java.util.Date;

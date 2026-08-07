@@ -3,7 +3,7 @@ package com.wangbin.collector.core.config.model;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import lombok.Getter;
 import lombok.ToString;
 import org.springframework.beans.BeanUtils;

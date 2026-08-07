@@ -2,8 +2,8 @@ package com.wangbin.collector.core.report.downlink;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudDeviceType;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceType;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.cloud.protocol.CloudInboundRoute;
 import com.wangbin.collector.core.cloud.ota.CloudOtaService;
 import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
