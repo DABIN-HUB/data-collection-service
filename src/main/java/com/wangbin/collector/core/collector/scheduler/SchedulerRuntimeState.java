@@ -2,13 +2,14 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Supplier;
 
 /**
  * 保存调度器运行期状态，并集中处理时间片任务桶和设备运行态的并发访问。
@@ -19,34 +20,22 @@ public class SchedulerRuntimeState {
     private final ConcurrentHashMap<String, DeviceScheduleInfo> deviceScheduleInfo = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, List<DeviceBatchTask>> timeSliceTasks = new ConcurrentHashMap<>();
     private final Set<String> startingDevices = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Long> startingGenerations = new ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicInteger timeSliceCount = new java.util.concurrent.atomic.AtomicInteger(2);
     private final java.util.concurrent.atomic.AtomicInteger timeSliceInterval = new java.util.concurrent.atomic.AtomicInteger(1000);
     private final java.util.concurrent.atomic.AtomicLong timeSliceRevision = new java.util.concurrent.atomic.AtomicLong(0);
     private final ReentrantLock stateLock = new ReentrantLock();
 
-    void runExclusive(Runnable action) {
-        stateLock.lock();
-        try {
-            action.run();
-        } finally {
-            stateLock.unlock();
-        }
-    }
-
-    <T> T callExclusive(Supplier<T> action) {
-        stateLock.lock();
-        try {
-            return action.get();
-        } finally {
-            stateLock.unlock();
-        }
-    }
-
     void initializeTimeSlices(int sliceCount, int intervalMs) {
-        timeSliceCount.set(Math.max(1, sliceCount));
-        timeSliceInterval.set(Math.max(1, intervalMs));
-        timeSliceRevision.set(1L);
-        resetTimeSliceBuckets(timeSliceCount.get());
+        stateLock.lock();
+        try {
+            timeSliceCount.set(Math.max(1, sliceCount));
+            timeSliceInterval.set(Math.max(1, intervalMs));
+            timeSliceRevision.set(1L);
+            resetTimeSliceBucketsLocked(timeSliceCount.get());
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     int getTimeSliceCount() {
@@ -62,12 +51,26 @@ public class SchedulerRuntimeState {
     }
 
     long updateTimeSliceConfig(int sliceCount, int intervalMs) {
-        timeSliceCount.set(Math.max(1, sliceCount));
-        timeSliceInterval.set(Math.max(1, intervalMs));
-        return timeSliceRevision.incrementAndGet();
+        stateLock.lock();
+        try {
+            timeSliceCount.set(Math.max(1, sliceCount));
+            timeSliceInterval.set(Math.max(1, intervalMs));
+            return timeSliceRevision.incrementAndGet();
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     void resetTimeSliceBuckets(int sliceCount) {
+        stateLock.lock();
+        try {
+            resetTimeSliceBucketsLocked(sliceCount);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    private void resetTimeSliceBucketsLocked(int sliceCount) {
         timeSliceTasks.clear();
         for (int i = 0; i < Math.max(1, sliceCount); i++) {
             timeSliceTasks.put(i, new CopyOnWriteArrayList<>());
@@ -83,6 +86,32 @@ public class SchedulerRuntimeState {
         if (batchTasks == null || batchTasks.isEmpty()) {
             return;
         }
+        stateLock.lock();
+        try {
+            addBatchTasksLocked(batchTasks);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    boolean addBatchTasksIfRunning(String deviceId, long generation, List<DeviceBatchTask> batchTasks) {
+        if (batchTasks == null || batchTasks.isEmpty()) {
+            return true;
+        }
+        stateLock.lock();
+        try {
+            DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
+            if (info == null || !info.isRunning() || info.getGeneration() != generation) {
+                return false;
+            }
+            addBatchTasksLocked(batchTasks);
+            return true;
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    private void addBatchTasksLocked(List<DeviceBatchTask> batchTasks) {
         for (DeviceBatchTask batchTask : batchTasks) {
             if (batchTask == null) {
                 continue;
@@ -94,37 +123,166 @@ public class SchedulerRuntimeState {
         }
     }
 
-    void removeDeviceTasks(String deviceId) {
-        for (List<DeviceBatchTask> tasks : timeSliceTasks.values()) {
-            tasks.removeIf(task -> {
-                if (task.deviceId.equals(deviceId)) {
-                    task.cancel();
-                    return true;
-                }
-                return false;
-            });
+    List<DeviceBatchTask> removeDeviceTasks(String deviceId) {
+        List<DeviceBatchTask> removedTasks = new ArrayList<>();
+        stateLock.lock();
+        try {
+            for (List<DeviceBatchTask> tasks : timeSliceTasks.values()) {
+                tasks.removeIf(task -> {
+                    if (Objects.equals(task.deviceId, deviceId)) {
+                        removedTasks.add(task);
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        } finally {
+            stateLock.unlock();
         }
+        removedTasks.forEach(DeviceBatchTask::cancel);
+        return List.copyOf(removedTasks);
+    }
+
+    List<DeviceBatchTask> removeDeviceTasksIfGeneration(String deviceId, long generation) {
+        List<DeviceBatchTask> removedTasks = new ArrayList<>();
+        stateLock.lock();
+        try {
+            for (List<DeviceBatchTask> tasks : timeSliceTasks.values()) {
+                tasks.removeIf(task -> {
+                    if (Objects.equals(task.deviceId, deviceId) && task.generation == generation) {
+                        removedTasks.add(task);
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        } finally {
+            stateLock.unlock();
+        }
+        removedTasks.forEach(DeviceBatchTask::cancel);
+        return List.copyOf(removedTasks);
     }
 
     boolean markStarting(String deviceId) {
-        return startingDevices.add(deviceId);
+        return markStartingIfNotActive(deviceId);
+    }
+
+    boolean markStartingIfNotActive(String deviceId) {
+        stateLock.lock();
+        try {
+            DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
+            if ((info != null && info.isRunning()) || startingDevices.contains(deviceId)) {
+                return false;
+            }
+            return startingDevices.add(deviceId);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    void markStartingGeneration(String deviceId, long generation) {
+        stateLock.lock();
+        try {
+            if (startingDevices.contains(deviceId)) {
+                startingGenerations.put(deviceId, generation);
+            }
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     void clearStarting(String deviceId) {
-        startingDevices.remove(deviceId);
+        stateLock.lock();
+        try {
+            startingDevices.remove(deviceId);
+            startingGenerations.remove(deviceId);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    boolean clearStartingIfGeneration(String deviceId, long generation) {
+        stateLock.lock();
+        try {
+            if (!Objects.equals(startingGenerations.get(deviceId), generation)) {
+                return false;
+            }
+            startingGenerations.remove(deviceId);
+            startingDevices.remove(deviceId);
+            return true;
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     boolean isStarting(String deviceId) {
         return startingDevices.contains(deviceId);
     }
 
+    boolean isStartingGeneration(String deviceId, long generation) {
+        return Objects.equals(startingGenerations.get(deviceId), generation);
+    }
+
+    long getStartingGeneration(String deviceId) {
+        return startingGenerations.getOrDefault(deviceId, 0L);
+    }
+
     void markRunning(String deviceId, long generation) {
-        deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
+        stateLock.lock();
+        try {
+            deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
+            startingDevices.remove(deviceId);
+            startingGenerations.remove(deviceId);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    boolean commitRunning(String deviceId, long generation, List<DeviceBatchTask> batchTasks) {
+        stateLock.lock();
+        try {
+            if (!startingDevices.contains(deviceId) || !Objects.equals(startingGenerations.get(deviceId), generation)) {
+                return false;
+            }
+            deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
+            addBatchTasksLocked(batchTasks);
+            startingDevices.remove(deviceId);
+            startingGenerations.remove(deviceId);
+            return true;
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     DeviceScheduleInfo removeDevice(String deviceId) {
-        clearStarting(deviceId);
-        return deviceScheduleInfo.remove(deviceId);
+        stateLock.lock();
+        try {
+            startingDevices.remove(deviceId);
+            startingGenerations.remove(deviceId);
+            return deviceScheduleInfo.remove(deviceId);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    boolean removeDeviceIfGeneration(String deviceId, long generation) {
+        stateLock.lock();
+        try {
+            boolean removed = false;
+            if (Objects.equals(startingGenerations.get(deviceId), generation)) {
+                startingGenerations.remove(deviceId);
+                startingDevices.remove(deviceId);
+                removed = true;
+            }
+            DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
+            if (info != null && info.getGeneration() == generation) {
+                deviceScheduleInfo.remove(deviceId);
+                removed = true;
+            }
+            return removed;
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     boolean isRunning(String deviceId) {
@@ -137,10 +295,37 @@ public class SchedulerRuntimeState {
     }
 
     List<String> getRunningDevices() {
-        return deviceScheduleInfo.entrySet().stream()
-                .filter(entry -> entry.getValue().isRunning())
-                .map(java.util.Map.Entry::getKey)
-                .toList();
+        stateLock.lock();
+        try {
+            return deviceScheduleInfo.entrySet().stream()
+                    .filter(entry -> entry.getValue().isRunning())
+                    .map(java.util.Map.Entry::getKey)
+                    .toList();
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    Set<String> getActiveDeviceIds() {
+        stateLock.lock();
+        try {
+            Set<String> deviceIds = new HashSet<>(deviceScheduleInfo.keySet());
+            deviceIds.addAll(startingDevices);
+            return Set.copyOf(deviceIds);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    List<DeviceScheduleInfo> getRunningScheduleSnapshot() {
+        stateLock.lock();
+        try {
+            return deviceScheduleInfo.values().stream()
+                    .filter(DeviceScheduleInfo::isRunning)
+                    .toList();
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     int getRunningDeviceCount() {
@@ -148,9 +333,7 @@ public class SchedulerRuntimeState {
     }
 
     Set<String> getKnownDeviceIds() {
-        Set<String> deviceIds = new HashSet<>(deviceScheduleInfo.keySet());
-        deviceIds.addAll(startingDevices);
-        return deviceIds;
+        return getActiveDeviceIds();
     }
 
     long getTotalTaskCount() {
@@ -167,13 +350,21 @@ public class SchedulerRuntimeState {
     }
 
     void clear() {
-        for (List<DeviceBatchTask> tasks : timeSliceTasks.values()) {
-            for (DeviceBatchTask task : tasks) {
-                task.cancel();
+        List<DeviceBatchTask> tasksToCancel = new ArrayList<>();
+        stateLock.lock();
+        try {
+            for (List<DeviceBatchTask> tasks : timeSliceTasks.values()) {
+                tasksToCancel.addAll(tasks);
             }
+            deviceScheduleInfo.clear();
+            timeSliceTasks.clear();
+            startingDevices.clear();
+            startingGenerations.clear();
+        } finally {
+            stateLock.unlock();
         }
-        deviceScheduleInfo.clear();
-        timeSliceTasks.clear();
-        startingDevices.clear();
+        for (DeviceBatchTask task : tasksToCancel) {
+            task.cancel();
+        }
     }
 }

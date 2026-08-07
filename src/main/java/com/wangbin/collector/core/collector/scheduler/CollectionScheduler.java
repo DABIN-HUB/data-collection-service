@@ -271,36 +271,26 @@ public class CollectionScheduler {
                 collectorProperties.getScheduler().getMinTimeSliceIntervalMs(),
                 newSliceInterval
         );
-        boolean changed = runtimeState.callExclusive(() -> {
-            int oldSliceCount = runtimeState.getTimeSliceCount();
-            int oldSliceInterval = runtimeState.getTimeSliceInterval();
-            boolean sliceCountChanged = normalizedSliceCount != oldSliceCount;
-            boolean intervalChanged = normalizedSliceInterval != oldSliceInterval;
-            if (!sliceCountChanged && !intervalChanged) {
-                return false;
-            }
-
+        int oldSliceCount = runtimeState.getTimeSliceCount();
+        int oldSliceInterval = runtimeState.getTimeSliceInterval();
+        boolean changed = normalizedSliceCount != oldSliceCount || normalizedSliceInterval != oldSliceInterval;
+        if (changed) {
             runtimeState.updateTimeSliceConfig(normalizedSliceCount, normalizedSliceInterval);
-            rebuildTimeSliceAssignmentsLocked();
-            return true;
-        });
+            rebuildTimeSliceAssignments();
+        }
         if (changed) {
             startTimeSliceScheduling();
         }
     }
 
     void rebuildTimeSliceAssignments() {
-        runtimeState.runExclusive(this::rebuildTimeSliceAssignmentsLocked);
-    }
-
-    private void rebuildTimeSliceAssignmentsLocked() {
         runtimeState.resetTimeSliceBuckets(runtimeState.getTimeSliceCount());
-        List<String> deviceIds = new ArrayList<>(runtimeState.getRunningDevices());
-        for (String deviceId : deviceIds) {
+        List<DeviceScheduleInfo> schedules = runtimeState.getRunningScheduleSnapshot();
+        for (DeviceScheduleInfo scheduleInfo : schedules) {
+            String deviceId = scheduleInfo.getDeviceId();
             try {
                 List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
-                DeviceScheduleInfo scheduleInfo = runtimeState.getScheduleInfo(deviceId);
-                if (scheduleInfo == null || !scheduleInfo.isRunning() || dataPoints == null || dataPoints.isEmpty()) {
+                if (dataPoints == null || dataPoints.isEmpty()) {
                     continue;
                 }
                 deviceLifecycleCoordinator.scheduleDevicePoints(deviceId, scheduleInfo.getGeneration(), dataPoints);

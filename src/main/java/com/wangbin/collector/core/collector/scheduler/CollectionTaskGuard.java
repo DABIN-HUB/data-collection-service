@@ -19,9 +19,6 @@ public class CollectionTaskGuard {
     private final ConcurrentMap<String, Long> activeGenerations = new ConcurrentHashMap<>();
     private final ThreadLocal<CollectionTaskContext> currentContext = new ThreadLocal<>();
 
-    /**
-     * 执行当前业务逻辑。
-     */
     public long activateNextGeneration(String deviceId) {
         long generation = generationSequence.incrementAndGet();
         activeGenerations.put(deviceId, generation);
@@ -29,13 +26,23 @@ public class CollectionTaskGuard {
     }
 
     /**
-     * 清理或删除业务数据。
+     * 停止设备时无条件使当前代次失效，阻止旧采集结果继续进入后处理。
      */
     public void clearDevice(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
         }
         activeGenerations.remove(deviceId);
+    }
+
+    /**
+     * 启动失败清理只允许清理自己的代次，避免旧 start 覆盖 stop/restart 后的新代次。
+     */
+    public boolean clearDeviceIfCurrent(String deviceId, long generation) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return false;
+        }
+        return activeGenerations.remove(deviceId, generation);
     }
 
     public boolean isCurrent(String deviceId, long generation) {
@@ -45,16 +52,10 @@ public class CollectionTaskGuard {
         return Objects.equals(activeGenerations.get(deviceId), generation);
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     public CollectionTaskContext captureCurrentContext() {
         return currentContext.get();
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     public <T> T callWithContext(String deviceId, long generation, Callable<T> callable) throws Exception {
         CollectionTaskContext previous = currentContext.get();
         currentContext.set(new CollectionTaskContext(deviceId, generation));
@@ -65,9 +66,6 @@ public class CollectionTaskGuard {
         }
     }
 
-    /**
-     * 处理当前业务流程。
-     */
     public void runWithContext(String deviceId, long generation, Runnable runnable) {
         CollectionTaskContext previous = currentContext.get();
         currentContext.set(new CollectionTaskContext(deviceId, generation));
@@ -78,9 +76,6 @@ public class CollectionTaskGuard {
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void restore(CollectionTaskContext previous) {
         if (previous == null) {
             currentContext.remove();
@@ -89,9 +84,6 @@ public class CollectionTaskGuard {
         currentContext.set(previous);
     }
 
-    /**
-     * 定义当前模块的不可变数据记录。
-     */
     public record CollectionTaskContext(String deviceId, long generation) {
     }
 }
