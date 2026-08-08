@@ -68,6 +68,7 @@ class BaseCollectorReadPointsTest {
 
         assertEquals(10.0D, firstRound.get("p1").getFinalValue());
         assertEquals(20.0D, secondRound.get("p1").getFinalValue());
+        assertTrue(collector.takeInvocationProcessResults().isEmpty());
     }
 
     @Test

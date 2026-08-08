@@ -361,6 +361,22 @@ public class DeviceBatchExecutor {
         return processRejectedCount.get();
     }
 
+    int getInFlightCollectFutureCountForTest() {
+        return futureCount(deviceInFlightCollectFutures);
+    }
+
+    int getInFlightProcessFutureCountForTest() {
+        return futureCount(deviceInFlightProcessFutures);
+    }
+
+    int getTotalInFlightFutureCountForTest() {
+        return getInFlightCollectFutureCountForTest() + getInFlightProcessFutureCountForTest();
+    }
+
+    private int futureCount(Map<String, ? extends Set<?>> futureRegistry) {
+        return futureRegistry.values().stream().mapToInt(Set::size).sum();
+    }
+
     private Long firstPositive(Long... candidates) {
         if (candidates == null) {
             return null;
