@@ -89,6 +89,11 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
             return;
         }
         repository.find(ackReply.messageId()).ifPresent(message -> {
+            if (message.getStatus() != CloudOutboxStatus.WAITING_ACK) {
+                log.debug("忽略非等待 ACK 状态的云端确认，消息={}，状态={}",
+                        ackReply.messageId(), message.getStatus());
+                return;
+            }
             if (ackReply.code() == 0) {
                 complete(message);
             } else {

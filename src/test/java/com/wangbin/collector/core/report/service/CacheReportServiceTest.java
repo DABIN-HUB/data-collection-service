@@ -10,6 +10,7 @@ import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import com.wangbin.collector.core.report.service.support.GatewayRateLimiter;
 import com.wangbin.collector.core.report.service.support.ReportConfigProvider;
 import com.wangbin.collector.core.report.shadow.DeviceShadow;
@@ -245,6 +246,29 @@ public class CacheReportServiceTest {
     }
 
     @Test
+    void outboxStoreFailureShouldPreventNetworkSend() {
+        ReportProperties props = baseProps();
+        ReportManager reportManager = mock(ReportManager.class);
+        ShadowManager shadowManager = mock(ShadowManager.class);
+        TaskScheduler taskScheduler = mock(TaskScheduler.class);
+        CloudOutboxService cloudOutboxService = mock(CloudOutboxService.class);
+        when(cloudOutboxService.isEnabled()).thenReturn(true);
+        when(cloudOutboxService.stage(any(), anyLong(), anyLong(), anyLong(), any()))
+                .thenThrow(new IllegalStateException("redis unavailable"));
+        CacheReportService service = createService(
+                reportManager, props, shadowManager, taskScheduler, null, cloudOutboxService);
+        Object tracker = createTracker("dev-outbox-fail", 8);
+        ReportData data = chunk("dev-outbox-fail", "f1");
+        ReportConfig config = validConfig();
+
+        ReflectionTestUtils.invokeMethod(service, "dispatch", data, config, false, tracker, 0);
+
+        verify(cloudOutboxService).stage(any(), anyLong(), anyLong(), anyLong(), any());
+        verify(reportManager, never()).reportAsync(any(), any());
+        verify(shadowManager, never()).markReportedValuesChunk(any(), any());
+    }
+
+    @Test
     void cacheReportServiceShouldAvoidDuplicateFlushAcrossInstances() {
         ReportProperties props = baseProps();
         ReportManager reportManager = mock(ReportManager.class);
@@ -360,6 +384,15 @@ public class CacheReportServiceTest {
                                              ShadowManager shadowManager,
                                              TaskScheduler taskScheduler,
                                              DistributedLock distributedLock) {
+        return createService(reportManager, props, shadowManager, taskScheduler, distributedLock, null);
+    }
+
+    private CacheReportService createService(ReportManager reportManager,
+                                             ReportProperties props,
+                                             ShadowManager shadowManager,
+                                             TaskScheduler taskScheduler,
+                                             DistributedLock distributedLock,
+                                             CloudOutboxService cloudOutboxService) {
         CloudDeviceIdentityService cloudDeviceIdentityService = mock(CloudDeviceIdentityService.class);
         ReportConfigProvider reportConfigProvider = mock(ReportConfigProvider.class);
         GatewayRateLimiter gatewayRateLimiter = mock(GatewayRateLimiter.class);
@@ -377,7 +410,7 @@ public class CacheReportServiceTest {
                 taskScheduler,
                 null,
                 null,
-                null
+                cloudOutboxService
         );
     }
 
