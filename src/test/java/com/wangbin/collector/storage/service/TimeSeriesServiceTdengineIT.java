@@ -113,6 +113,46 @@ class TimeSeriesServiceTdengineIT {
         assertThat(processed.get("quality")).isEqualTo("GOOD");
     }
 
+    @Test
+    void duplicateTimestampReplayShouldKeepSingleLatestRowInRealTdengine() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        long eventTs = System.currentTimeMillis();
+        String suffix = "dup_" + eventTs;
+        String deviceId = "tdengine-dup-" + suffix;
+
+        DataPoint point = new DataPoint();
+        point.setPointId("point-" + suffix);
+        point.setPointCode("temp_code_" + suffix);
+        point.setPointName("TDengine Duplicate Timestamp Point");
+        point.setAddress("40002");
+        point.setDataType("FLOAT");
+        point.setUnit("C");
+
+        service.append(deviceId, "MODBUS_TCP", point,
+                ProcessResult.success(1234, 12.34, "first write"), eventTs);
+        service.append(deviceId, "MODBUS_TCP", point,
+                ProcessResult.success(5678, 56.78, "replay write"), eventTs);
+
+        List<Map<String, Object>> rows = service.query(
+                deviceId,
+                point.getPointId(),
+                eventTs - 1000,
+                eventTs + 60_000,
+                5
+        );
+
+        assertThat(rows).hasSize(1);
+        assertThat(valueOf(rows.get(0), "valueText", "value_text")).isEqualTo("56.78");
+        assertThat(valueOf(rows.get(0), "message")).isEqualTo("replay write");
+    }
+
     private Map<String, Object> readMap(String json) throws Exception {
         return objectMapper.readValue(json, new TypeReference<>() {
         });
