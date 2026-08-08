@@ -122,6 +122,33 @@ class BaseCollectorReadPointsTest {
     }
 
     @Test
+    void readPointShouldUseProtectedTelemetryMetadataFacade() throws Exception {
+        MetadataOverrideCollector collector = connectedCollector(new MetadataOverrideCollector(Map.of("p1", 7)));
+
+        assertEquals(7.0D, collector.readPoint(point("p1")));
+
+        assertEquals(1, collector.enrichCount);
+        assertEquals(7, collector.rawValue);
+        assertEquals(7.0D, collector.processedValue);
+        assertEquals("POLLING", collector.source);
+        assertTrue(collector.collectTime > 0);
+    }
+
+    @Test
+    void ingestPushedValueShouldUseProtectedTelemetryMetadataFacade() throws Exception {
+        MetadataOverrideCollector collector = connectedCollector(new MetadataOverrideCollector(Map.of()));
+
+        ProcessResult result = collector.exposeIngestPushedValue(point("p1"), 8);
+
+        assertEquals(8.0D, result.getFinalValue());
+        assertEquals(1, collector.enrichCount);
+        assertEquals(8, collector.rawValue);
+        assertEquals(8.0D, collector.processedValue);
+        assertEquals("PUSH", collector.source);
+        assertTrue(collector.collectTime > 0);
+    }
+
+    @Test
     void writePointShouldUseSubclassConvertDataForWriteOverride() throws Exception {
         OverrideWriteCollector collector = connectedCollector(new OverrideWriteCollector(Map.of()));
         DataPoint point = point("p1");
@@ -241,6 +268,37 @@ class BaseCollectorReadPointsTest {
 
         void exposeValidateData(DataPoint point, Object value) {
             validateData(point, value);
+        }
+    }
+
+    private static class MetadataOverrideCollector extends TestCollector {
+
+        private int enrichCount;
+        private Object rawValue;
+        private Object processedValue;
+        private long collectTime;
+        private String source;
+
+        private MetadataOverrideCollector(Map<String, Object> rawValues) {
+            super(rawValues);
+        }
+
+        @Override
+        protected void enrichTelemetryMetadata(ProcessResult result,
+                                               Object rawValue,
+                                               Object processedValue,
+                                               long collectTime,
+                                               String source) {
+            enrichCount++;
+            this.rawValue = rawValue;
+            this.processedValue = processedValue;
+            this.collectTime = collectTime;
+            this.source = source;
+            super.enrichTelemetryMetadata(result, rawValue, processedValue, collectTime, source);
+        }
+
+        ProcessResult exposeIngestPushedValue(DataPoint point, Object rawValue) {
+            return ingestPushedValue(point, rawValue);
         }
     }
 

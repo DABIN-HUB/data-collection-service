@@ -9,6 +9,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.converter.CollectorValueConverter;
+import com.wangbin.collector.core.collector.telemetry.CollectorTelemetryMetadataEnricher;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
@@ -20,7 +21,6 @@ import com.wangbin.collector.core.port.ExceptionReporter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
-import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -90,6 +90,7 @@ protected volatile boolean connected = false;
     protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
     private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
     private final CollectorValueConverter valueConverter = new CollectorValueConverter();
+    private final CollectorTelemetryMetadataEnricher telemetryMetadataEnricher = new CollectorTelemetryMetadataEnricher();
 
     // 订阅的点位
     protected final Set<String> subscribedPointsSet = ConcurrentHashMap.newKeySet();
@@ -833,25 +834,7 @@ protected volatile boolean connected = false;
                                            Object processedValue,
                                            long collectTime,
                                            String source) {
-        if (result == null) {
-            return;
-        }
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.RAW_VALUE, rawValue);
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.PROCESSED_VALUE, processedValue);
-        if (collectTime > 0) {
-            putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.COLLECT_TIME, collectTime);
-        }
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.SOURCE, source);
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void putProcessMetadataIfAbsent(ProcessResult result, String key, Object value) {
-        if (result.getMetadata() == null || key == null || value == null) {
-            return;
-        }
-        result.getMetadata().putIfAbsent(key, value);
+        telemetryMetadataEnricher.enrich(result, rawValue, processedValue, collectTime, source);
     }
 
     /**
