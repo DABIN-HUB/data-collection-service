@@ -1,23 +1,26 @@
 package com.wangbin.collector.storage.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -37,6 +40,7 @@ class TimeSeriesServiceTest {
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
 
         TimeSeriesService service = new TimeSeriesService(
                 dataRepository,
@@ -83,12 +87,13 @@ class TimeSeriesServiceTest {
 
         verify(dataRepository).createDatabase("wangbin_collector", 30);
         verify(dataRepository).createStable("wangbin_collector", "telemetry_super");
-        verify(deviceRepository).createChildTable("wangbin_collector", "d_plc_001", "telemetry_super", "plc-001", "S7");
-        verify(dataRepository).insertTelemetry(
+        verify(dataRepository).createStableV2("wangbin_collector", "telemetry_super_v2");
+        verify(deviceRepository).createChildTable("wangbin_collector", "d_plc_001_v2", "telemetry_super_v2", "plc-001", "S7");
+        verify(dataRepository).insertTelemetryV2(
                 eq("wangbin_collector"),
-                eq("d_plc_001"),
-                eq(TimeSeriesService.resolveStorageTimestamp(eventTs, point)),
+                eq("d_plc_001_v2"),
                 eq(eventTs),
+                eq("1024"),
                 eq("1024"),
                 eq("temperature"),
                 eq("设备温度"),
@@ -135,38 +140,81 @@ class TimeSeriesServiceTest {
     }
 
     @Test
-    void storageTimestampShouldBeDeterministicForSameHistoryRecord() {
-        long eventTs = 1783046400123L;
-        DataPoint point = point(42L, "point-42");
+    void pointStorageKeyShouldUseStablePointIdentity() {
+        assertThat(TimeSeriesService.resolvePointStorageKey(point(42L, "point-42"))).isEqualTo("point-42");
 
-        long first = TimeSeriesService.resolveStorageTimestamp(eventTs, point);
-        long second = TimeSeriesService.resolveStorageTimestamp(eventTs, point);
+        DataPoint idOnly = point(42L, null);
+        idOnly.setPointCode(null);
+        assertThat(TimeSeriesService.resolvePointStorageKey(idOnly)).isEqualTo("id:42");
 
-        assertThat(first).isEqualTo(second);
+        DataPoint blankPointId = point(99L, " ");
+        assertThat(TimeSeriesService.resolvePointStorageKey(blankPointId)).isEqualTo("id:99");
     }
 
     @Test
-    void storageTimestampShouldNotCollideForThousandPointsInSameMillisecond() {
-        long eventTs = 1783046400123L;
-        Set<Long> storageTimestamps = new HashSet<>();
+    void pointStorageKeyShouldFailFastWhenStableIdentityIsMissingOrTooLong() {
+        DataPoint empty = point(null, null);
+        empty.setPointCode("temperature");
+        empty.setAddress("40001");
 
-        for (int i = 0; i < TimeSeriesService.STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND; i++) {
-            assertThat(storageTimestamps.add(TimeSeriesService.resolveStorageTimestamp(eventTs, point((long) i, "point-" + i))))
-                    .as("point index %s should have a unique storage timestamp", i)
-                    .isTrue();
-        }
+        assertThatThrownBy(() -> TimeSeriesService.resolvePointStorageKey(empty))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("pointId/id");
+
+        DataPoint tooLong = point(null, "p".repeat(129));
+        assertThatThrownBy(() -> TimeSeriesService.resolvePointStorageKey(tooLong))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("128");
     }
 
     @Test
-    void storageTimestampShouldNotCollideAcrossAdjacentEventMilliseconds() {
-        long eventTs = 1783046400123L;
-        DataPoint firstPoint = point(999L, "point-999");
-        DataPoint secondPoint = point(0L, "point-0");
+    void queryShouldMergeV2AndV1RowsPreferV2AndApplyUnifiedLimit() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        properties.setQueryDefaultLimit(10);
+        properties.setQueryMaxLimit(10);
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        when(dataRepository.queryPointHistoryV2("wangbin_collector", "d_dev_1_v2", null, null, null, 2))
+                .thenReturn(List.of(
+                        row("point-2", 3_000L, "v2-newest"),
+                        row("point-1", 2_000L, "v2-duplicate")));
+        when(dataRepository.queryPointHistory("wangbin_collector", "d_dev_1", null, null, null, 2))
+                .thenReturn(List.of(
+                        row("point-1", 2_000L, "v1-old"),
+                        row("point-3", 1_000L, "v1-oldest")));
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
 
-        long first = TimeSeriesService.resolveStorageTimestamp(eventTs, firstPoint);
-        long second = TimeSeriesService.resolveStorageTimestamp(eventTs + 1, secondPoint);
+        List<Map<String, Object>> rows = service.query("dev-1", null, null, null, 2);
 
-        assertThat(first).isNotEqualTo(second);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("point_id")).isEqualTo("point-2");
+        assertThat(rows.get(1).get("point_id")).isEqualTo("point-1");
+        assertThat(rows.get(1).get("value_text")).isEqualTo("v2-duplicate");
+    }
+
+    @Test
+    void oldHistoryWriteRequestJsonShouldStillResolvePointStorageKey() throws Exception {
+        String json = """
+                {"deviceId":"legacy-dev","protocolType":"MODBUS_TCP","point":{"pointId":"legacy-point","pointCode":"legacy-code","status":1},"eventTs":1783046400123}
+                """;
+
+        HistoryWriteRequest request = objectMapper.copy()
+                .setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE)
+                .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+                .readValue(json, HistoryWriteRequest.class);
+
+        assertThat(request.getEventTs()).isEqualTo(1783046400123L);
+        assertThat(TimeSeriesService.resolvePointStorageKey(request.getPoint())).isEqualTo("legacy-point");
     }
 
     private DataPoint point(Long id, String pointId) {
@@ -176,6 +224,20 @@ class TimeSeriesServiceTest {
         point.setPointCode(pointId);
         point.setStatus(1);
         return point;
+    }
+
+    private List<Map<String, Object>> v2CreateSql() {
+        return List.of(Map.of(
+                "stable", "telemetry_super_v2",
+                "sql", "CREATE STABLE telemetry_super_v2 (ts TIMESTAMP, point_key VARCHAR(128) COMPOSITE KEY, event_ts BIGINT)"));
+    }
+
+    private Map<String, Object> row(String pointId, long eventTs, String valueText) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("point_id", pointId);
+        row.put("event_ts", eventTs);
+        row.put("value_text", valueText);
+        return row;
     }
 
     private Map<String, Object> readMap(String json) throws Exception {

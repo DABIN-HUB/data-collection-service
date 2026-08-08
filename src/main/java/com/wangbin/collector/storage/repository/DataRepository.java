@@ -22,6 +22,8 @@ public interface DataRepository {
      */
     void createStable(@Param("database") String database, @Param("superTable") String superTable);
 
+    void createStableV2(@Param("database") String database, @Param("superTable") String superTable);
+
     /**
      * 记录或统计业务状态。
      */
@@ -34,6 +36,9 @@ public interface DataRepository {
                      @Param("tableName") String tableName,
                      @Param("columnName") String columnName);
 
+    List<Map<String, Object>> showCreateStable(@Param("database") String database,
+                                               @Param("tableName") String tableName);
+
     /**
      * 执行当前业务逻辑。
      */
@@ -45,7 +50,6 @@ public interface DataRepository {
      */
     void insertTelemetry(@Param("database") String database,
                          @Param("subTable") String subTable,
-                         @Param("storageTs") long storageTs,
                          @Param("eventTs") long eventTs,
                          @Param("pointId") String pointId,
                          @Param("pointCode") String pointCode,
@@ -59,6 +63,22 @@ public interface DataRepository {
                          @Param("processedJson") String processedJson,
                          @Param("metadataJson") String metadataJson);
 
+    void insertTelemetryV2(@Param("database") String database,
+                           @Param("subTable") String subTable,
+                           @Param("eventTs") long eventTs,
+                           @Param("pointKey") String pointKey,
+                           @Param("pointId") String pointId,
+                           @Param("pointCode") String pointCode,
+                           @Param("pointName") String pointName,
+                           @Param("valueText") String valueText,
+                           @Param("unit") String unit,
+                           @Param("quality") Integer quality,
+                           @Param("success") Boolean success,
+                           @Param("message") String message,
+                           @Param("rawJson") String rawJson,
+                           @Param("processedJson") String processedJson,
+                           @Param("metadataJson") String metadataJson);
+
     /**
      * 查询并返回业务数据。
      */
@@ -68,4 +88,11 @@ public interface DataRepository {
                                                 @Param("startTs") Long startTs,
                                                 @Param("endTs") Long endTs,
                                                 @Param("limit") int limit);
+
+    List<Map<String, Object>> queryPointHistoryV2(@Param("database") String database,
+                                                  @Param("subTable") String subTable,
+                                                  @Param("pointId") String pointId,
+                                                  @Param("startTs") Long startTs,
+                                                  @Param("endTs") Long endTs,
+                                                  @Param("limit") int limit);
 }

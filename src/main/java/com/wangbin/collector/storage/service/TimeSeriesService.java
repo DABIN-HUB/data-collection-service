@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.zip.CRC32;
 
 /**
  * 处理当前模块的业务服务。
@@ -37,8 +36,10 @@ import java.util.zip.CRC32;
 public class TimeSeriesService {
 
     private static final String TELEMETRY_UNIT_COLUMN = "unit";
-    static final long STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND = 1_000L;
-    private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final String POINT_KEY_COLUMN = "point_key";
+    private static final String COMPOSITE_KEY_NOTE = "COMPOSITE KEY";
+    private static final String V2_SUFFIX = "_v2";
+    private static final int POINT_KEY_MAX_BYTES = 128;
     private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
             ProcessResultMetadataKeys.RAW_VALUE,
             ProcessResultMetadataKeys.PROCESSED_VALUE,
@@ -68,18 +69,19 @@ public class TimeSeriesService {
         ensureSchema();
         String database = sanitizeIdentifier(properties.getDatabase());
         String superTable = sanitizeIdentifier(properties.getSuperTable());
-        String subTable = resolveSubTableName(deviceId);
-        ensureSubTable(database, superTable, subTable, deviceId, protocolType);
+        String superTableV2 = resolveV2Name(superTable);
+        String subTableV2 = resolveV2Name(resolveSubTableName(deviceId));
+        ensureSubTable(database, superTableV2, subTableV2, deviceId, protocolType);
 
         Object finalValue = processResult != null ? processResult.getFinalValue() : null;
         TelemetryPayload payload = buildPayload(deviceId, protocolType, point, processResult, finalValue, eventTs);
-        long storageTs = resolveStorageTimestamp(eventTs, point);
+        String pointKey = resolvePointStorageKey(point);
 
-        dataRepository.insertTelemetry(
+        dataRepository.insertTelemetryV2(
                 database,
-                subTable,
-                storageTs,
+                subTableV2,
                 eventTs,
+                pointKey,
                 point != null ? point.getPointId() : null,
                 point != null ? point.getPointCode() : null,
                 point != null ? point.getPointName() : null,
@@ -94,35 +96,25 @@ public class TimeSeriesService {
         );
     }
 
-    static long resolveStorageTimestamp(long eventTs, DataPoint point) {
-        long dayStart = Math.floorDiv(eventTs, MILLIS_PER_DAY) * MILLIS_PER_DAY;
-        long millisOfDay = Math.floorMod(eventTs, MILLIS_PER_DAY);
-        return dayStart + millisOfDay * STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND + pointSlot(point);
-    }
-
-    private static long pointSlot(DataPoint point) {
+    static String resolvePointStorageKey(DataPoint point) {
         if (point == null) {
-            return 0L;
+            throw new IllegalArgumentException("TDengine V2 写入缺少点位信息，无法生成稳定 point_key");
         }
-        Long id = point.getId();
-        if (id != null) {
-            return Math.floorMod(id, STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND);
-        }
-        String identity = firstNonBlank(
-                point.getPointId(),
-                point.getPointCode(),
-                point.getAddress(),
-                point.getPointName());
+        String identity = firstNonBlank(point.getPointId());
         if (identity == null) {
-            return 0L;
+            Long id = point.getId();
+            if (id != null) {
+                identity = "id:" + id;
+            }
         }
-        Long numericSuffix = trailingNumber(identity);
-        if (numericSuffix != null) {
-            return Math.floorMod(numericSuffix, STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND);
+        if (identity == null) {
+            throw new IllegalArgumentException("TDengine V2 写入缺少 pointId/id，无法生成稳定 point_key");
         }
-        CRC32 crc32 = new CRC32();
-        crc32.update(identity.getBytes(StandardCharsets.UTF_8));
-        return crc32.getValue() % STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND;
+        int byteLength = identity.getBytes(StandardCharsets.UTF_8).length;
+        if (byteLength > POINT_KEY_MAX_BYTES) {
+            throw new IllegalArgumentException("TDengine V2 point_key 超过 128 字节，无法无碰撞保存: " + identity);
+        }
+        return identity;
     }
 
     private static String firstNonBlank(String... values) {
@@ -137,25 +129,6 @@ public class TimeSeriesService {
         return null;
     }
 
-    private static Long trailingNumber(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        int end = value.length();
-        int start = end;
-        while (start > 0 && Character.isDigit(value.charAt(start - 1))) {
-            start--;
-        }
-        if (start == end) {
-            return null;
-        }
-        try {
-            return Long.parseLong(value.substring(start, end));
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
     /**
      * 查询并返回业务数据。
      */
@@ -167,19 +140,153 @@ public class TimeSeriesService {
         ensureSchema();
         int resolvedLimit = limit == null || limit <= 0 ? properties.getQueryDefaultLimit() : limit;
         int guardedLimit = Math.max(1, Math.min(resolvedLimit, properties.getQueryMaxLimit()));
-        return dataRepository.queryPointHistory(
-                sanitizeIdentifier(properties.getDatabase()),
-                resolveSubTableName(deviceId),
+        String database = sanitizeIdentifier(properties.getDatabase());
+        String v1SubTable = resolveSubTableName(deviceId);
+        String v2SubTable = resolveV2Name(v1SubTable);
+        List<Map<String, Object>> v2Rows = queryOptionalHistory(
+                true,
+                database,
+                v2SubTable,
                 pointId,
                 startTs,
                 endTs,
                 guardedLimit
         );
+        List<Map<String, Object>> v1Rows = queryOptionalHistory(
+                false,
+                database,
+                v1SubTable,
+                pointId,
+                startTs,
+                endTs,
+                guardedLimit
+        );
+        return mergeHistoryRows(v2Rows, v1Rows, guardedLimit);
     }
 
     /**
      * 校验业务条件和参数边界。
      */
+    private List<Map<String, Object>> queryOptionalHistory(boolean v2,
+                                                           String database,
+                                                           String subTable,
+                                                           String pointId,
+                                                           Long startTs,
+                                                           Long endTs,
+                                                           int limit) {
+        try {
+            if (v2) {
+                return dataRepository.queryPointHistoryV2(database, subTable, pointId, startTs, endTs, limit);
+            }
+            return dataRepository.queryPointHistory(database, subTable, pointId, startTs, endTs, limit);
+        } catch (RuntimeException exception) {
+            if (isMissingTableError(exception, subTable)) {
+                log.debug("TDengine 历史表不存在，按空结果处理:{}.{}", database, subTable);
+                return List.of();
+            }
+            throw exception;
+        }
+    }
+
+    private List<Map<String, Object>> mergeHistoryRows(List<Map<String, Object>> v2Rows,
+                                                       List<Map<String, Object>> v1Rows,
+                                                       int limit) {
+        Map<String, Map<String, Object>> merged = new LinkedHashMap<>();
+        for (Map<String, Object> row : v2Rows) {
+            merged.put(historyIdentity(row), row);
+        }
+        for (Map<String, Object> row : v1Rows) {
+            merged.putIfAbsent(historyIdentity(row), row);
+        }
+        return merged.values().stream()
+                .sorted(this::compareHistoryRow)
+                .limit(limit)
+                .toList();
+    }
+
+    private String historyIdentity(Map<String, Object> row) {
+        return rowText(row, "point_id", "pointId") + '\u0000' + rowLong(row, "event_ts", "eventTs");
+    }
+
+    private int compareHistoryRow(Map<String, Object> left, Map<String, Object> right) {
+        int eventTs = Long.compare(
+                rowLong(right, "event_ts", "eventTs"),
+                rowLong(left, "event_ts", "eventTs"));
+        if (eventTs != 0) {
+            return eventTs;
+        }
+        return rowText(left, "point_id", "pointId")
+                .compareTo(rowText(right, "point_id", "pointId"));
+    }
+
+    private long rowLong(Map<String, Object> row, String... keys) {
+        Object value = rowValue(row, keys);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof CharSequence text && !text.toString().isBlank()) {
+            try {
+                return Long.parseLong(text.toString().trim());
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+        return 0L;
+    }
+
+    private String rowText(Map<String, Object> row, String... keys) {
+        Object value = rowValue(row, keys);
+        return value == null ? "" : textValue(value);
+    }
+
+    private Object rowValue(Map<String, Object> row, String... keys) {
+        for (String key : keys) {
+            if (row.containsKey(key)) {
+                return row.get(key);
+            }
+            String camelKey = toCamelCase(key);
+            if (row.containsKey(camelKey)) {
+                return row.get(camelKey);
+            }
+        }
+        return null;
+    }
+
+    private String toCamelCase(String value) {
+        StringBuilder builder = new StringBuilder();
+        boolean upperNext = false;
+        for (int index = 0; index < value.length(); index++) {
+            char ch = value.charAt(index);
+            if (ch == '_') {
+                upperNext = true;
+                continue;
+            }
+            builder.append(upperNext ? Character.toUpperCase(ch) : ch);
+            upperNext = false;
+        }
+        return builder.toString();
+    }
+
+    private static String textValue(Object value) {
+        if (value instanceof byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        return String.valueOf(value);
+    }
+
+    private boolean isMissingTableError(RuntimeException exception, String subTable) {
+        String message = exception.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lowerMessage = message.toLowerCase(Locale.ROOT);
+        boolean missingTable = lowerMessage.contains("not exist")
+                || lowerMessage.contains("does not exist")
+                || lowerMessage.contains("table does not exist");
+        return missingTable && (lowerMessage.contains(subTable.toLowerCase(Locale.ROOT))
+                || lowerMessage.contains("table"));
+    }
+
     private void ensureSchema() {
         if (schemaReady.get() || !properties.isAutoCreate()) {
             return;
@@ -190,9 +297,12 @@ public class TimeSeriesService {
             }
             String database = sanitizeIdentifier(properties.getDatabase());
             String superTable = sanitizeIdentifier(properties.getSuperTable());
+            String superTableV2 = resolveV2Name(superTable);
             dataRepository.createDatabase(database, properties.getKeepDays());
             dataRepository.createStable(database, superTable);
+            dataRepository.createStableV2(database, superTableV2);
             ensureTelemetryUnitColumn(database, superTable);
+            validateV2StableSchema(database, superTableV2);
             schemaReady.set(true);
         }
     }
@@ -213,6 +323,29 @@ public class TimeSeriesService {
     /**
      * 校验业务条件和参数边界。
      */
+    void validateV2StableSchema(String database, String superTable) {
+        validateV2StableSchema(database, superTable, dataRepository.showCreateStable(database, superTable));
+    }
+
+    static void validateV2StableSchema(String database,
+                                       String superTable,
+                                       List<Map<String, Object>> createRows) {
+        String createSql = createRows == null ? "" : createRows.stream()
+                .flatMap(row -> row.values().stream())
+                .filter(value -> value != null)
+                .map(TimeSeriesService::textValue)
+                .reduce("", (left, right) -> left + " " + right);
+        String normalized = createSql.toUpperCase(Locale.ROOT);
+        if (!normalized.contains(POINT_KEY_COLUMN.toUpperCase(Locale.ROOT))) {
+            throw new IllegalStateException("TDengine V2 超级表缺少 point_key 复合主键列: "
+                    + database + "." + superTable + ", ddl=" + createSql);
+        }
+        if (!normalized.contains("VARCHAR") || !normalized.contains(COMPOSITE_KEY_NOTE)) {
+            throw new IllegalStateException("TDengine V2 超级表 point_key 不是 VARCHAR COMPOSITE KEY: "
+                    + database + "." + superTable + ", ddl=" + createSql);
+        }
+    }
+
     private void ensureSubTable(String database,
                                 String superTable,
                                 String subTable,
@@ -459,6 +592,10 @@ public class TimeSeriesService {
     /**
      * 执行当前业务逻辑。
      */
+    static String resolveV2Name(String name) {
+        return name + V2_SUFFIX;
+    }
+
     private String sanitizeIdentifier(String raw) {
         if (raw == null || raw.isBlank()) {
             return "unknown";

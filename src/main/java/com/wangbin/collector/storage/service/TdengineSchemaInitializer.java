@@ -30,6 +30,7 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
 
     private final AtomicBoolean databaseReady = new AtomicBoolean(false);
     private final AtomicBoolean telemetryStableReady = new AtomicBoolean(false);
+    private final AtomicBoolean telemetryStableV2Ready = new AtomicBoolean(false);
     private final AtomicBoolean alarmStableReady = new AtomicBoolean(false);
 
     /**
@@ -54,6 +55,7 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
         }
         String database = sanitizeIdentifier(properties.getDatabase());
         String superTable = sanitizeIdentifier(properties.getSuperTable());
+        String superTableV2 = TimeSeriesService.resolveV2Name(superTable);
         ensureDatabase(database);
         ensureStable(
                 telemetryStableReady,
@@ -63,6 +65,17 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
                 "telemetry"
         );
         ensureTelemetryUnitColumn(database, superTable);
+        ensureStable(
+                telemetryStableV2Ready,
+                database,
+                superTableV2,
+                () -> dataRepository.createStableV2(database, superTableV2),
+                "telemetry-v2"
+        );
+        TimeSeriesService.validateV2StableSchema(
+                database,
+                superTableV2,
+                dataRepository.showCreateStable(database, superTableV2));
     }
 
     /**

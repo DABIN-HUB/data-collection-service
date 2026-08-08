@@ -30,6 +30,28 @@
         )
     </update>
 
+    <update id="createStableV2">
+        CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
+            ts TIMESTAMP,
+            point_key VARCHAR(128) PRIMARY KEY,
+            event_ts BIGINT,
+            point_id NCHAR(128),
+            point_code NCHAR(128),
+            point_name NCHAR(256),
+            value_text NCHAR(1024),
+            unit NCHAR(64),
+            quality INT,
+            success BOOL,
+            message NCHAR(1024),
+            raw_json NCHAR(2048),
+            processed_json NCHAR(2048),
+            metadata_json NCHAR(4096)
+        ) TAGS (
+            device_id NCHAR(128),
+            protocol_type NCHAR(64)
+        )
+    </update>
+
     <select id="countStable" resultType="java.lang.Long">
         SELECT COUNT(*) AS cnt
         FROM information_schema.ins_stables
@@ -45,6 +67,10 @@
           AND col_name = #{columnName}
     </select>
 
+    <select id="showCreateStable" resultType="java.util.Map">
+        SHOW CREATE STABLE ${database}.${tableName}
+    </select>
+
     <update id="addTelemetryUnitColumn">
         ALTER STABLE ${database}.${superTable} ADD COLUMN unit NCHAR(64)
     </update>
@@ -53,7 +79,14 @@
         INSERT INTO ${database}.${subTable}
         (ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
         VALUES
-        (#{storageTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+        (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+    </insert>
+
+    <insert id="insertTelemetryV2">
+        INSERT INTO ${database}.${subTable}
+        (ts,point_key,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+        VALUES
+        (#{eventTs},#{pointKey},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
     </insert>
 
     <select id="queryPointHistory" resultType="java.util.Map">
@@ -71,6 +104,24 @@
             AND event_ts &lt;= #{endTs}
         </if>
         ORDER BY event_ts DESC, ts DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="queryPointHistoryV2" resultType="java.util.Map">
+        SELECT
+            ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json
+        FROM ${database}.${subTable}
+        WHERE 1 = 1
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND event_ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND event_ts &lt;= #{endTs}
+        </if>
+        ORDER BY event_ts DESC, ts DESC, point_key ASC
         LIMIT #{limit}
     </select>
 </mapper>
