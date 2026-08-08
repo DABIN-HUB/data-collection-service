@@ -21,7 +21,7 @@ public class TelemetryExecutorProperties {
     private Stage stream = new Stage(2, 4, 2000);
 
     @Valid
-    private Stage history = new Stage(2, 4, 5000);
+    private Stage history = new Stage(4, 4, 5000);
 
     @Valid
     private Stage report = new Stage(2, 4, 5000);
