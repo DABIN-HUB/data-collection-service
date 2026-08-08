@@ -1,25 +1,35 @@
 package com.wangbin.collector.core.cache.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.config.TelemetryStreamProperties;
 import com.wangbin.collector.core.cache.enums.StreamRetentionMode;
 import com.wangbin.collector.core.processor.ProcessResult;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class TelemetryStreamServiceImplTest {
@@ -28,9 +38,14 @@ public class TelemetryStreamServiceImplTest {
     private RedisConnection connection;
     private TelemetryStreamProperties properties;
     private TelemetryStreamServiceImpl service;
+    private Logger serviceLogger;
+    private Level originalServiceLogLevel;
 
     @BeforeEach
     void setUp() {
+        serviceLogger = (Logger) LoggerFactory.getLogger(TelemetryStreamServiceImpl.class);
+        originalServiceLogLevel = serviceLogger.getLevel();
+        serviceLogger.setLevel(Level.OFF);
         redisTemplate = mock(RedisTemplate.class);
         connection = mock(RedisConnection.class);
         properties = new TelemetryStreamProperties();
@@ -42,6 +57,13 @@ public class TelemetryStreamServiceImplTest {
         });
 
         service = new TelemetryStreamServiceImpl(redisTemplate, properties, objectMapper);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (serviceLogger != null) {
+            serviceLogger.setLevel(originalServiceLogLevel);
+        }
     }
 
     @Test
@@ -107,6 +129,42 @@ public class TelemetryStreamServiceImplTest {
         assertEquals("MINID", str((byte[]) args[2]));
     }
 
+    @Test
+    void append_shouldIsolateRedisConnectionFailure() {
+        properties.setEnabled(true);
+        properties.setKey("collector:telemetry:stream");
+        when(redisTemplate.execute(any(RedisCallback.class)))
+                .thenThrow(new RedisConnectionFailureException("redis unavailable"));
+
+        assertDoesNotThrow(() -> service.append("d1", point("p1"), ProcessResult.success(1, 1)));
+
+        verify(redisTemplate).execute(any(RedisCallback.class));
+    }
+
+    @Test
+    void append_shouldRecoverAfterTemporaryRedisFailure() {
+        properties.setEnabled(true);
+        properties.setKey("collector:telemetry:stream");
+        AtomicInteger calls = new AtomicInteger();
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() <= 2) {
+                throw new RedisSystemException("redis temporary failure",
+                        new RedisConnectionFailureException("redis down"));
+            }
+            RedisCallback<?> callback = invocation.getArgument(0);
+            return callback.doInRedis(connection);
+        });
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        service.append("d1", point("p2"), ProcessResult.success(2, 2));
+        service.append("d1", point("p3"), ProcessResult.success(3, 3));
+
+        assertEquals(3, calls.get());
+        Object[] args = findExecuteInvocationArgs("XADD");
+        assertEquals("collector:telemetry:stream", str((byte[]) args[1]));
+        verify(redisTemplate, times(3)).execute(any(RedisCallback.class));
+    }
+
     private Object[] findExecuteInvocationArgs(String command) {
         return mockingDetails(connection).getInvocations().stream()
                 .filter(invocation -> "execute".equals(invocation.getMethod().getName()))
@@ -127,5 +185,14 @@ public class TelemetryStreamServiceImplTest {
 
     private static String str(byte[] value) {
         return new String(value, StandardCharsets.UTF_8);
+    }
+
+    private static DataPoint point(String pointId) {
+        DataPoint point = new DataPoint();
+        point.setPointId(pointId);
+        point.setPointCode(pointId);
+        point.setPointName(pointId);
+        point.setDeviceId("d1");
+        return point;
     }
 }
