@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.report.outbox;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.inbound.MqttAckReply;
@@ -56,6 +57,7 @@ public class CloudOutboxServiceTest {
         publishResult.addMetadata(CloudOutboxMetadataKeys.ACK_PENDING, true);
         publishResult.addMetadata(CloudOutboxMetadataKeys.ACK_TIMEOUT_MS, 5000L);
         publishResult.addMetadata(CloudOutboxMetadataKeys.ACK_COMMIT_ON, "ACK_SUCCESS");
+        coordinator.markPublishing("msg-1", System.currentTimeMillis() + 1000L);
         coordinator.handlePublishResult("msg-1", publishResult, null);
 
         CloudOutboxMessage waiting = repository.find("msg-1").orElseThrow();
@@ -126,6 +128,7 @@ public class CloudOutboxServiceTest {
                         "dev-b", 5L, 10L, 20L, Map.of("b", 2)));
 
         String messageId = service.stageBatch(commits, data);
+        coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
         coordinator.handlePublishResult(
                 messageId, ReportResult.success("property-pack", "gateway-1"), null);
 
@@ -134,6 +137,19 @@ public class CloudOutboxServiceTest {
         verify(shadowManager).markOutboxReported("dev-b", Map.of("b", 2), 10L, 20L, false);
         verify(shadowManager).markOutboxReported("dev-a", Map.of(), 10L, 20L, true);
         verify(shadowManager).markOutboxReported("dev-b", Map.of(), 10L, 20L, true);
+    }
+
+    @Test
+    void publishingStatusShouldRoundTripAsJsonName() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        CloudOutboxMessage message = message("msg-json", "dev-json");
+        message.setStatus(CloudOutboxStatus.PUBLISHING);
+
+        String json = objectMapper.writeValueAsString(message);
+        CloudOutboxMessage restored = objectMapper.readValue(json, CloudOutboxMessage.class);
+
+        assertTrue(json.contains("\"PUBLISHING\""));
+        assertEquals(CloudOutboxStatus.PUBLISHING, restored.getStatus());
     }
 
     private CloudOutboxMessage message(String messageId, String localDeviceId) {
@@ -201,6 +217,11 @@ public class CloudOutboxServiceTest {
         @Override
         public void reschedule(CloudOutboxMessage message) {
             messages.put(message.getMessageId(), message);
+        }
+
+        @Override
+        public boolean rescheduleIfPresent(CloudOutboxMessage message) {
+            return messages.replace(message.getMessageId(), message) != null;
         }
 
         @Override

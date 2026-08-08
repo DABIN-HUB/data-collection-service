@@ -122,8 +122,15 @@ public class CloudOutboxService {
     }
 
     /**
-     * 处理当前业务流程。
+     * 将已 claim 的消息推进到真实发布窗口。
      */
+    public boolean markPublishing(String messageId) {
+        if (!enabled() || messageId == null) {
+            return true;
+        }
+        return coordinator.markPublishing(messageId, System.currentTimeMillis() + leaseMs());
+    }
+
     public void handlePublishResult(String messageId, ReportResult result, Throwable throwable) {
         if (enabled() && messageId != null) {
             coordinator.handlePublishResult(messageId, result, throwable);
@@ -196,7 +203,7 @@ public class CloudOutboxService {
     }
 
     /**
-     * 处理当前业务流程。
+     * 调度到期发件箱消息，claim 后会先进入 PUBLISHING 再调用真实发送。
      */
     private void dispatch(CloudOutboxMessage message) {
         ReportConfig config = reportConfigProvider.getConfig(message.getGatewayDeviceId());
@@ -208,6 +215,9 @@ public class CloudOutboxService {
         if (data == null) {
             coordinator.handlePublishResult(
                     message.getMessageId(), null, new IllegalStateException("发件箱消息缺少上报快照"));
+            return;
+        }
+        if (!markPublishing(message.getMessageId())) {
             return;
         }
         reportManager.reportAsync(data, config).whenComplete((result, throwable) ->

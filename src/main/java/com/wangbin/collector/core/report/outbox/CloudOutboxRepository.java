@@ -24,12 +24,20 @@ public interface CloudOutboxRepository {
     List<CloudOutboxMessage> claimDue(long now, int limit, long leaseUntil);
 
     /**
-     * 执行当前业务逻辑。
+     * 按下一次可调度时间重新写回消息。
      */
     void reschedule(CloudOutboxMessage message);
 
     /**
-     * 执行当前业务逻辑。
+     * 仅当消息仍存在时重新写回，避免 ACK 已完成后的迟到发布回调复活消息。
+     *
+     * @param message 待更新的发件箱消息
+     * @return 消息仍存在并完成写回时返回 true
+     */
+    boolean rescheduleIfPresent(CloudOutboxMessage message);
+
+    /**
+     * 完成并移除消息。
      */
     void complete(String messageId);
 

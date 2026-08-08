@@ -35,11 +35,16 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
     }
 
     /**
-     * 处理当前业务流程。
+     * 处理发布结果，迟到回调不得复活已经被 ACK 完成的消息。
      */
     public void handlePublishResult(String messageId, ReportResult result, Throwable throwable) {
         repository.find(messageId).ifPresent(message -> {
             if (throwable == null && result != null && result.isSuccess()) {
+                if (!isPublishResultApplicable(message)) {
+                    log.debug("忽略非发布窗口内的云端上报成功结果，消息={}，状态={}",
+                            messageId, message.getStatus());
+                    return;
+                }
                 if (isAwaitingAck(result)) {
                     long timeout = metadataLong(result.getMetadata(),
                             CloudOutboxMetadataKeys.ACK_TIMEOUT_MS,
@@ -47,7 +52,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                     message.setStatus(CloudOutboxStatus.WAITING_ACK);
                     message.setNextAttemptAt(System.currentTimeMillis() + Math.max(1000L, timeout));
                     message.setLastError(null);
-                    repository.reschedule(message);
+                    repository.rescheduleIfPresent(message);
                 } else {
                     complete(message);
                 }
@@ -70,6 +75,24 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         repository.reschedule(message);
     }
 
+    /**
+     * 在调用真实发送前持久化发布窗口，允许合法快速 ACK 匹配当前消息。
+     */
+    public boolean markPublishing(String messageId, long leaseUntil) {
+        if (messageId == null || messageId.isBlank()) {
+            return false;
+        }
+        return repository.find(messageId)
+                .filter(message -> message.getStatus() != CloudOutboxStatus.ISOLATED)
+                .map(message -> {
+                    message.setStatus(CloudOutboxStatus.PUBLISHING);
+                    message.setNextAttemptAt(leaseUntil);
+                    message.setLastError(null);
+                    return repository.rescheduleIfPresent(message);
+                })
+                .orElse(false);
+    }
+
     public boolean isAwaitingAck(ReportResult result) {
         if (result == null || result.getMetadata() == null) {
             return false;
@@ -81,7 +104,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 处理平台 ACK，只有已进入真实发布窗口或等待 ACK 的消息才能被完成。
      */
     @Override
     public void onAck(MqttAckReply ackReply) {
@@ -89,7 +112,8 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
             return;
         }
         repository.find(ackReply.messageId()).ifPresent(message -> {
-            if (message.getStatus() != CloudOutboxStatus.WAITING_ACK) {
+            if (message.getStatus() != CloudOutboxStatus.PUBLISHING
+                    && message.getStatus() != CloudOutboxStatus.WAITING_ACK) {
                 log.debug("忽略非等待 ACK 状态的云端确认，消息={}，状态={}",
                         ackReply.messageId(), message.getStatus());
                 return;
@@ -136,14 +160,14 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         message.setLastError(error);
         if (attempts >= Math.max(1, reportProperties.getOutbox().getMaxRetryTimes())) {
             message.setStatus(CloudOutboxStatus.ISOLATED);
-            repository.reschedule(message);
+            repository.rescheduleIfPresent(message);
             log.error("云端上报消息已进入隔离区，消息={}, 设备={}, 尝试次数={}",
                     message.getMessageId(), message.getLocalDeviceId(), attempts);
             return;
         }
         message.setStatus(CloudOutboxStatus.PENDING);
         message.setNextAttemptAt(System.currentTimeMillis() + retryDelay(attempts));
-        repository.reschedule(message);
+        repository.rescheduleIfPresent(message);
     }
 
     /**
@@ -153,6 +177,11 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         long base = Math.max(100L, reportProperties.getRetryBackoffMs());
         long max = Math.max(base, reportProperties.getMaxRetryBackoffMs());
         return Math.min(max, base * (1L << Math.min(Math.max(0, attempts - 1), 10)));
+    }
+
+    private boolean isPublishResultApplicable(CloudOutboxMessage message) {
+        return message.getStatus() == CloudOutboxStatus.PUBLISHING
+                || message.getStatus() == CloudOutboxStatus.WAITING_ACK;
     }
 
     /**

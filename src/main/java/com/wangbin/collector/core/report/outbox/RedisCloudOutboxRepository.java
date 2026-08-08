@@ -29,6 +29,18 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
                     + "for _,id in ipairs(ids) do redis.call('ZADD',KEYS[1],ARGV[3],id); end;"
                     + "return ids;",
             List.class);
+    private static final DefaultRedisScript<Long> RESCHEDULE_IF_PRESENT_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('HEXISTS',KEYS[1],ARGV[1]) == 0 then return 0 end;"
+                    + "redis.call('HSET',KEYS[1],ARGV[1],ARGV[2]);"
+                    + "if ARGV[4] == 'ISOLATED' then "
+                    + "redis.call('ZREM',KEYS[2],ARGV[1]);"
+                    + "redis.call('SADD',KEYS[3],ARGV[1]);"
+                    + "else "
+                    + "redis.call('SREM',KEYS[3],ARGV[1]);"
+                    + "redis.call('ZADD',KEYS[2],ARGV[3],ARGV[1]);"
+                    + "end;"
+                    + "return 1;",
+            Long.class);
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -120,6 +132,22 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
         }
         redisTemplate.opsForSet().remove(isolatedKey(), message.getMessageId());
         redisTemplate.opsForZSet().add(dueKey(), message.getMessageId(), message.getNextAttemptAt());
+    }
+
+    /**
+     * 仅当消息尚未被 ACK 完成删除时写回，避免迟到回调重新创建发件箱记录。
+     */
+    @Override
+    public boolean rescheduleIfPresent(CloudOutboxMessage message) {
+        validateMessage(message);
+        Long updated = redisTemplate.execute(
+                RESCHEDULE_IF_PRESENT_SCRIPT,
+                List.of(dataKey(), dueKey(), isolatedKey()),
+                message.getMessageId(),
+                serialize(message),
+                Long.toString(message.getNextAttemptAt()),
+                message.getStatus().name());
+        return Long.valueOf(1L).equals(updated);
     }
 
     /**

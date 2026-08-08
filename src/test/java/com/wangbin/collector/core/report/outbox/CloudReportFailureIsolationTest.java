@@ -93,6 +93,92 @@ class CloudReportFailureIsolationTest {
     }
 
     @Test
+    void earlyAckDuringPublishWindowShouldCompleteAfterPublishResultArrives() {
+        TestContext context = new TestContext();
+        ReportManager reportManager = mock(ReportManager.class);
+        CloudOutboxService service = context.service(reportManager);
+        String messageId = service.stage("dev-early", 1L, 10L, 20L,
+                reportData("cloud-dev-early", "msg-early-ack", "p1"));
+        context.repository.forceDue(messageId);
+        CompletableFuture<ReportResult> publishFuture = new CompletableFuture<>();
+        when(reportManager.reportAsync(any(), any())).thenReturn(publishFuture);
+
+        service.dispatchDueMessages();
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "early ok"));
+        publishFuture.complete(awaitingAckResult());
+
+        assertTrue(context.repository.find(messageId).isEmpty());
+        assertEquals(0L, context.repository.countPending());
+    }
+
+    @Test
+    void publishFailureAfterEarlyAckMustNotResurrectMessage() {
+        TestContext context = new TestContext();
+        ReportManager reportManager = mock(ReportManager.class);
+        CloudOutboxService service = context.service(reportManager);
+        String messageId = service.stage("dev-early-fail", 1L, 10L, 20L,
+                reportData("cloud-dev-early-fail", "msg-early-fail", "p1"));
+        context.repository.forceDue(messageId);
+        CompletableFuture<ReportResult> publishFuture = new CompletableFuture<>();
+        when(reportManager.reportAsync(any(), any())).thenReturn(publishFuture);
+
+        service.dispatchDueMessages();
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "early ok"));
+        publishFuture.complete(errorResult("local publish callback failed after ack"));
+
+        assertTrue(context.repository.find(messageId).isEmpty());
+        assertEquals(0L, context.repository.countPending());
+    }
+
+    @Test
+    void duplicateEarlyAckMustBeIdempotent() {
+        TestContext context = new TestContext();
+        ReportManager reportManager = mock(ReportManager.class);
+        CloudOutboxService service = context.service(reportManager);
+        String messageId = service.stage("dev-early-duplicate", 1L, 10L, 20L,
+                reportData("cloud-dev-early-duplicate", "msg-early-duplicate", "p1"));
+        context.repository.forceDue(messageId);
+        CompletableFuture<ReportResult> publishFuture = new CompletableFuture<>();
+        when(reportManager.reportAsync(any(), any())).thenReturn(publishFuture);
+
+        service.dispatchDueMessages();
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "early ok"));
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "early duplicate"));
+        publishFuture.complete(awaitingAckResult());
+
+        assertTrue(context.repository.find(messageId).isEmpty());
+        assertEquals(0L, context.repository.countPending());
+    }
+
+    @Test
+    void ackBeforeDispatchMustNotCompletePendingMessage() {
+        TestContext context = new TestContext();
+        String messageId = context.service(mock(ReportManager.class)).stage("dev-pending", 1L, 10L, 20L,
+                reportData("cloud-dev-pending", "msg-pending-before-dispatch", "p1"));
+
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "stale"));
+
+        CloudOutboxMessage pending = context.repository.find(messageId).orElseThrow();
+        assertEquals(CloudOutboxStatus.PENDING, pending.getStatus());
+        assertEquals(0, pending.getAttempts());
+    }
+
+    @Test
+    void isolatedAckMustBeRejected() {
+        TestContext context = new TestContext();
+        String messageId = context.service(mock(ReportManager.class)).stage("dev-isolated", 1L, 10L, 20L,
+                reportData("cloud-dev-isolated", "msg-isolated-ack", "p1"));
+        CloudOutboxMessage message = context.repository.find(messageId).orElseThrow();
+        message.setStatus(CloudOutboxStatus.ISOLATED);
+        context.repository.reschedule(message);
+
+        context.coordinator.onAck(new MqttAckReply(messageId, 0, "late"));
+
+        assertEquals(CloudOutboxStatus.ISOLATED,
+                context.repository.find(messageId).orElseThrow().getStatus());
+    }
+
+    @Test
     void ackMustNotCompleteMessageBeforePublishResultEntersWaitingAck() {
         TestContext context = new TestContext();
         String messageId = context.service(mock(ReportManager.class)).stage("dev-ack", 1L, 10L, 20L,
@@ -108,6 +194,7 @@ class CloudReportFailureIsolationTest {
         assertEquals(CloudOutboxStatus.WAITING_CONFIG,
                 context.repository.find(messageId).orElseThrow().getStatus());
 
+        context.coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
         context.coordinator.handlePublishResult(messageId, awaitingAckResult(), null);
         assertEquals(CloudOutboxStatus.WAITING_ACK,
                 context.repository.find(messageId).orElseThrow().getStatus());
@@ -125,6 +212,7 @@ class CloudReportFailureIsolationTest {
                 reportData("cloud-dev-pending", "msg-pending-ack-fail", "p1"));
         String waitingId = service.stage("dev-waiting", 1L, 10L, 20L,
                 reportData("cloud-dev-waiting", "msg-waiting-ack-fail", "p2"));
+        context.coordinator.markPublishing(waitingId, System.currentTimeMillis() + 1000L);
         context.coordinator.handlePublishResult(waitingId, awaitingAckResult(), null);
 
         context.coordinator.onAck(new MqttAckReply(pendingId, 500, "stale failure"));
@@ -147,6 +235,7 @@ class CloudReportFailureIsolationTest {
                 service.stage("dev-2", 1L, 10L, 20L, reportData("cloud-dev-2", "msg-2", "p2")),
                 service.stage("dev-3", 1L, 10L, 20L, reportData("cloud-dev-3", "msg-3", "p3")));
         for (String messageId : messageIds) {
+            context.coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
             context.coordinator.handlePublishResult(messageId, awaitingAckResult(), null);
         }
 
@@ -169,6 +258,7 @@ class CloudReportFailureIsolationTest {
         CloudOutboxService service = context.service(reportManager);
         String messageId = service.stage("dev-timeout", 1L, 10L, 20L,
                 reportData("cloud-dev-timeout", "msg-timeout", "p1"));
+        context.coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
         context.coordinator.handlePublishResult(messageId, awaitingAckResult(), null);
         context.repository.forceDue(messageId);
 
@@ -192,12 +282,14 @@ class CloudReportFailureIsolationTest {
         TestContext context = new TestContext(repository);
         String messageId = context.service(mock(ReportManager.class)).stage("dev-complete", 1L, 10L, 20L,
                 reportData("cloud-dev-complete", "msg-complete", "p1"));
+        context.coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
 
         assertThrows(IllegalStateException.class,
                 () -> context.coordinator.handlePublishResult(messageId, successResult(), null));
 
         assertTrue(repository.find(messageId).isPresent());
         repository.failComplete(false);
+        context.coordinator.markPublishing(messageId, System.currentTimeMillis() + 1000L);
         context.coordinator.handlePublishResult(messageId, successResult(), null);
         assertTrue(repository.find(messageId).isEmpty());
     }
@@ -330,6 +422,64 @@ class CloudReportFailureIsolationTest {
     }
 
     @Test
+    void publishingLeaseExpiryShouldBeRecoverableAfterDispatcherRestart() {
+        InMemoryRepository repository = new InMemoryRepository();
+        TestContext first = new TestContext(repository);
+        ReportManager blockedManager = mock(ReportManager.class);
+        String messageId = first.service(blockedManager).stage("dev-publishing-restart", 1L, 10L, 20L,
+                reportData("cloud-dev-publishing-restart", "msg-publishing-restart", "p1"));
+        repository.forceDue(messageId);
+        when(blockedManager.reportAsync(any(), any())).thenReturn(new CompletableFuture<>());
+
+        first.service(blockedManager).dispatchDueMessages();
+
+        assertEquals(CloudOutboxStatus.PUBLISHING,
+                repository.find(messageId).orElseThrow().getStatus());
+
+        repository.forceDue(messageId);
+        TestContext restarted = new TestContext(repository);
+        ReportManager recoveredManager = mock(ReportManager.class);
+        when(recoveredManager.reportAsync(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(successResult()));
+
+        restarted.service(recoveredManager).dispatchDueMessages();
+
+        assertTrue(repository.find(messageId).isEmpty());
+    }
+
+    @Test
+    void noBusinessAckPublishSuccessAndFailureShouldUsePublishingBoundary() {
+        TestContext context = new TestContext();
+        ReportManager reportManager = mock(ReportManager.class);
+        ReportConfigProvider configProvider = mock(ReportConfigProvider.class);
+        when(configProvider.getConfig("gateway-1")).thenReturn(validConfig("gateway-1"));
+        CloudOutboxService service = new CloudOutboxService(
+                context.repository,
+                context.coordinator,
+                reportManager,
+                configProvider,
+                context.properties);
+        String successId = service.stage("dev-http-ok", 1L, 10L, 20L,
+                reportData("cloud-dev-http-ok", "msg-http-ok", "p1"));
+        when(reportManager.reportAsync(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(successResult()))
+                .thenReturn(CompletableFuture.completedFuture(errorResult("http 500")));
+
+        context.repository.forceDue(successId);
+        service.dispatchDueMessages();
+
+        String failureId = service.stage("dev-http-fail", 1L, 10L, 20L,
+                reportData("cloud-dev-http-fail", "msg-http-fail", "p2"));
+        context.repository.forceDue(failureId);
+        service.dispatchDueMessages();
+
+        assertTrue(context.repository.find(successId).isEmpty());
+        CloudOutboxMessage failed = context.repository.find(failureId).orElseThrow();
+        assertEquals(CloudOutboxStatus.PENDING, failed.getStatus());
+        assertEquals(1, failed.getAttempts());
+    }
+
+    @Test
     void reportManagerShouldIsolateSlowCloudSendToReportExecutorAndDrain() throws Exception {
         ThreadPoolExecutor reportExecutor = new ThreadPoolExecutor(
                 1,
@@ -403,8 +553,12 @@ class CloudReportFailureIsolationTest {
     }
 
     private static ReportConfig validConfig(String targetId) {
+        return validConfig("MQTT", targetId);
+    }
+
+    private static ReportConfig validConfig(String protocol, String targetId) {
         ReportConfig config = new ReportConfig();
-        config.setProtocol("MQTT");
+        config.setProtocol(protocol);
         config.setTargetId(targetId);
         config.setHost("localhost");
         config.setPort(1883);
@@ -484,6 +638,11 @@ class CloudReportFailureIsolationTest {
         @Override
         public void reschedule(CloudOutboxMessage message) {
             messages.put(message.getMessageId(), message);
+        }
+
+        @Override
+        public boolean rescheduleIfPresent(CloudOutboxMessage message) {
+            return messages.replace(message.getMessageId(), message) != null;
         }
 
         @Override

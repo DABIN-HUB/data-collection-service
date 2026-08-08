@@ -402,6 +402,10 @@ public class CacheReportService {
             return selectedDeviceIds;
         }
 
+        if (!markOutboxPublishing(outboxMessageId)) {
+            selectedCandidates.forEach(candidate -> closeFlushSession(candidate.session, false));
+            return selectedDeviceIds;
+        }
         CompletableFuture<ReportResult> future = reportManager.reportAsync(aggregatedData, reportConfig);
         String stagedMessageId = outboxMessageId;
         future.whenComplete((result, throwable) ->
@@ -908,6 +912,15 @@ public class CacheReportService {
             return;
         }
 
+        if (!markOutboxPublishing(outboxMessageId)) {
+            if (tracker != null) {
+                tracker.markFailure();
+                if (tracker.markCompleted()) {
+                    completeFlush(tracker);
+                }
+            }
+            return;
+        }
         CompletableFuture<ReportResult> future = reportManager.reportAsync(data, config);
         future.whenComplete((result, throwable) ->
                 handleChunkResult(data, result, throwable, tracker, chunkKey, config,
@@ -1007,8 +1020,14 @@ public class CacheReportService {
     }
 
     /**
-     * 解析或转换业务数据。
+     * 真实发送前先推进发件箱状态，使快速 ACK 有持久状态可以匹配。
      */
+    private boolean markOutboxPublishing(String outboxMessageId) {
+        return cloudOutboxService == null
+                || outboxMessageId == null
+                || cloudOutboxService.markPublishing(outboxMessageId);
+    }
+
     private String resolveLocalDeviceId(ReportData data, FlushTracker tracker) {
         if (tracker != null) {
             return tracker.deviceId;

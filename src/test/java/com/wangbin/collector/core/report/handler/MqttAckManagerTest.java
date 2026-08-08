@@ -48,6 +48,21 @@ class MqttAckManagerTest {
         assertEquals(0, ack.pendingSize());
     }
 
+    @Test
+    void repeatedAckCompletionShouldNotLeakPendingTickets() throws Exception {
+        AckHarness ack = new AckHarness();
+
+        for (int i = 0; i < 300; i++) {
+            String messageId = "msg-loop-" + i;
+            Object registration = ack.register(messageId, options(1000L));
+            ack.complete(messageId, ack.received(messageId, 0, "ok"));
+            Object result = ack.await(registration, 1000L);
+            assertEquals(0, ack.intField(result, "code"));
+        }
+
+        assertEquals(0, ack.pendingSize());
+    }
+
     private static CloudAckOptions options(long timeoutMs) {
         return new CloudAckOptions(
                 CloudAckMode.ASYNC,
