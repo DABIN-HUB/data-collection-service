@@ -7,5 +7,20 @@ public record HistoryBufferMetrics(long redisPending,
                                    long redisProcessing,
                                    long redisDeadLetter,
                                    int localPending,
-                                   int localCapacity) {
+                                   int localCapacity,
+                                   long writeFailureRedisBuffered,
+                                   long rejectedRedisBuffered,
+                                   long writeFailureLocalBuffered,
+                                   long rejectedLocalBuffered,
+                                   long writeFailureDropped,
+                                   long rejectedDropped) {
+
+    public HistoryBufferMetrics(long redisPending,
+                                long redisProcessing,
+                                long redisDeadLetter,
+                                int localPending,
+                                int localCapacity) {
+        this(redisPending, redisProcessing, redisDeadLetter, localPending, localCapacity,
+                0L, 0L, 0L, 0L, 0L, 0L);
+    }
 }

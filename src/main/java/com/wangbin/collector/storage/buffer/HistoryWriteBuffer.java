@@ -1,22 +1,23 @@
 package com.wangbin.collector.storage.buffer;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.storage.service.TimeSeriesService;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import jakarta.annotation.PreDestroy;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
- * TDengine失败写入缓冲器，Redis队列承担跨重启恢复，本地队列承担Redis故障降级。
+ * 历史数据写入缓冲器，Redis 队列承担写失败恢复，本地有界队列承担 Redis 故障降级。
  */
 @Slf4j
 @Component
@@ -28,9 +29,15 @@ public class HistoryWriteBuffer {
     private final ObjectMapper objectMapper;
     private final HistoryBufferProperties properties;
     private final BlockingQueue<HistoryWriteRequest> localQueue;
+    private final LongAdder writeFailureRedisBuffered = new LongAdder();
+    private final LongAdder rejectedRedisBuffered = new LongAdder();
+    private final LongAdder writeFailureLocalBuffered = new LongAdder();
+    private final LongAdder rejectedLocalBuffered = new LongAdder();
+    private final LongAdder writeFailureDropped = new LongAdder();
+    private final LongAdder rejectedDropped = new LongAdder();
 
     /**
-     * 创建当前组件实例。
+     * 创建历史写入缓冲器。
      */
     public HistoryWriteBuffer(TimeSeriesService timeSeriesService,
                               StringRedisTemplate redisTemplate,
@@ -46,7 +53,7 @@ public class HistoryWriteBuffer {
     }
 
     /**
-     * 写入或持久化业务数据。
+     * 正常写入路径，优先同步写 TDengine，失败后进入既有缓冲链路。
      */
     public void writeOrBuffer(HistoryWriteRequest request) {
         try {
@@ -55,12 +62,24 @@ public class HistoryWriteBuffer {
             if (!properties.isEnabled()) {
                 throw exception;
             }
-            buffer(request, exception);
+            buffer(request, exception, BufferReason.WRITE_FAILURE);
         }
     }
 
     /**
-     * 优先回放Redis跨重启队列，再处理Redis故障期间形成的本地队列。
+     * 执行器过载时的延迟写入路径，不在调用线程同步访问 TDengine。
+     */
+    public void deferForRetry(HistoryWriteRequest request, RuntimeException cause) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        RuntimeException reason = cause != null
+                ? cause : new IllegalStateException("history stage rejected");
+        buffer(request, reason, BufferReason.REJECTION);
+    }
+
+    /**
+     * 优先回放 Redis 处理队列，再处理 Redis 故障期间形成的本地队列。
      */
     @Scheduled(fixedDelayString = "${telemetry.tdengine.buffer.replay-interval-ms:3000}")
     public void replay() {
@@ -72,7 +91,7 @@ public class HistoryWriteBuffer {
     }
 
     /**
-     * 处理组件生命周期。
+     * 停机时按现有语义做一次有限回放。
      */
     @PreDestroy
     public void shutdown() {
@@ -80,44 +99,55 @@ public class HistoryWriteBuffer {
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 返回历史缓冲队列与过载补偿计数。
      */
     public HistoryBufferMetrics metrics() {
         try {
-            return new HistoryBufferMetrics(
+            return newMetrics(
                     listSize(properties.getPendingKey()),
                     listSize(properties.getProcessingKey()),
-                    listSize(properties.getDeadLetterKey()),
-                    localQueue.size(),
-                    properties.getLocalQueueCapacity());
+                    listSize(properties.getDeadLetterKey()));
         } catch (RuntimeException exception) {
-            return new HistoryBufferMetrics(
-                    -1L, -1L, -1L, localQueue.size(), properties.getLocalQueueCapacity());
+            return newMetrics(-1L, -1L, -1L);
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void buffer(HistoryWriteRequest request, RuntimeException writeException) {
+    private HistoryBufferMetrics newMetrics(long redisPending,
+                                            long redisProcessing,
+                                            long redisDeadLetter) {
+        return new HistoryBufferMetrics(
+                redisPending,
+                redisProcessing,
+                redisDeadLetter,
+                localQueue.size(),
+                properties.getLocalQueueCapacity(),
+                writeFailureRedisBuffered.sum(),
+                rejectedRedisBuffered.sum(),
+                writeFailureLocalBuffered.sum(),
+                rejectedLocalBuffered.sum(),
+                writeFailureDropped.sum(),
+                rejectedDropped.sum());
+    }
+
+    private void buffer(HistoryWriteRequest request, RuntimeException cause, BufferReason reason) {
         try {
             redisTemplate.opsForList().leftPush(properties.getPendingKey(), serialize(request));
-            log.warn("TDengine写入失败，数据已进入Redis待写队列: 设备={}, 点位={}",
-                    request.getDeviceId(), pointId(request), writeException);
+            incrementRedisBuffered(reason);
+            log.warn("{}，数据已进入 Redis 历史待写队列，设备={}，点位={}",
+                    reason.message(), request.getDeviceId(), pointId(request), cause);
         } catch (RuntimeException redisException) {
             if (!localQueue.offer(request)) {
-                log.error("历史数据本地降级队列已满，无法继续缓冲: 设备={}, 点位={}",
-                        request.getDeviceId(), pointId(request), redisException);
+                incrementDropped(reason);
+                log.error("{}，且本地历史降级队列已满，数据明确丢弃，设备={}，点位={}",
+                        reason.message(), request.getDeviceId(), pointId(request), redisException);
                 return;
             }
-            log.warn("TDengine和Redis同时不可用，数据已进入本地降级队列: 设备={}, 点位={}",
-                    request.getDeviceId(), pointId(request), redisException);
+            incrementLocalBuffered(reason);
+            log.warn("{}，Redis 历史待写队列不可用，数据已进入本地有界降级队列，设备={}，点位={}",
+                    reason.message(), request.getDeviceId(), pointId(request), redisException);
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void replayRedisQueue() {
         int batchSize = Math.max(1, properties.getReplayBatchSize());
         for (int index = 0; index < batchSize; index++) {
@@ -125,7 +155,7 @@ public class HistoryWriteBuffer {
             try {
                 json = currentOrClaim();
             } catch (RuntimeException exception) {
-                log.warn("读取历史数据Redis待写队列失败", exception);
+                log.warn("读取历史数据 Redis 待写队列失败", exception);
                 return;
             }
             if (json == null) {
@@ -137,15 +167,12 @@ public class HistoryWriteBuffer {
             } catch (JsonProcessingException exception) {
                 moveToDeadLetter(json, exception);
             } catch (RuntimeException exception) {
-                log.warn("历史数据回放失败，将在下一周期继续重试", exception);
+                log.warn("历史数据回放失败，将在下一个周期继续重试", exception);
                 return;
             }
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private String currentOrClaim() {
         String processing = redisTemplate.opsForList().index(properties.getProcessingKey(), 0L);
         if (processing != null) {
@@ -155,9 +182,6 @@ public class HistoryWriteBuffer {
                 properties.getPendingKey(), properties.getProcessingKey());
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void moveToDeadLetter(String json, Exception exception) {
         try {
             redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
@@ -168,9 +192,6 @@ public class HistoryWriteBuffer {
         log.error("历史数据待写消息无法反序列化，已转入隔离队列", exception);
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void replayLocalQueue() {
         int batchSize = Math.max(1, properties.getReplayBatchSize());
         for (int index = 0; index < batchSize; index++) {
@@ -182,15 +203,12 @@ public class HistoryWriteBuffer {
                 write(request);
                 localQueue.poll();
             } catch (RuntimeException exception) {
-                log.warn("历史数据本地降级队列回放失败，将在下一周期继续重试", exception);
+                log.warn("历史数据本地降级队列回放失败，将在下一个周期继续重试", exception);
                 return;
             }
         }
     }
 
-    /**
-     * 写入或持久化业务数据。
-     */
     private void write(HistoryWriteRequest request) {
         timeSeriesService.append(
                 request.getDeviceId(),
@@ -200,9 +218,6 @@ public class HistoryWriteBuffer {
                 request.getEventTs());
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private String serialize(HistoryWriteRequest request) {
         try {
             return objectMapper.writeValueAsString(request);
@@ -211,25 +226,55 @@ public class HistoryWriteBuffer {
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private HistoryWriteRequest deserialize(String json) throws JsonProcessingException {
         return objectMapper.readValue(json, HistoryWriteRequest.class);
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private String pointId(HistoryWriteRequest request) {
         return request.getPoint() == null ? null : request.getPoint().getPointId();
     }
 
-    /**
-     * 查询并返回业务数据。
-     */
     private long listSize(String key) {
         Long size = redisTemplate.opsForList().size(key);
         return size == null ? 0L : size;
+    }
+
+    private void incrementRedisBuffered(BufferReason reason) {
+        if (reason == BufferReason.REJECTION) {
+            rejectedRedisBuffered.increment();
+        } else {
+            writeFailureRedisBuffered.increment();
+        }
+    }
+
+    private void incrementLocalBuffered(BufferReason reason) {
+        if (reason == BufferReason.REJECTION) {
+            rejectedLocalBuffered.increment();
+        } else {
+            writeFailureLocalBuffered.increment();
+        }
+    }
+
+    private void incrementDropped(BufferReason reason) {
+        if (reason == BufferReason.REJECTION) {
+            rejectedDropped.increment();
+        } else {
+            writeFailureDropped.increment();
+        }
+    }
+
+    private enum BufferReason {
+        WRITE_FAILURE("TDengine 写入失败"),
+        REJECTION("History stage 执行器过载");
+
+        private final String message;
+
+        BufferReason(String message) {
+            this.message = message;
+        }
+
+        private String message() {
+            return message;
+        }
     }
 }

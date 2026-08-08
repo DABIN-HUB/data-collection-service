@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.RejectedExecutionException;
+
 @Component
 @Order(30)
 @RequiredArgsConstructor
@@ -36,5 +38,11 @@ class HistoryTelemetryPostProcessStage implements TelemetryPostProcessStage {
     @Override
     public void process(TelemetryPostProcessContext context) {
         historyTelemetrySink.savePoint(context.deviceId(), context.point(), context.processResult());
+    }
+
+    @Override
+    public boolean onRejected(TelemetryPostProcessContext context, RejectedExecutionException exception) {
+        return historyTelemetrySink.deferPoint(
+                context.deviceId(), context.point(), context.processResult(), exception);
     }
 }

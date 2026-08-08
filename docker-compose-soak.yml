@@ -1,0 +1,30 @@
+version: "3.9"
+services:
+  redis-soak:
+    image: redis:7-alpine
+    container_name: data-collection-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-soak-data:/data
+  tdengine-soak:
+    image: tdengine/tdengine:3.4.0.0
+    container_name: data-collection-tdengine
+    ports:
+      - "6030:6030"
+      - "6041:6041"
+    volumes:
+      - tdengine-soak-data:/var/lib/taos
+      - tdengine-soak-log:/var/log/taos
+  mqtt-soak:
+    image: eclipse-mosquitto:2
+    container_name: data-collection-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./scripts/soak/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+volumes:
+  redis-soak-data:
+  tdengine-soak-data:
+  tdengine-soak-log:

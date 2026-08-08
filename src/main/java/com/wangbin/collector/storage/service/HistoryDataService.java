@@ -5,9 +5,9 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.port.HistoryTelemetrySink;
 import com.wangbin.collector.core.processor.ProcessResult;
-import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
+import com.wangbin.collector.storage.config.TdengineProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 处理当前模块的业务服务。
+ * 历史数据写入与查询服务。
  */
 @Slf4j
 @Service
@@ -32,28 +32,33 @@ public class HistoryDataService implements HistoryTelemetrySink {
     private final TdengineProperties properties;
 
     /**
-     * 写入或持久化业务数据。
+     * 保存单点历史数据，正常路径仍优先同步写入 TDengine。
      */
     @Override
     public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
             return;
         }
-        String protocolType = "UNKNOWN";
-        try {
-            DeviceInfo deviceInfo = configManager.getDevice(deviceId);
-            if (deviceInfo != null && deviceInfo.getProtocolType() != null) {
-                protocolType = deviceInfo.getProtocolType();
-            }
-        } catch (Exception e) {
-            log.debug("resolve protocolType from 配置 失败, 设备={}", deviceId, e);
-        }
-        historyWriteBuffer.writeOrBuffer(new HistoryWriteRequest(
-                deviceId, protocolType, point, processResult, System.currentTimeMillis()));
+        historyWriteBuffer.writeOrBuffer(newRequest(deviceId, point, processResult));
     }
 
     /**
-     * 查询并返回业务数据。
+     * History stage 执行器过载时跳过同步直写，直接进入既有可靠缓冲链路。
+     */
+    @Override
+    public boolean deferPoint(String deviceId,
+                              DataPoint point,
+                              ProcessResult processResult,
+                              RuntimeException cause) {
+        if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
+            return false;
+        }
+        historyWriteBuffer.deferForRetry(newRequest(deviceId, point, processResult), cause);
+        return true;
+    }
+
+    /**
+     * 查询指定点位的历史数据。
      */
     public List<Map<String, Object>> queryPointHistory(String deviceId,
                                                        String pointId,
@@ -71,4 +76,20 @@ public class HistoryDataService implements HistoryTelemetrySink {
         return properties.isEnabled();
     }
 
+    private HistoryWriteRequest newRequest(String deviceId, DataPoint point, ProcessResult processResult) {
+        return new HistoryWriteRequest(
+                deviceId, resolveProtocolType(deviceId), point, processResult, System.currentTimeMillis());
+    }
+
+    private String resolveProtocolType(String deviceId) {
+        try {
+            DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+            if (deviceInfo != null && deviceInfo.getProtocolType() != null) {
+                return deviceInfo.getProtocolType();
+            }
+        } catch (Exception exception) {
+            log.debug("解析历史数据协议类型失败，设备={}", deviceId, exception);
+        }
+        return "UNKNOWN";
+    }
 }

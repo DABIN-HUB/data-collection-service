@@ -102,6 +102,65 @@ class HistoryWriteBufferFailureRecoveryTest {
     }
 
     @Test
+    void deferForRetryShouldEnterRedisPendingWithoutDirectTdengineWrite() throws Exception {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        HistoryWriteRequest request = request("dev-overload-redis", "p1", 1_500L);
+
+        buffer.deferForRetry(request, new java.util.concurrent.RejectedExecutionException("history full"));
+
+        verify(timeSeriesService, never()).append(anyString(), anyString(), any(), any(), anyLong());
+        assertEquals(1L, redisLists.size(properties.getPendingKey()));
+        assertEquals(1L, buffer.metrics().rejectedRedisBuffered());
+        assertEquals(0L, buffer.metrics().rejectedLocalBuffered());
+        assertEquals(0L, buffer.metrics().rejectedDropped());
+        HistoryWriteRequest buffered = readRequest(redisLists.peekFirst(properties.getPendingKey()));
+        assertEquals(request.getDeviceId(), buffered.getDeviceId());
+        assertEquals(request.getPoint().getPointId(), buffered.getPoint().getPointId());
+        assertEquals(request.getEventTs(), buffered.getEventTs());
+    }
+
+    @Test
+    void deferForRetryShouldUseLocalQueueWhenRedisPendingFails() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 3);
+        redisLists.failLeftPush(properties.getPendingKey(), 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+
+        buffer.deferForRetry(request("dev-overload-local", "p1", 1_600L),
+                new java.util.concurrent.RejectedExecutionException("history full"));
+
+        verify(timeSeriesService, never()).append(anyString(), anyString(), any(), any(), anyLong());
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(1, buffer.metrics().localPending());
+        assertEquals(0L, buffer.metrics().rejectedRedisBuffered());
+        assertEquals(1L, buffer.metrics().rejectedLocalBuffered());
+        assertEquals(0L, buffer.metrics().rejectedDropped());
+    }
+
+    @Test
+    void deferForRetryShouldCountExplicitDropWhenLocalQueueIsFull() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 2);
+        redisLists.failLeftPush(properties.getPendingKey(), 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+
+        for (int index = 0; index < 3; index++) {
+            buffer.deferForRetry(request("dev-overload-drop", "p" + index, 1_700L + index),
+                    new java.util.concurrent.RejectedExecutionException("history full"));
+        }
+
+        verify(timeSeriesService, never()).append(anyString(), anyString(), any(), any(), anyLong());
+        assertEquals(2, buffer.metrics().localPending());
+        assertEquals(2L, buffer.metrics().rejectedLocalBuffered());
+        assertEquals(1L, buffer.metrics().rejectedDropped());
+    }
+
+    @Test
     void replayShouldMovePendingThroughProcessingAndRemoveAfterRecovery() {
         TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
         RedisLists redisLists = new RedisLists();

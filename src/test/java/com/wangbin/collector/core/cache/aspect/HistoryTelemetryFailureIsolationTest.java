@@ -16,9 +16,11 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -130,14 +132,129 @@ class HistoryTelemetryFailureIsolationTest {
                 && historyExecutor.getActiveCount() == 0);
     }
 
+    @Test
+    void rejectedHistoryStageTaskShouldUseHistoryDeferredFallback() throws Exception {
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        historyExecutor = fixedPool("history-reject-stage", 1, 1, rejected);
+        BlockingDeferringHistorySink sink = new BlockingDeferringHistorySink();
+        TelemetryPostProcessPipeline pipeline = historyPipeline(sink);
+        String deviceId = "history-reject-dev";
+
+        pipeline.process(context(deviceId, "p0"));
+        assertTrue(sink.awaitEntered());
+        pipeline.process(context(deviceId, "p1"));
+        pipeline.process(context(deviceId, "p2"));
+
+        waitUntil(() -> rejected.count() == 1L && sink.deferAttempts() == 1L);
+        sink.release();
+        waitUntil(() -> sink.attempts() == 2L
+                && historyExecutor.getQueue().isEmpty()
+                && historyExecutor.getActiveCount() == 0);
+
+        assertEquals(1L, rejected.count());
+        assertEquals(2L, sink.attempts());
+        assertEquals(1L, sink.deferAttempts());
+    }
+
+    @Test
+    void historyStageSubmittedCompletedRejectedAccountingShouldBeClosed() throws Exception {
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        historyExecutor = fixedPool("history-accounting-stage", 1, 2, rejected);
+        BlockingDeferringHistorySink sink = new BlockingDeferringHistorySink();
+        TelemetryPostProcessPipeline pipeline = historyPipeline(sink);
+        String deviceId = "history-accounting-dev";
+        int submitted = 8;
+
+        pipeline.process(context(deviceId, "p0"));
+        assertTrue(sink.awaitEntered());
+        for (int index = 1; index < submitted; index++) {
+            pipeline.process(context(deviceId, "p" + index));
+        }
+
+        waitUntil(() -> rejected.count() > 0L && sink.deferAttempts() == rejected.count());
+        sink.release();
+        waitUntil(() -> sink.attempts() + sink.deferAttempts() == submitted
+                && historyExecutor.getQueue().isEmpty()
+                && historyExecutor.getActiveCount() == 0);
+
+        assertEquals(submitted, sink.attempts() + sink.deferAttempts());
+        assertEquals(3L, sink.attempts());
+        assertEquals(5L, rejected.count());
+        assertEquals(5L, sink.deferAttempts());
+    }
+
+    @Test
+    void historyRejectionFallbackShouldRunOnTelemetryEntryThreadWithoutCallerRuns() throws Exception {
+        entryExecutor = fixedPool("history-overload-entry", 1, 16);
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        historyExecutor = fixedPool("history-overload-stage", 1, 1, rejected);
+        BlockingDeferringHistorySink sink = new BlockingDeferringHistorySink();
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        CollectorDataPostProcessor processor = processor(sink, guard);
+        String deviceId = "history-overload-thread-dev";
+        long generation = guard.activateNextGeneration(deviceId);
+
+        guard.runWithContext(deviceId, generation, () -> {
+            for (int index = 0; index < 5; index++) {
+                processor.savePointAsync(deviceId, point(deviceId, "p" + index), ProcessResult.success(index, index));
+            }
+        });
+
+        assertTrue(sink.awaitEntered());
+        waitUntil(() -> rejected.count() > 0L && sink.deferAttempts() == rejected.count()
+                && entryExecutor.getQueue().isEmpty()
+                && entryExecutor.getActiveCount() == 0);
+        sink.release();
+        waitUntil(() -> historyExecutor.getQueue().isEmpty() && historyExecutor.getActiveCount() == 0);
+
+        assertTrue(sink.deferThreads().stream().allMatch(name -> name.startsWith("history-overload-entry-")));
+        assertTrue(sink.saveThreads().stream().allMatch(name -> name.startsWith("history-overload-stage-")));
+    }
+
+    @Test
+    void measuredHistoryExecutorShouldRecordQueueWaitAndExecutionTime() throws Exception {
+        MeasuringThreadPoolExecutor measuredExecutor = new MeasuringThreadPoolExecutor("history-measured-stage", 1, 64);
+        historyExecutor = measuredExecutor;
+        TimedHistorySink sink = new TimedHistorySink(2L);
+        TelemetryPostProcessPipeline pipeline = historyPipeline(sink);
+        String deviceId = "history-measured-dev";
+        int submitted = 20;
+
+        for (int index = 0; index < submitted; index++) {
+            pipeline.process(context(deviceId, "p" + index));
+        }
+
+        waitUntil(() -> sink.attempts() == submitted
+                && measuredExecutor.getQueue().isEmpty()
+                && measuredExecutor.getActiveCount() == 0);
+
+        assertEquals(submitted, measuredExecutor.queueWaitSamples());
+        assertEquals(submitted, measuredExecutor.executionSamples());
+        assertTrue(measuredExecutor.queueWaitP95Millis() >= 0L);
+        assertTrue(measuredExecutor.executionP95Millis() >= 0L);
+    }
+
     private CollectorDataPostProcessor processor(HistoryTelemetrySink sink, CollectionTaskGuard guard) {
-        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(
+        return new CollectorDataPostProcessor(entryExecutor, historyPipeline(sink), guard);
+    }
+
+    private TelemetryPostProcessPipeline historyPipeline(HistoryTelemetrySink sink) {
+        return new TelemetryPostProcessPipeline(
                 List.of(new HistoryTelemetryPostProcessStage(sink)),
                 historyExecutor,
                 historyExecutor,
                 historyExecutor,
                 historyExecutor);
-        return new CollectorDataPostProcessor(entryExecutor, pipeline, guard);
+    }
+
+    private TelemetryPostProcessContext context(String deviceId, String pointId) {
+        return new TelemetryPostProcessContext(
+                deviceId,
+                point(deviceId, pointId),
+                ProcessResult.success(1, 1),
+                ProcessResult.success(1, 1),
+                System.currentTimeMillis(),
+                null);
     }
 
     private DataPoint point(String deviceId, String pointId) {
@@ -151,6 +268,13 @@ class HistoryTelemetryFailureIsolationTest {
     }
 
     private ThreadPoolExecutor fixedPool(String namePrefix, int threads, int queueCapacity) {
+        return fixedPool(namePrefix, threads, queueCapacity, new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    private ThreadPoolExecutor fixedPool(String namePrefix,
+                                         int threads,
+                                         int queueCapacity,
+                                         RejectedExecutionHandler rejectedExecutionHandler) {
         return new ThreadPoolExecutor(
                 threads,
                 threads,
@@ -162,7 +286,8 @@ class HistoryTelemetryFailureIsolationTest {
                     thread.setDaemon(true);
                     thread.setName(namePrefix + "-" + thread.getId());
                     return thread;
-                });
+                },
+                rejectedExecutionHandler);
     }
 
     private void waitUntil(Condition condition) throws InterruptedException {
@@ -278,6 +403,161 @@ class HistoryTelemetryFailureIsolationTest {
 
         private long attempts() {
             return attempts.sum();
+        }
+    }
+
+    private static final class BlockingDeferringHistorySink implements HistoryTelemetrySink {
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final LongAdder attempts = new LongAdder();
+        private final LongAdder deferAttempts = new LongAdder();
+        private final java.util.List<String> saveThreads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final java.util.List<String> deferThreads = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
+            attempts.increment();
+            saveThreads.add(Thread.currentThread().getName());
+            entered.countDown();
+            try {
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public boolean deferPoint(String deviceId,
+                                  DataPoint point,
+                                  ProcessResult processResult,
+                                  RuntimeException cause) {
+            deferAttempts.increment();
+            deferThreads.add(Thread.currentThread().getName());
+            return true;
+        }
+
+        private boolean awaitEntered() throws InterruptedException {
+            return entered.await(1, TimeUnit.SECONDS);
+        }
+
+        private void release() {
+            release.countDown();
+        }
+
+        private long attempts() {
+            return attempts.sum();
+        }
+
+        private long deferAttempts() {
+            return deferAttempts.sum();
+        }
+
+        private List<String> saveThreads() {
+            return saveThreads;
+        }
+
+        private List<String> deferThreads() {
+            return deferThreads;
+        }
+    }
+
+    private static final class TimedHistorySink implements HistoryTelemetrySink {
+        private final long latencyMillis;
+        private final LongAdder attempts = new LongAdder();
+
+        private TimedHistorySink(long latencyMillis) {
+            this.latencyMillis = latencyMillis;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
+            attempts.increment();
+            try {
+                TimeUnit.MILLISECONDS.sleep(latencyMillis);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        private long attempts() {
+            return attempts.sum();
+        }
+    }
+
+    private static final class CountingRejectedExecutionHandler implements RejectedExecutionHandler {
+        private final AtomicLong count = new AtomicLong();
+
+        @Override
+        public void rejectedExecution(Runnable runnable, ThreadPoolExecutor executor) {
+            count.incrementAndGet();
+            throw new java.util.concurrent.RejectedExecutionException("history stage queue full");
+        }
+
+        private long count() {
+            return count.get();
+        }
+    }
+
+    private static final class MeasuringThreadPoolExecutor extends ThreadPoolExecutor {
+        private final java.util.List<Long> queueWaitNanos = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final java.util.List<Long> executionNanos = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        private MeasuringThreadPoolExecutor(String namePrefix, int threads, int queueCapacity) {
+            super(threads, threads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(queueCapacity), runnable -> {
+                Thread thread = new Thread(runnable);
+                thread.setDaemon(true);
+                thread.setName(namePrefix + "-" + thread.getId());
+                return thread;
+            });
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            long submittedAt = System.nanoTime();
+            super.execute(() -> {
+                long startedAt = System.nanoTime();
+                queueWaitNanos.add(startedAt - submittedAt);
+                try {
+                    command.run();
+                } finally {
+                    executionNanos.add(System.nanoTime() - startedAt);
+                }
+            });
+        }
+
+        private int queueWaitSamples() {
+            return queueWaitNanos.size();
+        }
+
+        private int executionSamples() {
+            return executionNanos.size();
+        }
+
+        private long queueWaitP95Millis() {
+            return percentileMillis(queueWaitNanos, 0.95d);
+        }
+
+        private long executionP95Millis() {
+            return percentileMillis(executionNanos, 0.95d);
+        }
+
+        private long percentileMillis(List<Long> values, double percentile) {
+            if (values.isEmpty()) {
+                return 0L;
+            }
+            List<Long> sorted = values.stream().sorted().toList();
+            int index = (int) Math.ceil(sorted.size() * percentile) - 1;
+            return TimeUnit.NANOSECONDS.toMillis(sorted.get(Math.max(0, Math.min(index, sorted.size() - 1))));
         }
     }
 

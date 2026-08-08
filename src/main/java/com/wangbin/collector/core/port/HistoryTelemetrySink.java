@@ -17,4 +17,14 @@ public interface HistoryTelemetrySink {
      * 保存单点遥测处理结果。
      */
     void savePoint(String deviceId, DataPoint point, ProcessResult processResult);
+
+    /**
+     * 阶段执行器过载时的可靠延迟写入入口，默认表示当前实现不支持补偿。
+     */
+    default boolean deferPoint(String deviceId,
+                               DataPoint point,
+                               ProcessResult processResult,
+                               RuntimeException cause) {
+        return false;
+    }
 }
