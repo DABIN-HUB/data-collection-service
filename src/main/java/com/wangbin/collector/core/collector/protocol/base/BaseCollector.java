@@ -8,6 +8,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.converter.CollectorValueConverter;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
@@ -88,12 +89,10 @@ protected volatile boolean connected = false;
     // 处理结果
     protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
     private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
+    private final CollectorValueConverter valueConverter = new CollectorValueConverter();
 
     // 订阅的点位
     protected final Set<String> subscribedPointsSet = ConcurrentHashMap.newKeySet();
-
-    // 数据转换器
-    protected Map<String, DataConverter> dataConverters = new HashMap<>();
 
     // 使用Map存储订阅的点位对象，而不是Set只存ID
     protected final Map<String, DataPoint> subscribedPointMap = new ConcurrentHashMap<>();
@@ -108,8 +107,6 @@ protected volatile boolean connected = false;
     @Override
     public void init(DeviceInfo deviceInfo) throws CollectorException {
         this.deviceInfo = deviceInfo;
-        // 初始化数据转换器
-        initDataConverters();
 
         log.info("采集器初始化完成: {} [{}]", deviceInfo.getDeviceName(), getCollectorType());
     }
@@ -743,159 +740,24 @@ protected volatile boolean connected = false;
     }
 
     /**
-     * 初始化数据转换器
-     */
-    protected void initDataConverters() {
-        // 注册默认的数据转换器
-        dataConverters.put("default", new DefaultDataConverter());
-        dataConverters.put("scale", new ScaleDataConverter());
-        dataConverters.put("boolean", new BooleanDataConverter());
-    }
-
-    /**
      * 数据转换
      */
     protected Object convertData(DataPoint point, Object rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-
-        // 应用缩放因子和偏移量
-        Double scaledValue = point.getActualValue(convertToDouble(rawValue));
-
-        // 应用数据转换器
-        DataConverter converter = dataConverters.get(point.getDataType());
-        if (converter != null) {
-            return converter.convert(scaledValue, point);
-        }
-
-        return scaledValue;
+        return valueConverter.convertData(point, rawValue);
     }
 
     /**
      * 写入数据转换
      */
     protected Object convertDataForWrite(DataPoint point, Object value) {
-        if (value == null) {
-            return null;
-        }
-
-        // 反向应用缩放因子和偏移量
-        Double rawValue = convertToDouble(value);
-        if (point.getScalingFactor() != null && point.getScalingFactor() != 0) {
-            rawValue = rawValue / point.getScalingFactor();
-        }
-        if (point.getOffset() != null) {
-            rawValue = rawValue - point.getOffset();
-        }
-
-        return rawValue;
+        return valueConverter.convertDataForWrite(point, value);
     }
 
     /**
      * 数据验证
      */
     protected void validateData(DataPoint point, Object value) {
-        if (value == null) {
-            return;
-        }
-
-        if (value instanceof Number) {
-            double doubleValue = ((Number) value).doubleValue();
-
-            // 检查值范围
-            if (!point.isValueValid(doubleValue)) {
-                log.warn(String.format("点位值超出范围: %s, 值: %f, 范围: [%f, %f]",point.getPointName(), doubleValue,point.getMinValue(), point.getMaxValue()));
-            }
-        }
-    }
-
-    /**
-     * 转换为Double
-     */
-    private Double convertToDouble(Object value) {
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
-        } else if (value instanceof String) {
-            try {
-                return Double.parseDouble((String) value);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("无法转换为数字: " + value);
-            }
-        } else if (value instanceof Boolean) {
-            return ((Boolean) value) ? 1.0 : 0.0;
-        } else {
-            throw new IllegalArgumentException("不支持的数据类型: " + value.getClass().getName());
-        }
-    }
-
-    // =============== 数据转换器接口和实现 ===============
-
-    /**
-     * 数据转换器接口
-     */
-    protected interface DataConverter {
-        /**
-         * 解析或转换业务数据。
-         */
-        Object convert(Object value, DataPoint point);
-    }
-
-    /**
-     * 默认数据转换器
-     */
-    protected class DefaultDataConverter implements DataConverter {
-        /**
-         * 解析或转换业务数据。
-         */
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            return value;
-        }
-    }
-
-    /**
-     * 缩放数据转换器
-     */
-    protected class ScaleDataConverter implements DataConverter {
-        /**
-         * 解析或转换业务数据。
-         */
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            if (value instanceof Number) {
-                double scaledValue = ((Number) value).doubleValue();
-
-                // 应用精度（小数位数）
-                if (point.getPrecision() != null) {
-                    double factor = Math.pow(10, point.getPrecision());
-                    scaledValue = Math.round(scaledValue * factor) / factor;
-                }
-
-                return scaledValue;
-            }
-            return value;
-        }
-    }
-
-    /**
-     * 布尔数据转换器
-     */
-    protected class BooleanDataConverter implements DataConverter {
-        /**
-         * 解析或转换业务数据。
-         */
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            if (value instanceof Number) {
-                double numValue = ((Number) value).doubleValue();
-                return numValue != 0;
-            } else if (value instanceof String) {
-                String strValue = ((String) value).toLowerCase();
-                return "true".equals(strValue) || "1".equals(strValue) || "on".equals(strValue);
-            }
-            return value;
-        }
+        valueConverter.validateData(point, value);
     }
     
     public ProcessResult getLatestProcessResult(String pointId) {

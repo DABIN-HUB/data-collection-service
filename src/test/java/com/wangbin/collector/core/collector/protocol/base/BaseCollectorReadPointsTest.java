@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -106,7 +107,33 @@ class BaseCollectorReadPointsTest {
         verify(exceptionReporter).record(collector.readFailure, "dev-1", "p1");
     }
 
-    private TestCollector connectedCollector(TestCollector collector) throws Exception {
+    @Test
+    void shouldKeepProtectedConversionFacadesDelegatingToConverter() throws Exception {
+        TestCollector collector = connectedCollector(new TestCollector(Map.of()));
+        DataPoint point = point("p1");
+        point.setScalingFactor(2.0D);
+        point.setOffset(1.0D);
+        point.setMinValue(0.0D);
+        point.setMaxValue(10.0D);
+
+        assertEquals(7.0D, collector.exposeConvertData(point, 3));
+        assertEquals(2.0D, collector.exposeConvertDataForWrite(point, 6));
+        assertDoesNotThrow(() -> collector.exposeValidateData(point, 7));
+    }
+
+    @Test
+    void writePointShouldUseSubclassConvertDataForWriteOverride() throws Exception {
+        OverrideWriteCollector collector = connectedCollector(new OverrideWriteCollector(Map.of()));
+        DataPoint point = point("p1");
+        point.setReadWrite("W");
+
+        assertTrue(collector.writePoint(point, 12));
+
+        assertTrue(collector.overrideCalled);
+        assertEquals("OVERRIDDEN", collector.writtenValue);
+    }
+
+    private <T extends TestCollector> T connectedCollector(T collector) throws Exception {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId("dev-1");
         deviceInfo.setDeviceName("test-device");
@@ -125,7 +152,7 @@ class BaseCollectorReadPointsTest {
         return point;
     }
 
-    private static final class TestCollector extends BaseCollector {
+    private static class TestCollector extends BaseCollector {
 
         private final Map<String, Object> rawValues;
         private boolean failUnsubscribe;
@@ -202,6 +229,40 @@ class BaseCollectorReadPointsTest {
         @Override
         public String getProtocolType() {
             return "TEST";
+        }
+
+        Object exposeConvertData(DataPoint point, Object rawValue) {
+            return convertData(point, rawValue);
+        }
+
+        Object exposeConvertDataForWrite(DataPoint point, Object value) {
+            return convertDataForWrite(point, value);
+        }
+
+        void exposeValidateData(DataPoint point, Object value) {
+            validateData(point, value);
+        }
+    }
+
+    private static class OverrideWriteCollector extends TestCollector {
+
+        private boolean overrideCalled;
+        private Object writtenValue;
+
+        private OverrideWriteCollector(Map<String, Object> rawValues) {
+            super(rawValues);
+        }
+
+        @Override
+        protected Object convertDataForWrite(DataPoint point, Object value) {
+            overrideCalled = true;
+            return "OVERRIDDEN";
+        }
+
+        @Override
+        protected boolean doWritePoint(DataPoint point, Object value) {
+            writtenValue = value;
+            return true;
         }
     }
 }
