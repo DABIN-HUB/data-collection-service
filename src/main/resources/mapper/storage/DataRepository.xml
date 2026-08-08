@@ -53,7 +53,7 @@
         INSERT INTO ${database}.${subTable}
         (ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
         VALUES
-        (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+        (#{storageTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
     </insert>
 
     <select id="queryPointHistory" resultType="java.util.Map">
@@ -65,12 +65,12 @@
             AND point_id = #{pointId}
         </if>
         <if test="startTs != null and startTs &gt; 0">
-            AND ts &gt;= #{startTs}
+            AND event_ts &gt;= #{startTs}
         </if>
         <if test="endTs != null and endTs &gt; 0">
-            AND ts &lt;= #{endTs}
+            AND event_ts &lt;= #{endTs}
         </if>
-        ORDER BY ts DESC
+        ORDER BY event_ts DESC, ts DESC
         LIMIT #{limit}
     </select>
 </mapper>

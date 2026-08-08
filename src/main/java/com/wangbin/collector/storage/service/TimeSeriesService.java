@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.zip.CRC32;
 
 /**
  * 处理当前模块的业务服务。
@@ -35,6 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TimeSeriesService {
 
     private static final String TELEMETRY_UNIT_COLUMN = "unit";
+    static final long STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND = 1_000L;
+    private static final long MILLIS_PER_DAY = 86_400_000L;
     private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
             ProcessResultMetadataKeys.RAW_VALUE,
             ProcessResultMetadataKeys.PROCESSED_VALUE,
@@ -69,10 +73,12 @@ public class TimeSeriesService {
 
         Object finalValue = processResult != null ? processResult.getFinalValue() : null;
         TelemetryPayload payload = buildPayload(deviceId, protocolType, point, processResult, finalValue, eventTs);
+        long storageTs = resolveStorageTimestamp(eventTs, point);
 
         dataRepository.insertTelemetry(
                 database,
                 subTable,
+                storageTs,
                 eventTs,
                 point != null ? point.getPointId() : null,
                 point != null ? point.getPointCode() : null,
@@ -86,6 +92,68 @@ public class TimeSeriesService {
                 payload.processedJson(),
                 payload.metadataJson()
         );
+    }
+
+    static long resolveStorageTimestamp(long eventTs, DataPoint point) {
+        long dayStart = Math.floorDiv(eventTs, MILLIS_PER_DAY) * MILLIS_PER_DAY;
+        long millisOfDay = Math.floorMod(eventTs, MILLIS_PER_DAY);
+        return dayStart + millisOfDay * STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND + pointSlot(point);
+    }
+
+    private static long pointSlot(DataPoint point) {
+        if (point == null) {
+            return 0L;
+        }
+        Long id = point.getId();
+        if (id != null) {
+            return Math.floorMod(id, STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND);
+        }
+        String identity = firstNonBlank(
+                point.getPointId(),
+                point.getPointCode(),
+                point.getAddress(),
+                point.getPointName());
+        if (identity == null) {
+            return 0L;
+        }
+        Long numericSuffix = trailingNumber(identity);
+        if (numericSuffix != null) {
+            return Math.floorMod(numericSuffix, STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND);
+        }
+        CRC32 crc32 = new CRC32();
+        crc32.update(identity.getBytes(StandardCharsets.UTF_8));
+        return crc32.getValue() % STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static Long trailingNumber(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        int end = value.length();
+        int start = end;
+        while (start > 0 && Character.isDigit(value.charAt(start - 1))) {
+            start--;
+        }
+        if (start == end) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.substring(start, end));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     /**

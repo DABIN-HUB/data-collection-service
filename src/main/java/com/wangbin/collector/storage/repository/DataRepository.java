@@ -45,6 +45,7 @@ public interface DataRepository {
      */
     void insertTelemetry(@Param("database") String database,
                          @Param("subTable") String subTable,
+                         @Param("storageTs") long storageTs,
                          @Param("eventTs") long eventTs,
                          @Param("pointId") String pointId,
                          @Param("pointCode") String pointCode,

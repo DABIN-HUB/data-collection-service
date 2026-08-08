@@ -12,8 +12,10 @@ import com.wangbin.collector.storage.repository.DeviceRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -85,6 +87,7 @@ class TimeSeriesServiceTest {
         verify(dataRepository).insertTelemetry(
                 eq("wangbin_collector"),
                 eq("d_plc_001"),
+                eq(TimeSeriesService.resolveStorageTimestamp(eventTs, point)),
                 eq(eventTs),
                 eq("1024"),
                 eq("temperature"),
@@ -129,6 +132,50 @@ class TimeSeriesServiceTest {
         assertThat(metadata.get("processingVersion")).isEqualTo("v1.2");
         assertThat(metadata.get("reportEnabled")).isEqualTo(true);
         assertThat(metadata.get("alarmEnabled")).isEqualTo(true);
+    }
+
+    @Test
+    void storageTimestampShouldBeDeterministicForSameHistoryRecord() {
+        long eventTs = 1783046400123L;
+        DataPoint point = point(42L, "point-42");
+
+        long first = TimeSeriesService.resolveStorageTimestamp(eventTs, point);
+        long second = TimeSeriesService.resolveStorageTimestamp(eventTs, point);
+
+        assertThat(first).isEqualTo(second);
+    }
+
+    @Test
+    void storageTimestampShouldNotCollideForThousandPointsInSameMillisecond() {
+        long eventTs = 1783046400123L;
+        Set<Long> storageTimestamps = new HashSet<>();
+
+        for (int i = 0; i < TimeSeriesService.STORAGE_TIMESTAMP_SLOTS_PER_MILLISECOND; i++) {
+            assertThat(storageTimestamps.add(TimeSeriesService.resolveStorageTimestamp(eventTs, point((long) i, "point-" + i))))
+                    .as("point index %s should have a unique storage timestamp", i)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void storageTimestampShouldNotCollideAcrossAdjacentEventMilliseconds() {
+        long eventTs = 1783046400123L;
+        DataPoint firstPoint = point(999L, "point-999");
+        DataPoint secondPoint = point(0L, "point-0");
+
+        long first = TimeSeriesService.resolveStorageTimestamp(eventTs, firstPoint);
+        long second = TimeSeriesService.resolveStorageTimestamp(eventTs + 1, secondPoint);
+
+        assertThat(first).isNotEqualTo(second);
+    }
+
+    private DataPoint point(Long id, String pointId) {
+        DataPoint point = new DataPoint();
+        point.setId(id);
+        point.setPointId(pointId);
+        point.setPointCode(pointId);
+        point.setStatus(1);
+        return point;
     }
 
     private Map<String, Object> readMap(String json) throws Exception {

@@ -153,9 +153,123 @@ class TimeSeriesServiceTdengineIT {
         assertThat(valueOf(rows.get(0), "message")).isEqualTo("replay write");
     }
 
+    @Test
+    void sameDeviceDifferentPointsWithSameTimestampShouldNotOverwriteHistory() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        long eventTs = System.currentTimeMillis();
+        String suffix = "collision_" + eventTs;
+        String deviceId = "tdengine-collision-" + suffix;
+        DataPoint pointA = point(101L, "point-a-" + suffix, "temp_a_" + suffix, "40001");
+        DataPoint pointB = point(102L, "point-b-" + suffix, "temp_b_" + suffix, "40002");
+
+        service.append(deviceId, "MODBUS_TCP", pointA,
+                ProcessResult.success(111, 11.1, "point A"), eventTs);
+        service.append(deviceId, "MODBUS_TCP", pointB,
+                ProcessResult.success(222, 22.2, "point B"), eventTs);
+
+        List<Map<String, Object>> pointARows = service.query(
+                deviceId,
+                pointA.getPointId(),
+                eventTs,
+                eventTs,
+                5
+        );
+        List<Map<String, Object>> pointBRows = service.query(
+                deviceId,
+                pointB.getPointId(),
+                eventTs,
+                eventTs,
+                5
+        );
+
+        assertThat(pointARows)
+                .as("same device/different point/same timestamp must keep point A")
+                .hasSize(1);
+        assertThat(pointBRows)
+                .as("same device/different point/same timestamp must keep point B")
+                .hasSize(1);
+        assertThat(valueOf(pointARows.get(0), "valueText", "value_text")).isEqualTo("11.1");
+        assertThat(valueOf(pointBRows.get(0), "valueText", "value_text")).isEqualTo("22.2");
+    }
+
+    @Test
+    void sameDeviceDifferentPointsWithDifferentTimestampShouldRemainIndependent() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        long eventTs = System.currentTimeMillis();
+        String suffix = "different_ts_" + eventTs;
+        String deviceId = "tdengine-different-ts-" + suffix;
+        DataPoint pointA = point(201L, "point-a-" + suffix, "temp_a_" + suffix, "40001");
+        DataPoint pointB = point(202L, "point-b-" + suffix, "temp_b_" + suffix, "40002");
+
+        service.append(deviceId, "MODBUS_TCP", pointA,
+                ProcessResult.success(111, 11.1, "point A"), eventTs);
+        service.append(deviceId, "MODBUS_TCP", pointB,
+                ProcessResult.success(222, 22.2, "point B"), eventTs + 1);
+
+        assertThat(service.query(deviceId, pointA.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.query(deviceId, pointB.getPointId(), eventTs + 1, eventTs + 1, 5)).hasSize(1);
+    }
+
+    @Test
+    void differentDevicesSamePointWithSameTimestampShouldRemainIndependent() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        long eventTs = System.currentTimeMillis();
+        String suffix = "different_device_" + eventTs;
+        DataPoint pointA = point(301L, "point-" + suffix, "temp_" + suffix, "40001");
+        DataPoint pointB = point(301L, "point-" + suffix, "temp_" + suffix, "40001");
+        String deviceA = "tdengine-device-a-" + suffix;
+        String deviceB = "tdengine-device-b-" + suffix;
+
+        service.append(deviceA, "MODBUS_TCP", pointA,
+                ProcessResult.success(111, 11.1, "device A"), eventTs);
+        service.append(deviceB, "MODBUS_TCP", pointB,
+                ProcessResult.success(222, 22.2, "device B"), eventTs);
+
+        List<Map<String, Object>> deviceARows = service.query(deviceA, pointA.getPointId(), eventTs, eventTs, 5);
+        List<Map<String, Object>> deviceBRows = service.query(deviceB, pointB.getPointId(), eventTs, eventTs, 5);
+
+        assertThat(deviceARows).hasSize(1);
+        assertThat(deviceBRows).hasSize(1);
+        assertThat(valueOf(deviceARows.get(0), "valueText", "value_text")).isEqualTo("11.1");
+        assertThat(valueOf(deviceBRows.get(0), "valueText", "value_text")).isEqualTo("22.2");
+    }
+
     private Map<String, Object> readMap(String json) throws Exception {
         return objectMapper.readValue(json, new TypeReference<>() {
         });
+    }
+
+    private DataPoint point(Long id, String pointId, String pointCode, String address) {
+        DataPoint point = new DataPoint();
+        point.setId(id);
+        point.setPointId(pointId);
+        point.setPointCode(pointCode);
+        point.setPointName(pointId);
+        point.setAddress(address);
+        point.setDataType("FLOAT");
+        point.setUnit("C");
+        return point;
     }
 
     private static Object valueOf(Map<String, Object> row, String... keys) {
