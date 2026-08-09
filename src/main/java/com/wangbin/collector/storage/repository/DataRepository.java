@@ -80,6 +80,13 @@ public interface DataRepository {
                            @Param("metadataJson") String metadataJson);
 
     /**
+     * 批量写入同一 V2 子表的历史遥测行，调用方必须先按设备子表分组。
+     */
+    void insertTelemetryV2Batch(@Param("database") String database,
+                                @Param("subTable") String subTable,
+                                @Param("rows") List<TelemetryInsertRow> rows);
+
+    /**
      * 查询并返回业务数据。
      */
     List<Map<String, Object>> queryPointHistory(@Param("database") String database,

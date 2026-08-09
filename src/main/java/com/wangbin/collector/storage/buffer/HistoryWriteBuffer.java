@@ -12,6 +12,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.LongAdder;
@@ -63,6 +65,29 @@ public class HistoryWriteBuffer {
                 throw exception;
             }
             buffer(request, exception, BufferReason.WRITE_FAILURE);
+        }
+    }
+
+    /**
+     * 正常批量写入路径，批量失败时逐条进入既有 Redis/local fallback。
+     */
+    public boolean writeBatchOrBuffer(List<HistoryWriteRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return true;
+        }
+        try {
+            writeBatch(requests);
+            return true;
+        } catch (RuntimeException exception) {
+            if (!properties.isEnabled()) {
+                throw exception;
+            }
+            for (HistoryWriteRequest request : requests) {
+                if (request != null) {
+                    buffer(request, exception, BufferReason.WRITE_FAILURE);
+                }
+            }
+            return false;
         }
     }
 
@@ -216,6 +241,22 @@ public class HistoryWriteBuffer {
                 request.getPoint(),
                 request.getProcessResult(),
                 request.getEventTs());
+    }
+
+    private void writeBatch(List<HistoryWriteRequest> requests) {
+        List<TimeSeriesService.AppendRequest> appendRequests = new ArrayList<>(requests.size());
+        for (HistoryWriteRequest request : requests) {
+            if (request == null) {
+                continue;
+            }
+            appendRequests.add(new TimeSeriesService.AppendRequest(
+                    request.getDeviceId(),
+                    request.getProtocolType(),
+                    request.getPoint(),
+                    request.getProcessResult(),
+                    request.getEventTs()));
+        }
+        timeSeriesService.appendBatch(appendRequests);
     }
 
     private String serialize(HistoryWriteRequest request) {

@@ -331,6 +331,99 @@ class TimeSeriesServiceTdengineIT {
     }
 
     @Test
+    void batchSuccessShouldPreserveDifferentPointsSameTimestampInRealTdengine() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = System.currentTimeMillis();
+        String suffix = "batch_collision_" + eventTs;
+        String deviceId = "tdengine_batch_collision_" + suffix;
+        DataPoint pointA = point(701L, "point-a-" + suffix, "batch_a_" + suffix, "40001");
+        DataPoint pointB = point(702L, "point-b-" + suffix, "batch_b_" + suffix, "40002");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", pointA,
+                        ProcessResult.success(111, 11.1, "point A"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", pointB,
+                        ProcessResult.success(222, 22.2, "point B"), eventTs)));
+
+        assertThat(service.query(deviceId, pointA.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.query(deviceId, pointB.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+    }
+
+    @Test
+    void samePointSameTimestampBatchReplayShouldRemainIdempotentInRealTdengine() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = System.currentTimeMillis();
+        String suffix = "batch_replay_" + eventTs;
+        String deviceId = "tdengine_batch_replay_" + suffix;
+        DataPoint point = point(801L, "point-" + suffix, "batch_replay_" + suffix, "40001");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point,
+                        ProcessResult.success(1, 1.1, "first"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point,
+                        ProcessResult.success(2, 2.2, "second"), eventTs)));
+
+        List<Map<String, Object>> rows = service.query(deviceId, point.getPointId(), eventTs, eventTs, 5);
+        assertThat(rows).hasSize(1);
+        assertThat(valueOf(rows.get(0), "valueText", "value_text")).isEqualTo("2.2");
+        assertThat(valueOf(rows.get(0), "message")).isEqualTo("second");
+    }
+
+    @Test
+    void batchInsertShouldPreserveTypedAndNullValuesInRealTdengine() {
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = System.currentTimeMillis();
+        String suffix = "batch_types_" + eventTs;
+        String deviceId = "tdengine_batch_types_" + suffix;
+        DataPoint longPoint = point(901L, "long-" + suffix, "long_" + suffix, "40001");
+        DataPoint doublePoint = point(902L, "double-" + suffix, "double_" + suffix, "40002");
+        DataPoint boolPoint = point(903L, "bool-" + suffix, "bool_" + suffix, "40003");
+        DataPoint stringPoint = point(904L, "string-" + suffix, "string_" + suffix, "40004");
+        DataPoint nullPoint = point(905L, "null-" + suffix, "null_" + suffix, "40005");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", longPoint,
+                        ProcessResult.success(1L, 1L, "long"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", doublePoint,
+                        ProcessResult.success(2.5D, 2.5D, "double"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", boolPoint,
+                        ProcessResult.success(true, true, "bool"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", stringPoint,
+                        ProcessResult.success("ok", "ok", "string"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", nullPoint,
+                        ProcessResult.success(null, null, "null"), eventTs)));
+
+        assertThat(valueOf(service.query(deviceId, longPoint.getPointId(), eventTs, eventTs, 5).get(0),
+                "valueText", "value_text")).isEqualTo("1");
+        assertThat(valueOf(service.query(deviceId, doublePoint.getPointId(), eventTs, eventTs, 5).get(0),
+                "valueText", "value_text")).isEqualTo("2.5");
+        assertThat(valueOf(service.query(deviceId, boolPoint.getPointId(), eventTs, eventTs, 5).get(0),
+                "valueText", "value_text")).isEqualTo("true");
+        assertThat(valueOf(service.query(deviceId, stringPoint.getPointId(), eventTs, eventTs, 5).get(0),
+                "valueText", "value_text")).isEqualTo("ok");
+        assertThat(valueOf(service.query(deviceId, nullPoint.getPointId(), eventTs, eventTs, 5).get(0),
+                "valueText", "value_text")).isNull();
+    }
+
+    @Test
     void v1OldHistoryShouldRemainQueryableThroughDualRead() {
         TimeSeriesService service = new TimeSeriesService(
                 dataRepository,

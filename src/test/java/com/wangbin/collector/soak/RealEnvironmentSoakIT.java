@@ -15,6 +15,8 @@ import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
 import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
 import com.wangbin.collector.monitor.metrics.SystemResourceSnapshot;
+import com.wangbin.collector.storage.buffer.HistoryBatchMetrics;
+import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
 import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -109,6 +111,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private ObjectProvider<HistoryWriteBuffer> historyWriteBufferProvider;
+
+    @Autowired
+    private ObjectProvider<HistoryBatchWriter> historyBatchWriterProvider;
 
     @Autowired
     private ObjectProvider<TelemetryIngressBuffer> telemetryIngressBufferProvider;
@@ -325,6 +330,9 @@ class RealEnvironmentSoakIT {
         HistoryBufferMetrics history = historyWriteBufferProvider.getIfAvailable() != null
                 ? historyWriteBufferProvider.getIfAvailable().metrics()
                 : new HistoryBufferMetrics(0L, 0L, 0L, 0, 0);
+        HistoryBatchMetrics batch = historyBatchWriterProvider.getIfAvailable() != null
+                ? historyBatchWriterProvider.getIfAvailable().metrics()
+                : emptyHistoryBatchMetrics();
         TelemetryIngressBufferMetrics entry = telemetryIngressBufferProvider.getIfAvailable() != null
                 ? telemetryIngressBufferProvider.getIfAvailable().metrics()
                 : TelemetryIngressBufferMetrics.empty();
@@ -368,8 +376,20 @@ class RealEnvironmentSoakIT {
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
                         history.writeFailureLocalBuffered(), history.rejectedLocalBuffered(),
                         history.writeFailureDropped(), history.rejectedDropped()),
+                new HistoryBatchSnapshot(batch.acceptedRows(), batch.flushedBatches(), batch.flushedRows(),
+                        batch.batchWriteSuccess(), batch.batchWriteFailure(), batch.fallbackRows(),
+                        batch.currentBufferedRows(), batch.bufferedRowsPeak(), batch.averageBatchSize(),
+                        batch.batchSizeP50(), batch.batchSizeP95(), batch.batchSizeMax(),
+                        batch.flushLatencyP50Ms(), batch.flushLatencyP95Ms(), batch.flushLatencyP99Ms(),
+                        batch.oldestBufferedAgeMs(), batch.shutdownFlushedRows()),
                 cloud
         );
+    }
+
+    private HistoryBatchMetrics emptyHistoryBatchMetrics() {
+        return new HistoryBatchMetrics(
+                0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0D,
+                0, 0, 0, 0D, 0D, 0D, 0L, 0L);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -569,6 +589,7 @@ class RealEnvironmentSoakIT {
         summary.put("redisFinal", finalSample.redis());
         summary.put("telemetryEntryFinal", finalSample.entry());
         summary.put("historyFinal", finalSample.history());
+        summary.put("historyBatchFinal", finalSample.historyBatch());
         summary.put("cloudFinal", finalSample.cloud());
         summary.put("executorQueuePeaks", executorQueuePeaks(samples));
         summary.put("executorActivePeaks", executorActivePeaks(samples));
@@ -650,7 +671,11 @@ class RealEnvironmentSoakIT {
                 + "entryRejectedItems,entryRedisBufferedItems,entryLocalBufferedItems,entryDroppedItems,"
                 + "entryReplayCompletedItems,entryStaleSameRuntimeDroppedItems,entryCrossRuntimeRecoveredItems,"
                 + "entryLegacyEnvelopeRecoveredItems,historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
-                + "historyRejectedDropped,cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
+                + "historyRejectedDropped,historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
+                + "historyBatchWriteSuccess,historyBatchWriteFailure,historyBatchFallbackRows,historyBatchCurrentBuffered,"
+                + "historyBatchBufferedPeak,historyBatchAverageSize,historyBatchSizeP50,historyBatchSizeP95,"
+                + "historyBatchSizeMax,historyBatchLatencyP50Ms,historyBatchLatencyP95Ms,historyBatchLatencyP99Ms,"
+                + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,threadPoolsJson\n");
     }
 
@@ -700,6 +725,21 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.history().rejectedRedisBuffered()),
                 String.valueOf(sample.history().rejectedLocalBuffered()),
                 String.valueOf(sample.history().rejectedDropped()),
+                String.valueOf(sample.historyBatch().acceptedRows()),
+                String.valueOf(sample.historyBatch().flushedBatches()),
+                String.valueOf(sample.historyBatch().flushedRows()),
+                String.valueOf(sample.historyBatch().batchWriteSuccess()),
+                String.valueOf(sample.historyBatch().batchWriteFailure()),
+                String.valueOf(sample.historyBatch().fallbackRows()),
+                String.valueOf(sample.historyBatch().currentBufferedRows()),
+                String.valueOf(sample.historyBatch().bufferedRowsPeak()),
+                String.valueOf(sample.historyBatch().averageBatchSize()),
+                String.valueOf(sample.historyBatch().batchSizeP50()),
+                String.valueOf(sample.historyBatch().batchSizeP95()),
+                String.valueOf(sample.historyBatch().batchSizeMax()),
+                String.valueOf(sample.historyBatch().flushLatencyP50Ms()),
+                String.valueOf(sample.historyBatch().flushLatencyP95Ms()),
+                String.valueOf(sample.historyBatch().flushLatencyP99Ms()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -724,11 +764,16 @@ class RealEnvironmentSoakIT {
     private void waitForDrain(Duration timeout) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
+            HistoryBatchWriter batchWriter = historyBatchWriterProvider.getIfAvailable();
+            if (batchWriter != null) {
+                batchWriter.flushDueBuckets();
+            }
             SystemResourceSnapshot resources = systemResourceMonitorService.getResources();
             boolean queuesEmpty = resources.getThreadPools().values().stream()
                     .filter(Objects::nonNull)
                     .allMatch(pool -> pool.getQueueSize() <= 0 && pool.getActiveCount() <= 0);
-            if (queuesEmpty) {
+            boolean historyBatchEmpty = batchWriter == null || batchWriter.metrics().currentBufferedRows() <= 0;
+            if (queuesEmpty && historyBatchEmpty) {
                 return;
             }
             Thread.sleep(500L);
@@ -839,6 +884,25 @@ class RealEnvironmentSoakIT {
                                    long rejectedDropped) {
     }
 
+    private record HistoryBatchSnapshot(long acceptedRows,
+                                        long flushedBatches,
+                                        long flushedRows,
+                                        long batchWriteSuccess,
+                                        long batchWriteFailure,
+                                        long fallbackRows,
+                                        int currentBufferedRows,
+                                        int bufferedRowsPeak,
+                                        double averageBatchSize,
+                                        int batchSizeP50,
+                                        int batchSizeP95,
+                                        int batchSizeMax,
+                                        double flushLatencyP50Ms,
+                                        double flushLatencyP95Ms,
+                                        double flushLatencyP99Ms,
+                                        long oldestBufferedAgeMs,
+                                        long shutdownFlushedRows) {
+    }
+
     private record CloudSnapshot(long total,
                                  long pending,
                                  long publishing,
@@ -876,6 +940,7 @@ class RealEnvironmentSoakIT {
                                 RedisSnapshot redis,
                                 EntryIngressSnapshot entry,
                                 HistorySnapshot history,
+                                HistoryBatchSnapshot historyBatch,
                                 CloudSnapshot cloud) {
     }
 

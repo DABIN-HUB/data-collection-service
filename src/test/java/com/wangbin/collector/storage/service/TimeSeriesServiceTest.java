@@ -12,6 +12,7 @@ import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
+import com.wangbin.collector.storage.repository.TelemetryInsertRow;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -217,6 +218,49 @@ class TimeSeriesServiceTest {
         assertThat(TimeSeriesService.resolvePointStorageKey(request.getPoint())).isEqualTo("legacy-point");
     }
 
+    @Test
+    void appendBatchShouldGroupByV2SubTableAndPreserveTypedAndNullRows() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = 1783046400999L;
+
+        service.appendBatch(List.of(
+                appendRequest("dev-batch-a", point(1L, "long"), ProcessResult.success(1L, 1L), eventTs),
+                appendRequest("dev-batch-a", point(2L, "double"), ProcessResult.success(2.5D, 2.5D), eventTs),
+                appendRequest("dev-batch-a", point(3L, "boolean"), ProcessResult.success(true, true), eventTs),
+                appendRequest("dev-batch-a", point(4L, "string"), ProcessResult.success("ok", "ok"), eventTs),
+                appendRequest("dev-batch-a", point(5L, "null"), ProcessResult.success(null, null), eventTs)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TelemetryInsertRow>> rowsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(dataRepository).insertTelemetryV2Batch(
+                eq("wangbin_collector"),
+                eq("d_dev_batch_a_v2"),
+                rowsCaptor.capture());
+        List<TelemetryInsertRow> rows = rowsCaptor.getValue();
+        assertThat(rows).hasSize(5);
+        assertThat(rows).extracting(TelemetryInsertRow::getPointKey)
+                .containsExactly("long", "double", "boolean", "string", "null");
+        assertThat(rows).extracting(TelemetryInsertRow::getValueText)
+                .containsExactly("1", "2.5", "true", "ok", null);
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getEventTs()).isEqualTo(eventTs);
+            assertThat(row.getMetadataJson()).contains("\"deviceId\":\"dev-batch-a\"");
+        });
+    }
+
     private DataPoint point(Long id, String pointId) {
         DataPoint point = new DataPoint();
         point.setId(id);
@@ -224,6 +268,13 @@ class TimeSeriesServiceTest {
         point.setPointCode(pointId);
         point.setStatus(1);
         return point;
+    }
+
+    private TimeSeriesService.AppendRequest appendRequest(String deviceId,
+                                                          DataPoint point,
+                                                          ProcessResult processResult,
+                                                          long eventTs) {
+        return new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point, processResult, eventTs);
     }
 
     private List<Map<String, Object>> v2CreateSql() {

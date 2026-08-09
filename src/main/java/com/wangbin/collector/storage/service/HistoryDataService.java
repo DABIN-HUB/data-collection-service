@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.port.HistoryTelemetrySink;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
 import com.wangbin.collector.storage.config.TdengineProperties;
@@ -27,19 +28,24 @@ import java.util.Map;
 public class HistoryDataService implements HistoryTelemetrySink {
 
     private final HistoryWriteBuffer historyWriteBuffer;
+    private final HistoryBatchWriter historyBatchWriter;
     private final TimeSeriesService timeSeriesService;
     private final ConfigManager configManager;
     private final TdengineProperties properties;
 
     /**
-     * 保存单点历史数据，正常路径仍优先同步写入 TDengine。
+     * 保存单点历史数据；批量模式启用时先进入短暂聚合，关闭时沿用单条写入路径。
      */
     @Override
     public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
             return;
         }
-        historyWriteBuffer.writeOrBuffer(newRequest(deviceId, point, processResult));
+        HistoryWriteRequest request = newRequest(deviceId, point, processResult);
+        if (tryBatch(request)) {
+            return;
+        }
+        historyWriteBuffer.writeOrBuffer(request);
     }
 
     /**
@@ -79,6 +85,15 @@ public class HistoryDataService implements HistoryTelemetrySink {
     private HistoryWriteRequest newRequest(String deviceId, DataPoint point, ProcessResult processResult) {
         return new HistoryWriteRequest(
                 deviceId, resolveProtocolType(deviceId), point, processResult, System.currentTimeMillis());
+    }
+
+    private boolean tryBatch(HistoryWriteRequest request) {
+        try {
+            return historyBatchWriter.accept(request);
+        } catch (RuntimeException exception) {
+            historyWriteBuffer.deferForRetry(request, exception);
+            return true;
+        }
     }
 
     private String resolveProtocolType(String deviceId) {

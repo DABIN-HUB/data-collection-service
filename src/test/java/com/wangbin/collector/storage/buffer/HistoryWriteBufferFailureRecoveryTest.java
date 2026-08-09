@@ -289,6 +289,87 @@ class HistoryWriteBufferFailureRecoveryTest {
     }
 
     @Test
+    void batchWriteSuccessShouldNotEnterFallbackQueues() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        List<HistoryWriteRequest> requests = List.of(
+                request("dev-batch-success", "p1", 1_000L),
+                request("dev-batch-success", "p2", 1_001L));
+
+        boolean directSuccess = buffer.writeBatchOrBuffer(requests);
+
+        assertTrue(directSuccess);
+        verify(timeSeriesService).appendBatch(any());
+        verify(redisLists.operations, never()).leftPush(anyString(), anyString());
+        assertEquals(0L, buffer.metrics().redisPending());
+        assertEquals(0, buffer.metrics().localPending());
+    }
+
+    @Test
+    void batchFailureShouldDeferEveryRowToExistingHistoryBuffer() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
+                .when(timeSeriesService).appendBatch(any());
+        List<HistoryWriteRequest> requests = List.of(
+                request("dev-batch-pending", "p1", 1_000L),
+                request("dev-batch-pending", "p2", 1_001L),
+                request("dev-batch-pending", "p3", 1_002L));
+
+        boolean directSuccess = buffer.writeBatchOrBuffer(requests);
+
+        assertFalse(directSuccess);
+        assertEquals(3L, redisLists.size(properties.getPendingKey()));
+        assertEquals(3L, buffer.metrics().writeFailureRedisBuffered());
+        assertEquals(0, buffer.metrics().localPending());
+    }
+
+    @Test
+    void batchFailureAndRedisFailureShouldUseExistingLocalFallback() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 5);
+        redisLists.failLeftPush(properties.getPendingKey(), 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
+                .when(timeSeriesService).appendBatch(any());
+
+        boolean directSuccess = buffer.writeBatchOrBuffer(List.of(
+                request("dev-batch-local", "p1", 1_000L),
+                request("dev-batch-local", "p2", 1_001L)));
+
+        assertFalse(directSuccess);
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(2, buffer.metrics().localPending());
+        assertEquals(2L, buffer.metrics().writeFailureLocalBuffered());
+    }
+
+    @Test
+    void batchFailureAndFullLocalQueueShouldExplicitlyAccountDroppedRows() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 2);
+        redisLists.failLeftPush(properties.getPendingKey(), 10);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
+                .when(timeSeriesService).appendBatch(any());
+
+        boolean directSuccess = buffer.writeBatchOrBuffer(List.of(
+                request("dev-batch-full", "p1", 1_000L),
+                request("dev-batch-full", "p2", 1_001L),
+                request("dev-batch-full", "p3", 1_002L)));
+
+        assertFalse(directSuccess);
+        assertEquals(2, buffer.metrics().localPending());
+        assertEquals(2L, buffer.metrics().writeFailureLocalBuffered());
+        assertEquals(1L, buffer.metrics().writeFailureDropped());
+    }
+
+    @Test
     void fullLocalQueueShouldDropWithoutBlockingOrGrowing() {
         TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
         RedisLists redisLists = new RedisLists();

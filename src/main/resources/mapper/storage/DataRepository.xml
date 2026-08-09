@@ -89,6 +89,15 @@
         (#{eventTs},#{pointKey},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
     </insert>
 
+    <insert id="insertTelemetryV2Batch">
+        INSERT INTO ${database}.${subTable}
+        (ts,point_key,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+        VALUES
+        <foreach collection="rows" item="row" separator=",">
+            (#{row.eventTs},#{row.pointKey},#{row.eventTs},#{row.pointId},#{row.pointCode},#{row.pointName},#{row.valueText},#{row.unit},#{row.quality},#{row.success},#{row.message},#{row.rawJson},#{row.processedJson},#{row.metadataJson})
+        </foreach>
+    </insert>
+
     <select id="queryPointHistory" resultType="java.util.Map">
         SELECT
             ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json

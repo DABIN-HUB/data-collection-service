@@ -45,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "telemetry.tdengine.buffer.processing-key=collector:test:history:overload:processing:v1",
         "telemetry.tdengine.buffer.dead-letter-key=collector:test:history:overload:dead:v1",
         "telemetry.tdengine.buffer.replay-batch-size=200",
+        "telemetry.tdengine.batch.enabled=false",
         "collector.report.enabled=false",
         "collector.config.loader=file"
 })

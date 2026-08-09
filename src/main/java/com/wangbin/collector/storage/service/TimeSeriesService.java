@@ -12,12 +12,14 @@ import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.constant.TelemetryStorageJsonKeys;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
+import com.wangbin.collector.storage.repository.TelemetryInsertRow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,30 +72,55 @@ public class TimeSeriesService {
         String database = sanitizeIdentifier(properties.getDatabase());
         String superTable = sanitizeIdentifier(properties.getSuperTable());
         String superTableV2 = resolveV2Name(superTable);
-        String subTableV2 = resolveV2Name(resolveSubTableName(deviceId));
-        ensureSubTable(database, superTableV2, subTableV2, deviceId, protocolType);
-
-        Object finalValue = processResult != null ? processResult.getFinalValue() : null;
-        TelemetryPayload payload = buildPayload(deviceId, protocolType, point, processResult, finalValue, eventTs);
-        String pointKey = resolvePointStorageKey(point);
+        AppendRequest request = new AppendRequest(deviceId, protocolType, point, processResult, eventTs);
+        WriteTarget target = resolveWriteTarget(database, superTableV2, request);
+        TelemetryInsertRow row = buildInsertRow(request);
 
         dataRepository.insertTelemetryV2(
                 database,
-                subTableV2,
-                eventTs,
-                pointKey,
-                point != null ? point.getPointId() : null,
-                point != null ? point.getPointCode() : null,
-                point != null ? point.getPointName() : null,
-                finalValue != null ? String.valueOf(finalValue) : null,
-                point != null ? point.getUnit() : null,
-                processResult != null ? processResult.getQuality() : null,
-                processResult != null ? processResult.isSuccess() : null,
-                processResult != null ? processResult.getMessage() : null,
-                payload.rawJson(),
-                payload.processedJson(),
-                payload.metadataJson()
+                target.subTable(),
+                row.getEventTs(),
+                row.getPointKey(),
+                row.getPointId(),
+                row.getPointCode(),
+                row.getPointName(),
+                row.getValueText(),
+                row.getUnit(),
+                row.getQuality(),
+                row.getSuccess(),
+                row.getMessage(),
+                row.getRawJson(),
+                row.getProcessedJson(),
+                row.getMetadataJson()
         );
+    }
+
+    /**
+     * 批量写入历史数据，调用方传入的数据会按 V2 子表分组后分别写入。
+     */
+    public void appendBatch(List<AppendRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        ensureSchema();
+        String database = sanitizeIdentifier(properties.getDatabase());
+        String superTable = sanitizeIdentifier(properties.getSuperTable());
+        String superTableV2 = resolveV2Name(superTable);
+        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = new LinkedHashMap<>();
+        for (AppendRequest request : requests) {
+            if (request == null) {
+                continue;
+            }
+            WriteTarget target = resolveWriteTarget(database, superTableV2, request);
+            groupedRows.computeIfAbsent(target, ignored -> new ArrayList<>())
+                    .add(buildInsertRow(request));
+        }
+        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
+            List<TelemetryInsertRow> rows = entry.getValue();
+            if (!rows.isEmpty()) {
+                dataRepository.insertTelemetryV2Batch(entry.getKey().database(), entry.getKey().subTable(), rows);
+            }
+        }
     }
 
     static String resolvePointStorageKey(DataPoint point) {
@@ -115,6 +142,36 @@ public class TimeSeriesService {
             throw new IllegalArgumentException("TDengine V2 point_key 超过 128 字节，无法无碰撞保存: " + identity);
         }
         return identity;
+    }
+
+    private WriteTarget resolveWriteTarget(String database, String superTableV2, AppendRequest request) {
+        String subTableV2 = resolveV2Name(resolveSubTableName(request.deviceId()));
+        ensureSubTable(database, superTableV2, subTableV2, request.deviceId(), request.protocolType());
+        return new WriteTarget(database, subTableV2);
+    }
+
+    private TelemetryInsertRow buildInsertRow(AppendRequest request) {
+        DataPoint point = request.point();
+        ProcessResult processResult = request.processResult();
+        long eventTs = request.eventTs();
+        Object finalValue = processResult != null ? processResult.getFinalValue() : null;
+        TelemetryPayload payload = buildPayload(
+                request.deviceId(), request.protocolType(), point, processResult, finalValue, eventTs);
+        return new TelemetryInsertRow(
+                eventTs,
+                resolvePointStorageKey(point),
+                point != null ? point.getPointId() : null,
+                point != null ? point.getPointCode() : null,
+                point != null ? point.getPointName() : null,
+                finalValue != null ? String.valueOf(finalValue) : null,
+                point != null ? point.getUnit() : null,
+                processResult != null ? processResult.getQuality() : null,
+                processResult != null ? processResult.isSuccess() : null,
+                processResult != null ? processResult.getMessage() : null,
+                payload.rawJson(),
+                payload.processedJson(),
+                payload.metadataJson()
+        );
     }
 
     private static String firstNonBlank(String... values) {
@@ -632,6 +689,19 @@ public class TimeSeriesService {
     /**
      * 定义当前模块的不可变数据记录。
      */
+    /**
+     * 批量写入入口参数，保持与单条 append 相同的业务字段。
+     */
+    public record AppendRequest(String deviceId,
+                                String protocolType,
+                                DataPoint point,
+                                ProcessResult processResult,
+                                long eventTs) {
+    }
+
+    private record WriteTarget(String database, String subTable) {
+    }
+
     private record TelemetryPayload(String rawJson, String processedJson, String metadataJson) {
     }
 }

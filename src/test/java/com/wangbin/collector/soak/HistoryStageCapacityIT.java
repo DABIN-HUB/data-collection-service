@@ -13,6 +13,7 @@ import org.springframework.core.env.Environment;
 
 import javax.sql.DataSource;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -73,6 +74,31 @@ class HistoryStageCapacityIT {
                 options.outputDir().resolve("summary.json").toFile(), summary);
     }
 
+    @Test
+    void benchmarkApplicationLevelSingleAndBatchTelemetryWrites() throws IOException {
+        CapacityOptions options = CapacityOptions.from(environment);
+        Files.createDirectories(options.outputDir());
+        List<Map<String, Object>> results = new ArrayList<>();
+
+        for (int deviceCount : options.deviceVariants()) {
+            for (int recordCount : options.recordCounts()) {
+                results.add(runScenario(deviceCount, recordCount));
+                for (int batchSize : options.batchSizes()) {
+                    results.add(runBatchScenario(deviceCount, recordCount, batchSize));
+                }
+            }
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("recordCounts", options.recordCounts());
+        summary.put("deviceVariants", options.deviceVariants());
+        summary.put("batchSizes", options.batchSizes());
+        summary.put("jdbcPool", jdbcPoolSnapshot());
+        summary.put("results", results);
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(
+                options.outputDir().resolve("batch-summary.json").toFile(), summary);
+    }
+
     private Map<String, Object> runScenario(int deviceCount, int recordCount) {
         long baseEventTs = System.currentTimeMillis();
         List<Long> latencies = new ArrayList<>(recordCount);
@@ -91,6 +117,8 @@ class HistoryStageCapacityIT {
         assertEquals(recordCount, succeeded);
 
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("mode", "single");
+        result.put("batchSize", 1);
         result.put("devices", deviceCount);
         result.put("records", recordCount);
         result.put("succeeded", succeeded);
@@ -101,7 +129,76 @@ class HistoryStageCapacityIT {
         result.put("writeP99Ms", percentileMillis(latencies, 0.99d));
         result.put("writeMaxMs", TimeUnit.NANOSECONDS.toMillis(latencies.stream().mapToLong(Long::longValue).max().orElse(0L)));
         result.put("jdbcPoolAfter", jdbcPoolSnapshot());
+        result.put("processCpuLoad", processCpuLoad());
+        result.put("heapUsedBytes", heapUsedBytes());
         return result;
+    }
+
+    private Map<String, Object> runBatchScenario(int deviceCount, int recordCount, int batchSize) {
+        long baseEventTs = System.currentTimeMillis();
+        String runPrefix = "history-batch-" + batchSize + "-" + deviceCount + "-" + baseEventTs;
+        warmUpBatch(runPrefix + "-warm", deviceCount, Math.min(200, Math.max(1, recordCount / 10)), batchSize);
+        List<Long> latencies = new ArrayList<>();
+        int succeeded = 0;
+        long startedAt = System.nanoTime();
+        List<TimeSeriesService.AppendRequest> chunk = new ArrayList<>(batchSize);
+        for (int index = 0; index < recordCount; index++) {
+            chunk.add(appendRequest(runPrefix, deviceCount, index, baseEventTs + index));
+            if (chunk.size() >= batchSize) {
+                long writeStartedAt = System.nanoTime();
+                timeSeriesService.appendBatch(List.copyOf(chunk));
+                latencies.add(System.nanoTime() - writeStartedAt);
+                succeeded += chunk.size();
+                chunk.clear();
+            }
+        }
+        if (!chunk.isEmpty()) {
+            long writeStartedAt = System.nanoTime();
+            timeSeriesService.appendBatch(List.copyOf(chunk));
+            latencies.add(System.nanoTime() - writeStartedAt);
+            succeeded += chunk.size();
+        }
+        long totalNanos = System.nanoTime() - startedAt;
+        assertEquals(recordCount, succeeded);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("mode", "batch");
+        result.put("batchSize", batchSize);
+        result.put("devices", deviceCount);
+        result.put("records", recordCount);
+        result.put("succeeded", succeeded);
+        result.put("totalMs", TimeUnit.NANOSECONDS.toMillis(totalNanos));
+        result.put("rowsPerSecond", recordCount * 1_000_000_000.0d / Math.max(1L, totalNanos));
+        result.put("batchLatencyP50Ms", percentileMillis(latencies, 0.50d));
+        result.put("batchLatencyP95Ms", percentileMillis(latencies, 0.95d));
+        result.put("batchLatencyP99Ms", percentileMillis(latencies, 0.99d));
+        result.put("batchLatencyMaxMs", TimeUnit.NANOSECONDS.toMillis(latencies.stream().mapToLong(Long::longValue).max().orElse(0L)));
+        result.put("jdbcPoolAfter", jdbcPoolSnapshot());
+        result.put("processCpuLoad", processCpuLoad());
+        result.put("heapUsedBytes", heapUsedBytes());
+        return result;
+    }
+
+    private void warmUpBatch(String runPrefix, int deviceCount, int recordCount, int batchSize) {
+        long baseEventTs = System.currentTimeMillis() - 60_000L;
+        List<TimeSeriesService.AppendRequest> chunk = new ArrayList<>(batchSize);
+        for (int index = 0; index < recordCount; index++) {
+            chunk.add(appendRequest(runPrefix, deviceCount, index, baseEventTs + index));
+            if (chunk.size() >= batchSize) {
+                timeSeriesService.appendBatch(List.copyOf(chunk));
+                chunk.clear();
+            }
+        }
+        if (!chunk.isEmpty()) {
+            timeSeriesService.appendBatch(List.copyOf(chunk));
+        }
+    }
+
+    private TimeSeriesService.AppendRequest appendRequest(String runPrefix, int deviceCount, int index, long eventTs) {
+        String deviceId = runPrefix + "-dev-" + (index % deviceCount);
+        DataPoint point = point(deviceId, index);
+        ProcessResult result = ProcessResult.success(index, index);
+        return new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point, result, eventTs);
     }
 
     private DataPoint point(String deviceId, int index) {
@@ -137,6 +234,19 @@ class HistoryStageCapacityIT {
         return snapshot;
     }
 
+    private double processCpuLoad() {
+        java.lang.management.OperatingSystemMXBean bean = ManagementFactory.getOperatingSystemMXBean();
+        if (bean instanceof com.sun.management.OperatingSystemMXBean operatingSystem) {
+            return operatingSystem.getProcessCpuLoad();
+        }
+        return -1D;
+    }
+
+    private long heapUsedBytes() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
     private long percentileMillis(List<Long> values, double percentile) {
         if (values == null || values.isEmpty()) {
             return 0L;
@@ -148,6 +258,7 @@ class HistoryStageCapacityIT {
 
     private record CapacityOptions(List<Integer> recordCounts,
                                    List<Integer> deviceVariants,
+                                   List<Integer> batchSizes,
                                    Path outputDir) {
 
         static CapacityOptions from(Environment environment) {
@@ -158,6 +269,7 @@ class HistoryStageCapacityIT {
             return new CapacityOptions(
                     intList(value(environment, "history.capacity.records", "1000")),
                     intList(value(environment, "history.capacity.devices", "10")),
+                    intList(value(environment, "history.capacity.batch-sizes", "10,25,50,100,200,500")),
                     Path.of(output));
         }
 
