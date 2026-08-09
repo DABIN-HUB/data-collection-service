@@ -27,5 +27,8 @@ public record HistoryBatchMetrics(long acceptedRows,
                                   long shutdownDeferredRows,
                                   long shutdownNonDurableRows,
                                   long shutdownDroppedRows,
-                                  long shutdownDisabledRows) {
+                                  long shutdownDisabledRows,
+                                  int bucketCount,
+                                  int admissionInFlight,
+                                  int inFlightFlushes) {
 }

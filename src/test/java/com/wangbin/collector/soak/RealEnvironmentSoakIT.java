@@ -385,7 +385,8 @@ class RealEnvironmentSoakIT {
                         batch.oldestBufferedAgeMs(), batch.shutdownFlushedRows(),
                         batch.fallbackRedisRows(), batch.fallbackLocalRows(), batch.fallbackDroppedRows(),
                         batch.fallbackDisabledRows(), batch.shutdownDeferredRows(),
-                        batch.shutdownNonDurableRows(), batch.shutdownDroppedRows(), batch.shutdownDisabledRows()),
+                        batch.shutdownNonDurableRows(), batch.shutdownDroppedRows(), batch.shutdownDisabledRows(),
+                        batch.bucketCount(), batch.admissionInFlight(), batch.inFlightFlushes()),
                 cloud
         );
     }
@@ -394,7 +395,8 @@ class RealEnvironmentSoakIT {
         return new HistoryBatchMetrics(
                 0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0D,
                 0, 0, 0, 0D, 0D, 0D, 0L, 0L,
-                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0, 0, 0);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -683,7 +685,8 @@ class RealEnvironmentSoakIT {
                 + "historyBatchSizeMax,historyBatchLatencyP50Ms,historyBatchLatencyP95Ms,historyBatchLatencyP99Ms,"
                 + "historyBatchFallbackRedisRows,historyBatchFallbackLocalRows,historyBatchFallbackDroppedRows,"
                 + "historyBatchFallbackDisabledRows,historyBatchShutdownDeferredRows,historyBatchShutdownNonDurableRows,"
-                + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,"
+                + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,historyBatchBucketCount,"
+                + "historyBatchAdmissionInFlight,historyBatchInFlightFlushes,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,threadPoolsJson\n");
     }
@@ -759,6 +762,9 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().shutdownNonDurableRows()),
                 String.valueOf(sample.historyBatch().shutdownDroppedRows()),
                 String.valueOf(sample.historyBatch().shutdownDisabledRows()),
+                String.valueOf(sample.historyBatch().bucketCount()),
+                String.valueOf(sample.historyBatch().admissionInFlight()),
+                String.valueOf(sample.historyBatch().inFlightFlushes()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -929,7 +935,10 @@ class RealEnvironmentSoakIT {
                                         long shutdownDeferredRows,
                                         long shutdownNonDurableRows,
                                         long shutdownDroppedRows,
-                                        long shutdownDisabledRows) {
+                                        long shutdownDisabledRows,
+                                        int bucketCount,
+                                        int admissionInFlight,
+                                        int inFlightFlushes) {
     }
 
     private record CloudSnapshot(long total,
