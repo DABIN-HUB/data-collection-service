@@ -17,6 +17,7 @@ public final class TelemetryIngressEnvelope {
     private boolean cacheValueProcessResult;
     private long eventTs;
     private Long generation;
+    private String runtimeId;
 
     /**
      * Jackson 反序列化构造器。
@@ -31,7 +32,8 @@ public final class TelemetryIngressEnvelope {
                                      ProcessResult cacheProcessResult,
                                      boolean cacheValueProcessResult,
                                      long eventTs,
-                                     Long generation) {
+                                     Long generation,
+                                     String runtimeId) {
         this.deviceId = deviceId;
         this.point = point;
         this.processResult = processResult;
@@ -40,9 +42,10 @@ public final class TelemetryIngressEnvelope {
         this.cacheValueProcessResult = cacheValueProcessResult;
         this.eventTs = eventTs;
         this.generation = generation;
+        this.runtimeId = runtimeId;
     }
 
-    static TelemetryIngressEnvelope from(TelemetryPostProcessContext context) {
+    static TelemetryIngressEnvelope from(TelemetryPostProcessContext context, String runtimeId) {
         Object cacheValue = context.cacheValue();
         boolean cacheIsProcessResult = cacheValue instanceof ProcessResult;
         return new TelemetryIngressEnvelope(
@@ -53,7 +56,8 @@ public final class TelemetryIngressEnvelope {
                 cacheIsProcessResult ? snapshot((ProcessResult) cacheValue) : null,
                 cacheIsProcessResult,
                 context.eventTs(),
-                context.generation());
+                context.generation(),
+                runtimeId);
     }
 
     TelemetryPostProcessContext toContext() {
@@ -72,6 +76,10 @@ public final class TelemetryIngressEnvelope {
 
     Long generation() {
         return generation;
+    }
+
+    String runtimeId() {
+        return runtimeId;
     }
 
     private static ProcessResult snapshot(ProcessResult result) {

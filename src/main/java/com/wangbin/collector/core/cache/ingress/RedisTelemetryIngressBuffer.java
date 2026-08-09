@@ -31,6 +31,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     private final TelemetryIngressBufferProperties properties;
     private final TelemetryPostProcessPipeline pipeline;
     private final CollectionTaskGuard collectionTaskGuard;
+    private final RuntimeInstanceIdentity runtimeInstanceIdentity;
     private final BlockingQueue<TelemetryIngressEnvelope> localQueue;
     private final LongAdder rejectedTasks = new LongAdder();
     private final LongAdder rejectedItems = new LongAdder();
@@ -40,6 +41,9 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     private final LongAdder replayCompletedItems = new LongAdder();
     private final LongAdder pendingRemoveFailures = new LongAdder();
     private final LongAdder poisonDeadLetterItems = new LongAdder();
+    private final LongAdder staleSameRuntimeDroppedItems = new LongAdder();
+    private final LongAdder crossRuntimeRecoveredItems = new LongAdder();
+    private final LongAdder legacyEnvelopeRecoveredItems = new LongAdder();
 
     /**
      * 创建遥测入口缓冲。
@@ -48,7 +52,8 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
                                        ObjectMapper objectMapper,
                                        TelemetryIngressBufferProperties properties,
                                        TelemetryPostProcessPipeline pipeline,
-                                       CollectionTaskGuard collectionTaskGuard) {
+                                       CollectionTaskGuard collectionTaskGuard,
+                                       RuntimeInstanceIdentity runtimeInstanceIdentity) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper.copy()
                 .setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE)
@@ -56,6 +61,8 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
         this.properties = properties;
         this.pipeline = pipeline;
         this.collectionTaskGuard = collectionTaskGuard;
+        this.runtimeInstanceIdentity = java.util.Objects.requireNonNull(
+                runtimeInstanceIdentity, "runtimeInstanceIdentity must not be null");
         this.localQueue = new ArrayBlockingQueue<>(Math.max(1, properties.getLocalQueueCapacity()));
     }
 
@@ -89,6 +96,16 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
         }
     }
 
+    @Override
+    public void recordDropped(int itemCount, RuntimeException cause) {
+        if (itemCount <= 0) {
+            return;
+        }
+        droppedItems.add(itemCount);
+        log.error("遥测入口过载补偿自身异常，数据被显式丢弃，条数={}，原因={}",
+                itemCount, failureMessage(cause));
+    }
+
     /**
      * 按固定节奏回放入口缓冲，避免过载后形成递归重试。
      */
@@ -106,7 +123,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
      */
     @PreDestroy
     public void shutdown() {
-        replay();
+        log.debug("遥测入口持久待处理队列在停机时保留给下一运行实例恢复，pendingKey={}", properties.getPendingKey());
     }
 
     @Override
@@ -137,7 +154,10 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
                 droppedItems.sum(),
                 replayCompletedItems.sum(),
                 pendingRemoveFailures.sum(),
-                poisonDeadLetterItems.sum());
+                poisonDeadLetterItems.sum(),
+                staleSameRuntimeDroppedItems.sum(),
+                crossRuntimeRecoveredItems.sum(),
+                legacyEnvelopeRecoveredItems.sum());
     }
 
     private List<TelemetryIngressEnvelope> toEnvelopes(List<TelemetryPostProcessContext> contexts) {
@@ -150,7 +170,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
                     || context.point() == null || context.processResult() == null) {
                 continue;
             }
-            envelopes.add(TelemetryIngressEnvelope.from(context));
+            envelopes.add(TelemetryIngressEnvelope.from(context, runtimeInstanceIdentity.runtimeId()));
         }
         return envelopes;
     }
@@ -221,7 +241,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     }
 
     private void replayOne(TelemetryIngressEnvelope envelope) {
-        if (!isCurrent(envelope)) {
+        if (!shouldReplay(envelope)) {
             droppedItems.increment();
             return;
         }
@@ -229,12 +249,25 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
         replayCompletedItems.increment();
     }
 
-    private boolean isCurrent(TelemetryIngressEnvelope envelope) {
+    private boolean shouldReplay(TelemetryIngressEnvelope envelope) {
         Long generation = envelope.generation();
         if (generation == null) {
             return true;
         }
-        return collectionTaskGuard.isCurrent(envelope.deviceId(), generation);
+        String ownerRuntimeId = envelope.runtimeId();
+        if (ownerRuntimeId == null) {
+            legacyEnvelopeRecoveredItems.increment();
+            return true;
+        }
+        if (!ownerRuntimeId.equals(runtimeInstanceIdentity.runtimeId())) {
+            crossRuntimeRecoveredItems.increment();
+            return true;
+        }
+        boolean current = collectionTaskGuard.isCurrent(envelope.deviceId(), generation);
+        if (!current) {
+            staleSameRuntimeDroppedItems.increment();
+        }
+        return current;
     }
 
     private String currentOrClaim() {

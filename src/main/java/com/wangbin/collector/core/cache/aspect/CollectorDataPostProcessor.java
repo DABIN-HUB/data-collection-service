@@ -225,6 +225,7 @@ public class CollectorDataPostProcessor {
         try {
             result = telemetryIngressBuffer.defer(contexts, exception);
         } catch (Exception fallbackException) {
+            recordExplicitDropped(contexts.size(), fallbackException);
             log.error("遥测入口过载补偿失败，数据被明确丢弃，设备={}，点位={}，条数={}",
                     deviceId,
                     point != null ? point.getPointId() : "batch",
@@ -246,6 +247,21 @@ public class CollectorDataPostProcessor {
                 result.redisBufferedItems(),
                 result.localBufferedItems(),
                 result.droppedItems());
+    }
+
+    private void recordExplicitDropped(int itemCount, Exception fallbackException) {
+        try {
+            telemetryIngressBuffer.recordDropped(itemCount, asRuntimeException(fallbackException));
+        } catch (Exception metricsException) {
+            fallbackException.addSuppressed(metricsException);
+        }
+    }
+
+    private RuntimeException asRuntimeException(Exception exception) {
+        if (exception instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return new IllegalStateException(exception);
     }
 
     private boolean shouldProcess(String deviceId, Long generation) {

@@ -109,6 +109,27 @@ class TelemetryEntryOverloadReliabilityTest {
         waitUntil(() -> entryExecutor.getQueue().isEmpty() && entryExecutor.getActiveCount() == 0);
     }
 
+    @Test
+    void unexpectedDeferExceptionMustIncrementExplicitDroppedItems() throws Exception {
+        entryExecutor = fixedPool("entry-defer-error", 1, 1);
+        BlockingStage stage = new BlockingStage();
+        ThrowingIngressBuffer buffer = new ThrowingIngressBuffer();
+        CollectorDataPostProcessor processor = processor(stage, buffer);
+        String deviceId = "entry-defer-error-dev";
+        List<DataPoint> points = points(deviceId, 4);
+        Map<String, Object> values = values(points);
+
+        processor.saveBatchAsync(deviceId, points, values, null);
+        assertTrue(stage.awaitEntered());
+        processor.saveBatchAsync(deviceId, points, values, null);
+        processor.saveBatchAsync(deviceId, points, values, null);
+
+        waitUntil(() -> buffer.deferAttempts() == 1L && buffer.droppedItems() == 4L);
+
+        stage.release();
+        waitUntil(() -> entryExecutor.getQueue().isEmpty() && entryExecutor.getActiveCount() == 0);
+    }
+
     private CollectorDataPostProcessor processor(TelemetryPostProcessStage stage, TelemetryIngressBuffer buffer) {
         return new CollectorDataPostProcessor(
                 entryExecutor,
@@ -264,6 +285,35 @@ class TelemetryEntryOverloadReliabilityTest {
 
         private List<String> deferThreads() {
             return List.copyOf(deferThreads);
+        }
+    }
+
+    private static final class ThrowingIngressBuffer implements TelemetryIngressBuffer {
+        private final LongAdder deferAttempts = new LongAdder();
+        private final LongAdder droppedItems = new LongAdder();
+
+        @Override
+        public TelemetryIngressBufferResult defer(List<TelemetryPostProcessContext> contexts, RuntimeException cause) {
+            deferAttempts.increment();
+            throw new IllegalStateException("entry defer failed");
+        }
+
+        @Override
+        public void recordDropped(int itemCount, RuntimeException cause) {
+            droppedItems.add(itemCount);
+        }
+
+        @Override
+        public TelemetryIngressBufferMetrics metrics() {
+            return TelemetryIngressBufferMetrics.empty();
+        }
+
+        private long deferAttempts() {
+            return deferAttempts.sum();
+        }
+
+        private long droppedItems() {
+            return droppedItems.sum();
         }
     }
 

@@ -360,7 +360,9 @@ class RealEnvironmentSoakIT {
                 new EntryIngressSnapshot(entry.redisPending(), entry.redisProcessing(), entry.redisDeadLetter(),
                         entry.localPending(), entry.localCapacity(), entry.rejectedTasks(), entry.rejectedItems(),
                         entry.redisBufferedItems(), entry.localBufferedItems(), entry.droppedItems(),
-                        entry.replayCompletedItems(), entry.pendingRemoveFailures(), entry.poisonDeadLetterItems()),
+                        entry.replayCompletedItems(), entry.pendingRemoveFailures(), entry.poisonDeadLetterItems(),
+                        entry.staleSameRuntimeDroppedItems(), entry.crossRuntimeRecoveredItems(),
+                        entry.legacyEnvelopeRecoveredItems()),
                 new HistorySnapshot(history.redisPending(), history.redisProcessing(), history.redisDeadLetter(),
                         history.localPending(), history.localCapacity(),
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
@@ -646,7 +648,8 @@ class RealEnvironmentSoakIT {
                 + "redisUsedMemory,redisOpsPerSec,redisStreamLength,historyRedisPending,historyRedisProcessing,"
                 + "entryRedisPending,entryRedisProcessing,entryLocalPending,entryRejectedTasks,"
                 + "entryRejectedItems,entryRedisBufferedItems,entryLocalBufferedItems,entryDroppedItems,"
-                + "entryReplayCompletedItems,historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
+                + "entryReplayCompletedItems,entryStaleSameRuntimeDroppedItems,entryCrossRuntimeRecoveredItems,"
+                + "entryLegacyEnvelopeRecoveredItems,historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
                 + "historyRejectedDropped,cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,threadPoolsJson\n");
     }
@@ -690,6 +693,9 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.entry().localBufferedItems()),
                 String.valueOf(sample.entry().droppedItems()),
                 String.valueOf(sample.entry().replayCompletedItems()),
+                String.valueOf(sample.entry().staleSameRuntimeDroppedItems()),
+                String.valueOf(sample.entry().crossRuntimeRecoveredItems()),
+                String.valueOf(sample.entry().legacyEnvelopeRecoveredItems()),
                 String.valueOf(sample.history().localPending()),
                 String.valueOf(sample.history().rejectedRedisBuffered()),
                 String.valueOf(sample.history().rejectedLocalBuffered()),
@@ -812,9 +818,12 @@ class RealEnvironmentSoakIT {
                                         long redisBufferedItems,
                                         long localBufferedItems,
                                         long droppedItems,
-                                        long replayCompletedItems,
-                                        long pendingRemoveFailures,
-                                        long poisonDeadLetterItems) {
+                                         long replayCompletedItems,
+                                         long pendingRemoveFailures,
+                                         long poisonDeadLetterItems,
+                                         long staleSameRuntimeDroppedItems,
+                                         long crossRuntimeRecoveredItems,
+                                         long legacyEnvelopeRecoveredItems) {
     }
 
     private record HistorySnapshot(long redisPending,

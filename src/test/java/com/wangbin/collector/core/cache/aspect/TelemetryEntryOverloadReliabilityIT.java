@@ -3,9 +3,11 @@ package com.wangbin.collector.core.cache.aspect;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.ingress.RedisTelemetryIngressBuffer;
+import com.wangbin.collector.core.cache.ingress.RuntimeInstanceIdentity;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferProperties;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
+import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -67,7 +69,8 @@ class TelemetryEntryOverloadReliabilityIT {
                 objectMapper,
                 properties(),
                 pipeline,
-                new CollectionTaskGuard());
+                new CollectionTaskGuard(),
+                new RuntimeInstanceIdentity());
         ThreadPoolExecutor entryExecutor = executor("entry-overload-it-", 1, 1);
         CollectorDataPostProcessor processor = new CollectorDataPostProcessor(
                 entryExecutor,
@@ -114,6 +117,47 @@ class TelemetryEntryOverloadReliabilityIT {
         } finally {
             entryExecutor.shutdownNow();
             assertTrue(entryExecutor.awaitTermination(2, TimeUnit.SECONDS));
+            clearKeys();
+        }
+    }
+
+    @Test
+    void restartWithRealNonNullGenerationMustRecoverRedisPending() throws Exception {
+        clearKeys();
+        String deviceId = "entry-runtime-restart-it-" + System.currentTimeMillis();
+        DataPoint point = points(deviceId, 1).get(0);
+        CollectionTaskGuard firstGuard = new CollectionTaskGuard();
+        long generation = firstGuard.activateNextGeneration(deviceId);
+        RedisTelemetryIngressBuffer first = new RedisTelemetryIngressBuffer(
+                redisTemplate,
+                objectMapper,
+                properties(),
+                pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                firstGuard,
+                new RuntimeInstanceIdentity());
+        first.defer(List.of(context(deviceId, point, 42L, generation)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        assertEquals(1L, redisTemplate.opsForList().size(PENDING_KEY));
+
+        CountingStage recoveredStage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = new RedisTelemetryIngressBuffer(
+                redisTemplate,
+                objectMapper,
+                properties(),
+                pipeline(List.of(recoveredStage)),
+                new CollectionTaskGuard(),
+                new RuntimeInstanceIdentity());
+
+        try {
+            restarted.replay();
+
+            assertEquals(1L, recoveredStage.count());
+            TelemetryIngressBufferMetrics metrics = restarted.metrics();
+            assertEquals(1L, metrics.crossRuntimeRecoveredItems());
+            assertEquals(0L, metrics.droppedItems());
+            assertEquals(0L, metrics.redisPending());
+            assertEquals(0L, metrics.redisProcessing());
+        } finally {
             clearKeys();
         }
     }
@@ -177,6 +221,25 @@ class TelemetryEntryOverloadReliabilityIT {
         properties.setReplayBatchSize(100);
         properties.setLocalQueueCapacity(100);
         return properties;
+    }
+
+    private TelemetryPostProcessPipeline pipeline(List<TelemetryPostProcessStage> stages) {
+        return new TelemetryPostProcessPipeline(
+                stages,
+                Runnable::run,
+                Runnable::run,
+                Runnable::run,
+                Runnable::run);
+    }
+
+    private TelemetryPostProcessContext context(String deviceId, DataPoint point, Object value, Long generation) {
+        return new TelemetryPostProcessContext(
+                deviceId,
+                point,
+                ProcessResult.success(value, value, "ok"),
+                value,
+                System.currentTimeMillis(),
+                generation);
     }
 
     private List<DataPoint> points(String deviceId, int count) {

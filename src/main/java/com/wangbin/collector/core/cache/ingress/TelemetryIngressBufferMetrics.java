@@ -15,12 +15,16 @@ public record TelemetryIngressBufferMetrics(long redisPending,
                                             long droppedItems,
                                             long replayCompletedItems,
                                             long pendingRemoveFailures,
-                                            long poisonDeadLetterItems) {
+                                            long poisonDeadLetterItems,
+                                            long staleSameRuntimeDroppedItems,
+                                            long crossRuntimeRecoveredItems,
+                                            long legacyEnvelopeRecoveredItems) {
 
     public static TelemetryIngressBufferMetrics empty() {
         return new TelemetryIngressBufferMetrics(
                 0L, 0L, 0L, 0, 0,
                 0L, 0L, 0L, 0L, 0L,
-                0L, 0L, 0L);
+                0L, 0L, 0L, 0L, 0L,
+                0L);
     }
 }

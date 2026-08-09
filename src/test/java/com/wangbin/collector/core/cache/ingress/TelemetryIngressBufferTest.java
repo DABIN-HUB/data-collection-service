@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.cache.ingress;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessContext;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessPipeline;
@@ -21,6 +22,7 @@ import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -32,12 +34,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TelemetryIngressBufferTest {
@@ -187,7 +192,233 @@ class TelemetryIngressBufferTest {
     }
 
     @Test
-    void shutdownShouldReplayLocalFallbackOnceWithoutThreadLeak() {
+    void crossRuntimePersistedEnvelopeMustReplayEvenWhenGenerationDiffers() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        RedisTelemetryIngressBuffer first = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, new CollectionTaskGuard(), "runtime-a");
+        first.defer(List.of(context("dev-cross-runtime", "p1", 7L)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        CollectionTaskGuard restartedGuard = new CollectionTaskGuard();
+        restartedGuard.activateNextGeneration("dev-cross-runtime");
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                restartedGuard, "runtime-b");
+
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(1L, restarted.metrics().crossRuntimeRecoveredItems());
+        assertEquals(0L, restarted.metrics().droppedItems());
+        assertEquals(0L, redis.size(properties.getPendingKey()));
+        assertEquals(0L, redis.size(properties.getProcessingKey()));
+    }
+
+    @Test
+    void crossRuntimeSameGenerationNumberMustNotBeTreatedAsSameRuntime() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        RedisTelemetryIngressBuffer first = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, new CollectionTaskGuard(), "runtime-a");
+        first.defer(List.of(context("dev-generation-collision", "p1", 1L)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        CollectionTaskGuard restartedGuard = mock(CollectionTaskGuard.class);
+        when(restartedGuard.isCurrent("dev-generation-collision", 1L)).thenReturn(true);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                restartedGuard, "runtime-b");
+
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(1L, restarted.metrics().crossRuntimeRecoveredItems());
+        verify(restartedGuard, never()).isCurrent("dev-generation-collision", 1L);
+    }
+
+    @Test
+    void sameRuntimeOldGenerationMustBeDropped() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long oldGeneration = guard.activateNextGeneration("dev-same-runtime-stale");
+        RedisTelemetryIngressBuffer buffer = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, guard, "runtime-a");
+        buffer.defer(List.of(context("dev-same-runtime-stale", "p1", oldGeneration)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        guard.activateNextGeneration("dev-same-runtime-stale");
+        CountingStage stage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(stage)), properties, guard, "runtime-a");
+
+        restarted.replay();
+
+        assertEquals(0L, stage.count());
+        assertEquals(1L, restarted.metrics().droppedItems());
+        assertEquals(1L, restarted.metrics().staleSameRuntimeDroppedItems());
+    }
+
+    @Test
+    void sameRuntimeCurrentGenerationMustReplay() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long generation = guard.activateNextGeneration("dev-same-runtime-current");
+        CountingStage stage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer buffer = buffer(redis, pipeline(List.of(stage)), properties, guard, "runtime-a");
+        buffer.defer(List.of(context("dev-same-runtime-current", "p1", generation)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+
+        buffer.replay();
+
+        assertEquals(1L, stage.count());
+        assertEquals(0L, buffer.metrics().droppedItems());
+    }
+
+    @Test
+    void legacyEnvelopeWithoutRuntimeIdMustRecover() throws Exception {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        redis.leftPush(properties.getPendingKey(), legacyJson(context("dev-legacy", "p1", 7L)));
+        CountingStage stage = new CountingStage(TelemetryStageType.CACHE);
+        CollectionTaskGuard guard = mock(CollectionTaskGuard.class);
+        when(guard.isCurrent("dev-legacy", 7L)).thenReturn(false);
+        RedisTelemetryIngressBuffer buffer = buffer(redis, pipeline(List.of(stage)), properties, guard, "runtime-b");
+
+        buffer.replay();
+
+        assertEquals(1L, stage.count());
+        assertEquals(1L, buffer.metrics().legacyEnvelopeRecoveredItems());
+        assertEquals(0L, buffer.metrics().droppedItems());
+        verify(guard, never()).isCurrent("dev-legacy", 7L);
+    }
+
+    @Test
+    void restartWithRealNonNullGenerationMustRecoverRedisPending() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        CollectionTaskGuard firstGuard = new CollectionTaskGuard();
+        long generation = firstGuard.activateNextGeneration("dev-real-generation");
+        RedisTelemetryIngressBuffer first = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, firstGuard, "runtime-a");
+        first.defer(List.of(context("dev-real-generation", "p1", generation)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                new CollectionTaskGuard(), "runtime-b");
+
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(1L, restarted.metrics().crossRuntimeRecoveredItems());
+        assertEquals(0L, restarted.metrics().droppedItems());
+    }
+
+    @Test
+    void replayBeforeDeviceStartMustNotFailGenerationCheck() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        RedisTelemetryIngressBuffer first = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, new CollectionTaskGuard(), "runtime-a");
+        first.defer(List.of(context("dev-before-start", "p1", 3L)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                new CollectionTaskGuard(), "runtime-b");
+
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(0L, restarted.metrics().droppedItems());
+    }
+
+    @Test
+    void shutdownAfterGenerationClearMustNotDropRedisPending() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long generation = guard.activateNextGeneration("dev-shutdown-clear");
+        RedisTelemetryIngressBuffer buffer = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, guard, "runtime-a");
+        buffer.defer(List.of(context("dev-shutdown-clear", "p1", generation)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        guard.clearDevice("dev-shutdown-clear");
+
+        buffer.shutdown();
+
+        assertEquals(1L, redis.size(properties.getPendingKey()));
+        assertEquals(0L, redis.size(properties.getProcessingKey()));
+        assertEquals(0L, buffer.metrics().droppedItems());
+
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                new CollectionTaskGuard(), "runtime-b");
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(0L, redis.size(properties.getPendingKey()));
+    }
+
+    @Test
+    void pendingRemoveFailureMustNotRewriteRuntimeId() throws Exception {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        RedisTelemetryIngressBuffer first = buffer(redis, pipeline(List.of(new CountingStage(TelemetryStageType.CACHE))),
+                properties, new CollectionTaskGuard(), "runtime-a");
+        first.defer(List.of(context("dev-remove-runtime", "p1", 9L)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        CountingStage restartedStage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(restartedStage)), properties,
+                new CollectionTaskGuard(), "runtime-b");
+        redis.failRemove();
+
+        restarted.replay();
+
+        assertEquals(1L, restartedStage.count());
+        assertEquals(1L, restarted.metrics().pendingRemoveFailures());
+        String processing = redis.peekFirst(properties.getProcessingKey());
+        assertNotNull(processing);
+        TelemetryIngressEnvelope envelope = envelopeMapper().readValue(processing, TelemetryIngressEnvelope.class);
+        assertEquals("runtime-a", envelope.runtimeId());
+    }
+
+    @Test
+    void envelopeJsonRoundTripWithRuntimeIdAndTypedValues() {
+        FakeRedisLists redis = new FakeRedisLists();
+        TelemetryIngressBufferProperties properties = properties(10);
+        CountingStage stage = new CountingStage(TelemetryStageType.CACHE);
+        RedisTelemetryIngressBuffer buffer = buffer(redis, pipeline(List.of(stage)), properties,
+                new CollectionTaskGuard(), "runtime-a");
+
+        buffer.defer(List.of(
+                        contextWithValue("dev-typed", "long", 1_234_567_890_123L, 1L),
+                        contextWithValue("dev-typed", "double", 12.5D, 1L),
+                        contextWithValue("dev-typed", "boolean", true, 1L),
+                        contextWithValue("dev-typed", "string", "正常", 1L)),
+                new java.util.concurrent.RejectedExecutionException("entry full"));
+        RedisTelemetryIngressBuffer restarted = buffer(redis, pipeline(List.of(stage)), properties,
+                new CollectionTaskGuard(), "runtime-b");
+
+        restarted.replay();
+
+        assertEquals(4L, stage.count());
+        assertEquals(1_234_567_890_123L, ((Number) stage.contexts().get(0).cacheValue()).longValue());
+        assertEquals(12.5D, ((Number) stage.contexts().get(1).cacheValue()).doubleValue());
+        assertEquals(true, stage.contexts().get(2).cacheValue());
+        assertEquals("正常", stage.contexts().get(3).cacheValue());
+    }
+
+    @Test
+    void runtimeIdentityMustBeStableWithinOneJvmContext() {
+        RuntimeInstanceIdentity identity = new RuntimeInstanceIdentity();
+
+        String first = identity.runtimeId();
+        String second = identity.runtimeId();
+
+        assertEquals(first, second);
+        assertEquals(first, UUID.fromString(first).toString());
+    }
+
+    @Test
+    void shutdownShouldNotReplayLocalFallbackDuringBeanDestroy() {
         FakeRedisLists redis = new FakeRedisLists();
         redis.failLeftPushAll();
         CountingStage stage = new CountingStage(TelemetryStageType.CACHE);
@@ -198,8 +429,8 @@ class TelemetryIngressBufferTest {
 
         buffer.shutdown();
 
-        assertEquals(2L, stage.count());
-        assertEquals(0L, buffer.metrics().localPending());
+        assertEquals(0L, stage.count());
+        assertEquals(2, buffer.metrics().localPending());
     }
 
     @Test
@@ -248,12 +479,28 @@ class TelemetryIngressBufferTest {
     private RedisTelemetryIngressBuffer buffer(FakeRedisLists redis,
                                                TelemetryPostProcessPipeline pipeline,
                                                TelemetryIngressBufferProperties properties) {
+        return buffer(redis, pipeline, properties, new CollectionTaskGuard(), "runtime-test");
+    }
+
+    private RedisTelemetryIngressBuffer buffer(FakeRedisLists redis,
+                                               TelemetryPostProcessPipeline pipeline,
+                                               TelemetryIngressBufferProperties properties,
+                                               CollectionTaskGuard collectionTaskGuard) {
+        return buffer(redis, pipeline, properties, collectionTaskGuard, "runtime-test");
+    }
+
+    private RedisTelemetryIngressBuffer buffer(FakeRedisLists redis,
+                                               TelemetryPostProcessPipeline pipeline,
+                                               TelemetryIngressBufferProperties properties,
+                                               CollectionTaskGuard collectionTaskGuard,
+                                               String runtimeId) {
         return new RedisTelemetryIngressBuffer(
                 redis.template(),
                 new ObjectMapper(),
                 properties,
                 pipeline,
-                new CollectionTaskGuard());
+                collectionTaskGuard,
+                new RuntimeInstanceIdentity(runtimeId));
     }
 
     private TelemetryPostProcessPipeline pipeline(List<TelemetryPostProcessStage> stages) {
@@ -276,13 +523,42 @@ class TelemetryIngressBufferTest {
     }
 
     private TelemetryPostProcessContext context(String deviceId, String pointId) {
+        return context(deviceId, pointId, null);
+    }
+
+    private TelemetryPostProcessContext context(String deviceId, String pointId, Long generation) {
         return new TelemetryPostProcessContext(
                 deviceId,
                 point(deviceId, pointId),
                 ProcessResult.success(1, 1, "ok"),
                 1,
                 System.currentTimeMillis(),
-                null);
+                generation);
+    }
+
+    private TelemetryPostProcessContext contextWithValue(String deviceId, String pointId, Object value, Long generation) {
+        return new TelemetryPostProcessContext(
+                deviceId,
+                point(deviceId, pointId),
+                ProcessResult.success(value, value, "ok"),
+                value,
+                System.currentTimeMillis(),
+                generation);
+    }
+
+    private String legacyJson(TelemetryPostProcessContext context) throws Exception {
+        ObjectMapper mapper = envelopeMapper();
+        ObjectNode node = mapper.valueToTree(TelemetryIngressEnvelope.from(context, null));
+        node.remove("runtimeId");
+        return mapper.writeValueAsString(node);
+    }
+
+    private ObjectMapper envelopeMapper() {
+        return new ObjectMapper()
+                .setVisibility(com.fasterxml.jackson.annotation.PropertyAccessor.ALL,
+                        com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.NONE)
+                .setVisibility(com.fasterxml.jackson.annotation.PropertyAccessor.FIELD,
+                        com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.ANY);
     }
 
     private DataPoint point(String deviceId, String pointId) {
@@ -309,6 +585,7 @@ class TelemetryIngressBufferTest {
     private static final class CountingStage implements TelemetryPostProcessStage {
         private final TelemetryStageType type;
         private final LongAdder count = new LongAdder();
+        private final List<TelemetryPostProcessContext> contexts = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         private CountingStage(TelemetryStageType type) {
             this.type = type;
@@ -332,10 +609,15 @@ class TelemetryIngressBufferTest {
         @Override
         public void process(TelemetryPostProcessContext context) {
             count.increment();
+            contexts.add(context);
         }
 
         private long count() {
             return count.sum();
+        }
+
+        private List<TelemetryPostProcessContext> contexts() {
+            return List.copyOf(contexts);
         }
     }
 
@@ -468,6 +750,11 @@ class TelemetryIngressBufferTest {
 
         private void recoverRemove() {
             failRemove = false;
+        }
+
+        private String peekFirst(String key) {
+            Deque<String> values = lists.get(key);
+            return values == null ? null : values.peekFirst();
         }
 
         private void leftPush(String key, String value) {

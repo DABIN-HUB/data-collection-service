@@ -15,6 +15,12 @@ public interface TelemetryIngressBuffer {
     TelemetryIngressBufferResult defer(List<TelemetryPostProcessContext> contexts, RuntimeException cause);
 
     /**
+     * 记录入口补偿自身异常导致的显式丢弃，避免调用方只写日志后形成未知丢失。
+     */
+    default void recordDropped(int itemCount, RuntimeException cause) {
+    }
+
+    /**
      * 返回入口过载缓冲指标快照。
      */
     TelemetryIngressBufferMetrics metrics();
