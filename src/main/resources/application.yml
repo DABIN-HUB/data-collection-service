@@ -229,6 +229,14 @@ collector:
       core-size: 2
       max-size: 4
       queue-capacity: 5000
+  telemetry-ingress-buffer:
+    enabled: true
+    pending-key: "collector:${spring.profiles.active:default}:telemetry:ingress:pending:v1"
+    processing-key: "collector:${spring.profiles.active:default}:telemetry:ingress:processing:v1"
+    dead-letter-key: "collector:${spring.profiles.active:default}:telemetry:ingress:dead:v1"
+    replay-interval-ms: 1000
+    replay-batch-size: 100
+    local-queue-capacity: 10000
 
 ## 从云端获取配置数据地址，配套服务
   config:
