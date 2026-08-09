@@ -13,7 +13,9 @@ public record HistoryBufferMetrics(long redisPending,
                                    long writeFailureLocalBuffered,
                                    long rejectedLocalBuffered,
                                    long writeFailureDropped,
-                                   long rejectedDropped) {
+                                   long rejectedDropped,
+                                   long writeFailureDisabled,
+                                   long rejectedDisabled) {
 
     public HistoryBufferMetrics(long redisPending,
                                 long redisProcessing,
@@ -21,6 +23,6 @@ public record HistoryBufferMetrics(long redisPending,
                                 int localPending,
                                 int localCapacity) {
         this(redisPending, redisProcessing, redisDeadLetter, localPending, localCapacity,
-                0L, 0L, 0L, 0L, 0L, 0L);
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 }

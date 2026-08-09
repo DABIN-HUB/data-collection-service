@@ -37,6 +37,8 @@ public class HistoryWriteBuffer {
     private final LongAdder rejectedLocalBuffered = new LongAdder();
     private final LongAdder writeFailureDropped = new LongAdder();
     private final LongAdder rejectedDropped = new LongAdder();
+    private final LongAdder writeFailureDisabled = new LongAdder();
+    private final LongAdder rejectedDisabled = new LongAdder();
 
     /**
      * 创建历史写入缓冲器。
@@ -62,6 +64,9 @@ public class HistoryWriteBuffer {
             write(request);
         } catch (RuntimeException exception) {
             if (!properties.isEnabled()) {
+                incrementDisabled(BufferReason.WRITE_FAILURE);
+                log.error("TDengine 写入失败，且历史缓冲已关闭，数据未进入补偿链路，设备={}，点位={}",
+                        request.getDeviceId(), pointId(request), exception);
                 throw exception;
             }
             buffer(request, exception, BufferReason.WRITE_FAILURE);
@@ -71,36 +76,54 @@ public class HistoryWriteBuffer {
     /**
      * 正常批量写入路径，批量失败时逐条进入既有 Redis/local fallback。
      */
-    public boolean writeBatchOrBuffer(List<HistoryWriteRequest> requests) {
+    public HistoryBatchWriteResult writeBatchOrBuffer(List<HistoryWriteRequest> requests) {
         if (requests == null || requests.isEmpty()) {
-            return true;
+            return HistoryBatchWriteResult.empty();
         }
+        int rows = countRows(requests);
         try {
             writeBatch(requests);
-            return true;
+            return HistoryBatchWriteResult.directSuccess(rows);
         } catch (RuntimeException exception) {
             if (!properties.isEnabled()) {
-                throw exception;
+                writeFailureDisabled.add(rows);
+                log.error("TDengine 批量写入失败，且历史缓冲已关闭，整批数据未进入补偿链路，rows={}", rows, exception);
+                return HistoryBatchWriteResult.disabled(rows);
             }
+            int redisBuffered = 0;
+            int localBuffered = 0;
+            int dropped = 0;
+            int disabled = 0;
             for (HistoryWriteRequest request : requests) {
                 if (request != null) {
-                    buffer(request, exception, BufferReason.WRITE_FAILURE);
+                    HistoryBufferOutcome outcome = buffer(request, exception, BufferReason.WRITE_FAILURE);
+                    switch (outcome) {
+                        case REDIS_BUFFERED -> redisBuffered++;
+                        case LOCAL_BUFFERED -> localBuffered++;
+                        case DROPPED -> dropped++;
+                        case DISABLED -> disabled++;
+                    }
                 }
             }
-            return false;
+            return new HistoryBatchWriteResult(false, rows, redisBuffered, localBuffered, dropped, disabled);
         }
     }
 
     /**
      * 执行器过载时的延迟写入路径，不在调用线程同步访问 TDengine。
      */
-    public void deferForRetry(HistoryWriteRequest request, RuntimeException cause) {
+    public HistoryBufferOutcome deferForRetry(HistoryWriteRequest request, RuntimeException cause) {
         if (!properties.isEnabled()) {
-            return;
+            incrementDisabled(BufferReason.REJECTION);
+            log.error("History stage 执行器过载，但历史缓冲已关闭，数据未进入补偿链路，设备={}，点位={}",
+                    request != null ? request.getDeviceId() : null,
+                    request != null ? pointId(request) : null,
+                    cause);
+            return HistoryBufferOutcome.DISABLED;
         }
         RuntimeException reason = cause != null
                 ? cause : new IllegalStateException("history stage rejected");
-        buffer(request, reason, BufferReason.REJECTION);
+        return buffer(request, reason, BufferReason.REJECTION);
     }
 
     /**
@@ -151,25 +174,33 @@ public class HistoryWriteBuffer {
                 writeFailureLocalBuffered.sum(),
                 rejectedLocalBuffered.sum(),
                 writeFailureDropped.sum(),
-                rejectedDropped.sum());
+                rejectedDropped.sum(),
+                writeFailureDisabled.sum(),
+                rejectedDisabled.sum());
     }
 
-    private void buffer(HistoryWriteRequest request, RuntimeException cause, BufferReason reason) {
+    private HistoryBufferOutcome buffer(HistoryWriteRequest request, RuntimeException cause, BufferReason reason) {
+        if (request == null) {
+            incrementDropped(reason);
+            return HistoryBufferOutcome.DROPPED;
+        }
         try {
             redisTemplate.opsForList().leftPush(properties.getPendingKey(), serialize(request));
             incrementRedisBuffered(reason);
             log.warn("{}，数据已进入 Redis 历史待写队列，设备={}，点位={}",
                     reason.message(), request.getDeviceId(), pointId(request), cause);
+            return HistoryBufferOutcome.REDIS_BUFFERED;
         } catch (RuntimeException redisException) {
             if (!localQueue.offer(request)) {
                 incrementDropped(reason);
                 log.error("{}，且本地历史降级队列已满，数据明确丢弃，设备={}，点位={}",
                         reason.message(), request.getDeviceId(), pointId(request), redisException);
-                return;
+                return HistoryBufferOutcome.DROPPED;
             }
             incrementLocalBuffered(reason);
             log.warn("{}，Redis 历史待写队列不可用，数据已进入本地有界降级队列，设备={}，点位={}",
                     reason.message(), request.getDeviceId(), pointId(request), redisException);
+            return HistoryBufferOutcome.LOCAL_BUFFERED;
         }
     }
 
@@ -259,6 +290,16 @@ public class HistoryWriteBuffer {
         timeSeriesService.appendBatch(appendRequests);
     }
 
+    private int countRows(List<HistoryWriteRequest> requests) {
+        int rows = 0;
+        for (HistoryWriteRequest request : requests) {
+            if (request != null) {
+                rows++;
+            }
+        }
+        return rows;
+    }
+
     private String serialize(HistoryWriteRequest request) {
         try {
             return objectMapper.writeValueAsString(request);
@@ -301,6 +342,14 @@ public class HistoryWriteBuffer {
             rejectedDropped.increment();
         } else {
             writeFailureDropped.increment();
+        }
+    }
+
+    private void incrementDisabled(BufferReason reason) {
+        if (reason == BufferReason.REJECTION) {
+            rejectedDisabled.increment();
+        } else {
+            writeFailureDisabled.increment();
         }
     }
 

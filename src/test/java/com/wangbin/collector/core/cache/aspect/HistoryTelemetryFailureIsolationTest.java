@@ -184,6 +184,31 @@ class HistoryTelemetryFailureIsolationTest {
     }
 
     @Test
+    void historyExecutorRejectWithUnavailableDeferredFallbackShouldRemainObservable() throws Exception {
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        historyExecutor = fixedPool("history-disabled-stage", 1, 1, rejected);
+        UnavailableDeferringHistorySink sink = new UnavailableDeferringHistorySink();
+        TelemetryPostProcessPipeline pipeline = historyPipeline(sink);
+        String deviceId = "history-disabled-buffer-dev";
+
+        pipeline.process(context(deviceId, "p0"));
+        assertTrue(sink.awaitEntered());
+        pipeline.process(context(deviceId, "p1"));
+        pipeline.process(context(deviceId, "p2"));
+
+        waitUntil(() -> rejected.count() == 1L && sink.deferAttempts() == 1L);
+        sink.release();
+        waitUntil(() -> sink.attempts() == 2L
+                && historyExecutor.getQueue().isEmpty()
+                && historyExecutor.getActiveCount() == 0);
+
+        assertEquals(1L, rejected.count());
+        assertEquals(1L, sink.deferAttempts());
+        assertEquals(1L, sink.unreliableDeferred());
+    }
+
+
+    @Test
     void historyRejectionFallbackShouldRunOnTelemetryEntryThreadWithoutCallerRuns() throws Exception {
         entryExecutor = fixedPool("history-overload-entry", 1, 16);
         CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
@@ -463,6 +488,60 @@ class HistoryTelemetryFailureIsolationTest {
 
         private List<String> deferThreads() {
             return deferThreads;
+        }
+    }
+
+    private static final class UnavailableDeferringHistorySink implements HistoryTelemetrySink {
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final LongAdder attempts = new LongAdder();
+        private final LongAdder deferAttempts = new LongAdder();
+        private final LongAdder unreliableDeferred = new LongAdder();
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+
+        @Override
+        public void savePoint(String deviceId, DataPoint point, ProcessResult processResult) {
+            attempts.increment();
+            entered.countDown();
+            try {
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public boolean deferPoint(String deviceId,
+                                  DataPoint point,
+                                  ProcessResult processResult,
+                                  RuntimeException cause) {
+            deferAttempts.increment();
+            unreliableDeferred.increment();
+            return false;
+        }
+
+        private boolean awaitEntered() throws InterruptedException {
+            return entered.await(1, TimeUnit.SECONDS);
+        }
+
+        private void release() {
+            release.countDown();
+        }
+
+        private long attempts() {
+            return attempts.sum();
+        }
+
+        private long deferAttempts() {
+            return deferAttempts.sum();
+        }
+
+        private long unreliableDeferred() {
+            return unreliableDeferred.sum();
         }
     }
 

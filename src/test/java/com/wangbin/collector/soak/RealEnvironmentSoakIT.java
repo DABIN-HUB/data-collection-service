@@ -375,13 +375,17 @@ class RealEnvironmentSoakIT {
                         history.localPending(), history.localCapacity(),
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
                         history.writeFailureLocalBuffered(), history.rejectedLocalBuffered(),
-                        history.writeFailureDropped(), history.rejectedDropped()),
+                        history.writeFailureDropped(), history.rejectedDropped(),
+                        history.writeFailureDisabled(), history.rejectedDisabled()),
                 new HistoryBatchSnapshot(batch.acceptedRows(), batch.flushedBatches(), batch.flushedRows(),
                         batch.batchWriteSuccess(), batch.batchWriteFailure(), batch.fallbackRows(),
                         batch.currentBufferedRows(), batch.bufferedRowsPeak(), batch.averageBatchSize(),
                         batch.batchSizeP50(), batch.batchSizeP95(), batch.batchSizeMax(),
                         batch.flushLatencyP50Ms(), batch.flushLatencyP95Ms(), batch.flushLatencyP99Ms(),
-                        batch.oldestBufferedAgeMs(), batch.shutdownFlushedRows()),
+                        batch.oldestBufferedAgeMs(), batch.shutdownFlushedRows(),
+                        batch.fallbackRedisRows(), batch.fallbackLocalRows(), batch.fallbackDroppedRows(),
+                        batch.fallbackDisabledRows(), batch.shutdownDeferredRows(),
+                        batch.shutdownNonDurableRows(), batch.shutdownDroppedRows(), batch.shutdownDisabledRows()),
                 cloud
         );
     }
@@ -389,7 +393,8 @@ class RealEnvironmentSoakIT {
     private HistoryBatchMetrics emptyHistoryBatchMetrics() {
         return new HistoryBatchMetrics(
                 0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0D,
-                0, 0, 0, 0D, 0D, 0D, 0L, 0L);
+                0, 0, 0, 0D, 0D, 0D, 0L, 0L,
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -671,10 +676,14 @@ class RealEnvironmentSoakIT {
                 + "entryRejectedItems,entryRedisBufferedItems,entryLocalBufferedItems,entryDroppedItems,"
                 + "entryReplayCompletedItems,entryStaleSameRuntimeDroppedItems,entryCrossRuntimeRecoveredItems,"
                 + "entryLegacyEnvelopeRecoveredItems,historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
-                + "historyRejectedDropped,historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
+                + "historyRejectedDropped,historyWriteFailureDisabled,historyRejectedDisabled,"
+                + "historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
                 + "historyBatchWriteSuccess,historyBatchWriteFailure,historyBatchFallbackRows,historyBatchCurrentBuffered,"
                 + "historyBatchBufferedPeak,historyBatchAverageSize,historyBatchSizeP50,historyBatchSizeP95,"
                 + "historyBatchSizeMax,historyBatchLatencyP50Ms,historyBatchLatencyP95Ms,historyBatchLatencyP99Ms,"
+                + "historyBatchFallbackRedisRows,historyBatchFallbackLocalRows,historyBatchFallbackDroppedRows,"
+                + "historyBatchFallbackDisabledRows,historyBatchShutdownDeferredRows,historyBatchShutdownNonDurableRows,"
+                + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,threadPoolsJson\n");
     }
@@ -725,6 +734,8 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.history().rejectedRedisBuffered()),
                 String.valueOf(sample.history().rejectedLocalBuffered()),
                 String.valueOf(sample.history().rejectedDropped()),
+                String.valueOf(sample.history().writeFailureDisabled()),
+                String.valueOf(sample.history().rejectedDisabled()),
                 String.valueOf(sample.historyBatch().acceptedRows()),
                 String.valueOf(sample.historyBatch().flushedBatches()),
                 String.valueOf(sample.historyBatch().flushedRows()),
@@ -740,6 +751,14 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().flushLatencyP50Ms()),
                 String.valueOf(sample.historyBatch().flushLatencyP95Ms()),
                 String.valueOf(sample.historyBatch().flushLatencyP99Ms()),
+                String.valueOf(sample.historyBatch().fallbackRedisRows()),
+                String.valueOf(sample.historyBatch().fallbackLocalRows()),
+                String.valueOf(sample.historyBatch().fallbackDroppedRows()),
+                String.valueOf(sample.historyBatch().fallbackDisabledRows()),
+                String.valueOf(sample.historyBatch().shutdownDeferredRows()),
+                String.valueOf(sample.historyBatch().shutdownNonDurableRows()),
+                String.valueOf(sample.historyBatch().shutdownDroppedRows()),
+                String.valueOf(sample.historyBatch().shutdownDisabledRows()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -881,7 +900,9 @@ class RealEnvironmentSoakIT {
                                    long writeFailureLocalBuffered,
                                    long rejectedLocalBuffered,
                                    long writeFailureDropped,
-                                   long rejectedDropped) {
+                                   long rejectedDropped,
+                                   long writeFailureDisabled,
+                                   long rejectedDisabled) {
     }
 
     private record HistoryBatchSnapshot(long acceptedRows,
@@ -900,7 +921,15 @@ class RealEnvironmentSoakIT {
                                         double flushLatencyP95Ms,
                                         double flushLatencyP99Ms,
                                         long oldestBufferedAgeMs,
-                                        long shutdownFlushedRows) {
+                                        long shutdownFlushedRows,
+                                        long fallbackRedisRows,
+                                        long fallbackLocalRows,
+                                        long fallbackDroppedRows,
+                                        long fallbackDisabledRows,
+                                        long shutdownDeferredRows,
+                                        long shutdownNonDurableRows,
+                                        long shutdownDroppedRows,
+                                        long shutdownDisabledRows) {
     }
 
     private record CloudSnapshot(long total,

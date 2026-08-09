@@ -40,7 +40,15 @@ public class HistoryBatchWriter {
     private final LongAdder batchWriteSuccess = new LongAdder();
     private final LongAdder batchWriteFailure = new LongAdder();
     private final LongAdder fallbackRows = new LongAdder();
+    private final LongAdder fallbackRedisRows = new LongAdder();
+    private final LongAdder fallbackLocalRows = new LongAdder();
+    private final LongAdder fallbackDroppedRows = new LongAdder();
+    private final LongAdder fallbackDisabledRows = new LongAdder();
     private final LongAdder shutdownFlushedRows = new LongAdder();
+    private final LongAdder shutdownDeferredRows = new LongAdder();
+    private final LongAdder shutdownNonDurableRows = new LongAdder();
+    private final LongAdder shutdownDroppedRows = new LongAdder();
+    private final LongAdder shutdownDisabledRows = new LongAdder();
     private final List<Integer> batchSizeSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Long> flushLatencyNanos = Collections.synchronizedList(new ArrayList<>());
     private volatile boolean closing;
@@ -49,13 +57,16 @@ public class HistoryBatchWriter {
      * 接收单条历史写入请求；返回 false 表示批量模式未启用，调用方应走单条路径。
      */
     public boolean accept(HistoryWriteRequest request) {
-        if (!properties.isEnabled() || request == null || closing) {
+        if (!properties.isEnabled() || request == null) {
             return false;
+        }
+        if (closing) {
+            throw new RejectedExecutionException("history batch writer is closing");
         }
         int current = bufferedRows.incrementAndGet();
         if (current > maxBufferedRows()) {
             bufferedRows.decrementAndGet();
-            fallback(request, new RejectedExecutionException("history batch buffer full"));
+            fallback(request, new RejectedExecutionException("history batch buffer full"), false);
             return true;
         }
         acceptedRows.increment();
@@ -103,23 +114,22 @@ public class HistoryBatchWriter {
     public void shutdown() {
         closing = true;
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(properties.getShutdownFlushTimeoutMs());
-        while (!buckets.isEmpty() && System.nanoTime() < deadline) {
-            for (String bucketKey : List.copyOf(buckets.keySet())) {
-                if (System.nanoTime() >= deadline) {
-                    break;
-                }
-                AtomicReference<List<HistoryWriteRequest>> batchRef = new AtomicReference<>(List.of());
-                buckets.computeIfPresent(bucketKey, (ignored, bucket) -> {
-                    List<HistoryWriteRequest> batch = drainLocked(bucket, batchSize());
-                    batchRef.set(batch);
-                    return bucket.requests.isEmpty() ? null : bucket;
-                });
-                List<HistoryWriteRequest> batch = batchRef.get();
-                if (!batch.isEmpty()) {
-                    shutdownFlushedRows.add(batch.size());
-                    flush(batch);
-                }
+        List<List<HistoryWriteRequest>> batches = drainAllBatches();
+        int index = 0;
+        while (index < batches.size()) {
+            List<HistoryWriteRequest> batch = batches.get(index);
+            if (System.nanoTime() >= deadline) {
+                break;
             }
+            shutdownFlushedRows.add(batch.size());
+            flush(batch);
+            index++;
+        }
+        for (; index < batches.size(); index++) {
+            deferShutdownBatch(batches.get(index), new RejectedExecutionException("history batch shutdown deadline exceeded"));
+        }
+        for (List<HistoryWriteRequest> batch : drainAllBatches()) {
+            deferShutdownBatch(batch, new RejectedExecutionException("history batch shutdown closing race"));
         }
     }
 
@@ -144,7 +154,15 @@ public class HistoryBatchWriter {
                 percentileMillis(flushLatencyNanos, 0.95D),
                 percentileMillis(flushLatencyNanos, 0.99D),
                 oldestBufferedAgeMs(),
-                shutdownFlushedRows.sum());
+                shutdownFlushedRows.sum(),
+                fallbackRedisRows.sum(),
+                fallbackLocalRows.sum(),
+                fallbackDroppedRows.sum(),
+                fallbackDisabledRows.sum(),
+                shutdownDeferredRows.sum(),
+                shutdownNonDurableRows.sum(),
+                shutdownDroppedRows.sum(),
+                shutdownDisabledRows.sum());
     }
 
     private void flush(List<HistoryWriteRequest> batch) {
@@ -153,17 +171,17 @@ public class HistoryBatchWriter {
         }
         long startedAt = System.nanoTime();
         try {
-            boolean directSuccess = historyWriteBuffer.writeBatchOrBuffer(batch);
-            if (directSuccess) {
+            HistoryBatchWriteResult result = historyWriteBuffer.writeBatchOrBuffer(batch);
+            if (result.directSuccess()) {
                 batchWriteSuccess.increment();
             } else {
                 batchWriteFailure.increment();
-                fallbackRows.add(batch.size());
+                recordBatchFallback(result);
             }
         } catch (RuntimeException exception) {
             batchWriteFailure.increment();
             for (HistoryWriteRequest request : batch) {
-                fallback(request, exception);
+                fallback(request, exception, false);
             }
         } finally {
             flushedBatches.increment();
@@ -173,9 +191,83 @@ public class HistoryBatchWriter {
         }
     }
 
-    private void fallback(HistoryWriteRequest request, RuntimeException exception) {
+    private void fallback(HistoryWriteRequest request, RuntimeException exception, boolean shutdownFallback) {
         fallbackRows.increment();
-        historyWriteBuffer.deferForRetry(request, exception);
+        HistoryBufferOutcome outcome;
+        try {
+            outcome = historyWriteBuffer.deferForRetry(request, exception);
+        } catch (RuntimeException fallbackException) {
+            log.error("历史批量写入 fallback 异常，数据明确丢弃，设备={}，点位={}",
+                    request != null ? request.getDeviceId() : null,
+                    pointId(request),
+                    fallbackException);
+            outcome = HistoryBufferOutcome.DROPPED;
+        }
+        recordFallbackOutcome(outcome, shutdownFallback);
+    }
+
+    private void recordBatchFallback(HistoryBatchWriteResult result) {
+        fallbackRows.add(result.fallbackRows());
+        fallbackRedisRows.add(result.redisBufferedRows());
+        fallbackLocalRows.add(result.localBufferedRows());
+        fallbackDroppedRows.add(result.droppedRows());
+        fallbackDisabledRows.add(result.disabledRows());
+    }
+
+    private void recordFallbackOutcome(HistoryBufferOutcome outcome, boolean shutdownFallback) {
+        if (outcome == null) {
+            outcome = HistoryBufferOutcome.DROPPED;
+        }
+        switch (outcome) {
+            case REDIS_BUFFERED -> fallbackRedisRows.increment();
+            case LOCAL_BUFFERED -> fallbackLocalRows.increment();
+            case DROPPED -> fallbackDroppedRows.increment();
+            case DISABLED -> fallbackDisabledRows.increment();
+        }
+        if (shutdownFallback) {
+            shutdownDeferredRows.increment();
+            if (outcome == HistoryBufferOutcome.LOCAL_BUFFERED) {
+                shutdownNonDurableRows.increment();
+            } else if (outcome == HistoryBufferOutcome.DROPPED) {
+                shutdownDroppedRows.increment();
+            } else if (outcome == HistoryBufferOutcome.DISABLED) {
+                shutdownDisabledRows.increment();
+            }
+        }
+    }
+
+    private void deferShutdownBatch(List<HistoryWriteRequest> batch, RuntimeException exception) {
+        for (HistoryWriteRequest request : batch) {
+            fallback(request, exception, true);
+        }
+    }
+
+    private List<List<HistoryWriteRequest>> drainAllBatches() {
+        List<List<HistoryWriteRequest>> batches = new ArrayList<>();
+        for (String bucketKey : List.copyOf(buckets.keySet())) {
+            AtomicReference<List<HistoryWriteRequest>> drainedRef = new AtomicReference<>(List.of());
+            buckets.computeIfPresent(bucketKey, (ignored, bucket) -> {
+                drainedRef.set(drainAllLocked(bucket));
+                return null;
+            });
+            for (List<HistoryWriteRequest> batch : partition(drainedRef.get(), batchSize())) {
+                if (!batch.isEmpty()) {
+                    batches.add(batch);
+                }
+            }
+        }
+        return batches;
+    }
+
+    private List<List<HistoryWriteRequest>> partition(List<HistoryWriteRequest> rows, int size) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<List<HistoryWriteRequest>> batches = new ArrayList<>();
+        for (int index = 0; index < rows.size(); index += size) {
+            batches.add(new ArrayList<>(rows.subList(index, Math.min(index + size, rows.size()))));
+        }
+        return batches;
     }
 
     private List<HistoryWriteRequest> drainLocked(Bucket bucket, int maxRows) {
@@ -192,6 +284,21 @@ public class HistoryBatchWriter {
             bucket.firstAcceptedAtNanos = System.nanoTime();
         }
         return batch;
+    }
+
+    private List<HistoryWriteRequest> drainAllLocked(Bucket bucket) {
+        if (bucket.requests.isEmpty()) {
+            return List.of();
+        }
+        List<HistoryWriteRequest> batch = new ArrayList<>(bucket.requests);
+        bucket.requests.clear();
+        bufferedRows.addAndGet(-batch.size());
+        bucket.firstAcceptedAtNanos = 0L;
+        return batch;
+    }
+
+    private String pointId(HistoryWriteRequest request) {
+        return request == null || request.getPoint() == null ? null : request.getPoint().getPointId();
     }
 
     private String bucketKey(HistoryWriteRequest request) {

@@ -19,5 +19,13 @@ public record HistoryBatchMetrics(long acceptedRows,
                                   double flushLatencyP95Ms,
                                   double flushLatencyP99Ms,
                                   long oldestBufferedAgeMs,
-                                  long shutdownFlushedRows) {
+                                  long shutdownFlushedRows,
+                                  long fallbackRedisRows,
+                                  long fallbackLocalRows,
+                                  long fallbackDroppedRows,
+                                  long fallbackDisabledRows,
+                                  long shutdownDeferredRows,
+                                  long shutdownNonDurableRows,
+                                  long shutdownDroppedRows,
+                                  long shutdownDisabledRows) {
 }

@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.port.HistoryTelemetrySink;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.storage.buffer.HistoryBufferOutcome;
 import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
@@ -59,8 +60,8 @@ public class HistoryDataService implements HistoryTelemetrySink {
         if (!properties.isEnabled() || deviceId == null || point == null || processResult == null) {
             return false;
         }
-        historyWriteBuffer.deferForRetry(newRequest(deviceId, point, processResult), cause);
-        return true;
+        HistoryBufferOutcome outcome = historyWriteBuffer.deferForRetry(newRequest(deviceId, point, processResult), cause);
+        return outcome.buffered();
     }
 
     /**
@@ -91,7 +92,12 @@ public class HistoryDataService implements HistoryTelemetrySink {
         try {
             return historyBatchWriter.accept(request);
         } catch (RuntimeException exception) {
-            historyWriteBuffer.deferForRetry(request, exception);
+            HistoryBufferOutcome outcome = historyWriteBuffer.deferForRetry(request, exception);
+            if (!outcome.buffered()) {
+                log.error("历史批量写入入口异常，且数据未进入可靠补偿链路，设备={}，点位={}，结果={}",
+                        request.getDeviceId(), request.getPoint() != null ? request.getPoint().getPointId() : null,
+                        outcome, exception);
+            }
             return true;
         }
     }

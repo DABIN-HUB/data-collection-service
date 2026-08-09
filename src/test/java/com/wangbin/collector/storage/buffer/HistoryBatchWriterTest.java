@@ -6,13 +6,17 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -25,6 +29,7 @@ class HistoryBatchWriterTest {
     @Test
     void batchSizeReachedShouldFlushOnce() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 3, 100, 10));
 
         assertTrue(writer.accept(request("dev-1", "p1", 1_000L)));
@@ -41,6 +46,7 @@ class HistoryBatchWriterTest {
     @Test
     void flushIntervalShouldFlushPartialBatch() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
 
         writer.accept(request("dev-1", "p1", 1_000L));
@@ -56,6 +62,7 @@ class HistoryBatchWriterTest {
     @Test
     void concurrentSizeAndTimerFlushMustNotLoseRows() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 3, 100, 10));
 
         writer.accept(request("dev-1", "p1", 1_000L));
@@ -71,7 +78,7 @@ class HistoryBatchWriterTest {
     @Test
     void concurrentAcceptAndTimerFlushMustNotOrphanRows() throws Exception {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
-        when(buffer.writeBatchOrBuffer(anyList())).thenReturn(true);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 25, 100, 10_000));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         int rows = 2_000;
@@ -101,6 +108,7 @@ class HistoryBatchWriterTest {
     @Test
     void differentDevicesShouldBeGroupedByDeviceBucket() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 2, 100, 10));
 
         writer.accept(request("dev-a", "p1", 1_000L));
@@ -130,6 +138,7 @@ class HistoryBatchWriterTest {
     @Test
     void shutdownShouldFlushRemainingBatch() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
         HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
 
         writer.accept(request("dev-1", "p1", 1_000L));
@@ -140,6 +149,141 @@ class HistoryBatchWriterTest {
         verify(buffer).writeBatchOrBuffer(captor.capture());
         assertEquals(2, captor.getValue().size());
         assertEquals(2L, writer.metrics().shutdownFlushedRows());
+    }
+
+    @Test
+    void shutdownDeadlineMustNotLeaveRowsInBuckets() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        CountDownLatch firstFlushEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstFlush = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            if (calls.incrementAndGet() == 1) {
+                firstFlushEntered.countDown();
+                assertTrue(releaseFirstFlush.await(1, TimeUnit.SECONDS));
+            }
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        when(buffer.deferForRetry(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(HistoryBufferOutcome.REDIS_BUFFERED);
+        HistoryBatchProperties properties = properties(true, 50, 100, 10_000);
+        properties.setShutdownFlushTimeoutMs(50L);
+        HistoryBatchWriter writer = writer(buffer, properties);
+        addRows(writer, "dev-a", 10, 1_000L);
+        addRows(writer, "dev-b", 10, 2_000L);
+        addRows(writer, "dev-c", 10, 3_000L);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        Future<?> shutdown = executor.submit(writer::shutdown);
+        assertTrue(firstFlushEntered.await(1, TimeUnit.SECONDS));
+        TimeUnit.MILLISECONDS.sleep(80);
+        releaseFirstFlush.countDown();
+        shutdown.get(3, TimeUnit.SECONDS);
+        executor.shutdownNow();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(30L, metrics.acceptedRows());
+        assertEquals(0, metrics.currentBufferedRows());
+        assertEquals(10L, metrics.flushedRows());
+        assertEquals(20L, metrics.shutdownDeferredRows());
+        assertEquals(20L, metrics.fallbackRedisRows());
+    }
+
+    @Test
+    void shutdownDeadlineRedisFailureMustExplicitlyAccountNonDurableRows() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.deferForRetry(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(HistoryBufferOutcome.LOCAL_BUFFERED);
+        HistoryBatchProperties properties = properties(true, 10, 100, 10_000);
+        properties.setShutdownFlushTimeoutMs(0L);
+        HistoryBatchWriter writer = writer(buffer, properties);
+        addRows(writer, "dev-local", 3, 1_000L);
+
+        writer.shutdown();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.currentBufferedRows());
+        assertEquals(3L, metrics.shutdownDeferredRows());
+        assertEquals(3L, metrics.shutdownNonDurableRows());
+        assertEquals(3L, metrics.fallbackLocalRows());
+        verify(buffer, never()).writeBatchOrBuffer(anyList());
+    }
+
+    @Test
+    void shutdownBatchFailureShouldContinueFollowingBuckets() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        AtomicInteger calls = new AtomicInteger();
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            if (calls.incrementAndGet() == 1) {
+                return new HistoryBatchWriteResult(false, batch.size(), batch.size(), 0, 0, 0);
+            }
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10_000));
+        addRows(writer, "dev-fail-a", 3, 1_000L);
+        addRows(writer, "dev-fail-b", 3, 2_000L);
+
+        writer.shutdown();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(6L, metrics.acceptedRows());
+        assertEquals(6L, metrics.flushedRows());
+        assertEquals(3L, metrics.fallbackRows());
+        assertEquals(3L, metrics.fallbackRedisRows());
+        assertEquals(0, metrics.currentBufferedRows());
+    }
+
+    @Test
+    void concurrentTimerFlushAndShutdownMustNotLoseRows() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 50, 100, 10_000));
+        addRows(writer, "dev-race", 40, 1_000L);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        Future<?> timer = executor.submit(writer::flushDueBuckets);
+        Future<?> shutdown = executor.submit(writer::shutdown);
+        timer.get(3, TimeUnit.SECONDS);
+        shutdown.get(3, TimeUnit.SECONDS);
+        executor.shutdownNow();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(40L, metrics.acceptedRows());
+        assertEquals(0, metrics.currentBufferedRows());
+        assertEquals(40L, metrics.flushedRows() + metrics.fallbackRows());
+    }
+
+    @Test
+    void acceptDuringShutdownMustNotEnterAbandonedBucket() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.deferForRetry(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(HistoryBufferOutcome.REDIS_BUFFERED);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+
+        writer.shutdown();
+
+        assertThrows(RejectedExecutionException.class,
+                () -> writer.accept(request("dev-closing", "p1", 1_000L)));
+        assertEquals(0, writer.metrics().currentBufferedRows());
+    }
+
+    @Test
+    void batchFailureWithBufferDisabledMustExplicitlyAccountEveryRow() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList()))
+                .thenReturn(new HistoryBatchWriteResult(false, 3, 0, 0, 0, 3));
+        HistoryBatchWriter writer = writer(buffer, properties(true, 3, 100, 10));
+
+        addRows(writer, "dev-disabled", 3, 1_000L);
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(3L, metrics.acceptedRows());
+        assertEquals(3L, metrics.flushedRows());
+        assertEquals(3L, metrics.fallbackRows());
+        assertEquals(3L, metrics.fallbackDisabledRows());
+        assertEquals(0, metrics.currentBufferedRows());
     }
 
     @Test
@@ -164,6 +308,19 @@ class HistoryBatchWriterTest {
         properties.setFlushIntervalMs(flushIntervalMs);
         properties.setMaxBufferedRows(maxBufferedRows);
         return properties;
+    }
+
+    private void stubDirectSuccess(HistoryWriteBuffer buffer) {
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+    }
+
+    private void addRows(HistoryBatchWriter writer, String deviceId, int rows, long startTs) {
+        for (int index = 0; index < rows; index++) {
+            writer.accept(request(deviceId, "p" + index, startTs + index));
+        }
     }
 
     private HistoryWriteRequest request(String deviceId, String pointId, long eventTs) {

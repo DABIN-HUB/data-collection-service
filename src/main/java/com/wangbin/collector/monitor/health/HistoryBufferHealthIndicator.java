@@ -47,6 +47,8 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
                 .withDetail("拒绝本地缓冲累计", metrics.rejectedLocalBuffered())
                 .withDetail("写失败丢弃累计", metrics.writeFailureDropped())
                 .withDetail("拒绝丢弃累计", metrics.rejectedDropped())
+                .withDetail("写失败缓冲关闭累计", metrics.writeFailureDisabled())
+                .withDetail("拒绝缓冲关闭累计", metrics.rejectedDisabled())
                 .build();
     }
 }

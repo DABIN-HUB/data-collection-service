@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -298,9 +299,10 @@ class HistoryWriteBufferFailureRecoveryTest {
                 request("dev-batch-success", "p1", 1_000L),
                 request("dev-batch-success", "p2", 1_001L));
 
-        boolean directSuccess = buffer.writeBatchOrBuffer(requests);
+        HistoryBatchWriteResult result = buffer.writeBatchOrBuffer(requests);
 
-        assertTrue(directSuccess);
+        assertTrue(result.directSuccess());
+        assertEquals(2, result.rows());
         verify(timeSeriesService).appendBatch(any());
         verify(redisLists.operations, never()).leftPush(anyString(), anyString());
         assertEquals(0L, buffer.metrics().redisPending());
@@ -320,9 +322,10 @@ class HistoryWriteBufferFailureRecoveryTest {
                 request("dev-batch-pending", "p2", 1_001L),
                 request("dev-batch-pending", "p3", 1_002L));
 
-        boolean directSuccess = buffer.writeBatchOrBuffer(requests);
+        HistoryBatchWriteResult result = buffer.writeBatchOrBuffer(requests);
 
-        assertFalse(directSuccess);
+        assertFalse(result.directSuccess());
+        assertEquals(3, result.redisBufferedRows());
         assertEquals(3L, redisLists.size(properties.getPendingKey()));
         assertEquals(3L, buffer.metrics().writeFailureRedisBuffered());
         assertEquals(0, buffer.metrics().localPending());
@@ -338,11 +341,12 @@ class HistoryWriteBufferFailureRecoveryTest {
         doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
                 .when(timeSeriesService).appendBatch(any());
 
-        boolean directSuccess = buffer.writeBatchOrBuffer(List.of(
+        HistoryBatchWriteResult result = buffer.writeBatchOrBuffer(List.of(
                 request("dev-batch-local", "p1", 1_000L),
                 request("dev-batch-local", "p2", 1_001L)));
 
-        assertFalse(directSuccess);
+        assertFalse(result.directSuccess());
+        assertEquals(2, result.localBufferedRows());
         assertEquals(0L, redisLists.size(properties.getPendingKey()));
         assertEquals(2, buffer.metrics().localPending());
         assertEquals(2L, buffer.metrics().writeFailureLocalBuffered());
@@ -358,15 +362,75 @@ class HistoryWriteBufferFailureRecoveryTest {
         doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
                 .when(timeSeriesService).appendBatch(any());
 
-        boolean directSuccess = buffer.writeBatchOrBuffer(List.of(
+        HistoryBatchWriteResult result = buffer.writeBatchOrBuffer(List.of(
                 request("dev-batch-full", "p1", 1_000L),
                 request("dev-batch-full", "p2", 1_001L),
                 request("dev-batch-full", "p3", 1_002L)));
 
-        assertFalse(directSuccess);
+        assertFalse(result.directSuccess());
+        assertEquals(2, result.localBufferedRows());
+        assertEquals(1, result.droppedRows());
         assertEquals(2, buffer.metrics().localPending());
         assertEquals(2L, buffer.metrics().writeFailureLocalBuffered());
         assertEquals(1L, buffer.metrics().writeFailureDropped());
+    }
+
+    @Test
+    void bufferDisabledDeferMustReportNotPersisted() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        properties.setEnabled(false);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+
+        HistoryBufferOutcome outcome = buffer.deferForRetry(
+                request("dev-disabled-defer", "p1", 1_000L),
+                new java.util.concurrent.RejectedExecutionException("history full"));
+
+        assertEquals(HistoryBufferOutcome.DISABLED, outcome);
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0, buffer.metrics().localPending());
+        assertEquals(1L, buffer.metrics().rejectedDisabled());
+    }
+
+    @Test
+    void singleWriteFailureWithBufferDisabledMustNotPretendSuccess() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        properties.setEnabled(false);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        doThrow(new DataAccessResourceFailureException("TDengine unavailable"))
+                .when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+
+        assertThrows(DataAccessResourceFailureException.class,
+                () -> buffer.writeOrBuffer(request("dev-disabled-single", "p1", 1_000L)));
+
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0, buffer.metrics().localPending());
+        assertEquals(1L, buffer.metrics().writeFailureDisabled());
+    }
+
+    @Test
+    void batchFailureWithBufferDisabledMustExplicitlyAccountEveryRow() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(2, 10);
+        properties.setEnabled(false);
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        doThrow(new DataAccessResourceFailureException("TDengine batch unavailable"))
+                .when(timeSeriesService).appendBatch(any());
+
+        HistoryBatchWriteResult result = buffer.writeBatchOrBuffer(List.of(
+                request("dev-disabled-batch", "p1", 1_000L),
+                request("dev-disabled-batch", "p2", 1_001L),
+                request("dev-disabled-batch", "p3", 1_002L)));
+
+        assertFalse(result.directSuccess());
+        assertEquals(3, result.disabledRows());
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0, buffer.metrics().localPending());
+        assertEquals(3L, buffer.metrics().writeFailureDisabled());
     }
 
     @Test
