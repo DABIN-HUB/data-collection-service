@@ -7,10 +7,13 @@ import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
 import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
@@ -90,6 +93,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private TelemetryIngressService telemetryIngressService;
+
+    @Autowired
+    private CollectorDataPostProcessor collectorDataPostProcessor;
 
     @Autowired
     private ConfigManager configManager;
@@ -172,10 +178,16 @@ class RealEnvironmentSoakIT {
                 long eventTs = System.currentTimeMillis();
                 int emitted = 0;
                 for (DevicePoints device : devicePoints) {
-                    for (DataPoint point : device.points()) {
-                        appendPoint(device.deviceId(), point, eventTs, roundIndex, counters);
-                        emitted++;
+                    if (options.batchIngressMode()) {
+                        appendBatch(device.deviceId(), device.points(), eventTs, roundIndex, counters);
+                        emitted += device.points().size();
                         paceWithinRound(options, roundStart, emitted);
+                    } else {
+                        for (DataPoint point : device.points()) {
+                            appendPoint(device.deviceId(), point, eventTs, roundIndex, counters);
+                            emitted++;
+                            paceWithinRound(options, roundStart, emitted);
+                        }
                     }
                 }
                 long roundDurationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - roundStart);
@@ -206,7 +218,7 @@ class RealEnvironmentSoakIT {
                              int roundIndex,
                              SoakCounters counters) {
         try {
-            double value = roundIndex + ThreadLocalRandom.current().nextDouble(0.0d, 100.0d);
+            Object value = valueFor(point, roundIndex);
             telemetryIngressService.appendRaw(deviceId, point, value, 100, eventTs, DEFAULT_SOURCE);
             counters.submitted.incrementAndGet();
             counters.succeeded.incrementAndGet();
@@ -217,6 +229,54 @@ class RealEnvironmentSoakIT {
                 counters.rejected.incrementAndGet();
             }
         }
+    }
+
+    private void appendBatch(String deviceId,
+                             List<DataPoint> points,
+                             long eventTs,
+                             int roundIndex,
+                             SoakCounters counters) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        Map<String, ProcessResult> processResults = new LinkedHashMap<>();
+        for (DataPoint point : points) {
+            Object value = valueFor(point, roundIndex);
+            values.put(point.getPointId(), value);
+            processResults.put(point.getPointId(), processResult(point, value, eventTs));
+        }
+        try {
+            collectorDataPostProcessor.saveBatchAsync(deviceId, points, values, processResults);
+            counters.submitted.addAndGet(values.size());
+            counters.succeeded.addAndGet(values.size());
+        } catch (RuntimeException exception) {
+            counters.failed.addAndGet(values.size());
+            String message = exception.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains("reject")) {
+                counters.rejected.addAndGet(values.size());
+            }
+        }
+    }
+
+    private Object valueFor(DataPoint point, int roundIndex) {
+        String dataType = point != null && point.getDataType() != null
+                ? point.getDataType().toUpperCase(Locale.ROOT) : "DOUBLE";
+        return switch (dataType) {
+            case "LONG", "INT", "INTEGER" -> (long) roundIndex * 1_000L + ThreadLocalRandom.current().nextInt(1_000);
+            case "BOOLEAN", "BOOL" -> (roundIndex & 1) == 0;
+            case "STRING", "TEXT" -> "value-" + roundIndex + '-' + ThreadLocalRandom.current().nextInt(1_000);
+            default -> roundIndex + ThreadLocalRandom.current().nextDouble(0.0d, 100.0d);
+        };
+    }
+
+    private ProcessResult processResult(DataPoint point, Object value, long eventTs) {
+        ProcessResult result = ProcessResult.success(value, value, "soak process result");
+        result.addMetadata(ProcessResultMetadataKeys.RAW_VALUE, value);
+        result.addMetadata(ProcessResultMetadataKeys.PROCESSED_VALUE, value);
+        result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, eventTs);
+        result.addMetadata(ProcessResultMetadataKeys.SOURCE, DEFAULT_SOURCE);
+        return result;
     }
 
     private void paceWithinRound(SoakOptions options, long roundStartNanos, int emitted) throws InterruptedException {
@@ -297,7 +357,7 @@ class RealEnvironmentSoakIT {
             point.setDeviceId(deviceId);
             point.setDeviceName(deviceId);
             point.setAddress(toHoldingRegisterReference(index + 1));
-            point.setDataType("DOUBLE");
+            point.setDataType(dataTypeFor(index));
             point.setReadWrite("R");
             point.setUnitId(1);
             point.setUnit("value");
@@ -314,6 +374,15 @@ class RealEnvironmentSoakIT {
             points.add(point);
         }
         return points;
+    }
+
+    private String dataTypeFor(int index) {
+        return switch (index % 4) {
+            case 0 -> "LONG";
+            case 1 -> "DOUBLE";
+            case 2 -> "BOOLEAN";
+            default -> "STRING";
+        };
     }
 
     private String toHoldingRegisterReference(int oneBasedRegister) {
@@ -487,6 +556,7 @@ class RealEnvironmentSoakIT {
         info.put("durationSeconds", options.durationSeconds());
         info.put("collectionIntervalMs", options.collectionIntervalMs());
         info.put("spreadWithinInterval", options.spreadWithinInterval());
+        info.put("ingressMode", options.ingressMode());
         info.put("warmupSeconds", options.warmupSeconds());
         info.put("startedAt", Instant.ofEpochMilli(options.startedAt()).toString());
         info.put("branch", command(List.of("git", "rev-parse", "--abbrev-ref", "HEAD")));
@@ -575,6 +645,8 @@ class RealEnvironmentSoakIT {
         summary.put("points", options.points());
         summary.put("devices", options.devices());
         summary.put("durationSeconds", options.durationSeconds());
+        summary.put("ingressMode", options.ingressMode());
+        summary.put("spreadWithinInterval", options.spreadWithinInterval());
         summary.put("actualElapsedMs", elapsedMs);
         summary.put("activeLoadElapsedMs", loadElapsedMs);
         summary.put("rounds", counters.rounds.get());
@@ -1003,6 +1075,7 @@ class RealEnvironmentSoakIT {
                                long startedAt,
                                String streamKey,
                                String mqttBrokerUrl,
+                               String ingressMode,
                                boolean ackBridgeEnabled,
                                boolean historyEnabled,
                                boolean streamEnabled,
@@ -1031,6 +1104,7 @@ class RealEnvironmentSoakIT {
                     startedAt,
                     value(environment, "spring.data.redis.stream.key", "collector:telemetry:stream"),
                     value(environment, "collector.report.mqtt.broker-url", "tcp://127.0.0.1:1883"),
+                    value(environment, "soak.ingressMode", "point"),
                     booleanValue(environment, "soak.cloudAckBridgeEnabled", true),
                     booleanValue(environment, "soak.historyEnabled", true),
                     booleanValue(environment, "soak.streamEnabled", true),
@@ -1039,6 +1113,10 @@ class RealEnvironmentSoakIT {
                     longValue(environment, "soak.estimatedCloudMessageBytes", 1024L),
                     longValue(environment, "soak.maxAllowedRejected", 0L),
                     Path.of(output));
+        }
+
+        private boolean batchIngressMode() {
+            return "batch".equalsIgnoreCase(ingressMode);
         }
 
         private static String value(Environment environment, String key, String defaultValue) {
