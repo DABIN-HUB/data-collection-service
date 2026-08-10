@@ -186,7 +186,11 @@ public class CollectionScheduler {
                 if (task.shouldSkip() || !deviceBatchExecutor.isBatchTaskActive(task) || task.timeSliceRevision != revision) {
                     continue;
                 }
-                CompletableFuture<Void> future = deviceBatchExecutor.submit(task);
+                List<DataPoint> duePoints = task.selectDuePoints();
+                if (duePoints.isEmpty()) {
+                    continue;
+                }
+                CompletableFuture<Void> future = deviceBatchExecutor.submit(task, duePoints);
                 if (future != null) {
                     futures.add(future);
                 }

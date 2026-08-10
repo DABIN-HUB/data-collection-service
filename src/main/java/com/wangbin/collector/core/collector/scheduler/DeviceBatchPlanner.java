@@ -2,6 +2,8 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.protocol.ProtocolAddressingMode;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptor;
@@ -15,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.ToLongFunction;
 
 /**
  * 设备批次规划器：负责点位分组、分批与时间片分配。
@@ -25,6 +28,8 @@ import java.util.Map;
 class DeviceBatchPlanner {
 
     private final ConfigManager configManager;
+    private final CollectorProperties collectorProperties;
+    private final PointRuntimeStateService pointRuntimeStateService;
     private final ProtocolBatchStrategy protocolBatchStrategy;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
     private final PerformanceMonitor performanceMonitor;
@@ -38,10 +43,13 @@ class DeviceBatchPlanner {
                                long generation,
                                long timeSliceRevision) {
         List<List<DataPoint>> batches = smartBatchGrouping(points, deviceId, performanceMonitor);
+        DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+        ToLongFunction<DataPoint> intervalResolver = buildCollectionIntervalResolver(deviceId, deviceInfo);
         List<DeviceBatchTask> tasks = new ArrayList<>(batches.size());
         for (int i = 0; i < batches.size(); i++) {
             int timeSliceIndex = calculateOptimalTimeSlice(deviceId, i, batches.size(), timeSliceCount);
-            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex, generation, timeSliceRevision));
+            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex, generation, timeSliceRevision,
+                    intervalResolver, System::nanoTime));
         }
         log.debug("设备 {} 点位调度完成，批次数: {}", deviceId, tasks.size());
         return tasks;
@@ -247,6 +255,35 @@ class DeviceBatchPlanner {
 
     private int getProtocolMaxBatchSize(String protocol) {
         return protocolBatchStrategy.maxBatchSize(protocol);
+    }
+
+    private ToLongFunction<DataPoint> buildCollectionIntervalResolver(String deviceId, DeviceInfo deviceInfo) {
+        long deviceInterval = resolveDeviceCollectionInterval(deviceInfo);
+        return point -> {
+            if (point == null) {
+                return deviceInterval;
+            }
+            if (collectorProperties.getAdaptiveCollection().isEnabled()) {
+                long runtimeInterval = pointRuntimeStateService.snapshot(deviceId, point).currentCollectionInterval();
+                if (runtimeInterval > 0) {
+                    return runtimeInterval;
+                }
+            }
+            if (point.getCurrentCollectionInterval() > 0) {
+                return point.getCurrentCollectionInterval();
+            }
+            if (point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0) {
+                return point.getBaseCollectionInterval();
+            }
+            return deviceInterval;
+        };
+    }
+
+    private long resolveDeviceCollectionInterval(DeviceInfo deviceInfo) {
+        if (deviceInfo != null && deviceInfo.getCollectionInterval() != null && deviceInfo.getCollectionInterval() > 0) {
+            return deviceInfo.getCollectionInterval();
+        }
+        return AdaptiveCollectionUtil.DEFAULT_BASE_COLLECTION_INTERVAL;
     }
 
     /**

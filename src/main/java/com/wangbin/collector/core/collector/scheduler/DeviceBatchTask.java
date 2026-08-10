@@ -2,12 +2,16 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
+import java.util.function.ToLongFunction;
 
 /**
  * 设备批次任务
@@ -24,21 +28,41 @@ class DeviceBatchTask {
     final long generation;
     final long timeSliceRevision;
     long lastExecutionTime;
+    private final ToLongFunction<DataPoint> collectionIntervalResolver;
+    private final LongSupplier nanoTimeSupplier;
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Long> lastExecutionNanosByPoint = new ConcurrentHashMap<>();
     private volatile long nextAllowedExecutionTime;
 
     /**
      * 创建当前组件实例。
      */
     DeviceBatchTask(String deviceId, List<DataPoint> points, int timeSliceIndex, long generation, long timeSliceRevision) {
+        this(deviceId, points, timeSliceIndex, generation, timeSliceRevision,
+                DeviceBatchTask::defaultCollectionInterval, System::nanoTime);
+    }
+
+    /**
+     * 创建带可控时钟和采集间隔解析器的批次任务，用于生产动态间隔和确定性测试。
+     */
+    DeviceBatchTask(String deviceId,
+                    List<DataPoint> points,
+                    int timeSliceIndex,
+                    long generation,
+                    long timeSliceRevision,
+                    ToLongFunction<DataPoint> collectionIntervalResolver,
+                    LongSupplier nanoTimeSupplier) {
         this.deviceId = deviceId;
         this.points = points;
         this.timeSliceIndex = timeSliceIndex;
         this.generation = generation;
         this.timeSliceRevision = timeSliceRevision;
+        this.collectionIntervalResolver = collectionIntervalResolver != null
+                ? collectionIntervalResolver : DeviceBatchTask::defaultCollectionInterval;
+        this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
     }
 
     /**
@@ -56,6 +80,37 @@ class DeviceBatchTask {
             return false;
         }
         return running.compareAndSet(false, true);
+    }
+
+    /**
+     * 选出当前真正到期的点位。时间片只负责检查频率，业务采集周期由点位运行间隔控制。
+     */
+    List<DataPoint> selectDuePoints() {
+        if (points == null || points.isEmpty()) {
+            return List.of();
+        }
+        long nowNanos = nanoTimeSupplier.getAsLong();
+        List<DataPoint> duePoints = new ArrayList<>(points.size());
+        for (DataPoint point : points) {
+            if (point == null || isPointDue(point, nowNanos)) {
+                duePoints.add(point);
+            }
+        }
+        return duePoints;
+    }
+
+    /**
+     * 在任务取得执行权后推进 due 状态，避免慢采集结束后补执行历史周期形成突发。
+     */
+    void markScheduled(List<DataPoint> scheduledPoints) {
+        if (scheduledPoints == null || scheduledPoints.isEmpty()) {
+            return;
+        }
+        long nowNanos = nanoTimeSupplier.getAsLong();
+        for (DataPoint point : scheduledPoints) {
+            lastExecutionNanosByPoint.put(pointScheduleKey(point), nowNanos);
+        }
+        lastExecutionTime = System.currentTimeMillis();
     }
 
     /**
@@ -127,5 +182,38 @@ class DeviceBatchTask {
             }
         }
         inFlightFutures.clear();
+    }
+
+    private boolean isPointDue(DataPoint point, long nowNanos) {
+        Long lastExecutionNanos = lastExecutionNanosByPoint.get(pointScheduleKey(point));
+        if (lastExecutionNanos == null) {
+            return true;
+        }
+        long intervalNanos = TimeUnit.MILLISECONDS.toNanos(
+                Math.max(1L, collectionIntervalResolver.applyAsLong(point)));
+        return nowNanos - lastExecutionNanos >= intervalNanos;
+    }
+
+    private String pointScheduleKey(DataPoint point) {
+        if (point == null) {
+            return "<null>";
+        }
+        if (point.getPointId() != null && !point.getPointId().isBlank()) {
+            return point.getPointId();
+        }
+        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
+            return point.getPointCode();
+        }
+        if (point.getAddress() != null && !point.getAddress().isBlank()) {
+            return point.getAddress();
+        }
+        return String.valueOf(System.identityHashCode(point));
+    }
+
+    private static long defaultCollectionInterval(DataPoint point) {
+        if (point != null && point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0) {
+            return point.getBaseCollectionInterval();
+        }
+        return AdaptiveCollectionUtil.DEFAULT_BASE_COLLECTION_INTERVAL;
     }
 }

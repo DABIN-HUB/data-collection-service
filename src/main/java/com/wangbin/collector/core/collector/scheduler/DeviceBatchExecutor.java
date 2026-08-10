@@ -76,17 +76,25 @@ public class DeviceBatchExecutor {
     }
 
     public CompletableFuture<Void> submit(DeviceBatchTask task) {
-        return submitBatchDispatchTask(task);
+        return submitBatchDispatchTask(task, task != null ? task.points : List.of());
     }
 
-    CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task) {
+    public CompletableFuture<Void> submit(DeviceBatchTask task, List<DataPoint> duePoints) {
+        return submitBatchDispatchTask(task, duePoints);
+    }
+
+    CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task, List<DataPoint> duePoints) {
+        if (task == null || duePoints == null || duePoints.isEmpty()) {
+            return null;
+        }
         if (!task.tryStartExecution()) {
             return null;
         }
+        task.markScheduled(duePoints);
         try {
             return CompletableFuture.runAsync(() -> {
                 try {
-                    processDeviceBatch(task);
+                    processDeviceBatch(task, duePoints);
                 } catch (Exception e) {
                     log.error("设备批量执行失败，设备={}", task.deviceId, e);
                 } finally {
@@ -107,8 +115,15 @@ public class DeviceBatchExecutor {
     }
 
     void processDeviceBatch(DeviceBatchTask batchTask) {
+        processDeviceBatch(batchTask, batchTask != null ? batchTask.points : List.of());
+    }
+
+    void processDeviceBatch(DeviceBatchTask batchTask, List<DataPoint> duePoints) {
         String deviceId = batchTask.deviceId;
-        List<DataPoint> points = batchTask.points;
+        List<DataPoint> points = duePoints;
+        if (points == null || points.isEmpty()) {
+            return;
+        }
         long generation = batchTask.generation;
 
         long startTime = System.currentTimeMillis();

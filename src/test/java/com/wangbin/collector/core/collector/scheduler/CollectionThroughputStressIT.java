@@ -103,8 +103,11 @@ class CollectionThroughputStressIT {
             SchedulerRuntimeState runtimeState = new SchedulerRuntimeState();
             PerformanceMonitor performanceMonitor = new PerformanceMonitor();
             ProtocolBatchStrategy protocolBatchStrategy = new ProtocolBatchStrategy();
+            PointRuntimeStateService pointRuntimeStateService = new PointRuntimeStateService();
             DeviceBatchPlanner batchPlanner = new DeviceBatchPlanner(
                     configManager,
+                    properties,
+                    pointRuntimeStateService,
                     protocolBatchStrategy,
                     ProtocolDescriptorTestProviders.registry(),
                     performanceMonitor
@@ -136,13 +139,13 @@ class CollectionThroughputStressIT {
                     configManager,
                     collectionStatistics,
                     properties,
-                    healthTracker,
-                    batchPlanner,
-                    protocolBatchStrategy,
-                    collectionTaskGuard,
-                    new PointRuntimeStateService(),
-                    runtimeState,
-                    performanceMonitor,
+                healthTracker,
+                batchPlanner,
+                protocolBatchStrategy,
+                collectionTaskGuard,
+                pointRuntimeStateService,
+                runtimeState,
+                performanceMonitor,
                     batchExecutor,
                     reconnectCoordinator,
                     deviceStartExecutor
@@ -359,6 +362,7 @@ class CollectionThroughputStressIT {
             point.setStatus(1);
             point.setCollectionMode("POLLING");
             point.setCacheEnabled(0);
+            point.setBaseCollectionInterval(1L);
             points.add(point);
         }
         return points;
@@ -371,6 +375,7 @@ class CollectionThroughputStressIT {
         device.setProtocolType(PROTOCOL);
         device.setConnectionType(PROTOCOL);
         device.setStatus("ONLINE");
+        device.setCollectionInterval(1);
         return device;
     }
 

@@ -10,7 +10,10 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
+import com.wangbin.collector.core.collector.factory.CollectorFactory;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
+import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
+import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
@@ -32,7 +35,9 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,6 +50,7 @@ import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -68,6 +74,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 /**
  * 真实 Redis、TDengine 与本地云端通道的长稳容量基线入口。
@@ -98,7 +106,13 @@ class RealEnvironmentSoakIT {
     private CollectorDataPostProcessor collectorDataPostProcessor;
 
     @Autowired
+    private CollectionScheduler collectionScheduler;
+
+    @Autowired
     private ConfigManager configManager;
+
+    @Autowired
+    private AutowireCapableBeanFactory beanFactory;
 
     @Autowired
     private SystemResourceMonitorService systemResourceMonitorService;
@@ -126,6 +140,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private ObjectProvider<DataSource> dataSourceProvider;
+
+    @MockBean
+    private CollectorFactory collectorFactory;
 
     @Test
     void runRealEnvironmentSoak() throws Exception {
@@ -164,9 +181,13 @@ class RealEnvironmentSoakIT {
     private void runLoad(SoakOptions options,
                          List<DevicePoints> devicePoints,
                          SoakCounters counters,
-                         List<Long> roundDurations,
-                         List<MetricSample> samples,
-                         BufferedWriter metricsWriter) throws Exception {
+                        List<Long> roundDurations,
+                        List<MetricSample> samples,
+                        BufferedWriter metricsWriter) throws Exception {
+        if (options.runtimeIngressMode()) {
+            runRuntimeLoad(options, devicePoints, counters, roundDurations, samples, metricsWriter);
+            return;
+        }
         long start = System.currentTimeMillis();
         counters.loadStartedAt.set(start);
         long end = start + TimeUnit.SECONDS.toMillis(options.durationSeconds());
@@ -210,6 +231,48 @@ class RealEnvironmentSoakIT {
         } finally {
             counters.loadFinishedAt.set(System.currentTimeMillis());
         }
+    }
+
+    private void runRuntimeLoad(SoakOptions options,
+                                List<DevicePoints> devicePoints,
+                                SoakCounters counters,
+                                List<Long> roundDurations,
+                                List<MetricSample> samples,
+                                BufferedWriter metricsWriter) throws Exception {
+        configureRuntimeCollectorFactory(counters);
+        long start = System.currentTimeMillis();
+        counters.loadStartedAt.set(start);
+        for (DevicePoints device : devicePoints) {
+            assertTrue(collectionScheduler.startDevice(device.deviceId()),
+                    "runtime soak device failed to start: " + device.deviceId());
+        }
+        long end = start + TimeUnit.SECONDS.toMillis(options.durationSeconds());
+        long nextSample = start;
+        try {
+            while (System.currentTimeMillis() < end) {
+                long now = System.currentTimeMillis();
+                if (now >= nextSample) {
+                    MetricSample sample = collectSample(options, counters, roundDurations, null, false);
+                    samples.add(sample);
+                    writeMetric(metricsWriter, sample);
+                    metricsWriter.flush();
+                    nextSample = now + TimeUnit.SECONDS.toMillis(options.sampleIntervalSeconds());
+                }
+                Thread.sleep(200L);
+            }
+        } finally {
+            counters.loadFinishedAt.set(System.currentTimeMillis());
+        }
+    }
+
+    private void configureRuntimeCollectorFactory(SoakCounters counters) {
+        when(collectorFactory.createCollector(any(DeviceInfo.class))).thenAnswer(invocation -> {
+            DeviceInfo deviceInfo = invocation.getArgument(0);
+            RuntimeSoakCollector collector = beanFactory.createBean(RuntimeSoakCollector.class);
+            collector.attachCounters(counters);
+            collector.init(deviceInfo);
+            return collector;
+        });
     }
 
     private void appendPoint(String deviceId,
@@ -561,6 +624,10 @@ class RealEnvironmentSoakIT {
         info.put("startedAt", Instant.ofEpochMilli(options.startedAt()).toString());
         info.put("branch", command(List.of("git", "rev-parse", "--abbrev-ref", "HEAD")));
         info.put("commit", command(List.of("git", "rev-parse", "HEAD")));
+        String gitStatus = command(List.of("git", "status", "--short"));
+        info.put("gitStatusSummary", gitStatus);
+        info.put("gitDirty", gitStatus != null && !gitStatus.isBlank() && !"unknown".equals(gitStatus));
+        info.put("gitDiffHash", sha256(command(List.of("git", "diff", "--binary", "--no-ext-diff"))));
         info.put("javaVersion", System.getProperty("java.version"));
         info.put("javaVm", System.getProperty("java.vm.name"));
         info.put("jvmArgs", ManagementFactory.getRuntimeMXBean().getInputArguments());
@@ -654,6 +721,8 @@ class RealEnvironmentSoakIT {
         summary.put("succeeded", counters.succeeded.get());
         summary.put("failed", counters.failed.get());
         summary.put("rejected", counters.rejected.get());
+        summary.put("runtimeReadPointsCalls", counters.runtimeReadPointsCalls.get());
+        summary.put("runtimeReadPointsItems", counters.runtimeReadPointsItems.get());
         summary.put("pointsPerSecond", counters.submitted.get() * 1000.0d / loadElapsedMs);
         summary.put("roundP50Ms", percentile(roundDurations, 0.50d));
         summary.put("roundP95Ms", percentile(roundDurations, 0.95d));
@@ -880,6 +949,7 @@ class RealEnvironmentSoakIT {
     private void cleanupDevices(List<DevicePoints> devicePoints) {
         for (DevicePoints device : devicePoints) {
             try {
+                collectionScheduler.stopDevice(device.deviceId());
                 configManager.deleteLocalDeviceConfig(device.deviceId());
             } catch (RuntimeException ignored) {
                 // Soak 清理失败不覆盖主测试结果，最终指标仍保留在结果目录。
@@ -898,6 +968,23 @@ class RealEnvironmentSoakIT {
                 return "unknown";
             }
             return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        } catch (Exception exception) {
+            return "unknown";
+        }
+    }
+
+    private String sha256(String value) {
+        if (value == null || "unknown".equals(value)) {
+            return "unknown";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                builder.append(String.format(Locale.ROOT, "%02x", b));
+            }
+            return builder.toString();
         } catch (Exception exception) {
             return "unknown";
         }
@@ -1060,8 +1147,110 @@ class RealEnvironmentSoakIT {
         private final AtomicLong failed = new AtomicLong();
         private final AtomicLong rejected = new AtomicLong();
         private final AtomicLong rounds = new AtomicLong();
+        private final AtomicLong runtimeReadPointsCalls = new AtomicLong();
+        private final AtomicLong runtimeReadPointsItems = new AtomicLong();
         private final AtomicLong loadStartedAt = new AtomicLong();
         private final AtomicLong loadFinishedAt = new AtomicLong();
+    }
+
+    public static class RuntimeSoakCollector extends BaseCollector {
+        private SoakCounters counters;
+
+        void attachCounters(SoakCounters counters) {
+            this.counters = counters;
+        }
+
+        @Override
+        public String getCollectorType() {
+            return "RUNTIME_SOAK";
+        }
+
+        @Override
+        public String getProtocolType() {
+            return "MODBUS_TCP";
+        }
+
+        @Override
+        protected void doConnect() {
+        }
+
+        @Override
+        protected void doDisconnect() {
+        }
+
+        @Override
+        protected Object doReadPoint(DataPoint point) {
+            return valueFor(point);
+        }
+
+        @Override
+        protected Map<String, Object> doReadPoints(List<DataPoint> points) {
+            Map<String, Object> values = new LinkedHashMap<>();
+            if (points == null || points.isEmpty()) {
+                return values;
+            }
+            if (counters != null) {
+                counters.runtimeReadPointsCalls.incrementAndGet();
+                counters.runtimeReadPointsItems.addAndGet(points.size());
+                counters.submitted.addAndGet(points.size());
+                counters.succeeded.addAndGet(points.size());
+                counters.rounds.incrementAndGet();
+            }
+            for (DataPoint point : points) {
+                if (point != null) {
+                    values.put(point.getPointId(), valueFor(point));
+                }
+            }
+            return values;
+        }
+
+        @Override
+        protected boolean doWritePoint(DataPoint point, Object value) {
+            return true;
+        }
+
+        @Override
+        protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
+            Map<String, Boolean> result = new LinkedHashMap<>();
+            if (points != null) {
+                points.keySet().forEach(point -> result.put(point != null ? point.getPointId() : "<null>", true));
+            }
+            return result;
+        }
+
+        @Override
+        protected void doSubscribe(List<DataPoint> points) {
+        }
+
+        @Override
+        protected void doUnsubscribe(List<DataPoint> points) {
+        }
+
+        @Override
+        protected Map<String, Object> doGetDeviceStatus() {
+            return Map.of("runtimeSoak", true);
+        }
+
+        @Override
+        protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
+            return Map.of("command", command, "unitId", unitId);
+        }
+
+        @Override
+        protected void buildReadPlans(String deviceId, List<DataPoint> points) {
+        }
+
+        private Object valueFor(DataPoint point) {
+            long sequence = totalReadCount.get() + 1L;
+            String dataType = point != null && point.getDataType() != null
+                    ? point.getDataType().toUpperCase(Locale.ROOT) : "DOUBLE";
+            return switch (dataType) {
+                case "LONG", "INT", "INTEGER" -> sequence;
+                case "BOOLEAN", "BOOL" -> (sequence & 1L) == 0L;
+                case "STRING", "TEXT" -> "runtime-" + sequence;
+                default -> (double) sequence;
+            };
+        }
     }
 
     private record SoakOptions(String scenario,
@@ -1117,6 +1306,10 @@ class RealEnvironmentSoakIT {
 
         private boolean batchIngressMode() {
             return "batch".equalsIgnoreCase(ingressMode);
+        }
+
+        private boolean runtimeIngressMode() {
+            return "runtime".equalsIgnoreCase(ingressMode);
         }
 
         private static String value(Environment environment, String key, String defaultValue) {
