@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -20,11 +21,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -154,6 +158,87 @@ class DeviceBatchExecutorTest {
 
         verify(collectionManager, never()).readPoints(eq(deviceId), anyList());
         verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
+    }
+
+    @Test
+    void inFlightCollectionMustNotDropResultOnlyBecauseRevisionChanged() throws Exception {
+        String deviceId = "dev-revision-inflight";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        CountDownLatch readStarted = new CountDownLatch(1);
+        CompletableFuture<Map<String, Object>> gate = new CompletableFuture<>();
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
+        when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
+            readStarted.countDown();
+            return gate.get(2, TimeUnit.SECONDS);
+        });
+        DeviceBatchTask task = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                generation,
+                runtimeState.getTimeSliceRevision());
+
+        CompletableFuture<Void> dispatchFuture = batchExecutor.submit(task, List.of(point));
+        assertNotNull(dispatchFuture);
+        assertTrue(readStarted.await(1, TimeUnit.SECONDS));
+        runtimeState.updateTimeSliceConfig(2, 1_000);
+        gate.complete(Map.of("p1", 1));
+        dispatchFuture.get(2, TimeUnit.SECONDS);
+
+        verify(collectedDataProcessor, timeout(1_000)).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
+    }
+
+    @Test
+    void inFlightCollectionMustStillDropResultWhenGenerationChanged() throws Exception {
+        String deviceId = "dev-generation-inflight";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        CountDownLatch readStarted = new CountDownLatch(1);
+        CompletableFuture<Map<String, Object>> gate = new CompletableFuture<>();
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
+        when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
+            readStarted.countDown();
+            return gate.get(2, TimeUnit.SECONDS);
+        });
+        DeviceBatchTask task = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                generation,
+                runtimeState.getTimeSliceRevision());
+
+        CompletableFuture<Void> dispatchFuture = batchExecutor.submit(task, List.of(point));
+        assertNotNull(dispatchFuture);
+        assertTrue(readStarted.await(1, TimeUnit.SECONDS));
+        runtimeState.removeDevice(deviceId);
+        collectionTaskGuard.clearDevice(deviceId);
+        runtimeState.markRunning(deviceId, collectionTaskGuard.activateNextGeneration(deviceId));
+        gate.complete(Map.of("p1", 1));
+        dispatchFuture.get(2, TimeUnit.SECONDS);
+
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
+    }
+
+    @Test
+    void staleRevisionTaskMustNotBeNewlySubmittedAfterReplan() {
+        String deviceId = "dev-stale-revision";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        DeviceBatchTask staleTask = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                generation,
+                runtimeState.getTimeSliceRevision());
+
+        runtimeState.updateTimeSliceConfig(2, 1_000);
+        CompletableFuture<Void> dispatchFuture = batchExecutor.submit(staleTask, List.of(point));
+
+        assertNull(dispatchFuture);
+        verify(collectionManager, never()).readPoints(eq(deviceId), anyList());
     }
 
     private long markRunning(String deviceId) {

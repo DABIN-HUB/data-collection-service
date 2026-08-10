@@ -2,12 +2,10 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
@@ -34,7 +32,6 @@ class DeviceBatchTask {
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
-    private final ConcurrentHashMap<String, Long> lastExecutionNanosByPoint = new ConcurrentHashMap<>();
     private volatile long nextAllowedExecutionTime;
 
     /**
@@ -85,30 +82,24 @@ class DeviceBatchTask {
     /**
      * 选出当前真正到期的点位。时间片只负责检查频率，业务采集周期由点位运行间隔控制。
      */
-    List<DataPoint> selectDuePoints() {
-        if (points == null || points.isEmpty()) {
+    List<DataPoint> selectDuePoints(SchedulerRuntimeState runtimeState) {
+        if (runtimeState == null) {
             return List.of();
         }
-        long nowNanos = nanoTimeSupplier.getAsLong();
-        List<DataPoint> duePoints = new ArrayList<>(points.size());
-        for (DataPoint point : points) {
-            if (point == null || isPointDue(point, nowNanos)) {
-                duePoints.add(point);
-            }
-        }
-        return duePoints;
+        return runtimeState.selectDuePoints(deviceId, generation, points, collectionIntervalResolver,
+                nanoTimeSupplier.getAsLong());
     }
 
     /**
      * 在任务取得执行权后推进 due 状态，避免慢采集结束后补执行历史周期形成突发。
      */
-    void markScheduled(List<DataPoint> scheduledPoints) {
+    void markScheduled(SchedulerRuntimeState runtimeState, List<DataPoint> scheduledPoints) {
         if (scheduledPoints == null || scheduledPoints.isEmpty()) {
             return;
         }
         long nowNanos = nanoTimeSupplier.getAsLong();
-        for (DataPoint point : scheduledPoints) {
-            lastExecutionNanosByPoint.put(pointScheduleKey(point), nowNanos);
+        if (runtimeState != null) {
+            runtimeState.markPointsScheduled(deviceId, generation, scheduledPoints, nowNanos);
         }
         lastExecutionTime = System.currentTimeMillis();
     }
@@ -118,6 +109,13 @@ class DeviceBatchTask {
      */
     void finishExecution() {
         running.set(false);
+    }
+
+    void finishExecution(SchedulerRuntimeState runtimeState, List<DataPoint> scheduledPoints) {
+        if (runtimeState != null) {
+            runtimeState.completePointSchedules(deviceId, generation, scheduledPoints);
+        }
+        finishExecution();
     }
 
     /**
@@ -182,32 +180,6 @@ class DeviceBatchTask {
             }
         }
         inFlightFutures.clear();
-    }
-
-    private boolean isPointDue(DataPoint point, long nowNanos) {
-        Long lastExecutionNanos = lastExecutionNanosByPoint.get(pointScheduleKey(point));
-        if (lastExecutionNanos == null) {
-            return true;
-        }
-        long intervalNanos = TimeUnit.MILLISECONDS.toNanos(
-                Math.max(1L, collectionIntervalResolver.applyAsLong(point)));
-        return nowNanos - lastExecutionNanos >= intervalNanos;
-    }
-
-    private String pointScheduleKey(DataPoint point) {
-        if (point == null) {
-            return "<null>";
-        }
-        if (point.getPointId() != null && !point.getPointId().isBlank()) {
-            return point.getPointId();
-        }
-        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
-            return point.getPointCode();
-        }
-        if (point.getAddress() != null && !point.getAddress().isBlank()) {
-            return point.getAddress();
-        }
-        return String.valueOf(System.identityHashCode(point));
     }
 
     private static long defaultCollectionInterval(DataPoint point) {

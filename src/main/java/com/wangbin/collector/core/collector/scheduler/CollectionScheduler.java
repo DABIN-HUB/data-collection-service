@@ -186,7 +186,7 @@ public class CollectionScheduler {
                 if (task.shouldSkip() || !deviceBatchExecutor.isBatchTaskActive(task) || task.timeSliceRevision != revision) {
                     continue;
                 }
-                List<DataPoint> duePoints = task.selectDuePoints();
+                List<DataPoint> duePoints = task.selectDuePoints(runtimeState);
                 if (duePoints.isEmpty()) {
                     continue;
                 }

@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.scheduler;
 
+import com.wangbin.collector.common.domain.entity.DataPoint;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -9,7 +10,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.ToLongFunction;
 
 /**
  * 保存调度器运行期状态，并集中处理时间片任务桶和设备运行态的并发访问。
@@ -21,6 +24,8 @@ public class SchedulerRuntimeState {
     private final ConcurrentHashMap<Integer, List<DeviceBatchTask>> timeSliceTasks = new ConcurrentHashMap<>();
     private final Set<String> startingDevices = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Long> startingGenerations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<PointScheduleKey, Long> pointScheduleNanos = new ConcurrentHashMap<>();
+    private final Set<PointScheduleKey> inFlightPointSchedules = ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicInteger timeSliceCount = new java.util.concurrent.atomic.AtomicInteger(2);
     private final java.util.concurrent.atomic.AtomicInteger timeSliceInterval = new java.util.concurrent.atomic.AtomicInteger(1000);
     private final java.util.concurrent.atomic.AtomicLong timeSliceRevision = new java.util.concurrent.atomic.AtomicLong(0);
@@ -68,6 +73,100 @@ public class SchedulerRuntimeState {
         } finally {
             stateLock.unlock();
         }
+    }
+
+    List<DataPoint> selectDuePoints(
+            String deviceId,
+            long generation,
+            List<DataPoint> points,
+            ToLongFunction<DataPoint> intervalResolver,
+            long nowNanos) {
+        if (points == null || points.isEmpty()) {
+            return List.of();
+        }
+        List<DataPoint> duePoints = new ArrayList<>(points.size());
+        for (DataPoint point : points) {
+            if (point == null || isPointDue(deviceId, generation, point, intervalResolver, nowNanos)) {
+                duePoints.add(point);
+            }
+        }
+        return duePoints;
+    }
+
+    void markPointsScheduled(String deviceId,
+                             long generation,
+                             List<DataPoint> points,
+                             long nowNanos) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
+        if (scheduleInfo == null || !scheduleInfo.isRunning() || scheduleInfo.getGeneration() != generation) {
+            return;
+        }
+        for (DataPoint point : points) {
+            PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
+            pointScheduleNanos.put(key, nowNanos);
+            inFlightPointSchedules.add(key);
+        }
+    }
+
+    void completePointSchedules(String deviceId, long generation, List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        for (DataPoint point : points) {
+            inFlightPointSchedules.remove(new PointScheduleKey(deviceId, generation, pointScheduleKey(point)));
+        }
+    }
+
+    void rollbackPointSchedules(String deviceId, long generation, List<DataPoint> points) {
+        if (points == null || points.isEmpty()) {
+            return;
+        }
+        for (DataPoint point : points) {
+            PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
+            inFlightPointSchedules.remove(key);
+            pointScheduleNanos.remove(key);
+        }
+    }
+
+    int getCadenceStateSizeForTest() {
+        return pointScheduleNanos.size();
+    }
+
+    private boolean isPointDue(String deviceId,
+                               long generation,
+                               DataPoint point,
+                               ToLongFunction<DataPoint> intervalResolver,
+                               long nowNanos) {
+        PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
+        if (inFlightPointSchedules.contains(key)) {
+            return false;
+        }
+        Long lastScheduledNanos = pointScheduleNanos.get(key);
+        if (lastScheduledNanos == null) {
+            return true;
+        }
+        long intervalMs = intervalResolver != null ? intervalResolver.applyAsLong(point) : 1L;
+        long intervalNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, intervalMs));
+        return nowNanos - lastScheduledNanos >= intervalNanos;
+    }
+
+    private String pointScheduleKey(DataPoint point) {
+        if (point == null) {
+            return "<null>";
+        }
+        if (point.getPointId() != null && !point.getPointId().isBlank()) {
+            return point.getPointId();
+        }
+        if (point.getPointCode() != null && !point.getPointCode().isBlank()) {
+            return point.getPointCode();
+        }
+        if (point.getAddress() != null && !point.getAddress().isBlank()) {
+            return point.getAddress();
+        }
+        return String.valueOf(System.identityHashCode(point));
     }
 
     private void resetTimeSliceBucketsLocked(int sliceCount) {
@@ -259,6 +358,7 @@ public class SchedulerRuntimeState {
         try {
             startingDevices.remove(deviceId);
             startingGenerations.remove(deviceId);
+            clearCadenceStateLocked(deviceId);
             return deviceScheduleInfo.remove(deviceId);
         } finally {
             stateLock.unlock();
@@ -277,6 +377,7 @@ public class SchedulerRuntimeState {
             DeviceScheduleInfo info = deviceScheduleInfo.get(deviceId);
             if (info != null && info.getGeneration() == generation) {
                 deviceScheduleInfo.remove(deviceId);
+                clearCadenceStateLocked(deviceId, generation);
                 removed = true;
             }
             return removed;
@@ -360,11 +461,28 @@ public class SchedulerRuntimeState {
             timeSliceTasks.clear();
             startingDevices.clear();
             startingGenerations.clear();
+            pointScheduleNanos.clear();
+            inFlightPointSchedules.clear();
         } finally {
             stateLock.unlock();
         }
         for (DeviceBatchTask task : tasksToCancel) {
             task.cancel();
         }
+    }
+
+    private void clearCadenceStateLocked(String deviceId) {
+        pointScheduleNanos.keySet().removeIf(key -> Objects.equals(key.deviceId(), deviceId));
+        inFlightPointSchedules.removeIf(key -> Objects.equals(key.deviceId(), deviceId));
+    }
+
+    private void clearCadenceStateLocked(String deviceId, long generation) {
+        pointScheduleNanos.keySet().removeIf(key ->
+                Objects.equals(key.deviceId(), deviceId) && key.generation() == generation);
+        inFlightPointSchedules.removeIf(key ->
+                Objects.equals(key.deviceId(), deviceId) && key.generation() == generation);
+    }
+
+    private record PointScheduleKey(String deviceId, long generation, String pointKey) {
     }
 }

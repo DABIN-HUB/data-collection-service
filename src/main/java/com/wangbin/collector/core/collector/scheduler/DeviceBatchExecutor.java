@@ -87,21 +87,26 @@ public class DeviceBatchExecutor {
         if (task == null || duePoints == null || duePoints.isEmpty()) {
             return null;
         }
+        if (!isBatchTaskDispatchable(task)) {
+            return null;
+        }
         if (!task.tryStartExecution()) {
             return null;
         }
-        task.markScheduled(duePoints);
+        task.markScheduled(runtimeState, duePoints);
         try {
-            return CompletableFuture.runAsync(() -> {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try {
                     processDeviceBatch(task, duePoints);
                 } catch (Exception e) {
                     log.error("设备批量执行失败，设备={}", task.deviceId, e);
                 } finally {
-                    task.finishExecution();
+                    task.finishExecution(runtimeState, duePoints);
                 }
             }, batchDispatcherExecutor);
+            return future;
         } catch (RejectedExecutionException e) {
+            runtimeState.rollbackPointSchedules(task.deviceId, task.generation, duePoints);
             task.finishExecution();
             batchDispatchRejectedCount.incrementAndGet();
             task.recordFailure();
@@ -129,7 +134,7 @@ public class DeviceBatchExecutor {
         long startTime = System.currentTimeMillis();
         boolean success = false;
         try {
-            if (!isBatchTaskActive(batchTask)) {
+            if (!isBatchTaskExecutionStillValid(batchTask)) {
                 return;
             }
 
@@ -168,7 +173,7 @@ public class DeviceBatchExecutor {
                 unregisterCollectFuture(deviceId, collectFuture);
             }
 
-            if (!isBatchTaskActive(batchTask) || values == null || values.isEmpty()) {
+            if (!isBatchTaskExecutionStillValid(batchTask) || values == null || values.isEmpty()) {
                 return;
             }
 
@@ -285,6 +290,10 @@ public class DeviceBatchExecutor {
     }
 
     boolean isBatchTaskActive(DeviceBatchTask batchTask) {
+        return isBatchTaskDispatchable(batchTask);
+    }
+
+    boolean isBatchTaskDispatchable(DeviceBatchTask batchTask) {
         if (batchTask == null || batchTask.isCancelled()) {
             return false;
         }
@@ -294,6 +303,18 @@ public class DeviceBatchExecutor {
         }
         return scheduleInfo.getGeneration() == batchTask.generation
                 && batchTask.timeSliceRevision == runtimeState.getTimeSliceRevision()
+                && collectionTaskGuard.isCurrent(batchTask.deviceId, batchTask.generation);
+    }
+
+    boolean isBatchTaskExecutionStillValid(DeviceBatchTask batchTask) {
+        if (batchTask == null || batchTask.isCancelled()) {
+            return false;
+        }
+        DeviceScheduleInfo scheduleInfo = runtimeState.getScheduleInfo(batchTask.deviceId);
+        if (scheduleInfo == null || !scheduleInfo.isRunning()) {
+            return false;
+        }
+        return scheduleInfo.getGeneration() == batchTask.generation
                 && collectionTaskGuard.isCurrent(batchTask.deviceId, batchTask.generation);
     }
 
