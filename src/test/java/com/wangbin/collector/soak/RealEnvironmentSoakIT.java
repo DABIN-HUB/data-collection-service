@@ -8,12 +8,15 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
+import com.wangbin.collector.core.cache.config.TelemetryExecutorProperties;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
 import com.wangbin.collector.core.collector.factory.CollectorFactory;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
+import com.wangbin.collector.core.collector.scheduler.PerformanceStatsSnapshot;
+import com.wangbin.collector.core.collector.scheduler.SchedulerRuntimeState;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
@@ -22,9 +25,12 @@ import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
 import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
 import com.wangbin.collector.monitor.metrics.SystemResourceSnapshot;
 import com.wangbin.collector.storage.buffer.HistoryBatchMetrics;
+import com.wangbin.collector.storage.buffer.HistoryBatchProperties;
 import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
 import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -42,6 +48,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
 import java.io.BufferedWriter;
@@ -61,6 +68,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -109,6 +117,9 @@ class RealEnvironmentSoakIT {
     private CollectionScheduler collectionScheduler;
 
     @Autowired
+    private SchedulerRuntimeState schedulerRuntimeState;
+
+    @Autowired
     private ConfigManager configManager;
 
     @Autowired
@@ -122,6 +133,12 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private ReportProperties reportProperties;
+
+    @Autowired
+    private HistoryBatchProperties historyBatchProperties;
+
+    @Autowired
+    private TelemetryExecutorProperties telemetryExecutorProperties;
 
     @Autowired
     private Environment environment;
@@ -150,8 +167,11 @@ class RealEnvironmentSoakIT {
         Path outputDir = options.outputDir();
         Files.createDirectories(outputDir);
 
-        List<DevicePoints> devicePoints = registerDevices(options);
         SoakCounters counters = new SoakCounters();
+        if (options.runtimeIngressMode()) {
+            configureRuntimeCollectorFactory(counters);
+        }
+        List<DevicePoints> devicePoints = registerDevices(options);
         List<Long> roundDurations = new ArrayList<>();
         List<MetricSample> samples = new ArrayList<>();
         MqttAckBridge ackBridge = null;
@@ -243,7 +263,7 @@ class RealEnvironmentSoakIT {
         long start = System.currentTimeMillis();
         counters.loadStartedAt.set(start);
         for (DevicePoints device : devicePoints) {
-            assertTrue(collectionScheduler.startDevice(device.deviceId()),
+            assertTrue(startRuntimeDevice(device.deviceId()),
                     "runtime soak device failed to start: " + device.deviceId());
         }
         long end = start + TimeUnit.SECONDS.toMillis(options.durationSeconds());
@@ -273,6 +293,20 @@ class RealEnvironmentSoakIT {
             collector.init(deviceInfo);
             return collector;
         });
+    }
+
+    private boolean startRuntimeDevice(String deviceId) throws InterruptedException {
+        if (collectionScheduler.startDevice(deviceId)) {
+            return true;
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+        while (System.nanoTime() < deadline) {
+            if (collectionScheduler.isDeviceRunning(deviceId)) {
+                return true;
+            }
+            Thread.sleep(100L);
+        }
+        return collectionScheduler.isDeviceRunning(deviceId);
     }
 
     private void appendPoint(String deviceId,
@@ -360,10 +394,12 @@ class RealEnvironmentSoakIT {
     private List<DevicePoints> registerDevices(SoakOptions options) {
         List<DevicePoints> result = new ArrayList<>(options.devices());
         int remaining = options.points();
+        String devicePrefix = "soak-" + safeRunSegment(options.scenario())
+                + '-' + Long.toString(options.startedAt(), Character.MAX_RADIX);
         for (int deviceIndex = 0; deviceIndex < options.devices(); deviceIndex++) {
             int devicesLeft = options.devices() - deviceIndex;
             int pointCount = Math.max(1, remaining / devicesLeft);
-            String deviceId = "soak-dev-" + String.format(Locale.ROOT, "%04d", deviceIndex);
+            String deviceId = devicePrefix + "-dev-" + String.format(Locale.ROOT, "%04d", deviceIndex);
             DeviceInfo device = device(deviceId, options.collectionIntervalMs());
             DeviceConnection connection = connection(deviceId);
             List<DataPoint> points = points(deviceId, pointCount, options);
@@ -372,6 +408,16 @@ class RealEnvironmentSoakIT {
             remaining -= pointCount;
         }
         return result;
+    }
+
+    private String safeRunSegment(String value) {
+        String normalized = value == null ? "run" : value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-+|-+$)", "");
+        if (normalized.isBlank()) {
+            return "run";
+        }
+        return normalized.length() > 24 ? normalized.substring(0, 24) : normalized;
     }
 
     private DeviceInfo device(String deviceId, long collectionIntervalMs) {
@@ -471,6 +517,8 @@ class RealEnvironmentSoakIT {
         RedisSnapshot redis = redisSnapshot(options);
         CloudSnapshot cloud = cloudSnapshot(ackBridge);
         GcSnapshot gc = gcSnapshot();
+        SchedulerStateSnapshot scheduler = schedulerStateSnapshot();
+        HikariSnapshot hikari = hikariSnapshot();
         long now = System.currentTimeMillis();
         return new MetricSample(
                 now,
@@ -496,6 +544,8 @@ class RealEnvironmentSoakIT {
                 gc.count(),
                 gc.timeMs(),
                 resources.getThreadPools(),
+                scheduler,
+                hikari,
                 redis,
                 new EntryIngressSnapshot(entry.redisPending(), entry.redisProcessing(), entry.redisDeadLetter(),
                         entry.localPending(), entry.localCapacity(), entry.rejectedTasks(), entry.rejectedItems(),
@@ -610,6 +660,52 @@ class RealEnvironmentSoakIT {
         return new GcSnapshot(count, timeMs);
     }
 
+    private SchedulerStateSnapshot schedulerStateSnapshot() {
+        PerformanceStatsSnapshot performance = collectionScheduler.getPerformanceSnapshot();
+        return new SchedulerStateSnapshot(
+                performance.getTimeSliceCount(),
+                performance.getTimeSliceIntervalMs(),
+                schedulerLongMethod("getTimeSliceRevision"),
+                performance.getBatchDispatchRejectedCount(),
+                performance.getCollectRejectedCount(),
+                performance.getProcessRejectedCount(),
+                performance.getReconnectAttemptCount(),
+                performance.getReconnectSuccessCount(),
+                performance.getReconnectFailureCount(),
+                performance.getReconnectingDevices(),
+                schedulerIntMethod("getCadenceStateSizeForTest"),
+                schedulerIntMethod("getInFlightPointScheduleSizeForTest"),
+                performance.getTimeSliceExecutionTimes().size(),
+                performance.getDeviceStats().size());
+    }
+
+    private long schedulerLongMethod(String methodName) {
+        Object value = ReflectionTestUtils.invokeMethod(schedulerRuntimeState, methodName);
+        return value instanceof Number number ? number.longValue() : -1L;
+    }
+
+    private int schedulerIntMethod(String methodName) {
+        Object value = ReflectionTestUtils.invokeMethod(schedulerRuntimeState, methodName);
+        return value instanceof Number number ? number.intValue() : -1;
+    }
+
+    private HikariSnapshot hikariSnapshot() {
+        DataSource dataSource = dataSourceProvider.getIfAvailable();
+        if (dataSource instanceof HikariDataSource hikari) {
+            HikariPoolMXBean pool = hikari.getHikariPoolMXBean();
+            return new HikariSnapshot(
+                    hikari.getMaximumPoolSize(),
+                    hikari.getMinimumIdle(),
+                    pool != null ? pool.getActiveConnections() : -1,
+                    pool != null ? pool.getIdleConnections() : -1,
+                    pool != null ? pool.getThreadsAwaitingConnection() : -1,
+                    pool != null ? pool.getTotalConnections() : -1,
+                    null);
+        }
+        return new HikariSnapshot(-1, -1, -1, -1, -1, -1,
+                dataSource != null ? dataSource.getClass().getName() : "unavailable");
+    }
+
     private void writeRunInfo(Path outputDir, SoakOptions options, List<DevicePoints> devicePoints) throws IOException {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("scenario", options.scenario());
@@ -635,8 +731,45 @@ class RealEnvironmentSoakIT {
         info.put("maxMemoryBytes", Runtime.getRuntime().maxMemory());
         info.put("redis", redisSnapshot(options));
         info.put("tdengine", tdengineInfo());
+        info.put("hikari", hikariSnapshot());
+        info.put("cloudEnabled", reportProperties.isEnabled());
+        info.put("historyBatchConfiguration", historyBatchConfiguration());
+        info.put("telemetryExecutorConfiguration", telemetryExecutorConfiguration());
         info.put("mqttBrokerUrl", options.mqttBrokerUrl());
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(outputDir.resolve("run-info.json").toFile(), info);
+    }
+
+    private Map<String, Object> historyBatchConfiguration() {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("enabled", historyBatchProperties.isEnabled());
+        config.put("batchSize", historyBatchProperties.getBatchSize());
+        config.put("flushIntervalMs", historyBatchProperties.getFlushIntervalMs());
+        config.put("maxBufferedRows", historyBatchProperties.getMaxBufferedRows());
+        config.put("shutdownFlushTimeoutMs", historyBatchProperties.getShutdownFlushTimeoutMs());
+        return config;
+    }
+
+    private Map<String, Object> telemetryExecutorConfiguration() {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("cacheAsyncExecutor", Map.of(
+                "coreSize", 8,
+                "maxSize", 16,
+                "queueCapacity", 1000,
+                "rejectedExecutionHandler", "ObservedRejectedExecutionHandler+AbortPolicy"));
+        config.put("cacheStage", stageConfiguration(telemetryExecutorProperties.getCache()));
+        config.put("streamStage", stageConfiguration(telemetryExecutorProperties.getStream()));
+        config.put("historyStage", stageConfiguration(telemetryExecutorProperties.getHistory()));
+        config.put("reportStage", stageConfiguration(telemetryExecutorProperties.getReport()));
+        return config;
+    }
+
+    private Map<String, Object> stageConfiguration(TelemetryExecutorProperties.Stage stage) {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("coreSize", stage.getCoreSize());
+        config.put("maxSize", stage.getMaxSize());
+        config.put("queueCapacity", stage.getQueueCapacity());
+        config.put("rejectedExecutionHandler", "ObservedRejectedExecutionHandler+AbortPolicy");
+        return config;
     }
 
     private Map<String, Object> tdengineInfo() {
@@ -707,11 +840,19 @@ class RealEnvironmentSoakIT {
         MetricSample finalSample = samples.get(samples.size() - 1);
         long elapsedMs = Math.max(1L, finalSample.elapsedMs());
         long loadElapsedMs = Math.max(1L, counters.loadFinishedAt.get() - counters.loadStartedAt.get());
+        List<Integer> readPointSizes = counters.runtimeReadPointSizesSnapshot();
+        List<Long> runtimeCadenceIntervalsMs = counters.runtimeCadenceIntervalsMsSnapshot();
+        double theoreticalRate = options.points() * 1000.0d / Math.max(1L, options.collectionIntervalMs());
+        double collectorRate = counters.runtimeReadPointsItems.get() * 1000.0d / loadElapsedMs;
+        double pipelineRate = finalSample.historyBatch().acceptedRows() * 1000.0d / loadElapsedMs;
+        double tdengineRate = finalSample.historyBatch().flushedRows() * 1000.0d / loadElapsedMs;
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("scenario", options.scenario());
         summary.put("points", options.points());
         summary.put("devices", options.devices());
         summary.put("durationSeconds", options.durationSeconds());
+        summary.put("collectionIntervalMs", options.collectionIntervalMs());
+        summary.put("drainWaitSeconds", options.drainWaitSeconds());
         summary.put("ingressMode", options.ingressMode());
         summary.put("spreadWithinInterval", options.spreadWithinInterval());
         summary.put("actualElapsedMs", elapsedMs);
@@ -724,16 +865,49 @@ class RealEnvironmentSoakIT {
         summary.put("runtimeReadPointsCalls", counters.runtimeReadPointsCalls.get());
         summary.put("runtimeReadPointsItems", counters.runtimeReadPointsItems.get());
         summary.put("pointsPerSecond", counters.submitted.get() * 1000.0d / loadElapsedMs);
+        summary.put("theoreticalPointsPerSecond", theoreticalRate);
+        summary.put("actualCollectorPointsPerSecond", collectorRate);
+        summary.put("actualPipelinePointsPerSecond", pipelineRate);
+        summary.put("actualTdengineRowsPerSecond", tdengineRate);
+        summary.put("readPointsCalls", counters.runtimeReadPointsCalls.get());
+        summary.put("pointsPerReadAvg", average(readPointSizes));
+        summary.put("pointsPerReadP50", percentileInt(readPointSizes, 0.50d));
+        summary.put("pointsPerReadP95", percentileInt(readPointSizes, 0.95d));
+        summary.put("pointsPerReadMax", maxInt(readPointSizes));
+        summary.put("runtimeCadenceP50Ms", percentile(runtimeCadenceIntervalsMs, 0.50d));
+        summary.put("runtimeCadenceP95Ms", percentile(runtimeCadenceIntervalsMs, 0.95d));
+        summary.put("runtimeCadenceP99Ms", percentile(runtimeCadenceIntervalsMs, 0.99d));
+        summary.put("runtimeCadenceMinMs", runtimeCadenceIntervalsMs.stream().mapToLong(Long::longValue).min().orElse(0L));
+        summary.put("runtimeCadenceMaxMs", max(runtimeCadenceIntervalsMs));
+        summary.put("max100msBurstItems", counters.maxBurst100Ms());
+        summary.put("max500msBurstItems", counters.maxBurst500Ms());
+        summary.put("max1sBurstItems", counters.maxBurst1s());
+        summary.put("saveBatchAsyncTaskRatePerSecond", counters.runtimeReadPointsCalls.get() * 1000.0d / loadElapsedMs);
+        summary.put("saveBatchAsyncTaskRateNote", "runtime mode 中每次 readPoints 批量返回后由 AOP 触发一个 saveBatchAsync task");
         summary.put("roundP50Ms", percentile(roundDurations, 0.50d));
         summary.put("roundP95Ms", percentile(roundDurations, 0.95d));
         summary.put("roundP99Ms", percentile(roundDurations, 0.99d));
         summary.put("roundMaxMs", max(roundDurations));
         summary.put("roundMetricNote", "round*Ms 表示本测试发射周期，开启 pacing 时接近 collectionInterval，不代表 History 写入延迟");
+        summary.put("processCpuLoadAvg", averageDouble(samples.stream().map(MetricSample::processCpuLoad).toList()));
+        summary.put("processCpuLoadPeak", samples.stream().mapToDouble(MetricSample::processCpuLoad).max().orElse(-1D));
+        summary.put("systemCpuLoadAvg", averageDouble(samples.stream().map(MetricSample::systemCpuLoad).toList()));
+        summary.put("systemCpuLoadPeak", samples.stream().mapToDouble(MetricSample::systemCpuLoad).max().orElse(-1D));
         summary.put("heapPeakBytes", samples.stream().mapToLong(MetricSample::heapUsed).max().orElse(-1L));
         summary.put("heapEndBytes", finalSample.heapUsed());
         summary.put("threadPeak", samples.stream().mapToInt(MetricSample::threadCount).max().orElse(-1));
+        summary.put("threadEnd", finalSample.threadCount());
         summary.put("gcCount", finalSample.gcCount());
         summary.put("gcTimeMs", finalSample.gcTimeMs());
+        summary.put("redisMemoryStartBytes", samples.stream().findFirst().map(sample -> sample.redis().usedMemory()).orElse(-1L));
+        summary.put("redisMemoryPeakBytes", samples.stream().mapToLong(sample -> sample.redis().usedMemory()).max().orElse(-1L));
+        summary.put("redisMemoryEndBytes", finalSample.redis().usedMemory());
+        summary.put("schedulerFinal", finalSample.scheduler());
+        summary.put("hikariFinal", finalSample.hikari());
+        summary.put("hikariActivePeak", samples.stream().mapToInt(sample -> sample.hikari().activeConnections()).max().orElse(-1));
+        summary.put("hikariWaitingPeak", samples.stream().mapToInt(sample -> sample.hikari().threadsAwaitingConnection()).max().orElse(-1));
+        summary.put("historyPendingPeak", samples.stream().mapToLong(sample -> sample.history().redisPending()).max().orElse(-1L));
+        summary.put("entryPendingPeak", samples.stream().mapToLong(sample -> sample.entry().redisPending()).max().orElse(-1L));
         summary.put("redisFinal", finalSample.redis());
         summary.put("telemetryEntryFinal", finalSample.entry());
         summary.put("historyFinal", finalSample.history());
@@ -751,6 +925,165 @@ class RealEnvironmentSoakIT {
         summary.put("ackBridgeFailed", ackBridge != null ? ackBridge.failed.get() : 0L);
         summary.put("deviceIds", devicePoints.stream().map(DevicePoints::deviceId).toList());
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(outputDir.resolve("summary.json").toFile(), summary);
+        writeRuntimeCapacitySummary(outputDir, summary);
+    }
+
+    private Map<String, Long> castLongMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Long> result = new LinkedHashMap<>();
+            map.forEach((key, number) -> {
+                if (key != null && number instanceof Number typedNumber) {
+                    result.put(String.valueOf(key), typedNumber.longValue());
+                }
+            });
+            return result;
+        }
+        return Map.of();
+    }
+
+    private long rejectedCounter(Map<String, Long> rejectedPeaks, String executorKeyword) {
+        String normalized = executorKeyword.toLowerCase(Locale.ROOT);
+        return rejectedPeaks.entrySet().stream()
+                .filter(entry -> entry.getKey().toLowerCase(Locale.ROOT).contains(normalized))
+                .mapToLong(Map.Entry::getValue)
+                .max()
+                .orElse(0L);
+    }
+
+    private long queuePeak(Map<String, Long> queuePeaks, String executorKeyword) {
+        String normalized = executorKeyword.toLowerCase(Locale.ROOT);
+        return queuePeaks.entrySet().stream()
+                .filter(entry -> entry.getKey().toLowerCase(Locale.ROOT).contains(normalized))
+                .mapToLong(Map.Entry::getValue)
+                .max()
+                .orElse(0L);
+    }
+
+    private long peakHistoryPending(Map<String, Object> summary) {
+        Object value = summary.get("historyPendingPeak");
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private boolean isStable(SchedulerStateSnapshot scheduler,
+                             EntryIngressSnapshot entry,
+                             HistorySnapshot history,
+                             HistoryBatchSnapshot batch,
+                             Map<String, Long> rejectedPeaks) {
+        return scheduler.batchDispatchRejectedCount() == 0L
+                && scheduler.collectRejectedCount() == 0L
+                && scheduler.processRejectedCount() == 0L
+                && entry.rejectedItems() == 0L
+                && entry.redisPending() == 0L
+                && entry.localPending() == 0
+                && entry.droppedItems() == 0L
+                && rejectedCounter(rejectedPeaks, "stream") == 0L
+                && rejectedCounter(rejectedPeaks, "history") == 0L
+                && history.redisPending() == 0L
+                && history.localPending() == 0
+                && history.rejectedDropped() == 0L
+                && batch.currentBufferedRows() == 0
+                && batch.inFlightFlushes() == 0;
+    }
+
+    private String firstBottleneck(SchedulerStateSnapshot scheduler,
+                                   EntryIngressSnapshot entry,
+                                   HistorySnapshot history,
+                                   Map<String, Long> rejectedPeaks) {
+        if (scheduler.processRejectedCount() > 0L) {
+            return "process-executor";
+        }
+        if (scheduler.collectRejectedCount() > 0L) {
+            return "collector-executor";
+        }
+        if (scheduler.batchDispatchRejectedCount() > 0L) {
+            return "batch-dispatch-executor";
+        }
+        if (entry.rejectedItems() > 0L || entry.redisPending() > 0L) {
+            return "telemetry-entry";
+        }
+        if (rejectedCounter(rejectedPeaks, "stream") > 0L) {
+            return "stream-stage";
+        }
+        if (rejectedCounter(rejectedPeaks, "history") > 0L
+                || history.redisPending() > 0L
+                || history.localPending() > 0) {
+            return "history-stage";
+        }
+        return "none";
+    }
+
+    private String csvValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n")) {
+            return '"' + text.replace("\"", "\"\"") + '"';
+        }
+        return text;
+    }
+
+    private void writeRuntimeCapacitySummary(Path outputDir, Map<String, Object> summary) throws IOException {
+        List<String> headers = List.of(
+                "scenario", "points", "devices", "collectionIntervalMs", "theoreticalPointsPerSecond",
+                "actualCollectorPointsPerSecond", "actualPipelinePointsPerSecond", "actualTdengineRowsPerSecond",
+                "durationSeconds", "readPointsCalls", "pointsPerReadAvg", "pointsPerReadP95",
+                "max1sBurstItems", "batchDispatchRejected", "collectRejected", "processRejected",
+                "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
+                "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
+                "batchP95", "batchWriteP95", "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
+                "threadPeak", "drainSeconds", "stable", "firstBottleneck");
+        SchedulerStateSnapshot scheduler = (SchedulerStateSnapshot) summary.get("schedulerFinal");
+        EntryIngressSnapshot entry = (EntryIngressSnapshot) summary.get("telemetryEntryFinal");
+        HistorySnapshot history = (HistorySnapshot) summary.get("historyFinal");
+        HistoryBatchSnapshot batch = (HistoryBatchSnapshot) summary.get("historyBatchFinal");
+        Map<String, Long> queuePeaks = castLongMap(summary.get("executorQueuePeaks"));
+        Map<String, Long> rejectedPeaks = castLongMap(summary.get("executorRejectedPeaks"));
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("scenario", summary.get("scenario"));
+        row.put("points", summary.get("points"));
+        row.put("devices", summary.get("devices"));
+        row.put("collectionIntervalMs", summary.get("collectionIntervalMs"));
+        row.put("theoreticalPointsPerSecond", summary.get("theoreticalPointsPerSecond"));
+        row.put("actualCollectorPointsPerSecond", summary.get("actualCollectorPointsPerSecond"));
+        row.put("actualPipelinePointsPerSecond", summary.get("actualPipelinePointsPerSecond"));
+        row.put("actualTdengineRowsPerSecond", summary.get("actualTdengineRowsPerSecond"));
+        row.put("durationSeconds", summary.get("durationSeconds"));
+        row.put("readPointsCalls", summary.get("readPointsCalls"));
+        row.put("pointsPerReadAvg", summary.get("pointsPerReadAvg"));
+        row.put("pointsPerReadP95", summary.get("pointsPerReadP95"));
+        row.put("max1sBurstItems", summary.get("max1sBurstItems"));
+        row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
+        row.put("collectRejected", scheduler.collectRejectedCount());
+        row.put("processRejected", scheduler.processRejectedCount());
+        row.put("entryRejectedItems", entry.rejectedItems());
+        row.put("streamRejected", rejectedCounter(rejectedPeaks, "stream"));
+        row.put("historyRejected", rejectedCounter(rejectedPeaks, "history"));
+        row.put("historyDeferred", history.rejectedRedisBuffered() + history.rejectedLocalBuffered()
+                + history.writeFailureRedisBuffered() + history.writeFailureLocalBuffered());
+        row.put("historyPendingPeak", peakHistoryPending(summary));
+        row.put("historyPendingFinal", history.redisPending());
+        row.put("historyQueuePeak", queuePeak(queuePeaks, "history"));
+        row.put("batchAvg", batch.averageBatchSize());
+        row.put("batchP95", batch.batchSizeP95());
+        row.put("batchWriteP95", batch.flushLatencyP95Ms());
+        row.put("cpuAvg", summary.get("processCpuLoadAvg"));
+        row.put("cpuPeak", summary.get("processCpuLoadPeak"));
+        row.put("heapPeakBytes", summary.get("heapPeakBytes"));
+        row.put("gcTimeMs", summary.get("gcTimeMs"));
+        row.put("threadPeak", summary.get("threadPeak"));
+        row.put("drainSeconds", summary.get("drainWaitSeconds"));
+        row.put("stable", isStable(scheduler, entry, history, batch, rejectedPeaks));
+        row.put("firstBottleneck", firstBottleneck(scheduler, entry, history, rejectedPeaks));
+        try (BufferedWriter writer = Files.newBufferedWriter(outputDir.resolve("runtime-capacity-summary.csv"),
+                StandardCharsets.UTF_8)) {
+            writer.write(String.join(",", headers));
+            writer.write('\n');
+            writer.write(String.join(",", headers.stream()
+                    .map(header -> csvValue(row.get(header)))
+                    .toList()));
+            writer.write('\n');
+        }
     }
 
     private Map<String, Long> executorQueuePeaks(List<MetricSample> samples) {
@@ -829,7 +1162,10 @@ class RealEnvironmentSoakIT {
                 + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,historyBatchBucketCount,"
                 + "historyBatchAdmissionInFlight,historyBatchInFlightFlushes,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
-                + "ackReceived,ackSent,ackFailed,threadPoolsJson\n");
+                + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
+                + "schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
+                + "schedulerProcessRejected,schedulerCadenceStateSize,schedulerInFlightPointClaims,"
+                + "hikariActive,hikariIdle,hikariWaiting,hikariTotal,hikariMaxPool,threadPoolsJson\n");
     }
 
     private void writeMetric(BufferedWriter writer, MetricSample sample) throws IOException {
@@ -914,6 +1250,19 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.cloud().ackReceived()),
                 String.valueOf(sample.cloud().ackSent()),
                 String.valueOf(sample.cloud().ackFailed()),
+                String.valueOf(sample.scheduler().timeSliceCount()),
+                String.valueOf(sample.scheduler().timeSliceIntervalMs()),
+                String.valueOf(sample.scheduler().timeSliceRevision()),
+                String.valueOf(sample.scheduler().batchDispatchRejectedCount()),
+                String.valueOf(sample.scheduler().collectRejectedCount()),
+                String.valueOf(sample.scheduler().processRejectedCount()),
+                String.valueOf(sample.scheduler().cadenceStateSize()),
+                String.valueOf(sample.scheduler().inFlightPointClaims()),
+                String.valueOf(sample.hikari().activeConnections()),
+                String.valueOf(sample.hikari().idleConnections()),
+                String.valueOf(sample.hikari().threadsAwaitingConnection()),
+                String.valueOf(sample.hikari().totalConnections()),
+                String.valueOf(sample.hikari().maximumPoolSize()),
                 csvJson(sample.threadPools())
         ));
         writer.write('\n');
@@ -953,6 +1302,16 @@ class RealEnvironmentSoakIT {
                 configManager.deleteLocalDeviceConfig(device.deviceId());
             } catch (RuntimeException ignored) {
                 // Soak 清理失败不覆盖主测试结果，最终指标仍保留在结果目录。
+            }
+        }
+    }
+
+    private void stopRuntimeDevices(List<DevicePoints> devicePoints) {
+        for (DevicePoints device : devicePoints) {
+            try {
+                collectionScheduler.stopDevice(device.deviceId());
+            } catch (RuntimeException ignored) {
+                // runtime soak 停止输入失败不覆盖后续 drain 指标，最终由 summary 暴露残留状态。
             }
         }
     }
@@ -997,6 +1356,37 @@ class RealEnvironmentSoakIT {
         List<Long> sorted = values.stream().sorted().toList();
         int index = (int) Math.ceil(percentile * sorted.size()) - 1;
         return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
+    }
+
+    private static int percentileInt(List<Integer> values, double percentile) {
+        if (values == null || values.isEmpty()) {
+            return 0;
+        }
+        List<Integer> sorted = values.stream().sorted().toList();
+        int index = (int) Math.ceil(percentile * sorted.size()) - 1;
+        return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
+    }
+
+    private static double average(List<Integer> values) {
+        if (values == null || values.isEmpty()) {
+            return 0D;
+        }
+        return values.stream().mapToLong(Integer::longValue).average().orElse(0D);
+    }
+
+    private static double averageDouble(List<Double> values) {
+        if (values == null || values.isEmpty()) {
+            return 0D;
+        }
+        return values.stream()
+                .filter(value -> value != null && value >= 0D)
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0D);
+    }
+
+    private static int maxInt(List<Integer> values) {
+        return values == null || values.isEmpty() ? 0 : values.stream().max(Comparator.naturalOrder()).orElse(0);
     }
 
     private static long max(List<Long> values) {
@@ -1111,6 +1501,31 @@ class RealEnvironmentSoakIT {
                                  long ackFailed) {
     }
 
+    private record SchedulerStateSnapshot(int timeSliceCount,
+                                          int timeSliceIntervalMs,
+                                          long timeSliceRevision,
+                                          long batchDispatchRejectedCount,
+                                          long collectRejectedCount,
+                                          long processRejectedCount,
+                                          long reconnectAttemptCount,
+                                          long reconnectSuccessCount,
+                                          long reconnectFailureCount,
+                                          int reconnectingDevices,
+                                          int cadenceStateSize,
+                                          int inFlightPointClaims,
+                                          int timeSliceExecutionEntries,
+                                          int deviceStatsEntries) {
+    }
+
+    private record HikariSnapshot(int maximumPoolSize,
+                                  int minimumIdle,
+                                  int activeConnections,
+                                  int idleConnections,
+                                  int threadsAwaitingConnection,
+                                  int totalConnections,
+                                  String type) {
+    }
+
     private record MetricSample(long timestamp,
                                 long elapsedMs,
                                 boolean finalSample,
@@ -1134,6 +1549,8 @@ class RealEnvironmentSoakIT {
                                 long gcCount,
                                 long gcTimeMs,
                                 Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> threadPools,
+                                SchedulerStateSnapshot scheduler,
+                                HikariSnapshot hikari,
                                 RedisSnapshot redis,
                                 EntryIngressSnapshot entry,
                                 HistorySnapshot history,
@@ -1151,6 +1568,90 @@ class RealEnvironmentSoakIT {
         private final AtomicLong runtimeReadPointsItems = new AtomicLong();
         private final AtomicLong loadStartedAt = new AtomicLong();
         private final AtomicLong loadFinishedAt = new AtomicLong();
+        private final List<Integer> runtimeReadPointSizes = Collections.synchronizedList(new ArrayList<>());
+        private final List<Long> runtimeCadenceIntervalsMs = Collections.synchronizedList(new ArrayList<>());
+        private final ConcurrentMap<String, Long> lastRuntimeReadNanosByPoint = new ConcurrentHashMap<>();
+        private final ConcurrentMap<Long, AtomicLong> burst100MsBuckets = new ConcurrentHashMap<>();
+        private final ConcurrentMap<Long, AtomicLong> burst500MsBuckets = new ConcurrentHashMap<>();
+        private final ConcurrentMap<Long, AtomicLong> burst1SBuckets = new ConcurrentHashMap<>();
+
+        private SoakCounters() {
+        }
+
+        private void recordRuntimeRead(List<DataPoint> points) {
+            if (points == null || points.isEmpty()) {
+                return;
+            }
+            long nowNanos = System.nanoTime();
+            int pointCount = points.size();
+            runtimeReadPointsCalls.incrementAndGet();
+            runtimeReadPointsItems.addAndGet(pointCount);
+            submitted.addAndGet(pointCount);
+            succeeded.addAndGet(pointCount);
+            rounds.incrementAndGet();
+            runtimeReadPointSizes.add(pointCount);
+            for (DataPoint point : points) {
+                recordPointCadence(point, nowNanos);
+            }
+            recordBurst(nowNanos, pointCount);
+        }
+
+        private boolean loadActive() {
+            return loadStartedAt.get() > 0L && loadFinishedAt.get() <= 0L;
+        }
+
+        private void recordPointCadence(DataPoint point, long nowNanos) {
+            if (point == null || point.getDeviceId() == null || point.getDeviceId().isBlank()
+                    || point.getPointId() == null || point.getPointId().isBlank()) {
+                return;
+            }
+            String key = point.getDeviceId() + '|' + point.getPointId();
+            lastRuntimeReadNanosByPoint.compute(key, (ignored, lastNanos) -> {
+                if (lastNanos != null) {
+                    runtimeCadenceIntervalsMs.add(TimeUnit.NANOSECONDS.toMillis(nowNanos - lastNanos));
+                }
+                return nowNanos;
+            });
+        }
+
+        private void recordBurst(long nowNanos, int pointCount) {
+            long nowMs = TimeUnit.NANOSECONDS.toMillis(nowNanos);
+            addBurst(burst100MsBuckets, nowMs / 100L, pointCount);
+            addBurst(burst500MsBuckets, nowMs / 500L, pointCount);
+            addBurst(burst1SBuckets, nowMs / 1000L, pointCount);
+        }
+
+        private void addBurst(ConcurrentMap<Long, AtomicLong> buckets, long bucket, int pointCount) {
+            buckets.computeIfAbsent(bucket, ignored -> new AtomicLong()).addAndGet(pointCount);
+        }
+
+        private List<Integer> runtimeReadPointSizesSnapshot() {
+            synchronized (runtimeReadPointSizes) {
+                return List.copyOf(runtimeReadPointSizes);
+            }
+        }
+
+        private List<Long> runtimeCadenceIntervalsMsSnapshot() {
+            synchronized (runtimeCadenceIntervalsMs) {
+                return List.copyOf(runtimeCadenceIntervalsMs);
+            }
+        }
+
+        private long maxBurst100Ms() {
+            return maxBurst(burst100MsBuckets);
+        }
+
+        private long maxBurst500Ms() {
+            return maxBurst(burst500MsBuckets);
+        }
+
+        private long maxBurst1s() {
+            return maxBurst(burst1SBuckets);
+        }
+
+        private long maxBurst(ConcurrentMap<Long, AtomicLong> buckets) {
+            return buckets.values().stream().mapToLong(AtomicLong::get).max().orElse(0L);
+        }
     }
 
     public static class RuntimeSoakCollector extends BaseCollector {
@@ -1189,12 +1690,11 @@ class RealEnvironmentSoakIT {
             if (points == null || points.isEmpty()) {
                 return values;
             }
+            if (counters != null && !counters.loadActive()) {
+                return values;
+            }
             if (counters != null) {
-                counters.runtimeReadPointsCalls.incrementAndGet();
-                counters.runtimeReadPointsItems.addAndGet(points.size());
-                counters.submitted.addAndGet(points.size());
-                counters.succeeded.addAndGet(points.size());
-                counters.rounds.incrementAndGet();
+                counters.recordRuntimeRead(points);
             }
             for (DataPoint point : points) {
                 if (point != null) {
@@ -1247,7 +1747,7 @@ class RealEnvironmentSoakIT {
             return switch (dataType) {
                 case "LONG", "INT", "INTEGER" -> sequence;
                 case "BOOLEAN", "BOOL" -> (sequence & 1L) == 0L;
-                case "STRING", "TEXT" -> "runtime-" + sequence;
+                case "STRING", "TEXT" -> String.valueOf(sequence);
                 default -> (double) sequence;
             };
         }
