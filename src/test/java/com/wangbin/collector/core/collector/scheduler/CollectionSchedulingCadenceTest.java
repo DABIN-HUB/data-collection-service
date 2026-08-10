@@ -424,14 +424,17 @@ class CollectionSchedulingCadenceTest {
                 return null;
             }).when(lifecycleCoordinator).scheduleDevicePoints(anyString(), anyLong(), anyList());
             when(batchExecutor.isBatchTaskActive(any(DeviceBatchTask.class))).thenReturn(true);
-            when(batchExecutor.submit(any(DeviceBatchTask.class), anyList())).thenAnswer(invocation -> {
+            when(batchExecutor.submit(any(DeviceBatchTask.class))).thenAnswer(invocation -> {
                 DeviceBatchTask task = invocation.getArgument(0);
-                List<DataPoint> duePoints = invocation.getArgument(1);
-                task.markScheduled(runtimeState, duePoints);
+                SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState);
+                if (claim.isEmpty()) {
+                    return null;
+                }
+                List<DataPoint> duePoints = claim.points();
                 submittedPoints.merge(task.deviceId, duePoints.size(), Integer::sum);
                 duePoints.forEach(point -> submittedPointCounts.merge(point.getPointId(), 1, Integer::sum));
                 if (!keepInFlight) {
-                    runtimeState.completePointSchedules(task.deviceId, task.generation, duePoints);
+                    runtimeState.completeClaim(claim);
                 }
                 return CompletableFuture.completedFuture(null);
             });

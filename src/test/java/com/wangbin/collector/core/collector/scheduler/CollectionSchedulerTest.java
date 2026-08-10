@@ -122,7 +122,7 @@ public class CollectionSchedulerTest {
 
         scheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
 
-        verify(batchExecutor, never()).submit(eq(staleTask), anyList());
+        verify(batchExecutor, never()).submit(eq(staleTask));
     }
 
     @Test
@@ -135,7 +135,7 @@ public class CollectionSchedulerTest {
         DeviceBatchTask task = new DeviceBatchTask(deviceId, List.of(point), 0, generation, runtimeState.getTimeSliceRevision());
         runtimeState.addBatchTasks(List.of(task));
         when(batchExecutor.isBatchTaskActive(task)).thenReturn(true);
-        when(batchExecutor.submit(eq(task), anyList())).thenReturn(new CompletableFuture<>());
+        when(batchExecutor.submit(eq(task))).thenReturn(new CompletableFuture<>());
 
         scheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
 

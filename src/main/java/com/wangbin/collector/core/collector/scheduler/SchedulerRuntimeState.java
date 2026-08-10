@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.ToLongFunction;
 
 /**
@@ -25,10 +26,11 @@ public class SchedulerRuntimeState {
     private final Set<String> startingDevices = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Long> startingGenerations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<PointScheduleKey, Long> pointScheduleNanos = new ConcurrentHashMap<>();
-    private final Set<PointScheduleKey> inFlightPointSchedules = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<PointScheduleKey, Long> inFlightPointSchedules = new ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicInteger timeSliceCount = new java.util.concurrent.atomic.AtomicInteger(2);
     private final java.util.concurrent.atomic.AtomicInteger timeSliceInterval = new java.util.concurrent.atomic.AtomicInteger(1000);
     private final java.util.concurrent.atomic.AtomicLong timeSliceRevision = new java.util.concurrent.atomic.AtomicLong(0);
+    private final AtomicLong pointClaimSequence = new AtomicLong(0);
     private final ReentrantLock stateLock = new ReentrantLock();
 
     void initializeTimeSlices(int sliceCount, int intervalMs) {
@@ -84,55 +86,105 @@ public class SchedulerRuntimeState {
         if (points == null || points.isEmpty()) {
             return List.of();
         }
-        List<DataPoint> duePoints = new ArrayList<>(points.size());
-        for (DataPoint point : points) {
-            if (point == null || isPointDue(deviceId, generation, point, intervalResolver, nowNanos)) {
-                duePoints.add(point);
+        stateLock.lock();
+        try {
+            List<DataPoint> duePoints = new ArrayList<>(points.size());
+            for (DataPoint point : points) {
+                if (point == null || isPointDue(deviceId, generation, point, intervalResolver, nowNanos)) {
+                    duePoints.add(point);
+                }
             }
-        }
-        return duePoints;
-    }
-
-    void markPointsScheduled(String deviceId,
-                             long generation,
-                             List<DataPoint> points,
-                             long nowNanos) {
-        if (points == null || points.isEmpty()) {
-            return;
-        }
-        DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
-        if (scheduleInfo == null || !scheduleInfo.isRunning() || scheduleInfo.getGeneration() != generation) {
-            return;
-        }
-        for (DataPoint point : points) {
-            PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
-            pointScheduleNanos.put(key, nowNanos);
-            inFlightPointSchedules.add(key);
+            return duePoints;
+        } finally {
+            stateLock.unlock();
         }
     }
 
-    void completePointSchedules(String deviceId, long generation, List<DataPoint> points) {
+    PointDispatchClaim claimDuePoints(String deviceId,
+                                      long generation,
+                                      long taskRevision,
+                                      List<DataPoint> points,
+                                      ToLongFunction<DataPoint> intervalResolver,
+                                      long nowNanos) {
         if (points == null || points.isEmpty()) {
-            return;
+            return PointDispatchClaim.empty();
         }
-        for (DataPoint point : points) {
-            inFlightPointSchedules.remove(new PointScheduleKey(deviceId, generation, pointScheduleKey(point)));
+        stateLock.lock();
+        try {
+            DeviceScheduleInfo scheduleInfo = deviceScheduleInfo.get(deviceId);
+            if (scheduleInfo == null
+                    || !scheduleInfo.isRunning()
+                    || scheduleInfo.getGeneration() != generation
+                    || timeSliceRevision.get() != taskRevision) {
+                return PointDispatchClaim.empty();
+            }
+            long claimId = pointClaimSequence.incrementAndGet();
+            List<ClaimedPoint> claimedPoints = new ArrayList<>(points.size());
+            for (DataPoint point : points) {
+                PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
+                if (inFlightPointSchedules.containsKey(key)) {
+                    continue;
+                }
+                Long previousLastScheduled = pointScheduleNanos.get(key);
+                if (point != null && !isPointDue(previousLastScheduled, point, intervalResolver, nowNanos)) {
+                    continue;
+                }
+                pointScheduleNanos.put(key, nowNanos);
+                inFlightPointSchedules.put(key, claimId);
+                claimedPoints.add(new ClaimedPoint(key, point, previousLastScheduled));
+            }
+            if (claimedPoints.isEmpty()) {
+                return PointDispatchClaim.empty();
+            }
+            return new PointDispatchClaim(deviceId, generation, taskRevision, claimId, nowNanos, claimedPoints);
+        } finally {
+            stateLock.unlock();
         }
     }
 
-    void rollbackPointSchedules(String deviceId, long generation, List<DataPoint> points) {
-        if (points == null || points.isEmpty()) {
+    void completeClaim(PointDispatchClaim claim) {
+        if (claim == null || claim.isEmpty()) {
             return;
         }
-        for (DataPoint point : points) {
-            PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
-            inFlightPointSchedules.remove(key);
-            pointScheduleNanos.remove(key);
+        stateLock.lock();
+        try {
+            for (ClaimedPoint claimedPoint : claim.claimedPoints) {
+                inFlightPointSchedules.remove(claimedPoint.key(), claim.claimId);
+            }
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    void rollbackClaim(PointDispatchClaim claim) {
+        if (claim == null || claim.isEmpty()) {
+            return;
+        }
+        stateLock.lock();
+        try {
+            for (ClaimedPoint claimedPoint : claim.claimedPoints) {
+                Long owner = inFlightPointSchedules.get(claimedPoint.key());
+                if (!Objects.equals(owner, claim.claimId)) {
+                    continue;
+                }
+                inFlightPointSchedules.remove(claimedPoint.key());
+                if (claimedPoint.previousLastScheduledNanos() == null) {
+                    pointScheduleNanos.remove(claimedPoint.key(), claim.claimNanos);
+                } else {
+                    pointScheduleNanos.put(claimedPoint.key(), claimedPoint.previousLastScheduledNanos());
+                }
+            }
+        } finally {
+            stateLock.unlock();
         }
     }
 
     int getCadenceStateSizeForTest() {
         return pointScheduleNanos.size();
+    }
+
+    int getInFlightPointScheduleSizeForTest() {
+        return inFlightPointSchedules.size();
     }
 
     private boolean isPointDue(String deviceId,
@@ -141,10 +193,16 @@ public class SchedulerRuntimeState {
                                ToLongFunction<DataPoint> intervalResolver,
                                long nowNanos) {
         PointScheduleKey key = new PointScheduleKey(deviceId, generation, pointScheduleKey(point));
-        if (inFlightPointSchedules.contains(key)) {
+        if (inFlightPointSchedules.containsKey(key)) {
             return false;
         }
-        Long lastScheduledNanos = pointScheduleNanos.get(key);
+        return isPointDue(pointScheduleNanos.get(key), point, intervalResolver, nowNanos);
+    }
+
+    private boolean isPointDue(Long lastScheduledNanos,
+                               DataPoint point,
+                               ToLongFunction<DataPoint> intervalResolver,
+                               long nowNanos) {
         if (lastScheduledNanos == null) {
             return true;
         }
@@ -473,16 +531,79 @@ public class SchedulerRuntimeState {
 
     private void clearCadenceStateLocked(String deviceId) {
         pointScheduleNanos.keySet().removeIf(key -> Objects.equals(key.deviceId(), deviceId));
-        inFlightPointSchedules.removeIf(key -> Objects.equals(key.deviceId(), deviceId));
+        inFlightPointSchedules.keySet().removeIf(key -> Objects.equals(key.deviceId(), deviceId));
     }
 
     private void clearCadenceStateLocked(String deviceId, long generation) {
         pointScheduleNanos.keySet().removeIf(key ->
                 Objects.equals(key.deviceId(), deviceId) && key.generation() == generation);
-        inFlightPointSchedules.removeIf(key ->
+        inFlightPointSchedules.keySet().removeIf(key ->
                 Objects.equals(key.deviceId(), deviceId) && key.generation() == generation);
     }
 
     private record PointScheduleKey(String deviceId, long generation, String pointKey) {
+    }
+
+    private record ClaimedPoint(PointScheduleKey key, DataPoint point, Long previousLastScheduledNanos) {
+    }
+
+    static final class PointDispatchClaim {
+
+        private static final PointDispatchClaim EMPTY = new PointDispatchClaim(
+                null,
+                0L,
+                0L,
+                0L,
+                0L,
+                List.of());
+
+        private final String deviceId;
+        private final long generation;
+        private final long taskRevision;
+        private final long claimId;
+        private final long claimNanos;
+        private final List<ClaimedPoint> claimedPoints;
+        private final List<DataPoint> points;
+
+        private PointDispatchClaim(String deviceId,
+                                   long generation,
+                                   long taskRevision,
+                                   long claimId,
+                                   long claimNanos,
+                                   List<ClaimedPoint> claimedPoints) {
+            this.deviceId = deviceId;
+            this.generation = generation;
+            this.taskRevision = taskRevision;
+            this.claimId = claimId;
+            this.claimNanos = claimNanos;
+            this.claimedPoints = List.copyOf(claimedPoints);
+            this.points = this.claimedPoints.stream()
+                    .map(ClaimedPoint::point)
+                    .toList();
+        }
+
+        static PointDispatchClaim empty() {
+            return EMPTY;
+        }
+
+        boolean isEmpty() {
+            return claimedPoints.isEmpty();
+        }
+
+        List<DataPoint> points() {
+            return points;
+        }
+
+        String deviceId() {
+            return deviceId;
+        }
+
+        long generation() {
+            return generation;
+        }
+
+        long taskRevision() {
+            return taskRevision;
+        }
     }
 }

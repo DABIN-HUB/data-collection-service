@@ -93,20 +93,29 @@ public class DeviceBatchExecutor {
         if (!task.tryStartExecution()) {
             return null;
         }
-        task.markScheduled(runtimeState, duePoints);
+        SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState, duePoints);
+        if (claim.isEmpty()) {
+            task.finishExecution();
+            return null;
+        }
+        if (!isBatchTaskExecutionStillValid(task)) {
+            runtimeState.rollbackClaim(claim);
+            task.finishExecution();
+            return null;
+        }
         try {
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try {
-                    processDeviceBatch(task, duePoints);
+                    processDeviceBatch(task, claim.points());
                 } catch (Exception e) {
                     log.error("设备批量执行失败，设备={}", task.deviceId, e);
                 } finally {
-                    task.finishExecution(runtimeState, duePoints);
+                    task.finishExecution(runtimeState, claim);
                 }
             }, batchDispatcherExecutor);
             return future;
         } catch (RejectedExecutionException e) {
-            runtimeState.rollbackPointSchedules(task.deviceId, task.generation, duePoints);
+            runtimeState.rollbackClaim(claim);
             task.finishExecution();
             batchDispatchRejectedCount.incrementAndGet();
             task.recordFailure();

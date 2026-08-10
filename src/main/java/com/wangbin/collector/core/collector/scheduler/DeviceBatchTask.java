@@ -93,15 +93,26 @@ class DeviceBatchTask {
     /**
      * 在任务取得执行权后推进 due 状态，避免慢采集结束后补执行历史周期形成突发。
      */
-    void markScheduled(SchedulerRuntimeState runtimeState, List<DataPoint> scheduledPoints) {
-        if (scheduledPoints == null || scheduledPoints.isEmpty()) {
-            return;
+    SchedulerRuntimeState.PointDispatchClaim claimDuePoints(SchedulerRuntimeState runtimeState,
+                                                            List<DataPoint> candidates) {
+        if (runtimeState == null) {
+            return SchedulerRuntimeState.PointDispatchClaim.empty();
         }
-        long nowNanos = nanoTimeSupplier.getAsLong();
-        if (runtimeState != null) {
-            runtimeState.markPointsScheduled(deviceId, generation, scheduledPoints, nowNanos);
+        SchedulerRuntimeState.PointDispatchClaim claim = runtimeState.claimDuePoints(
+                deviceId,
+                generation,
+                timeSliceRevision,
+                candidates,
+                collectionIntervalResolver,
+                nanoTimeSupplier.getAsLong());
+        if (!claim.isEmpty()) {
+            lastExecutionTime = System.currentTimeMillis();
         }
-        lastExecutionTime = System.currentTimeMillis();
+        return claim;
+    }
+
+    SchedulerRuntimeState.PointDispatchClaim claimDuePoints(SchedulerRuntimeState runtimeState) {
+        return claimDuePoints(runtimeState, points);
     }
 
     /**
@@ -111,9 +122,9 @@ class DeviceBatchTask {
         running.set(false);
     }
 
-    void finishExecution(SchedulerRuntimeState runtimeState, List<DataPoint> scheduledPoints) {
-        if (runtimeState != null) {
-            runtimeState.completePointSchedules(deviceId, generation, scheduledPoints);
+    void finishExecution(SchedulerRuntimeState runtimeState, SchedulerRuntimeState.PointDispatchClaim claim) {
+        if (runtimeState != null && claim != null && !claim.isEmpty()) {
+            runtimeState.completeClaim(claim);
         }
         finishExecution();
     }
