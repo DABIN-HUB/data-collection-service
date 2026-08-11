@@ -17,9 +17,10 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -198,40 +199,65 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
     }
 
     private double percentileMillis(LatencyReservoir values, double percentile) {
-        List<Long> snapshot = values.snapshot();
-        if (snapshot.isEmpty()) {
+        long[] snapshot = values.snapshot();
+        if (snapshot.length == 0) {
             return 0D;
         }
-        snapshot.sort(Long::compareTo);
-        int index = Math.min(snapshot.size() - 1, (int) Math.ceil(snapshot.size() * percentile) - 1);
-        return snapshot.get(Math.max(0, index)) / 1_000_000.0D;
+        int index = Math.min(snapshot.length - 1, (int) Math.ceil(snapshot.length * percentile) - 1);
+        return snapshot[Math.max(0, index)] / 1_000_000.0D;
     }
 
     private static final class LatencyReservoir {
         private final AtomicLongArray values;
-        private final AtomicInteger cursor = new AtomicInteger();
+        private final AtomicLong sequence = new AtomicLong();
+        private final AtomicLong totalRecorded = new AtomicLong();
+        private final LongAdder internalErrors = new LongAdder();
 
         private LatencyReservoir(int capacity) {
-            this.values = new AtomicLongArray(capacity);
+            this.values = new AtomicLongArray(Math.max(1, capacity));
         }
 
         private void add(long nanos) {
-            int index = cursor.getAndIncrement();
-            if (index < values.length()) {
-                values.set(index, nanos);
+            if (nanos <= 0L) {
+                return;
+            }
+            try {
+                long currentSequence = sequence.getAndIncrement();
+                values.set((int) Long.remainderUnsigned(currentSequence, values.length()), nanos);
+                incrementTotalRecorded();
+            } catch (RuntimeException exception) {
+                internalErrors.increment();
             }
         }
 
-        private List<Long> snapshot() {
-            int size = Math.min(cursor.get(), values.length());
-            List<Long> snapshot = new ArrayList<>(size);
-            for (int index = 0; index < size; index++) {
+        private long[] snapshot() {
+            long total = totalRecorded.get();
+            int limit = (int) Math.min(Math.max(0L, total), values.length());
+            long[] snapshot = new long[limit];
+            int sampleCount = 0;
+            for (int index = 0; index < values.length() && sampleCount < limit; index++) {
                 long value = values.get(index);
                 if (value > 0L) {
-                    snapshot.add(value);
+                    snapshot[sampleCount++] = value;
                 }
             }
+            if (sampleCount != snapshot.length) {
+                snapshot = Arrays.copyOf(snapshot, sampleCount);
+            }
+            Arrays.sort(snapshot);
             return snapshot;
+        }
+
+        private void incrementTotalRecorded() {
+            while (true) {
+                long current = totalRecorded.get();
+                if (current == Long.MAX_VALUE) {
+                    return;
+                }
+                if (totalRecorded.compareAndSet(current, current + 1L)) {
+                    return;
+                }
+            }
         }
     }
 }

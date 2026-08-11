@@ -313,15 +313,24 @@ public class CollectorDataPostProcessor {
      */
     public CollectorDataPostProcessorMetrics metrics() {
         RateLimitedLogReporter.Snapshot logSnapshot = entryRejectionLogReporter.snapshot();
+        TelemetryLatencyReservoir.Snapshot batchSizeSnapshot = batchTaskSizes.snapshot();
+        TelemetryLatencyReservoir.Snapshot batchTaskLatencySnapshot = batchTaskLatencyNanos.snapshot();
         return new CollectorDataPostProcessorMetrics(
                 batchTaskCount.sum(),
                 batchTaskItems.sum(),
-                batchTaskSizes.percentileInt(0.50D),
-                batchTaskSizes.percentileInt(0.95D),
-                batchTaskSizes.maxInt(),
-                batchTaskLatencyNanos.percentileMillis(0.50D),
-                batchTaskLatencyNanos.percentileMillis(0.95D),
-                batchTaskLatencyNanos.percentileMillis(0.99D),
+                batchSizeSnapshot.percentileInt(0.50D),
+                batchSizeSnapshot.percentileInt(0.95D),
+                batchSizeSnapshot.maxInt(),
+                batchSizeSnapshot.sampleCount(),
+                batchSizeSnapshot.totalRecorded(),
+                batchSizeSnapshot.overwrittenSamples(),
+                batchTaskLatencySnapshot.percentileMillis(0.50D),
+                batchTaskLatencySnapshot.percentileMillis(0.95D),
+                batchTaskLatencySnapshot.percentileMillis(0.99D),
+                batchTaskLatencySnapshot.sampleCount(),
+                batchTaskLatencySnapshot.totalRecorded(),
+                batchTaskLatencySnapshot.overwrittenSamples(),
+                batchSizeSnapshot.internalErrors() + batchTaskLatencySnapshot.internalErrors(),
                 logSnapshot.emittedEvents(),
                 logSnapshot.suppressedEvents());
     }

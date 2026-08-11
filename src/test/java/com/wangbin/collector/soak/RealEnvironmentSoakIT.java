@@ -671,9 +671,16 @@ class RealEnvironmentSoakIT {
                         pipelineMetrics.processLatencyP50Ms(),
                         pipelineMetrics.processLatencyP95Ms(),
                         pipelineMetrics.processLatencyP99Ms(),
+                        pipelineMetrics.processLatencySampleCount(),
+                        pipelineMetrics.processLatencyTotalRecorded(),
+                        pipelineMetrics.processLatencyOverwrittenSamples(),
                         pipelineMetrics.stageSubmissionLatencyP50Ms(),
                         pipelineMetrics.stageSubmissionLatencyP95Ms(),
                         pipelineMetrics.stageSubmissionLatencyP99Ms(),
+                        pipelineMetrics.stageSubmissionLatencySampleCount(),
+                        pipelineMetrics.stageSubmissionLatencyTotalRecorded(),
+                        pipelineMetrics.stageSubmissionLatencyOverwrittenSamples(),
+                        pipelineMetrics.metricsInternalErrors(),
                         pipelineMetrics.logRateLimitedEvents(),
                         pipelineMetrics.logSuppressedEvents()),
                 new PostProcessorSnapshot(
@@ -682,9 +689,16 @@ class RealEnvironmentSoakIT {
                         postProcessorMetrics.batchSizeP50(),
                         postProcessorMetrics.batchSizeP95(),
                         postProcessorMetrics.batchSizeMax(),
+                        postProcessorMetrics.batchSizeSampleCount(),
+                        postProcessorMetrics.batchSizeTotalRecorded(),
+                        postProcessorMetrics.batchSizeOverwrittenSamples(),
                         postProcessorMetrics.batchTaskLatencyP50Ms(),
                         postProcessorMetrics.batchTaskLatencyP95Ms(),
                         postProcessorMetrics.batchTaskLatencyP99Ms(),
+                        postProcessorMetrics.batchTaskLatencySampleCount(),
+                        postProcessorMetrics.batchTaskLatencyTotalRecorded(),
+                        postProcessorMetrics.batchTaskLatencyOverwrittenSamples(),
+                        postProcessorMetrics.metricsInternalErrors(),
                         postProcessorMetrics.entryLogRateLimitedEvents(),
                         postProcessorMetrics.entryLogSuppressedEvents()),
                 scheduler,
@@ -1189,9 +1203,17 @@ class RealEnvironmentSoakIT {
         summary.put("pipelineLatencyP50Ms", loadEndSample.pipeline().processLatencyP50Ms());
         summary.put("pipelineLatencyP95Ms", loadEndSample.pipeline().processLatencyP95Ms());
         summary.put("pipelineLatencyP99Ms", loadEndSample.pipeline().processLatencyP99Ms());
+        summary.put("pipelineLatencySampleCount", loadEndSample.pipeline().processLatencySampleCount());
+        summary.put("pipelineLatencyTotalRecorded", loadEndSample.pipeline().processLatencyTotalRecorded());
+        summary.put("pipelineLatencyOverwrittenSamples", loadEndSample.pipeline().processLatencyOverwrittenSamples());
         summary.put("stageSubmissionLatencyP50Ms", loadEndSample.pipeline().stageSubmissionLatencyP50Ms());
         summary.put("stageSubmissionLatencyP95Ms", loadEndSample.pipeline().stageSubmissionLatencyP95Ms());
         summary.put("stageSubmissionLatencyP99Ms", loadEndSample.pipeline().stageSubmissionLatencyP99Ms());
+        summary.put("stageSubmissionLatencySampleCount", loadEndSample.pipeline().stageSubmissionLatencySampleCount());
+        summary.put("stageSubmissionLatencyTotalRecorded", loadEndSample.pipeline().stageSubmissionLatencyTotalRecorded());
+        summary.put("stageSubmissionLatencyOverwrittenSamples",
+                loadEndSample.pipeline().stageSubmissionLatencyOverwrittenSamples());
+        summary.put("pipelineMetricsInternalErrors", loadEndSample.pipeline().metricsInternalErrors());
         summary.put("pipelineLogRateLimitedEvents", loadEndSample.pipeline().logRateLimitedEvents());
         summary.put("pipelineLogSuppressedEvents", loadEndSample.pipeline().logSuppressedEvents());
         summary.put("entryBatchTaskCount", loadEndSample.postProcessor().batchTaskCount());
@@ -1199,9 +1221,19 @@ class RealEnvironmentSoakIT {
         summary.put("entryBatchSizeP50", loadEndSample.postProcessor().batchSizeP50());
         summary.put("entryBatchSizeP95", loadEndSample.postProcessor().batchSizeP95());
         summary.put("entryBatchSizeMax", loadEndSample.postProcessor().batchSizeMax());
+        summary.put("entryBatchSizeSampleCount", loadEndSample.postProcessor().batchSizeSampleCount());
+        summary.put("entryBatchSizeTotalRecorded", loadEndSample.postProcessor().batchSizeTotalRecorded());
+        summary.put("entryBatchSizeOverwrittenSamples", loadEndSample.postProcessor().batchSizeOverwrittenSamples());
         summary.put("entryBatchTaskLatencyP50Ms", loadEndSample.postProcessor().batchTaskLatencyP50Ms());
         summary.put("entryBatchTaskLatencyP95Ms", loadEndSample.postProcessor().batchTaskLatencyP95Ms());
         summary.put("entryBatchTaskLatencyP99Ms", loadEndSample.postProcessor().batchTaskLatencyP99Ms());
+        summary.put("entryBatchTaskLatencySampleCount",
+                loadEndSample.postProcessor().batchTaskLatencySampleCount());
+        summary.put("entryBatchTaskLatencyTotalRecorded",
+                loadEndSample.postProcessor().batchTaskLatencyTotalRecorded());
+        summary.put("entryBatchTaskLatencyOverwrittenSamples",
+                loadEndSample.postProcessor().batchTaskLatencyOverwrittenSamples());
+        summary.put("entryMetricsInternalErrors", loadEndSample.postProcessor().metricsInternalErrors());
         summary.put("entryLogRateLimitedEvents", loadEndSample.postProcessor().entryLogRateLimitedEvents());
         summary.put("entryLogSuppressedEvents", loadEndSample.postProcessor().entryLogSuppressedEvents());
         summary.put("actualWarnLogs", loadEndSample.pipeline().logRateLimitedEvents()
@@ -1461,7 +1493,10 @@ class RealEnvironmentSoakIT {
                 "phaseWheelTickGapP50Ms", "phaseWheelTickGapP95Ms", "phaseWheelTickGapP99Ms",
                 "phaseWheelTickGapMinMs", "phaseWheelTickGapMaxMs", "sliceExecutionP95Ms",
                 "maxTasksPerSlice", "maxPointsPerSlice",
-                "pipelineLatencyP95Ms", "entryBatchTaskLatencyP95Ms", "actualWarnLogs", "suppressedWarnLogs",
+                "pipelineLatencyP95Ms", "pipelineLatencySampleCount", "pipelineLatencyTotalRecorded",
+                "pipelineLatencyOverwrittenSamples", "entryBatchTaskLatencyP95Ms",
+                "entryBatchTaskLatencySampleCount", "entryBatchTaskLatencyTotalRecorded",
+                "entryBatchTaskLatencyOverwrittenSamples", "actualWarnLogs", "suppressedWarnLogs",
                 "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "streamXaddFailure", "streamXaddLatencyP95Ms",
                 "historyRejected", "historyDeferred",
@@ -1511,7 +1546,13 @@ class RealEnvironmentSoakIT {
         row.put("maxTasksPerSlice", scheduler.maxTasksPerSlice());
         row.put("maxPointsPerSlice", scheduler.maxPointsPerSlice());
         row.put("pipelineLatencyP95Ms", summary.get("pipelineLatencyP95Ms"));
+        row.put("pipelineLatencySampleCount", summary.get("pipelineLatencySampleCount"));
+        row.put("pipelineLatencyTotalRecorded", summary.get("pipelineLatencyTotalRecorded"));
+        row.put("pipelineLatencyOverwrittenSamples", summary.get("pipelineLatencyOverwrittenSamples"));
         row.put("entryBatchTaskLatencyP95Ms", summary.get("entryBatchTaskLatencyP95Ms"));
+        row.put("entryBatchTaskLatencySampleCount", summary.get("entryBatchTaskLatencySampleCount"));
+        row.put("entryBatchTaskLatencyTotalRecorded", summary.get("entryBatchTaskLatencyTotalRecorded"));
+        row.put("entryBatchTaskLatencyOverwrittenSamples", summary.get("entryBatchTaskLatencyOverwrittenSamples"));
         row.put("actualWarnLogs", summary.get("actualWarnLogs"));
         row.put("suppressedWarnLogs", summary.get("suppressedWarnLogs"));
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
@@ -1624,11 +1665,17 @@ class RealEnvironmentSoakIT {
                 + "streamXaddLatencyP50Ms,streamXaddLatencyP95Ms,streamXaddLatencyP99Ms,"
                 + "pipelineProcessedItems,pipelineStageSubmissions,pipelineStageRejected,pipelineStageRejectedCompensated,"
                 + "pipelineStageRejectedUncompensated,pipelineStageRejectedShutdown,pipelineLatencyP50Ms,"
-                + "pipelineLatencyP95Ms,pipelineLatencyP99Ms,stageSubmissionLatencyP50Ms,"
-                + "stageSubmissionLatencyP95Ms,stageSubmissionLatencyP99Ms,pipelineLogRateLimited,"
-                + "pipelineLogSuppressed,entryBatchTaskCount,entryBatchTaskItems,entryBatchSizeP50,"
-                + "entryBatchSizeP95,entryBatchSizeMax,entryBatchTaskLatencyP50Ms,entryBatchTaskLatencyP95Ms,"
-                + "entryBatchTaskLatencyP99Ms,entryLogRateLimited,entryLogSuppressed,"
+                + "pipelineLatencyP95Ms,pipelineLatencyP99Ms,pipelineLatencySampleCount,"
+                + "pipelineLatencyTotalRecorded,pipelineLatencyOverwrittenSamples,stageSubmissionLatencyP50Ms,"
+                + "stageSubmissionLatencyP95Ms,stageSubmissionLatencyP99Ms,stageSubmissionLatencySampleCount,"
+                + "stageSubmissionLatencyTotalRecorded,stageSubmissionLatencyOverwrittenSamples,"
+                + "pipelineMetricsInternalErrors,pipelineLogRateLimited,pipelineLogSuppressed,"
+                + "entryBatchTaskCount,entryBatchTaskItems,entryBatchSizeP50,"
+                + "entryBatchSizeP95,entryBatchSizeMax,entryBatchSizeSampleCount,entryBatchSizeTotalRecorded,"
+                + "entryBatchSizeOverwrittenSamples,entryBatchTaskLatencyP50Ms,entryBatchTaskLatencyP95Ms,"
+                + "entryBatchTaskLatencyP99Ms,entryBatchTaskLatencySampleCount,"
+                + "entryBatchTaskLatencyTotalRecorded,entryBatchTaskLatencyOverwrittenSamples,"
+                + "entryMetricsInternalErrors,entryLogRateLimited,entryLogSuppressed,"
                 + "historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
                 + "historyRejectedDropped,historyWriteFailureDisabled,historyRejectedDisabled,"
                 + "historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
@@ -1720,9 +1767,16 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.pipeline().processLatencyP50Ms()),
                 String.valueOf(sample.pipeline().processLatencyP95Ms()),
                 String.valueOf(sample.pipeline().processLatencyP99Ms()),
+                String.valueOf(sample.pipeline().processLatencySampleCount()),
+                String.valueOf(sample.pipeline().processLatencyTotalRecorded()),
+                String.valueOf(sample.pipeline().processLatencyOverwrittenSamples()),
                 String.valueOf(sample.pipeline().stageSubmissionLatencyP50Ms()),
                 String.valueOf(sample.pipeline().stageSubmissionLatencyP95Ms()),
                 String.valueOf(sample.pipeline().stageSubmissionLatencyP99Ms()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencySampleCount()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencyTotalRecorded()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencyOverwrittenSamples()),
+                String.valueOf(sample.pipeline().metricsInternalErrors()),
                 String.valueOf(sample.pipeline().logRateLimitedEvents()),
                 String.valueOf(sample.pipeline().logSuppressedEvents()),
                 String.valueOf(sample.postProcessor().batchTaskCount()),
@@ -1730,9 +1784,16 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.postProcessor().batchSizeP50()),
                 String.valueOf(sample.postProcessor().batchSizeP95()),
                 String.valueOf(sample.postProcessor().batchSizeMax()),
+                String.valueOf(sample.postProcessor().batchSizeSampleCount()),
+                String.valueOf(sample.postProcessor().batchSizeTotalRecorded()),
+                String.valueOf(sample.postProcessor().batchSizeOverwrittenSamples()),
                 String.valueOf(sample.postProcessor().batchTaskLatencyP50Ms()),
                 String.valueOf(sample.postProcessor().batchTaskLatencyP95Ms()),
                 String.valueOf(sample.postProcessor().batchTaskLatencyP99Ms()),
+                String.valueOf(sample.postProcessor().batchTaskLatencySampleCount()),
+                String.valueOf(sample.postProcessor().batchTaskLatencyTotalRecorded()),
+                String.valueOf(sample.postProcessor().batchTaskLatencyOverwrittenSamples()),
+                String.valueOf(sample.postProcessor().metricsInternalErrors()),
                 String.valueOf(sample.postProcessor().entryLogRateLimitedEvents()),
                 String.valueOf(sample.postProcessor().entryLogSuppressedEvents()),
                 String.valueOf(sample.history().localPending()),
@@ -2123,9 +2184,16 @@ class RealEnvironmentSoakIT {
                                     double processLatencyP50Ms,
                                     double processLatencyP95Ms,
                                     double processLatencyP99Ms,
+                                    int processLatencySampleCount,
+                                    long processLatencyTotalRecorded,
+                                    long processLatencyOverwrittenSamples,
                                     double stageSubmissionLatencyP50Ms,
                                     double stageSubmissionLatencyP95Ms,
                                     double stageSubmissionLatencyP99Ms,
+                                    int stageSubmissionLatencySampleCount,
+                                    long stageSubmissionLatencyTotalRecorded,
+                                    long stageSubmissionLatencyOverwrittenSamples,
+                                    long metricsInternalErrors,
                                     long logRateLimitedEvents,
                                     long logSuppressedEvents) {
     }
@@ -2135,9 +2203,16 @@ class RealEnvironmentSoakIT {
                                          int batchSizeP50,
                                          int batchSizeP95,
                                          int batchSizeMax,
+                                         int batchSizeSampleCount,
+                                         long batchSizeTotalRecorded,
+                                         long batchSizeOverwrittenSamples,
                                          double batchTaskLatencyP50Ms,
                                          double batchTaskLatencyP95Ms,
                                          double batchTaskLatencyP99Ms,
+                                         int batchTaskLatencySampleCount,
+                                         long batchTaskLatencyTotalRecorded,
+                                         long batchTaskLatencyOverwrittenSamples,
+                                         long metricsInternalErrors,
                                          long entryLogRateLimitedEvents,
                                          long entryLogSuppressedEvents) {
     }

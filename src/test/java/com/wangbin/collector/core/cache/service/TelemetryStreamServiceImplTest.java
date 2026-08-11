@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,6 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.util.ReflectionTestUtils.getField;
 
 public class TelemetryStreamServiceImplTest {
 
@@ -248,6 +250,24 @@ public class TelemetryStreamServiceImplTest {
         assertEquals(1L, metrics.xaddFailure());
     }
 
+    @Test
+    void streamLatencyReservoirMustRemainSafeNearLongBoundary() {
+        properties.setEnabled(true);
+        setReservoirSequence("appendLatencyNanos", Long.MAX_VALUE - 2L);
+        setReservoirSequence("xaddLatencyNanos", Long.MAX_VALUE - 2L);
+
+        assertDoesNotThrow(() -> {
+            for (int index = 0; index < 6; index++) {
+                service.append("d1", point("p" + index), ProcessResult.success(index, index));
+            }
+        });
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(6L, metrics.appendAttempts());
+        assertEquals(6L, metrics.xaddSuccess());
+        assertEquals(0L, metrics.xaddFailure());
+    }
+
     private Object[] findExecuteInvocationArgs(String command) {
         return mockingDetails(connection).getInvocations().stream()
                 .filter(invocation -> "execute".equals(invocation.getMethod().getName()))
@@ -277,5 +297,11 @@ public class TelemetryStreamServiceImplTest {
         point.setPointName(pointId);
         point.setDeviceId("d1");
         return point;
+    }
+
+    private void setReservoirSequence(String fieldName, long value) {
+        Object reservoir = getField(service, fieldName);
+        AtomicLong sequence = (AtomicLong) getField(reservoir, "sequence");
+        sequence.set(value);
     }
 }

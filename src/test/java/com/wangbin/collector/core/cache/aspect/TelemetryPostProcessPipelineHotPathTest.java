@@ -11,9 +11,11 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.LongAdder;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.util.ReflectionTestUtils.getField;
 
 class TelemetryPostProcessPipelineHotPathTest {
 
@@ -153,6 +155,20 @@ class TelemetryPostProcessPipelineHotPathTest {
         assertEquals(0L, second.orderReads());
         assertEquals(10L, first.processed());
         assertEquals(10L, second.processed());
+    }
+
+    @Test
+    void metricsFailureMustNeverBreakTelemetryPipeline() {
+        CountingRejectedStage stage = new CountingRejectedStage("cache", TelemetryStageType.CACHE, true);
+        TelemetryPostProcessPipeline pipeline = pipeline(List.of(stage), Runnable::run);
+        TelemetryLatencyReservoir reservoir = (TelemetryLatencyReservoir) getField(pipeline, "processLatencyNanos");
+        reservoir.failNextAddForTest();
+
+        assertDoesNotThrow(() -> pipeline.process(context("metrics-fail-dev", "p1")));
+
+        TelemetryPipelineMetrics metrics = pipeline.metrics();
+        assertEquals(1L, metrics.processedItems());
+        assertEquals(1L, metrics.metricsInternalErrors());
     }
 
     private TelemetryPostProcessPipeline pipeline(List<TelemetryPostProcessStage> stages, Executor executor) {

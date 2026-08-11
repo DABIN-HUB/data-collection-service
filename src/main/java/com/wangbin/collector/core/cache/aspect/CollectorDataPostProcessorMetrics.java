@@ -8,9 +8,16 @@ public record CollectorDataPostProcessorMetrics(long batchTaskCount,
                                                 int batchSizeP50,
                                                 int batchSizeP95,
                                                 int batchSizeMax,
+                                                int batchSizeSampleCount,
+                                                long batchSizeTotalRecorded,
+                                                long batchSizeOverwrittenSamples,
                                                 double batchTaskLatencyP50Ms,
                                                 double batchTaskLatencyP95Ms,
                                                 double batchTaskLatencyP99Ms,
+                                                int batchTaskLatencySampleCount,
+                                                long batchTaskLatencyTotalRecorded,
+                                                long batchTaskLatencyOverwrittenSamples,
+                                                long metricsInternalErrors,
                                                 long entryLogRateLimitedEvents,
                                                 long entryLogSuppressedEvents) {
 
@@ -19,7 +26,8 @@ public record CollectorDataPostProcessorMetrics(long batchTaskCount,
      */
     public static CollectorDataPostProcessorMetrics empty() {
         return new CollectorDataPostProcessorMetrics(
-                0L, 0L, 0, 0, 0,
-                0D, 0D, 0D, 0L, 0L);
+                0L, 0L, 0, 0, 0, 0, 0L, 0L,
+                0D, 0D, 0D, 0, 0L, 0L,
+                0L, 0L, 0L);
     }
 }

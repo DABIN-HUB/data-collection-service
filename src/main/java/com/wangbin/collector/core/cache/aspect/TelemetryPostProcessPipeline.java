@@ -174,6 +174,8 @@ public class TelemetryPostProcessPipeline {
      */
     public TelemetryPipelineMetrics metrics() {
         RateLimitedLogReporter.Snapshot logSnapshot = rejectedLogReporter.snapshot();
+        TelemetryLatencyReservoir.Snapshot processLatencySnapshot = processLatencyNanos.snapshot();
+        TelemetryLatencyReservoir.Snapshot stageSubmissionLatencySnapshot = stageSubmissionLatencyNanos.snapshot();
         return new TelemetryPipelineMetrics(
                 processedItems.sum(),
                 stageSubmissions.sum(),
@@ -181,12 +183,19 @@ public class TelemetryPostProcessPipeline {
                 stageRejectedCompensatedEvents.sum(),
                 stageRejectedUncompensatedEvents.sum(),
                 stageRejectedShutdownEvents.sum(),
-                processLatencyNanos.percentileMillis(0.50D),
-                processLatencyNanos.percentileMillis(0.95D),
-                processLatencyNanos.percentileMillis(0.99D),
-                stageSubmissionLatencyNanos.percentileMillis(0.50D),
-                stageSubmissionLatencyNanos.percentileMillis(0.95D),
-                stageSubmissionLatencyNanos.percentileMillis(0.99D),
+                processLatencySnapshot.percentileMillis(0.50D),
+                processLatencySnapshot.percentileMillis(0.95D),
+                processLatencySnapshot.percentileMillis(0.99D),
+                processLatencySnapshot.sampleCount(),
+                processLatencySnapshot.totalRecorded(),
+                processLatencySnapshot.overwrittenSamples(),
+                stageSubmissionLatencySnapshot.percentileMillis(0.50D),
+                stageSubmissionLatencySnapshot.percentileMillis(0.95D),
+                stageSubmissionLatencySnapshot.percentileMillis(0.99D),
+                stageSubmissionLatencySnapshot.sampleCount(),
+                stageSubmissionLatencySnapshot.totalRecorded(),
+                stageSubmissionLatencySnapshot.overwrittenSamples(),
+                processLatencySnapshot.internalErrors() + stageSubmissionLatencySnapshot.internalErrors(),
                 logSnapshot.emittedEvents(),
                 logSnapshot.suppressedEvents());
     }
