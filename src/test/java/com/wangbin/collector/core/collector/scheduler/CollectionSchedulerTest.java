@@ -23,6 +23,7 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -450,6 +451,83 @@ public class CollectionSchedulerTest {
     }
 
     @Test
+    void fixedRateDelayMustNotCollapseMultipleLogicalSlicesIntoBurst() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        List<Long> fixedDelayPeriods = new CopyOnWriteArrayList<>();
+        List<Long> fixedRatePeriods = new CopyOnWriteArrayList<>();
+        ScheduledExecutorService scheduledExecutor = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> scheduledFuture = mock(ScheduledFuture.class);
+        doAnswer(invocation -> {
+            fixedDelayPeriods.add(invocation.getArgument(2, Long.class));
+            return scheduledFuture;
+        }).when(scheduledExecutor).scheduleWithFixedDelay(
+                any(Runnable.class),
+                anyLong(),
+                anyLong(),
+                any(TimeUnit.class));
+        doAnswer(invocation -> {
+            fixedRatePeriods.add(invocation.getArgument(2, Long.class));
+            return scheduledFuture;
+        }).when(scheduledExecutor).scheduleAtFixedRate(
+                any(Runnable.class),
+                anyLong(),
+                anyLong(),
+                any(TimeUnit.class));
+        runtimeState.initializeTimeSlices(12, 417);
+        CollectionScheduler localScheduler = schedulerWithExecutor(scheduledExecutor, nowNanos);
+
+        localScheduler.startTimeSliceScheduling();
+
+        assertEquals(List.of(50L), fixedDelayPeriods);
+        assertEquals(List.of(), fixedRatePeriods);
+    }
+
+    @Test
+    void phaseWheelMustExposeCatchUpTicks() {
+        PerformanceMonitor localMonitor = new PerformanceMonitor();
+
+        localMonitor.recordPhaseWheelTick(0, TimeUnit.MILLISECONDS.toNanos(0L), 50);
+        localMonitor.recordPhaseWheelTick(1, TimeUnit.MILLISECONDS.toNanos(5L), 50);
+        localMonitor.recordPhaseWheelTick(2, TimeUnit.MILLISECONDS.toNanos(8L), 50);
+
+        PerformanceMonitor.PhaseWheelStatsSnapshot snapshot = localMonitor.getPhaseWheelStatsSnapshot();
+        assertEquals(3L, snapshot.tickCount());
+        assertEquals(2L, snapshot.catchUpTickCount());
+        assertEquals(1L, snapshot.consecutiveCatchUpCount());
+        assertTrue(snapshot.tickGapMaxMs() <= 5L);
+    }
+
+    @Test
+    void slowSliceExecutionMustNotSilentlyCreateUnboundedCatchUp() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        List<Runnable> scheduledTasks = new CopyOnWriteArrayList<>();
+        ScheduledExecutorService scheduledExecutor = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> scheduledFuture = mock(ScheduledFuture.class);
+        doAnswer(invocation -> {
+            scheduledTasks.add(invocation.getArgument(0, Runnable.class));
+            return scheduledFuture;
+        }).when(scheduledExecutor).scheduleWithFixedDelay(
+                any(Runnable.class),
+                anyLong(),
+                anyLong(),
+                any(TimeUnit.class));
+        runtimeState.initializeTimeSlices(3, 417);
+        CollectionScheduler localScheduler = schedulerWithExecutor(scheduledExecutor, nowNanos);
+        when(batchExecutor.isBatchTaskActive(any(DeviceBatchTask.class))).thenReturn(true);
+
+        localScheduler.startTimeSliceScheduling();
+        assertEquals(1, scheduledTasks.size());
+        scheduledTasks.get(0).run();
+        nowNanos.addAndGet(TimeUnit.MILLISECONDS.toNanos(500L));
+        scheduledTasks.get(0).run();
+
+        PerformanceMonitor.PhaseWheelStatsSnapshot snapshot = performanceMonitor.getPhaseWheelStatsSnapshot();
+        assertEquals(2L, snapshot.tickCount());
+        assertEquals(0L, snapshot.catchUpTickCount());
+        assertTrue(snapshot.tickGapMinMs() >= 500L);
+    }
+
+    @Test
     void sliceOffsetsMustNotAliasModuloDueScanPeriod() {
         long legacyMaxScansPer100Ms = maxLegacyModuloScansPerWindowBucket(12, 417L, 500L, 100L);
         long phaseWheelMaxScansPer100Ms = maxScansPerWindowBucket(12, 50L, 100L);
@@ -808,6 +886,19 @@ public class CollectionSchedulerTest {
                 anyLong(),
                 anyLong(),
                 any(TimeUnit.class));
+        doAnswer(invocation -> {
+            initialDelays.add(invocation.getArgument(1, Long.class));
+            periods.add(invocation.getArgument(2, Long.class));
+            return scheduledFuture;
+        }).when(scheduledExecutor).scheduleWithFixedDelay(
+                any(Runnable.class),
+                anyLong(),
+                anyLong(),
+                any(TimeUnit.class));
+        return schedulerWithExecutor(scheduledExecutor, nowNanos);
+    }
+
+    private CollectionScheduler schedulerWithExecutor(ScheduledExecutorService scheduledExecutor, AtomicLong nowNanos) {
         return new CollectionScheduler(
                 collectionManager,
                 configManager,

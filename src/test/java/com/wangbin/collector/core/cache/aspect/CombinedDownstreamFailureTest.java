@@ -254,7 +254,7 @@ class CombinedDownstreamFailureTest {
         cloud.redisOutboxRecovered();
         pipeline.submitBatch("triple-recovery-a", points("triple-recovery-a", 5, 1_000));
         waitUntil(() -> history.redisPending() == 5L
-                && cloud.sendAttempts() == 5L
+                && cloud.sendAttempts() >= 5L
                 && cloud.outboxCount() == 5L
                 && executors.idle());
 

@@ -134,6 +134,14 @@ public class CollectionScheduler {
                 .build();
     }
 
+    public PerformanceMonitor.PhaseWheelStatsSnapshot getPhaseWheelStatsSnapshot() {
+        return performanceMonitor.getPhaseWheelStatsSnapshot();
+    }
+
+    public void resetPhaseWheelStats() {
+        performanceMonitor.resetPhaseWheelStats();
+    }
+
     @PostConstruct
     public void init() {
         int normalizedSliceCount = Math.max(1, Math.min(
@@ -176,8 +184,8 @@ public class CollectionScheduler {
         int sliceCount = Math.max(1, runtimeState.getTimeSliceCount());
         int phaseWheelTickMs = resolvePhaseWheelTickIntervalMs(sliceCount);
         long revision = runtimeState.getTimeSliceRevision();
-        ScheduledFuture<?> future = timeSliceScheduler.scheduleAtFixedRate(
-                new PhaseWheelScanTask(sliceCount, revision),
+        ScheduledFuture<?> future = timeSliceScheduler.scheduleWithFixedDelay(
+                new PhaseWheelScanTask(sliceCount, revision, phaseWheelTickMs),
                 0L,
                 phaseWheelTickMs,
                 TimeUnit.MILLISECONDS);
@@ -404,17 +412,20 @@ public class CollectionScheduler {
 
         private final int sliceCount;
         private final long revision;
+        private final int expectedTickMs;
         private int nextSliceIndex;
 
-        private PhaseWheelScanTask(int sliceCount, long revision) {
+        private PhaseWheelScanTask(int sliceCount, long revision, int expectedTickMs) {
             this.sliceCount = Math.max(1, sliceCount);
             this.revision = revision;
+            this.expectedTickMs = Math.max(1, expectedTickMs);
         }
 
         @Override
         public void run() {
             int currentSlice = nextSliceIndex;
             nextSliceIndex = (nextSliceIndex + 1) % sliceCount;
+            performanceMonitor.recordPhaseWheelTick(currentSlice, nanoTimeSupplier.getAsLong(), expectedTickMs);
             try {
                 executeTimeSlice(currentSlice, revision);
             } catch (Exception e) {

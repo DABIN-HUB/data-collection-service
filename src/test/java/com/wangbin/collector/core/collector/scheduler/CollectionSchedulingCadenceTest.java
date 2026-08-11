@@ -42,6 +42,8 @@ class CollectionSchedulingCadenceTest {
         ScheduledFuture<?> scheduledFuture = mock(ScheduledFuture.class);
         when(timeSliceScheduler.scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any()))
                 .thenReturn((ScheduledFuture) scheduledFuture);
+        when(timeSliceScheduler.scheduleWithFixedDelay(any(Runnable.class), anyLong(), anyLong(), any()))
+                .thenReturn((ScheduledFuture) scheduledFuture);
         when(timeSliceScheduler.shutdownNow()).thenReturn(Collections.emptyList());
     }
 

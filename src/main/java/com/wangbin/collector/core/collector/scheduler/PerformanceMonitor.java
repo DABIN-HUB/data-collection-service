@@ -3,10 +3,13 @@ package com.wangbin.collector.core.collector.scheduler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -16,11 +19,14 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 @Component
 public class PerformanceMonitor {
+    private static final int MAX_PHASE_WHEEL_SAMPLES = 20_000;
+
     final Map<String, DevicePerformance> devicePerformance = new ConcurrentHashMap<>();
     private final AtomicLong totalProcessedPoints = new AtomicLong(0);
     private final AtomicLong totalSuccessfulBatches = new AtomicLong(0);
     private final AtomicLong totalFailedBatches = new AtomicLong(0);
     private final Map<Integer, Long> timeSliceExecutionTimes = new ConcurrentHashMap<>();
+    private final List<Long> timeSliceExecutionSamplesMs = Collections.synchronizedList(new ArrayList<>());
 
     private final AtomicLong peakMemoryUsage = new AtomicLong(0);
     private final AtomicLong cpuUsage = new AtomicLong(0);
@@ -28,6 +34,14 @@ public class PerformanceMonitor {
     private final Map<String, Long> slowestDevices = new ConcurrentHashMap<>();
     private final Map<Integer, Long> overloadedSlices = new ConcurrentHashMap<>();
     private final AtomicBoolean recentTimeSliceTimeout = new AtomicBoolean(false);
+    private final AtomicLong phaseWheelTickCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelCatchUpTickCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelConsecutiveCatchUpCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelMaxScansPer100Ms = new AtomicLong(0);
+    private final AtomicLong lastPhaseWheelTickNanos = new AtomicLong(Long.MIN_VALUE);
+    private final AtomicBoolean previousPhaseWheelTickWasCatchUp = new AtomicBoolean(false);
+    private final List<Long> phaseWheelTickGapSamplesMs = Collections.synchronizedList(new ArrayList<>());
+    private final Map<Long, AtomicLong> phaseWheelScan100MsBuckets = new ConcurrentHashMap<>();
 
     private long lastStatisticsTime = System.currentTimeMillis();
 
@@ -47,10 +61,75 @@ public class PerformanceMonitor {
      */
     void recordTimeSliceExecution(int sliceIndex, long executionTime, int timeSliceIntervalMs) {
         timeSliceExecutionTimes.put(sliceIndex, executionTime);
+        addBoundedSample(timeSliceExecutionSamplesMs, Math.max(0L, executionTime));
         if (executionTime > timeSliceIntervalMs) {
             overloadedSlices.put(sliceIndex, executionTime);
             recentTimeSliceTimeout.set(true);
         }
+    }
+
+    /**
+     * 记录 phase-wheel 的真实 tick 间隔，用于识别 fixed-rate 补 tick 造成的突发。
+     */
+    void recordPhaseWheelTick(int sliceIndex, long tickNanos, int expectedTickMs) {
+        phaseWheelTickCount.incrementAndGet();
+        long bucket = TimeUnit.NANOSECONDS.toMillis(tickNanos) / 100L;
+        long bucketCount = phaseWheelScan100MsBuckets
+                .computeIfAbsent(bucket, ignored -> new AtomicLong())
+                .incrementAndGet();
+        updateMax(phaseWheelMaxScansPer100Ms, bucketCount);
+
+        long previous = lastPhaseWheelTickNanos.getAndSet(tickNanos);
+        if (previous == Long.MIN_VALUE) {
+            previousPhaseWheelTickWasCatchUp.set(false);
+            return;
+        }
+        long gapNanos = Math.max(0L, tickNanos - previous);
+        addBoundedSample(phaseWheelTickGapSamplesMs, TimeUnit.NANOSECONDS.toMillis(gapNanos));
+        long catchUpThresholdNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1, expectedTickMs)) / 2L;
+        boolean catchUp = gapNanos < catchUpThresholdNanos;
+        if (catchUp) {
+            phaseWheelCatchUpTickCount.incrementAndGet();
+            if (previousPhaseWheelTickWasCatchUp.get()) {
+                phaseWheelConsecutiveCatchUpCount.incrementAndGet();
+            }
+        }
+        previousPhaseWheelTickWasCatchUp.set(catchUp);
+    }
+
+    /**
+     * 重置 phase-wheel 观测窗口，不影响真实调度状态。
+     */
+    public void resetPhaseWheelStats() {
+        phaseWheelTickCount.set(0L);
+        phaseWheelCatchUpTickCount.set(0L);
+        phaseWheelConsecutiveCatchUpCount.set(0L);
+        phaseWheelMaxScansPer100Ms.set(0L);
+        lastPhaseWheelTickNanos.set(Long.MIN_VALUE);
+        previousPhaseWheelTickWasCatchUp.set(false);
+        phaseWheelTickGapSamplesMs.clear();
+        phaseWheelScan100MsBuckets.clear();
+        timeSliceExecutionSamplesMs.clear();
+    }
+
+    public PhaseWheelStatsSnapshot getPhaseWheelStatsSnapshot() {
+        List<Long> gaps = copySorted(phaseWheelTickGapSamplesMs);
+        List<Long> executions = copySorted(timeSliceExecutionSamplesMs);
+        return new PhaseWheelStatsSnapshot(
+                phaseWheelTickCount.get(),
+                phaseWheelCatchUpTickCount.get(),
+                phaseWheelConsecutiveCatchUpCount.get(),
+                phaseWheelMaxScansPer100Ms.get(),
+                percentile(gaps, 0.50D),
+                percentile(gaps, 0.95D),
+                percentile(gaps, 0.99D),
+                gaps.stream().mapToLong(Long::longValue).min().orElse(0L),
+                gaps.stream().mapToLong(Long::longValue).max().orElse(0L),
+                percentile(executions, 0.50D),
+                percentile(executions, 0.95D),
+                percentile(executions, 0.99D),
+                executions.stream().mapToLong(Long::longValue).max().orElse(0L)
+        );
     }
 
     /**
@@ -260,5 +339,53 @@ public class PerformanceMonitor {
         Map<String, Map<String, Object>> stats = new ConcurrentHashMap<>();
         devicePerformance.forEach((deviceId, perf) -> stats.put(deviceId, perf.getStatistics()));
         return stats;
+    }
+
+    private void addBoundedSample(List<Long> samples, long value) {
+        synchronized (samples) {
+            if (samples.size() >= MAX_PHASE_WHEEL_SAMPLES) {
+                samples.remove(0);
+            }
+            samples.add(value);
+        }
+    }
+
+    private List<Long> copySorted(List<Long> samples) {
+        synchronized (samples) {
+            return samples.stream().sorted(Comparator.naturalOrder()).toList();
+        }
+    }
+
+    private long percentile(List<Long> sortedValues, double percentile) {
+        if (sortedValues == null || sortedValues.isEmpty()) {
+            return 0L;
+        }
+        int index = (int) Math.ceil(percentile * sortedValues.size()) - 1;
+        return sortedValues.get(Math.max(0, Math.min(index, sortedValues.size() - 1)));
+    }
+
+    private void updateMax(AtomicLong target, long value) {
+        long current;
+        do {
+            current = target.get();
+            if (value <= current) {
+                return;
+            }
+        } while (!target.compareAndSet(current, value));
+    }
+
+    public record PhaseWheelStatsSnapshot(long tickCount,
+                                          long catchUpTickCount,
+                                          long consecutiveCatchUpCount,
+                                          long maxScansPer100Ms,
+                                          long tickGapP50Ms,
+                                          long tickGapP95Ms,
+                                          long tickGapP99Ms,
+                                          long tickGapMinMs,
+                                          long tickGapMaxMs,
+                                          long sliceExecutionP50Ms,
+                                          long sliceExecutionP95Ms,
+                                          long sliceExecutionP99Ms,
+                                          long sliceExecutionMaxMs) {
     }
 }
