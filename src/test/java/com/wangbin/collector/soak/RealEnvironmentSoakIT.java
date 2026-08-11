@@ -81,6 +81,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,6 +108,7 @@ class RealEnvironmentSoakIT {
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.ROOT).withZone(ZoneId.systemDefault());
     private static final String DEFAULT_SOURCE = "REAL_SOAK";
     private static final long BYTES_PER_MIB = 1024L * 1024L;
+    private static final int MIN_PHASE_WHEEL_TICK_MS = 50;
 
     @Autowired
     private TelemetryIngressService telemetryIngressService;
@@ -915,6 +917,10 @@ class RealEnvironmentSoakIT {
         summary.put("schedulerEstimatedPointCount", finalSample.scheduler().estimatedPointCount());
         summary.put("schedulerMinimumCollectionIntervalMs", finalSample.scheduler().minimumCollectionIntervalMs());
         summary.put("schedulerDueScanIntervalMs", finalSample.scheduler().dueScanIntervalMs());
+        summary.put("schedulerPhaseWheelTickMs", phaseWheelTickMs(finalSample.scheduler()));
+        summary.put("schedulerPhaseWheelRoundMs", phaseWheelRoundMs(finalSample.scheduler()));
+        summary.put("schedulerPhaseOffsetsMs", phaseOffsetsMs(finalSample.scheduler()));
+        summary.put("schedulerMaxScansPer100Ms", maxScansPer100Ms(finalSample.scheduler()));
         summary.put("saveBatchAsyncTaskRatePerSecond", counters.runtimeReadPointsCalls.get() * 1000.0d / loadElapsedMs);
         summary.put("saveBatchAsyncTaskRateNote", "runtime mode 中每次 readPoints 批量返回后由 AOP 触发一个 saveBatchAsync task");
         summary.put("roundP50Ms", percentile(roundDurations, 0.50d));
@@ -997,6 +1003,40 @@ class RealEnvironmentSoakIT {
         return value instanceof Number number ? number.longValue() : 0L;
     }
 
+    private int phaseWheelTickMs(SchedulerStateSnapshot scheduler) {
+        int sliceCount = Math.max(1, scheduler.timeSliceCount());
+        int dueScanInterval = Math.max(1, scheduler.dueScanIntervalMs());
+        int distributedTick = (dueScanInterval + sliceCount - 1) / sliceCount;
+        return Math.max(MIN_PHASE_WHEEL_TICK_MS, distributedTick);
+    }
+
+    private int phaseWheelRoundMs(SchedulerStateSnapshot scheduler) {
+        return phaseWheelTickMs(scheduler) * Math.max(1, scheduler.timeSliceCount());
+    }
+
+    private List<Integer> phaseOffsetsMs(SchedulerStateSnapshot scheduler) {
+        int tick = phaseWheelTickMs(scheduler);
+        return IntStream.range(0, Math.max(1, scheduler.timeSliceCount()))
+                .map(index -> index * tick)
+                .boxed()
+                .toList();
+    }
+
+    private long maxScansPer100Ms(SchedulerStateSnapshot scheduler) {
+        int tick = phaseWheelTickMs(scheduler);
+        return IntStream.range(0, Math.max(1, scheduler.timeSliceCount()))
+                .map(index -> index * tick / 100)
+                .boxed()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        bucket -> bucket,
+                        java.util.stream.Collectors.counting()))
+                .values()
+                .stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
+    }
+
     private boolean isStable(SchedulerStateSnapshot scheduler,
                              EntryIngressSnapshot entry,
                              HistorySnapshot history,
@@ -1061,7 +1101,8 @@ class RealEnvironmentSoakIT {
                 "scenario", "points", "devices", "collectionIntervalMs", "theoreticalPointsPerSecond",
                 "actualCollectorPointsPerSecond", "actualPipelinePointsPerSecond", "actualTdengineRowsPerSecond",
                 "durationSeconds", "readPointsCalls", "pointsPerReadAvg", "pointsPerReadP95",
-                "max1sBurstItems", "dueScanIntervalMs", "maxTasksPerSlice", "maxPointsPerSlice",
+                "max1sBurstItems", "dueScanIntervalMs", "phaseWheelTickMs", "phaseWheelRoundMs",
+                "maxScansPer100Ms", "maxTasksPerSlice", "maxPointsPerSlice",
                 "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
                 "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
@@ -1088,6 +1129,9 @@ class RealEnvironmentSoakIT {
         row.put("pointsPerReadP95", summary.get("pointsPerReadP95"));
         row.put("max1sBurstItems", summary.get("max1sBurstItems"));
         row.put("dueScanIntervalMs", scheduler.dueScanIntervalMs());
+        row.put("phaseWheelTickMs", summary.get("schedulerPhaseWheelTickMs"));
+        row.put("phaseWheelRoundMs", summary.get("schedulerPhaseWheelRoundMs"));
+        row.put("maxScansPer100Ms", summary.get("schedulerMaxScansPer100Ms"));
         row.put("maxTasksPerSlice", scheduler.maxTasksPerSlice());
         row.put("maxPointsPerSlice", scheduler.maxPointsPerSlice());
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());

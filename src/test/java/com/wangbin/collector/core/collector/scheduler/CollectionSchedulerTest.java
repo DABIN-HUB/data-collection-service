@@ -349,7 +349,7 @@ public class CollectionSchedulerTest {
 
         assertEquals(2, claimedMillis.size());
         assertEquals(0L, claimedMillis.get(0));
-        assertEquals(5_499L, claimedMillis.get(1));
+        assertEquals(5_049L, claimedMillis.get(1));
     }
 
     @Test
@@ -424,11 +424,151 @@ public class CollectionSchedulerTest {
 
         localScheduler.startTimeSliceScheduling();
 
-        assertEquals(12, periods.size());
-        assertEquals(true, periods.stream().allMatch(period -> period == 500L));
+        assertEquals(1, periods.size());
+        assertEquals(50L, periods.get(0));
         assertEquals(0L, initialDelays.get(0));
-        assertEquals(834L, initialDelays.get(1));
-        assertEquals(1_668L, initialDelays.get(2));
+    }
+
+    @Test
+    void persistentSlicePhasesMustRemainEvenlyDistributed() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> periods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                periods,
+                new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        collectorProperties.getScheduler().setMinTimeSliceIntervalMs(50);
+        runtimeState.initializeTimeSlices(12, 417);
+
+        localScheduler.startTimeSliceScheduling();
+
+        assertEquals(1, periods.size());
+        assertEquals(50L, periods.get(0));
+        assertEquals(true, maxScansPerWindowBucket(12, periods.get(0), 100L) <= 2);
+    }
+
+    @Test
+    void sliceOffsetsMustNotAliasModuloDueScanPeriod() {
+        long legacyMaxScansPer100Ms = maxLegacyModuloScansPerWindowBucket(12, 417L, 500L, 100L);
+        long phaseWheelMaxScansPer100Ms = maxScansPerWindowBucket(12, 50L, 100L);
+
+        assertEquals(4L, legacyMaxScansPer100Ms);
+        assertEquals(2L, phaseWheelMaxScansPer100Ms);
+    }
+
+    @Test
+    void replanMustPreservePersistentPhaseDistribution() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> periods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                periods,
+                new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        collectorProperties.getScheduler().setMinTimeSliceIntervalMs(50);
+        runtimeState.initializeTimeSlices(4, 1_250);
+        localScheduler.startTimeSliceScheduling();
+
+        localScheduler.applyTimeSliceConfigUpdate(12, 417);
+
+        assertEquals(List.of(125L, 50L), periods);
+    }
+
+    @Test
+    void phaseDistributionMustNotChangeBusinessCadence() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                new CopyOnWriteArrayList<>(),
+                new CopyOnWriteArrayList<>());
+        runtimeState.initializeTimeSlices(12, 417);
+        String deviceId = "dev-phase-cadence";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get)));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L);
+        executeAtMillis(localScheduler, nowNanos, 5_000L);
+
+        assertEquals(List.of(0L, 5_000L), claimedMillis);
+    }
+
+    @Test
+    void phaseDistributionMustNotBreakAtomicClaim() {
+        String deviceId = "dev-phase-claim";
+        DataPoint point = point(deviceId, "p1");
+        long generation = 1L;
+        runtimeState.markRunning(deviceId, generation);
+        runtimeState.initializeTimeSlices(2, 250);
+        DeviceBatchTask firstTask = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                generation,
+                runtimeState.getTimeSliceRevision());
+        DeviceBatchTask secondTask = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                1,
+                generation,
+                runtimeState.getTimeSliceRevision());
+
+        SchedulerRuntimeState.PointDispatchClaim firstClaim = firstTask.claimDuePoints(runtimeState, List.of(point), 0L);
+        SchedulerRuntimeState.PointDispatchClaim secondClaim = secondTask.claimDuePoints(runtimeState, List.of(point), 0L);
+
+        assertEquals(false, firstClaim.isEmpty());
+        assertEquals(true, secondClaim.isEmpty());
+        runtimeState.completeClaim(firstClaim);
+    }
+
+    @Test
+    void phaseDistributionMustNotCreateDuplicateDispatch() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                new CopyOnWriteArrayList<>(),
+                new CopyOnWriteArrayList<>());
+        runtimeState.initializeTimeSlices(2, 250);
+        String deviceId = "dev-phase-duplicate";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        DeviceBatchTask firstTask = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get);
+        DeviceBatchTask secondTask = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                1,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get);
+        runtimeState.addBatchTasks(List.of(firstTask, secondTask));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        localScheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
+        localScheduler.executeTimeSlice(1, runtimeState.getTimeSliceRevision());
+
+        assertEquals(1, claimedMillis.size());
     }
 
     @Test
@@ -530,6 +670,7 @@ public class CollectionSchedulerTest {
         assertEquals(2, claimedMillis.size());
     }
 
+    @Test
     void workloadDecreaseShouldNotCreateUnsafeBurst() {
         collectorProperties.getScheduler().setMaxTimeSliceCount(12);
 
@@ -701,6 +842,38 @@ public class CollectionSchedulerTest {
     private void executeAtMillis(CollectionScheduler localScheduler, AtomicLong nowNanos, long millis) {
         nowNanos.set(TimeUnit.MILLISECONDS.toNanos(millis));
         localScheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
+    }
+
+    private long maxScansPerWindowBucket(int sliceCount, long phaseWheelTickMs, long bucketMs) {
+        return IntStream.range(0, sliceCount)
+                .mapToLong(slice -> slice * phaseWheelTickMs / Math.max(1L, bucketMs))
+                .boxed()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        bucket -> bucket,
+                        java.util.stream.Collectors.counting()))
+                .values()
+                .stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
+    }
+
+    private long maxLegacyModuloScansPerWindowBucket(int sliceCount,
+                                                     long timeSliceIntervalMs,
+                                                     long dueScanIntervalMs,
+                                                     long bucketMs) {
+        return IntStream.range(0, sliceCount)
+                .mapToLong(slice -> ((long) slice * timeSliceIntervalMs) % Math.max(1L, dueScanIntervalMs))
+                .map(phase -> phase / Math.max(1L, bucketMs))
+                .boxed()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        bucket -> bucket,
+                        java.util.stream.Collectors.counting()))
+                .values()
+                .stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
     }
 
     private DeviceBatchTask weightedTask(String deviceId, int pointCount) {

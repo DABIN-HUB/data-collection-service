@@ -43,6 +43,7 @@ import java.util.function.LongSupplier;
 public class CollectionScheduler {
 
     private static final long CONFIG_RESTART_DEBOUNCE_MS = 1000L;
+    private static final int MIN_PHASE_WHEEL_TICK_MS = 50;
 
     private final CollectionManager collectionManager;
     private final ConfigManager configManager;
@@ -173,21 +174,14 @@ public class CollectionScheduler {
     void startTimeSliceScheduling() {
         cancelTimeSliceScheduling();
         int sliceCount = Math.max(1, runtimeState.getTimeSliceCount());
-        int slicePhaseInterval = Math.max(1, runtimeState.getTimeSliceInterval());
-        int dueScanInterval = resolveDueScanIntervalMs();
+        int phaseWheelTickMs = resolvePhaseWheelTickIntervalMs(sliceCount);
         long revision = runtimeState.getTimeSliceRevision();
-        for (int sliceIndex = 0; sliceIndex < sliceCount; sliceIndex++) {
-            final int currentSlice = sliceIndex;
-            final long currentRevision = revision;
-            ScheduledFuture<?> future = timeSliceScheduler.scheduleAtFixedRate(() -> {
-                try {
-                    executeTimeSlice(currentSlice, currentRevision);
-                } catch (Exception e) {
-                    log.error("时间片执行失败, 分片={}", currentSlice, e);
-                }
-            }, (long) sliceIndex * slicePhaseInterval, dueScanInterval, TimeUnit.MILLISECONDS);
-            timeSliceScheduleFutures.put(currentSlice, future);
-        }
+        ScheduledFuture<?> future = timeSliceScheduler.scheduleAtFixedRate(
+                new PhaseWheelScanTask(sliceCount, revision),
+                0L,
+                phaseWheelTickMs,
+                TimeUnit.MILLISECONDS);
+        timeSliceScheduleFutures.put(0, future);
     }
 
     void cancelTimeSliceScheduling() {
@@ -335,6 +329,13 @@ public class CollectionScheduler {
         return Math.max(minInterval, collectorProperties.getScheduler().getDueScanIntervalMs());
     }
 
+    int resolvePhaseWheelTickIntervalMs(int sliceCount) {
+        int normalizedSliceCount = Math.max(1, sliceCount);
+        int dueScanInterval = resolveDueScanIntervalMs();
+        int distributedTick = (dueScanInterval + normalizedSliceCount - 1) / normalizedSliceCount;
+        return Math.max(MIN_PHASE_WHEEL_TICK_MS, distributedTick);
+    }
+
     private int requiredSlices(long workload, int targetPerSlice) {
         if (workload <= 0L) {
             return 1;
@@ -396,6 +397,29 @@ public class CollectionScheduler {
         } catch (Exception e) {
             log.debug("读取进程 CPU 负载失败", e);
             return -1D;
+        }
+    }
+
+    private final class PhaseWheelScanTask implements Runnable {
+
+        private final int sliceCount;
+        private final long revision;
+        private int nextSliceIndex;
+
+        private PhaseWheelScanTask(int sliceCount, long revision) {
+            this.sliceCount = Math.max(1, sliceCount);
+            this.revision = revision;
+        }
+
+        @Override
+        public void run() {
+            int currentSlice = nextSliceIndex;
+            nextSliceIndex = (nextSliceIndex + 1) % sliceCount;
+            try {
+                executeTimeSlice(currentSlice, revision);
+            } catch (Exception e) {
+                log.error("时间片执行失败, 分片={}", currentSlice, e);
+            }
         }
     }
 
