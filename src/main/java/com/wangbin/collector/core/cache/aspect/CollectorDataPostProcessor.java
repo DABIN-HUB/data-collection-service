@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.logging.RateLimitedLogReporter;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferResult;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
 /**
@@ -25,10 +27,17 @@ import java.util.function.Supplier;
 @Component
 public class CollectorDataPostProcessor {
 
+    private static final int LATENCY_SAMPLE_LIMIT = 20_000;
+
     private final Executor cacheAsyncExecutor;
     private final TelemetryPostProcessPipeline pipeline;
     private final CollectionTaskGuard collectionTaskGuard;
     private final TelemetryIngressBuffer telemetryIngressBuffer;
+    private final RateLimitedLogReporter entryRejectionLogReporter = new RateLimitedLogReporter(log);
+    private final LongAdder batchTaskCount = new LongAdder();
+    private final LongAdder batchTaskItems = new LongAdder();
+    private final TelemetryLatencyReservoir batchTaskLatencyNanos = new TelemetryLatencyReservoir(LATENCY_SAMPLE_LIMIT);
+    private final TelemetryLatencyReservoir batchTaskSizes = new TelemetryLatencyReservoir(LATENCY_SAMPLE_LIMIT);
 
     @Autowired
     public CollectorDataPostProcessor(@Qualifier("cacheAsyncExecutor") Executor cacheAsyncExecutor,
@@ -66,7 +75,7 @@ public class CollectorDataPostProcessor {
                                Map<String, ProcessResult> processResults) {
         Long generation = captureGeneration(deviceId);
         submit(deviceId, null, generation,
-                () -> processBatch(deviceId, points, values, processResults, generation),
+                () -> processTimedBatch(deviceId, points, values, processResults, generation),
                 () -> contextsForBatch(deviceId, points, values, processResults, generation));
     }
 
@@ -116,6 +125,23 @@ public class CollectorDataPostProcessor {
         List<TelemetryPostProcessContext> contexts = contextForPoint(deviceId, point, value, generation);
         if (!contexts.isEmpty()) {
             pipeline.process(contexts.get(0));
+        }
+    }
+
+    private void processTimedBatch(String deviceId,
+                                   List<DataPoint> points,
+                                   Map<String, Object> values,
+                                   Map<String, ProcessResult> processResults,
+                                   Long generation) {
+        int batchSize = points == null ? 0 : points.size();
+        long startedAt = System.nanoTime();
+        try {
+            processBatch(deviceId, points, values, processResults, generation);
+        } finally {
+            batchTaskCount.increment();
+            batchTaskItems.add(batchSize);
+            batchTaskSizes.add(batchSize);
+            batchTaskLatencyNanos.add(System.nanoTime() - startedAt);
         }
     }
 
@@ -234,13 +260,13 @@ public class CollectorDataPostProcessor {
             return;
         }
         if (result.inputItems() == 0) {
-            log.warn("遥测后处理入口任务被拒绝，设备={}，点位={}，无可缓冲数据，原因={}",
-                    deviceId,
-                    point != null ? point.getPointId() : "batch",
-                    exception.getMessage());
+            entryRejectionLogReporter.warn("entry-rejected-empty",
+                    "遥测后处理入口任务被拒绝，设备={}，点位={}，无可缓冲数据，原因={}",
+                    deviceId, point != null ? point.getPointId() : "batch", exception.getMessage());
             return;
         }
-        log.warn("遥测入口任务被拒绝，已执行入口过载处理，设备={}，点位={}，条数={}，Redis缓冲={}，本地缓冲={}，明确丢弃={}",
+        entryRejectionLogReporter.warn("entry-rejected-deferred",
+                "遥测入口任务被拒绝，已执行入口过载处理，设备={}，点位={}，条数={}，Redis缓冲={}，本地缓冲={}，明确丢弃={}",
                 deviceId,
                 point != null ? point.getPointId() : "batch",
                 result.inputItems(),
@@ -280,5 +306,34 @@ public class CollectorDataPostProcessor {
             return null;
         }
         return context.generation();
+    }
+
+    /**
+     * 返回入口执行器任务热路径内部观测快照。
+     */
+    public CollectorDataPostProcessorMetrics metrics() {
+        RateLimitedLogReporter.Snapshot logSnapshot = entryRejectionLogReporter.snapshot();
+        return new CollectorDataPostProcessorMetrics(
+                batchTaskCount.sum(),
+                batchTaskItems.sum(),
+                batchTaskSizes.percentileInt(0.50D),
+                batchTaskSizes.percentileInt(0.95D),
+                batchTaskSizes.maxInt(),
+                batchTaskLatencyNanos.percentileMillis(0.50D),
+                batchTaskLatencyNanos.percentileMillis(0.95D),
+                batchTaskLatencyNanos.percentileMillis(0.99D),
+                logSnapshot.emittedEvents(),
+                logSnapshot.suppressedEvents());
+    }
+
+    /**
+     * 重置入口任务观测采样，不影响可靠缓冲计数。
+     */
+    public void resetMetrics() {
+        batchTaskCount.reset();
+        batchTaskItems.reset();
+        batchTaskLatencyNanos.reset();
+        batchTaskSizes.reset();
+        entryRejectionLogReporter.reset();
     }
 }

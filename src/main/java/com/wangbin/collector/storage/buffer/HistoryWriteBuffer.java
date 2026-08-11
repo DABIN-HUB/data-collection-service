@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.common.logging.RateLimitedLogReporter;
 import com.wangbin.collector.storage.service.TimeSeriesService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class HistoryWriteBuffer {
     private final ObjectMapper objectMapper;
     private final HistoryBufferProperties properties;
     private final BlockingQueue<HistoryWriteRequest> localQueue;
+    private final RateLimitedLogReporter overloadLogReporter = new RateLimitedLogReporter(log);
     private final LongAdder writeFailureRedisBuffered = new LongAdder();
     private final LongAdder rejectedRedisBuffered = new LongAdder();
     private final LongAdder writeFailureLocalBuffered = new LongAdder();
@@ -187,8 +189,9 @@ public class HistoryWriteBuffer {
         try {
             redisTemplate.opsForList().leftPush(properties.getPendingKey(), serialize(request));
             incrementRedisBuffered(reason);
-            log.warn("{}，数据已进入 Redis 历史待写队列，设备={}，点位={}",
-                    reason.message(), request.getDeviceId(), pointId(request), cause);
+            overloadLogReporter.warn("history-redis-buffered-" + reason.name(),
+                    "{}，数据已进入 Redis 历史待写队列，设备={}，点位={}，原因={}",
+                    reason.message(), request.getDeviceId(), pointId(request), failureMessage(cause));
             return HistoryBufferOutcome.REDIS_BUFFERED;
         } catch (RuntimeException redisException) {
             if (!localQueue.offer(request)) {
@@ -198,8 +201,9 @@ public class HistoryWriteBuffer {
                 return HistoryBufferOutcome.DROPPED;
             }
             incrementLocalBuffered(reason);
-            log.warn("{}，Redis 历史待写队列不可用，数据已进入本地有界降级队列，设备={}，点位={}",
-                    reason.message(), request.getDeviceId(), pointId(request), redisException);
+            overloadLogReporter.warn("history-local-buffered-" + reason.name(),
+                    "{}，Redis 历史待写队列不可用，数据已进入本地有界降级队列，设备={}，点位={}，原因={}",
+                    reason.message(), request.getDeviceId(), pointId(request), failureMessage(redisException));
             return HistoryBufferOutcome.LOCAL_BUFFERED;
         }
     }
@@ -319,6 +323,13 @@ public class HistoryWriteBuffer {
     private long listSize(String key) {
         Long size = redisTemplate.opsForList().size(key);
         return size == null ? 0L : size;
+    }
+
+    private String failureMessage(RuntimeException exception) {
+        if (exception == null) {
+            return "unknown";
+        }
+        return exception.getClass().getSimpleName() + ": " + exception.getMessage();
     }
 
     private void incrementRedisBuffered(BufferReason reason) {

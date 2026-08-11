@@ -130,6 +130,33 @@ class TelemetryEntryOverloadReliabilityTest {
         waitUntil(() -> entryExecutor.getQueue().isEmpty() && entryExecutor.getActiveCount() == 0);
     }
 
+    @Test
+    void highVolumeEntryRejectMustRateLimitWarnLogsAndKeepExactMetrics() throws Exception {
+        entryExecutor = fixedPool("entry-log-limit", 1, 1);
+        BlockingStage stage = new BlockingStage();
+        RecordingIngressBuffer buffer = new RecordingIngressBuffer();
+        CollectorDataPostProcessor processor = processor(stage, buffer);
+        String deviceId = "entry-log-limit-dev";
+        List<DataPoint> points = points(deviceId, 3);
+        Map<String, Object> values = values(points);
+
+        processor.saveBatchAsync(deviceId, points, values, null);
+        assertTrue(stage.awaitEntered());
+        for (int index = 0; index < 12; index++) {
+            processor.saveBatchAsync(deviceId, points, values, null);
+        }
+
+        waitUntil(() -> buffer.rejectedTasks() == 11L && buffer.rejectedItems() == 33L);
+        CollectorDataPostProcessorMetrics metrics = processor.metrics();
+        assertEquals(11L, buffer.rejectedTasks());
+        assertEquals(33L, buffer.rejectedItems());
+        assertEquals(1L, metrics.entryLogRateLimitedEvents());
+        assertEquals(10L, metrics.entryLogSuppressedEvents());
+
+        stage.release();
+        waitUntil(() -> entryExecutor.getQueue().isEmpty() && entryExecutor.getActiveCount() == 0);
+    }
+
     private CollectorDataPostProcessor processor(TelemetryPostProcessStage stage, TelemetryIngressBuffer buffer) {
         return new CollectorDataPostProcessor(
                 entryExecutor,

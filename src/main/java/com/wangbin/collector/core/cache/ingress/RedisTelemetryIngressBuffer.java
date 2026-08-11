@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.common.logging.RateLimitedLogReporter;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessContext;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessPipeline;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
@@ -33,6 +34,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     private final CollectionTaskGuard collectionTaskGuard;
     private final RuntimeInstanceIdentity runtimeInstanceIdentity;
     private final BlockingQueue<TelemetryIngressEnvelope> localQueue;
+    private final RateLimitedLogReporter overloadLogReporter = new RateLimitedLogReporter(log);
     private final LongAdder rejectedTasks = new LongAdder();
     private final LongAdder rejectedItems = new LongAdder();
     private final LongAdder redisBufferedItems = new LongAdder();
@@ -88,7 +90,8 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
             }
             redisTemplate.opsForList().leftPushAll(properties.getPendingKey(), payloads);
             redisBufferedItems.add(itemCount);
-            log.warn("遥测入口执行器过载，遥测已进入 Redis 入口待处理队列，条数={}，原因={}",
+            overloadLogReporter.warn("entry-redis-buffered",
+                    "遥测入口执行器过载，遥测已进入 Redis 入口待处理队列，条数={}，原因={}",
                     itemCount, failureMessage(cause));
             return new TelemetryIngressBufferResult(itemCount, itemCount, 0, 0);
         } catch (RuntimeException exception) {
@@ -187,7 +190,8 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
         }
         if (local > 0) {
             localBufferedItems.add(local);
-            log.warn("Redis 入口待处理队列不可用，遥测已进入本地有界入口队列，条数={}，原因={}",
+            overloadLogReporter.warn("entry-local-buffered",
+                    "Redis 入口待处理队列不可用，遥测已进入本地有界入口队列，条数={}，原因={}",
                     local, failureMessage(cause));
         }
         if (dropped > 0) {

@@ -8,6 +8,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
+import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessorMetrics;
+import com.wangbin.collector.core.cache.aspect.TelemetryPipelineMetrics;
+import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessPipeline;
 import com.wangbin.collector.core.cache.config.TelemetryExecutorProperties;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
@@ -119,6 +122,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private CollectorDataPostProcessor collectorDataPostProcessor;
+
+    @Autowired
+    private TelemetryPostProcessPipeline telemetryPostProcessPipeline;
 
     @Autowired
     private CollectionScheduler collectionScheduler;
@@ -314,6 +320,8 @@ class RealEnvironmentSoakIT {
                     options.drainWaitSeconds()))));
 
             collectionScheduler.resetPhaseWheelStats();
+            telemetryPostProcessPipeline.resetMetrics();
+            collectorDataPostProcessor.resetMetrics();
             counters.activateRuntimeCollector();
             counters.startMeasurement();
             lifecycle.measurementStartedAt.set(counters.loadStartedAt.get());
@@ -626,6 +634,8 @@ class RealEnvironmentSoakIT {
         GcSnapshot gc = gcSnapshot();
         SchedulerStateSnapshot scheduler = schedulerStateSnapshot();
         HikariSnapshot hikari = hikariSnapshot();
+        TelemetryPipelineMetrics pipelineMetrics = telemetryPostProcessPipeline.metrics();
+        CollectorDataPostProcessorMetrics postProcessorMetrics = collectorDataPostProcessor.metrics();
         long now = System.currentTimeMillis();
         return new MetricSample(
                 now,
@@ -651,6 +661,32 @@ class RealEnvironmentSoakIT {
                 gc.count(),
                 gc.timeMs(),
                 resources.getThreadPools(),
+                new PipelineSnapshot(
+                        pipelineMetrics.processedItems(),
+                        pipelineMetrics.stageSubmissions(),
+                        pipelineMetrics.stageRejectedEvents(),
+                        pipelineMetrics.stageRejectedCompensatedEvents(),
+                        pipelineMetrics.stageRejectedUncompensatedEvents(),
+                        pipelineMetrics.stageRejectedShutdownEvents(),
+                        pipelineMetrics.processLatencyP50Ms(),
+                        pipelineMetrics.processLatencyP95Ms(),
+                        pipelineMetrics.processLatencyP99Ms(),
+                        pipelineMetrics.stageSubmissionLatencyP50Ms(),
+                        pipelineMetrics.stageSubmissionLatencyP95Ms(),
+                        pipelineMetrics.stageSubmissionLatencyP99Ms(),
+                        pipelineMetrics.logRateLimitedEvents(),
+                        pipelineMetrics.logSuppressedEvents()),
+                new PostProcessorSnapshot(
+                        postProcessorMetrics.batchTaskCount(),
+                        postProcessorMetrics.batchTaskItems(),
+                        postProcessorMetrics.batchSizeP50(),
+                        postProcessorMetrics.batchSizeP95(),
+                        postProcessorMetrics.batchSizeMax(),
+                        postProcessorMetrics.batchTaskLatencyP50Ms(),
+                        postProcessorMetrics.batchTaskLatencyP95Ms(),
+                        postProcessorMetrics.batchTaskLatencyP99Ms(),
+                        postProcessorMetrics.entryLogRateLimitedEvents(),
+                        postProcessorMetrics.entryLogSuppressedEvents()),
                 scheduler,
                 hikari,
                 redis,
@@ -1145,6 +1181,33 @@ class RealEnvironmentSoakIT {
         summary.put("streamXaddLatencyP50Ms", loadEndSample.stream().xaddLatencyP50Ms());
         summary.put("streamXaddLatencyP95Ms", loadEndSample.stream().xaddLatencyP95Ms());
         summary.put("streamXaddLatencyP99Ms", loadEndSample.stream().xaddLatencyP99Ms());
+        summary.put("pipelineProcessedItems", loadEndSample.pipeline().processedItems());
+        summary.put("pipelineStageSubmissions", loadEndSample.pipeline().stageSubmissions());
+        summary.put("pipelineStageRejected", loadEndSample.pipeline().stageRejectedEvents());
+        summary.put("pipelineStageRejectedCompensated", loadEndSample.pipeline().stageRejectedCompensatedEvents());
+        summary.put("pipelineStageRejectedUncompensated", loadEndSample.pipeline().stageRejectedUncompensatedEvents());
+        summary.put("pipelineLatencyP50Ms", loadEndSample.pipeline().processLatencyP50Ms());
+        summary.put("pipelineLatencyP95Ms", loadEndSample.pipeline().processLatencyP95Ms());
+        summary.put("pipelineLatencyP99Ms", loadEndSample.pipeline().processLatencyP99Ms());
+        summary.put("stageSubmissionLatencyP50Ms", loadEndSample.pipeline().stageSubmissionLatencyP50Ms());
+        summary.put("stageSubmissionLatencyP95Ms", loadEndSample.pipeline().stageSubmissionLatencyP95Ms());
+        summary.put("stageSubmissionLatencyP99Ms", loadEndSample.pipeline().stageSubmissionLatencyP99Ms());
+        summary.put("pipelineLogRateLimitedEvents", loadEndSample.pipeline().logRateLimitedEvents());
+        summary.put("pipelineLogSuppressedEvents", loadEndSample.pipeline().logSuppressedEvents());
+        summary.put("entryBatchTaskCount", loadEndSample.postProcessor().batchTaskCount());
+        summary.put("entryBatchTaskItems", loadEndSample.postProcessor().batchTaskItems());
+        summary.put("entryBatchSizeP50", loadEndSample.postProcessor().batchSizeP50());
+        summary.put("entryBatchSizeP95", loadEndSample.postProcessor().batchSizeP95());
+        summary.put("entryBatchSizeMax", loadEndSample.postProcessor().batchSizeMax());
+        summary.put("entryBatchTaskLatencyP50Ms", loadEndSample.postProcessor().batchTaskLatencyP50Ms());
+        summary.put("entryBatchTaskLatencyP95Ms", loadEndSample.postProcessor().batchTaskLatencyP95Ms());
+        summary.put("entryBatchTaskLatencyP99Ms", loadEndSample.postProcessor().batchTaskLatencyP99Ms());
+        summary.put("entryLogRateLimitedEvents", loadEndSample.postProcessor().entryLogRateLimitedEvents());
+        summary.put("entryLogSuppressedEvents", loadEndSample.postProcessor().entryLogSuppressedEvents());
+        summary.put("actualWarnLogs", loadEndSample.pipeline().logRateLimitedEvents()
+                + loadEndSample.postProcessor().entryLogRateLimitedEvents());
+        summary.put("suppressedWarnLogs", loadEndSample.pipeline().logSuppressedEvents()
+                + loadEndSample.postProcessor().entryLogSuppressedEvents());
         summary.put("entryRejectedItemsDelta", entryRejectedItemsDelta);
         summary.put("entryDroppedItemsDelta", entryDroppedItemsDelta);
         summary.put("historyDeferredDelta", historyDeferredDelta);
@@ -1398,6 +1461,7 @@ class RealEnvironmentSoakIT {
                 "phaseWheelTickGapP50Ms", "phaseWheelTickGapP95Ms", "phaseWheelTickGapP99Ms",
                 "phaseWheelTickGapMinMs", "phaseWheelTickGapMaxMs", "sliceExecutionP95Ms",
                 "maxTasksPerSlice", "maxPointsPerSlice",
+                "pipelineLatencyP95Ms", "entryBatchTaskLatencyP95Ms", "actualWarnLogs", "suppressedWarnLogs",
                 "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "streamXaddFailure", "streamXaddLatencyP95Ms",
                 "historyRejected", "historyDeferred",
@@ -1446,6 +1510,10 @@ class RealEnvironmentSoakIT {
         row.put("sliceExecutionP95Ms", summary.get("schedulerSliceExecutionP95Ms"));
         row.put("maxTasksPerSlice", scheduler.maxTasksPerSlice());
         row.put("maxPointsPerSlice", scheduler.maxPointsPerSlice());
+        row.put("pipelineLatencyP95Ms", summary.get("pipelineLatencyP95Ms"));
+        row.put("entryBatchTaskLatencyP95Ms", summary.get("entryBatchTaskLatencyP95Ms"));
+        row.put("actualWarnLogs", summary.get("actualWarnLogs"));
+        row.put("suppressedWarnLogs", summary.get("suppressedWarnLogs"));
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
         row.put("collectRejected", scheduler.collectRejectedCount());
         row.put("processRejected", scheduler.processRejectedCount());
@@ -1554,6 +1622,13 @@ class RealEnvironmentSoakIT {
                 + "streamAppendAttempts,streamSkippedAppends,streamSerializationFailures,streamXaddSuccess,"
                 + "streamXaddFailure,streamAppendLatencyP50Ms,streamAppendLatencyP95Ms,streamAppendLatencyP99Ms,"
                 + "streamXaddLatencyP50Ms,streamXaddLatencyP95Ms,streamXaddLatencyP99Ms,"
+                + "pipelineProcessedItems,pipelineStageSubmissions,pipelineStageRejected,pipelineStageRejectedCompensated,"
+                + "pipelineStageRejectedUncompensated,pipelineStageRejectedShutdown,pipelineLatencyP50Ms,"
+                + "pipelineLatencyP95Ms,pipelineLatencyP99Ms,stageSubmissionLatencyP50Ms,"
+                + "stageSubmissionLatencyP95Ms,stageSubmissionLatencyP99Ms,pipelineLogRateLimited,"
+                + "pipelineLogSuppressed,entryBatchTaskCount,entryBatchTaskItems,entryBatchSizeP50,"
+                + "entryBatchSizeP95,entryBatchSizeMax,entryBatchTaskLatencyP50Ms,entryBatchTaskLatencyP95Ms,"
+                + "entryBatchTaskLatencyP99Ms,entryLogRateLimited,entryLogSuppressed,"
                 + "historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
                 + "historyRejectedDropped,historyWriteFailureDisabled,historyRejectedDisabled,"
                 + "historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
@@ -1636,6 +1711,30 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.stream().xaddLatencyP50Ms()),
                 String.valueOf(sample.stream().xaddLatencyP95Ms()),
                 String.valueOf(sample.stream().xaddLatencyP99Ms()),
+                String.valueOf(sample.pipeline().processedItems()),
+                String.valueOf(sample.pipeline().stageSubmissions()),
+                String.valueOf(sample.pipeline().stageRejectedEvents()),
+                String.valueOf(sample.pipeline().stageRejectedCompensatedEvents()),
+                String.valueOf(sample.pipeline().stageRejectedUncompensatedEvents()),
+                String.valueOf(sample.pipeline().stageRejectedShutdownEvents()),
+                String.valueOf(sample.pipeline().processLatencyP50Ms()),
+                String.valueOf(sample.pipeline().processLatencyP95Ms()),
+                String.valueOf(sample.pipeline().processLatencyP99Ms()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencyP50Ms()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencyP95Ms()),
+                String.valueOf(sample.pipeline().stageSubmissionLatencyP99Ms()),
+                String.valueOf(sample.pipeline().logRateLimitedEvents()),
+                String.valueOf(sample.pipeline().logSuppressedEvents()),
+                String.valueOf(sample.postProcessor().batchTaskCount()),
+                String.valueOf(sample.postProcessor().batchTaskItems()),
+                String.valueOf(sample.postProcessor().batchSizeP50()),
+                String.valueOf(sample.postProcessor().batchSizeP95()),
+                String.valueOf(sample.postProcessor().batchSizeMax()),
+                String.valueOf(sample.postProcessor().batchTaskLatencyP50Ms()),
+                String.valueOf(sample.postProcessor().batchTaskLatencyP95Ms()),
+                String.valueOf(sample.postProcessor().batchTaskLatencyP99Ms()),
+                String.valueOf(sample.postProcessor().entryLogRateLimitedEvents()),
+                String.valueOf(sample.postProcessor().entryLogSuppressedEvents()),
                 String.valueOf(sample.history().localPending()),
                 String.valueOf(sample.history().rejectedRedisBuffered()),
                 String.valueOf(sample.history().rejectedLocalBuffered()),
@@ -2015,6 +2114,34 @@ class RealEnvironmentSoakIT {
                                  long ackFailed) {
     }
 
+    private record PipelineSnapshot(long processedItems,
+                                    long stageSubmissions,
+                                    long stageRejectedEvents,
+                                    long stageRejectedCompensatedEvents,
+                                    long stageRejectedUncompensatedEvents,
+                                    long stageRejectedShutdownEvents,
+                                    double processLatencyP50Ms,
+                                    double processLatencyP95Ms,
+                                    double processLatencyP99Ms,
+                                    double stageSubmissionLatencyP50Ms,
+                                    double stageSubmissionLatencyP95Ms,
+                                    double stageSubmissionLatencyP99Ms,
+                                    long logRateLimitedEvents,
+                                    long logSuppressedEvents) {
+    }
+
+    private record PostProcessorSnapshot(long batchTaskCount,
+                                         long batchTaskItems,
+                                         int batchSizeP50,
+                                         int batchSizeP95,
+                                         int batchSizeMax,
+                                         double batchTaskLatencyP50Ms,
+                                         double batchTaskLatencyP95Ms,
+                                         double batchTaskLatencyP99Ms,
+                                         long entryLogRateLimitedEvents,
+                                         long entryLogSuppressedEvents) {
+    }
+
     private record SchedulerStateSnapshot(int timeSliceCount,
                                           int timeSliceIntervalMs,
                                           int dueScanIntervalMs,
@@ -2082,6 +2209,8 @@ class RealEnvironmentSoakIT {
                                 long gcCount,
                                 long gcTimeMs,
                                 Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> threadPools,
+                                PipelineSnapshot pipeline,
+                                PostProcessorSnapshot postProcessor,
                                 SchedulerStateSnapshot scheduler,
                                 HikariSnapshot hikari,
                                 RedisSnapshot redis,
