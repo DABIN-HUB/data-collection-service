@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
@@ -33,6 +34,7 @@ class DeviceBatchTask {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final Set<Future<?>> inFlightFutures = ConcurrentHashMap.newKeySet();
     private volatile long nextAllowedExecutionTime;
+    private volatile long firstEligibleNanos;
 
     /**
      * 创建当前组件实例。
@@ -110,7 +112,8 @@ class DeviceBatchTask {
                 timeSliceRevision,
                 candidates,
                 collectionIntervalResolver,
-                nowNanos);
+                nowNanos,
+                firstEligibleNanos);
         if (!claim.isEmpty()) {
             lastExecutionTime = System.currentTimeMillis();
         }
@@ -139,6 +142,12 @@ class DeviceBatchTask {
 
     void assignTimeSlice(int timeSliceIndex) {
         this.timeSliceIndex = Math.max(0, timeSliceIndex);
+    }
+
+    void assignTimeSlice(int timeSliceIndex, int phaseIntervalMs, long baseNanos) {
+        assignTimeSlice(timeSliceIndex);
+        long phaseDelayMs = (long) this.timeSliceIndex * Math.max(0, phaseIntervalMs);
+        this.firstEligibleNanos = baseNanos + TimeUnit.MILLISECONDS.toNanos(phaseDelayMs);
     }
 
     /**

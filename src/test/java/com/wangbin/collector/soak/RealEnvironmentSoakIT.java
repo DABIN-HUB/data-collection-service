@@ -669,6 +669,8 @@ class RealEnvironmentSoakIT {
         return new SchedulerStateSnapshot(
                 performance.getTimeSliceCount(),
                 performance.getTimeSliceIntervalMs(),
+                Math.max(collectorProperties.getScheduler().getMinTimeSliceIntervalMs(),
+                        collectorProperties.getScheduler().getDueScanIntervalMs()),
                 schedulerLongMethod("getTimeSliceRevision"),
                 performance.getBatchDispatchRejectedCount(),
                 performance.getCollectRejectedCount(),
@@ -760,6 +762,7 @@ class RealEnvironmentSoakIT {
         config.put("dynamicAdjustIntervalMs", scheduler.getDynamicAdjustIntervalMs());
         config.put("targetTasksPerTimeSlice", scheduler.getTargetTasksPerTimeSlice());
         config.put("targetPointsPerTimeSlice", scheduler.getTargetPointsPerTimeSlice());
+        config.put("dueScanIntervalMs", scheduler.getDueScanIntervalMs());
         return config;
     }
 
@@ -911,6 +914,7 @@ class RealEnvironmentSoakIT {
         summary.put("schedulerTotalTaskCount", finalSample.scheduler().totalTaskCount());
         summary.put("schedulerEstimatedPointCount", finalSample.scheduler().estimatedPointCount());
         summary.put("schedulerMinimumCollectionIntervalMs", finalSample.scheduler().minimumCollectionIntervalMs());
+        summary.put("schedulerDueScanIntervalMs", finalSample.scheduler().dueScanIntervalMs());
         summary.put("saveBatchAsyncTaskRatePerSecond", counters.runtimeReadPointsCalls.get() * 1000.0d / loadElapsedMs);
         summary.put("saveBatchAsyncTaskRateNote", "runtime mode 中每次 readPoints 批量返回后由 AOP 触发一个 saveBatchAsync task");
         summary.put("roundP50Ms", percentile(roundDurations, 0.50d));
@@ -1057,7 +1061,8 @@ class RealEnvironmentSoakIT {
                 "scenario", "points", "devices", "collectionIntervalMs", "theoreticalPointsPerSecond",
                 "actualCollectorPointsPerSecond", "actualPipelinePointsPerSecond", "actualTdengineRowsPerSecond",
                 "durationSeconds", "readPointsCalls", "pointsPerReadAvg", "pointsPerReadP95",
-                "max1sBurstItems", "maxTasksPerSlice", "maxPointsPerSlice", "batchDispatchRejected", "collectRejected", "processRejected",
+                "max1sBurstItems", "dueScanIntervalMs", "maxTasksPerSlice", "maxPointsPerSlice",
+                "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
                 "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
                 "batchP95", "batchWriteP95", "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
@@ -1082,6 +1087,7 @@ class RealEnvironmentSoakIT {
         row.put("pointsPerReadAvg", summary.get("pointsPerReadAvg"));
         row.put("pointsPerReadP95", summary.get("pointsPerReadP95"));
         row.put("max1sBurstItems", summary.get("max1sBurstItems"));
+        row.put("dueScanIntervalMs", scheduler.dueScanIntervalMs());
         row.put("maxTasksPerSlice", scheduler.maxTasksPerSlice());
         row.put("maxPointsPerSlice", scheduler.maxPointsPerSlice());
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
@@ -1194,7 +1200,7 @@ class RealEnvironmentSoakIT {
                 + "historyBatchAdmissionInFlight,historyBatchInFlightFlushes,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
-                + "schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
+                + "schedulerDueScanIntervalMs,schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
                 + "schedulerProcessRejected,schedulerCadenceStateSize,schedulerInFlightPointClaims,"
                 + "schedulerTotalTasks,schedulerEstimatedPoints,schedulerMinimumCollectionIntervalMs,"
                 + "schedulerMaxTasksPerSlice,schedulerMaxPointsPerSlice,"
@@ -1285,6 +1291,7 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.cloud().ackFailed()),
                 String.valueOf(sample.scheduler().timeSliceCount()),
                 String.valueOf(sample.scheduler().timeSliceIntervalMs()),
+                String.valueOf(sample.scheduler().dueScanIntervalMs()),
                 String.valueOf(sample.scheduler().timeSliceRevision()),
                 String.valueOf(sample.scheduler().batchDispatchRejectedCount()),
                 String.valueOf(sample.scheduler().collectRejectedCount()),
@@ -1541,6 +1548,7 @@ class RealEnvironmentSoakIT {
 
     private record SchedulerStateSnapshot(int timeSliceCount,
                                           int timeSliceIntervalMs,
+                                          int dueScanIntervalMs,
                                           long timeSliceRevision,
                                           long batchDispatchRejectedCount,
                                           long collectRejectedCount,

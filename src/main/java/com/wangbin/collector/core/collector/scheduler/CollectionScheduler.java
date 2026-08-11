@@ -31,7 +31,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 
 /**
@@ -174,7 +173,8 @@ public class CollectionScheduler {
     void startTimeSliceScheduling() {
         cancelTimeSliceScheduling();
         int sliceCount = Math.max(1, runtimeState.getTimeSliceCount());
-        int sliceInterval = Math.max(1, runtimeState.getTimeSliceInterval());
+        int slicePhaseInterval = Math.max(1, runtimeState.getTimeSliceInterval());
+        int dueScanInterval = resolveDueScanIntervalMs();
         long revision = runtimeState.getTimeSliceRevision();
         for (int sliceIndex = 0; sliceIndex < sliceCount; sliceIndex++) {
             final int currentSlice = sliceIndex;
@@ -185,7 +185,7 @@ public class CollectionScheduler {
                 } catch (Exception e) {
                     log.error("时间片执行失败, 分片={}", currentSlice, e);
                 }
-            }, (long) sliceIndex * sliceInterval, (long) sliceInterval * sliceCount, TimeUnit.MILLISECONDS);
+            }, (long) sliceIndex * slicePhaseInterval, dueScanInterval, TimeUnit.MILLISECONDS);
             timeSliceScheduleFutures.put(currentSlice, future);
         }
     }
@@ -202,7 +202,6 @@ public class CollectionScheduler {
 
     void executeTimeSlice(int sliceIndex, long revision) {
         long startTime = System.currentTimeMillis();
-        int currentSliceInterval = runtimeState.getTimeSliceInterval();
         try {
             if (revision != runtimeState.getTimeSliceRevision()) {
                 return;
@@ -225,19 +224,20 @@ public class CollectionScheduler {
             }
 
             if (!futures.isEmpty()) {
-                try {
-                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                            .get(Math.max(1, currentSliceInterval - 10L), TimeUnit.MILLISECONDS);
-                } catch (TimeoutException e) {
-                    log.warn("时间片执行超时，保留周期任务继续运行, 分片={}", sliceIndex);
-                } catch (Exception e) {
-                    log.error("时间片执行失败, 分片={}", sliceIndex, e);
-                }
+                observeTimeSliceFutures(sliceIndex, futures);
             }
         } finally {
             long executionTime = System.currentTimeMillis() - startTime;
             performanceMonitor.recordTimeSliceExecution(sliceIndex, executionTime, runtimeState.getTimeSliceInterval());
         }
+    }
+
+    private void observeTimeSliceFutures(int sliceIndex, List<CompletableFuture<Void>> futures) {
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .exceptionally(throwable -> {
+                    log.error("时间片异步执行失败, 分片={}", sliceIndex, throwable);
+                    return null;
+                });
     }
 
     private void autoStartAllDevices() {
@@ -328,6 +328,11 @@ public class CollectionScheduler {
         int minInterval = Math.max(1, collectorProperties.getScheduler().getMinTimeSliceIntervalMs());
         long maxSlicesByCadence = Math.max(1L, minimumCollectionIntervalMs / minInterval);
         return (int) Math.min(normalizedSliceCount, Math.min(Integer.MAX_VALUE, maxSlicesByCadence));
+    }
+
+    int resolveDueScanIntervalMs() {
+        int minInterval = Math.max(1, collectorProperties.getScheduler().getMinTimeSliceIntervalMs());
+        return Math.max(minInterval, collectorProperties.getScheduler().getDueScanIntervalMs());
     }
 
     private int requiredSlices(long workload, int targetPerSlice) {

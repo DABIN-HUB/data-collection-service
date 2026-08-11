@@ -15,7 +15,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -146,6 +148,26 @@ public class CollectionSchedulerTest {
         scheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
 
         assertFalse(task.isCancelled());
+    }
+
+    @Test
+    void dueScanMustNotBlockSchedulerThreadOnCollectorFuture() {
+        String deviceId = "dev-non-blocking-scan";
+        DataPoint point = point(deviceId, "p1");
+        long generation = 1L;
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        runtimeState.initializeTimeSlices(1, 500);
+        runtimeState.markRunning(deviceId, generation);
+        DeviceBatchTask task = new DeviceBatchTask(deviceId, List.of(point), 0, generation, runtimeState.getTimeSliceRevision());
+        runtimeState.addBatchTasks(List.of(task));
+        when(batchExecutor.isBatchTaskActive(task)).thenReturn(true);
+        when(batchExecutor.submit(eq(task), anyLong())).thenReturn(new CompletableFuture<>());
+
+        long started = System.nanoTime();
+        scheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        assertEquals(true, elapsedMs < 250L);
     }
 
     @Test
@@ -297,6 +319,217 @@ public class CollectionSchedulerTest {
     }
 
     @Test
+    void dueMissByFewMillisecondsMustNotWaitFullCollectionInterval() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> scheduledPeriods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(nowNanos, scheduledPeriods, new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        runtimeState.initializeTimeSlices(10, 500);
+        String deviceId = "dev-due-miss-5s";
+        DataPoint point = point(deviceId, "p1");
+        long generation = 1L;
+        runtimeState.markRunning(deviceId, generation);
+        DeviceBatchTask task = new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                generation,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get);
+        runtimeState.addBatchTasks(List.of(task));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        localScheduler.startTimeSliceScheduling();
+        long periodMs = scheduledPeriods.get(0);
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L + periodMs);
+
+        assertEquals(2, claimedMillis.size());
+        assertEquals(0L, claimedMillis.get(0));
+        assertEquals(5_499L, claimedMillis.get(1));
+    }
+
+    @Test
+    void fiveSecondCadenceP95MustNotJumpToTenSeconds() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> scheduledPeriods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(nowNanos, scheduledPeriods, new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        runtimeState.initializeTimeSlices(10, 500);
+        String deviceId = "dev-five-second-late";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get)));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        localScheduler.startTimeSliceScheduling();
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L + scheduledPeriods.get(0));
+
+        assertEquals(2, claimedMillis.size());
+        assertEquals(true, claimedMillis.get(1) - claimedMillis.get(0) <= 6_000L);
+    }
+
+    @Test
+    void tenSecondCadenceP95MustNotJumpToTwentySeconds() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> scheduledPeriods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(nowNanos, scheduledPeriods, new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        runtimeState.initializeTimeSlices(10, 1_000);
+        String deviceId = "dev-ten-second-late";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 10_000L,
+                nowNanos::get)));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        localScheduler.startTimeSliceScheduling();
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 9_999L);
+        executeAtMillis(localScheduler, nowNanos, 9_999L + scheduledPeriods.get(0));
+
+        assertEquals(2, claimedMillis.size());
+        assertEquals(true, claimedMillis.get(1) - claimedMillis.get(0) <= 11_000L);
+    }
+
+    @Test
+    void dueScanFrequencyMustBeIndependentFromBusinessCollectionInterval() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> periods = new CopyOnWriteArrayList<>();
+        List<Long> initialDelays = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(nowNanos, periods, initialDelays);
+        collectorProperties.getScheduler().setDueScanIntervalMs(500);
+        runtimeState.initializeTimeSlices(12, 834);
+
+        localScheduler.startTimeSliceScheduling();
+
+        assertEquals(12, periods.size());
+        assertEquals(true, periods.stream().allMatch(period -> period == 500L));
+        assertEquals(0L, initialDelays.get(0));
+        assertEquals(834L, initialDelays.get(1));
+        assertEquals(1_668L, initialDelays.get(2));
+    }
+
+    @Test
+    void dueScanChangeMustNotChangeCollectionCadence() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        List<Long> periods = new CopyOnWriteArrayList<>();
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(nowNanos, periods, new CopyOnWriteArrayList<>());
+        collectorProperties.getScheduler().setDueScanIntervalMs(250);
+        runtimeState.initializeTimeSlices(1, 5_000);
+        String deviceId = "dev-scan-change";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get)));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        localScheduler.startTimeSliceScheduling();
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 4_999L);
+        executeAtMillis(localScheduler, nowNanos, 5_000L);
+
+        assertEquals(250L, periods.get(0));
+        assertEquals(List.of(0L, 5_000L), claimedMillis);
+    }
+
+    @Test
+    void dueScanMustNotCreateCatchUpStorm() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                new CopyOnWriteArrayList<>(),
+                new CopyOnWriteArrayList<>());
+        runtimeState.initializeTimeSlices(1, 500);
+        String deviceId = "dev-no-catch-up-scan";
+        DataPoint point = point(deviceId, "p1");
+        runtimeState.markRunning(deviceId, 1L);
+        runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
+                deviceId,
+                List.of(point),
+                0,
+                1L,
+                runtimeState.getTimeSliceRevision(),
+                ignored -> 5_000L,
+                nowNanos::get)));
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        executeAtMillis(localScheduler, nowNanos, 0L);
+        executeAtMillis(localScheduler, nowNanos, 20_000L);
+        executeAtMillis(localScheduler, nowNanos, 20_500L);
+        executeAtMillis(localScheduler, nowNanos, 21_000L);
+
+        assertEquals(List.of(0L, 20_000L), claimedMillis);
+    }
+
+    @Test
+    void dueScanMustNotIncreaseBurstBeyondConfiguredEnvelope() {
+        AtomicLong nowNanos = new AtomicLong(0L);
+        runtimeState = new SchedulerRuntimeState(nowNanos::get);
+        runtimeState.initializeTimeSlices(10, 500);
+        CollectionScheduler localScheduler = schedulerWithCapturedSchedule(
+                nowNanos,
+                new CopyOnWriteArrayList<>(),
+                new CopyOnWriteArrayList<>());
+        List<DeviceBatchTask> tasks = IntStream.range(0, 10)
+                .mapToObj(index -> {
+                    String deviceId = "dev-burst-envelope-" + index;
+                    runtimeState.markRunning(deviceId, 1L);
+                    return new DeviceBatchTask(
+                            deviceId,
+                            List.of(point(deviceId, "p1")),
+                            0,
+                            1L,
+                            runtimeState.getTimeSliceRevision(),
+                            ignored -> 5_000L,
+                            nowNanos::get);
+                })
+                .toList();
+        runtimeState.addBatchTasks(tasks);
+        List<Long> claimedMillis = captureClaims(nowNanos);
+
+        nowNanos.set(0L);
+        for (int slice = 0; slice < 10; slice++) {
+            localScheduler.executeTimeSlice(slice, runtimeState.getTimeSliceRevision());
+        }
+        assertEquals(1, claimedMillis.size());
+
+        nowNanos.set(TimeUnit.MILLISECONDS.toNanos(500L));
+        for (int slice = 0; slice < 10; slice++) {
+            localScheduler.executeTimeSlice(slice, runtimeState.getTimeSliceRevision());
+        }
+        assertEquals(2, claimedMillis.size());
+    }
+
     void workloadDecreaseShouldNotCreateUnsafeBurst() {
         collectorProperties.getScheduler().setMaxTimeSliceCount(12);
 
@@ -418,6 +651,56 @@ public class CollectionSchedulerTest {
         point.setPointId(pointId);
         point.setPointCode(pointId);
         return point;
+    }
+
+    private CollectionScheduler schedulerWithCapturedSchedule(AtomicLong nowNanos,
+                                                              List<Long> periods,
+                                                              List<Long> initialDelays) {
+        ScheduledExecutorService scheduledExecutor = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> scheduledFuture = mock(ScheduledFuture.class);
+        doAnswer(invocation -> {
+            initialDelays.add(invocation.getArgument(1, Long.class));
+            periods.add(invocation.getArgument(2, Long.class));
+            return scheduledFuture;
+        }).when(scheduledExecutor).scheduleAtFixedRate(
+                any(Runnable.class),
+                anyLong(),
+                anyLong(),
+                any(TimeUnit.class));
+        return new CollectionScheduler(
+                collectionManager,
+                configManager,
+                mock(CollectionStatistics.class),
+                collectorProperties,
+                systemResourceProbe,
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                batchExecutor,
+                reconnectCoordinator,
+                scheduledExecutor,
+                nowNanos::get);
+    }
+
+    private List<Long> captureClaims(AtomicLong nowNanos) {
+        List<Long> claimedMillis = new CopyOnWriteArrayList<>();
+        when(batchExecutor.isBatchTaskActive(any(DeviceBatchTask.class))).thenReturn(true);
+        doAnswer(invocation -> {
+            DeviceBatchTask task = invocation.getArgument(0);
+            long claimNanos = invocation.getArgument(1, Long.class);
+            SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState, task.points, claimNanos);
+            if (!claim.isEmpty()) {
+                claimedMillis.add(TimeUnit.NANOSECONDS.toMillis(claimNanos));
+                runtimeState.completeClaim(claim);
+            }
+            return CompletableFuture.completedFuture(null);
+        }).when(batchExecutor).submit(any(DeviceBatchTask.class), anyLong());
+        return claimedMillis;
+    }
+
+    private void executeAtMillis(CollectionScheduler localScheduler, AtomicLong nowNanos, long millis) {
+        nowNanos.set(TimeUnit.MILLISECONDS.toNanos(millis));
+        localScheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision());
     }
 
     private DeviceBatchTask weightedTask(String deviceId, int pointCount) {

@@ -15,6 +15,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import java.util.function.ToLongFunction;
 
 /**
@@ -34,6 +35,15 @@ public class SchedulerRuntimeState {
     private final java.util.concurrent.atomic.AtomicLong timeSliceRevision = new java.util.concurrent.atomic.AtomicLong(0);
     private final AtomicLong pointClaimSequence = new AtomicLong(0);
     private final ReentrantLock stateLock = new ReentrantLock();
+    private final LongSupplier nanoTimeSupplier;
+
+    public SchedulerRuntimeState() {
+        this(System::nanoTime);
+    }
+
+    SchedulerRuntimeState(LongSupplier nanoTimeSupplier) {
+        this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
+    }
 
     void initializeTimeSlices(int sliceCount, int intervalMs) {
         stateLock.lock();
@@ -107,7 +117,8 @@ public class SchedulerRuntimeState {
                                       long taskRevision,
                                       List<DataPoint> points,
                                       ToLongFunction<DataPoint> intervalResolver,
-                                      long nowNanos) {
+                                      long nowNanos,
+                                      long firstEligibleNanos) {
         if (points == null || points.isEmpty()) {
             return PointDispatchClaim.empty();
         }
@@ -128,6 +139,9 @@ public class SchedulerRuntimeState {
                     continue;
                 }
                 Long previousLastScheduled = pointScheduleNanos.get(key);
+                if (previousLastScheduled == null && nowNanos < firstEligibleNanos) {
+                    continue;
+                }
                 if (point != null && !isPointDue(previousLastScheduled, point, intervalResolver, nowNanos)) {
                     continue;
                 }
@@ -272,6 +286,8 @@ public class SchedulerRuntimeState {
 
     private void addBatchTasksLocked(List<DeviceBatchTask> batchTasks) {
         int sliceCount = Math.max(1, timeSliceCount.get());
+        int phaseIntervalMs = Math.max(1, timeSliceInterval.get());
+        long assignmentBaseNanos = nanoTimeSupplier.getAsLong();
         ensureTimeSliceBucketsLocked(sliceCount);
         int[] taskLoads = new int[sliceCount];
         int[] pointLoads = new int[sliceCount];
@@ -288,7 +304,7 @@ public class SchedulerRuntimeState {
                 continue;
             }
             int targetSlice = leastLoadedSlice(taskLoads, pointLoads);
-            batchTask.assignTimeSlice(targetSlice);
+            batchTask.assignTimeSlice(targetSlice, phaseIntervalMs, assignmentBaseNanos);
             timeSliceTasks.get(targetSlice).add(batchTask);
             taskLoads[targetSlice]++;
             pointLoads[targetSlice] += batchTask.estimatedPointCount();

@@ -394,7 +394,7 @@ class CollectionSchedulingCadenceTest {
 
     private final class SchedulerFixture {
         private final AtomicLong nowNanos;
-        private final SchedulerRuntimeState runtimeState = new SchedulerRuntimeState();
+        private final SchedulerRuntimeState runtimeState;
         private final ConfigManager configManager = mock(ConfigManager.class);
         private final DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         private final DeviceBatchExecutor batchExecutor = mock(DeviceBatchExecutor.class);
@@ -407,6 +407,7 @@ class CollectionSchedulingCadenceTest {
 
         private SchedulerFixture(AtomicLong nowNanos) {
             this.nowNanos = nowNanos;
+            this.runtimeState = new SchedulerRuntimeState(nowNanos::get);
             runtimeState.initializeTimeSlices(1, 1_000);
             doAnswer(invocation -> {
                 String deviceId = invocation.getArgument(0);

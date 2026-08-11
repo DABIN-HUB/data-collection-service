@@ -221,6 +221,10 @@ public class CollectorProperties {
          * 每个时间片期望承载的点位数量，用于避免少量大批次设备形成瞬时突发。
          */
         private int targetPointsPerTimeSlice = 1000;
+        /**
+         * due 扫描间隔，只控制已经分片的任务多久重新检查一次到期状态，不改变业务采集周期。
+         */
+        private int dueScanIntervalMs = 500;
     }
 
     /**
