@@ -1,10 +1,11 @@
 package com.wangbin.collector.storage.buffer;
 
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,19 +13,21 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * 历史正常路径的小批量聚合器；不承担可靠存储，失败统一回落到 HistoryWriteBuffer。
+ * 历史正常路径的小批量聚合器；可靠存储仍由 HistoryWriteBuffer 统一负责。
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class HistoryBatchWriter {
 
@@ -32,11 +35,14 @@ public class HistoryBatchWriter {
 
     private final HistoryWriteBuffer historyWriteBuffer;
     private final HistoryBatchProperties properties;
+    private final Executor historyBatchFlushExecutor;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final Map<Long, BatchFlushTask> ownedFlushTasks = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock admissionLock = new ReentrantReadWriteLock();
     private final Object flushMonitor = new Object();
     private final AtomicInteger bufferedRows = new AtomicInteger();
     private final AtomicInteger bufferedRowsPeak = new AtomicInteger();
+    private final AtomicLong flushTaskSequence = new AtomicLong();
     private final LongAdder acceptedRows = new LongAdder();
     private final LongAdder flushedBatches = new LongAdder();
     private final LongAdder flushedRows = new LongAdder();
@@ -52,11 +58,31 @@ public class HistoryBatchWriter {
     private final LongAdder shutdownNonDurableRows = new LongAdder();
     private final LongAdder shutdownDroppedRows = new LongAdder();
     private final LongAdder shutdownDisabledRows = new LongAdder();
+    private final LongAdder flushExecutorSubmittedBatches = new LongAdder();
+    private final LongAdder flushExecutorCompletedBatches = new LongAdder();
+    private final LongAdder flushExecutorRejectedBatches = new LongAdder();
+    private final AtomicInteger flushExecutorQueueCurrent = new AtomicInteger();
+    private final AtomicInteger flushExecutorQueuePeak = new AtomicInteger();
+    private final AtomicInteger flushExecutorActiveCurrent = new AtomicInteger();
+    private final AtomicInteger flushExecutorActivePeak = new AtomicInteger();
+    private final LongAdder shutdownQueuedBatches = new LongAdder();
     private final List<Integer> batchSizeSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Long> flushLatencyNanos = Collections.synchronizedList(new ArrayList<>());
     private volatile AdmissionObserver admissionObserver = AdmissionObserver.NOOP;
     private int inFlightFlushes;
     private volatile boolean closing;
+
+    /**
+     * 创建历史批量写入器；flush executor 只执行 TDengine batch I/O，不参与 point admission。
+     */
+    public HistoryBatchWriter(HistoryWriteBuffer historyWriteBuffer,
+                              HistoryBatchProperties properties,
+                              @Qualifier(HistoryBatchFlushExecutorConfig.HISTORY_BATCH_FLUSH_EXECUTOR)
+                              Executor historyBatchFlushExecutor) {
+        this.historyWriteBuffer = historyWriteBuffer;
+        this.properties = properties;
+        this.historyBatchFlushExecutor = historyBatchFlushExecutor;
+    }
 
     /**
      * 接收单条历史写入请求；返回 false 表示批量模式未启用，调用方应走单条路径。
@@ -84,7 +110,7 @@ public class HistoryBatchWriter {
             fallback(request, new RejectedExecutionException("history batch buffer full"), false);
             return true;
         }
-        flushOwned(result.batchToFlush());
+        submitOwnedFlush(result.batchToFlush(), false);
         return true;
     }
 
@@ -109,11 +135,7 @@ public class HistoryBatchWriter {
             }
             return bucket.requests.isEmpty() ? null : bucket;
         });
-        List<HistoryWriteRequest> batch = batchRef.get();
-        if (!batch.isEmpty()) {
-            registerInFlightFlush();
-        }
-        return AdmissionResult.accepted(batch);
+        return AdmissionResult.accepted(batchRef.get());
     }
 
     /**
@@ -125,12 +147,12 @@ public class HistoryBatchWriter {
             return;
         }
         for (List<HistoryWriteRequest> batch : detachDueBatches()) {
-            flushOwned(batch);
+            submitOwnedFlush(batch, false);
         }
     }
 
     /**
-     * 停机时尽力 flush 内存批次，失败仍进入既有 Redis/local fallback。
+     * 停机时关闭 admission，已脱离 bucket 的 batch 要么完成 flush，要么进入既有 fallback。
      */
     @PreDestroy
     public void shutdown() {
@@ -140,18 +162,19 @@ public class HistoryBatchWriter {
         List<List<HistoryWriteRequest>> batches = drainAllBatches();
         int index = 0;
         while (index < batches.size()) {
-            List<HistoryWriteRequest> batch = batches.get(index);
             if (System.nanoTime() >= deadline) {
                 break;
             }
-            shutdownFlushedRows.add(batch.size());
-            flush(batch);
+            submitOwnedFlush(batches.get(index), true);
             index++;
         }
         for (; index < batches.size(); index++) {
-            deferShutdownBatch(batches.get(index), new RejectedExecutionException("history batch shutdown deadline exceeded"));
+            deferShutdownBatch(batches.get(index),
+                    new RejectedExecutionException("history batch shutdown deadline exceeded"));
         }
-        waitForInFlightFlushes();
+        waitForInFlightFlushes(deadline);
+        fallbackOutstandingFlushTasks(
+                new RejectedExecutionException("history batch shutdown deadline exceeded"));
     }
 
     /**
@@ -184,6 +207,14 @@ public class HistoryBatchWriter {
                 shutdownNonDurableRows.sum(),
                 shutdownDroppedRows.sum(),
                 shutdownDisabledRows.sum(),
+                flushExecutorSubmittedBatches.sum(),
+                flushExecutorCompletedBatches.sum(),
+                flushExecutorRejectedBatches.sum(),
+                flushExecutorQueueCurrent.get(),
+                flushExecutorQueuePeak.get(),
+                flushExecutorActiveCurrent.get(),
+                flushExecutorActivePeak.get(),
+                shutdownQueuedBatches.sum(),
                 buckets.size(),
                 admissionLock.getReadLockCount(),
                 currentInFlightFlushes());
@@ -205,7 +236,6 @@ public class HistoryBatchWriter {
                 });
                 List<HistoryWriteRequest> batch = batchRef.get();
                 if (!batch.isEmpty()) {
-                    registerInFlightFlush();
                     batches.add(batch);
                 }
             }
@@ -218,47 +248,61 @@ public class HistoryBatchWriter {
     private void awaitAdmissionBarrier() {
         admissionLock.writeLock().lock();
         try {
-            // 写锁成功表示已经进入准入临界区的接收/定时脱离操作已完成所有权转移。
+            // 写锁成功表示所有已进入 admission 临界区的请求都完成了 bucket 所有权转移。
         } finally {
             admissionLock.writeLock().unlock();
         }
     }
 
-    private void flushOwned(List<HistoryWriteRequest> batch) {
+    private void submitOwnedFlush(List<HistoryWriteRequest> batch, boolean shutdownOwned) {
         if (batch == null || batch.isEmpty()) {
             return;
         }
+        BatchFlushTask task = new BatchFlushTask(
+                flushTaskSequence.incrementAndGet(), List.copyOf(batch), shutdownOwned);
+        registerInFlightFlush();
+        ownedFlushTasks.put(task.id(), task);
+        flushExecutorSubmittedBatches.increment();
+        incrementFlushQueue();
         try {
-            flush(batch);
-        } finally {
-            completeInFlightFlush();
+            historyBatchFlushExecutor.execute(task);
+        } catch (RuntimeException exception) {
+            flushExecutorRejectedBatches.increment();
+            task.fallback(exception, shutdownOwned, true);
         }
     }
 
-    private void flush(List<HistoryWriteRequest> batch) {
-        if (batch == null || batch.isEmpty()) {
-            return;
-        }
-        long startedAt = System.nanoTime();
+    private BatchWriteAttempt executeBatchWrite(List<HistoryWriteRequest> batch) {
         try {
             HistoryBatchWriteResult result = historyWriteBuffer.writeBatchOrBuffer(batch);
-            if (result.directSuccess()) {
-                batchWriteSuccess.increment();
-            } else {
-                batchWriteFailure.increment();
-                recordBatchFallback(result);
+            if (result == null) {
+                return new BatchWriteAttempt(null,
+                        new IllegalStateException("history batch write returned null result"));
             }
+            return new BatchWriteAttempt(result, null);
         } catch (RuntimeException exception) {
+            return new BatchWriteAttempt(null, exception);
+        }
+    }
+
+    private void recordBatchWriteAttempt(List<HistoryWriteRequest> batch,
+                                         BatchWriteAttempt attempt,
+                                         long startedAt) {
+        if (attempt.exception() != null) {
             batchWriteFailure.increment();
             for (HistoryWriteRequest request : batch) {
-                fallback(request, exception, false);
+                fallback(request, attempt.exception(), false);
             }
-        } finally {
-            flushedBatches.increment();
-            flushedRows.add(batch.size());
-            recordBatchSize(batch.size());
-            recordFlushLatency(System.nanoTime() - startedAt);
+        } else if (attempt.result().directSuccess()) {
+            batchWriteSuccess.increment();
+        } else {
+            batchWriteFailure.increment();
+            recordBatchFallback(attempt.result());
         }
+        flushedBatches.increment();
+        flushedRows.add(batch.size());
+        recordBatchSize(batch.size());
+        recordFlushLatency(System.nanoTime() - startedAt);
     }
 
     private void fallback(HistoryWriteRequest request, RuntimeException exception, boolean shutdownFallback) {
@@ -312,6 +356,12 @@ public class HistoryBatchWriter {
         }
     }
 
+    private void fallbackOutstandingFlushTasks(RuntimeException exception) {
+        for (BatchFlushTask task : List.copyOf(ownedFlushTasks.values())) {
+            task.fallback(exception, true, false);
+        }
+    }
+
     private void registerInFlightFlush() {
         synchronized (flushMonitor) {
             inFlightFlushes++;
@@ -327,14 +377,15 @@ public class HistoryBatchWriter {
         }
     }
 
-    private void waitForInFlightFlushes() {
+    private void waitForInFlightFlushes(long deadlineNanos) {
         synchronized (flushMonitor) {
-            while (inFlightFlushes > 0) {
+            while (inFlightFlushes > 0 && System.nanoTime() < deadlineNanos) {
                 try {
-                    flushMonitor.wait(100L);
+                    long remainingMs = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+                    flushMonitor.wait(Math.min(100L, remainingMs));
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
-                    log.warn("等待历史批量在途 flush 完成时被中断，仍由在途 flush 线程负责已脱离 bucket 的数据");
+                    log.warn("等待历史批量 flush 完成时被中断，将对未完成 batch 进入 shutdown fallback");
                     return;
                 }
             }
@@ -345,6 +396,39 @@ public class HistoryBatchWriter {
         synchronized (flushMonitor) {
             return inFlightFlushes;
         }
+    }
+
+    private void incrementFlushQueue() {
+        int current = flushExecutorQueueCurrent.incrementAndGet();
+        flushExecutorQueuePeak.accumulateAndGet(current, Math::max);
+    }
+
+    private void decrementFlushQueue() {
+        flushExecutorQueueCurrent.updateAndGet(current -> Math.max(0, current - 1));
+    }
+
+    private void incrementFlushActive() {
+        int current = flushExecutorActiveCurrent.incrementAndGet();
+        flushExecutorActivePeak.accumulateAndGet(current, Math::max);
+    }
+
+    private void decrementFlushActive() {
+        flushExecutorActiveCurrent.updateAndGet(current -> Math.max(0, current - 1));
+    }
+
+    private boolean removeFromExecutorQueue(BatchFlushTask task) {
+        try {
+            if (historyBatchFlushExecutor instanceof ThreadPoolTaskExecutor taskExecutor) {
+                ThreadPoolExecutor executor = taskExecutor.getThreadPoolExecutor();
+                return executor.getQueue().remove(task);
+            }
+            if (historyBatchFlushExecutor instanceof ThreadPoolExecutor executor) {
+                return executor.getQueue().remove(task);
+            }
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+        return false;
     }
 
     private List<List<HistoryWriteRequest>> drainAllBatches() {
@@ -499,6 +583,93 @@ public class HistoryBatchWriter {
 
         private static AdmissionResult capacityRejected() {
             return new AdmissionResult(List.of(), true);
+        }
+    }
+
+    private record BatchWriteAttempt(HistoryBatchWriteResult result, RuntimeException exception) {
+    }
+
+    private enum FlushTaskState {
+        PENDING,
+        RUNNING,
+        DONE,
+        FALLBACKED
+    }
+
+    private final class BatchFlushTask implements Runnable {
+
+        private final long id;
+        private final List<HistoryWriteRequest> batch;
+        private final boolean shutdownOwned;
+        private final AtomicReference<FlushTaskState> state = new AtomicReference<>(FlushTaskState.PENDING);
+
+        private BatchFlushTask(long id, List<HistoryWriteRequest> batch, boolean shutdownOwned) {
+            this.id = id;
+            this.batch = batch;
+            this.shutdownOwned = shutdownOwned;
+        }
+
+        private long id() {
+            return id;
+        }
+
+        @Override
+        public void run() {
+            if (!state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
+                return;
+            }
+            decrementFlushQueue();
+            incrementFlushActive();
+            long startedAt = System.nanoTime();
+            BatchWriteAttempt attempt = executeBatchWrite(batch);
+            decrementFlushActive();
+            if (state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
+                recordBatchWriteAttempt(batch, attempt, startedAt);
+                if (shutdownOwned) {
+                    shutdownFlushedRows.add(batch.size());
+                }
+                flushExecutorCompletedBatches.increment();
+                ownedFlushTasks.remove(id);
+                completeInFlightFlush();
+            }
+        }
+
+        private void fallback(RuntimeException exception, boolean shutdownFallback, boolean submitRejected) {
+            while (true) {
+                FlushTaskState current = state.get();
+                if (current == FlushTaskState.DONE || current == FlushTaskState.FALLBACKED) {
+                    return;
+                }
+                if (state.compareAndSet(current, FlushTaskState.FALLBACKED)) {
+                    if (current == FlushTaskState.PENDING) {
+                        if (!submitRejected) {
+                            removeFromExecutorQueue(this);
+                            shutdownQueuedBatches.increment();
+                        }
+                        decrementFlushQueue();
+                    }
+                    if (submitRejected) {
+                        log.warn("历史批量 flush executor 拒绝任务，数据进入既有 fallback，rows={}，reason={}",
+                                batch.size(), exception.getClass().getSimpleName());
+                    }
+                    deferShutdownOrNormalBatch(batch, exception, shutdownFallback);
+                    ownedFlushTasks.remove(id);
+                    completeInFlightFlush();
+                    return;
+                }
+            }
+        }
+
+        private void deferShutdownOrNormalBatch(List<HistoryWriteRequest> rows,
+                                                RuntimeException exception,
+                                                boolean shutdownFallback) {
+            if (shutdownFallback) {
+                deferShutdownBatch(rows, exception);
+                return;
+            }
+            for (HistoryWriteRequest request : rows) {
+                HistoryBatchWriter.this.fallback(request, exception, false);
+            }
         }
     }
 

@@ -574,6 +574,10 @@ class RealEnvironmentSoakIT {
                         batch.fallbackRedisRows(), batch.fallbackLocalRows(), batch.fallbackDroppedRows(),
                         batch.fallbackDisabledRows(), batch.shutdownDeferredRows(),
                         batch.shutdownNonDurableRows(), batch.shutdownDroppedRows(), batch.shutdownDisabledRows(),
+                        batch.flushExecutorSubmittedBatches(), batch.flushExecutorCompletedBatches(),
+                        batch.flushExecutorRejectedBatches(), batch.flushExecutorQueueCurrent(),
+                        batch.flushExecutorQueuePeak(), batch.flushExecutorActiveCurrent(),
+                        batch.flushExecutorActivePeak(), batch.shutdownQueuedBatches(),
                         batch.bucketCount(), batch.admissionInFlight(), batch.inFlightFlushes()),
                 cloud
         );
@@ -584,6 +588,7 @@ class RealEnvironmentSoakIT {
                 0L, 0L, 0L, 0L, 0L, 0L, 0, 0, 0D,
                 0, 0, 0, 0D, 0D, 0D, 0L, 0L,
                 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0L, 0L, 0L, 0, 0, 0, 0, 0L,
                 0, 0, 0);
     }
 
@@ -775,6 +780,11 @@ class RealEnvironmentSoakIT {
         config.put("flushIntervalMs", historyBatchProperties.getFlushIntervalMs());
         config.put("maxBufferedRows", historyBatchProperties.getMaxBufferedRows());
         config.put("shutdownFlushTimeoutMs", historyBatchProperties.getShutdownFlushTimeoutMs());
+        Map<String, Object> flushExecutor = new LinkedHashMap<>();
+        flushExecutor.put("coreSize", historyBatchProperties.getFlushExecutor().getCoreSize());
+        flushExecutor.put("maxSize", historyBatchProperties.getFlushExecutor().getMaxSize());
+        flushExecutor.put("queueCapacity", historyBatchProperties.getFlushExecutor().getQueueCapacity());
+        config.put("flushExecutor", flushExecutor);
         return config;
     }
 
@@ -1106,7 +1116,8 @@ class RealEnvironmentSoakIT {
                 "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
                 "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
-                "batchP95", "batchWriteP95", "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
+                "batchP95", "batchWriteP95", "flushExecutorQueuePeak", "flushExecutorRejectedBatches",
+                "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
                 "threadPeak", "drainSeconds", "stable", "firstBottleneck");
         SchedulerStateSnapshot scheduler = (SchedulerStateSnapshot) summary.get("schedulerFinal");
         EntryIngressSnapshot entry = (EntryIngressSnapshot) summary.get("telemetryEntryFinal");
@@ -1148,6 +1159,8 @@ class RealEnvironmentSoakIT {
         row.put("batchAvg", batch.averageBatchSize());
         row.put("batchP95", batch.batchSizeP95());
         row.put("batchWriteP95", batch.flushLatencyP95Ms());
+        row.put("flushExecutorQueuePeak", batch.flushExecutorQueuePeak());
+        row.put("flushExecutorRejectedBatches", batch.flushExecutorRejectedBatches());
         row.put("cpuAvg", summary.get("processCpuLoadAvg"));
         row.put("cpuPeak", summary.get("processCpuLoadPeak"));
         row.put("heapPeakBytes", summary.get("heapPeakBytes"));
@@ -1240,7 +1253,11 @@ class RealEnvironmentSoakIT {
                 + "historyBatchSizeMax,historyBatchLatencyP50Ms,historyBatchLatencyP95Ms,historyBatchLatencyP99Ms,"
                 + "historyBatchFallbackRedisRows,historyBatchFallbackLocalRows,historyBatchFallbackDroppedRows,"
                 + "historyBatchFallbackDisabledRows,historyBatchShutdownDeferredRows,historyBatchShutdownNonDurableRows,"
-                + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,historyBatchBucketCount,"
+                + "historyBatchShutdownDroppedRows,historyBatchShutdownDisabledRows,"
+                + "historyBatchFlushExecutorSubmittedBatches,historyBatchFlushExecutorCompletedBatches,"
+                + "historyBatchFlushExecutorRejectedBatches,historyBatchFlushExecutorQueueCurrent,"
+                + "historyBatchFlushExecutorQueuePeak,historyBatchFlushExecutorActiveCurrent,"
+                + "historyBatchFlushExecutorActivePeak,historyBatchShutdownQueuedBatches,historyBatchBucketCount,"
                 + "historyBatchAdmissionInFlight,historyBatchInFlightFlushes,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
@@ -1322,6 +1339,14 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().shutdownNonDurableRows()),
                 String.valueOf(sample.historyBatch().shutdownDroppedRows()),
                 String.valueOf(sample.historyBatch().shutdownDisabledRows()),
+                String.valueOf(sample.historyBatch().flushExecutorSubmittedBatches()),
+                String.valueOf(sample.historyBatch().flushExecutorCompletedBatches()),
+                String.valueOf(sample.historyBatch().flushExecutorRejectedBatches()),
+                String.valueOf(sample.historyBatch().flushExecutorQueueCurrent()),
+                String.valueOf(sample.historyBatch().flushExecutorQueuePeak()),
+                String.valueOf(sample.historyBatch().flushExecutorActiveCurrent()),
+                String.valueOf(sample.historyBatch().flushExecutorActivePeak()),
+                String.valueOf(sample.historyBatch().shutdownQueuedBatches()),
                 String.valueOf(sample.historyBatch().bucketCount()),
                 String.valueOf(sample.historyBatch().admissionInFlight()),
                 String.valueOf(sample.historyBatch().inFlightFlushes()),
@@ -1574,6 +1599,14 @@ class RealEnvironmentSoakIT {
                                         long shutdownNonDurableRows,
                                         long shutdownDroppedRows,
                                         long shutdownDisabledRows,
+                                        long flushExecutorSubmittedBatches,
+                                        long flushExecutorCompletedBatches,
+                                        long flushExecutorRejectedBatches,
+                                        int flushExecutorQueueCurrent,
+                                        int flushExecutorQueuePeak,
+                                        int flushExecutorActiveCurrent,
+                                        int flushExecutorActivePeak,
+                                        long shutdownQueuedBatches,
                                         int bucketCount,
                                         int admissionInFlight,
                                         int inFlightFlushes) {
