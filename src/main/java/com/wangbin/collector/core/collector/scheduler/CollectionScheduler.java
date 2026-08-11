@@ -13,6 +13,7 @@ import com.wangbin.collector.core.port.SystemResourceProbe;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
@@ -31,6 +32,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.LongSupplier;
 
 /**
  * 采集任务调度器。
@@ -55,11 +57,13 @@ public class CollectionScheduler {
     private final DeviceBatchExecutor deviceBatchExecutor;
     private final ReconnectCoordinator reconnectCoordinator;
     private final ScheduledExecutorService timeSliceScheduler;
+    private final LongSupplier nanoTimeSupplier;
     private final Map<Integer, ScheduledFuture<?>> timeSliceScheduleFutures = new ConcurrentHashMap<>();
     private final List<ScheduledFuture<?>> maintenanceScheduleFutures = new CopyOnWriteArrayList<>();
     private final Map<String, ScheduledFuture<?>> pendingConfigRestartTasks = new ConcurrentHashMap<>();
     private TimeSliceTuner timeSliceTuner;
 
+    @Autowired
     public CollectionScheduler(CollectionManager collectionManager,
                                ConfigManager configManager,
                                CollectionStatistics collectionStatistics,
@@ -71,6 +75,32 @@ public class CollectionScheduler {
                                DeviceBatchExecutor deviceBatchExecutor,
                                ReconnectCoordinator reconnectCoordinator,
                                @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler) {
+        this(collectionManager,
+                configManager,
+                collectionStatistics,
+                collectorProperties,
+                systemResourceProbe,
+                runtimeState,
+                performanceMonitor,
+                deviceLifecycleCoordinator,
+                deviceBatchExecutor,
+                reconnectCoordinator,
+                timeSliceScheduler,
+                System::nanoTime);
+    }
+
+    CollectionScheduler(CollectionManager collectionManager,
+                        ConfigManager configManager,
+                        CollectionStatistics collectionStatistics,
+                        CollectorProperties collectorProperties,
+                        @Nullable SystemResourceProbe systemResourceProbe,
+                        SchedulerRuntimeState runtimeState,
+                        PerformanceMonitor performanceMonitor,
+                        DeviceLifecycleCoordinator deviceLifecycleCoordinator,
+                        DeviceBatchExecutor deviceBatchExecutor,
+                        ReconnectCoordinator reconnectCoordinator,
+                        ScheduledExecutorService timeSliceScheduler,
+                        LongSupplier nanoTimeSupplier) {
         this.collectionManager = collectionManager;
         this.configManager = configManager;
         this.collectionStatistics = collectionStatistics;
@@ -82,6 +112,7 @@ public class CollectionScheduler {
         this.deviceBatchExecutor = deviceBatchExecutor;
         this.reconnectCoordinator = reconnectCoordinator;
         this.timeSliceScheduler = timeSliceScheduler;
+        this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
     }
 
     public PerformanceStatsSnapshot getPerformanceSnapshot() {
@@ -182,11 +213,12 @@ public class CollectionScheduler {
             }
 
             List<CompletableFuture<Void>> futures = new ArrayList<>();
+            long sliceNowNanos = nanoTimeSupplier.getAsLong();
             for (DeviceBatchTask task : tasks) {
                 if (task.shouldSkip() || !deviceBatchExecutor.isBatchTaskActive(task) || task.timeSliceRevision != revision) {
                     continue;
                 }
-                CompletableFuture<Void> future = deviceBatchExecutor.submit(task);
+                CompletableFuture<Void> future = deviceBatchExecutor.submit(task, sliceNowNanos);
                 if (future != null) {
                     futures.add(future);
                 }
@@ -240,29 +272,70 @@ public class CollectionScheduler {
             double cpuLoad = getSystemCpuLoad();
             int activeDevices = runtimeState.getRunningDeviceCount();
             long totalTasks = runtimeState.getTotalTaskCount();
-            int newSliceCount = calculateOptimalSliceCount(activeDevices, totalTasks, cpuLoad);
+            long estimatedPoints = runtimeState.getTotalEstimatedPointCount();
+            int newSliceCount = calculateOptimalSliceCount(activeDevices, totalTasks, estimatedPoints, cpuLoad);
             long avgExecution = performanceMonitor.getAverageTimeSliceExecution();
             boolean timeoutDetected = performanceMonitor.consumeTimeSliceTimeout();
             int tunedInterval = timeSliceTuner != null
                     ? timeSliceTuner.adjustInterval(runtimeState.getTimeSliceInterval(), avgExecution, timeoutDetected)
                     : runtimeState.getTimeSliceInterval();
-            applyTimeSliceConfigUpdate(newSliceCount, tunedInterval);
+            long minimumCollectionIntervalMs = runtimeState.getMinimumCollectionIntervalMs();
+            newSliceCount = capSliceCountForCadence(newSliceCount, minimumCollectionIntervalMs);
+            int boundedInterval = capTimeSliceIntervalForCadence(
+                    tunedInterval,
+                    newSliceCount,
+                    minimumCollectionIntervalMs);
+            applyTimeSliceConfigUpdate(newSliceCount, boundedInterval);
         } catch (Exception e) {
             log.error("调整时间片失败", e);
         }
     }
 
     int calculateOptimalSliceCount(int activeDevices, long totalTasks, double cpuLoad) {
-        int baseSlices = Math.max(1, Math.min(
-                activeDevices / 5 + 1,
-                collectorProperties.getScheduler().getMaxTimeSliceCount()
-        ));
+        return calculateOptimalSliceCount(activeDevices, totalTasks, 0L, cpuLoad);
+    }
+
+    int calculateOptimalSliceCount(int activeDevices, long totalTasks, long estimatedPoints, double cpuLoad) {
+        int maxSlices = Math.max(1, collectorProperties.getScheduler().getMaxTimeSliceCount());
+        int activeDeviceSlices = Math.max(1, activeDevices / 5 + 1);
+        int taskSlices = requiredSlices(totalTasks, collectorProperties.getScheduler().getTargetTasksPerTimeSlice());
+        int pointSlices = requiredSlices(estimatedPoints, collectorProperties.getScheduler().getTargetPointsPerTimeSlice());
+        int baseSlices = Math.max(activeDeviceSlices, Math.max(taskSlices, pointSlices));
+        baseSlices = Math.max(1, Math.min(baseSlices, maxSlices));
         if (cpuLoad > 0.8) {
-            baseSlices = Math.min(collectorProperties.getScheduler().getMaxTimeSliceCount(), baseSlices + 2);
-        } else if (cpuLoad < 0.3) {
-            baseSlices = Math.max(2, baseSlices - 1);
+            baseSlices = Math.min(maxSlices, baseSlices + 2);
         }
         return baseSlices;
+    }
+
+    int capTimeSliceIntervalForCadence(int proposedIntervalMs, int sliceCount, long minimumCollectionIntervalMs) {
+        int normalizedInterval = Math.max(1, proposedIntervalMs);
+        if (sliceCount <= 1 || minimumCollectionIntervalMs <= 0L) {
+            return normalizedInterval;
+        }
+        int minInterval = Math.max(1, collectorProperties.getScheduler().getMinTimeSliceIntervalMs());
+        long cadenceAlignedInterval = (minimumCollectionIntervalMs + Math.max(1, sliceCount) - 1L)
+                / Math.max(1, sliceCount);
+        long boundedInterval = Math.max(minInterval, cadenceAlignedInterval);
+        return (int) Math.min(Integer.MAX_VALUE, boundedInterval);
+    }
+
+    int capSliceCountForCadence(int requestedSliceCount, long minimumCollectionIntervalMs) {
+        int normalizedSliceCount = Math.max(1, requestedSliceCount);
+        if (minimumCollectionIntervalMs <= 0L) {
+            return normalizedSliceCount;
+        }
+        int minInterval = Math.max(1, collectorProperties.getScheduler().getMinTimeSliceIntervalMs());
+        long maxSlicesByCadence = Math.max(1L, minimumCollectionIntervalMs / minInterval);
+        return (int) Math.min(normalizedSliceCount, Math.min(Integer.MAX_VALUE, maxSlicesByCadence));
+    }
+
+    private int requiredSlices(long workload, int targetPerSlice) {
+        if (workload <= 0L) {
+            return 1;
+        }
+        int normalizedTarget = Math.max(1, targetPerSlice);
+        return (int) Math.min(Integer.MAX_VALUE, (workload + normalizedTarget - 1L) / normalizedTarget);
     }
 
     void applyTimeSliceConfigUpdate(int newSliceCount, int newSliceInterval) {
@@ -274,11 +347,12 @@ public class CollectionScheduler {
         int oldSliceCount = runtimeState.getTimeSliceCount();
         int oldSliceInterval = runtimeState.getTimeSliceInterval();
         boolean changed = normalizedSliceCount != oldSliceCount || normalizedSliceInterval != oldSliceInterval;
+        boolean schedulingActive = !timeSliceScheduleFutures.isEmpty();
         if (changed) {
             runtimeState.updateTimeSliceConfig(normalizedSliceCount, normalizedSliceInterval);
             rebuildTimeSliceAssignments();
         }
-        if (changed) {
+        if (changed && schedulingActive) {
             startTimeSliceScheduling();
         }
     }
@@ -391,7 +465,11 @@ public class CollectionScheduler {
     }
 
     public boolean startDevice(String deviceId) {
-        return deviceLifecycleCoordinator.startDevice(deviceId);
+        boolean started = deviceLifecycleCoordinator.startDevice(deviceId);
+        if (started) {
+            adjustTimeSlicesAfterWorkloadChange();
+        }
+        return started;
     }
 
     public boolean stopDevice(String deviceId) {
@@ -400,6 +478,11 @@ public class CollectionScheduler {
 
     public void startAllDevices() {
         deviceLifecycleCoordinator.startAllDevices();
+        adjustTimeSlicesAfterWorkloadChange();
+    }
+
+    private void adjustTimeSlicesAfterWorkloadChange() {
+        adjustTimeSlicesDynamically();
     }
 
     public void stopAllDevices() {

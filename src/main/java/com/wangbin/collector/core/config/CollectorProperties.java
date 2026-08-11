@@ -213,6 +213,14 @@ public class CollectorProperties {
         private int reconnectExecutorSize = 4;
         private long reconnectBaseDelayMs = 1000;
         private long reconnectMaxDelayMs = 30000;
+        /**
+         * 每个时间片期望承载的批量采集任务数量，用于根据真实批任务负载计算分片数。
+         */
+        private int targetTasksPerTimeSlice = 8;
+        /**
+         * 每个时间片期望承载的点位数量，用于避免少量大批次设备形成瞬时突发。
+         */
+        private int targetPointsPerTimeSlice = 1000;
     }
 
     /**

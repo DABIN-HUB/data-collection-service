@@ -79,11 +79,19 @@ public class DeviceBatchExecutor {
         return submitBatchDispatchTask(task, task != null ? task.points : List.of());
     }
 
+    public CompletableFuture<Void> submit(DeviceBatchTask task, long claimNanos) {
+        return submitBatchDispatchTask(task, task != null ? task.points : List.of(), claimNanos);
+    }
+
     public CompletableFuture<Void> submit(DeviceBatchTask task, List<DataPoint> duePoints) {
         return submitBatchDispatchTask(task, duePoints);
     }
 
     CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task, List<DataPoint> duePoints) {
+        return submitBatchDispatchTask(task, duePoints, Long.MIN_VALUE);
+    }
+
+    CompletableFuture<Void> submitBatchDispatchTask(DeviceBatchTask task, List<DataPoint> duePoints, long claimNanos) {
         if (task == null || duePoints == null || duePoints.isEmpty()) {
             return null;
         }
@@ -93,7 +101,9 @@ public class DeviceBatchExecutor {
         if (!task.tryStartExecution()) {
             return null;
         }
-        SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState, duePoints);
+        SchedulerRuntimeState.PointDispatchClaim claim = claimNanos == Long.MIN_VALUE
+                ? task.claimDuePoints(runtimeState, duePoints)
+                : task.claimDuePoints(runtimeState, duePoints, claimNanos);
         if (claim.isEmpty()) {
             task.finishExecution();
             return null;

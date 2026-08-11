@@ -5,7 +5,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -269,15 +271,45 @@ public class SchedulerRuntimeState {
     }
 
     private void addBatchTasksLocked(List<DeviceBatchTask> batchTasks) {
+        int sliceCount = Math.max(1, timeSliceCount.get());
+        ensureTimeSliceBucketsLocked(sliceCount);
+        int[] taskLoads = new int[sliceCount];
+        int[] pointLoads = new int[sliceCount];
+        for (int i = 0; i < sliceCount; i++) {
+            List<DeviceBatchTask> tasks = timeSliceTasks.get(i);
+            if (tasks == null) {
+                continue;
+            }
+            taskLoads[i] = tasks.size();
+            pointLoads[i] = tasks.stream().mapToInt(DeviceBatchTask::estimatedPointCount).sum();
+        }
         for (DeviceBatchTask batchTask : batchTasks) {
             if (batchTask == null) {
                 continue;
             }
-            List<DeviceBatchTask> tasks = timeSliceTasks.get(batchTask.timeSliceIndex);
-            if (tasks != null) {
-                tasks.add(batchTask);
+            int targetSlice = leastLoadedSlice(taskLoads, pointLoads);
+            batchTask.assignTimeSlice(targetSlice);
+            timeSliceTasks.get(targetSlice).add(batchTask);
+            taskLoads[targetSlice]++;
+            pointLoads[targetSlice] += batchTask.estimatedPointCount();
+        }
+    }
+
+    private void ensureTimeSliceBucketsLocked(int sliceCount) {
+        for (int i = 0; i < Math.max(1, sliceCount); i++) {
+            timeSliceTasks.computeIfAbsent(i, ignored -> new CopyOnWriteArrayList<>());
+        }
+    }
+
+    private int leastLoadedSlice(int[] taskLoads, int[] pointLoads) {
+        int bestIndex = 0;
+        for (int i = 1; i < taskLoads.length; i++) {
+            if (pointLoads[i] < pointLoads[bestIndex]
+                    || (pointLoads[i] == pointLoads[bestIndex] && taskLoads[i] < taskLoads[bestIndex])) {
+                bestIndex = i;
             }
         }
+        return bestIndex;
     }
 
     List<DeviceBatchTask> removeDeviceTasks(String deviceId) {
@@ -496,7 +528,91 @@ public class SchedulerRuntimeState {
     }
 
     long getTotalTaskCount() {
-        return timeSliceTasks.values().stream().mapToInt(List::size).sum();
+        stateLock.lock();
+        try {
+            return timeSliceTasks.values().stream().mapToInt(List::size).sum();
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    long getTotalEstimatedPointCount() {
+        stateLock.lock();
+        try {
+            return timeSliceTasks.values().stream()
+                    .flatMap(List::stream)
+                    .mapToLong(DeviceBatchTask::estimatedPointCount)
+                    .sum();
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    long getMinimumCollectionIntervalMs() {
+        stateLock.lock();
+        try {
+            return timeSliceTasks.values().stream()
+                    .flatMap(List::stream)
+                    .mapToLong(DeviceBatchTask::minimumCollectionIntervalMs)
+                    .filter(value -> value != Long.MAX_VALUE)
+                    .min()
+                    .orElse(0L);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    int getMaxTasksPerTimeSliceForTest() {
+        stateLock.lock();
+        try {
+            return timeSliceTasks.values().stream()
+                    .mapToInt(List::size)
+                    .max()
+                    .orElse(0);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    int getMaxPointsPerTimeSliceForTest() {
+        stateLock.lock();
+        try {
+            return timeSliceTasks.values().stream()
+                    .mapToInt(tasks -> tasks.stream().mapToInt(DeviceBatchTask::estimatedPointCount).sum())
+                    .max()
+                    .orElse(0);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    Map<Integer, Integer> getTimeSliceTaskCountsForTest() {
+        stateLock.lock();
+        try {
+            Map<Integer, Integer> snapshot = new LinkedHashMap<>();
+            for (int i = 0; i < timeSliceCount.get(); i++) {
+                List<DeviceBatchTask> tasks = timeSliceTasks.get(i);
+                snapshot.put(i, tasks == null ? 0 : tasks.size());
+            }
+            return Map.copyOf(snapshot);
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    Map<Integer, Integer> getTimeSlicePointCountsForTest() {
+        stateLock.lock();
+        try {
+            Map<Integer, Integer> snapshot = new LinkedHashMap<>();
+            for (int i = 0; i < timeSliceCount.get(); i++) {
+                List<DeviceBatchTask> tasks = timeSliceTasks.get(i);
+                int points = tasks == null ? 0 : tasks.stream().mapToInt(DeviceBatchTask::estimatedPointCount).sum();
+                snapshot.put(i, points);
+            }
+            return Map.copyOf(snapshot);
+        } finally {
+            stateLock.unlock();
+        }
     }
 
     long getDeviceBackoffUntil(String deviceId) {

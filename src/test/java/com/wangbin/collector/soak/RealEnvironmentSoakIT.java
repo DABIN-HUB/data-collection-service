@@ -17,6 +17,7 @@ import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.collector.scheduler.PerformanceStatsSnapshot;
 import com.wangbin.collector.core.collector.scheduler.SchedulerRuntimeState;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
@@ -136,6 +137,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private HistoryBatchProperties historyBatchProperties;
+
+    @Autowired
+    private CollectorProperties collectorProperties;
 
     @Autowired
     private TelemetryExecutorProperties telemetryExecutorProperties;
@@ -675,6 +679,11 @@ class RealEnvironmentSoakIT {
                 performance.getReconnectingDevices(),
                 schedulerIntMethod("getCadenceStateSizeForTest"),
                 schedulerIntMethod("getInFlightPointScheduleSizeForTest"),
+                schedulerLongMethod("getTotalTaskCount"),
+                schedulerLongMethod("getTotalEstimatedPointCount"),
+                schedulerLongMethod("getMinimumCollectionIntervalMs"),
+                schedulerIntMethod("getMaxTasksPerTimeSliceForTest"),
+                schedulerIntMethod("getMaxPointsPerTimeSliceForTest"),
                 performance.getTimeSliceExecutionTimes().size(),
                 performance.getDeviceStats().size());
     }
@@ -734,9 +743,24 @@ class RealEnvironmentSoakIT {
         info.put("hikari", hikariSnapshot());
         info.put("cloudEnabled", reportProperties.isEnabled());
         info.put("historyBatchConfiguration", historyBatchConfiguration());
+        info.put("schedulerConfiguration", schedulerConfiguration());
         info.put("telemetryExecutorConfiguration", telemetryExecutorConfiguration());
         info.put("mqttBrokerUrl", options.mqttBrokerUrl());
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(outputDir.resolve("run-info.json").toFile(), info);
+    }
+
+    private Map<String, Object> schedulerConfiguration() {
+        CollectorProperties.SchedulerConfig scheduler = collectorProperties.getScheduler();
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("initialTimeSliceCount", scheduler.getInitialTimeSliceCount());
+        config.put("maxTimeSliceCount", scheduler.getMaxTimeSliceCount());
+        config.put("minTimeSliceIntervalMs", scheduler.getMinTimeSliceIntervalMs());
+        config.put("defaultTimeSliceIntervalMs", scheduler.getDefaultTimeSliceIntervalMs());
+        config.put("initialTimeSliceIntervalMs", scheduler.getInitialTimeSliceIntervalMs());
+        config.put("dynamicAdjustIntervalMs", scheduler.getDynamicAdjustIntervalMs());
+        config.put("targetTasksPerTimeSlice", scheduler.getTargetTasksPerTimeSlice());
+        config.put("targetPointsPerTimeSlice", scheduler.getTargetPointsPerTimeSlice());
+        return config;
     }
 
     private Map<String, Object> historyBatchConfiguration() {
@@ -882,6 +906,11 @@ class RealEnvironmentSoakIT {
         summary.put("max100msBurstItems", counters.maxBurst100Ms());
         summary.put("max500msBurstItems", counters.maxBurst500Ms());
         summary.put("max1sBurstItems", counters.maxBurst1s());
+        summary.put("schedulerMaxTasksPerSlice", finalSample.scheduler().maxTasksPerSlice());
+        summary.put("schedulerMaxPointsPerSlice", finalSample.scheduler().maxPointsPerSlice());
+        summary.put("schedulerTotalTaskCount", finalSample.scheduler().totalTaskCount());
+        summary.put("schedulerEstimatedPointCount", finalSample.scheduler().estimatedPointCount());
+        summary.put("schedulerMinimumCollectionIntervalMs", finalSample.scheduler().minimumCollectionIntervalMs());
         summary.put("saveBatchAsyncTaskRatePerSecond", counters.runtimeReadPointsCalls.get() * 1000.0d / loadElapsedMs);
         summary.put("saveBatchAsyncTaskRateNote", "runtime mode 中每次 readPoints 批量返回后由 AOP 触发一个 saveBatchAsync task");
         summary.put("roundP50Ms", percentile(roundDurations, 0.50d));
@@ -1028,7 +1057,7 @@ class RealEnvironmentSoakIT {
                 "scenario", "points", "devices", "collectionIntervalMs", "theoreticalPointsPerSecond",
                 "actualCollectorPointsPerSecond", "actualPipelinePointsPerSecond", "actualTdengineRowsPerSecond",
                 "durationSeconds", "readPointsCalls", "pointsPerReadAvg", "pointsPerReadP95",
-                "max1sBurstItems", "batchDispatchRejected", "collectRejected", "processRejected",
+                "max1sBurstItems", "maxTasksPerSlice", "maxPointsPerSlice", "batchDispatchRejected", "collectRejected", "processRejected",
                 "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
                 "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
                 "batchP95", "batchWriteP95", "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
@@ -1053,6 +1082,8 @@ class RealEnvironmentSoakIT {
         row.put("pointsPerReadAvg", summary.get("pointsPerReadAvg"));
         row.put("pointsPerReadP95", summary.get("pointsPerReadP95"));
         row.put("max1sBurstItems", summary.get("max1sBurstItems"));
+        row.put("maxTasksPerSlice", scheduler.maxTasksPerSlice());
+        row.put("maxPointsPerSlice", scheduler.maxPointsPerSlice());
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
         row.put("collectRejected", scheduler.collectRejectedCount());
         row.put("processRejected", scheduler.processRejectedCount());
@@ -1165,6 +1196,8 @@ class RealEnvironmentSoakIT {
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
                 + "schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
                 + "schedulerProcessRejected,schedulerCadenceStateSize,schedulerInFlightPointClaims,"
+                + "schedulerTotalTasks,schedulerEstimatedPoints,schedulerMinimumCollectionIntervalMs,"
+                + "schedulerMaxTasksPerSlice,schedulerMaxPointsPerSlice,"
                 + "hikariActive,hikariIdle,hikariWaiting,hikariTotal,hikariMaxPool,threadPoolsJson\n");
     }
 
@@ -1258,6 +1291,11 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.scheduler().processRejectedCount()),
                 String.valueOf(sample.scheduler().cadenceStateSize()),
                 String.valueOf(sample.scheduler().inFlightPointClaims()),
+                String.valueOf(sample.scheduler().totalTaskCount()),
+                String.valueOf(sample.scheduler().estimatedPointCount()),
+                String.valueOf(sample.scheduler().minimumCollectionIntervalMs()),
+                String.valueOf(sample.scheduler().maxTasksPerSlice()),
+                String.valueOf(sample.scheduler().maxPointsPerSlice()),
                 String.valueOf(sample.hikari().activeConnections()),
                 String.valueOf(sample.hikari().idleConnections()),
                 String.valueOf(sample.hikari().threadsAwaitingConnection()),
@@ -1513,6 +1551,11 @@ class RealEnvironmentSoakIT {
                                           int reconnectingDevices,
                                           int cadenceStateSize,
                                           int inFlightPointClaims,
+                                          long totalTaskCount,
+                                          long estimatedPointCount,
+                                          long minimumCollectionIntervalMs,
+                                          int maxTasksPerSlice,
+                                          int maxPointsPerSlice,
                                           int timeSliceExecutionEntries,
                                           int deviceStatsEntries) {
     }

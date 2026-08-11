@@ -22,7 +22,7 @@ class DeviceBatchTask {
 
     final String deviceId;
     final List<DataPoint> points;
-    final int timeSliceIndex;
+    int timeSliceIndex;
     final long generation;
     final long timeSliceRevision;
     long lastExecutionTime;
@@ -95,6 +95,12 @@ class DeviceBatchTask {
      */
     SchedulerRuntimeState.PointDispatchClaim claimDuePoints(SchedulerRuntimeState runtimeState,
                                                             List<DataPoint> candidates) {
+        return claimDuePoints(runtimeState, candidates, nanoTimeSupplier.getAsLong());
+    }
+
+    SchedulerRuntimeState.PointDispatchClaim claimDuePoints(SchedulerRuntimeState runtimeState,
+                                                            List<DataPoint> candidates,
+                                                            long nowNanos) {
         if (runtimeState == null) {
             return SchedulerRuntimeState.PointDispatchClaim.empty();
         }
@@ -104,7 +110,7 @@ class DeviceBatchTask {
                 timeSliceRevision,
                 candidates,
                 collectionIntervalResolver,
-                nanoTimeSupplier.getAsLong());
+                nowNanos);
         if (!claim.isEmpty()) {
             lastExecutionTime = System.currentTimeMillis();
         }
@@ -113,6 +119,26 @@ class DeviceBatchTask {
 
     SchedulerRuntimeState.PointDispatchClaim claimDuePoints(SchedulerRuntimeState runtimeState) {
         return claimDuePoints(runtimeState, points);
+    }
+
+    int estimatedPointCount() {
+        return points == null ? 0 : points.size();
+    }
+
+    long minimumCollectionIntervalMs() {
+        if (points == null || points.isEmpty()) {
+            return Long.MAX_VALUE;
+        }
+        long minInterval = Long.MAX_VALUE;
+        for (DataPoint point : points) {
+            long interval = collectionIntervalResolver.applyAsLong(point);
+            minInterval = Math.min(minInterval, Math.max(1L, interval));
+        }
+        return minInterval;
+    }
+
+    void assignTimeSlice(int timeSliceIndex) {
+        this.timeSliceIndex = Math.max(0, timeSliceIndex);
     }
 
     /**

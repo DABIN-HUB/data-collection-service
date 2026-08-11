@@ -424,9 +424,10 @@ class CollectionSchedulingCadenceTest {
                 return null;
             }).when(lifecycleCoordinator).scheduleDevicePoints(anyString(), anyLong(), anyList());
             when(batchExecutor.isBatchTaskActive(any(DeviceBatchTask.class))).thenReturn(true);
-            when(batchExecutor.submit(any(DeviceBatchTask.class))).thenAnswer(invocation -> {
+            when(batchExecutor.submit(any(DeviceBatchTask.class), anyLong())).thenAnswer(invocation -> {
                 DeviceBatchTask task = invocation.getArgument(0);
-                SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState);
+                long claimNanos = invocation.getArgument(1);
+                SchedulerRuntimeState.PointDispatchClaim claim = task.claimDuePoints(runtimeState, task.points, claimNanos);
                 if (claim.isEmpty()) {
                     return null;
                 }
@@ -449,7 +450,8 @@ class CollectionSchedulingCadenceTest {
                     lifecycleCoordinator,
                     batchExecutor,
                     mock(ReconnectCoordinator.class),
-                    timeSliceScheduler);
+                    timeSliceScheduler,
+                    nowNanos::get);
         }
 
         private DeviceBatchTask addTask(String deviceId, long intervalMs) {
