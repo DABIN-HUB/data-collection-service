@@ -193,12 +193,19 @@ class RealEnvironmentSoakIT {
             if (options.ackBridgeEnabled()) {
                 ackBridge = MqttAckBridge.start(options, objectMapper);
             }
+            MetricSample runStartSample = collectSample(options, counters, roundDurations, ackBridge, false);
+            samples.add(runStartSample);
+            writeMetric(metricsWriter, runStartSample);
             runLoad(options, devicePoints, counters, roundDurations, samples, metricsWriter);
+            MetricSample loadEndSample = collectSample(options, counters, roundDurations, ackBridge, false);
+            samples.add(loadEndSample);
+            writeMetric(metricsWriter, loadEndSample);
             waitForDrain(Duration.ofSeconds(options.drainWaitSeconds()));
             MetricSample finalSample = collectSample(options, counters, roundDurations, ackBridge, true);
             samples.add(finalSample);
             writeMetric(metricsWriter, finalSample);
-            writeSummary(outputDir, options, devicePoints, counters, roundDurations, samples, ackBridge);
+            writeSummary(outputDir, options, devicePoints, counters, roundDurations,
+                    samples, runStartSample, loadEndSample, ackBridge);
             assertTrue(counters.rejected.get() <= options.maxAllowedRejected(),
                     "Soak rejected task count exceeded threshold: " + counters.rejected.get());
         } finally {
@@ -887,6 +894,8 @@ class RealEnvironmentSoakIT {
                               SoakCounters counters,
                               List<Long> roundDurations,
                               List<MetricSample> samples,
+                              MetricSample runStartSample,
+                              MetricSample loadEndSample,
                               MqttAckBridge ackBridge) throws IOException {
         MetricSample finalSample = samples.get(samples.size() - 1);
         long elapsedMs = Math.max(1L, finalSample.elapsedMs());
@@ -895,8 +904,35 @@ class RealEnvironmentSoakIT {
         List<Long> runtimeCadenceIntervalsMs = counters.runtimeCadenceIntervalsMsSnapshot();
         double theoreticalRate = options.points() * 1000.0d / Math.max(1L, options.collectionIntervalMs());
         double collectorRate = counters.runtimeReadPointsItems.get() * 1000.0d / loadElapsedMs;
-        double pipelineRate = finalSample.historyBatch().acceptedRows() * 1000.0d / loadElapsedMs;
-        double tdengineRate = finalSample.historyBatch().flushedRows() * 1000.0d / loadElapsedMs;
+        long entryReplayDelta = delta(loadEndSample.entry().replayCompletedItems(),
+                runStartSample.entry().replayCompletedItems());
+        long pipelineAcceptedDelta = delta(loadEndSample.historyBatch().acceptedRows(),
+                runStartSample.historyBatch().acceptedRows());
+        long flushedBatchesDelta = delta(loadEndSample.historyBatch().flushedBatches(),
+                runStartSample.historyBatch().flushedBatches());
+        long tdengineFlushedDelta = delta(loadEndSample.historyBatch().flushedRows(),
+                runStartSample.historyBatch().flushedRows());
+        long livePipelineItems = Math.max(0L, pipelineAcceptedDelta - entryReplayDelta);
+        long liveTdengineRows = Math.max(0L, tdengineFlushedDelta - Math.min(tdengineFlushedDelta, entryReplayDelta));
+        double pipelineRate = livePipelineItems * 1000.0d / loadElapsedMs;
+        double tdengineRate = liveTdengineRows * 1000.0d / loadElapsedMs;
+        Map<String, Long> executorRejectedDelta = executorRejectedDelta(runStartSample, loadEndSample);
+        long streamAppendAttemptsDelta = delta(loadEndSample.stream().appendAttempts(),
+                runStartSample.stream().appendAttempts());
+        long streamXaddSuccessDelta = delta(loadEndSample.stream().xaddSuccess(),
+                runStartSample.stream().xaddSuccess());
+        long streamXaddFailureDelta = delta(loadEndSample.stream().xaddFailure(),
+                runStartSample.stream().xaddFailure());
+        long entryRejectedItemsDelta = delta(loadEndSample.entry().rejectedItems(),
+                runStartSample.entry().rejectedItems());
+        long entryDroppedItemsDelta = delta(loadEndSample.entry().droppedItems(),
+                runStartSample.entry().droppedItems());
+        long historyDeferredDelta = historyDeferredDelta(runStartSample.history(), loadEndSample.history());
+        long historyRejectedDroppedDelta = delta(loadEndSample.history().rejectedDropped(),
+                runStartSample.history().rejectedDropped());
+        long flushExecutorRejectedBatchesDelta = delta(loadEndSample.historyBatch().flushExecutorRejectedBatches(),
+                runStartSample.historyBatch().flushExecutorRejectedBatches());
+        SchedulerStateSnapshot schedulerLoadDelta = schedulerDelta(runStartSample.scheduler(), loadEndSample.scheduler());
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("scenario", options.scenario());
         summary.put("points", options.points());
@@ -920,6 +956,14 @@ class RealEnvironmentSoakIT {
         summary.put("actualCollectorPointsPerSecond", collectorRate);
         summary.put("actualPipelinePointsPerSecond", pipelineRate);
         summary.put("actualTdengineRowsPerSecond", tdengineRate);
+        summary.put("livePipelineItems", livePipelineItems);
+        summary.put("liveTdengineRows", liveTdengineRows);
+        summary.put("entryReplayCompletedItemsDelta", entryReplayDelta);
+        summary.put("pipelineAcceptedRowsDelta", pipelineAcceptedDelta);
+        summary.put("flushedBatchesDelta", flushedBatchesDelta);
+        summary.put("tdengineFlushedRowsDelta", tdengineFlushedDelta);
+        summary.put("batchAverageSizeDelta", flushedBatchesDelta > 0L
+                ? tdengineFlushedDelta / (double) flushedBatchesDelta : 0D);
         summary.put("readPointsCalls", counters.runtimeReadPointsCalls.get());
         summary.put("pointsPerReadAvg", average(readPointSizes));
         summary.put("pointsPerReadP50", percentileInt(readPointSizes, 0.50d));
@@ -963,16 +1007,22 @@ class RealEnvironmentSoakIT {
         summary.put("redisMemoryStartBytes", samples.stream().findFirst().map(sample -> sample.redis().usedMemory()).orElse(-1L));
         summary.put("redisMemoryPeakBytes", samples.stream().mapToLong(sample -> sample.redis().usedMemory()).max().orElse(-1L));
         summary.put("redisMemoryEndBytes", finalSample.redis().usedMemory());
-        summary.put("streamAppendAttempts", finalSample.stream().appendAttempts());
-        summary.put("streamXaddSuccess", finalSample.stream().xaddSuccess());
-        summary.put("streamXaddFailure", finalSample.stream().xaddFailure());
-        summary.put("streamAppendLatencyP50Ms", finalSample.stream().appendLatencyP50Ms());
-        summary.put("streamAppendLatencyP95Ms", finalSample.stream().appendLatencyP95Ms());
-        summary.put("streamAppendLatencyP99Ms", finalSample.stream().appendLatencyP99Ms());
-        summary.put("streamXaddLatencyP50Ms", finalSample.stream().xaddLatencyP50Ms());
-        summary.put("streamXaddLatencyP95Ms", finalSample.stream().xaddLatencyP95Ms());
-        summary.put("streamXaddLatencyP99Ms", finalSample.stream().xaddLatencyP99Ms());
+        summary.put("streamAppendAttempts", streamAppendAttemptsDelta);
+        summary.put("streamXaddSuccess", streamXaddSuccessDelta);
+        summary.put("streamXaddFailure", streamXaddFailureDelta);
+        summary.put("streamAppendLatencyP50Ms", loadEndSample.stream().appendLatencyP50Ms());
+        summary.put("streamAppendLatencyP95Ms", loadEndSample.stream().appendLatencyP95Ms());
+        summary.put("streamAppendLatencyP99Ms", loadEndSample.stream().appendLatencyP99Ms());
+        summary.put("streamXaddLatencyP50Ms", loadEndSample.stream().xaddLatencyP50Ms());
+        summary.put("streamXaddLatencyP95Ms", loadEndSample.stream().xaddLatencyP95Ms());
+        summary.put("streamXaddLatencyP99Ms", loadEndSample.stream().xaddLatencyP99Ms());
+        summary.put("entryRejectedItemsDelta", entryRejectedItemsDelta);
+        summary.put("entryDroppedItemsDelta", entryDroppedItemsDelta);
+        summary.put("historyDeferredDelta", historyDeferredDelta);
+        summary.put("historyRejectedDroppedDelta", historyRejectedDroppedDelta);
+        summary.put("flushExecutorRejectedBatchesDelta", flushExecutorRejectedBatchesDelta);
         summary.put("schedulerFinal", finalSample.scheduler());
+        summary.put("schedulerLoadDelta", schedulerLoadDelta);
         summary.put("hikariFinal", finalSample.hikari());
         summary.put("hikariActivePeak", samples.stream().mapToInt(sample -> sample.hikari().activeConnections()).max().orElse(-1));
         summary.put("hikariWaitingPeak", samples.stream().mapToInt(sample -> sample.hikari().threadsAwaitingConnection()).max().orElse(-1));
@@ -987,6 +1037,7 @@ class RealEnvironmentSoakIT {
         summary.put("executorQueuePeaks", executorQueuePeaks(samples));
         summary.put("executorActivePeaks", executorActivePeaks(samples));
         summary.put("executorRejectedPeaks", executorRejectedPeaks(samples));
+        summary.put("executorRejectedDelta", executorRejectedDelta);
         summary.put("executorCompletedFinal", executorCompletedFinal(finalSample));
         summary.put("historyLocalQueueSecondsAtMeasuredRate",
                 estimateHistoryLocalSeconds(finalSample.history(), counters, loadElapsedMs));
@@ -1010,6 +1061,55 @@ class RealEnvironmentSoakIT {
             return result;
         }
         return Map.of();
+    }
+
+    private long longValue(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private long delta(long end, long start) {
+        return Math.max(0L, end - start);
+    }
+
+    private long historyDeferredDelta(HistorySnapshot start, HistorySnapshot end) {
+        return delta(end.rejectedRedisBuffered(), start.rejectedRedisBuffered())
+                + delta(end.rejectedLocalBuffered(), start.rejectedLocalBuffered())
+                + delta(end.writeFailureRedisBuffered(), start.writeFailureRedisBuffered())
+                + delta(end.writeFailureLocalBuffered(), start.writeFailureLocalBuffered());
+    }
+
+    private Map<String, Long> executorRejectedDelta(MetricSample start, MetricSample end) {
+        Map<String, Long> result = new LinkedHashMap<>();
+        end.threadPools().forEach((name, snapshot) -> {
+            long startRejected = start.threadPools().containsKey(name)
+                    ? start.threadPools().get(name).getRejectedCount() : 0L;
+            result.put(name, delta(snapshot.getRejectedCount(), startRejected));
+        });
+        return result;
+    }
+
+    private SchedulerStateSnapshot schedulerDelta(SchedulerStateSnapshot start, SchedulerStateSnapshot end) {
+        return new SchedulerStateSnapshot(
+                end.timeSliceCount(),
+                end.timeSliceIntervalMs(),
+                end.dueScanIntervalMs(),
+                end.timeSliceRevision(),
+                delta(end.batchDispatchRejectedCount(), start.batchDispatchRejectedCount()),
+                delta(end.collectRejectedCount(), start.collectRejectedCount()),
+                delta(end.processRejectedCount(), start.processRejectedCount()),
+                delta(end.reconnectAttemptCount(), start.reconnectAttemptCount()),
+                delta(end.reconnectSuccessCount(), start.reconnectSuccessCount()),
+                delta(end.reconnectFailureCount(), start.reconnectFailureCount()),
+                end.reconnectingDevices(),
+                end.cadenceStateSize(),
+                end.inFlightPointClaims(),
+                end.totalTaskCount(),
+                end.estimatedPointCount(),
+                end.minimumCollectionIntervalMs(),
+                end.maxTasksPerSlice(),
+                end.maxPointsPerSlice(),
+                end.timeSliceExecutionEntries(),
+                end.deviceStatsEntries());
     }
 
     private long rejectedCounter(Map<String, Long> rejectedPeaks, String executorKeyword) {
@@ -1071,32 +1171,37 @@ class RealEnvironmentSoakIT {
 
     private boolean isStable(SchedulerStateSnapshot scheduler,
                              EntryIngressSnapshot entry,
-                             StreamSnapshot stream,
+                             long entryRejectedItemsDelta,
+                             long entryDroppedItemsDelta,
+                             long streamXaddFailureDelta,
                              HistorySnapshot history,
+                             long historyRejectedDroppedDelta,
                              HistoryBatchSnapshot batch,
-                             Map<String, Long> rejectedPeaks) {
+                             Map<String, Long> rejectedDelta) {
         return scheduler.batchDispatchRejectedCount() == 0L
                 && scheduler.collectRejectedCount() == 0L
                 && scheduler.processRejectedCount() == 0L
-                && entry.rejectedItems() == 0L
+                && entryRejectedItemsDelta == 0L
                 && entry.redisPending() == 0L
                 && entry.localPending() == 0
-                && entry.droppedItems() == 0L
-                && rejectedCounter(rejectedPeaks, "stream") == 0L
-                && stream.xaddFailure() == 0L
-                && rejectedCounter(rejectedPeaks, "history") == 0L
+                && entryDroppedItemsDelta == 0L
+                && rejectedCounter(rejectedDelta, "stream") == 0L
+                && streamXaddFailureDelta == 0L
+                && rejectedCounter(rejectedDelta, "history") == 0L
                 && history.redisPending() == 0L
                 && history.localPending() == 0
-                && history.rejectedDropped() == 0L
+                && historyRejectedDroppedDelta == 0L
                 && batch.currentBufferedRows() == 0
                 && batch.inFlightFlushes() == 0;
     }
 
     private String firstBottleneck(SchedulerStateSnapshot scheduler,
                                    EntryIngressSnapshot entry,
-                                   StreamSnapshot stream,
+                                   long entryRejectedItemsDelta,
+                                   long entryDroppedItemsDelta,
+                                   long streamXaddFailureDelta,
                                    HistorySnapshot history,
-                                   Map<String, Long> rejectedPeaks) {
+                                   Map<String, Long> rejectedDelta) {
         if (scheduler.processRejectedCount() > 0L) {
             return "process-executor";
         }
@@ -1106,16 +1211,16 @@ class RealEnvironmentSoakIT {
         if (scheduler.batchDispatchRejectedCount() > 0L) {
             return "batch-dispatch-executor";
         }
-        if (entry.rejectedItems() > 0L || entry.redisPending() > 0L) {
+        if (entryRejectedItemsDelta > 0L || entryDroppedItemsDelta > 0L || entry.redisPending() > 0L) {
             return "telemetry-entry";
         }
-        if (rejectedCounter(rejectedPeaks, "stream") > 0L) {
+        if (rejectedCounter(rejectedDelta, "stream") > 0L) {
             return "stream-stage";
         }
-        if (stream.xaddFailure() > 0L) {
+        if (streamXaddFailureDelta > 0L) {
             return "redis-xadd";
         }
-        if (rejectedCounter(rejectedPeaks, "history") > 0L
+        if (rejectedCounter(rejectedDelta, "history") > 0L
                 || history.redisPending() > 0L
                 || history.localPending() > 0) {
             return "history-stage";
@@ -1148,13 +1253,19 @@ class RealEnvironmentSoakIT {
                 "batchP95", "batchWriteP95", "flushExecutorQueuePeak", "flushExecutorRejectedBatches",
                 "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
                 "threadPeak", "drainSeconds", "stable", "firstBottleneck");
-        SchedulerStateSnapshot scheduler = (SchedulerStateSnapshot) summary.get("schedulerFinal");
+        SchedulerStateSnapshot scheduler = (SchedulerStateSnapshot) summary.get("schedulerLoadDelta");
         EntryIngressSnapshot entry = (EntryIngressSnapshot) summary.get("telemetryEntryFinal");
         StreamSnapshot stream = (StreamSnapshot) summary.get("streamFinal");
         HistorySnapshot history = (HistorySnapshot) summary.get("historyFinal");
         HistoryBatchSnapshot batch = (HistoryBatchSnapshot) summary.get("historyBatchFinal");
         Map<String, Long> queuePeaks = castLongMap(summary.get("executorQueuePeaks"));
-        Map<String, Long> rejectedPeaks = castLongMap(summary.get("executorRejectedPeaks"));
+        Map<String, Long> rejectedDelta = castLongMap(summary.get("executorRejectedDelta"));
+        long entryRejectedItemsDelta = longValue(summary.get("entryRejectedItemsDelta"));
+        long entryDroppedItemsDelta = longValue(summary.get("entryDroppedItemsDelta"));
+        long streamXaddFailureDelta = longValue(summary.get("streamXaddFailure"));
+        long historyDeferredDelta = longValue(summary.get("historyDeferredDelta"));
+        long historyRejectedDroppedDelta = longValue(summary.get("historyRejectedDroppedDelta"));
+        long flushExecutorRejectedBatchesDelta = longValue(summary.get("flushExecutorRejectedBatchesDelta"));
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("scenario", summary.get("scenario"));
         row.put("points", summary.get("points"));
@@ -1178,29 +1289,31 @@ class RealEnvironmentSoakIT {
         row.put("batchDispatchRejected", scheduler.batchDispatchRejectedCount());
         row.put("collectRejected", scheduler.collectRejectedCount());
         row.put("processRejected", scheduler.processRejectedCount());
-        row.put("entryRejectedItems", entry.rejectedItems());
-        row.put("streamRejected", rejectedCounter(rejectedPeaks, "stream"));
-        row.put("streamXaddFailure", stream.xaddFailure());
-        row.put("streamXaddLatencyP95Ms", stream.xaddLatencyP95Ms());
-        row.put("historyRejected", rejectedCounter(rejectedPeaks, "history"));
-        row.put("historyDeferred", history.rejectedRedisBuffered() + history.rejectedLocalBuffered()
-                + history.writeFailureRedisBuffered() + history.writeFailureLocalBuffered());
+        row.put("entryRejectedItems", entryRejectedItemsDelta);
+        row.put("streamRejected", rejectedCounter(rejectedDelta, "stream"));
+        row.put("streamXaddFailure", streamXaddFailureDelta);
+        row.put("streamXaddLatencyP95Ms", summary.get("streamXaddLatencyP95Ms"));
+        row.put("historyRejected", rejectedCounter(rejectedDelta, "history"));
+        row.put("historyDeferred", historyDeferredDelta);
         row.put("historyPendingPeak", peakHistoryPending(summary));
         row.put("historyPendingFinal", history.redisPending());
         row.put("historyQueuePeak", queuePeak(queuePeaks, "history"));
-        row.put("batchAvg", batch.averageBatchSize());
+        row.put("batchAvg", summary.get("batchAverageSizeDelta"));
         row.put("batchP95", batch.batchSizeP95());
         row.put("batchWriteP95", batch.flushLatencyP95Ms());
         row.put("flushExecutorQueuePeak", batch.flushExecutorQueuePeak());
-        row.put("flushExecutorRejectedBatches", batch.flushExecutorRejectedBatches());
+        row.put("flushExecutorRejectedBatches", flushExecutorRejectedBatchesDelta);
         row.put("cpuAvg", summary.get("processCpuLoadAvg"));
         row.put("cpuPeak", summary.get("processCpuLoadPeak"));
         row.put("heapPeakBytes", summary.get("heapPeakBytes"));
         row.put("gcTimeMs", summary.get("gcTimeMs"));
         row.put("threadPeak", summary.get("threadPeak"));
         row.put("drainSeconds", summary.get("drainWaitSeconds"));
-        row.put("stable", isStable(scheduler, entry, stream, history, batch, rejectedPeaks));
-        row.put("firstBottleneck", firstBottleneck(scheduler, entry, stream, history, rejectedPeaks));
+        row.put("stable", isStable(scheduler, entry, entryRejectedItemsDelta, entryDroppedItemsDelta,
+                streamXaddFailureDelta,
+                history, historyRejectedDroppedDelta, batch, rejectedDelta));
+        row.put("firstBottleneck", firstBottleneck(scheduler, entry, entryRejectedItemsDelta,
+                entryDroppedItemsDelta, streamXaddFailureDelta, history, rejectedDelta));
         try (BufferedWriter writer = Files.newBufferedWriter(outputDir.resolve("runtime-capacity-summary.csv"),
                 StandardCharsets.UTF_8)) {
             writer.write(String.join(",", headers));

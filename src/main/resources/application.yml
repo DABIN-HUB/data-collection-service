@@ -218,7 +218,7 @@ collector:
       max-size: 4
       queue-capacity: 2000
     stream:
-      core-size: 2
+      core-size: 4
       max-size: 4
       queue-capacity: 2000
     history:
