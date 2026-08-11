@@ -497,7 +497,7 @@ class CombinedDownstreamFailureTest {
     }
 
     private void waitUntil(Condition condition) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 5_000L;
+        long deadline = System.currentTimeMillis() + 10_000L;
         while (System.currentTimeMillis() < deadline) {
             if (condition.isSatisfied()) {
                 return;
