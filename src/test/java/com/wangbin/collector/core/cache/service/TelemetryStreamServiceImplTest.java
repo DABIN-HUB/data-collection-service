@@ -19,6 +19,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -26,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -163,6 +166,86 @@ public class TelemetryStreamServiceImplTest {
         Object[] args = findExecuteInvocationArgs("XADD");
         assertEquals("collector:telemetry:stream", str((byte[]) args[1]));
         verify(redisTemplate, times(3)).execute(any(RedisCallback.class));
+    }
+
+    @Test
+    void redisXaddFailureMustBeSeparatelyAccounted() {
+        properties.setEnabled(true);
+        when(redisTemplate.execute(any(RedisCallback.class)))
+                .thenThrow(new RedisConnectionFailureException("redis unavailable"));
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(1L, metrics.appendAttempts());
+        assertEquals(0L, metrics.xaddSuccess());
+        assertEquals(1L, metrics.xaddFailure());
+    }
+
+    @Test
+    void streamSuccessCountMustOnlyCountSuccessfulXadd() {
+        properties.setEnabled(true);
+        AtomicInteger calls = new AtomicInteger();
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() == 2) {
+                throw new RedisConnectionFailureException("redis unavailable");
+            }
+            RedisCallback<?> callback = invocation.getArgument(0);
+            return callback.doInRedis(connection);
+        });
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        service.append("d1", point("p2"), ProcessResult.success(2, 2));
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(2L, metrics.appendAttempts());
+        assertEquals(1L, metrics.xaddSuccess());
+        assertEquals(1L, metrics.xaddFailure());
+    }
+
+    @Test
+    void streamFailureMustNotBeSilent() throws Exception {
+        ObjectMapper brokenMapper = mock(ObjectMapper.class);
+        when(brokenMapper.writeValueAsString(any()))
+                .thenThrow(new com.fasterxml.jackson.core.JsonProcessingException("bad payload") {
+                });
+        TelemetryStreamServiceImpl brokenService = new TelemetryStreamServiceImpl(
+                redisTemplate, properties, brokenMapper);
+
+        brokenService.append("d1", point("p1"), ProcessResult.success(1, 1));
+
+        TelemetryStreamMetrics metrics = brokenService.metrics();
+        assertEquals(1L, metrics.appendAttempts());
+        assertEquals(1L, metrics.serializationFailures());
+        assertEquals(0L, metrics.xaddSuccess());
+        assertEquals(0L, metrics.xaddFailure());
+    }
+
+    @Test
+    void shutdownMustAccountAcceptedStreamTasks() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
+            entered.countDown();
+            try {
+                TimeUnit.SECONDS.sleep(5);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new RedisSystemException("redis command interrupted", exception);
+            }
+            return null;
+        });
+        Thread thread = new Thread(() -> service.append("d1", point("p1"), ProcessResult.success(1, 1)),
+                "stream-shutdown-test");
+
+        thread.start();
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        thread.interrupt();
+        thread.join(TimeUnit.SECONDS.toMillis(2));
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(1L, metrics.appendAttempts());
+        assertEquals(0L, metrics.xaddSuccess());
+        assertEquals(1L, metrics.xaddFailure());
     }
 
     private Object[] findExecuteInvocationArgs(String command) {

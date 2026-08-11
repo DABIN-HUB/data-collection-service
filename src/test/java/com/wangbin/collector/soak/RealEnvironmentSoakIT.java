@@ -11,6 +11,8 @@ import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessor;
 import com.wangbin.collector.core.cache.config.TelemetryExecutorProperties;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
+import com.wangbin.collector.core.cache.service.TelemetryStreamMetrics;
+import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.factory.CollectorFactory;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
@@ -160,6 +162,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private ObjectProvider<TelemetryIngressBuffer> telemetryIngressBufferProvider;
+
+    @Autowired
+    private ObjectProvider<TelemetryStreamService> telemetryStreamServiceProvider;
 
     @Autowired
     private ObjectProvider<DataSource> dataSourceProvider;
@@ -520,6 +525,9 @@ class RealEnvironmentSoakIT {
         TelemetryIngressBufferMetrics entry = telemetryIngressBufferProvider.getIfAvailable() != null
                 ? telemetryIngressBufferProvider.getIfAvailable().metrics()
                 : TelemetryIngressBufferMetrics.empty();
+        TelemetryStreamMetrics stream = telemetryStreamServiceProvider.getIfAvailable() != null
+                ? telemetryStreamServiceProvider.getIfAvailable().metrics()
+                : TelemetryStreamMetrics.empty();
         RedisSnapshot redis = redisSnapshot(options);
         CloudSnapshot cloud = cloudSnapshot(ackBridge);
         GcSnapshot gc = gcSnapshot();
@@ -559,6 +567,10 @@ class RealEnvironmentSoakIT {
                         entry.replayCompletedItems(), entry.pendingRemoveFailures(), entry.poisonDeadLetterItems(),
                         entry.staleSameRuntimeDroppedItems(), entry.crossRuntimeRecoveredItems(),
                         entry.legacyEnvelopeRecoveredItems()),
+                new StreamSnapshot(stream.appendAttempts(), stream.skippedAppends(), stream.serializationFailures(),
+                        stream.xaddSuccess(), stream.xaddFailure(), stream.appendLatencyP50Ms(),
+                        stream.appendLatencyP95Ms(), stream.appendLatencyP99Ms(), stream.xaddLatencyP50Ms(),
+                        stream.xaddLatencyP95Ms(), stream.xaddLatencyP99Ms()),
                 new HistorySnapshot(history.redisPending(), history.redisProcessing(), history.redisDeadLetter(),
                         history.localPending(), history.localCapacity(),
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
@@ -951,6 +963,15 @@ class RealEnvironmentSoakIT {
         summary.put("redisMemoryStartBytes", samples.stream().findFirst().map(sample -> sample.redis().usedMemory()).orElse(-1L));
         summary.put("redisMemoryPeakBytes", samples.stream().mapToLong(sample -> sample.redis().usedMemory()).max().orElse(-1L));
         summary.put("redisMemoryEndBytes", finalSample.redis().usedMemory());
+        summary.put("streamAppendAttempts", finalSample.stream().appendAttempts());
+        summary.put("streamXaddSuccess", finalSample.stream().xaddSuccess());
+        summary.put("streamXaddFailure", finalSample.stream().xaddFailure());
+        summary.put("streamAppendLatencyP50Ms", finalSample.stream().appendLatencyP50Ms());
+        summary.put("streamAppendLatencyP95Ms", finalSample.stream().appendLatencyP95Ms());
+        summary.put("streamAppendLatencyP99Ms", finalSample.stream().appendLatencyP99Ms());
+        summary.put("streamXaddLatencyP50Ms", finalSample.stream().xaddLatencyP50Ms());
+        summary.put("streamXaddLatencyP95Ms", finalSample.stream().xaddLatencyP95Ms());
+        summary.put("streamXaddLatencyP99Ms", finalSample.stream().xaddLatencyP99Ms());
         summary.put("schedulerFinal", finalSample.scheduler());
         summary.put("hikariFinal", finalSample.hikari());
         summary.put("hikariActivePeak", samples.stream().mapToInt(sample -> sample.hikari().activeConnections()).max().orElse(-1));
@@ -959,6 +980,7 @@ class RealEnvironmentSoakIT {
         summary.put("entryPendingPeak", samples.stream().mapToLong(sample -> sample.entry().redisPending()).max().orElse(-1L));
         summary.put("redisFinal", finalSample.redis());
         summary.put("telemetryEntryFinal", finalSample.entry());
+        summary.put("streamFinal", finalSample.stream());
         summary.put("historyFinal", finalSample.history());
         summary.put("historyBatchFinal", finalSample.historyBatch());
         summary.put("cloudFinal", finalSample.cloud());
@@ -1049,6 +1071,7 @@ class RealEnvironmentSoakIT {
 
     private boolean isStable(SchedulerStateSnapshot scheduler,
                              EntryIngressSnapshot entry,
+                             StreamSnapshot stream,
                              HistorySnapshot history,
                              HistoryBatchSnapshot batch,
                              Map<String, Long> rejectedPeaks) {
@@ -1060,6 +1083,7 @@ class RealEnvironmentSoakIT {
                 && entry.localPending() == 0
                 && entry.droppedItems() == 0L
                 && rejectedCounter(rejectedPeaks, "stream") == 0L
+                && stream.xaddFailure() == 0L
                 && rejectedCounter(rejectedPeaks, "history") == 0L
                 && history.redisPending() == 0L
                 && history.localPending() == 0
@@ -1070,6 +1094,7 @@ class RealEnvironmentSoakIT {
 
     private String firstBottleneck(SchedulerStateSnapshot scheduler,
                                    EntryIngressSnapshot entry,
+                                   StreamSnapshot stream,
                                    HistorySnapshot history,
                                    Map<String, Long> rejectedPeaks) {
         if (scheduler.processRejectedCount() > 0L) {
@@ -1086,6 +1111,9 @@ class RealEnvironmentSoakIT {
         }
         if (rejectedCounter(rejectedPeaks, "stream") > 0L) {
             return "stream-stage";
+        }
+        if (stream.xaddFailure() > 0L) {
+            return "redis-xadd";
         }
         if (rejectedCounter(rejectedPeaks, "history") > 0L
                 || history.redisPending() > 0L
@@ -1114,13 +1142,15 @@ class RealEnvironmentSoakIT {
                 "max1sBurstItems", "dueScanIntervalMs", "phaseWheelTickMs", "phaseWheelRoundMs",
                 "maxScansPer100Ms", "maxTasksPerSlice", "maxPointsPerSlice",
                 "batchDispatchRejected", "collectRejected", "processRejected",
-                "entryRejectedItems", "streamRejected", "historyRejected", "historyDeferred",
+                "entryRejectedItems", "streamRejected", "streamXaddFailure", "streamXaddLatencyP95Ms",
+                "historyRejected", "historyDeferred",
                 "historyPendingPeak", "historyPendingFinal", "historyQueuePeak", "batchAvg",
                 "batchP95", "batchWriteP95", "flushExecutorQueuePeak", "flushExecutorRejectedBatches",
                 "cpuAvg", "cpuPeak", "heapPeakBytes", "gcTimeMs",
                 "threadPeak", "drainSeconds", "stable", "firstBottleneck");
         SchedulerStateSnapshot scheduler = (SchedulerStateSnapshot) summary.get("schedulerFinal");
         EntryIngressSnapshot entry = (EntryIngressSnapshot) summary.get("telemetryEntryFinal");
+        StreamSnapshot stream = (StreamSnapshot) summary.get("streamFinal");
         HistorySnapshot history = (HistorySnapshot) summary.get("historyFinal");
         HistoryBatchSnapshot batch = (HistoryBatchSnapshot) summary.get("historyBatchFinal");
         Map<String, Long> queuePeaks = castLongMap(summary.get("executorQueuePeaks"));
@@ -1150,6 +1180,8 @@ class RealEnvironmentSoakIT {
         row.put("processRejected", scheduler.processRejectedCount());
         row.put("entryRejectedItems", entry.rejectedItems());
         row.put("streamRejected", rejectedCounter(rejectedPeaks, "stream"));
+        row.put("streamXaddFailure", stream.xaddFailure());
+        row.put("streamXaddLatencyP95Ms", stream.xaddLatencyP95Ms());
         row.put("historyRejected", rejectedCounter(rejectedPeaks, "history"));
         row.put("historyDeferred", history.rejectedRedisBuffered() + history.rejectedLocalBuffered()
                 + history.writeFailureRedisBuffered() + history.writeFailureLocalBuffered());
@@ -1167,8 +1199,8 @@ class RealEnvironmentSoakIT {
         row.put("gcTimeMs", summary.get("gcTimeMs"));
         row.put("threadPeak", summary.get("threadPeak"));
         row.put("drainSeconds", summary.get("drainWaitSeconds"));
-        row.put("stable", isStable(scheduler, entry, history, batch, rejectedPeaks));
-        row.put("firstBottleneck", firstBottleneck(scheduler, entry, history, rejectedPeaks));
+        row.put("stable", isStable(scheduler, entry, stream, history, batch, rejectedPeaks));
+        row.put("firstBottleneck", firstBottleneck(scheduler, entry, stream, history, rejectedPeaks));
         try (BufferedWriter writer = Files.newBufferedWriter(outputDir.resolve("runtime-capacity-summary.csv"),
                 StandardCharsets.UTF_8)) {
             writer.write(String.join(",", headers));
@@ -1245,7 +1277,11 @@ class RealEnvironmentSoakIT {
                 + "entryRedisPending,entryRedisProcessing,entryLocalPending,entryRejectedTasks,"
                 + "entryRejectedItems,entryRedisBufferedItems,entryLocalBufferedItems,entryDroppedItems,"
                 + "entryReplayCompletedItems,entryStaleSameRuntimeDroppedItems,entryCrossRuntimeRecoveredItems,"
-                + "entryLegacyEnvelopeRecoveredItems,historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
+                + "entryLegacyEnvelopeRecoveredItems,"
+                + "streamAppendAttempts,streamSkippedAppends,streamSerializationFailures,streamXaddSuccess,"
+                + "streamXaddFailure,streamAppendLatencyP50Ms,streamAppendLatencyP95Ms,streamAppendLatencyP99Ms,"
+                + "streamXaddLatencyP50Ms,streamXaddLatencyP95Ms,streamXaddLatencyP99Ms,"
+                + "historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
                 + "historyRejectedDropped,historyWriteFailureDisabled,historyRejectedDisabled,"
                 + "historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
                 + "historyBatchWriteSuccess,historyBatchWriteFailure,historyBatchFallbackRows,historyBatchCurrentBuffered,"
@@ -1310,6 +1346,17 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.entry().staleSameRuntimeDroppedItems()),
                 String.valueOf(sample.entry().crossRuntimeRecoveredItems()),
                 String.valueOf(sample.entry().legacyEnvelopeRecoveredItems()),
+                String.valueOf(sample.stream().appendAttempts()),
+                String.valueOf(sample.stream().skippedAppends()),
+                String.valueOf(sample.stream().serializationFailures()),
+                String.valueOf(sample.stream().xaddSuccess()),
+                String.valueOf(sample.stream().xaddFailure()),
+                String.valueOf(sample.stream().appendLatencyP50Ms()),
+                String.valueOf(sample.stream().appendLatencyP95Ms()),
+                String.valueOf(sample.stream().appendLatencyP99Ms()),
+                String.valueOf(sample.stream().xaddLatencyP50Ms()),
+                String.valueOf(sample.stream().xaddLatencyP95Ms()),
+                String.valueOf(sample.stream().xaddLatencyP99Ms()),
                 String.valueOf(sample.history().localPending()),
                 String.valueOf(sample.history().rejectedRedisBuffered()),
                 String.valueOf(sample.history().rejectedLocalBuffered()),
@@ -1559,6 +1606,19 @@ class RealEnvironmentSoakIT {
                                          long legacyEnvelopeRecoveredItems) {
     }
 
+    private record StreamSnapshot(long appendAttempts,
+                                  long skippedAppends,
+                                  long serializationFailures,
+                                  long xaddSuccess,
+                                  long xaddFailure,
+                                  double appendLatencyP50Ms,
+                                  double appendLatencyP95Ms,
+                                  double appendLatencyP99Ms,
+                                  double xaddLatencyP50Ms,
+                                  double xaddLatencyP95Ms,
+                                  double xaddLatencyP99Ms) {
+    }
+
     private record HistorySnapshot(long redisPending,
                                    long redisProcessing,
                                    long redisDeadLetter,
@@ -1681,6 +1741,7 @@ class RealEnvironmentSoakIT {
                                 HikariSnapshot hikari,
                                 RedisSnapshot redis,
                                 EntryIngressSnapshot entry,
+                                StreamSnapshot stream,
                                 HistorySnapshot history,
                                 HistoryBatchSnapshot historyBatch,
                                 CloudSnapshot cloud) {

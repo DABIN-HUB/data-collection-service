@@ -1,7 +1,11 @@
 package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.cache.config.TelemetryStreamProperties;
+import com.wangbin.collector.core.cache.service.TelemetryStreamMetrics;
+import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
+import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -11,8 +15,10 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -71,6 +77,59 @@ class TelemetryPipelineBackpressureTest {
         assertEquals(0, stageExecutor.getQueue().size());
     }
 
+    @Test
+    void slowRedisXaddMustExposeStreamStageCapacityPressure() throws Exception {
+        entryExecutor = fixedPool("stream-entry", 1, 128);
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        stageExecutor = fixedPool("stream-stage", 1, 1, rejected);
+        BlockingStreamService streamService = new BlockingStreamService();
+        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(
+                List.of(new StreamTelemetryPostProcessStage(streamService, new TelemetryStreamProperties())),
+                Runnable::run,
+                stageExecutor,
+                Runnable::run,
+                Runnable::run);
+        List<DataPoint> points = points("stream-pressure-dev", 4);
+
+        for (DataPoint point : points) {
+            pipeline.process(new TelemetryPostProcessContext(
+                    point.getDeviceId(), point, ProcessResult.success(1, 1), null,
+                    System.currentTimeMillis(), null));
+        }
+
+        assertTrue(streamService.awaitEntered());
+        waitUntil(() -> stageExecutor.getQueue().size() == 1 && rejected.count() > 0);
+        assertEquals(1, stageExecutor.getActiveCount());
+        assertEquals(1, stageExecutor.getQueue().size());
+        streamService.release();
+        waitUntil(() -> stageExecutor.getQueue().isEmpty() && stageExecutor.getActiveCount() == 0);
+    }
+
+    @Test
+    void streamExecutorRejectMustBeExplicitlyAccounted() throws Exception {
+        CountingRejectedExecutionHandler rejected = new CountingRejectedExecutionHandler();
+        stageExecutor = fixedPool("stream-reject", 1, 1, rejected);
+        BlockingStreamService streamService = new BlockingStreamService();
+        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(
+                List.of(new StreamTelemetryPostProcessStage(streamService, new TelemetryStreamProperties())),
+                Runnable::run,
+                stageExecutor,
+                Runnable::run,
+                Runnable::run);
+        List<DataPoint> points = points("stream-reject-dev", 5);
+
+        for (DataPoint point : points) {
+            pipeline.process(new TelemetryPostProcessContext(
+                    point.getDeviceId(), point, ProcessResult.success(1, 1), null,
+                    System.currentTimeMillis(), null));
+        }
+
+        assertTrue(streamService.awaitEntered());
+        waitUntil(() -> rejected.count() >= 3);
+        assertTrue(rejected.count() >= 3);
+        streamService.release();
+    }
+
     private List<DataPoint> points(String deviceId, int count) {
         java.util.ArrayList<DataPoint> points = new java.util.ArrayList<>(count);
         for (int i = 0; i < count; i++) {
@@ -93,6 +152,13 @@ class TelemetryPipelineBackpressureTest {
     }
 
     private ThreadPoolExecutor fixedPool(String namePrefix, int threads, int queueCapacity) {
+        return fixedPool(namePrefix, threads, queueCapacity, new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    private ThreadPoolExecutor fixedPool(String namePrefix,
+                                         int threads,
+                                         int queueCapacity,
+                                         RejectedExecutionHandler rejectedExecutionHandler) {
         return new ThreadPoolExecutor(
                 threads,
                 threads,
@@ -104,7 +170,8 @@ class TelemetryPipelineBackpressureTest {
                     thread.setDaemon(true);
                     thread.setName(namePrefix + "-" + thread.getId());
                     return thread;
-                });
+                },
+                rejectedExecutionHandler);
     }
 
     private void waitUntil(Condition condition) throws InterruptedException {
@@ -197,6 +264,50 @@ class TelemetryPipelineBackpressureTest {
 
         private long attemptCount() {
             return attempts.sum();
+        }
+    }
+
+    private static final class BlockingStreamService implements TelemetryStreamService {
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final LongAdder attempts = new LongAdder();
+
+        @Override
+        public void append(String deviceId, DataPoint point, ProcessResult processResult) {
+            attempts.increment();
+            entered.countDown();
+            try {
+                release.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public TelemetryStreamMetrics metrics() {
+            return TelemetryStreamMetrics.empty();
+        }
+
+        private boolean awaitEntered() throws InterruptedException {
+            return entered.await(1, TimeUnit.SECONDS);
+        }
+
+        private void release() {
+            release.countDown();
+        }
+    }
+
+    private static final class CountingRejectedExecutionHandler implements RejectedExecutionHandler {
+        private final AtomicInteger rejected = new AtomicInteger();
+
+        @Override
+        public void rejectedExecution(Runnable runnable, ThreadPoolExecutor executor) {
+            rejected.incrementAndGet();
+            throw new java.util.concurrent.RejectedExecutionException("stream stage full");
+        }
+
+        private int count() {
+            return rejected.get();
         }
     }
 

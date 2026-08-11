@@ -12,5 +12,12 @@ public interface TelemetryStreamService {
      * 写入或持久化业务数据。
      */
     void append(String deviceId, DataPoint point, ProcessResult processResult);
+
+    /**
+     * 返回 Redis Stream 写入路径的内部观测快照。
+     */
+    default TelemetryStreamMetrics metrics() {
+        return TelemetryStreamMetrics.empty();
+    }
 }
 

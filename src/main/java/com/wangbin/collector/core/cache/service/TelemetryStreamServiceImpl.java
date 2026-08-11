@@ -9,8 +9,8 @@ import com.wangbin.collector.core.cache.util.TelemetryStreamRecordBuilder;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -19,15 +19,19 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
- * 定义当前模块的业务组件。
+ * Redis Stream 遥测写入服务。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class TelemetryStreamServiceImpl implements TelemetryStreamService {
 
+    private static final int METRIC_SAMPLE_LIMIT = 20_000;
     private static final String CMD_XADD = "XADD";
     private static final String CMD_XTRIM = "XTRIM";
     private static final byte[] MAXLEN = bytes("MAXLEN");
@@ -38,38 +42,77 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final TelemetryStreamProperties properties;
     private final ObjectMapper objectMapper;
+    private final LongAdder appendAttempts = new LongAdder();
+    private final LongAdder skippedAppends = new LongAdder();
+    private final LongAdder serializationFailures = new LongAdder();
+    private final LongAdder xaddSuccess = new LongAdder();
+    private final LongAdder xaddFailure = new LongAdder();
+    private final LatencyReservoir appendLatencyNanos = new LatencyReservoir(METRIC_SAMPLE_LIMIT);
+    private final LatencyReservoir xaddLatencyNanos = new LatencyReservoir(METRIC_SAMPLE_LIMIT);
 
     /**
-     * 写入或持久化业务数据。
+     * 追加单条遥测到 Redis Stream，失败仍隔离在 Stream stage 内。
      */
     @Override
     public void append(String deviceId, DataPoint point, ProcessResult processResult) {
         if (!properties.isEnabled() || processResult == null) {
+            skippedAppends.increment();
             return;
         }
 
+        appendAttempts.increment();
+        long appendStartedAt = System.nanoTime();
         long eventTs = Instant.now().toEpochMilli();
         Map<String, String> fields;
         try {
             fields = TelemetryStreamRecordBuilder.build(objectMapper, deviceId, point, processResult, eventTs);
         } catch (JsonProcessingException e) {
-            log.error("序列化 ProcessResult for 流 失败, 点位={}", point != null ? point.getPointId() : null, e);
+            serializationFailures.increment();
+            recordAppendLatency(System.nanoTime() - appendStartedAt);
+            log.error("序列化 ProcessResult 到 Redis Stream 失败，点位={}",
+                    point != null ? point.getPointId() : null, e);
             return;
         }
 
+        long xaddStartedAt = System.nanoTime();
         try {
             if (properties.getRetentionMode() == StreamRetentionMode.COUNT) {
                 xaddWithCountRetention(fields);
-                return;
+            } else {
+                xaddPlain(fields);
             }
-            xaddPlain(fields);
+            xaddSuccess.increment();
+            recordXaddLatency(System.nanoTime() - xaddStartedAt);
         } catch (Exception e) {
-            log.error("追加 遥测 to redis 流 失败, 键={}", properties.getKey(), e);
+            xaddFailure.increment();
+            recordXaddLatency(System.nanoTime() - xaddStartedAt);
+            log.error("追加遥测到 Redis Stream 失败，键={}", properties.getKey(), e);
+        } finally {
+            recordAppendLatency(System.nanoTime() - appendStartedAt);
         }
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 返回当前 Redis Stream 写入指标。
+     */
+    @Override
+    public TelemetryStreamMetrics metrics() {
+        return new TelemetryStreamMetrics(
+                appendAttempts.sum(),
+                skippedAppends.sum(),
+                serializationFailures.sum(),
+                xaddSuccess.sum(),
+                xaddFailure.sum(),
+                percentileMillis(appendLatencyNanos, 0.50D),
+                percentileMillis(appendLatencyNanos, 0.95D),
+                percentileMillis(appendLatencyNanos, 0.99D),
+                percentileMillis(xaddLatencyNanos, 0.50D),
+                percentileMillis(xaddLatencyNanos, 0.95D),
+                percentileMillis(xaddLatencyNanos, 0.99D));
+    }
+
+    /**
+     * 按时间保留模式裁剪 Redis Stream。
      */
     @Scheduled(fixedDelayString = "${spring.data.redis.stream.trim-interval-ms:${telemetry.stream.trim-interval-ms:5000}}")
     public void trimByTimeRetention() {
@@ -94,15 +137,13 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         args.add(bytes(minId));
 
         try {
-            redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XTRIM, args.toArray(new byte[0][])));
+            redisTemplate.execute((RedisCallback<Object>) connection ->
+                    connection.execute(CMD_XTRIM, args.toArray(new byte[0][])));
         } catch (Exception e) {
-            log.error("裁剪 遥测 流 by time 失败, 键={}, minId={}", properties.getKey(), minId, e);
+            log.error("按时间裁剪 Redis Stream 失败，键={}，minId={}", properties.getKey(), minId, e);
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void xaddWithCountRetention(Map<String, String> fields) {
         if (properties.getMaxLength() <= 0) {
             xaddPlain(fields);
@@ -119,24 +160,20 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         args.add(STAR);
         appendFields(args, fields);
 
-        redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XADD, args.toArray(new byte[0][])));
+        redisTemplate.execute((RedisCallback<Object>) connection ->
+                connection.execute(CMD_XADD, args.toArray(new byte[0][])));
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private void xaddPlain(Map<String, String> fields) {
         List<byte[]> args = new ArrayList<>();
         args.add(bytes(properties.getKey()));
         args.add(STAR);
         appendFields(args, fields);
 
-        redisTemplate.execute((RedisCallback<Object>) connection -> connection.execute(CMD_XADD, args.toArray(new byte[0][])));
+        redisTemplate.execute((RedisCallback<Object>) connection ->
+                connection.execute(CMD_XADD, args.toArray(new byte[0][])));
     }
 
-    /**
-     * 写入或持久化业务数据。
-     */
     private static void appendFields(List<byte[]> args, Map<String, String> fields) {
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             args.add(bytes(entry.getKey()));
@@ -144,10 +181,57 @@ public class TelemetryStreamServiceImpl implements TelemetryStreamService {
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private static byte[] bytes(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void recordAppendLatency(long nanos) {
+        recordLatency(appendLatencyNanos, nanos);
+    }
+
+    private void recordXaddLatency(long nanos) {
+        recordLatency(xaddLatencyNanos, nanos);
+    }
+
+    private void recordLatency(LatencyReservoir target, long nanos) {
+        target.add(nanos);
+    }
+
+    private double percentileMillis(LatencyReservoir values, double percentile) {
+        List<Long> snapshot = values.snapshot();
+        if (snapshot.isEmpty()) {
+            return 0D;
+        }
+        snapshot.sort(Long::compareTo);
+        int index = Math.min(snapshot.size() - 1, (int) Math.ceil(snapshot.size() * percentile) - 1);
+        return snapshot.get(Math.max(0, index)) / 1_000_000.0D;
+    }
+
+    private static final class LatencyReservoir {
+        private final AtomicLongArray values;
+        private final AtomicInteger cursor = new AtomicInteger();
+
+        private LatencyReservoir(int capacity) {
+            this.values = new AtomicLongArray(capacity);
+        }
+
+        private void add(long nanos) {
+            int index = cursor.getAndIncrement();
+            if (index < values.length()) {
+                values.set(index, nanos);
+            }
+        }
+
+        private List<Long> snapshot() {
+            int size = Math.min(cursor.get(), values.length());
+            List<Long> snapshot = new ArrayList<>(size);
+            for (int index = 0; index < size; index++) {
+                long value = values.get(index);
+                if (value > 0L) {
+                    snapshot.add(value);
+                }
+            }
+            return snapshot;
+        }
     }
 }
