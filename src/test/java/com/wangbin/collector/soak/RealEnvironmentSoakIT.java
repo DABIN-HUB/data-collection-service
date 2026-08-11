@@ -12,8 +12,10 @@ import com.wangbin.collector.core.cache.aspect.CollectorDataPostProcessorMetrics
 import com.wangbin.collector.core.cache.aspect.TelemetryPipelineMetrics;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessPipeline;
 import com.wangbin.collector.core.cache.config.TelemetryExecutorProperties;
+import com.wangbin.collector.core.cache.config.TelemetryStreamProperties;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
+import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferProperties;
 import com.wangbin.collector.core.cache.service.TelemetryStreamMetrics;
 import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.factory.CollectorFactory;
@@ -34,6 +36,7 @@ import com.wangbin.collector.monitor.metrics.SystemResourceSnapshot;
 import com.wangbin.collector.storage.buffer.HistoryBatchMetrics;
 import com.wangbin.collector.storage.buffer.HistoryBatchProperties;
 import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
+import com.wangbin.collector.storage.buffer.HistoryBufferProperties;
 import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.zaxxer.hikari.HikariDataSource;
@@ -88,6 +91,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -151,6 +155,15 @@ class RealEnvironmentSoakIT {
     private HistoryBatchProperties historyBatchProperties;
 
     @Autowired
+    private HistoryBufferProperties historyBufferProperties;
+
+    @Autowired
+    private TelemetryIngressBufferProperties telemetryIngressBufferProperties;
+
+    @Autowired
+    private TelemetryStreamProperties telemetryStreamProperties;
+
+    @Autowired
     private CollectorProperties collectorProperties;
 
     @Autowired
@@ -185,57 +198,132 @@ class RealEnvironmentSoakIT {
         SoakOptions options = SoakOptions.from(environment);
         Path outputDir = options.outputDir();
         Files.createDirectories(outputDir);
-
         SoakCounters counters = new SoakCounters();
-        if (options.runtimeIngressMode()) {
-            configureRuntimeCollectorFactory(counters);
-        }
-        List<DevicePoints> devicePoints = registerDevices(options);
+        SoakRunIsolationSupport.SoakRunLock runLock = null;
+        RedisNamespaceBinding redisBinding = null;
         SoakLifecycle lifecycle = new SoakLifecycle(options.startedAt());
-        List<Long> roundDurations = new ArrayList<>();
-        List<MetricSample> samples = new ArrayList<>();
+        List<DevicePoints> devicePoints = List.of();
         MqttAckBridge ackBridge = null;
-        BufferedWriter metricsWriter = Files.newBufferedWriter(outputDir.resolve("metrics.csv"), StandardCharsets.UTF_8);
-        try (metricsWriter) {
-            writeRunInfo(outputDir, options, devicePoints, lifecycle);
-            writeMetricsHeader(metricsWriter);
-            if (options.ackBridgeEnabled()) {
-                ackBridge = MqttAckBridge.start(options, objectMapper);
-            }
-            MetricSample runStartSample;
-            MetricSample loadEndSample;
+        boolean lockAcquired = false;
+        try {
+            runLock = SoakRunIsolationSupport.acquireRunLock(soakResultsRoot(outputDir), options.runId());
+            lockAcquired = true;
+            lifecycle.runLockOwner.set(runLock.owner());
+            lifecycle.runLockPath.set(runLock.path().toString());
+            redisBinding = applyRedisNamespace(options);
+            devicePoints = registerDevices(options);
             if (options.runtimeIngressMode()) {
-                RuntimeMeasurementWindow window = runRuntimeWarmupAndMeasurement(
-                        options, devicePoints, counters, roundDurations, samples, metricsWriter, ackBridge, lifecycle);
-                runStartSample = window.measurementStartSample();
-                loadEndSample = window.measurementEndSample();
-            } else {
-                lifecycle.measurementStartedAt.set(System.currentTimeMillis());
-                runStartSample = collectSample(options, counters, roundDurations, ackBridge, false);
-                samples.add(runStartSample);
-                writeMetric(metricsWriter, runStartSample);
-                runLoad(options, devicePoints, counters, roundDurations, samples, metricsWriter);
-                loadEndSample = collectSample(options, counters, roundDurations, ackBridge, false);
-                samples.add(loadEndSample);
-                writeMetric(metricsWriter, loadEndSample);
-                lifecycle.measurementCompletedAt.set(loadEndSample.timestamp());
+                configureRuntimeCollectorFactory(counters);
             }
-            lifecycle.drainStartedAt.set(System.currentTimeMillis());
-            waitForDrain(Duration.ofSeconds(options.drainWaitSeconds()));
-            lifecycle.drainCompletedAt.set(System.currentTimeMillis());
-            MetricSample finalSample = collectSample(options, counters, roundDurations, ackBridge, true);
-            samples.add(finalSample);
-            writeMetric(metricsWriter, finalSample);
-            writeSummary(outputDir, options, devicePoints, counters, roundDurations,
-                    samples, runStartSample, loadEndSample, ackBridge, lifecycle);
+            List<Long> roundDurations = new ArrayList<>();
+            List<MetricSample> samples = new ArrayList<>();
+            try (BufferedWriter metricsWriter = Files.newBufferedWriter(
+                    outputDir.resolve("metrics.csv"), StandardCharsets.UTF_8)) {
+                writeRunInfo(outputDir, options, devicePoints, lifecycle);
+                writeMetricsHeader(metricsWriter);
+                if (options.ackBridgeEnabled()) {
+                    ackBridge = MqttAckBridge.start(options, objectMapper);
+                }
+                MetricSample runStartSample;
+                MetricSample loadEndSample;
+                if (options.runtimeIngressMode()) {
+                    RuntimeMeasurementWindow window = runRuntimeWarmupAndMeasurement(
+                            outputDir, options, devicePoints, counters, roundDurations, samples, metricsWriter,
+                            ackBridge, lifecycle);
+                    runStartSample = window.measurementStartSample();
+                    loadEndSample = window.measurementEndSample();
+                } else {
+                    lifecycle.measurementValid.set(true);
+                    lifecycle.measurementStartedAt.set(System.currentTimeMillis());
+                    runStartSample = collectSample(options, counters, roundDurations, ackBridge, false);
+                    samples.add(runStartSample);
+                    writeMetric(metricsWriter, runStartSample);
+                    runLoad(options, devicePoints, counters, roundDurations, samples, metricsWriter);
+                    loadEndSample = collectSample(options, counters, roundDurations, ackBridge, false);
+                    samples.add(loadEndSample);
+                    writeMetric(metricsWriter, loadEndSample);
+                    lifecycle.measurementCompletedAt.set(loadEndSample.timestamp());
+                }
+                lifecycle.drainStartedAt.set(System.currentTimeMillis());
+                waitForDrain(Duration.ofSeconds(options.drainWaitSeconds()));
+                lifecycle.drainCompletedAt.set(System.currentTimeMillis());
+                MetricSample finalSample = collectSample(options, counters, roundDurations, ackBridge, true);
+                samples.add(finalSample);
+                writeMetric(metricsWriter, finalSample);
+                writeSummary(outputDir, options, devicePoints, counters, roundDurations,
+                        samples, runStartSample, loadEndSample, ackBridge, lifecycle);
+                writeRunInfo(outputDir, options, devicePoints, lifecycle);
+                assertTrue(counters.rejected.get() <= options.maxAllowedRejected(),
+                        "Soak rejected task count exceeded threshold: " + counters.rejected.get());
+            }
+        } catch (SoakRunIsolationSupport.SoakRunLockException exception) {
+            lifecycle.measurementValid.set(false);
+            lifecycle.invalidReason.set(exception.getMessage());
+            writeInvalidSummary(outputDir, options, lifecycle);
             writeRunInfo(outputDir, options, devicePoints, lifecycle);
-            assertTrue(counters.rejected.get() <= options.maxAllowedRejected(),
-                    "Soak rejected task count exceeded threshold: " + counters.rejected.get());
+            throw exception;
         } finally {
             if (ackBridge != null) {
                 ackBridge.close();
             }
-            cleanupDevices(devicePoints);
+            if (lockAcquired) {
+                cleanupDevices(devicePoints);
+                cleanupRunNamespace(options);
+            }
+            restoreRedisNamespace(redisBinding);
+            if (runLock != null) {
+                runLock.close();
+            }
+        }
+    }
+
+    private Path soakResultsRoot(Path outputDir) {
+        Path parent = outputDir.toAbsolutePath().getParent();
+        return parent != null ? parent : Path.of("target", "soak-results").toAbsolutePath();
+    }
+
+    private RedisNamespaceBinding applyRedisNamespace(SoakOptions options) {
+        RedisNamespaceBinding binding = new RedisNamespaceBinding(
+                historyBufferProperties.getPendingKey(),
+                historyBufferProperties.getProcessingKey(),
+                historyBufferProperties.getDeadLetterKey(),
+                telemetryIngressBufferProperties.getPendingKey(),
+                telemetryIngressBufferProperties.getProcessingKey(),
+                telemetryIngressBufferProperties.getDeadLetterKey(),
+                telemetryStreamProperties.getKey());
+        SoakRunIsolationSupport.RedisNamespace namespace = options.redisNamespace();
+        historyBufferProperties.setPendingKey(namespace.historyPendingKey());
+        historyBufferProperties.setProcessingKey(namespace.historyProcessingKey());
+        historyBufferProperties.setDeadLetterKey(namespace.historyDeadLetterKey());
+        telemetryIngressBufferProperties.setPendingKey(namespace.entryPendingKey());
+        telemetryIngressBufferProperties.setProcessingKey(namespace.entryProcessingKey());
+        telemetryIngressBufferProperties.setDeadLetterKey(namespace.entryDeadLetterKey());
+        telemetryStreamProperties.setKey(namespace.streamKey());
+        return binding;
+    }
+
+    private void restoreRedisNamespace(RedisNamespaceBinding binding) {
+        if (binding == null) {
+            return;
+        }
+        historyBufferProperties.setPendingKey(binding.historyPendingKey());
+        historyBufferProperties.setProcessingKey(binding.historyProcessingKey());
+        historyBufferProperties.setDeadLetterKey(binding.historyDeadLetterKey());
+        telemetryIngressBufferProperties.setPendingKey(binding.entryPendingKey());
+        telemetryIngressBufferProperties.setProcessingKey(binding.entryProcessingKey());
+        telemetryIngressBufferProperties.setDeadLetterKey(binding.entryDeadLetterKey());
+        telemetryStreamProperties.setKey(binding.streamKey());
+    }
+
+    private void cleanupRunNamespace(SoakOptions options) {
+        SoakRunIsolationSupport.RedisNamespace namespace = options.redisNamespace();
+        if (!namespace.ownsAll(namespace.keys())) {
+            return;
+        }
+        try {
+            redisTemplate.delete(namespace.keys());
+        } catch (RuntimeException ignored) {
+            // 测试 namespace 清理失败不覆盖主结果；summary 已记录清理前的最终状态。
         }
     }
 
@@ -293,7 +381,8 @@ class RealEnvironmentSoakIT {
         }
     }
 
-    private RuntimeMeasurementWindow runRuntimeWarmupAndMeasurement(SoakOptions options,
+    private RuntimeMeasurementWindow runRuntimeWarmupAndMeasurement(Path outputDir,
+                                                                    SoakOptions options,
                                                                     List<DevicePoints> devicePoints,
                                                                     SoakCounters counters,
                                                                     List<Long> roundDurations,
@@ -316,14 +405,28 @@ class RealEnvironmentSoakIT {
                     ackBridge, options.warmupSeconds(), false);
             lifecycle.warmupCompletedAt.set(System.currentTimeMillis());
             counters.deactivateRuntimeCollector();
-            lifecycle.warmupBacklogClean.set(waitForWarmupBacklog(Duration.ofSeconds(Math.max(1L,
-                    options.drainWaitSeconds()))));
+            lifecycle.settleStartedAt.set(System.currentTimeMillis());
+            SoakRunIsolationSupport.QuiescenceSnapshot warmupQuiescence =
+                    waitForWarmupQuiescence(Duration.ofSeconds(Math.max(1L, options.settleTimeoutSeconds())));
+            lifecycle.settleCompletedAt.set(System.currentTimeMillis());
+            lifecycle.warmupBacklogClean.set(warmupQuiescence.quiescent());
+            lifecycle.warmupQuiescence.set(warmupQuiescence);
+            lifecycle.settleSeconds.set(Math.max(0L,
+                    TimeUnit.MILLISECONDS.toSeconds(lifecycle.settleCompletedAt.get() - lifecycle.settleStartedAt.get())));
+            if (!warmupQuiescence.quiescent()) {
+                lifecycle.measurementValid.set(false);
+                lifecycle.invalidReason.set("INVALID_WARMUP");
+                writeInvalidSummary(outputDir, options, lifecycle);
+                writeRunInfo(outputDir, options, devicePoints, lifecycle);
+                throw new SoakRunIsolationSupport.InvalidWarmupException(warmupQuiescence);
+            }
 
             collectionScheduler.resetPhaseWheelStats();
             telemetryPostProcessPipeline.resetMetrics();
             collectorDataPostProcessor.resetMetrics();
             counters.activateRuntimeCollector();
             counters.startMeasurement();
+            lifecycle.measurementValid.set(true);
             lifecycle.measurementStartedAt.set(counters.loadStartedAt.get());
             measurementStart = collectSample(options, counters, roundDurations, ackBridge, false);
             samples.add(measurementStart);
@@ -369,32 +472,68 @@ class RealEnvironmentSoakIT {
         }
     }
 
-    private boolean waitForWarmupBacklog(Duration timeout) throws InterruptedException {
+    private SoakRunIsolationSupport.QuiescenceSnapshot waitForWarmupQuiescence(Duration timeout)
+            throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
+        SoakRunIsolationSupport.QuiescenceSnapshot latest = currentQuiescenceSnapshot();
         while (System.nanoTime() < deadline) {
             HistoryBatchWriter batchWriter = historyBatchWriterProvider.getIfAvailable();
             if (batchWriter != null) {
                 batchWriter.flushDueBuckets();
             }
-            HistoryBufferMetrics history = historyWriteBufferProvider.getIfAvailable() != null
-                    ? historyWriteBufferProvider.getIfAvailable().metrics()
-                    : new HistoryBufferMetrics(0L, 0L, 0L, 0, 0);
-            TelemetryIngressBufferMetrics entry = telemetryIngressBufferProvider.getIfAvailable() != null
-                    ? telemetryIngressBufferProvider.getIfAvailable().metrics()
-                    : TelemetryIngressBufferMetrics.empty();
-            HistoryBatchMetrics batch = batchWriter != null ? batchWriter.metrics() : emptyHistoryBatchMetrics();
-            boolean empty = history.redisPending() == 0L
-                    && history.redisProcessing() == 0L
-                    && entry.redisPending() == 0L
-                    && entry.redisProcessing() == 0L
-                    && batch.currentBufferedRows() == 0
-                    && batch.inFlightFlushes() == 0;
-            if (empty) {
-                return true;
+            latest = currentQuiescenceSnapshot();
+            if (latest.quiescent()) {
+                return latest;
             }
             Thread.sleep(500L);
         }
-        return false;
+        return latest;
+    }
+
+    private SoakRunIsolationSupport.QuiescenceSnapshot currentQuiescenceSnapshot() {
+        Map<String, Long> observed = new LinkedHashMap<>();
+        HistoryBufferMetrics history = historyWriteBufferProvider.getIfAvailable() != null
+                ? historyWriteBufferProvider.getIfAvailable().metrics()
+                : new HistoryBufferMetrics(0L, 0L, 0L, 0, 0);
+        TelemetryIngressBufferMetrics entry = telemetryIngressBufferProvider.getIfAvailable() != null
+                ? telemetryIngressBufferProvider.getIfAvailable().metrics()
+                : TelemetryIngressBufferMetrics.empty();
+        HistoryBatchWriter batchWriter = historyBatchWriterProvider.getIfAvailable();
+        HistoryBatchMetrics batch = batchWriter != null ? batchWriter.metrics() : emptyHistoryBatchMetrics();
+        observed.put("entry.redisPending", entry.redisPending());
+        observed.put("entry.redisProcessing", entry.redisProcessing());
+        observed.put("entry.localPending", (long) entry.localPending());
+        observed.put("history.redisPending", history.redisPending());
+        observed.put("history.redisProcessing", history.redisProcessing());
+        observed.put("history.localPending", (long) history.localPending());
+        observed.put("historyBatch.currentBufferedRows", (long) batch.currentBufferedRows());
+        observed.put("historyBatch.inFlightFlushes", (long) batch.inFlightFlushes());
+        observed.put("historyBatch.flushExecutorQueueCurrent", (long) batch.flushExecutorQueueCurrent());
+        observed.put("historyBatch.flushExecutorActiveCurrent", (long) batch.flushExecutorActiveCurrent());
+        observed.put("scheduler.inFlightPointClaims", schedulerLongMethod("getInFlightPointScheduleSizeForTest"));
+        SystemResourceSnapshot resources = systemResourceMonitorService.getResources();
+        addExecutorQuiescence(observed, resources, "cacheAsyncExecutor");
+        addExecutorQuiescence(observed, resources, "telemetryCacheStageExecutor");
+        addExecutorQuiescence(observed, resources, "telemetryStreamStageExecutor");
+        addExecutorQuiescence(observed, resources, "telemetryHistoryStageExecutor");
+        addExecutorQuiescence(observed, resources, "batchDispatcherExecutor");
+        addExecutorQuiescence(observed, resources, "asyncCollectorExecutor");
+        addExecutorQuiescence(observed, resources, "dataProcessorExecutor");
+        return SoakRunIsolationSupport.quiescence(observed);
+    }
+
+    private void addExecutorQuiescence(Map<String, Long> observed,
+                                       SystemResourceSnapshot resources,
+                                       String executorName) {
+        if (resources == null || resources.getThreadPools() == null) {
+            return;
+        }
+        var pool = resources.getThreadPools().get(executorName);
+        if (pool == null) {
+            return;
+        }
+        observed.put(executorName + ".queue", (long) pool.getQueueSize());
+        observed.put(executorName + ".active", (long) pool.getActiveCount());
     }
 
     private void configureRuntimeCollectorFactory(SoakCounters counters) {
@@ -506,8 +645,7 @@ class RealEnvironmentSoakIT {
     private List<DevicePoints> registerDevices(SoakOptions options) {
         List<DevicePoints> result = new ArrayList<>(options.devices());
         int remaining = options.points();
-        String devicePrefix = "soak-" + safeRunSegment(options.scenario())
-                + '-' + Long.toString(options.startedAt(), Character.MAX_RADIX);
+        String devicePrefix = options.tdengineDevicePrefix();
         for (int deviceIndex = 0; deviceIndex < options.devices(); deviceIndex++) {
             int devicesLeft = options.devices() - deviceIndex;
             int pointCount = Math.max(1, remaining / devicesLeft);
@@ -898,6 +1036,9 @@ class RealEnvironmentSoakIT {
                               List<DevicePoints> devicePoints,
                               SoakLifecycle lifecycle) throws IOException {
         Map<String, Object> info = new LinkedHashMap<>();
+        info.put("runId", options.runId());
+        info.put("redisNamespace", options.redisNamespace().asMap());
+        info.put("tdengineDevicePrefix", options.tdengineDevicePrefix());
         info.put("scenario", options.scenario());
         info.put("points", options.points());
         info.put("devices", options.devices());
@@ -909,9 +1050,16 @@ class RealEnvironmentSoakIT {
         info.put("spreadWithinInterval", options.spreadWithinInterval());
         info.put("ingressMode", options.ingressMode());
         info.put("warmupSeconds", options.warmupSeconds());
+        info.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         info.put("startedAt", Instant.ofEpochMilli(options.startedAt()).toString());
         info.put("warmupCompletedAt", SoakLifecycle.instantString(lifecycle.warmupCompletedAt.get()));
+        info.put("settleStartedAt", SoakLifecycle.instantString(lifecycle.settleStartedAt.get()));
+        info.put("settleCompletedAt", SoakLifecycle.instantString(lifecycle.settleCompletedAt.get()));
+        info.put("settleSeconds", lifecycle.settleSeconds.get());
         info.put("measurementStartedAt", SoakLifecycle.instantString(lifecycle.measurementStartedAt.get()));
+        info.put("measurementValid", lifecycle.measurementValid.get());
+        info.put("invalidReason", lifecycle.invalidReason.get());
+        info.put("warmupQuiescence", lifecycle.warmupQuiescence.get().asMap());
         info.put("lifecycle", lifecycle.asMap());
         info.put("branch", command(List.of("git", "rev-parse", "--abbrev-ref", "HEAD")));
         info.put("commit", command(List.of("git", "rev-parse", "HEAD")));
@@ -1047,6 +1195,30 @@ class RealEnvironmentSoakIT {
         }
     }
 
+    private void writeInvalidSummary(Path outputDir,
+                                     SoakOptions options,
+                                     SoakLifecycle lifecycle) throws IOException {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("runId", options.runId());
+        summary.put("redisNamespace", options.redisNamespace().asMap());
+        summary.put("tdengineDevicePrefix", options.tdengineDevicePrefix());
+        summary.put("scenario", options.scenario());
+        summary.put("points", options.points());
+        summary.put("devices", options.devices());
+        summary.put("collectionIntervalMs", options.collectionIntervalMs());
+        summary.put("warmupSeconds", options.warmupSeconds());
+        summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
+        summary.put("measurementSeconds", options.durationSeconds());
+        summary.put("drainSeconds", options.drainWaitSeconds());
+        summary.put("measurementValid", false);
+        summary.put("invalidReason", lifecycle.invalidReason.get());
+        summary.put("warmupBacklogClean", lifecycle.warmupBacklogClean.get());
+        summary.put("settleSeconds", lifecycle.settleSeconds.get());
+        summary.put("warmupQuiescence", lifecycle.warmupQuiescence.get().asMap());
+        summary.put("lifecycle", lifecycle.asMap());
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(outputDir.resolve("summary.json").toFile(), summary);
+    }
+
     private void writeSummary(Path outputDir,
                               SoakOptions options,
                               List<DevicePoints> devicePoints,
@@ -1095,15 +1267,23 @@ class RealEnvironmentSoakIT {
                 runStartSample.historyBatch().flushExecutorRejectedBatches());
         SchedulerStateSnapshot schedulerLoadDelta = schedulerDelta(runStartSample.scheduler(), loadEndSample.scheduler());
         Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("runId", options.runId());
+        summary.put("redisNamespace", options.redisNamespace().asMap());
+        summary.put("tdengineDevicePrefix", options.tdengineDevicePrefix());
         summary.put("scenario", options.scenario());
         summary.put("points", options.points());
         summary.put("devices", options.devices());
         summary.put("durationSeconds", options.durationSeconds());
         summary.put("warmupSeconds", options.warmupSeconds());
+        summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         summary.put("measurementSeconds", options.durationSeconds());
         summary.put("drainSeconds", options.drainWaitSeconds());
         summary.put("lifecycle", lifecycle.asMap());
         summary.put("warmupBacklogClean", lifecycle.warmupBacklogClean.get());
+        summary.put("warmupQuiescence", lifecycle.warmupQuiescence.get().asMap());
+        summary.put("settleSeconds", lifecycle.settleSeconds.get());
+        summary.put("measurementValid", lifecycle.measurementValid.get());
+        summary.put("invalidReason", lifecycle.invalidReason.get());
         summary.put("collectionIntervalMs", options.collectionIntervalMs());
         summary.put("drainWaitSeconds", options.drainWaitSeconds());
         summary.put("ingressMode", options.ingressMode());
@@ -2028,6 +2208,15 @@ class RealEnvironmentSoakIT {
     private record DevicePoints(String deviceId, List<DataPoint> points) {
     }
 
+    private record RedisNamespaceBinding(String historyPendingKey,
+                                         String historyProcessingKey,
+                                         String historyDeadLetterKey,
+                                         String entryPendingKey,
+                                         String entryProcessingKey,
+                                         String entryDeadLetterKey,
+                                         String streamKey) {
+    }
+
     private record RuntimeMeasurementWindow(MetricSample measurementStartSample,
                                             MetricSample measurementEndSample) {
     }
@@ -2038,11 +2227,20 @@ class RealEnvironmentSoakIT {
         private final AtomicLong setupCompletedAt = new AtomicLong();
         private final AtomicLong warmupStartedAt = new AtomicLong();
         private final AtomicLong warmupCompletedAt = new AtomicLong();
+        private final AtomicLong settleStartedAt = new AtomicLong();
+        private final AtomicLong settleCompletedAt = new AtomicLong();
+        private final AtomicLong settleSeconds = new AtomicLong();
         private final AtomicLong measurementStartedAt = new AtomicLong();
         private final AtomicLong measurementCompletedAt = new AtomicLong();
         private final AtomicLong drainStartedAt = new AtomicLong();
         private final AtomicLong drainCompletedAt = new AtomicLong();
         private final AtomicBoolean warmupBacklogClean = new AtomicBoolean(false);
+        private final AtomicBoolean measurementValid = new AtomicBoolean(false);
+        private final AtomicReference<String> invalidReason = new AtomicReference<>();
+        private final AtomicReference<String> runLockOwner = new AtomicReference<>();
+        private final AtomicReference<String> runLockPath = new AtomicReference<>();
+        private final AtomicReference<SoakRunIsolationSupport.QuiescenceSnapshot> warmupQuiescence =
+                new AtomicReference<>(SoakRunIsolationSupport.quiescence(Map.of()));
 
         private SoakLifecycle(long createdAt) {
             this.createdAt.set(createdAt);
@@ -2055,11 +2253,19 @@ class RealEnvironmentSoakIT {
             result.put("setupCompletedAt", instantString(setupCompletedAt.get()));
             result.put("warmupStartedAt", instantString(warmupStartedAt.get()));
             result.put("warmupCompletedAt", instantString(warmupCompletedAt.get()));
+            result.put("settleStartedAt", instantString(settleStartedAt.get()));
+            result.put("settleCompletedAt", instantString(settleCompletedAt.get()));
+            result.put("settleSeconds", settleSeconds.get());
             result.put("measurementStartedAt", instantString(measurementStartedAt.get()));
             result.put("measurementCompletedAt", instantString(measurementCompletedAt.get()));
             result.put("drainStartedAt", instantString(drainStartedAt.get()));
             result.put("drainCompletedAt", instantString(drainCompletedAt.get()));
             result.put("warmupBacklogClean", warmupBacklogClean.get());
+            result.put("warmupQuiescence", warmupQuiescence.get().asMap());
+            result.put("measurementValid", measurementValid.get());
+            result.put("invalidReason", invalidReason.get());
+            result.put("runLockOwner", runLockOwner.get());
+            result.put("runLockPath", runLockPath.get());
             return result;
         }
 
@@ -2531,11 +2737,15 @@ class RealEnvironmentSoakIT {
         }
     }
 
-    private record SoakOptions(String scenario,
+    private record SoakOptions(String runId,
+                               SoakRunIsolationSupport.RedisNamespace redisNamespace,
+                               String tdengineDevicePrefix,
+                               String scenario,
                                int points,
                                int devices,
                                long durationSeconds,
                                long warmupSeconds,
+                               long settleTimeoutSeconds,
                                long collectionIntervalMs,
                                long sampleIntervalSeconds,
                                long drainWaitSeconds,
@@ -2557,19 +2767,30 @@ class RealEnvironmentSoakIT {
             int defaultDevices = Math.max(1, points / 1000);
             int devices = intValue(environment, "soak.devices", defaultDevices);
             long startedAt = System.currentTimeMillis();
-            String runId = RUN_ID_FORMATTER.format(Instant.ofEpochMilli(startedAt));
+            String scenario = value(environment, "soak.scenario", "normal");
+            String runId = SoakRunIsolationSupport.safeSegment(scenario, 24)
+                    + '-' + RUN_ID_FORMATTER.format(Instant.ofEpochMilli(startedAt))
+                    + '-' + Long.toString(ThreadLocalRandom.current().nextLong(1L, Long.MAX_VALUE), Character.MAX_RADIX);
+            SoakRunIsolationSupport.RedisNamespace redisNamespace =
+                    SoakRunIsolationSupport.redisNamespace(scenario, runId);
+            String tdengineDevicePrefix = "soak-" + SoakRunIsolationSupport.safeSegment(scenario, 24)
+                    + '-' + SoakRunIsolationSupport.safeSegment(runId, 48);
             String output = value(environment, "soak.metricsOutput", "target/soak-results/" + runId);
             return new SoakOptions(
-                    value(environment, "soak.scenario", "normal"),
+                    runId,
+                    redisNamespace,
+                    tdengineDevicePrefix,
+                    scenario,
                     points,
                     devices,
                     longValue(environment, "soak.durationSeconds", 300L),
                     longValue(environment, "soak.warmupSeconds", 60L),
+                    longValue(environment, "soak.settleTimeoutSeconds", 120L),
                     longValue(environment, "soak.collectionIntervalMs", 1000L),
                     longValue(environment, "soak.sampleIntervalSeconds", 5L),
                     longValue(environment, "soak.drainWaitSeconds", 30L),
                     startedAt,
-                    value(environment, "spring.data.redis.stream.key", "collector:telemetry:stream"),
+                    redisNamespace.streamKey(),
                     value(environment, "collector.report.mqtt.broker-url", "tcp://127.0.0.1:1883"),
                     value(environment, "soak.ingressMode", "point"),
                     booleanValue(environment, "soak.cloudAckBridgeEnabled", true),

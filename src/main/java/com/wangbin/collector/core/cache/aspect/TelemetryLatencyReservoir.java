@@ -26,7 +26,7 @@ final class TelemetryLatencyReservoir {
             return;
         }
         try {
-            if (failNextAddForTest.getAndSet(false)) {
+            if (failNextAddForTest.get() && failNextAddForTest.compareAndSet(true, false)) {
                 throw new ArrayIndexOutOfBoundsException("forced metrics failure");
             }
             long currentSequence = sequence.getAndIncrement();
