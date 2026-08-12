@@ -881,7 +881,15 @@ class RealEnvironmentSoakIT {
                         batch.flushExecutorRejectedBatches(), batch.flushExecutorQueueCurrent(),
                         batch.flushExecutorQueuePeak(), batch.flushExecutorActiveCurrent(),
                         batch.flushExecutorActivePeak(), batch.shutdownQueuedBatches(),
-                        batch.bucketCount(), batch.admissionInFlight(), batch.inFlightFlushes()),
+                        batch.bucketCount(), batch.admissionInFlight(), batch.inFlightFlushes(),
+                        batch.sizeFlushBatches(), batch.timerFlushBatches(),
+                        batch.sizeFlushRows(), batch.timerFlushRows(),
+                        batch.sizeAverageBatchSize(), batch.sizeBatchSizeP50(),
+                        batch.sizeBatchSizeP95(), batch.sizeBatchSizeMax(),
+                        batch.timerAverageBatchSize(), batch.timerBatchSizeP50(),
+                        batch.timerBatchSizeP95(), batch.timerBatchSizeMax(),
+                        batch.tdengineBatchCallsPerSecond(), batch.flushExecutorServiceRatePerSecond(),
+                        batch.flushExecutorQueueUtilization()),
                 cloud
         );
     }
@@ -892,7 +900,8 @@ class RealEnvironmentSoakIT {
                 0, 0, 0, 0D, 0D, 0D, 0L, 0L,
                 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
                 0L, 0L, 0L, 0, 0, 0, 0, 0L,
-                0, 0, 0);
+                0, 0, 0, 0L, 0L, 0L, 0L, 0D,
+                0, 0, 0, 0D, 0, 0, 0, 0D, 0D, 0D);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -1114,6 +1123,7 @@ class RealEnvironmentSoakIT {
         config.put("enabled", historyBatchProperties.isEnabled());
         config.put("batchSize", historyBatchProperties.getBatchSize());
         config.put("flushIntervalMs", historyBatchProperties.getFlushIntervalMs());
+        config.put("flushScanIntervalMs", historyBatchProperties.getFlushScanIntervalMs());
         config.put("maxBufferedRows", historyBatchProperties.getMaxBufferedRows());
         config.put("shutdownFlushTimeoutMs", historyBatchProperties.getShutdownFlushTimeoutMs());
         Map<String, Object> flushExecutor = new LinkedHashMap<>();
@@ -1887,6 +1897,13 @@ class RealEnvironmentSoakIT {
                 + "historyBatchFlushExecutorQueuePeak,historyBatchFlushExecutorActiveCurrent,"
                 + "historyBatchFlushExecutorActivePeak,historyBatchShutdownQueuedBatches,historyBatchBucketCount,"
                 + "historyBatchAdmissionInFlight,historyBatchInFlightFlushes,"
+                + "historyBatchSizeFlushBatches,historyBatchTimerFlushBatches,"
+                + "historyBatchSizeFlushRows,historyBatchTimerFlushRows,"
+                + "historyBatchSizeAverageSize,historyBatchSizeBatchP50,historyBatchSizeBatchP95,"
+                + "historyBatchSizeBatchMax,historyBatchTimerAverageSize,historyBatchTimerBatchP50,"
+                + "historyBatchTimerBatchP95,historyBatchTimerBatchMax,"
+                + "historyBatchTdengineBatchCallsPerSecond,historyBatchFlushExecutorServiceRatePerSecond,"
+                + "historyBatchFlushExecutorQueueUtilization,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
                 + "schedulerDueScanIntervalMs,schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
@@ -2054,6 +2071,21 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().bucketCount()),
                 String.valueOf(sample.historyBatch().admissionInFlight()),
                 String.valueOf(sample.historyBatch().inFlightFlushes()),
+                String.valueOf(sample.historyBatch().sizeFlushBatches()),
+                String.valueOf(sample.historyBatch().timerFlushBatches()),
+                String.valueOf(sample.historyBatch().sizeFlushRows()),
+                String.valueOf(sample.historyBatch().timerFlushRows()),
+                String.valueOf(sample.historyBatch().sizeAverageBatchSize()),
+                String.valueOf(sample.historyBatch().sizeBatchSizeP50()),
+                String.valueOf(sample.historyBatch().sizeBatchSizeP95()),
+                String.valueOf(sample.historyBatch().sizeBatchSizeMax()),
+                String.valueOf(sample.historyBatch().timerAverageBatchSize()),
+                String.valueOf(sample.historyBatch().timerBatchSizeP50()),
+                String.valueOf(sample.historyBatch().timerBatchSizeP95()),
+                String.valueOf(sample.historyBatch().timerBatchSizeMax()),
+                String.valueOf(sample.historyBatch().tdengineBatchCallsPerSecond()),
+                String.valueOf(sample.historyBatch().flushExecutorServiceRatePerSecond()),
+                String.valueOf(sample.historyBatch().flushExecutorQueueUtilization()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -2426,7 +2458,22 @@ class RealEnvironmentSoakIT {
                                         long shutdownQueuedBatches,
                                         int bucketCount,
                                         int admissionInFlight,
-                                        int inFlightFlushes) {
+                                        int inFlightFlushes,
+                                        long sizeFlushBatches,
+                                        long timerFlushBatches,
+                                        long sizeFlushRows,
+                                        long timerFlushRows,
+                                        double sizeAverageBatchSize,
+                                        int sizeBatchSizeP50,
+                                        int sizeBatchSizeP95,
+                                        int sizeBatchSizeMax,
+                                        double timerAverageBatchSize,
+                                        int timerBatchSizeP50,
+                                        int timerBatchSizeP95,
+                                        int timerBatchSizeMax,
+                                        double tdengineBatchCallsPerSecond,
+                                        double flushExecutorServiceRatePerSecond,
+                                        double flushExecutorQueueUtilization) {
     }
 
     private record CloudSnapshot(long total,

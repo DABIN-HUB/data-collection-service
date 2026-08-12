@@ -29,7 +29,12 @@ public class HistoryBatchProperties {
     /**
      * 未满批次的最大等待时间。
      */
-    private long flushIntervalMs = 100L;
+    private long flushIntervalMs = 300L;
+
+    /**
+     * 定时扫描未满批次是否到期的间隔，业务最大等待时间仍由 flushIntervalMs 决定。
+     */
+    private long flushScanIntervalMs = 100L;
 
     /**
      * 批量写入组件允许暂存的最大行数，达到上限后进入既有可靠 fallback。

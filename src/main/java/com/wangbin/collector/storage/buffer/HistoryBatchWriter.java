@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.LongSupplier;
 
 /**
  * 历史正常路径的小批量聚合器；可靠存储仍由 HistoryWriteBuffer 统一负责。
@@ -61,14 +62,22 @@ public class HistoryBatchWriter {
     private final LongAdder flushExecutorSubmittedBatches = new LongAdder();
     private final LongAdder flushExecutorCompletedBatches = new LongAdder();
     private final LongAdder flushExecutorRejectedBatches = new LongAdder();
+    private final LongAdder sizeFlushBatches = new LongAdder();
+    private final LongAdder timerFlushBatches = new LongAdder();
+    private final LongAdder sizeFlushRows = new LongAdder();
+    private final LongAdder timerFlushRows = new LongAdder();
     private final AtomicInteger flushExecutorQueueCurrent = new AtomicInteger();
     private final AtomicInteger flushExecutorQueuePeak = new AtomicInteger();
     private final AtomicInteger flushExecutorActiveCurrent = new AtomicInteger();
     private final AtomicInteger flushExecutorActivePeak = new AtomicInteger();
     private final LongAdder shutdownQueuedBatches = new LongAdder();
     private final List<Integer> batchSizeSamples = Collections.synchronizedList(new ArrayList<>());
+    private final List<Integer> sizeBatchSizeSamples = Collections.synchronizedList(new ArrayList<>());
+    private final List<Integer> timerBatchSizeSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Long> flushLatencyNanos = Collections.synchronizedList(new ArrayList<>());
+    private final long createdAtNanos = System.nanoTime();
     private volatile AdmissionObserver admissionObserver = AdmissionObserver.NOOP;
+    private volatile LongSupplier nanoTimeSupplier = System::nanoTime;
     private int inFlightFlushes;
     private volatile boolean closing;
 
@@ -110,7 +119,7 @@ public class HistoryBatchWriter {
             fallback(request, new RejectedExecutionException("history batch buffer full"), false);
             return true;
         }
-        submitOwnedFlush(result.batchToFlush(), false);
+        submitOwnedFlush(result.batchToFlush(), false, FlushTrigger.SIZE);
         return true;
     }
 
@@ -128,7 +137,7 @@ public class HistoryBatchWriter {
             Bucket bucket = existing == null ? new Bucket() : existing;
             bucket.requests.add(request);
             if (bucket.firstAcceptedAtNanos == 0L) {
-                bucket.firstAcceptedAtNanos = System.nanoTime();
+                bucket.firstAcceptedAtNanos = currentNanoTime();
             }
             if (bucket.requests.size() >= batchSize()) {
                 batchRef.set(drainLocked(bucket, batchSize()));
@@ -141,13 +150,13 @@ public class HistoryBatchWriter {
     /**
      * 定期 flush 未满批次，避免低流量设备长期滞留。
      */
-    @Scheduled(fixedDelayString = "${telemetry.tdengine.batch.flush-interval-ms:100}")
+    @Scheduled(fixedDelayString = "${telemetry.tdengine.batch.flush-scan-interval-ms:100}")
     public void flushDueBuckets() {
         if (!properties.isEnabled()) {
             return;
         }
         for (List<HistoryWriteRequest> batch : detachDueBatches()) {
-            submitOwnedFlush(batch, false);
+            submitOwnedFlush(batch, false, FlushTrigger.TIMER);
         }
     }
 
@@ -165,7 +174,7 @@ public class HistoryBatchWriter {
             if (System.nanoTime() >= deadline) {
                 break;
             }
-            submitOwnedFlush(batches.get(index), true);
+            submitOwnedFlush(batches.get(index), true, FlushTrigger.SHUTDOWN);
             index++;
         }
         for (; index < batches.size(); index++) {
@@ -217,11 +226,28 @@ public class HistoryBatchWriter {
                 shutdownQueuedBatches.sum(),
                 buckets.size(),
                 admissionLock.getReadLockCount(),
-                currentInFlightFlushes());
+                currentInFlightFlushes(),
+                sizeFlushBatches.sum(),
+                timerFlushBatches.sum(),
+                sizeFlushRows.sum(),
+                timerFlushRows.sum(),
+                averageBatchSize(sizeFlushRows.sum(), sizeFlushBatches.sum()),
+                percentileInt(sizeBatchSizeSamples, 0.50D),
+                percentileInt(sizeBatchSizeSamples, 0.95D),
+                maxInt(sizeBatchSizeSamples),
+                averageBatchSize(timerFlushRows.sum(), timerFlushBatches.sum()),
+                percentileInt(timerBatchSizeSamples, 0.50D),
+                percentileInt(timerBatchSizeSamples, 0.95D),
+                maxInt(timerBatchSizeSamples),
+                tdengineBatchCallsPerSecond(),
+                flushExecutorServiceRatePerSecond(),
+                flushExecutorQueueUtilization());
     }
 
     private List<List<HistoryWriteRequest>> detachDueBatches() {
         List<List<HistoryWriteRequest>> batches = new ArrayList<>();
+        long now = currentNanoTime();
+        long intervalNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(0L, properties.getFlushIntervalMs()));
         admissionLock.readLock().lock();
         try {
             if (closing) {
@@ -230,6 +256,12 @@ public class HistoryBatchWriter {
             for (String bucketKey : List.copyOf(buckets.keySet())) {
                 AtomicReference<List<HistoryWriteRequest>> batchRef = new AtomicReference<>(List.of());
                 buckets.computeIfPresent(bucketKey, (ignored, bucket) -> {
+                    if (bucket.requests.isEmpty()) {
+                        return null;
+                    }
+                    if (!isDue(bucket, now, intervalNanos)) {
+                        return bucket;
+                    }
                     List<HistoryWriteRequest> batch = drainLocked(bucket, batchSize());
                     batchRef.set(batch);
                     return bucket.requests.isEmpty() ? null : bucket;
@@ -254,12 +286,16 @@ public class HistoryBatchWriter {
         }
     }
 
-    private void submitOwnedFlush(List<HistoryWriteRequest> batch, boolean shutdownOwned) {
+    private boolean isDue(Bucket bucket, long now, long intervalNanos) {
+        return bucket.firstAcceptedAtNanos > 0L && now - bucket.firstAcceptedAtNanos >= intervalNanos;
+    }
+
+    private void submitOwnedFlush(List<HistoryWriteRequest> batch, boolean shutdownOwned, FlushTrigger trigger) {
         if (batch == null || batch.isEmpty()) {
             return;
         }
         BatchFlushTask task = new BatchFlushTask(
-                flushTaskSequence.incrementAndGet(), List.copyOf(batch), shutdownOwned);
+                flushTaskSequence.incrementAndGet(), List.copyOf(batch), shutdownOwned, trigger);
         registerInFlightFlush();
         ownedFlushTasks.put(task.id(), task);
         flushExecutorSubmittedBatches.increment();
@@ -287,7 +323,8 @@ public class HistoryBatchWriter {
 
     private void recordBatchWriteAttempt(List<HistoryWriteRequest> batch,
                                          BatchWriteAttempt attempt,
-                                         long startedAt) {
+                                         long startedAt,
+                                         FlushTrigger trigger) {
         if (attempt.exception() != null) {
             batchWriteFailure.increment();
             fallbackBatch(batch, attempt.exception(), false);
@@ -300,6 +337,7 @@ public class HistoryBatchWriter {
         flushedBatches.increment();
         flushedRows.add(batch.size());
         recordBatchSize(batch.size());
+        recordTriggerBatchSize(trigger, batch.size());
         recordFlushLatency(System.nanoTime() - startedAt);
     }
 
@@ -491,8 +529,6 @@ public class HistoryBatchWriter {
         bufferedRows.addAndGet(-count);
         if (bucket.requests.isEmpty()) {
             bucket.firstAcceptedAtNanos = 0L;
-        } else {
-            bucket.firstAcceptedAtNanos = System.nanoTime();
         }
         return batch;
     }
@@ -545,8 +581,48 @@ public class HistoryBatchWriter {
     }
 
     private double averageBatchSize() {
-        long batches = flushedBatches.sum();
-        return batches <= 0L ? 0D : (double) flushedRows.sum() / batches;
+        return averageBatchSize(flushedRows.sum(), flushedBatches.sum());
+    }
+
+    private double averageBatchSize(long rows, long batches) {
+        return batches <= 0L ? 0D : (double) rows / batches;
+    }
+
+    private void recordTriggerBatchSize(FlushTrigger trigger, int size) {
+        if (trigger == FlushTrigger.SIZE) {
+            sizeFlushBatches.increment();
+            sizeFlushRows.add(size);
+            recordIntSample(sizeBatchSizeSamples, size);
+        } else if (trigger == FlushTrigger.TIMER) {
+            timerFlushBatches.increment();
+            timerFlushRows.add(size);
+            recordIntSample(timerBatchSizeSamples, size);
+        }
+    }
+
+    private void recordIntSample(List<Integer> samples, int size) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(size);
+            }
+        }
+    }
+
+    private double tdengineBatchCallsPerSecond() {
+        return ratePerSecond(flushedBatches.sum());
+    }
+
+    private double flushExecutorServiceRatePerSecond() {
+        return ratePerSecond(flushExecutorCompletedBatches.sum());
+    }
+
+    private double ratePerSecond(long count) {
+        long elapsedNanos = Math.max(1L, System.nanoTime() - createdAtNanos);
+        return count * 1_000_000_000.0D / elapsedNanos;
+    }
+
+    private double flushExecutorQueueUtilization() {
+        return Math.max(0D, (double) flushExecutorQueueCurrent.get() / flushExecutorQueueCapacity());
     }
 
     private int percentileInt(List<Integer> values, double percentile) {
@@ -579,7 +655,7 @@ public class HistoryBatchWriter {
     }
 
     private long oldestBufferedAgeMs() {
-        long now = System.nanoTime();
+        long now = currentNanoTime();
         long oldest = 0L;
         for (Bucket bucket : buckets.values()) {
             synchronized (bucket) {
@@ -590,6 +666,10 @@ public class HistoryBatchWriter {
             }
         }
         return oldest;
+    }
+
+    private long currentNanoTime() {
+        return nanoTimeSupplier.getAsLong();
     }
 
     private static final class Bucket {
@@ -618,17 +698,25 @@ public class HistoryBatchWriter {
         FALLBACKED
     }
 
+    private enum FlushTrigger {
+        SIZE,
+        TIMER,
+        SHUTDOWN
+    }
+
     private final class BatchFlushTask implements Runnable {
 
         private final long id;
         private final List<HistoryWriteRequest> batch;
         private final boolean shutdownOwned;
+        private final FlushTrigger trigger;
         private final AtomicReference<FlushTaskState> state = new AtomicReference<>(FlushTaskState.PENDING);
 
-        private BatchFlushTask(long id, List<HistoryWriteRequest> batch, boolean shutdownOwned) {
+        private BatchFlushTask(long id, List<HistoryWriteRequest> batch, boolean shutdownOwned, FlushTrigger trigger) {
             this.id = id;
             this.batch = batch;
             this.shutdownOwned = shutdownOwned;
+            this.trigger = trigger == null ? FlushTrigger.TIMER : trigger;
         }
 
         private long id() {
@@ -646,7 +734,7 @@ public class HistoryBatchWriter {
             BatchWriteAttempt attempt = executeBatchWrite(batch);
             decrementFlushActive();
             if (state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
-                recordBatchWriteAttempt(batch, attempt, startedAt);
+                recordBatchWriteAttempt(batch, attempt, startedAt, trigger);
                 if (shutdownOwned) {
                     shutdownFlushedRows.add(batch.size());
                 }
@@ -695,6 +783,10 @@ public class HistoryBatchWriter {
 
     void admissionObserver(AdmissionObserver admissionObserver) {
         this.admissionObserver = admissionObserver == null ? AdmissionObserver.NOOP : admissionObserver;
+    }
+
+    void nanoTimeSupplierForTest(LongSupplier nanoTimeSupplier) {
+        this.nanoTimeSupplier = nanoTimeSupplier == null ? System::nanoTime : nanoTimeSupplier;
     }
 
     interface AdmissionObserver {

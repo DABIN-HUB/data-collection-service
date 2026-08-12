@@ -19,6 +19,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,16 +56,179 @@ class HistoryBatchWriterTest {
     void flushIntervalShouldFlushPartialBatch() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
         stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
         HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
 
         writer.accept(request("dev-1", "p1", 1_000L));
         writer.accept(request("dev-1", "p2", 1_001L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
         writer.flushDueBuckets();
 
         ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
         verify(buffer).writeBatchOrBuffer(captor.capture());
         assertEquals(2, captor.getValue().size());
         assertEquals(0, writer.metrics().currentBufferedRows());
+    }
+
+    @Test
+    void defaultFlushScanIntervalMustRemainIndependentFromFlushAge() {
+        HistoryBatchProperties properties = new HistoryBatchProperties();
+
+        assertEquals(300L, properties.getFlushIntervalMs());
+        assertEquals(100L, properties.getFlushScanIntervalMs());
+    }
+
+    @Test
+    void partialBatchMustNotFlushBeforeInterval() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-early", "p1", 1_000L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(10));
+        writer.flushDueBuckets();
+
+        verify(buffer, never()).writeBatchOrBuffer(anyList());
+        assertEquals(1, writer.metrics().currentBufferedRows());
+    }
+
+    @Test
+    void partialBatchMustFlushAfterInterval() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-due", "p1", 1_000L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
+        writer.flushDueBuckets();
+
+        verify(buffer).writeBatchOrBuffer(anyList());
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(1L, metrics.timerFlushBatches());
+        assertEquals(1L, metrics.timerFlushRows());
+        assertEquals(0, metrics.currentBufferedRows());
+    }
+
+    @Test
+    void fullBatchMustFlushImmediatelyRegardlessOfInterval() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-full", "p1", 1_000L));
+        writer.accept(request("dev-full", "p2", 1_001L));
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).writeBatchOrBuffer(captor.capture());
+        assertEquals(2, captor.getValue().size());
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(1L, metrics.sizeFlushBatches());
+        assertEquals(2L, metrics.sizeFlushRows());
+        assertEquals(0L, metrics.timerFlushBatches());
+    }
+
+    @Test
+    void timerMustNotResetAgeWithoutFlush() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-age", "p1", 1_000L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(90));
+        writer.flushDueBuckets();
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(10));
+        writer.flushDueBuckets();
+
+        verify(buffer).writeBatchOrBuffer(anyList());
+        assertEquals(0, writer.metrics().currentBufferedRows());
+    }
+
+    @Test
+    void remainingRowsAfterPartialDrainMustGetCorrectNewAge() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchProperties properties = properties(true, 10, 100, 10);
+        HistoryBatchWriter writer = writer(buffer, properties);
+        writer.nanoTimeSupplierForTest(now::get);
+
+        addRows(writer, "dev-partial", 5, 1_000L);
+        properties.setBatchSize(2);
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
+        writer.flushDueBuckets();
+        writer.flushDueBuckets();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(4L, metrics.timerFlushRows());
+        assertEquals(1, metrics.currentBufferedRows());
+    }
+
+    @Test
+    void timerAndSizeRaceMustNotDoubleFlush() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 3, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-race-trigger", "p1", 1_000L));
+        writer.accept(request("dev-race-trigger", "p2", 1_001L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
+        writer.accept(request("dev-race-trigger", "p3", 1_002L));
+        writer.flushDueBuckets();
+
+        verify(buffer, org.mockito.Mockito.times(1)).writeBatchOrBuffer(anyList());
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(3L, metrics.flushedRows());
+        assertEquals(1L, metrics.sizeFlushBatches());
+        assertEquals(0L, metrics.timerFlushBatches());
+        assertEquals(0, metrics.currentBufferedRows());
+    }
+
+    @Test
+    void timerFlushMetricsShouldTrackPartialBatchSize() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-timer-metrics", "p1", 1_000L));
+        writer.accept(request("dev-timer-metrics", "p2", 1_001L));
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
+        writer.flushDueBuckets();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(1L, metrics.timerFlushBatches());
+        assertEquals(2L, metrics.timerFlushRows());
+        assertEquals(2.0D, metrics.timerAverageBatchSize());
+        assertEquals(2, metrics.timerBatchSizeP50());
+        assertEquals(0L, metrics.sizeFlushBatches());
+    }
+
+    @Test
+    void shutdownMustIgnoreAgeAndDrainEverything() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        AtomicLong now = new AtomicLong(1_000_000L);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 10, 10_000, 10));
+        writer.nanoTimeSupplierForTest(now::get);
+
+        writer.accept(request("dev-shutdown-age", "p1", 1_000L));
+        writer.shutdown();
+
+        verify(buffer).writeBatchOrBuffer(anyList());
+        assertEquals(0, writer.metrics().currentBufferedRows());
+        assertEquals(1L, writer.metrics().shutdownFlushedRows());
     }
 
     @Test
@@ -360,8 +524,11 @@ class HistoryBatchWriterTest {
             assertTrue(releaseFlush.await(1, TimeUnit.SECONDS));
             return HistoryBatchWriteResult.directSuccess(batch.size());
         });
+        AtomicLong now = new AtomicLong(1_000_000L);
         HistoryBatchWriter writer = writer(buffer, properties(true, 10, 100, 10));
+        writer.nanoTimeSupplierForTest(now::get);
         addRows(writer, "dev-timer-owned", 3, 1_000L);
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         Future<?> timerFlush = executor.submit(writer::flushDueBuckets);
@@ -502,8 +669,11 @@ class HistoryBatchWriterTest {
             }
             return HistoryBatchWriteResult.directSuccess(batch.size());
         });
+        AtomicLong now = new AtomicLong(1_000_000L);
         HistoryBatchWriter writer = writer(buffer, properties(true, 1_000, 100, 200));
+        writer.nanoTimeSupplierForTest(now::get);
         addRows(writer, "dev-mixed-detached", 20, 1_000L);
+        now.addAndGet(TimeUnit.MILLISECONDS.toNanos(100));
         ExecutorService executor = Executors.newFixedThreadPool(48);
         Future<?> timerFlush = executor.submit(writer::flushDueBuckets);
         assertTrue(firstFlushEntered.await(1, TimeUnit.SECONDS));

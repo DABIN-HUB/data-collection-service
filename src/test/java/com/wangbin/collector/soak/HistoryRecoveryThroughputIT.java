@@ -11,9 +11,14 @@ import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
 import com.wangbin.collector.storage.service.TimeSeriesService;
 import org.junit.jupiter.api.Test;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -37,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 历史 Redis pending 恢复吞吐专项入口；默认不进入 surefire 通配测试，只在显式指定 IT 时运行。
  */
-@SpringBootTest(properties = {
+@SpringBootTest(classes = HistoryRecoveryThroughputIT.TestApplication.class, properties = {
         "spring.main.web-application-type=none",
         "telemetry.tdengine.enabled=true",
         "telemetry.tdengine.buffer.enabled=true",
@@ -45,6 +50,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "collector.config.loader=file"
 })
 class HistoryRecoveryThroughputIT {
+
+    @Configuration
+    @EnableAutoConfiguration
+    @MapperScan("com.wangbin.collector.storage.repository")
+    @ComponentScan(basePackages = "com.wangbin.collector",
+            excludeFilters = {
+                    @ComponentScan.Filter(
+                            type = FilterType.ASSIGNABLE_TYPE,
+                            classes = com.wangbin.collector.Application.class),
+                    @ComponentScan.Filter(
+                            type = FilterType.REGEX,
+                            pattern = "com\\.wangbin\\.collector\\..*Test.*")
+            })
+    static class TestApplication {
+    }
 
     private static final DateTimeFormatter RUN_ID_FORMATTER =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss", Locale.ROOT).withZone(ZoneId.systemDefault());
@@ -142,10 +162,11 @@ class HistoryRecoveryThroughputIT {
     private void waitUntilDrained(long timeoutSeconds) throws InterruptedException {
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (System.nanoTime() < deadlineNanos) {
+            historyWriteBuffer.replay();
             if (pendingSize() == 0L && processingSize() == 0L) {
                 return;
             }
-            Thread.sleep(100L);
+            Thread.sleep(Math.max(1L, Math.min(100L, historyBufferProperties.getReplayIntervalMs())));
         }
     }
 
