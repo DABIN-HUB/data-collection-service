@@ -11,8 +11,10 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,7 +48,9 @@ public class HistoryBatchWriter {
     private final Executor historyBatchFlushExecutor;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
     private final Map<Long, BatchFlushTask> ownedFlushTasks = new ConcurrentHashMap<>();
-    private final ConcurrentLinkedQueue<BatchFlushTask> pendingFlushTasks = new ConcurrentLinkedQueue<>();
+    private final Map<String, SubTableFlushState> subTableFlushStates = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> activeWritesBySubTable = new ConcurrentHashMap<>();
+    private final Map<String, List<Long>> subTableWriteLatencyNanos = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock admissionLock = new ReentrantReadWriteLock();
     private final Object flushMonitor = new Object();
     private final AtomicInteger bufferedRows = new AtomicInteger();
@@ -81,11 +85,15 @@ public class HistoryBatchWriter {
     private final LongAdder multiTableAggregatedBatches = new LongAdder();
     private final List<Integer> rowsPerTdengineRequestSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Integer> tablesPerTdengineRequestSamples = Collections.synchronizedList(new ArrayList<>());
+    private final List<Long> dbQueueWaitNanos = Collections.synchronizedList(new ArrayList<>());
+    private final List<Long> dbExecuteLatencyNanos = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger flushExecutorQueueCurrent = new AtomicInteger();
     private final AtomicInteger flushExecutorQueuePeak = new AtomicInteger();
     private final AtomicInteger flushExecutorActiveCurrent = new AtomicInteger();
     private final AtomicInteger flushExecutorActivePeak = new AtomicInteger();
+    private final AtomicInteger maxConcurrentWritesSameSubTable = new AtomicInteger();
     private final LongAdder shutdownQueuedBatches = new LongAdder();
+    private final LongAdder sameSubTableConcurrentWriteCount = new LongAdder();
     private final List<Integer> batchSizeSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Integer> sizeBatchSizeSamples = Collections.synchronizedList(new ArrayList<>());
     private final List<Integer> timerBatchSizeSamples = Collections.synchronizedList(new ArrayList<>());
@@ -277,7 +285,17 @@ public class HistoryBatchWriter {
                 maxInt(tablesPerTdengineRequestSamples),
                 multiTableWriteRequests.sum(),
                 multiTableWriteRows.sum(),
-                multiTableAggregatedBatches.sum());
+                multiTableAggregatedBatches.sum(),
+                activeWritesSnapshot(),
+                maxConcurrentWritesSameSubTable.get(),
+                sameSubTableConcurrentWriteCount.sum(),
+                percentileMillis(dbQueueWaitNanos, 0.50D),
+                percentileMillis(dbQueueWaitNanos, 0.95D),
+                percentileMillis(dbQueueWaitNanos, 0.99D),
+                percentileMillis(dbExecuteLatencyNanos, 0.50D),
+                percentileMillis(dbExecuteLatencyNanos, 0.95D),
+                percentileMillis(dbExecuteLatencyNanos, 0.99D),
+                subTableLatencyP95Snapshot());
     }
 
     private List<List<HistoryWriteRequest>> detachDueBatches() {
@@ -335,15 +353,13 @@ public class HistoryBatchWriter {
         registerInFlightFlush();
         ownedFlushTasks.put(task.id(), task);
         flushExecutorSubmittedBatches.increment();
-        incrementFlushQueue();
-        pendingFlushTasks.add(task);
-        try {
-            historyBatchFlushExecutor.execute(task);
-        } catch (RuntimeException exception) {
-            pendingFlushTasks.remove(task);
+        if (!tryIncrementFlushQueue()) {
             flushExecutorRejectedBatches.increment();
-            task.fallback(exception, shutdownOwned, true);
+            task.fallback(new RejectedExecutionException("history batch flush queue full"),
+                    shutdownOwned, false, true);
+            return;
         }
+        enqueueSubTableTask(task);
     }
 
     private BatchWriteAttempt executeBatchWrite(List<HistoryWriteRequest> batch) {
@@ -359,40 +375,137 @@ public class HistoryBatchWriter {
         }
     }
 
-    private List<BatchFlushTask> collectOwnedTasks(BatchFlushTask primary) {
-        if (!tdengineProperties.getWrite().isMultiTableEnabled()) {
-            return List.of(primary);
+    private void enqueueSubTableTask(BatchFlushTask task) {
+        SubTableFlushState state = subTableFlushStates.computeIfAbsent(
+                task.subTableKey(), SubTableFlushState::new);
+        SubTableFlushRunner runner = null;
+        synchronized (state) {
+            state.queue.addLast(task);
+            if (!state.runnerSubmitted) {
+                state.runnerSubmitted = true;
+                runner = new SubTableFlushRunner(state);
+                state.runner = runner;
+            }
         }
+        if (runner != null) {
+            submitSubTableRunner(state, runner);
+        }
+    }
+
+    private void submitSubTableRunner(SubTableFlushState state, SubTableFlushRunner runner) {
+        try {
+            historyBatchFlushExecutor.execute(runner);
+        } catch (RuntimeException exception) {
+            fallbackQueuedSubTableTasks(state, exception, false, true);
+        }
+    }
+
+    private void fallbackQueuedSubTableTasks(SubTableFlushState state,
+                                             RuntimeException exception,
+                                             boolean shutdownFallback,
+                                             boolean submitRejected) {
+        List<BatchFlushTask> queued = new ArrayList<>();
+        synchronized (state) {
+            while (!state.queue.isEmpty()) {
+                queued.add(state.queue.removeFirst());
+            }
+            state.runnerSubmitted = false;
+            state.runnerActive = false;
+            state.runner = null;
+        }
+        for (BatchFlushTask task : queued) {
+            flushExecutorRejectedBatches.increment();
+            task.fallback(exception, shutdownFallback || task.shutdownOwned, true, submitRejected);
+        }
+    }
+
+    private ClaimedFlushTasks claimOwnedTasks(SubTableFlushState state) {
+        List<BatchFlushTask> tasks = claimSameSubTableTasks(state);
+        List<SubTableFlushState> ownedStates = new ArrayList<>();
+        if (!tasks.isEmpty()) {
+            ownedStates.add(state);
+        }
+        if (!tasks.isEmpty() && tdengineProperties.getWrite().isMultiTableEnabled()) {
+            collectOtherSubTableTasks(tasks, ownedStates);
+        }
+        return new ClaimedFlushTasks(state, ownedStates, tasks);
+    }
+
+    private List<BatchFlushTask> claimSameSubTableTasks(SubTableFlushState state) {
         List<BatchFlushTask> tasks = new ArrayList<>();
-        tasks.add(primary);
-        int maxTables = Math.max(1, tdengineProperties.getWrite().getMaxTablesPerRequest());
-        int maxRows = Math.max(1, tdengineProperties.getWrite().getMaxRowsPerRequest());
-        long deadline = System.nanoTime()
-                + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, tdengineProperties.getWrite().getAggregationWaitMs()));
-        int rows = primary.batch.size();
-        while (tasks.size() < maxTables && rows < maxRows) {
-            BatchFlushTask next = pendingFlushTasks.poll();
-            if (next == null) {
-                if (System.nanoTime() >= deadline) {
+        int maxRows = maxRowsPerRequest();
+        int rows = 0;
+        long now = System.nanoTime();
+        synchronized (state) {
+            while (!state.queue.isEmpty()) {
+                BatchFlushTask next = state.queue.peekFirst();
+                if (!tasks.isEmpty() && rows + next.batch.size() > maxRows) {
                     break;
                 }
-                LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(100));
-                continue;
-            }
-            if (next == primary) {
-                continue;
-            }
-            if (rows + next.batch.size() > maxRows) {
-                pendingFlushTasks.add(next);
-                break;
-            }
-            if (next.state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
-                decrementFlushQueue();
-                tasks.add(next);
-                rows += next.batch.size();
+                state.queue.removeFirst();
+                if (next.claimForRun()) {
+                    decrementFlushQueue();
+                    recordDbQueueWait(now - next.queuedAtNanos);
+                    tasks.add(next);
+                    rows += next.batch.size();
+                }
             }
         }
         return tasks;
+    }
+
+    private void collectOtherSubTableTasks(List<BatchFlushTask> tasks, List<SubTableFlushState> ownedStates) {
+        int maxTables = Math.max(1, tdengineProperties.getWrite().getMaxTablesPerRequest());
+        int maxRows = maxRowsPerRequest();
+        long deadline = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, tdengineProperties.getWrite().getAggregationWaitMs()));
+        while (distinctBucketCount(tasks) < maxTables && totalRows(tasks) < maxRows) {
+            ClaimedOtherSubTableTask claimed = claimOneOtherSubTableTask(tasks, maxRows);
+            if (claimed != null) {
+                tasks.add(claimed.task());
+                ownedStates.add(claimed.state());
+                continue;
+            }
+            if (System.nanoTime() >= deadline) {
+                return;
+            }
+            LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(100));
+        }
+    }
+
+    private ClaimedOtherSubTableTask claimOneOtherSubTableTask(List<BatchFlushTask> existingTasks, int maxRows) {
+        Set<String> existingSubTables = subTableKeys(existingTasks);
+        int rows = totalRows(existingTasks);
+        long now = System.nanoTime();
+        for (SubTableFlushState state : List.copyOf(subTableFlushStates.values())) {
+            if (existingSubTables.contains(state.subTable)) {
+                continue;
+            }
+            if (!tryReserveAggregatedState(state)) {
+                continue;
+            }
+            boolean claimed = false;
+            try {
+                synchronized (state) {
+                    BatchFlushTask next = state.queue.peekFirst();
+                    if (next == null || rows + next.batch.size() > maxRows) {
+                        continue;
+                    }
+                    state.queue.removeFirst();
+                    if (next.claimForRun()) {
+                        decrementFlushQueue();
+                        recordDbQueueWait(now - next.queuedAtNanos);
+                        claimed = true;
+                        return new ClaimedOtherSubTableTask(state, next);
+                    }
+                }
+            } finally {
+                if (!claimed) {
+                    releaseAggregatedState(state);
+                }
+            }
+        }
+        return null;
     }
 
     private List<HistoryWriteRequest> flatten(List<BatchFlushTask> tasks) {
@@ -407,6 +520,64 @@ public class HistoryBatchWriter {
         return requests;
     }
 
+    private int totalRows(List<BatchFlushTask> tasks) {
+        int rows = 0;
+        for (BatchFlushTask task : tasks) {
+            rows += task.batch.size();
+        }
+        return rows;
+    }
+
+    private Set<String> subTableKeys(List<BatchFlushTask> tasks) {
+        Set<String> keys = new HashSet<>();
+        for (BatchFlushTask task : tasks) {
+            keys.add(task.subTableKey());
+        }
+        return keys;
+    }
+
+    private int maxRowsPerRequest() {
+        return Math.max(batchSize(), tdengineProperties.getWrite().getMaxRowsPerRequest());
+    }
+
+    private boolean tryReserveAggregatedState(SubTableFlushState state) {
+        SubTableFlushRunner queuedRunner;
+        synchronized (state) {
+            if (state.queue.isEmpty() || state.runnerActive) {
+                return false;
+            }
+            if (!state.runnerSubmitted) {
+                state.runnerSubmitted = true;
+                return true;
+            }
+            queuedRunner = state.runner;
+        }
+        if (queuedRunner == null || !removeFromExecutorQueue(queuedRunner)) {
+            return false;
+        }
+        synchronized (state) {
+            if (state.runnerActive || state.runner != queuedRunner) {
+                return false;
+            }
+            state.runner = null;
+            return true;
+        }
+    }
+
+    private void releaseAggregatedState(SubTableFlushState state) {
+        SubTableFlushRunner runner;
+        synchronized (state) {
+            if (state.queue.isEmpty()) {
+                state.runnerSubmitted = false;
+                state.runner = null;
+                return;
+            }
+            runner = new SubTableFlushRunner(state);
+            state.runner = runner;
+        }
+        submitSubTableRunner(state, runner);
+    }
+
     private void recordTdengineRequest(List<BatchFlushTask> tasks, int rows) {
         int tables = distinctBucketCount(tasks);
         tdengineWriteRequests.increment();
@@ -418,6 +589,41 @@ public class HistoryBatchWriter {
             multiTableWriteRows.add(rows);
             multiTableAggregatedBatches.add(tables);
         }
+    }
+
+    private ActiveWriteLease beginSubTableWrite(String subTable) {
+        AtomicInteger active = activeWritesBySubTable.computeIfAbsent(subTable, ignored -> new AtomicInteger());
+        int current = active.incrementAndGet();
+        maxConcurrentWritesSameSubTable.accumulateAndGet(current, Math::max);
+        if (current > 1) {
+            sameSubTableConcurrentWriteCount.increment();
+        }
+        return new ActiveWriteLease(subTable, System.nanoTime());
+    }
+
+    private void finishSubTableWrite(ActiveWriteLease lease) {
+        if (lease == null) {
+            return;
+        }
+        AtomicInteger active = activeWritesBySubTable.get(lease.subTable());
+        if (active != null) {
+            active.updateAndGet(current -> Math.max(0, current - 1));
+        }
+        recordSubTableWriteLatency(lease.subTable(), System.nanoTime() - lease.startedAtNanos());
+    }
+
+    private void recordDbQueueWait(long nanos) {
+        recordLongSample(dbQueueWaitNanos, Math.max(0L, nanos));
+    }
+
+    private void recordDbExecuteLatency(long nanos) {
+        recordLongSample(dbExecuteLatencyNanos, Math.max(0L, nanos));
+    }
+
+    private void recordSubTableWriteLatency(String subTable, long nanos) {
+        List<Long> samples = subTableWriteLatencyNanos.computeIfAbsent(
+                subTable, ignored -> Collections.synchronizedList(new ArrayList<>()));
+        recordLongSample(samples, Math.max(0L, nanos));
     }
 
     private int distinctBucketCount(List<BatchFlushTask> tasks) {
@@ -553,7 +759,7 @@ public class HistoryBatchWriter {
 
     private void fallbackOutstandingFlushTasks(RuntimeException exception) {
         for (BatchFlushTask task : List.copyOf(ownedFlushTasks.values())) {
-            task.fallback(exception, true, false);
+            task.fallback(exception, true, task.state.get() == FlushTaskState.PENDING, false);
         }
     }
 
@@ -598,6 +804,16 @@ public class HistoryBatchWriter {
         flushExecutorQueuePeak.accumulateAndGet(current, Math::max);
     }
 
+    private boolean tryIncrementFlushQueue() {
+        int current = flushExecutorQueueCurrent.incrementAndGet();
+        if (current > flushExecutorQueueCapacity()) {
+            flushExecutorQueueCurrent.decrementAndGet();
+            return false;
+        }
+        flushExecutorQueuePeak.accumulateAndGet(current, Math::max);
+        return true;
+    }
+
     private void decrementFlushQueue() {
         flushExecutorQueueCurrent.updateAndGet(current -> Math.max(0, current - 1));
     }
@@ -611,14 +827,17 @@ public class HistoryBatchWriter {
         flushExecutorActiveCurrent.updateAndGet(current -> Math.max(0, current - 1));
     }
 
-    private boolean removeFromExecutorQueue(BatchFlushTask task) {
+    private boolean removeFromExecutorQueue(Runnable command) {
         try {
+            if (historyBatchFlushExecutor instanceof RemovableExecutor removableExecutor) {
+                return removableExecutor.remove(command);
+            }
             if (historyBatchFlushExecutor instanceof ThreadPoolTaskExecutor taskExecutor) {
                 ThreadPoolExecutor executor = taskExecutor.getThreadPoolExecutor();
-                return executor.getQueue().remove(task);
+                return executor.getQueue().remove(command);
             }
             if (historyBatchFlushExecutor instanceof ThreadPoolExecutor executor) {
-                return executor.getQueue().remove(task);
+                return executor.getQueue().remove(command);
             }
         } catch (RuntimeException ignored) {
             return false;
@@ -715,6 +934,14 @@ public class HistoryBatchWriter {
         }
     }
 
+    private void recordLongSample(List<Long> samples, long value) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(value);
+            }
+        }
+    }
+
     private double averageBatchSize() {
         return averageBatchSize(flushedRows.sum(), flushedBatches.sum());
     }
@@ -795,6 +1022,25 @@ public class HistoryBatchWriter {
         return sorted.get(Math.max(0, index)) / 1_000_000.0D;
     }
 
+    private Map<String, Integer> activeWritesSnapshot() {
+        Map<String, Integer> snapshot = new LinkedHashMap<>();
+        for (Map.Entry<String, AtomicInteger> entry : activeWritesBySubTable.entrySet()) {
+            int active = entry.getValue().get();
+            if (active > 0) {
+                snapshot.put(entry.getKey(), active);
+            }
+        }
+        return Map.copyOf(snapshot);
+    }
+
+    private Map<String, Double> subTableLatencyP95Snapshot() {
+        Map<String, Double> snapshot = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Long>> entry : subTableWriteLatencyNanos.entrySet()) {
+            snapshot.put(entry.getKey(), percentileMillis(entry.getValue(), 0.95D));
+        }
+        return Map.copyOf(snapshot);
+    }
+
     private <T extends Comparable<? super T>> List<T> snapshot(List<T> values) {
         synchronized (values) {
             return values.stream().sorted().toList();
@@ -851,12 +1097,155 @@ public class HistoryBatchWriter {
         SHUTDOWN
     }
 
-    private final class BatchFlushTask implements Runnable {
+    private final class SubTableFlushRunner implements Runnable {
+
+        private final SubTableFlushState state;
+
+        private SubTableFlushRunner(SubTableFlushState state) {
+            this.state = state;
+        }
+
+        @Override
+        public void run() {
+            if (!startRunner(state, this)) {
+                return;
+            }
+            try {
+                while (true) {
+                    ClaimedFlushTasks claimed = claimOwnedTasks(state);
+                    if (claimed.tasks().isEmpty()) {
+                        return;
+                    }
+                    processClaimedTasks(claimed);
+                }
+            } finally {
+                finishPrimaryRunner(state);
+            }
+        }
+    }
+
+    private boolean startRunner(SubTableFlushState state, SubTableFlushRunner runner) {
+        synchronized (state) {
+            if (state.runner != runner || state.runnerActive) {
+                return false;
+            }
+            state.runnerActive = true;
+            return true;
+        }
+    }
+
+    private void processClaimedTasks(ClaimedFlushTasks claimed) {
+        List<BatchFlushTask> ownedTasks = claimed.tasks();
+        List<HistoryWriteRequest> rows = flatten(ownedTasks);
+        List<ActiveWriteLease> leases = new ArrayList<>();
+        incrementFlushActive();
+        long startedAt = System.nanoTime();
+        BatchWriteAttempt attempt = null;
+        try {
+            for (SubTableFlushState state : claimed.ownedStates()) {
+                leases.add(beginSubTableWrite(state.subTable));
+            }
+            long executeStartedAt = System.nanoTime();
+            attempt = executeBatchWrite(rows);
+            recordDbExecuteLatency(System.nanoTime() - executeStartedAt);
+            recordTdengineRequest(ownedTasks, rows.size());
+        } catch (RuntimeException exception) {
+            attempt = new BatchWriteAttempt(null, exception);
+        } finally {
+            for (ActiveWriteLease lease : leases) {
+                finishSubTableWrite(lease);
+            }
+            decrementFlushActive();
+        }
+        completeOwnedTasks(ownedTasks, attempt, startedAt);
+        for (SubTableFlushState state : claimed.ownedStates()) {
+            if (state != claimed.primaryState()) {
+                finishAggregatedState(state);
+            }
+        }
+    }
+
+    private void completeOwnedTasks(List<BatchFlushTask> ownedTasks,
+                                    BatchWriteAttempt attempt,
+                                    long startedAt) {
+        boolean combinedFallbackRecorded = false;
+        for (BatchFlushTask task : ownedTasks) {
+            if (task.state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
+                recordOwnedBatchWriteAttempt(task, attempt, startedAt, !combinedFallbackRecorded);
+                if (attempt.exception() == null
+                        && attempt.result() != null
+                        && !attempt.result().directSuccess()) {
+                    combinedFallbackRecorded = true;
+                }
+                if (task.shutdownOwned) {
+                    shutdownFlushedRows.add(task.batch.size());
+                }
+                flushExecutorCompletedBatches.increment();
+                ownedFlushTasks.remove(task.id);
+                completeInFlightFlush();
+            }
+        }
+    }
+
+    private void finishPrimaryRunner(SubTableFlushState state) {
+        SubTableFlushRunner runner;
+        synchronized (state) {
+            state.runnerActive = false;
+            if (state.queue.isEmpty()) {
+                state.runnerSubmitted = false;
+                state.runner = null;
+                return;
+            }
+            runner = new SubTableFlushRunner(state);
+            state.runner = runner;
+        }
+        submitSubTableRunner(state, runner);
+    }
+
+    private void finishAggregatedState(SubTableFlushState state) {
+        SubTableFlushRunner runner;
+        synchronized (state) {
+            if (state.queue.isEmpty()) {
+                state.runnerSubmitted = false;
+                state.runner = null;
+                return;
+            }
+            runner = new SubTableFlushRunner(state);
+            state.runner = runner;
+        }
+        submitSubTableRunner(state, runner);
+    }
+
+    private static final class SubTableFlushState {
+        private final String subTable;
+        private final ArrayDeque<BatchFlushTask> queue = new ArrayDeque<>();
+        private boolean runnerSubmitted;
+        private boolean runnerActive;
+        private SubTableFlushRunner runner;
+
+        private SubTableFlushState(String subTable) {
+            this.subTable = subTable;
+        }
+    }
+
+    private record ClaimedFlushTasks(SubTableFlushState primaryState,
+                                     List<SubTableFlushState> ownedStates,
+                                     List<BatchFlushTask> tasks) {
+    }
+
+    private record ClaimedOtherSubTableTask(SubTableFlushState state, BatchFlushTask task) {
+    }
+
+    private record ActiveWriteLease(String subTable, long startedAtNanos) {
+    }
+
+    private final class BatchFlushTask {
 
         private final long id;
         private final List<HistoryWriteRequest> batch;
         private final boolean shutdownOwned;
         private final FlushTrigger trigger;
+        private final long queuedAtNanos = System.nanoTime();
         private final AtomicReference<FlushTaskState> state = new AtomicReference<>(FlushTaskState.PENDING);
 
         private BatchFlushTask(long id, List<HistoryWriteRequest> batch, boolean shutdownOwned, FlushTrigger trigger) {
@@ -870,56 +1259,26 @@ public class HistoryBatchWriter {
             return id;
         }
 
-        @Override
-        public void run() {
-            if (!claimForRun()) {
-                return;
-            }
-            decrementFlushQueue();
-            incrementFlushActive();
-            long startedAt = System.nanoTime();
-            List<BatchFlushTask> ownedTasks = collectOwnedTasks(this);
-            List<HistoryWriteRequest> rows = flatten(ownedTasks);
-            BatchWriteAttempt attempt = executeBatchWrite(rows);
-            decrementFlushActive();
-            recordTdengineRequest(ownedTasks, rows.size());
-            boolean combinedFallbackRecorded = false;
-            for (BatchFlushTask task : ownedTasks) {
-                if (task.state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
-                    recordOwnedBatchWriteAttempt(task, attempt, startedAt, !combinedFallbackRecorded);
-                    if (attempt.exception() == null
-                            && attempt.result() != null
-                            && !attempt.result().directSuccess()) {
-                        combinedFallbackRecorded = true;
-                    }
-                    if (task.shutdownOwned) {
-                        shutdownFlushedRows.add(task.batch.size());
-                    }
-                    flushExecutorCompletedBatches.increment();
-                    ownedFlushTasks.remove(task.id);
-                    completeInFlightFlush();
-                }
-            }
-        }
-
         private boolean claimForRun() {
-            if (!state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
-                return false;
-            }
-            pendingFlushTasks.remove(this);
-            return true;
+            return state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING);
         }
 
-        private void fallback(RuntimeException exception, boolean shutdownFallback, boolean submitRejected) {
+        private String subTableKey() {
+            return batch.isEmpty() ? "" : bucketKey(batch.get(0));
+        }
+
+        private void fallback(RuntimeException exception,
+                              boolean shutdownFallback,
+                              boolean decrementQueued,
+                              boolean submitRejected) {
             while (true) {
                 FlushTaskState current = state.get();
                 if (current == FlushTaskState.DONE || current == FlushTaskState.FALLBACKED) {
                     return;
                 }
                 if (state.compareAndSet(current, FlushTaskState.FALLBACKED)) {
-                    if (current == FlushTaskState.PENDING) {
+                    if (current == FlushTaskState.PENDING && decrementQueued) {
                         if (!submitRejected) {
-                            removeFromExecutorQueue(this);
                             shutdownQueuedBatches.increment();
                         }
                         decrementFlushQueue();
@@ -964,5 +1323,10 @@ public class HistoryBatchWriter {
 
         default void beforeBucketOwnershipTransfer(HistoryWriteRequest request) {
         }
+    }
+
+    interface RemovableExecutor extends Executor {
+
+        boolean remove(Runnable command);
     }
 }

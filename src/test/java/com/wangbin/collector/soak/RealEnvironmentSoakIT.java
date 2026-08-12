@@ -895,7 +895,11 @@ class RealEnvironmentSoakIT {
                         batch.tdengineRowsPerRequestMax(), batch.tdengineTablesPerRequest(),
                         batch.tdengineTablesPerRequestP95(), batch.tdengineTablesPerRequestMax(),
                         batch.multiTableWriteRequests(), batch.multiTableWriteRows(),
-                        batch.multiTableAggregatedBatches()),
+                        batch.multiTableAggregatedBatches(), batch.activeWritesBySubTable(),
+                        batch.maxConcurrentWritesSameSubTable(), batch.sameSubTableConcurrentWriteCount(),
+                        batch.dbQueueWaitP50Ms(), batch.dbQueueWaitP95Ms(), batch.dbQueueWaitP99Ms(),
+                        batch.dbExecuteLatencyP50Ms(), batch.dbExecuteLatencyP95Ms(),
+                        batch.dbExecuteLatencyP99Ms(), batch.subTableWriteLatencyP95Ms()),
                 cloud
         );
     }
@@ -908,7 +912,8 @@ class RealEnvironmentSoakIT {
                 0L, 0L, 0L, 0, 0, 0, 0, 0L,
                 0, 0, 0, 0L, 0L, 0L, 0L, 0D,
                 0, 0, 0, 0D, 0, 0, 0, 0D, 0D, 0D,
-                0L, 0L, 0D, 0D, 0, 0, 0D, 0, 0, 0L, 0L, 0L);
+                0L, 0L, 0D, 0D, 0, 0, 0D, 0, 0, 0L, 0L, 0L,
+                Map.of(), 0, 0L, 0D, 0D, 0D, 0D, 0D, 0D, Map.of());
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -1292,6 +1297,10 @@ class RealEnvironmentSoakIT {
                 runStartSample.history().rejectedDropped());
         long flushExecutorRejectedBatchesDelta = delta(loadEndSample.historyBatch().flushExecutorRejectedBatches(),
                 runStartSample.historyBatch().flushExecutorRejectedBatches());
+        long tdengineWriteRequestsDelta = delta(loadEndSample.historyBatch().tdengineWriteRequests(),
+                runStartSample.historyBatch().tdengineWriteRequests());
+        long tdengineWriteRowsDelta = delta(loadEndSample.historyBatch().tdengineWriteRows(),
+                runStartSample.historyBatch().tdengineWriteRows());
         SchedulerStateSnapshot schedulerLoadDelta = schedulerDelta(runStartSample.scheduler(), loadEndSample.scheduler());
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("runId", options.runId());
@@ -1452,6 +1461,22 @@ class RealEnvironmentSoakIT {
         summary.put("historyDeferredDelta", historyDeferredDelta);
         summary.put("historyRejectedDroppedDelta", historyRejectedDroppedDelta);
         summary.put("flushExecutorRejectedBatchesDelta", flushExecutorRejectedBatchesDelta);
+        summary.put("historyBatchTdengineWriteRequestsDelta", tdengineWriteRequestsDelta);
+        summary.put("historyBatchTdengineWriteRowsDelta", tdengineWriteRowsDelta);
+        summary.put("historyBatchTdengineWriteRequestsPerSecondDelta", tdengineWriteRequestsDelta * 1000.0d / loadElapsedMs);
+        summary.put("historyBatchTdengineWriteRowsPerSecondDelta", tdengineWriteRowsDelta * 1000.0d / loadElapsedMs);
+        summary.put("historyBatchDbQueueWaitP50Ms", loadEndSample.historyBatch().dbQueueWaitP50Ms());
+        summary.put("historyBatchDbQueueWaitP95Ms", loadEndSample.historyBatch().dbQueueWaitP95Ms());
+        summary.put("historyBatchDbQueueWaitP99Ms", loadEndSample.historyBatch().dbQueueWaitP99Ms());
+        summary.put("historyBatchDbExecuteLatencyP50Ms", loadEndSample.historyBatch().dbExecuteLatencyP50Ms());
+        summary.put("historyBatchDbExecuteLatencyP95Ms", loadEndSample.historyBatch().dbExecuteLatencyP95Ms());
+        summary.put("historyBatchDbExecuteLatencyP99Ms", loadEndSample.historyBatch().dbExecuteLatencyP99Ms());
+        summary.put("historyBatchMaxConcurrentWritesSameSubTable",
+                loadEndSample.historyBatch().maxConcurrentWritesSameSubTable());
+        summary.put("historyBatchSameSubTableConcurrentWriteCount",
+                loadEndSample.historyBatch().sameSubTableConcurrentWriteCount());
+        summary.put("historyBatchSubTableWriteLatencyP95Ms",
+                loadEndSample.historyBatch().subTableWriteLatencyP95Ms());
         summary.put("schedulerFinal", finalSample.scheduler());
         summary.put("schedulerLoadDelta", schedulerLoadDelta);
         summary.put("hikariFinal", finalSample.hikari());
@@ -1910,7 +1935,11 @@ class RealEnvironmentSoakIT {
                 + "historyBatchSizeBatchMax,historyBatchTimerAverageSize,historyBatchTimerBatchP50,"
                 + "historyBatchTimerBatchP95,historyBatchTimerBatchMax,"
                 + "historyBatchTdengineBatchCallsPerSecond,historyBatchFlushExecutorServiceRatePerSecond,"
-                + "historyBatchFlushExecutorQueueUtilization,"
+                + "historyBatchFlushExecutorQueueUtilization,historyBatchMaxConcurrentWritesSameSubTable,"
+                + "historyBatchSameSubTableConcurrentWriteCount,historyBatchDbQueueWaitP50Ms,"
+                + "historyBatchDbQueueWaitP95Ms,historyBatchDbQueueWaitP99Ms,"
+                + "historyBatchDbExecuteLatencyP50Ms,historyBatchDbExecuteLatencyP95Ms,"
+                + "historyBatchDbExecuteLatencyP99Ms,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
                 + "schedulerDueScanIntervalMs,schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
@@ -2093,6 +2122,14 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().tdengineBatchCallsPerSecond()),
                 String.valueOf(sample.historyBatch().flushExecutorServiceRatePerSecond()),
                 String.valueOf(sample.historyBatch().flushExecutorQueueUtilization()),
+                String.valueOf(sample.historyBatch().maxConcurrentWritesSameSubTable()),
+                String.valueOf(sample.historyBatch().sameSubTableConcurrentWriteCount()),
+                String.valueOf(sample.historyBatch().dbQueueWaitP50Ms()),
+                String.valueOf(sample.historyBatch().dbQueueWaitP95Ms()),
+                String.valueOf(sample.historyBatch().dbQueueWaitP99Ms()),
+                String.valueOf(sample.historyBatch().dbExecuteLatencyP50Ms()),
+                String.valueOf(sample.historyBatch().dbExecuteLatencyP95Ms()),
+                String.valueOf(sample.historyBatch().dbExecuteLatencyP99Ms()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -2492,7 +2529,17 @@ class RealEnvironmentSoakIT {
                                         int tdengineTablesPerRequestMax,
                                         long multiTableWriteRequests,
                                         long multiTableWriteRows,
-                                        long multiTableAggregatedBatches) {
+                                        long multiTableAggregatedBatches,
+                                        Map<String, Integer> activeWritesBySubTable,
+                                        int maxConcurrentWritesSameSubTable,
+                                        long sameSubTableConcurrentWriteCount,
+                                        double dbQueueWaitP50Ms,
+                                        double dbQueueWaitP95Ms,
+                                        double dbQueueWaitP99Ms,
+                                        double dbExecuteLatencyP50Ms,
+                                        double dbExecuteLatencyP95Ms,
+                                        double dbExecuteLatencyP99Ms,
+                                        Map<String, Double> subTableWriteLatencyP95Ms) {
     }
 
     private record CloudSnapshot(long total,

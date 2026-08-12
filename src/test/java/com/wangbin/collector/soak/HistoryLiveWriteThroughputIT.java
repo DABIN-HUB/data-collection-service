@@ -32,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -95,6 +96,18 @@ class HistoryLiveWriteThroughputIT {
     @Value("${history.live.duration-seconds:120}")
     private long durationSeconds;
 
+    @Value("${history.live.traffic-mode:uniform}")
+    private String trafficMode;
+
+    @Value("${history.live.cluster-rows:500}")
+    private int clusterRows;
+
+    @Value("${history.live.burst-window-seconds:5}")
+    private int burstWindowSeconds;
+
+    @Value("${history.live.burst-active-seconds:2}")
+    private int burstActiveSeconds;
+
     @Value("${history.live.output:target/soak-results/history-live-write}")
     private String outputDirectory;
 
@@ -123,6 +136,13 @@ class HistoryLiveWriteThroughputIT {
     }
 
     private long submitRows(String runId, long startedAtNanos) {
+        if ("clustered".equalsIgnoreCase(trafficMode) || "device-clustered-burst".equalsIgnoreCase(trafficMode)) {
+            return submitClusteredBurstRows(runId, startedAtNanos);
+        }
+        return submitUniformRows(runId, startedAtNanos);
+    }
+
+    private long submitUniformRows(String runId, long startedAtNanos) {
         long durationNanos = TimeUnit.SECONDS.toNanos(durationSeconds);
         long spacingNanos = Math.max(1L, 1_000_000_000L / Math.max(1, rowsPerSecond));
         long submitted = 0L;
@@ -138,6 +158,47 @@ class HistoryLiveWriteThroughputIT {
             }
         }
         return submitted;
+    }
+
+    private long submitClusteredBurstRows(String runId, long startedAtNanos) {
+        long durationNanos = TimeUnit.SECONDS.toNanos(durationSeconds);
+        long windowNanos = TimeUnit.SECONDS.toNanos(Math.max(1, burstWindowSeconds));
+        long activeNanos = TimeUnit.SECONDS.toNanos(Math.max(1, Math.min(burstActiveSeconds, burstWindowSeconds)));
+        long rowsPerWindow = Math.max(1L, (long) rowsPerSecond * Math.max(1, burstWindowSeconds));
+        long spacingNanos = Math.max(1L, activeNanos / rowsPerWindow);
+        long submitted = 0L;
+        long windowIndex = 0L;
+        while (System.nanoTime() - startedAtNanos < durationNanos) {
+            long windowStart = startedAtNanos + windowIndex * windowNanos;
+            long activeEnd = Math.min(startedAtNanos + durationNanos, windowStart + activeNanos);
+            long rowsInWindow = 0L;
+            while (rowsInWindow < rowsPerWindow && System.nanoTime() < activeEnd) {
+                long eventTs = System.currentTimeMillis();
+                int deviceIndex = (int) Math.floorMod(submitted / Math.max(1, clusterRows), Math.max(1, devices));
+                int pointIndex = (int) submitted;
+                historyBatchWriter.accept(request(runId, deviceIndex, pointIndex, eventTs));
+                submitted++;
+                rowsInWindow++;
+                waitUntil(windowStart + rowsInWindow * spacingNanos);
+            }
+            windowIndex++;
+            waitUntil(Math.min(startedAtNanos + durationNanos, windowStart + windowNanos));
+        }
+        return submitted;
+    }
+
+    private void waitUntil(long targetNanos) {
+        while (true) {
+            long remaining = targetNanos - System.nanoTime();
+            if (remaining <= 0L) {
+                return;
+            }
+            if (remaining > TimeUnit.MILLISECONDS.toNanos(1)) {
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+            } else {
+                Thread.onSpinWait();
+            }
+        }
     }
 
     private void waitForFlushDrain(long timeoutNanos) throws InterruptedException {
@@ -219,6 +280,7 @@ class HistoryLiveWriteThroughputIT {
         config.put("aggregationWaitMs", tdengineProperties.getWrite().getAggregationWaitMs());
         return new Summary(
                 runId, submitted, rowsPerSecond, devices, durationSeconds,
+                trafficMode, clusterRows, burstWindowSeconds, burstActiveSeconds,
                 submitted / elapsedSeconds, flushedRows / elapsedSeconds,
                 flushedBatches / elapsedSeconds, flushedRows, flushedBatches,
                 rejectedBatches, fallbackRows, pendingRows,
@@ -233,12 +295,17 @@ class HistoryLiveWriteThroughputIT {
                 bufferEnd.replaySuccessfulRows() - bufferStart.replaySuccessfulRows(),
                 bufferEnd.replayPausedForLivePressureCount() - bufferStart.replayPausedForLivePressureCount(),
                 writeRequests, writeRows, singleRequests, multiRequests, writeFailures,
-                writeRequests / elapsedSeconds, writeRows / elapsedSeconds,
+                measurementRate(writeStart.writeRequests(), writeEnd.writeRequests(), elapsedSeconds),
+                measurementRate(writeStart.writtenRows(), writeEnd.writtenRows(), elapsedSeconds),
                 writeRequests <= 0L ? 0D : writeRows / (double) writeRequests,
                 batchEnd.tdengineRowsPerRequestP95(), batchEnd.tdengineRowsPerRequestMax(),
                 batchEnd.tdengineTablesPerRequest(), batchEnd.tdengineTablesPerRequestP95(),
                 batchEnd.tdengineTablesPerRequestMax(), writeEnd.writeLatencyP50Ms(),
                 writeEnd.writeLatencyP95Ms(), writeEnd.writeLatencyP99Ms(),
+                batchEnd.dbQueueWaitP50Ms(), batchEnd.dbQueueWaitP95Ms(), batchEnd.dbQueueWaitP99Ms(),
+                batchEnd.dbExecuteLatencyP50Ms(), batchEnd.dbExecuteLatencyP95Ms(),
+                batchEnd.dbExecuteLatencyP99Ms(), batchEnd.maxConcurrentWritesSameSubTable(),
+                batchEnd.sameSubTableConcurrentWriteCount(), batchEnd.subTableWriteLatencyP95Ms(),
                 writeEnd.ensureSubTableCalls() - writeStart.ensureSubTableCalls(),
                 writeEnd.ensureSubTableCacheHits() - writeStart.ensureSubTableCacheHits(),
                 writeEnd.ensureSubTableCacheMisses() - writeStart.ensureSubTableCacheMisses(),
@@ -264,6 +331,10 @@ class HistoryLiveWriteThroughputIT {
                            int targetRowsPerSecond,
                            int devices,
                            long durationSeconds,
+                           String trafficMode,
+                           int clusterRows,
+                           int burstWindowSeconds,
+                           int burstActiveSeconds,
                            double submittedRowsPerSecond,
                            double tdengineRowsPerSecond,
                            double batchCallsPerSecond,
@@ -305,9 +376,25 @@ class HistoryLiveWriteThroughputIT {
                            double tdengineWriteP50Ms,
                            double tdengineWriteP95Ms,
                            double tdengineWriteP99Ms,
+                           double dbQueueWaitP50Ms,
+                           double dbQueueWaitP95Ms,
+                           double dbQueueWaitP99Ms,
+                           double dbExecuteLatencyP50Ms,
+                           double dbExecuteLatencyP95Ms,
+                           double dbExecuteLatencyP99Ms,
+                           int maxConcurrentWritesSameSubTable,
+                           long sameSubTableConcurrentWriteCount,
+                           Map<String, Double> subTableWriteLatencyP95Ms,
                            long ensureSubTableCalls,
                            long ensureSubTableCacheHits,
                            long ensureSubTableCacheMisses,
                            Map<String, Object> config) {
+    }
+
+    static double measurementRate(long startCount, long endCount, double elapsedSeconds) {
+        if (elapsedSeconds <= 0D) {
+            return 0D;
+        }
+        return Math.max(0L, endCount - startCount) / elapsedSeconds;
     }
 }

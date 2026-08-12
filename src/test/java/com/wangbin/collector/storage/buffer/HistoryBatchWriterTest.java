@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -1033,6 +1035,187 @@ class HistoryBatchWriterTest {
     }
 
     @Test
+    void uniformTrafficMustNotSerializeDifferentSubTables() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        CountDownLatch twoWritesEntered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            twoWritesEntered.countDown();
+            release.await(3, TimeUnit.SECONDS);
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                2, 2, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(10), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-parallel-a", 2, 1_000L);
+        addRows(writer, "dev-parallel-b", 2, 2_000L);
+
+        assertTrue(twoWritesEntered.await(3, TimeUnit.SECONDS));
+        assertEquals(2, writer.metrics().flushExecutorActiveCurrent());
+        release.countDown();
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+        assertEquals(1, writer.metrics().maxConcurrentWritesSameSubTable());
+    }
+
+    @Test
+    void sameSubTableMustNeverWriteConcurrently() throws Exception {
+        ConcurrentMap<String, AtomicInteger> activeByDevice = new ConcurrentHashMap<>();
+        AtomicInteger maxSameDeviceActive = new AtomicInteger();
+        CountDownLatch firstWriteEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            String deviceId = batch.get(0).getDeviceId();
+            int active = activeByDevice.computeIfAbsent(deviceId, ignored -> new AtomicInteger()).incrementAndGet();
+            maxSameDeviceActive.accumulateAndGet(active, Math::max);
+            firstWriteEntered.countDown();
+            release.await(3, TimeUnit.SECONDS);
+            activeByDevice.get(deviceId).decrementAndGet();
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                4, 4, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(20), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-single-flight", 8, 1_000L);
+
+        assertTrue(firstWriteEntered.await(3, TimeUnit.SECONDS));
+        TimeUnit.MILLISECONDS.sleep(100);
+        assertEquals(1, maxSameDeviceActive.get());
+        assertEquals(1, writer.metrics().maxConcurrentWritesSameSubTable());
+        release.countDown();
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+        assertEquals(0L, writer.metrics().sameSubTableConcurrentWriteCount());
+    }
+
+    @Test
+    void differentSubTablesMayWriteConcurrently() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        CountDownLatch twoWritesEntered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            twoWritesEntered.countDown();
+            release.await(3, TimeUnit.SECONDS);
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                4, 4, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(20), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-different-a", 2, 1_000L);
+        addRows(writer, "dev-different-b", 2, 2_000L);
+
+        assertTrue(twoWritesEntered.await(3, TimeUnit.SECONDS));
+        assertEquals(2, writer.metrics().flushExecutorActiveCurrent());
+        release.countDown();
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void clusteredBurstMustNotCauseUnboundedFlushQueueGrowth() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                4, 4, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(256), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 50, 10_000, 10_000), flushExecutor);
+
+        addRows(writer, "dev-clustered", 1_000, 1_000L);
+        waitUntilNoInFlight(writer, 3);
+
+        assertEquals(0L, writer.metrics().flushExecutorRejectedBatches());
+        assertEquals(0, writer.metrics().flushExecutorQueueCurrent());
+        assertEquals(1, writer.metrics().maxConcurrentWritesSameSubTable());
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void sameSubTableQueuedBatchesMustPreserveOrder() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(5, 150, 0);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 50, 10_000, 1_000), tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-order-single-flight", 150, 1_000L);
+        assertEquals(1, flushExecutor.size());
+        flushExecutor.runNext();
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).writeBatchOrBuffer(captor.capture());
+        List<HistoryWriteRequest> rows = captor.getValue();
+        assertEquals(150, rows.size());
+        for (int index = 0; index < rows.size(); index++) {
+            assertEquals("p" + index, rows.get(index).getPoint().getPointId());
+        }
+    }
+
+    @Test
+    void singleFlightFailureMustFallbackAllOwnedRows() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList())).thenReturn(new HistoryBatchWriteResult(false, 4, 4, 0, 0, 0));
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-single-flight-fallback", 4, 1_000L);
+        flushExecutor.runNext();
+
+        assertEquals(4L, writer.metrics().fallbackRows());
+        assertEquals(4L, writer.metrics().fallbackRedisRows());
+        assertEquals(0, writer.metrics().inFlightFlushes());
+    }
+
+    @Test
+    void shutdownMustDrainOrFallbackSingleFlightTasks() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            TimeUnit.MILLISECONDS.sleep(200);
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        HistoryBatchProperties properties = properties(true, 2, 10_000, 100);
+        properties.setShutdownFlushTimeoutMs(50);
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(10), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties, flushExecutor);
+        addRows(writer, "dev-shutdown-single-flight", 4, 1_000L);
+
+        writer.shutdown();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.currentBufferedRows());
+        assertTrue(metrics.flushedRows() + metrics.fallbackRows() >= 4L);
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void aggregatedTaskMustNotRemainInExecutorQueue() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(2, 100, 50);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-aggregate-owned-a", 2, 1_000L);
+        addRows(writer, "dev-aggregate-owned-b", 2, 2_000L);
+        assertEquals(2, flushExecutor.size());
+        flushExecutor.runNext();
+
+        assertEquals(0, flushExecutor.size());
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).writeBatchOrBuffer(captor.capture());
+        assertEquals(4, captor.getValue().size());
+    }
+
+    @Test
     void multiTableAggregationShouldCombinePendingDeviceBatchesWithinLimits() throws Exception {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
         stubDirectSuccess(buffer);
@@ -1200,12 +1383,17 @@ class HistoryBatchWriterTest {
         return properties;
     }
 
-    private static final class ManualExecutor implements Executor {
+    private static final class ManualExecutor implements HistoryBatchWriter.RemovableExecutor {
         private final List<Runnable> tasks = new ArrayList<>();
 
         @Override
         public void execute(Runnable command) {
             tasks.add(command);
+        }
+
+        @Override
+        public boolean remove(Runnable command) {
+            return tasks.remove(command);
         }
 
         private int size() {
@@ -1222,6 +1410,17 @@ class HistoryBatchWriterTest {
     private void addRows(HistoryBatchWriter writer, String deviceId, int rows, long startTs) {
         for (int index = 0; index < rows; index++) {
             writer.accept(request(deviceId, "p" + index, startTs + index));
+        }
+    }
+
+    private void waitUntilNoInFlight(HistoryBatchWriter writer, long timeoutSeconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (System.nanoTime() < deadline) {
+            HistoryBatchMetrics metrics = writer.metrics();
+            if (metrics.inFlightFlushes() == 0 && metrics.flushExecutorQueueCurrent() == 0) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(10);
         }
     }
 

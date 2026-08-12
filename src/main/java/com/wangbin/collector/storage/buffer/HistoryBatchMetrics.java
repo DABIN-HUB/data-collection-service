@@ -1,5 +1,7 @@
 package com.wangbin.collector.storage.buffer;
 
+import java.util.Map;
+
 /**
  * 历史批量写入的内部观测快照。
  */
@@ -65,5 +67,15 @@ public record HistoryBatchMetrics(long acceptedRows,
                                   int tdengineTablesPerRequestMax,
                                   long multiTableWriteRequests,
                                   long multiTableWriteRows,
-                                  long multiTableAggregatedBatches) {
+                                  long multiTableAggregatedBatches,
+                                  Map<String, Integer> activeWritesBySubTable,
+                                  int maxConcurrentWritesSameSubTable,
+                                  long sameSubTableConcurrentWriteCount,
+                                  double dbQueueWaitP50Ms,
+                                  double dbQueueWaitP95Ms,
+                                  double dbQueueWaitP99Ms,
+                                  double dbExecuteLatencyP50Ms,
+                                  double dbExecuteLatencyP95Ms,
+                                  double dbExecuteLatencyP99Ms,
+                                  Map<String, Double> subTableWriteLatencyP95Ms) {
 }
