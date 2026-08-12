@@ -290,14 +290,12 @@ public class HistoryBatchWriter {
                                          long startedAt) {
         if (attempt.exception() != null) {
             batchWriteFailure.increment();
-            for (HistoryWriteRequest request : batch) {
-                fallback(request, attempt.exception(), false);
-            }
+            fallbackBatch(batch, attempt.exception(), false);
         } else if (attempt.result().directSuccess()) {
             batchWriteSuccess.increment();
         } else {
             batchWriteFailure.increment();
-            recordBatchFallback(attempt.result());
+            recordBatchFallback(attempt.result(), false);
         }
         flushedBatches.increment();
         flushedRows.add(batch.size());
@@ -320,12 +318,38 @@ public class HistoryBatchWriter {
         recordFallbackOutcome(outcome, shutdownFallback);
     }
 
-    private void recordBatchFallback(HistoryBatchWriteResult result) {
+    private void fallbackBatch(List<HistoryWriteRequest> batch,
+                               RuntimeException exception,
+                               boolean shutdownFallback) {
+        HistoryBatchWriteResult result;
+        try {
+            result = historyWriteBuffer.deferBatchForRetry(batch, exception);
+        } catch (RuntimeException fallbackException) {
+            log.error("历史批量 fallback 异常，将回退逐条计入既有 fallback 语义，rows={}",
+                    batch != null ? batch.size() : 0, fallbackException);
+            result = null;
+        }
+        if (result == null) {
+            for (HistoryWriteRequest request : batch) {
+                fallback(request, exception, shutdownFallback);
+            }
+            return;
+        }
+        recordBatchFallback(result, shutdownFallback);
+    }
+
+    private void recordBatchFallback(HistoryBatchWriteResult result, boolean shutdownFallback) {
         fallbackRows.add(result.fallbackRows());
         fallbackRedisRows.add(result.redisBufferedRows());
         fallbackLocalRows.add(result.localBufferedRows());
         fallbackDroppedRows.add(result.droppedRows());
         fallbackDisabledRows.add(result.disabledRows());
+        if (shutdownFallback) {
+            shutdownDeferredRows.add(result.fallbackRows());
+            shutdownNonDurableRows.add(result.localBufferedRows());
+            shutdownDroppedRows.add(result.droppedRows());
+            shutdownDisabledRows.add(result.disabledRows());
+        }
     }
 
     private void recordFallbackOutcome(HistoryBufferOutcome outcome, boolean shutdownFallback) {
@@ -351,9 +375,7 @@ public class HistoryBatchWriter {
     }
 
     private void deferShutdownBatch(List<HistoryWriteRequest> batch, RuntimeException exception) {
-        for (HistoryWriteRequest request : batch) {
-            fallback(request, exception, true);
-        }
+        fallbackBatch(batch, exception, true);
     }
 
     private void fallbackOutstandingFlushTasks(RuntimeException exception) {
@@ -663,14 +685,12 @@ public class HistoryBatchWriter {
         private void deferShutdownOrNormalBatch(List<HistoryWriteRequest> rows,
                                                 RuntimeException exception,
                                                 boolean shutdownFallback) {
-            if (shutdownFallback) {
-                deferShutdownBatch(rows, exception);
-                return;
-            }
-            for (HistoryWriteRequest request : rows) {
-                HistoryBatchWriter.this.fallback(request, exception, false);
-            }
+            fallbackBatch(rows, exception, shutdownFallback);
         }
+    }
+
+    int flushExecutorQueueCapacity() {
+        return Math.max(1, properties.getFlushExecutor().getQueueCapacity());
     }
 
     void admissionObserver(AdmissionObserver admissionObserver) {

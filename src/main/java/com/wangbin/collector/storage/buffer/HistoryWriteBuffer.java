@@ -8,16 +8,21 @@ import com.wangbin.collector.common.logging.RateLimitedLogReporter;
 import com.wangbin.collector.storage.service.TimeSeriesService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
 
 /**
  * 历史数据写入缓冲器，Redis 队列承担写失败恢复，本地有界队列承担 Redis 故障降级。
@@ -31,8 +36,10 @@ public class HistoryWriteBuffer {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final HistoryBufferProperties properties;
+    private final ObjectProvider<HistoryBatchWriter> historyBatchWriterProvider;
     private final BlockingQueue<HistoryWriteRequest> localQueue;
     private final RateLimitedLogReporter overloadLogReporter = new RateLimitedLogReporter(log);
+    private static final int METRIC_SAMPLE_LIMIT = 10_000;
     private final LongAdder writeFailureRedisBuffered = new LongAdder();
     private final LongAdder rejectedRedisBuffered = new LongAdder();
     private final LongAdder writeFailureLocalBuffered = new LongAdder();
@@ -41,6 +48,21 @@ public class HistoryWriteBuffer {
     private final LongAdder rejectedDropped = new LongAdder();
     private final LongAdder writeFailureDisabled = new LongAdder();
     private final LongAdder rejectedDisabled = new LongAdder();
+    private final LongAdder replayClaimedRows = new LongAdder();
+    private final LongAdder replaySuccessfulRows = new LongAdder();
+    private final LongAdder replayFailedRows = new LongAdder();
+    private final LongAdder replayBatchCount = new LongAdder();
+    private final LongAdder replayPausedForLivePressureCount = new LongAdder();
+    private final AtomicInteger replayProcessingRows = new AtomicInteger();
+    private final LongAdder batchFallbackRedisRows = new LongAdder();
+    private final LongAdder batchFallbackRedisOps = new LongAdder();
+    private final LongAdder batchFallbackLocalRows = new LongAdder();
+    private final LongAdder batchFallbackDroppedRows = new LongAdder();
+    private final List<Integer> replayBatchSizeSamples = Collections.synchronizedList(new ArrayList<>());
+    private final List<Long> replayBatchWriteLatencyNanos = Collections.synchronizedList(new ArrayList<>());
+    private final List<Long> batchFallbackLatencyNanos = Collections.synchronizedList(new ArrayList<>());
+    private final long createdAtNanos = System.nanoTime();
+    private volatile Supplier<LivePressureSnapshot> livePressureSupplier;
 
     /**
      * 创建历史写入缓冲器。
@@ -49,12 +71,25 @@ public class HistoryWriteBuffer {
                               StringRedisTemplate redisTemplate,
                               ObjectMapper objectMapper,
                               HistoryBufferProperties properties) {
+        this(timeSeriesService, redisTemplate, objectMapper, properties, null);
+    }
+
+    /**
+     * 创建历史写入缓冲器，恢复路径通过 ObjectProvider 延迟读取实时写入压力，避免 Spring 构造期循环依赖。
+     */
+    @Autowired
+    public HistoryWriteBuffer(TimeSeriesService timeSeriesService,
+                              StringRedisTemplate redisTemplate,
+                              ObjectMapper objectMapper,
+                              HistoryBufferProperties properties,
+                              ObjectProvider<HistoryBatchWriter> historyBatchWriterProvider) {
         this.timeSeriesService = timeSeriesService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper.copy()
                 .setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE)
                 .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
         this.properties = properties;
+        this.historyBatchWriterProvider = historyBatchWriterProvider;
         this.localQueue = new ArrayBlockingQueue<>(Math.max(1, properties.getLocalQueueCapacity()));
     }
 
@@ -92,22 +127,7 @@ public class HistoryWriteBuffer {
                 log.error("TDengine 批量写入失败，且历史缓冲已关闭，整批数据未进入补偿链路，rows={}", rows, exception);
                 return HistoryBatchWriteResult.disabled(rows);
             }
-            int redisBuffered = 0;
-            int localBuffered = 0;
-            int dropped = 0;
-            int disabled = 0;
-            for (HistoryWriteRequest request : requests) {
-                if (request != null) {
-                    HistoryBufferOutcome outcome = buffer(request, exception, BufferReason.WRITE_FAILURE);
-                    switch (outcome) {
-                        case REDIS_BUFFERED -> redisBuffered++;
-                        case LOCAL_BUFFERED -> localBuffered++;
-                        case DROPPED -> dropped++;
-                        case DISABLED -> disabled++;
-                    }
-                }
-            }
-            return new HistoryBatchWriteResult(false, rows, redisBuffered, localBuffered, dropped, disabled);
+            return bufferBatch(requests, exception, BufferReason.WRITE_FAILURE);
         }
     }
 
@@ -129,15 +149,29 @@ public class HistoryWriteBuffer {
     }
 
     /**
+     * 批量延迟写入路径，供 History batch flush executor 拒绝或失败时快速进入既有可靠 fallback。
+     */
+    public HistoryBatchWriteResult deferBatchForRetry(List<HistoryWriteRequest> requests, RuntimeException cause) {
+        RuntimeException reason = cause != null
+                ? cause : new IllegalStateException("history batch fallback");
+        return bufferBatch(requests, reason, BufferReason.REJECTION);
+    }
+
+    /**
      * 优先回放 Redis 处理队列，再处理 Redis 故障期间形成的本地队列。
      */
-    @Scheduled(fixedDelayString = "${telemetry.tdengine.buffer.replay-interval-ms:3000}")
+    @Scheduled(fixedDelayString = "${telemetry.tdengine.buffer.replay-interval-ms:500}")
     public void replay() {
         if (!properties.isEnabled()) {
             return;
         }
-        replayRedisQueue();
-        replayLocalQueue();
+        int batches = replayBatchesAllowedByLivePressure();
+        for (int index = 0; index < batches; index++) {
+            if (replayRedisQueue() == 0) {
+                break;
+            }
+        }
+        replayLocalQueue(batches);
     }
 
     /**
@@ -178,7 +212,28 @@ public class HistoryWriteBuffer {
                 writeFailureDropped.sum(),
                 rejectedDropped.sum(),
                 writeFailureDisabled.sum(),
-                rejectedDisabled.sum());
+                rejectedDisabled.sum(),
+                replayClaimedRows.sum(),
+                replaySuccessfulRows.sum(),
+                replayFailedRows.sum(),
+                replayBatchCount.sum(),
+                replayAverageBatchSize(),
+                percentileInt(replayBatchSizeSamples, 0.95D),
+                maxInt(replayBatchSizeSamples),
+                replayRowsPerSecond(),
+                percentileMillis(replayBatchWriteLatencyNanos, 0.50D),
+                percentileMillis(replayBatchWriteLatencyNanos, 0.95D),
+                percentileMillis(replayBatchWriteLatencyNanos, 0.99D),
+                replayPausedForLivePressureCount.sum(),
+                replayProcessingRows.get(),
+                batchFallbackRedisRows.sum(),
+                batchFallbackRedisOps.sum(),
+                batchFallbackLocalRows.sum(),
+                batchFallbackDroppedRows.sum(),
+                percentileMillis(batchFallbackLatencyNanos, 0.50D),
+                percentileMillis(batchFallbackLatencyNanos, 0.95D),
+                percentileMillis(batchFallbackLatencyNanos, 0.99D),
+                livePressureSnapshot().queueUtilization());
     }
 
     private HistoryBufferOutcome buffer(HistoryWriteRequest request, RuntimeException cause, BufferReason reason) {
@@ -208,62 +263,189 @@ public class HistoryWriteBuffer {
         }
     }
 
-    private void replayRedisQueue() {
-        int batchSize = Math.max(1, properties.getReplayBatchSize());
-        for (int index = 0; index < batchSize; index++) {
-            String json;
+    private HistoryBatchWriteResult bufferBatch(List<HistoryWriteRequest> requests,
+                                                RuntimeException cause,
+                                                BufferReason reason) {
+        int rows = countRows(requests);
+        if (rows <= 0) {
+            return new HistoryBatchWriteResult(false, 0, 0, 0, 0, 0);
+        }
+        if (!properties.isEnabled()) {
+            incrementDisabled(reason, rows);
+            return HistoryBatchWriteResult.disabled(rows);
+        }
+        long startedAt = System.nanoTime();
+        List<HistoryWriteRequest> validRequests = new ArrayList<>(rows);
+        List<String> payloads = new ArrayList<>(rows);
+        int dropped = 0;
+        for (HistoryWriteRequest request : requests) {
+            if (request == null) {
+                dropped++;
+                incrementDropped(reason);
+                continue;
+            }
             try {
-                json = currentOrClaim();
+                payloads.add(serialize(request));
+                validRequests.add(request);
             } catch (RuntimeException exception) {
-                log.warn("读取历史数据 Redis 待写队列失败", exception);
-                return;
+                dropped++;
+                incrementDropped(reason);
+                log.error("{}，历史待写消息序列化失败，数据明确丢弃，设备={}，点位={}",
+                        reason.message(), request.getDeviceId(), pointId(request), exception);
             }
-            if (json == null) {
-                return;
+        }
+        try {
+            if (!payloads.isEmpty()) {
+                redisTemplate.opsForList().leftPushAll(properties.getPendingKey(), payloads);
+                incrementRedisBuffered(reason, payloads.size());
+                batchFallbackRedisRows.add(payloads.size());
+                batchFallbackRedisOps.increment();
+                overloadLogReporter.warn("history-redis-buffered-batch-" + reason.name(),
+                        "{}，批量数据已进入 Redis 历史待写队列，rows={}，原因={}",
+                        reason.message(), payloads.size(), failureMessage(cause));
             }
-            try {
-                write(deserialize(json));
-                redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
-            } catch (JsonProcessingException exception) {
-                moveToDeadLetter(json, exception);
-            } catch (RuntimeException exception) {
-                log.warn("历史数据回放失败，将在下一个周期继续重试", exception);
-                return;
+            batchFallbackDroppedRows.add(dropped);
+            recordBatchFallbackLatency(System.nanoTime() - startedAt);
+            return new HistoryBatchWriteResult(false, rows, payloads.size(), 0, dropped, 0);
+        } catch (RuntimeException redisException) {
+            int localBuffered = 0;
+            int localDropped = dropped;
+            for (HistoryWriteRequest request : validRequests) {
+                if (localQueue.offer(request)) {
+                    localBuffered++;
+                } else {
+                    localDropped++;
+                }
             }
+            incrementLocalBuffered(reason, localBuffered);
+            incrementDropped(reason, localDropped - dropped);
+            batchFallbackLocalRows.add(localBuffered);
+            batchFallbackDroppedRows.add(localDropped);
+            if (localDropped > dropped) {
+                log.error("{}，Redis 批量历史待写队列不可用，且本地历史降级队列已满，部分数据明确丢弃，rows={}，local={}，dropped={}",
+                        reason.message(), rows, localBuffered, localDropped - dropped, redisException);
+            } else {
+                overloadLogReporter.warn("history-local-buffered-batch-" + reason.name(),
+                        "{}，Redis 批量历史待写队列不可用，数据已进入本地有界降级队列，rows={}，原因={}",
+                        reason.message(), localBuffered, failureMessage(redisException));
+            }
+            recordBatchFallbackLatency(System.nanoTime() - startedAt);
+            return new HistoryBatchWriteResult(false, rows, 0, localBuffered, localDropped, 0);
         }
     }
 
-    private String currentOrClaim() {
-        String processing = redisTemplate.opsForList().index(properties.getProcessingKey(), 0L);
-        if (processing != null) {
+    private int replayRedisQueue() {
+        int batchSize = Math.max(1, properties.getReplayBatchSize());
+        List<String> claimed;
+        try {
+            claimed = claimRedisBatch(batchSize);
+        } catch (RuntimeException exception) {
+            log.warn("读取历史数据 Redis 待写队列失败", exception);
+            return 0;
+        }
+        if (claimed.isEmpty()) {
+            return 0;
+        }
+        replayClaimedRows.add(claimed.size());
+        replayProcessingRows.addAndGet(claimed.size());
+        try {
+            List<HistoryWriteRequest> requests = new ArrayList<>(claimed.size());
+            List<String> validJsons = new ArrayList<>(claimed.size());
+            for (String json : claimed) {
+                try {
+                    requests.add(deserialize(json));
+                    validJsons.add(json);
+                } catch (JsonProcessingException exception) {
+                    if (!moveToDeadLetter(json, exception)) {
+                        return 0;
+                    }
+                }
+            }
+            if (requests.isEmpty()) {
+                return claimed.size();
+            }
+            long startedAt = System.nanoTime();
+            try {
+                writeBatch(requests);
+                recordReplayBatch(requests.size(), System.nanoTime() - startedAt);
+                replaySuccessfulRows.add(requests.size());
+            } catch (RuntimeException exception) {
+                replayFailedRows.add(requests.size());
+                log.warn("历史数据批量回放失败，将在下一轮继续重试", exception);
+                return 0;
+            }
+            try {
+                removeOwnedProcessing(validJsons);
+            } catch (RuntimeException exception) {
+                log.warn("历史批量回放已写库，但 Redis processing 删除失败，下次可能重复写入", exception);
+            }
+            return claimed.size();
+        } finally {
+            replayProcessingRows.addAndGet(-claimed.size());
+        }
+    }
+
+    private List<String> claimRedisBatch(int batchSize) {
+        List<String> processing = redisTemplate.opsForList().range(
+                properties.getProcessingKey(), 0L, batchSize - 1L);
+        if (processing != null && !processing.isEmpty()) {
             return processing;
         }
-        return redisTemplate.opsForList().rightPopAndLeftPush(
-                properties.getPendingKey(), properties.getProcessingKey());
+        List<String> claimed = new ArrayList<>(batchSize);
+        for (int index = 0; index < batchSize; index++) {
+            String json = redisTemplate.opsForList().rightPopAndLeftPush(
+                    properties.getPendingKey(), properties.getProcessingKey());
+            if (json == null) {
+                break;
+            }
+            claimed.add(json);
+        }
+        return claimed;
     }
 
-    private void moveToDeadLetter(String json, Exception exception) {
-        try {
+    private void removeOwnedProcessing(List<String> validJsons) {
+        for (String json : validJsons) {
             redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+        }
+    }
+
+    private boolean moveToDeadLetter(String json, Exception exception) {
+        try {
             redisTemplate.opsForList().leftPush(properties.getDeadLetterKey(), json);
+            redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+            log.error("历史数据待写消息无法反序列化，已转入隔离队列", exception);
+            return true;
         } catch (RuntimeException redisException) {
             exception.addSuppressed(redisException);
+            log.error("历史数据待写消息无法反序列化，且转入隔离队列失败，将保留 processing 等待下次回放", exception);
+            return false;
         }
-        log.error("历史数据待写消息无法反序列化，已转入隔离队列", exception);
     }
 
-    private void replayLocalQueue() {
+    private void replayLocalQueue(int maxBatches) {
+        if (maxBatches <= 0) {
+            return;
+        }
         int batchSize = Math.max(1, properties.getReplayBatchSize());
-        for (int index = 0; index < batchSize; index++) {
-            HistoryWriteRequest request = localQueue.peek();
-            if (request == null) {
+        for (int batchIndex = 0; batchIndex < maxBatches; batchIndex++) {
+            List<HistoryWriteRequest> requests = new ArrayList<>(batchSize);
+            localQueue.drainTo(requests, batchSize);
+            if (requests.isEmpty()) {
                 return;
             }
             try {
-                write(request);
-                localQueue.poll();
+                long startedAt = System.nanoTime();
+                writeBatch(requests);
+                recordReplayBatch(requests.size(), System.nanoTime() - startedAt);
+                replaySuccessfulRows.add(requests.size());
             } catch (RuntimeException exception) {
-                log.warn("历史数据本地降级队列回放失败，将在下一个周期继续重试", exception);
+                replayFailedRows.add(requests.size());
+                for (HistoryWriteRequest request : requests) {
+                    if (!localQueue.offer(request)) {
+                        writeFailureDropped.increment();
+                    }
+                }
+                log.warn("历史数据本地降级队列批量回放失败，将在下一轮继续重试", exception);
                 return;
             }
         }
@@ -340,11 +522,33 @@ public class HistoryWriteBuffer {
         }
     }
 
+    private void incrementRedisBuffered(BufferReason reason, int rows) {
+        if (rows <= 0) {
+            return;
+        }
+        if (reason == BufferReason.REJECTION) {
+            rejectedRedisBuffered.add(rows);
+        } else {
+            writeFailureRedisBuffered.add(rows);
+        }
+    }
+
     private void incrementLocalBuffered(BufferReason reason) {
         if (reason == BufferReason.REJECTION) {
             rejectedLocalBuffered.increment();
         } else {
             writeFailureLocalBuffered.increment();
+        }
+    }
+
+    private void incrementLocalBuffered(BufferReason reason, int rows) {
+        if (rows <= 0) {
+            return;
+        }
+        if (reason == BufferReason.REJECTION) {
+            rejectedLocalBuffered.add(rows);
+        } else {
+            writeFailureLocalBuffered.add(rows);
         }
     }
 
@@ -356,11 +560,142 @@ public class HistoryWriteBuffer {
         }
     }
 
+    private void incrementDropped(BufferReason reason, int rows) {
+        if (rows <= 0) {
+            return;
+        }
+        if (reason == BufferReason.REJECTION) {
+            rejectedDropped.add(rows);
+        } else {
+            writeFailureDropped.add(rows);
+        }
+    }
+
     private void incrementDisabled(BufferReason reason) {
         if (reason == BufferReason.REJECTION) {
             rejectedDisabled.increment();
         } else {
             writeFailureDisabled.increment();
+        }
+    }
+
+    private void incrementDisabled(BufferReason reason, int rows) {
+        if (rows <= 0) {
+            return;
+        }
+        if (reason == BufferReason.REJECTION) {
+            rejectedDisabled.add(rows);
+        } else {
+            writeFailureDisabled.add(rows);
+        }
+    }
+
+    private int replayBatchesAllowedByLivePressure() {
+        LivePressureSnapshot pressure = livePressureSnapshot();
+        int maxBatches = Math.max(1, properties.getReplayMaxBatchesPerCycle());
+        int limitedBatches = Math.max(1, properties.getReplayLimitedBatchesPerCycle());
+        double utilizationPercent = pressure.queueUtilization() * 100D;
+        if (utilizationPercent >= Math.max(0, properties.getReplayLiveQueuePauseThresholdPercent())) {
+            replayPausedForLivePressureCount.increment();
+            return 0;
+        }
+        if (utilizationPercent >= Math.max(0, properties.getReplayLiveQueueLimitedThresholdPercent())) {
+            return Math.min(maxBatches, limitedBatches);
+        }
+        return maxBatches;
+    }
+
+    private LivePressureSnapshot livePressureSnapshot() {
+        Supplier<LivePressureSnapshot> supplier = livePressureSupplier;
+        if (supplier != null) {
+            return supplier.get();
+        }
+        if (historyBatchWriterProvider == null) {
+            return LivePressureSnapshot.none();
+        }
+        HistoryBatchWriter writer = historyBatchWriterProvider.getIfAvailable();
+        if (writer == null) {
+            return LivePressureSnapshot.none();
+        }
+        HistoryBatchMetrics metrics = writer.metrics();
+        int capacity = Math.max(1, writer.flushExecutorQueueCapacity());
+        return new LivePressureSnapshot(
+                Math.max(0D, (double) metrics.flushExecutorQueueCurrent() / capacity));
+    }
+
+    private void recordReplayBatch(int size, long nanos) {
+        replayBatchCount.increment();
+        recordIntSample(replayBatchSizeSamples, size);
+        recordLongSample(replayBatchWriteLatencyNanos, nanos);
+    }
+
+    private void recordBatchFallbackLatency(long nanos) {
+        recordLongSample(batchFallbackLatencyNanos, nanos);
+    }
+
+    private void recordIntSample(List<Integer> samples, int value) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(value);
+            }
+        }
+    }
+
+    private void recordLongSample(List<Long> samples, long value) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(value);
+            }
+        }
+    }
+
+    private double replayAverageBatchSize() {
+        long batches = replayBatchCount.sum();
+        return batches <= 0L ? 0D : (double) replaySuccessfulRows.sum() / batches;
+    }
+
+    private double replayRowsPerSecond() {
+        long rows = replaySuccessfulRows.sum();
+        long elapsedNanos = Math.max(1L, System.nanoTime() - createdAtNanos);
+        return rows * 1_000_000_000D / elapsedNanos;
+    }
+
+    private int percentileInt(List<Integer> values, double percentile) {
+        List<Integer> sorted = snapshot(values);
+        if (sorted.isEmpty()) {
+            return 0;
+        }
+        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
+        return sorted.get(Math.max(0, index));
+    }
+
+    private int maxInt(List<Integer> values) {
+        List<Integer> sorted = snapshot(values);
+        return sorted.isEmpty() ? 0 : sorted.get(sorted.size() - 1);
+    }
+
+    private double percentileMillis(List<Long> values, double percentile) {
+        List<Long> sorted = snapshot(values);
+        if (sorted.isEmpty()) {
+            return 0D;
+        }
+        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
+        return sorted.get(Math.max(0, index)) / 1_000_000.0D;
+    }
+
+    private <T extends Comparable<? super T>> List<T> snapshot(List<T> values) {
+        synchronized (values) {
+            return values.stream().sorted().toList();
+        }
+    }
+
+    void livePressureSupplierForTest(Supplier<LivePressureSnapshot> livePressureSupplier) {
+        this.livePressureSupplier = livePressureSupplier;
+    }
+
+    record LivePressureSnapshot(double queueUtilization) {
+        private static LivePressureSnapshot none() {
+            return new LivePressureSnapshot(0D);
         }
     }
 

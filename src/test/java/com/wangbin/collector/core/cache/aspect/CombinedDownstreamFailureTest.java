@@ -721,6 +721,17 @@ class CombinedDownstreamFailureTest {
                 appendSuccesses.increment();
                 return null;
             }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+            doAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                List<TimeSeriesService.AppendRequest> requests = invocation.getArgument(0);
+                appendAttempts.add(requests.size());
+                if (this.tdengineFailing.get()) {
+                    appendFailures.add(requests.size());
+                    throw new DataAccessResourceFailureException("TDengine unavailable");
+                }
+                appendSuccesses.add(requests.size());
+                return null;
+            }).when(timeSeriesService).appendBatch(any());
             this.buffer = new HistoryWriteBuffer(timeSeriesService, redisLists.template, OBJECT_MAPPER, properties);
         }
 
@@ -1096,6 +1107,20 @@ class CombinedDownstreamFailureTest {
                 list.addFirst(value);
                 return (long) list.size();
             });
+            when(operations.leftPushAll(anyString(), org.mockito.ArgumentMatchers.<String>anyCollection()))
+                    .thenAnswer(invocation -> {
+                        String key = invocation.getArgument(0);
+                        @SuppressWarnings("unchecked")
+                        java.util.Collection<String> values = invocation.getArgument(1);
+                        if (shouldFail(leftPushFailures, key)) {
+                            throw new RedisConnectionFailureException("history pending redis unavailable");
+                        }
+                        Deque<String> list = list(key);
+                        for (String value : values) {
+                            list.addFirst(value);
+                        }
+                        return (long) list.size();
+                    });
             when(operations.rightPopAndLeftPush(anyString(), anyString())).thenAnswer(invocation -> {
                 String source = invocation.getArgument(0);
                 String destination = invocation.getArgument(1);
@@ -1119,6 +1144,20 @@ class CombinedDownstreamFailureTest {
                     }
                 }
                 return null;
+            });
+            when(operations.range(anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
+                String key = invocation.getArgument(0);
+                long start = invocation.getArgument(1);
+                long end = invocation.getArgument(2);
+                List<String> values = new ArrayList<>();
+                int current = 0;
+                for (String value : list(key)) {
+                    if (current >= start && current <= end) {
+                        values.add(value);
+                    }
+                    current++;
+                }
+                return values;
             });
             when(operations.remove(anyString(), anyLong(), anyString())).thenAnswer(invocation -> {
                 String key = invocation.getArgument(0);

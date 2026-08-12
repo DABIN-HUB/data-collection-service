@@ -177,15 +177,97 @@ class HistoryWriteBufferFailureRecoveryTest {
         HistoryWriteBuffer recoveredBuffer = buffer(recoveredService, redisLists, properties);
         recoveredBuffer.replay();
 
-        verify(recoveredService).append(
-                request.getDeviceId(),
-                request.getProtocolType(),
-                request.getPoint(),
-                request.getProcessResult(),
-                request.getEventTs());
+        verify(recoveredService).appendBatch(any());
+        verify(recoveredService, never()).append(anyString(), anyString(), any(), any(), anyLong());
         assertEquals(0L, redisLists.size(properties.getPendingKey()));
         assertEquals(0L, redisLists.size(properties.getProcessingKey()));
         assertEquals(0, recoveredBuffer.metrics().localPending());
+    }
+
+    @Test
+    void replayMustUseBatchInsertInsteadOfPerRowInsert() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(10, 10);
+        for (int index = 0; index < 3; index++) {
+            redisLists.leftPush(properties.getPendingKey(),
+                    writeJson(request("dev-batch-replay", "p" + index, 2_000L + index)));
+        }
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+
+        buffer.replay();
+
+        verify(timeSeriesService).appendBatch(any());
+        verify(timeSeriesService, never()).append(anyString(), anyString(), any(), any(), anyLong());
+        assertEquals(3L, buffer.metrics().replaySuccessfulRows());
+        assertEquals(1L, buffer.metrics().replayBatchCount());
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0L, redisLists.size(properties.getProcessingKey()));
+    }
+
+    @Test
+    void twentyThousandPendingMustDrainWithBatchReplay() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(500, 10);
+        properties.setReplayMaxBatchesPerCycle(2);
+        for (int index = 0; index < 20_000; index++) {
+            redisLists.leftPush(properties.getPendingKey(),
+                    writeJson(request("dev-replay-20k-" + (index % 20), "p" + index, 20_000L + index)));
+        }
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+
+        for (int cycle = 0; cycle < 20; cycle++) {
+            buffer.replay();
+        }
+
+        verify(timeSeriesService, org.mockito.Mockito.times(40)).appendBatch(any());
+        assertEquals(20_000L, buffer.metrics().replayClaimedRows());
+        assertEquals(20_000L, buffer.metrics().replaySuccessfulRows());
+        assertEquals(40L, buffer.metrics().replayBatchCount());
+        assertEquals(500, buffer.metrics().replayBatchSizeP95());
+        assertEquals(500, buffer.metrics().replayBatchSizeMax());
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0L, redisLists.size(properties.getProcessingKey()));
+    }
+
+    @Test
+    void replayMustPauseWhenLiveFlushQueueHigh() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(10, 10);
+        redisLists.leftPush(properties.getPendingKey(),
+                writeJson(request("dev-live-pressure", "p1", 2_000L)));
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        buffer.livePressureSupplierForTest(() -> new HistoryWriteBuffer.LivePressureSnapshot(0.80D));
+
+        buffer.replay();
+
+        verify(timeSeriesService, never()).appendBatch(any());
+        assertEquals(1L, redisLists.size(properties.getPendingKey()));
+        assertEquals(1L, buffer.metrics().replayPausedForLivePressureCount());
+    }
+
+    @Test
+    void replayMustResumeWhenLivePressureDrops() {
+        TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
+        RedisLists redisLists = new RedisLists();
+        HistoryBufferProperties properties = properties(10, 10);
+        AtomicBoolean highPressure = new AtomicBoolean(true);
+        redisLists.leftPush(properties.getPendingKey(),
+                writeJson(request("dev-live-resume", "p1", 2_000L)));
+        HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
+        buffer.livePressureSupplierForTest(() -> new HistoryWriteBuffer.LivePressureSnapshot(
+                highPressure.get() ? 0.80D : 0D));
+
+        buffer.replay();
+        highPressure.set(false);
+        buffer.replay();
+
+        verify(timeSeriesService).appendBatch(any());
+        assertEquals(0L, redisLists.size(properties.getPendingKey()));
+        assertEquals(0L, redisLists.size(properties.getProcessingKey()));
+        assertEquals(1L, buffer.metrics().replaySuccessfulRows());
     }
 
     @Test
@@ -201,7 +283,7 @@ class HistoryWriteBufferFailureRecoveryTest {
                 throw new DataAccessResourceFailureException("TDengine replay failed");
             }
             return null;
-        }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         buffer.replay();
@@ -221,16 +303,19 @@ class HistoryWriteBufferFailureRecoveryTest {
         TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
         RedisLists redisLists = new RedisLists();
         HistoryBufferProperties properties = properties(1, 10);
+        properties.setReplayMaxBatchesPerCycle(1);
         HistoryWriteRequest processing = request("dev-priority", "processing", 4_000L);
         HistoryWriteRequest pending = request("dev-priority", "pending", 5_000L);
         redisLists.leftPush(properties.getProcessingKey(), writeJson(processing));
         redisLists.leftPush(properties.getPendingKey(), writeJson(pending));
         List<String> writtenPoints = new ArrayList<>();
         doAnswer(invocation -> {
-            DataPoint point = invocation.getArgument(2);
-            writtenPoints.add(point.getPointId());
+            List<TimeSeriesService.AppendRequest> requests = invocation.getArgument(0);
+            writtenPoints.addAll(requests.stream()
+                    .map(request -> request.point().getPointId())
+                    .toList());
             return null;
-        }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         buffer.replay();
@@ -250,9 +335,12 @@ class HistoryWriteBufferFailureRecoveryTest {
         redisLists.failRemove(properties.getProcessingKey(), 1);
         List<Long> eventTsValues = new ArrayList<>();
         doAnswer(invocation -> {
-            eventTsValues.add(invocation.getArgument(4));
+            List<TimeSeriesService.AppendRequest> requests = invocation.getArgument(0);
+            eventTsValues.addAll(requests.stream()
+                    .map(TimeSeriesService.AppendRequest::eventTs)
+                    .toList());
             return null;
-        }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         buffer.replay();
@@ -275,6 +363,12 @@ class HistoryWriteBufferFailureRecoveryTest {
             }
             return null;
         }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        doAnswer(invocation -> {
+            if (tdengineFailing.get()) {
+                throw new DataAccessResourceFailureException("TDengine unavailable");
+            }
+            return null;
+        }).when(timeSeriesService).appendBatch(any());
         redisLists.failLeftPush(properties.getPendingKey(), 10);
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
@@ -465,7 +559,7 @@ class HistoryWriteBufferFailureRecoveryTest {
         doAnswer(invocation -> {
             writes.incrementAndGet();
             return null;
-        }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         buffer.replay();
@@ -477,7 +571,7 @@ class HistoryWriteBufferFailureRecoveryTest {
     }
 
     @Test
-    void deadLetterRedisFailureAfterProcessingRemoveDropsMalformedMessageWithoutTightLoop() {
+    void deadLetterRedisFailureShouldKeepMalformedMessageInProcessing() {
         TimeSeriesService timeSeriesService = mock(TimeSeriesService.class);
         RedisLists redisLists = new RedisLists();
         HistoryBufferProperties properties = properties(2, 10);
@@ -487,7 +581,7 @@ class HistoryWriteBufferFailureRecoveryTest {
 
         buffer.replay();
 
-        assertEquals(0L, redisLists.size(properties.getProcessingKey()));
+        assertEquals(1L, redisLists.size(properties.getProcessingKey()));
         assertEquals(0L, redisLists.size(properties.getDeadLetterKey()));
     }
 
@@ -503,8 +597,8 @@ class HistoryWriteBufferFailureRecoveryTest {
         buffer.replay();
 
         assertEquals(1L, redisLists.size(properties.getProcessingKey()));
-        assertEquals(0L, redisLists.size(properties.getDeadLetterKey()));
-        assertEquals(2, redisLists.removeAttempts(properties.getProcessingKey()));
+        assertEquals(1L, redisLists.size(properties.getDeadLetterKey()));
+        assertEquals(1, redisLists.removeAttempts(properties.getProcessingKey()));
     }
 
     @Test
@@ -521,6 +615,13 @@ class HistoryWriteBufferFailureRecoveryTest {
             }
             return null;
         }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        doAnswer(invocation -> {
+            attempts.incrementAndGet();
+            if (failing.get()) {
+                throw new DataAccessResourceFailureException("TDengine unavailable");
+            }
+            return null;
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         for (int i = 0; i < 100; i++) {
@@ -533,7 +634,7 @@ class HistoryWriteBufferFailureRecoveryTest {
         failing.set(false);
         buffer.replay();
 
-        assertEquals(200, attempts.get());
+        assertEquals(101, attempts.get());
         assertEquals(0L, redisLists.size(properties.getPendingKey()));
         assertEquals(0L, redisLists.size(properties.getProcessingKey()));
         assertEquals(0, buffer.metrics().localPending());
@@ -553,6 +654,13 @@ class HistoryWriteBufferFailureRecoveryTest {
             }
             return null;
         }).when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+        doAnswer(invocation -> {
+            attempts.incrementAndGet();
+            if (failing.get()) {
+                throw new DataAccessResourceFailureException("TDengine unavailable");
+            }
+            return null;
+        }).when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         for (int i = 0; i < 100; i++) {
@@ -577,7 +685,7 @@ class HistoryWriteBufferFailureRecoveryTest {
         HistoryBufferProperties properties = properties(2, 10);
         redisLists.leftPush(properties.getProcessingKey(), writeJson(request("dev-shutdown", "p1", 11_000L)));
         doThrow(new DataAccessResourceFailureException("TDengine unavailable"))
-                .when(timeSeriesService).append(anyString(), anyString(), any(), any(), anyLong());
+                .when(timeSeriesService).appendBatch(any());
         HistoryWriteBuffer buffer = buffer(timeSeriesService, redisLists, properties);
 
         long startedAt = System.nanoTime();
@@ -666,6 +774,20 @@ class HistoryWriteBufferFailureRecoveryTest {
                         list.addFirst(value);
                         return (long) list.size();
                     });
+            org.mockito.Mockito.when(operations.leftPushAll(anyString(), org.mockito.ArgumentMatchers.<String>anyCollection()))
+                    .thenAnswer(invocation -> {
+                        String key = invocation.getArgument(0);
+                        @SuppressWarnings("unchecked")
+                        java.util.Collection<String> values = invocation.getArgument(1);
+                        if (shouldFail(leftPushFailures, key)) {
+                            throw new RedisConnectionFailureException("redis leftPushAll failed");
+                        }
+                        Deque<String> list = list(key);
+                        for (String value : values) {
+                            list.addFirst(value);
+                        }
+                        return (long) list.size();
+                    });
             org.mockito.Mockito.when(operations.rightPopAndLeftPush(anyString(), anyString()))
                     .thenAnswer(invocation -> {
                         String source = invocation.getArgument(0);
@@ -692,6 +814,21 @@ class HistoryWriteBufferFailureRecoveryTest {
                             }
                         }
                         return null;
+                    });
+            org.mockito.Mockito.when(operations.range(anyString(), anyLong(), anyLong()))
+                    .thenAnswer(invocation -> {
+                        String key = invocation.getArgument(0);
+                        long start = invocation.getArgument(1);
+                        long end = invocation.getArgument(2);
+                        List<String> values = new ArrayList<>();
+                        int current = 0;
+                        for (String value : list(key)) {
+                            if (current >= start && current <= end) {
+                                values.add(value);
+                            }
+                            current++;
+                        }
+                        return values;
                     });
             org.mockito.Mockito.when(operations.remove(anyString(), anyLong(), anyString()))
                     .thenAnswer(invocation -> {

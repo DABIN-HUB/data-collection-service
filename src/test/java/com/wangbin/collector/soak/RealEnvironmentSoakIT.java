@@ -857,7 +857,17 @@ class RealEnvironmentSoakIT {
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
                         history.writeFailureLocalBuffered(), history.rejectedLocalBuffered(),
                         history.writeFailureDropped(), history.rejectedDropped(),
-                        history.writeFailureDisabled(), history.rejectedDisabled()),
+                        history.writeFailureDisabled(), history.rejectedDisabled(),
+                        history.replayClaimedRows(), history.replaySuccessfulRows(), history.replayFailedRows(),
+                        history.replayBatchCount(), history.replayAverageBatchSize(), history.replayBatchSizeP95(),
+                        history.replayBatchSizeMax(), history.replayRowsPerSecond(),
+                        history.replayBatchWriteP50Ms(), history.replayBatchWriteP95Ms(),
+                        history.replayBatchWriteP99Ms(), history.replayPausedForLivePressureCount(),
+                        history.replayProcessingRows(), history.batchFallbackRedisRows(),
+                        history.batchFallbackRedisOps(), history.batchFallbackLocalRows(),
+                        history.batchFallbackDroppedRows(), history.batchFallbackLatencyP50Ms(),
+                        history.batchFallbackLatencyP95Ms(), history.batchFallbackLatencyP99Ms(),
+                        history.liveFlushQueueUtilization()),
                 new HistoryBatchSnapshot(batch.acceptedRows(), batch.flushedBatches(), batch.flushedRows(),
                         batch.batchWriteSuccess(), batch.batchWriteFailure(), batch.fallbackRows(),
                         batch.currentBufferedRows(), batch.bufferedRowsPeak(), batch.averageBatchSize(),
@@ -1858,6 +1868,13 @@ class RealEnvironmentSoakIT {
                 + "entryMetricsInternalErrors,entryLogRateLimited,entryLogSuppressed,"
                 + "historyLocalPending,historyRejectedRedisBuffered,historyRejectedLocalBuffered,"
                 + "historyRejectedDropped,historyWriteFailureDisabled,historyRejectedDisabled,"
+                + "historyReplayClaimedRows,historyReplaySuccessfulRows,historyReplayFailedRows,"
+                + "historyReplayBatchCount,historyReplayAverageBatchSize,historyReplayBatchSizeP95,"
+                + "historyReplayBatchSizeMax,historyReplayRowsPerSecond,historyReplayBatchWriteP50Ms,"
+                + "historyReplayBatchWriteP95Ms,historyReplayBatchWriteP99Ms,historyReplayPausedForLivePressure,"
+                + "historyReplayProcessingRows,historyBatchFallbackRedisRows,historyBatchFallbackRedisOps,"
+                + "historyBatchFallbackLocalRows,historyBatchFallbackDroppedRows,historyBatchFallbackLatencyP50Ms,"
+                + "historyBatchFallbackLatencyP95Ms,historyBatchFallbackLatencyP99Ms,historyLiveFlushQueueUtilization,"
                 + "historyBatchAcceptedRows,historyBatchFlushedBatches,historyBatchFlushedRows,"
                 + "historyBatchWriteSuccess,historyBatchWriteFailure,historyBatchFallbackRows,historyBatchCurrentBuffered,"
                 + "historyBatchBufferedPeak,historyBatchAverageSize,historyBatchSizeP50,historyBatchSizeP95,"
@@ -1982,6 +1999,27 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.history().rejectedDropped()),
                 String.valueOf(sample.history().writeFailureDisabled()),
                 String.valueOf(sample.history().rejectedDisabled()),
+                String.valueOf(sample.history().replayClaimedRows()),
+                String.valueOf(sample.history().replaySuccessfulRows()),
+                String.valueOf(sample.history().replayFailedRows()),
+                String.valueOf(sample.history().replayBatchCount()),
+                String.valueOf(sample.history().replayAverageBatchSize()),
+                String.valueOf(sample.history().replayBatchSizeP95()),
+                String.valueOf(sample.history().replayBatchSizeMax()),
+                String.valueOf(sample.history().replayRowsPerSecond()),
+                String.valueOf(sample.history().replayBatchWriteP50Ms()),
+                String.valueOf(sample.history().replayBatchWriteP95Ms()),
+                String.valueOf(sample.history().replayBatchWriteP99Ms()),
+                String.valueOf(sample.history().replayPausedForLivePressureCount()),
+                String.valueOf(sample.history().replayProcessingRows()),
+                String.valueOf(sample.history().batchFallbackRedisRows()),
+                String.valueOf(sample.history().batchFallbackRedisOps()),
+                String.valueOf(sample.history().batchFallbackLocalRows()),
+                String.valueOf(sample.history().batchFallbackDroppedRows()),
+                String.valueOf(sample.history().batchFallbackLatencyP50Ms()),
+                String.valueOf(sample.history().batchFallbackLatencyP95Ms()),
+                String.valueOf(sample.history().batchFallbackLatencyP99Ms()),
+                String.valueOf(sample.history().liveFlushQueueUtilization()),
                 String.valueOf(sample.historyBatch().acceptedRows()),
                 String.valueOf(sample.historyBatch().flushedBatches()),
                 String.valueOf(sample.historyBatch().flushedRows()),
@@ -2325,11 +2363,32 @@ class RealEnvironmentSoakIT {
                                    long writeFailureRedisBuffered,
                                    long rejectedRedisBuffered,
                                    long writeFailureLocalBuffered,
-                                   long rejectedLocalBuffered,
-                                   long writeFailureDropped,
-                                   long rejectedDropped,
-                                   long writeFailureDisabled,
-                                   long rejectedDisabled) {
+                                    long rejectedLocalBuffered,
+                                    long writeFailureDropped,
+                                    long rejectedDropped,
+                                    long writeFailureDisabled,
+                                    long rejectedDisabled,
+                                    long replayClaimedRows,
+                                    long replaySuccessfulRows,
+                                    long replayFailedRows,
+                                    long replayBatchCount,
+                                    double replayAverageBatchSize,
+                                    int replayBatchSizeP95,
+                                    int replayBatchSizeMax,
+                                    double replayRowsPerSecond,
+                                    double replayBatchWriteP50Ms,
+                                    double replayBatchWriteP95Ms,
+                                    double replayBatchWriteP99Ms,
+                                    long replayPausedForLivePressureCount,
+                                    int replayProcessingRows,
+                                    long batchFallbackRedisRows,
+                                    long batchFallbackRedisOps,
+                                    long batchFallbackLocalRows,
+                                    long batchFallbackDroppedRows,
+                                    double batchFallbackLatencyP50Ms,
+                                    double batchFallbackLatencyP95Ms,
+                                    double batchFallbackLatencyP99Ms,
+                                    double liveFlushQueueUtilization) {
     }
 
     private record HistoryBatchSnapshot(long acceptedRows,

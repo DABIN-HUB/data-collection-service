@@ -149,8 +149,12 @@ telemetry:
       pending-key: "collector:${spring.profiles.active:default}:history:pending:v1"
       processing-key: "collector:${spring.profiles.active:default}:history:processing:v1"
       dead-letter-key: "collector:${spring.profiles.active:default}:history:dead:v1"
-      replay-interval-ms: 3000
-      replay-batch-size: 200
+      replay-interval-ms: 500
+      replay-batch-size: 500
+      replay-max-batches-per-cycle: 2
+      replay-limited-batches-per-cycle: 1
+      replay-live-queue-limited-threshold-percent: 30
+      replay-live-queue-pause-threshold-percent: 70
       local-queue-capacity: 10000
     query-max-limit: 5000
 

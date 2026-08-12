@@ -652,6 +652,49 @@ class HistoryBatchWriterTest {
     }
 
     @Test
+    void flushExecutorRejectMustUseBatchRedisFallback() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.deferBatchForRetry(anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> {
+                    List<HistoryWriteRequest> batch = invocation.getArgument(0);
+                    return new HistoryBatchWriteResult(false, batch.size(), batch.size(), 0, 0, 0);
+                });
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("flush executor full");
+        };
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 100, 10), rejectingExecutor);
+
+        addRows(writer, "dev-flush-reject-batch", 2, 1_000L);
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).deferBatchForRetry(captor.capture(), org.mockito.ArgumentMatchers.any());
+        verify(buffer, never()).writeBatchOrBuffer(anyList());
+        verify(buffer, never()).deferForRetry(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertEquals(2, captor.getValue().size());
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(1L, metrics.flushExecutorRejectedBatches());
+        assertEquals(2L, metrics.fallbackRedisRows());
+        assertEquals(0, metrics.inFlightFlushes());
+    }
+
+    @Test
+    void batchFallbackMustNotRunTdengineOnHistoryStageThread() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.deferBatchForRetry(anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new HistoryBatchWriteResult(false, 2, 2, 0, 0, 0));
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("flush executor full");
+        };
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 100, 10), rejectingExecutor);
+
+        addRows(writer, "dev-no-tdengine-batch-fallback", 2, 1_000L);
+
+        verify(buffer, never()).writeBatchOrBuffer(anyList());
+        verify(buffer).deferBatchForRetry(anyList(), org.mockito.ArgumentMatchers.any());
+        assertEquals(2L, writer.metrics().fallbackRedisRows());
+    }
+
+    @Test
     void flushExecutorRejectMustNotRunTdengineOnHistoryStageThread() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
         when(buffer.deferForRetry(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
