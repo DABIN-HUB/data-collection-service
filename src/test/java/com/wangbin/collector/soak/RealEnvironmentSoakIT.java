@@ -111,7 +111,8 @@ import static org.mockito.Mockito.when;
         "collector.report.cloud.ack.commit-on=ack-success",
         "collector.report.cloud.batch.max-delay-ms=500",
         "collector.report.interval-ms=1000",
-        "collector.config.loader=file"
+        "collector.config.loader=file",
+        "collector.adaptive-collection.enabled=false"
 })
 class RealEnvironmentSoakIT {
 
@@ -120,6 +121,7 @@ class RealEnvironmentSoakIT {
     private static final String DEFAULT_SOURCE = "REAL_SOAK";
     private static final long BYTES_PER_MIB = 1024L * 1024L;
     private static final int MIN_PHASE_WHEEL_TICK_MS = 50;
+    static final double DEFAULT_LOAD_DEVIATION_TOLERANCE_PERCENT = 5.0d;
 
     @Autowired
     private TelemetryIngressService telemetryIngressService;
@@ -390,6 +392,7 @@ class RealEnvironmentSoakIT {
                                                                     BufferedWriter metricsWriter,
                                                                     MqttAckBridge ackBridge,
                                                                     SoakLifecycle lifecycle) throws Exception {
+        validateFixedCapacityContract(options);
         configureRuntimeCollectorFactory(counters);
         lifecycle.setupStartedAt.set(System.currentTimeMillis());
         for (DevicePoints device : devicePoints) {
@@ -446,6 +449,16 @@ class RealEnvironmentSoakIT {
             measurementStart = measurementEnd;
         }
         return new RuntimeMeasurementWindow(measurementStart, measurementEnd);
+    }
+
+    private void validateFixedCapacityContract(SoakOptions options) {
+        if (!options.fixedCapacityMode()) {
+            return;
+        }
+        String invalidReason = fixedCapacityInvalidReason(collectorProperties.getAdaptiveCollection().isEnabled());
+        if (invalidReason != null) {
+            throw new IllegalStateException(invalidReason);
+        }
     }
 
     private void observeRuntimeWindow(SoakOptions options,
@@ -723,6 +736,8 @@ class RealEnvironmentSoakIT {
             point.setStatus(1);
             point.setCacheEnabled(1);
             point.setCacheDuration(300);
+            point.setBaseCollectionInterval(options.collectionIntervalMs());
+            point.setCurrentCollectionInterval(0L);
             point.setAdditionalConfig(Map.of(
                     "historyEnabled", options.historyEnabled(),
                     "streamEnabled", options.streamEnabled(),
@@ -1066,6 +1081,8 @@ class RealEnvironmentSoakIT {
                               SoakOptions options,
                               List<DevicePoints> devicePoints,
                               SoakLifecycle lifecycle) throws IOException {
+        double theoreticalRate = theoreticalCollectorRate(options.points(), options.collectionIntervalMs());
+        SchedulerStateSnapshot scheduler = schedulerStateSnapshot();
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("runId", options.runId());
         info.put("redisNamespace", options.redisNamespace().asMap());
@@ -1077,7 +1094,18 @@ class RealEnvironmentSoakIT {
         info.put("durationSeconds", options.durationSeconds());
         info.put("measurementSeconds", options.durationSeconds());
         info.put("drainSeconds", options.drainWaitSeconds());
+        info.put("capacityProfile", options.capacityProfile());
+        info.put("fixedCapacityMode", options.fixedCapacityMode());
+        info.put("adaptiveCollectionEnabled", collectorProperties.getAdaptiveCollection().isEnabled());
         info.put("collectionIntervalMs", options.collectionIntervalMs());
+        info.put("configuredCollectionIntervalMs", options.collectionIntervalMs());
+        info.put("effectiveCollectionIntervalMs", effectiveCollectionIntervalMs(options, devicePoints));
+        info.put("totalPoints", options.points());
+        info.put("theoreticalCollectorRate", theoreticalRate);
+        info.put("loadDeviationTolerancePercent", options.loadDeviationTolerancePercent());
+        info.put("schedulerDueScanIntervalMs", scheduler.dueScanIntervalMs());
+        info.put("schedulerPhaseWheelTickMs", phaseWheelTickMs(scheduler));
+        info.put("schedulerPhaseWheelRoundMs", phaseWheelRoundMs(scheduler));
         info.put("spreadWithinInterval", options.spreadWithinInterval());
         info.put("ingressMode", options.ingressMode());
         info.put("warmupSeconds", options.warmupSeconds());
@@ -1117,6 +1145,7 @@ class RealEnvironmentSoakIT {
 
     private Map<String, Object> schedulerConfiguration() {
         CollectorProperties.SchedulerConfig scheduler = collectorProperties.getScheduler();
+        SchedulerStateSnapshot snapshot = schedulerStateSnapshot();
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("initialTimeSliceCount", scheduler.getInitialTimeSliceCount());
         config.put("maxTimeSliceCount", scheduler.getMaxTimeSliceCount());
@@ -1127,6 +1156,9 @@ class RealEnvironmentSoakIT {
         config.put("targetTasksPerTimeSlice", scheduler.getTargetTasksPerTimeSlice());
         config.put("targetPointsPerTimeSlice", scheduler.getTargetPointsPerTimeSlice());
         config.put("dueScanIntervalMs", scheduler.getDueScanIntervalMs());
+        config.put("runtimeDueScanIntervalMs", snapshot.dueScanIntervalMs());
+        config.put("runtimePhaseWheelTickMs", phaseWheelTickMs(snapshot));
+        config.put("runtimePhaseWheelRoundMs", phaseWheelRoundMs(snapshot));
         return config;
     }
 
@@ -1230,6 +1262,7 @@ class RealEnvironmentSoakIT {
     private void writeInvalidSummary(Path outputDir,
                                      SoakOptions options,
                                      SoakLifecycle lifecycle) throws IOException {
+        double theoreticalRate = theoreticalCollectorRate(options.points(), options.collectionIntervalMs());
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("runId", options.runId());
         summary.put("redisNamespace", options.redisNamespace().asMap());
@@ -1238,6 +1271,18 @@ class RealEnvironmentSoakIT {
         summary.put("points", options.points());
         summary.put("devices", options.devices());
         summary.put("collectionIntervalMs", options.collectionIntervalMs());
+        summary.put("configuredCollectionIntervalMs", options.collectionIntervalMs());
+        summary.put("effectiveCollectionIntervalMs", options.collectionIntervalMs());
+        summary.put("totalPoints", options.points());
+        summary.put("capacityProfile", options.capacityProfile());
+        summary.put("fixedCapacityMode", options.fixedCapacityMode());
+        summary.put("adaptiveCollectionEnabled", collectorProperties.getAdaptiveCollection().isEnabled());
+        summary.put("theoreticalPointsPerSecond", theoreticalRate);
+        summary.put("theoreticalCollectorRate", theoreticalRate);
+        summary.put("actualCollectorRate", 0D);
+        summary.put("collectorRateDeviationPercent", 0D);
+        summary.put("loadDeviationTolerancePercent", options.loadDeviationTolerancePercent());
+        summary.put("loadProfileValid", false);
         summary.put("warmupSeconds", options.warmupSeconds());
         summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         summary.put("measurementSeconds", options.durationSeconds());
@@ -1267,8 +1312,12 @@ class RealEnvironmentSoakIT {
         List<MetricSample> measurementSamples = samplesBetween(samples, runStartSample.timestamp(), loadEndSample.timestamp());
         List<Integer> readPointSizes = counters.runtimeReadPointSizesSnapshot();
         List<Long> runtimeCadenceIntervalsMs = counters.runtimeCadenceIntervalsMsSnapshot();
-        double theoreticalRate = options.points() * 1000.0d / Math.max(1L, options.collectionIntervalMs());
+        double theoreticalRate = theoreticalCollectorRate(options.points(), options.collectionIntervalMs());
         double collectorRate = counters.runtimeReadPointsItems.get() * 1000.0d / loadElapsedMs;
+        long theoreticalMeasurementRows = Math.round(theoreticalRate * options.durationSeconds());
+        double collectorRateDeviationPercent = rateDeviationPercent(collectorRate, theoreticalRate);
+        LoadProfileResult loadProfile = evaluateLoadProfile(collectorRate, theoreticalRate,
+                options.loadDeviationTolerancePercent());
         long entryReplayDelta = delta(loadEndSample.entry().replayCompletedItems(),
                 runStartSample.entry().replayCompletedItems());
         long pipelineAcceptedDelta = delta(loadEndSample.historyBatch().acceptedRows(),
@@ -1302,6 +1351,10 @@ class RealEnvironmentSoakIT {
         long tdengineWriteRowsDelta = delta(loadEndSample.historyBatch().tdengineWriteRows(),
                 runStartSample.historyBatch().tdengineWriteRows());
         SchedulerStateSnapshot schedulerLoadDelta = schedulerDelta(runStartSample.scheduler(), loadEndSample.scheduler());
+        if (!loadProfile.valid()) {
+            lifecycle.measurementValid.set(false);
+            lifecycle.invalidReason.set(loadProfile.invalidReason());
+        }
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("runId", options.runId());
         summary.put("redisNamespace", options.redisNamespace().asMap());
@@ -1314,6 +1367,8 @@ class RealEnvironmentSoakIT {
         summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         summary.put("measurementSeconds", options.durationSeconds());
         summary.put("drainSeconds", options.drainWaitSeconds());
+        summary.put("capacityProfile", options.capacityProfile());
+        summary.put("fixedCapacityMode", options.fixedCapacityMode());
         summary.put("lifecycle", lifecycle.asMap());
         summary.put("warmupBacklogClean", lifecycle.warmupBacklogClean.get());
         summary.put("warmupQuiescence", lifecycle.warmupQuiescence.get().asMap());
@@ -1321,6 +1376,9 @@ class RealEnvironmentSoakIT {
         summary.put("measurementValid", lifecycle.measurementValid.get());
         summary.put("invalidReason", lifecycle.invalidReason.get());
         summary.put("collectionIntervalMs", options.collectionIntervalMs());
+        summary.put("configuredCollectionIntervalMs", options.collectionIntervalMs());
+        summary.put("effectiveCollectionIntervalMs", effectiveCollectionIntervalMs(options, devicePoints));
+        summary.put("totalPoints", options.points());
         summary.put("drainWaitSeconds", options.drainWaitSeconds());
         summary.put("ingressMode", options.ingressMode());
         summary.put("spreadWithinInterval", options.spreadWithinInterval());
@@ -1333,9 +1391,18 @@ class RealEnvironmentSoakIT {
         summary.put("rejected", counters.rejected.get());
         summary.put("runtimeReadPointsCalls", counters.runtimeReadPointsCalls.get());
         summary.put("runtimeReadPointsItems", counters.runtimeReadPointsItems.get());
+        summary.put("collectorMeasurementRows", counters.runtimeReadPointsItems.get());
+        summary.put("theoreticalMeasurementRows", theoreticalMeasurementRows);
+        summary.put("adaptiveCollectionEnabled", collectorProperties.getAdaptiveCollection().isEnabled());
         summary.put("pointsPerSecond", counters.submitted.get() * 1000.0d / loadElapsedMs);
         summary.put("theoreticalPointsPerSecond", theoreticalRate);
+        summary.put("theoreticalCollectorRate", theoreticalRate);
         summary.put("actualCollectorPointsPerSecond", collectorRate);
+        summary.put("actualCollectorRate", collectorRate);
+        summary.put("collectorRateDeviationPercent", collectorRateDeviationPercent);
+        summary.put("loadDeviationTolerancePercent", options.loadDeviationTolerancePercent());
+        summary.put("loadProfileValid", loadProfile.valid());
+        summary.put("loadProfileInvalidReason", loadProfile.invalidReason());
         summary.put("actualPipelinePointsPerSecond", pipelineRate);
         summary.put("actualTdengineRowsPerSecond", tdengineRate);
         summary.put("livePipelineItems", livePipelineItems);
@@ -1541,6 +1608,48 @@ class RealEnvironmentSoakIT {
                 + delta(end.writeFailureLocalBuffered(), start.writeFailureLocalBuffered());
     }
 
+    static double theoreticalCollectorRate(int points, long collectionIntervalMs) {
+        return Math.max(0, points) * 1000.0d / Math.max(1L, collectionIntervalMs);
+    }
+
+    static double rateDeviationPercent(double actualRate, double theoreticalRate) {
+        if (theoreticalRate <= 0D) {
+            return actualRate <= 0D ? 0D : Double.POSITIVE_INFINITY;
+        }
+        return Math.abs(actualRate - theoreticalRate) * 100.0d / theoreticalRate;
+    }
+
+    static LoadProfileResult evaluateLoadProfile(double actualRate,
+                                                 double theoreticalRate,
+                                                 double tolerancePercent) {
+        double deviation = rateDeviationPercent(actualRate, theoreticalRate);
+        if (deviation > Math.max(0D, tolerancePercent)) {
+            return new LoadProfileResult(false, "INVALID_LOAD_PROFILE");
+        }
+        return new LoadProfileResult(true, null);
+    }
+
+    static String fixedCapacityInvalidReason(boolean adaptiveCollectionEnabled) {
+        return adaptiveCollectionEnabled
+                ? "INVALID_LOAD_PROFILE: fixed capacity requires collector.adaptive-collection.enabled=false"
+                : null;
+    }
+
+    static long measurementCounterDelta(long start, long end) {
+        return Math.max(0L, end - start);
+    }
+
+    private long effectiveCollectionIntervalMs(SoakOptions options, List<DevicePoints> devicePoints) {
+        List<Long> intervals = devicePoints.stream()
+                .flatMap(device -> device.points().stream())
+                .mapToLong(point -> point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0
+                        ? point.getBaseCollectionInterval() : options.collectionIntervalMs())
+                .distinct()
+                .boxed()
+                .toList();
+        return intervals.size() == 1 ? intervals.get(0) : -1L;
+    }
+
     private Map<String, Long> executorRejectedDelta(MetricSample start, MetricSample end) {
         Map<String, Long> result = new LinkedHashMap<>();
         end.threadPools().forEach((name, snapshot) -> {
@@ -1718,7 +1827,9 @@ class RealEnvironmentSoakIT {
     private void writeRuntimeCapacitySummary(Path outputDir, Map<String, Object> summary) throws IOException {
         List<String> headers = List.of(
                 "scenario", "points", "devices", "collectionIntervalMs", "theoreticalPointsPerSecond",
-                "actualCollectorPointsPerSecond", "actualPipelinePointsPerSecond", "actualTdengineRowsPerSecond",
+                "actualCollectorPointsPerSecond", "collectorRateDeviationPercent", "measurementValid",
+                "invalidReason", "adaptiveCollectionEnabled", "actualPipelinePointsPerSecond",
+                "actualTdengineRowsPerSecond",
                 "durationSeconds", "readPointsCalls", "pointsPerReadAvg", "pointsPerReadP95",
                 "max1sBurstItems", "dueScanIntervalMs", "phaseWheelTickMs", "phaseWheelRoundMs",
                 "maxScansPer100Ms", "actualMaxScansPer100Ms", "phaseWheelCatchUpTicks",
@@ -1756,6 +1867,10 @@ class RealEnvironmentSoakIT {
         row.put("collectionIntervalMs", summary.get("collectionIntervalMs"));
         row.put("theoreticalPointsPerSecond", summary.get("theoreticalPointsPerSecond"));
         row.put("actualCollectorPointsPerSecond", summary.get("actualCollectorPointsPerSecond"));
+        row.put("collectorRateDeviationPercent", summary.get("collectorRateDeviationPercent"));
+        row.put("measurementValid", summary.get("measurementValid"));
+        row.put("invalidReason", summary.get("invalidReason"));
+        row.put("adaptiveCollectionEnabled", summary.get("adaptiveCollectionEnabled"));
         row.put("actualPipelinePointsPerSecond", summary.get("actualPipelinePointsPerSecond"));
         row.put("actualTdengineRowsPerSecond", summary.get("actualTdengineRowsPerSecond"));
         row.put("durationSeconds", summary.get("durationSeconds"));
@@ -1810,11 +1925,15 @@ class RealEnvironmentSoakIT {
         row.put("gcTimeMs", summary.get("gcTimeMs"));
         row.put("threadPeak", summary.get("threadPeak"));
         row.put("drainSeconds", summary.get("drainWaitSeconds"));
-        row.put("stable", isStable(scheduler, entry, entryRejectedItemsDelta, entryDroppedItemsDelta,
+        boolean measurementValid = Boolean.TRUE.equals(summary.get("measurementValid"));
+        row.put("stable", measurementValid && isStable(scheduler, entry, entryRejectedItemsDelta, entryDroppedItemsDelta,
                 streamXaddFailureDelta,
                 history, historyRejectedDroppedDelta, batch, rejectedDelta));
-        row.put("firstBottleneck", firstBottleneck(scheduler, entry, entryRejectedItemsDelta,
-                entryDroppedItemsDelta, streamXaddFailureDelta, history, rejectedDelta));
+        String firstBottleneck = measurementValid
+                ? firstBottleneck(scheduler, entry, entryRejectedItemsDelta, entryDroppedItemsDelta,
+                streamXaddFailureDelta, history, rejectedDelta)
+                : "invalid-load-profile";
+        row.put("firstBottleneck", firstBottleneck);
         try (BufferedWriter writer = Files.newBufferedWriter(outputDir.resolve("runtime-capacity-summary.csv"),
                 StandardCharsets.UTF_8)) {
             writer.write(String.join(",", headers));
@@ -2333,6 +2452,9 @@ class RealEnvironmentSoakIT {
 
     private record RuntimeMeasurementWindow(MetricSample measurementStartSample,
                                             MetricSample measurementEndSample) {
+    }
+
+    record LoadProfileResult(boolean valid, String invalidReason) {
     }
 
     private static final class SoakLifecycle {
@@ -2925,11 +3047,13 @@ class RealEnvironmentSoakIT {
                                String streamKey,
                                String mqttBrokerUrl,
                                String ingressMode,
+                               String capacityProfile,
                                boolean ackBridgeEnabled,
                                boolean historyEnabled,
                                boolean streamEnabled,
                                boolean cloudEnabled,
                                boolean spreadWithinInterval,
+                               double loadDeviationTolerancePercent,
                                long estimatedCloudMessageBytes,
                                long maxAllowedRejected,
                                Path outputDir) {
@@ -2965,11 +3089,14 @@ class RealEnvironmentSoakIT {
                     redisNamespace.streamKey(),
                     value(environment, "collector.report.mqtt.broker-url", "tcp://127.0.0.1:1883"),
                     value(environment, "soak.ingressMode", "point"),
+                    value(environment, "soak.capacityProfile", "fixed"),
                     booleanValue(environment, "soak.cloudAckBridgeEnabled", true),
                     booleanValue(environment, "soak.historyEnabled", true),
                     booleanValue(environment, "soak.streamEnabled", true),
                     booleanValue(environment, "soak.cloudEnabled", true),
                     booleanValue(environment, "soak.spreadWithinInterval", true),
+                    doubleValue(environment, "soak.loadDeviationTolerancePercent",
+                            DEFAULT_LOAD_DEVIATION_TOLERANCE_PERCENT),
                     longValue(environment, "soak.estimatedCloudMessageBytes", 1024L),
                     longValue(environment, "soak.maxAllowedRejected", 0L),
                     Path.of(output));
@@ -2981,6 +3108,10 @@ class RealEnvironmentSoakIT {
 
         private boolean runtimeIngressMode() {
             return "runtime".equalsIgnoreCase(ingressMode);
+        }
+
+        private boolean fixedCapacityMode() {
+            return "fixed".equalsIgnoreCase(capacityProfile);
         }
 
         private static String value(Environment environment, String key, String defaultValue) {
@@ -3007,6 +3138,18 @@ class RealEnvironmentSoakIT {
         private static boolean booleanValue(Environment environment, String key, boolean defaultValue) {
             String value = environment.getProperty(key);
             return value == null || value.isBlank() ? defaultValue : Boolean.parseBoolean(value.trim());
+        }
+
+        private static double doubleValue(Environment environment, String key, double defaultValue) {
+            String value = environment.getProperty(key);
+            if (value == null || value.isBlank()) {
+                return defaultValue;
+            }
+            try {
+                return Double.parseDouble(value.trim());
+            } catch (NumberFormatException exception) {
+                return defaultValue;
+            }
         }
     }
 
