@@ -2,6 +2,7 @@ package com.wangbin.collector.storage.buffer;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.storage.config.TdengineProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -1032,6 +1033,112 @@ class HistoryBatchWriterTest {
     }
 
     @Test
+    void multiTableAggregationShouldCombinePendingDeviceBatchesWithinLimits() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(2, 100, 50);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-multi-a", 2, 1_000L);
+        addRows(writer, "dev-multi-b", 2, 2_000L);
+        assertEquals(2, flushExecutor.size());
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).writeBatchOrBuffer(captor.capture());
+        assertEquals(4, captor.getValue().size());
+        assertEquals(1L, writer.metrics().tdengineWriteRequests());
+        assertEquals(4L, writer.metrics().tdengineWriteRows());
+        assertEquals(2, writer.metrics().tdengineTablesPerRequestMax());
+    }
+
+    @Test
+    void multiTableAggregationMustRespectMaxRows() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(3, 3, 50);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-limit-a", 2, 1_000L);
+        addRows(writer, "dev-limit-b", 2, 2_000L);
+        assertEquals(2, flushExecutor.size());
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer, org.mockito.Mockito.times(2)).writeBatchOrBuffer(captor.capture());
+        assertEquals(List.of(2, 2), captor.getAllValues().stream().map(List::size).toList());
+        assertEquals(2L, writer.metrics().tdengineWriteRequests());
+        assertEquals(1, writer.metrics().tdengineTablesPerRequestMax());
+    }
+
+    @Test
+    void multiTableAggregationMustRespectMaxTables() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(2, 100, 50);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-table-a", 2, 1_000L);
+        addRows(writer, "dev-table-b", 2, 2_000L);
+        addRows(writer, "dev-table-c", 2, 3_000L);
+        assertEquals(3, flushExecutor.size());
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer, org.mockito.Mockito.times(2)).writeBatchOrBuffer(captor.capture());
+        assertEquals(List.of(4, 2), captor.getAllValues().stream().map(List::size).toList());
+        assertEquals(2L, writer.metrics().tdengineWriteRequests());
+        assertEquals(2, writer.metrics().tdengineTablesPerRequestMax());
+    }
+
+    @Test
+    void singleDeviceTrafficMustStillFlushNormallyWhenMultiTableEnabled() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchWriter writer = writer(
+                buffer, properties(true, 2, 10_000, 100), multiTableProperties(5, 250, 0), flushExecutor);
+
+        addRows(writer, "dev-single-table", 2, 1_000L);
+        assertEquals(1, flushExecutor.size());
+        flushExecutor.runNext();
+
+        ArgumentCaptor<List<HistoryWriteRequest>> captor = ArgumentCaptor.captor();
+        verify(buffer).writeBatchOrBuffer(captor.capture());
+        assertEquals(2, captor.getValue().size());
+        assertEquals(1L, writer.metrics().tdengineWriteRequests());
+        assertEquals(1, writer.metrics().tdengineTablesPerRequestMax());
+    }
+
+    @Test
+    void multiTableFailureMustFallbackOnlyOnceForCombinedRows() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return new HistoryBatchWriteResult(false, batch.size(), batch.size(), 0, 0, 0);
+        });
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchWriter writer = writer(
+                buffer, properties(true, 2, 10_000, 100), multiTableProperties(2, 100, 50), flushExecutor);
+
+        addRows(writer, "dev-fallback-a", 2, 1_000L);
+        addRows(writer, "dev-fallback-b", 2, 2_000L);
+        assertEquals(2, flushExecutor.size());
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+
+        assertEquals(4L, writer.metrics().fallbackRows());
+        assertEquals(4L, writer.metrics().fallbackRedisRows());
+    }
+
+    @Test
     void batchDisabledShouldReturnFalseAndAvoidBuffering() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
         HistoryBatchWriter writer = writer(buffer, properties(false, 10, 100, 10));
@@ -1052,6 +1159,13 @@ class HistoryBatchWriterTest {
         return new HistoryBatchWriter(buffer, properties, flushExecutor);
     }
 
+    private HistoryBatchWriter writer(HistoryWriteBuffer buffer,
+                                      HistoryBatchProperties properties,
+                                      TdengineProperties tdengineProperties,
+                                      Executor flushExecutor) {
+        return new HistoryBatchWriter(buffer, properties, tdengineProperties, flushExecutor);
+    }
+
     private HistoryBatchProperties properties(boolean enabled, int batchSize, long flushIntervalMs, int maxBufferedRows) {
         HistoryBatchProperties properties = new HistoryBatchProperties();
         properties.setEnabled(enabled);
@@ -1066,6 +1180,43 @@ class HistoryBatchWriterTest {
             List<HistoryWriteRequest> batch = invocation.getArgument(0);
             return HistoryBatchWriteResult.directSuccess(batch.size());
         });
+    }
+
+    private void stubDirectSuccess(HistoryWriteBuffer buffer, CountDownLatch firstBatchEntered) {
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            firstBatchEntered.countDown();
+            TimeUnit.MILLISECONDS.sleep(30);
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+    }
+
+    private TdengineProperties multiTableProperties(int maxTables, int maxRows, long waitMs) {
+        TdengineProperties properties = new TdengineProperties();
+        properties.getWrite().setMultiTableEnabled(true);
+        properties.getWrite().setMaxTablesPerRequest(maxTables);
+        properties.getWrite().setMaxRowsPerRequest(maxRows);
+        properties.getWrite().setAggregationWaitMs(waitMs);
+        return properties;
+    }
+
+    private static final class ManualExecutor implements Executor {
+        private final List<Runnable> tasks = new ArrayList<>();
+
+        @Override
+        public void execute(Runnable command) {
+            tasks.add(command);
+        }
+
+        private int size() {
+            return tasks.size();
+        }
+
+        private void runNext() {
+            if (!tasks.isEmpty()) {
+                tasks.remove(0).run();
+            }
+        }
     }
 
     private void addRows(HistoryBatchWriter writer, String deviceId, int rows, long startTs) {

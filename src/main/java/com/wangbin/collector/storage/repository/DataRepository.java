@@ -87,6 +87,12 @@ public interface DataRepository {
                                 @Param("rows") List<TelemetryInsertRow> rows);
 
     /**
+     * 批量写入多个 V2 子表，调用方必须保证每个 table 片段仍然对应原设备子表。
+     */
+    void insertTelemetryV2MultiTableBatch(@Param("database") String database,
+                                          @Param("tables") List<TdengineTableRows> tables);
+
+    /**
      * 查询并返回业务数据。
      */
     List<Map<String, Object>> queryPointHistory(@Param("database") String database,

@@ -144,6 +144,11 @@ telemetry:
     auto-create: true
     keep-days: 30
     query-default-limit: 500
+    write:
+      multi-table-enabled: ${TDENGINE_WRITE_MULTI_TABLE_ENABLED:false}
+      max-tables-per-request: ${TDENGINE_WRITE_MAX_TABLES_PER_REQUEST:5}
+      max-rows-per-request: ${TDENGINE_WRITE_MAX_ROWS_PER_REQUEST:250}
+      aggregation-wait-ms: ${TDENGINE_WRITE_AGGREGATION_WAIT_MS:5}
     buffer:
       enabled: true
       pending-key: "collector:${spring.profiles.active:default}:history:pending:v1"

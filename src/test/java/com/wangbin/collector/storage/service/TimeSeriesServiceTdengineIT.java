@@ -424,6 +424,62 @@ class TimeSeriesServiceTdengineIT {
     }
 
     @Test
+    void multiTableBatchInsertShouldPreserveDeviceIsolationInRealTdengine() {
+        properties.getWrite().setMultiTableEnabled(true);
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = System.currentTimeMillis();
+        String suffix = "multi_table_" + eventTs;
+        String deviceA = "tdengine_multi_a_" + suffix;
+        String deviceB = "tdengine_multi_b_" + suffix;
+        DataPoint pointA = point(1101L, "point-a-" + suffix, "multi_a_" + suffix, "40001");
+        DataPoint pointB = point(1102L, "point-b-" + suffix, "multi_b_" + suffix, "40002");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceA, "MODBUS_TCP", pointA,
+                        ProcessResult.success(111, 11.1, "multi device A"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceB, "MODBUS_TCP", pointB,
+                        ProcessResult.success(222, 22.2, "multi device B"), eventTs)));
+
+        assertThat(service.query(deviceA, pointA.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.query(deviceB, pointB.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.writeMetrics().multiTableWriteRequests()).isEqualTo(1L);
+        assertThat(service.writeMetrics().writtenRows()).isEqualTo(2L);
+    }
+
+    @Test
+    void multiTableBatchShouldKeepV2IdempotentReplaySemanticsInRealTdengine() {
+        properties.getWrite().setMultiTableEnabled(true);
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+        long eventTs = System.currentTimeMillis();
+        String suffix = "multi_replay_" + eventTs;
+        String deviceId = "tdengine_multi_replay_" + suffix;
+        DataPoint point = point(1201L, "point-" + suffix, "multi_replay_" + suffix, "40001");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point,
+                        ProcessResult.success(1, 1.1, "first"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", point,
+                        ProcessResult.success(2, 2.2, "second"), eventTs)));
+
+        List<Map<String, Object>> rows = service.query(deviceId, point.getPointId(), eventTs, eventTs, 5);
+        assertThat(rows).hasSize(1);
+        assertThat(valueOf(rows.get(0), "valueText", "value_text")).isEqualTo("2.2");
+        assertThat(valueOf(rows.get(0), "message")).isEqualTo("second");
+    }
+
+    @Test
     void v1OldHistoryShouldRemainQueryableThroughDualRead() {
         TimeSeriesService service = new TimeSeriesService(
                 dataRepository,

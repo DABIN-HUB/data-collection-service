@@ -2,7 +2,9 @@ package com.wangbin.collector.storage.buffer;
 
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import com.wangbin.collector.storage.config.TdengineProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -10,8 +12,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -22,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.LongSupplier;
 
 /**
@@ -36,9 +42,11 @@ public class HistoryBatchWriter {
 
     private final HistoryWriteBuffer historyWriteBuffer;
     private final HistoryBatchProperties properties;
+    private final TdengineProperties tdengineProperties;
     private final Executor historyBatchFlushExecutor;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
     private final Map<Long, BatchFlushTask> ownedFlushTasks = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<BatchFlushTask> pendingFlushTasks = new ConcurrentLinkedQueue<>();
     private final ReentrantReadWriteLock admissionLock = new ReentrantReadWriteLock();
     private final Object flushMonitor = new Object();
     private final AtomicInteger bufferedRows = new AtomicInteger();
@@ -66,6 +74,13 @@ public class HistoryBatchWriter {
     private final LongAdder timerFlushBatches = new LongAdder();
     private final LongAdder sizeFlushRows = new LongAdder();
     private final LongAdder timerFlushRows = new LongAdder();
+    private final LongAdder tdengineWriteRequests = new LongAdder();
+    private final LongAdder tdengineWriteRows = new LongAdder();
+    private final LongAdder multiTableWriteRequests = new LongAdder();
+    private final LongAdder multiTableWriteRows = new LongAdder();
+    private final LongAdder multiTableAggregatedBatches = new LongAdder();
+    private final List<Integer> rowsPerTdengineRequestSamples = Collections.synchronizedList(new ArrayList<>());
+    private final List<Integer> tablesPerTdengineRequestSamples = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger flushExecutorQueueCurrent = new AtomicInteger();
     private final AtomicInteger flushExecutorQueuePeak = new AtomicInteger();
     private final AtomicInteger flushExecutorActiveCurrent = new AtomicInteger();
@@ -84,13 +99,22 @@ public class HistoryBatchWriter {
     /**
      * 创建历史批量写入器；flush executor 只执行 TDengine batch I/O，不参与 point admission。
      */
+    @Autowired
     public HistoryBatchWriter(HistoryWriteBuffer historyWriteBuffer,
                               HistoryBatchProperties properties,
+                              TdengineProperties tdengineProperties,
                               @Qualifier(HistoryBatchFlushExecutorConfig.HISTORY_BATCH_FLUSH_EXECUTOR)
                               Executor historyBatchFlushExecutor) {
         this.historyWriteBuffer = historyWriteBuffer;
         this.properties = properties;
+        this.tdengineProperties = tdengineProperties;
         this.historyBatchFlushExecutor = historyBatchFlushExecutor;
+    }
+
+    HistoryBatchWriter(HistoryWriteBuffer historyWriteBuffer,
+                       HistoryBatchProperties properties,
+                       Executor historyBatchFlushExecutor) {
+        this(historyWriteBuffer, properties, new TdengineProperties(), historyBatchFlushExecutor);
     }
 
     /**
@@ -241,7 +265,19 @@ public class HistoryBatchWriter {
                 maxInt(timerBatchSizeSamples),
                 tdengineBatchCallsPerSecond(),
                 flushExecutorServiceRatePerSecond(),
-                flushExecutorQueueUtilization());
+                flushExecutorQueueUtilization(),
+                tdengineWriteRequests.sum(),
+                tdengineWriteRows.sum(),
+                ratePerSecond(tdengineWriteRequests.sum()),
+                averageBatchSize(tdengineWriteRows.sum(), tdengineWriteRequests.sum()),
+                percentileInt(rowsPerTdengineRequestSamples, 0.95D),
+                maxInt(rowsPerTdengineRequestSamples),
+                averageBatchSize(sumIntSamples(tablesPerTdengineRequestSamples), tdengineWriteRequests.sum()),
+                percentileInt(tablesPerTdengineRequestSamples, 0.95D),
+                maxInt(tablesPerTdengineRequestSamples),
+                multiTableWriteRequests.sum(),
+                multiTableWriteRows.sum(),
+                multiTableAggregatedBatches.sum());
     }
 
     private List<List<HistoryWriteRequest>> detachDueBatches() {
@@ -300,9 +336,11 @@ public class HistoryBatchWriter {
         ownedFlushTasks.put(task.id(), task);
         flushExecutorSubmittedBatches.increment();
         incrementFlushQueue();
+        pendingFlushTasks.add(task);
         try {
             historyBatchFlushExecutor.execute(task);
         } catch (RuntimeException exception) {
+            pendingFlushTasks.remove(task);
             flushExecutorRejectedBatches.increment();
             task.fallback(exception, shutdownOwned, true);
         }
@@ -319,6 +357,81 @@ public class HistoryBatchWriter {
         } catch (RuntimeException exception) {
             return new BatchWriteAttempt(null, exception);
         }
+    }
+
+    private List<BatchFlushTask> collectOwnedTasks(BatchFlushTask primary) {
+        if (!tdengineProperties.getWrite().isMultiTableEnabled()) {
+            return List.of(primary);
+        }
+        List<BatchFlushTask> tasks = new ArrayList<>();
+        tasks.add(primary);
+        int maxTables = Math.max(1, tdengineProperties.getWrite().getMaxTablesPerRequest());
+        int maxRows = Math.max(1, tdengineProperties.getWrite().getMaxRowsPerRequest());
+        long deadline = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, tdengineProperties.getWrite().getAggregationWaitMs()));
+        int rows = primary.batch.size();
+        while (tasks.size() < maxTables && rows < maxRows) {
+            BatchFlushTask next = pendingFlushTasks.poll();
+            if (next == null) {
+                if (System.nanoTime() >= deadline) {
+                    break;
+                }
+                LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(100));
+                continue;
+            }
+            if (next == primary) {
+                continue;
+            }
+            if (rows + next.batch.size() > maxRows) {
+                pendingFlushTasks.add(next);
+                break;
+            }
+            if (next.state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
+                decrementFlushQueue();
+                tasks.add(next);
+                rows += next.batch.size();
+            }
+        }
+        return tasks;
+    }
+
+    private List<HistoryWriteRequest> flatten(List<BatchFlushTask> tasks) {
+        int rows = 0;
+        for (BatchFlushTask task : tasks) {
+            rows += task.batch.size();
+        }
+        List<HistoryWriteRequest> requests = new ArrayList<>(rows);
+        for (BatchFlushTask task : tasks) {
+            requests.addAll(task.batch);
+        }
+        return requests;
+    }
+
+    private void recordTdengineRequest(List<BatchFlushTask> tasks, int rows) {
+        int tables = distinctBucketCount(tasks);
+        tdengineWriteRequests.increment();
+        tdengineWriteRows.add(rows);
+        recordIntSample(rowsPerTdengineRequestSamples, rows);
+        recordIntSample(tablesPerTdengineRequestSamples, tables);
+        if (tables > 1) {
+            multiTableWriteRequests.increment();
+            multiTableWriteRows.add(rows);
+            multiTableAggregatedBatches.add(tables);
+        }
+    }
+
+    private int distinctBucketCount(List<BatchFlushTask> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            return 0;
+        }
+        Set<String> bucketKeys = new HashSet<>();
+        for (BatchFlushTask task : tasks) {
+            if (task.batch.isEmpty()) {
+                continue;
+            }
+            bucketKeys.add(bucketKey(task.batch.get(0)));
+        }
+        return Math.max(1, bucketKeys.size());
     }
 
     private void recordBatchWriteAttempt(List<HistoryWriteRequest> batch,
@@ -338,6 +451,28 @@ public class HistoryBatchWriter {
         flushedRows.add(batch.size());
         recordBatchSize(batch.size());
         recordTriggerBatchSize(trigger, batch.size());
+        recordFlushLatency(System.nanoTime() - startedAt);
+    }
+
+    private void recordOwnedBatchWriteAttempt(BatchFlushTask task,
+                                              BatchWriteAttempt attempt,
+                                              long startedAt,
+                                              boolean recordFallbackOutcome) {
+        if (attempt.exception() != null) {
+            batchWriteFailure.increment();
+            fallbackBatch(task.batch, attempt.exception(), false);
+        } else if (attempt.result().directSuccess()) {
+            batchWriteSuccess.increment();
+        } else {
+            batchWriteFailure.increment();
+            if (recordFallbackOutcome) {
+                recordBatchFallback(attempt.result(), false);
+            }
+        }
+        flushedBatches.increment();
+        flushedRows.add(task.batch.size());
+        recordBatchSize(task.batch.size());
+        recordTriggerBatchSize(task.trigger, task.batch.size());
         recordFlushLatency(System.nanoTime() - startedAt);
     }
 
@@ -639,6 +774,18 @@ public class HistoryBatchWriter {
         return sorted.isEmpty() ? 0 : sorted.get(sorted.size() - 1);
     }
 
+    private long sumIntSamples(List<Integer> values) {
+        synchronized (values) {
+            long sum = 0L;
+            for (Integer value : values) {
+                if (value != null) {
+                    sum += value;
+                }
+            }
+            return sum;
+        }
+    }
+
     private double percentileMillis(List<Long> values, double percentile) {
         List<Long> sorted = snapshot(values);
         if (sorted.isEmpty()) {
@@ -725,23 +872,42 @@ public class HistoryBatchWriter {
 
         @Override
         public void run() {
-            if (!state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
+            if (!claimForRun()) {
                 return;
             }
             decrementFlushQueue();
             incrementFlushActive();
             long startedAt = System.nanoTime();
-            BatchWriteAttempt attempt = executeBatchWrite(batch);
+            List<BatchFlushTask> ownedTasks = collectOwnedTasks(this);
+            List<HistoryWriteRequest> rows = flatten(ownedTasks);
+            BatchWriteAttempt attempt = executeBatchWrite(rows);
             decrementFlushActive();
-            if (state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
-                recordBatchWriteAttempt(batch, attempt, startedAt, trigger);
-                if (shutdownOwned) {
-                    shutdownFlushedRows.add(batch.size());
+            recordTdengineRequest(ownedTasks, rows.size());
+            boolean combinedFallbackRecorded = false;
+            for (BatchFlushTask task : ownedTasks) {
+                if (task.state.compareAndSet(FlushTaskState.RUNNING, FlushTaskState.DONE)) {
+                    recordOwnedBatchWriteAttempt(task, attempt, startedAt, !combinedFallbackRecorded);
+                    if (attempt.exception() == null
+                            && attempt.result() != null
+                            && !attempt.result().directSuccess()) {
+                        combinedFallbackRecorded = true;
+                    }
+                    if (task.shutdownOwned) {
+                        shutdownFlushedRows.add(task.batch.size());
+                    }
+                    flushExecutorCompletedBatches.increment();
+                    ownedFlushTasks.remove(task.id);
+                    completeInFlightFlush();
                 }
-                flushExecutorCompletedBatches.increment();
-                ownedFlushTasks.remove(id);
-                completeInFlightFlush();
             }
+        }
+
+        private boolean claimForRun() {
+            if (!state.compareAndSet(FlushTaskState.PENDING, FlushTaskState.RUNNING)) {
+                return false;
+            }
+            pendingFlushTasks.remove(this);
+            return true;
         }
 
         private void fallback(RuntimeException exception, boolean shutdownFallback, boolean submitRejected) {

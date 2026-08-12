@@ -3,12 +3,18 @@ package com.wangbin.collector.storage.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 /**
  * 承载当前模块的配置属性。
  */
 @Data
 @Component
+@Validated
 @ConfigurationProperties(prefix = "telemetry.tdengine")
 public class TdengineProperties {
 
@@ -61,4 +67,43 @@ public class TdengineProperties {
      * 查询最大返回数量。
      */
     private int queryMaxLimit = 5000;
+
+    /**
+     * TDengine 写入路径配置，默认保持历史单子表 INSERT 语义。
+     */
+    @Valid
+    private Write write = new Write();
+
+    /**
+     * TDengine 历史写入路径的可回滚开关和有界聚合参数。
+     */
+    @Data
+    public static class Write {
+
+        /**
+         * 是否启用跨子表 multi-table INSERT。
+         */
+        private boolean multiTableEnabled = false;
+
+        /**
+         * 单次 multi-table request 最多包含的子表数量。
+         */
+        @Min(1)
+        @Max(100)
+        private int maxTablesPerRequest = 5;
+
+        /**
+         * 单次 multi-table request 最多包含的行数。
+         */
+        @Min(1)
+        @Max(5000)
+        private int maxRowsPerRequest = 250;
+
+        /**
+         * 为聚合同一轮已脱离 bucket 的 device batch 最多等待的毫秒数。
+         */
+        @Min(0)
+        @Max(100)
+        private long aggregationWaitMs = 5L;
+    }
 }

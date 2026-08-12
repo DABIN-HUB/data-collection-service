@@ -13,6 +13,7 @@ import com.wangbin.collector.storage.constant.TelemetryStorageJsonKeys;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import com.wangbin.collector.storage.repository.TelemetryInsertRow;
+import com.wangbin.collector.storage.repository.TdengineTableRows;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * 处理当前模块的业务服务。
@@ -42,6 +44,7 @@ public class TimeSeriesService {
     private static final String COMPOSITE_KEY_NOTE = "COMPOSITE KEY";
     private static final String V2_SUFFIX = "_v2";
     private static final int POINT_KEY_MAX_BYTES = 128;
+    private static final int METRIC_SAMPLE_LIMIT = 10_000;
     private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
             ProcessResultMetadataKeys.RAW_VALUE,
             ProcessResultMetadataKeys.PROCESSED_VALUE,
@@ -59,6 +62,18 @@ public class TimeSeriesService {
     private final PointRuntimeStateService pointRuntimeStateService;
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
+    private final LongAdder writeRequests = new LongAdder();
+    private final LongAdder writtenRows = new LongAdder();
+    private final LongAdder singleTableWriteRequests = new LongAdder();
+    private final LongAdder multiTableWriteRequests = new LongAdder();
+    private final LongAdder writeFailures = new LongAdder();
+    private final LongAdder ensureSubTableCalls = new LongAdder();
+    private final LongAdder ensureSubTableCacheHits = new LongAdder();
+    private final LongAdder ensureSubTableCacheMisses = new LongAdder();
+    private final List<Integer> rowsPerRequestSamples = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final List<Integer> tablesPerRequestSamples = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final List<Long> writeLatencyNanos = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final long metricsStartedAtNanos = System.nanoTime();
 
     /**
      * 写入或持久化业务数据。
@@ -76,23 +91,30 @@ public class TimeSeriesService {
         WriteTarget target = resolveWriteTarget(database, superTableV2, request);
         TelemetryInsertRow row = buildInsertRow(request);
 
-        dataRepository.insertTelemetryV2(
-                database,
-                target.subTable(),
-                row.getEventTs(),
-                row.getPointKey(),
-                row.getPointId(),
-                row.getPointCode(),
-                row.getPointName(),
-                row.getValueText(),
-                row.getUnit(),
-                row.getQuality(),
-                row.getSuccess(),
-                row.getMessage(),
-                row.getRawJson(),
-                row.getProcessedJson(),
-                row.getMetadataJson()
-        );
+        long startedAt = System.nanoTime();
+        try {
+            dataRepository.insertTelemetryV2(
+                    database,
+                    target.subTable(),
+                    row.getEventTs(),
+                    row.getPointKey(),
+                    row.getPointId(),
+                    row.getPointCode(),
+                    row.getPointName(),
+                    row.getValueText(),
+                    row.getUnit(),
+                    row.getQuality(),
+                    row.getSuccess(),
+                    row.getMessage(),
+                    row.getRawJson(),
+                    row.getProcessedJson(),
+                    row.getMetadataJson()
+            );
+            recordWriteRequest(1, 1, false, System.nanoTime() - startedAt);
+        } catch (RuntimeException exception) {
+            writeFailures.increment();
+            throw exception;
+        }
     }
 
     /**
@@ -102,6 +124,104 @@ public class TimeSeriesService {
         if (requests == null || requests.isEmpty()) {
             return;
         }
+        if (properties.getWrite().isMultiTableEnabled()) {
+            appendMultiTableBatch(requests);
+            return;
+        }
+        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
+        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
+            List<TelemetryInsertRow> rows = entry.getValue();
+            if (!rows.isEmpty()) {
+                long startedAt = System.nanoTime();
+                try {
+                    dataRepository.insertTelemetryV2Batch(entry.getKey().database(), entry.getKey().subTable(), rows);
+                    recordWriteRequest(rows.size(), 1, false, System.nanoTime() - startedAt);
+                } catch (RuntimeException exception) {
+                    writeFailures.increment();
+                    throw exception;
+                }
+            }
+        }
+    }
+
+    /**
+     * 跨 V2 子表批量写入历史数据，保持每个设备仍写入自己的子表。
+     */
+    public void appendMultiTableBatch(List<AppendRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        if (!properties.getWrite().isMultiTableEnabled()) {
+            appendBatch(requests);
+            return;
+        }
+        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
+        List<TdengineTableRows> tables = new ArrayList<>();
+        int rows = 0;
+        String database = null;
+        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
+            List<TelemetryInsertRow> tableRows = entry.getValue();
+            if (tableRows.isEmpty()) {
+                continue;
+            }
+            database = entry.getKey().database();
+            rows += tableRows.size();
+            tables.add(new TdengineTableRows(entry.getKey().subTable(), tableRows));
+        }
+        if (tables.isEmpty()) {
+            return;
+        }
+        if (tables.size() == 1) {
+            List<TelemetryInsertRow> tableRows = tables.get(0).rows();
+            long startedAt = System.nanoTime();
+            try {
+                dataRepository.insertTelemetryV2Batch(database, tables.get(0).subTable(), tableRows);
+                recordWriteRequest(tableRows.size(), 1, false, System.nanoTime() - startedAt);
+            } catch (RuntimeException exception) {
+                writeFailures.increment();
+                throw exception;
+            }
+            return;
+        }
+        long startedAt = System.nanoTime();
+        try {
+            dataRepository.insertTelemetryV2MultiTableBatch(database, tables);
+            recordWriteRequest(rows, tables.size(), true, System.nanoTime() - startedAt);
+        } catch (RuntimeException exception) {
+            writeFailures.increment();
+            throw exception;
+        }
+    }
+
+    /**
+     * 返回 TDengine 写入请求级指标，用于容量测试区分 rows/s 和 request/s。
+     */
+    public TdengineWriteMetrics writeMetrics() {
+        long requests = writeRequests.sum();
+        long rows = writtenRows.sum();
+        return new TdengineWriteMetrics(
+                requests,
+                rows,
+                singleTableWriteRequests.sum(),
+                multiTableWriteRequests.sum(),
+                writeFailures.sum(),
+                ensureSubTableCalls.sum(),
+                ensureSubTableCacheHits.sum(),
+                ensureSubTableCacheMisses.sum(),
+                requests <= 0L ? 0D : (double) rows / requests,
+                percentileInt(rowsPerRequestSamples, 0.95D),
+                maxInt(rowsPerRequestSamples),
+                requests <= 0L ? 0D : (double) sumSamples(tablesPerRequestSamples) / requests,
+                percentileInt(tablesPerRequestSamples, 0.95D),
+                maxInt(tablesPerRequestSamples),
+                percentileMillis(writeLatencyNanos, 0.50D),
+                percentileMillis(writeLatencyNanos, 0.95D),
+                percentileMillis(writeLatencyNanos, 0.99D),
+                ratePerSecond(requests),
+                ratePerSecond(rows));
+    }
+
+    private Map<WriteTarget, List<TelemetryInsertRow>> groupRows(List<AppendRequest> requests) {
         ensureSchema();
         String database = sanitizeIdentifier(properties.getDatabase());
         String superTable = sanitizeIdentifier(properties.getSuperTable());
@@ -115,12 +235,7 @@ public class TimeSeriesService {
             groupedRows.computeIfAbsent(target, ignored -> new ArrayList<>())
                     .add(buildInsertRow(request));
         }
-        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
-            List<TelemetryInsertRow> rows = entry.getValue();
-            if (!rows.isEmpty()) {
-                dataRepository.insertTelemetryV2Batch(entry.getKey().database(), entry.getKey().subTable(), rows);
-            }
-        }
+        return groupedRows;
     }
 
     static String resolvePointStorageKey(DataPoint point) {
@@ -408,13 +523,17 @@ public class TimeSeriesService {
                                 String subTable,
                                 String deviceTag,
                                 String protocolTag) {
+        ensureSubTableCalls.increment();
         if (Boolean.TRUE.equals(ensuredTables.get(subTable))) {
+            ensureSubTableCacheHits.increment();
             return;
         }
         synchronized (ensuredTables) {
             if (Boolean.TRUE.equals(ensuredTables.get(subTable))) {
+                ensureSubTableCacheHits.increment();
                 return;
             }
+            ensureSubTableCacheMisses.increment();
             deviceRepository.createChildTable(
                     database,
                     subTable,
@@ -692,6 +811,81 @@ public class TimeSeriesService {
     /**
      * 批量写入入口参数，保持与单条 append 相同的业务字段。
      */
+    private void recordWriteRequest(int rows, int tables, boolean multiTable, long latencyNanos) {
+        writeRequests.increment();
+        writtenRows.add(Math.max(0, rows));
+        if (multiTable) {
+            multiTableWriteRequests.increment();
+        } else {
+            singleTableWriteRequests.increment();
+        }
+        recordIntSample(rowsPerRequestSamples, Math.max(0, rows));
+        recordIntSample(tablesPerRequestSamples, Math.max(0, tables));
+        recordLongSample(writeLatencyNanos, latencyNanos);
+    }
+
+    private void recordIntSample(List<Integer> samples, int value) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(value);
+            }
+        }
+    }
+
+    private void recordLongSample(List<Long> samples, long value) {
+        synchronized (samples) {
+            if (samples.size() < METRIC_SAMPLE_LIMIT) {
+                samples.add(value);
+            }
+        }
+    }
+
+    private int percentileInt(List<Integer> values, double percentile) {
+        List<Integer> sorted = snapshot(values);
+        if (sorted.isEmpty()) {
+            return 0;
+        }
+        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
+        return sorted.get(Math.max(0, index));
+    }
+
+    private int maxInt(List<Integer> values) {
+        List<Integer> sorted = snapshot(values);
+        return sorted.isEmpty() ? 0 : sorted.get(sorted.size() - 1);
+    }
+
+    private double percentileMillis(List<Long> values, double percentile) {
+        List<Long> sorted = snapshot(values);
+        if (sorted.isEmpty()) {
+            return 0D;
+        }
+        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
+        return sorted.get(Math.max(0, index)) / 1_000_000.0D;
+    }
+
+    private <T extends Comparable<? super T>> List<T> snapshot(List<T> values) {
+        synchronized (values) {
+            return values.stream().sorted().toList();
+        }
+    }
+
+    private long sumSamples(List<Integer> values) {
+        synchronized (values) {
+            long sum = 0L;
+            for (Integer value : values) {
+                if (value != null) {
+                    sum += value;
+                }
+            }
+            return sum;
+        }
+    }
+
+    private double ratePerSecond(long count) {
+        long elapsedNanos = Math.max(1L, System.nanoTime() - metricsStartedAtNanos);
+        return count * 1_000_000_000.0D / elapsedNanos;
+    }
+
     public record AppendRequest(String deviceId,
                                 String protocolType,
                                 DataPoint point,

@@ -13,6 +13,7 @@ import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import com.wangbin.collector.storage.repository.TelemetryInsertRow;
+import com.wangbin.collector.storage.repository.TdengineTableRows;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -22,8 +23,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -259,6 +262,65 @@ class TimeSeriesServiceTest {
             assertThat(row.getEventTs()).isEqualTo(eventTs);
             assertThat(row.getMetadataJson()).contains("\"deviceId\":\"dev-batch-a\"");
         });
+    }
+
+    @Test
+    void appendBatchShouldUseMultiTableInsertWhenEnabled() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        properties.getWrite().setMultiTableEnabled(true);
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        service.appendBatch(List.of(
+                appendRequest("dev-multi-a", point(1L, "p-a"), ProcessResult.success(1L, 1L), 1_000L),
+                appendRequest("dev-multi-b", point(2L, "p-b"), ProcessResult.success(2L, 2L), 1_001L)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TdengineTableRows>> tablesCaptor = ArgumentCaptor.forClass(List.class);
+        verify(dataRepository).insertTelemetryV2MultiTableBatch(eq("wangbin_collector"), tablesCaptor.capture());
+        assertThat(tablesCaptor.getValue()).hasSize(2);
+        assertThat(tablesCaptor.getValue()).extracting(TdengineTableRows::subTable)
+                .containsExactly("d_dev_multi_a_v2", "d_dev_multi_b_v2");
+        assertThat(service.writeMetrics().multiTableWriteRequests()).isEqualTo(1L);
+        assertThat(service.writeMetrics().writtenRows()).isEqualTo(2L);
+    }
+
+    @Test
+    void appendBatchShouldKeepSingleTableInsertWhenMultiTableDisabled() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService()
+        );
+
+        service.appendBatch(List.of(
+                appendRequest("dev-single-a", point(1L, "p-a"), ProcessResult.success(1L, 1L), 1_000L),
+                appendRequest("dev-single-b", point(2L, "p-b"), ProcessResult.success(2L, 2L), 1_001L)));
+
+        verify(dataRepository).insertTelemetryV2Batch(eq("wangbin_collector"), eq("d_dev_single_a_v2"), any());
+        verify(dataRepository).insertTelemetryV2Batch(eq("wangbin_collector"), eq("d_dev_single_b_v2"), any());
+        verify(dataRepository, never()).insertTelemetryV2MultiTableBatch(any(), any());
+        assertThat(service.writeMetrics().singleTableWriteRequests()).isEqualTo(2L);
     }
 
     private DataPoint point(Long id, String pointId) {

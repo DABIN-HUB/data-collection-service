@@ -53,5 +53,17 @@ public record HistoryBatchMetrics(long acceptedRows,
                                   int timerBatchSizeMax,
                                   double tdengineBatchCallsPerSecond,
                                   double flushExecutorServiceRatePerSecond,
-                                  double flushExecutorQueueUtilization) {
+                                  double flushExecutorQueueUtilization,
+                                  long tdengineWriteRequests,
+                                  long tdengineWriteRows,
+                                  double tdengineWriteRequestsPerSecond,
+                                  double tdengineRowsPerRequest,
+                                  int tdengineRowsPerRequestP95,
+                                  int tdengineRowsPerRequestMax,
+                                  double tdengineTablesPerRequest,
+                                  int tdengineTablesPerRequestP95,
+                                  int tdengineTablesPerRequestMax,
+                                  long multiTableWriteRequests,
+                                  long multiTableWriteRows,
+                                  long multiTableAggregatedBatches) {
 }

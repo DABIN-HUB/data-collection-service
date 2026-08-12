@@ -889,7 +889,13 @@ class RealEnvironmentSoakIT {
                         batch.timerAverageBatchSize(), batch.timerBatchSizeP50(),
                         batch.timerBatchSizeP95(), batch.timerBatchSizeMax(),
                         batch.tdengineBatchCallsPerSecond(), batch.flushExecutorServiceRatePerSecond(),
-                        batch.flushExecutorQueueUtilization()),
+                        batch.flushExecutorQueueUtilization(), batch.tdengineWriteRequests(),
+                        batch.tdengineWriteRows(), batch.tdengineWriteRequestsPerSecond(),
+                        batch.tdengineRowsPerRequest(), batch.tdengineRowsPerRequestP95(),
+                        batch.tdengineRowsPerRequestMax(), batch.tdengineTablesPerRequest(),
+                        batch.tdengineTablesPerRequestP95(), batch.tdengineTablesPerRequestMax(),
+                        batch.multiTableWriteRequests(), batch.multiTableWriteRows(),
+                        batch.multiTableAggregatedBatches()),
                 cloud
         );
     }
@@ -901,7 +907,8 @@ class RealEnvironmentSoakIT {
                 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
                 0L, 0L, 0L, 0, 0, 0, 0, 0L,
                 0, 0, 0, 0L, 0L, 0L, 0L, 0D,
-                0, 0, 0, 0D, 0, 0, 0, 0D, 0D, 0D);
+                0, 0, 0, 0D, 0, 0, 0, 0D, 0D, 0D,
+                0L, 0L, 0D, 0D, 0, 0, 0D, 0, 0, 0L, 0L, 0L);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -2473,7 +2480,19 @@ class RealEnvironmentSoakIT {
                                         int timerBatchSizeMax,
                                         double tdengineBatchCallsPerSecond,
                                         double flushExecutorServiceRatePerSecond,
-                                        double flushExecutorQueueUtilization) {
+                                        double flushExecutorQueueUtilization,
+                                        long tdengineWriteRequests,
+                                        long tdengineWriteRows,
+                                        double tdengineWriteRequestsPerSecond,
+                                        double tdengineRowsPerRequest,
+                                        int tdengineRowsPerRequestP95,
+                                        int tdengineRowsPerRequestMax,
+                                        double tdengineTablesPerRequest,
+                                        int tdengineTablesPerRequestP95,
+                                        int tdengineTablesPerRequestMax,
+                                        long multiTableWriteRequests,
+                                        long multiTableWriteRows,
+                                        long multiTableAggregatedBatches) {
     }
 
     private record CloudSnapshot(long total,

@@ -10,12 +10,17 @@ import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryBufferProperties;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
 import com.wangbin.collector.storage.buffer.HistoryWriteRequest;
+import com.wangbin.collector.storage.config.TdengineProperties;
+import com.wangbin.collector.storage.service.TimeSeriesService;
+import com.wangbin.collector.storage.service.TdengineWriteMetrics;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,7 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "telemetry.tdengine.enabled=true",
         "telemetry.tdengine.batch.enabled=true",
         "collector.report.enabled=false",
-        "collector.report.mqtt.enabled=false"
+        "collector.report.mqtt.enabled=false",
+        "collector.config.loader=file"
 })
 @ActiveProfiles("test")
 class HistoryLiveWriteThroughputIT {
@@ -46,6 +52,15 @@ class HistoryLiveWriteThroughputIT {
     private static final DateTimeFormatter RUN_ID_FORMATTER = DateTimeFormatter
             .ofPattern("yyyyMMdd-HHmmss")
             .withZone(ZoneId.systemDefault());
+    private static final String RUN_ID = "history-live-" + RUN_ID_FORMATTER.format(Instant.now());
+    private static final String REDIS_NAMESPACE = "collector:soak:" + RUN_ID + ":history";
+
+    @DynamicPropertySource
+    static void historyLiveWriteProperties(DynamicPropertyRegistry registry) {
+        registry.add("telemetry.tdengine.buffer.pending-key", () -> REDIS_NAMESPACE + ":pending:v1");
+        registry.add("telemetry.tdengine.buffer.processing-key", () -> REDIS_NAMESPACE + ":processing:v1");
+        registry.add("telemetry.tdengine.buffer.dead-letter-key", () -> REDIS_NAMESPACE + ":dead:v1");
+    }
 
     @Autowired
     private HistoryBatchWriter historyBatchWriter;
@@ -58,6 +73,12 @@ class HistoryLiveWriteThroughputIT {
 
     @Autowired
     private HistoryBatchProperties historyBatchProperties;
+
+    @Autowired
+    private TdengineProperties tdengineProperties;
+
+    @Autowired
+    private TimeSeriesService timeSeriesService;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -79,25 +100,25 @@ class HistoryLiveWriteThroughputIT {
 
     @Test
     void historyLiveWriteShouldSustainConfiguredRate() throws Exception {
-        String runId = "history-live-" + RUN_ID_FORMATTER.format(Instant.now());
-        RedisKeys previous = overrideRedisKeys(runId);
         try {
             deleteRunKeys();
             HistoryBatchMetrics batchStart = historyBatchWriter.metrics();
             HistoryBufferMetrics bufferStart = historyWriteBuffer.metrics();
+            TdengineWriteMetrics writeStart = timeSeriesService.writeMetrics();
             long startedAt = System.nanoTime();
-            long submitted = submitRows(runId, startedAt);
+            long submitted = submitRows(RUN_ID, startedAt);
             waitForFlushDrain(TimeUnit.SECONDS.toNanos(120));
             long elapsedNanos = Math.max(1L, System.nanoTime() - startedAt);
             HistoryBatchMetrics batchEnd = historyBatchWriter.metrics();
             HistoryBufferMetrics bufferEnd = historyWriteBuffer.metrics();
-            Summary summary = buildSummary(runId, submitted, elapsedNanos, batchStart, batchEnd, bufferStart, bufferEnd);
+            TdengineWriteMetrics writeEnd = timeSeriesService.writeMetrics();
+            Summary summary = buildSummary(RUN_ID, submitted, elapsedNanos, batchStart, batchEnd,
+                    bufferStart, bufferEnd, writeStart, writeEnd);
             writeSummary(summary);
             assertEquals(0, batchEnd.currentBufferedRows(), "history live benchmark buffered rows");
             assertEquals(0, batchEnd.inFlightFlushes(), "history live benchmark in-flight flushes");
         } finally {
             deleteRunKeys();
-            restoreRedisKeys(previous);
         }
     }
 
@@ -172,19 +193,30 @@ class HistoryLiveWriteThroughputIT {
                                  HistoryBatchMetrics batchStart,
                                  HistoryBatchMetrics batchEnd,
                                  HistoryBufferMetrics bufferStart,
-                                 HistoryBufferMetrics bufferEnd) {
+                                 HistoryBufferMetrics bufferEnd,
+                                 TdengineWriteMetrics writeStart,
+                                 TdengineWriteMetrics writeEnd) {
         double elapsedSeconds = elapsedNanos / 1_000_000_000.0D;
         long flushedRows = batchEnd.flushedRows() - batchStart.flushedRows();
         long flushedBatches = batchEnd.flushedBatches() - batchStart.flushedBatches();
         long rejectedBatches = batchEnd.flushExecutorRejectedBatches() - batchStart.flushExecutorRejectedBatches();
         long fallbackRows = batchEnd.fallbackRows() - batchStart.fallbackRows();
         long pendingRows = bufferEnd.redisPending();
+        long writeRequests = writeEnd.writeRequests() - writeStart.writeRequests();
+        long writeRows = writeEnd.writtenRows() - writeStart.writtenRows();
+        long singleRequests = writeEnd.singleTableWriteRequests() - writeStart.singleTableWriteRequests();
+        long multiRequests = writeEnd.multiTableWriteRequests() - writeStart.multiTableWriteRequests();
+        long writeFailures = writeEnd.writeFailures() - writeStart.writeFailures();
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("batchSize", historyBatchProperties.getBatchSize());
         config.put("flushIntervalMs", historyBatchProperties.getFlushIntervalMs());
         config.put("flushScanIntervalMs", historyBatchProperties.getFlushScanIntervalMs());
         config.put("flushThreads", historyBatchProperties.getFlushExecutor().getCoreSize());
         config.put("flushQueue", historyBatchProperties.getFlushExecutor().getQueueCapacity());
+        config.put("multiTableEnabled", tdengineProperties.getWrite().isMultiTableEnabled());
+        config.put("maxTablesPerRequest", tdengineProperties.getWrite().getMaxTablesPerRequest());
+        config.put("maxRowsPerRequest", tdengineProperties.getWrite().getMaxRowsPerRequest());
+        config.put("aggregationWaitMs", tdengineProperties.getWrite().getAggregationWaitMs());
         return new Summary(
                 runId, submitted, rowsPerSecond, devices, durationSeconds,
                 submitted / elapsedSeconds, flushedRows / elapsedSeconds,
@@ -200,6 +232,16 @@ class HistoryLiveWriteThroughputIT {
                 batchEnd.flushLatencyP50Ms(), batchEnd.flushLatencyP95Ms(), batchEnd.flushLatencyP99Ms(),
                 bufferEnd.replaySuccessfulRows() - bufferStart.replaySuccessfulRows(),
                 bufferEnd.replayPausedForLivePressureCount() - bufferStart.replayPausedForLivePressureCount(),
+                writeRequests, writeRows, singleRequests, multiRequests, writeFailures,
+                writeRequests / elapsedSeconds, writeRows / elapsedSeconds,
+                writeRequests <= 0L ? 0D : writeRows / (double) writeRequests,
+                batchEnd.tdengineRowsPerRequestP95(), batchEnd.tdengineRowsPerRequestMax(),
+                batchEnd.tdengineTablesPerRequest(), batchEnd.tdengineTablesPerRequestP95(),
+                batchEnd.tdengineTablesPerRequestMax(), writeEnd.writeLatencyP50Ms(),
+                writeEnd.writeLatencyP95Ms(), writeEnd.writeLatencyP99Ms(),
+                writeEnd.ensureSubTableCalls() - writeStart.ensureSubTableCalls(),
+                writeEnd.ensureSubTableCacheHits() - writeStart.ensureSubTableCacheHits(),
+                writeEnd.ensureSubTableCacheMisses() - writeStart.ensureSubTableCacheMisses(),
                 config);
     }
 
@@ -209,32 +251,12 @@ class HistoryLiveWriteThroughputIT {
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(directory.resolve("summary.json").toFile(), summary);
     }
 
-    private RedisKeys overrideRedisKeys(String runId) {
-        RedisKeys previous = new RedisKeys(
-                historyBufferProperties.getPendingKey(),
-                historyBufferProperties.getProcessingKey(),
-                historyBufferProperties.getDeadLetterKey());
-        historyBufferProperties.setPendingKey("collector:soak:" + runId + ":history:pending:v1");
-        historyBufferProperties.setProcessingKey("collector:soak:" + runId + ":history:processing:v1");
-        historyBufferProperties.setDeadLetterKey("collector:soak:" + runId + ":history:dead:v1");
-        return previous;
-    }
-
-    private void restoreRedisKeys(RedisKeys previous) {
-        historyBufferProperties.setPendingKey(previous.pendingKey());
-        historyBufferProperties.setProcessingKey(previous.processingKey());
-        historyBufferProperties.setDeadLetterKey(previous.deadLetterKey());
-    }
-
     private void deleteRunKeys() {
         List<String> keys = new ArrayList<>();
         keys.add(historyBufferProperties.getPendingKey());
         keys.add(historyBufferProperties.getProcessingKey());
         keys.add(historyBufferProperties.getDeadLetterKey());
         redisTemplate.delete(keys);
-    }
-
-    private record RedisKeys(String pendingKey, String processingKey, String deadLetterKey) {
     }
 
     private record Summary(String runId,
@@ -267,6 +289,25 @@ class HistoryLiveWriteThroughputIT {
                            double batchWriteP99Ms,
                            long replaySuccessfulRows,
                            long replayPausedForLivePressureCount,
+                           long tdengineWriteRequests,
+                           long tdengineWriteRows,
+                           long tdengineSingleTableRequests,
+                           long tdengineMultiTableRequests,
+                           long tdengineWriteFailures,
+                           double tdengineWriteRequestsPerSecond,
+                           double tdengineWriteRowsPerSecond,
+                           double tdengineRowsPerRequest,
+                           int tdengineRowsPerRequestP95,
+                           int tdengineRowsPerRequestMax,
+                           double tdengineTablesPerRequest,
+                           int tdengineTablesPerRequestP95,
+                           int tdengineTablesPerRequestMax,
+                           double tdengineWriteP50Ms,
+                           double tdengineWriteP95Ms,
+                           double tdengineWriteP99Ms,
+                           long ensureSubTableCalls,
+                           long ensureSubTableCacheHits,
+                           long ensureSubTableCacheMisses,
                            Map<String, Object> config) {
     }
 }
