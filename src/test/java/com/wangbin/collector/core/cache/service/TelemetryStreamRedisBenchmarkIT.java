@@ -58,9 +58,9 @@ class TelemetryStreamRedisBenchmarkIT {
     void benchmarkSingleAndParallelXadd() throws Exception {
         redisTemplate.delete(streamProperties.getKey());
         List<Map<String, Object>> results = new ArrayList<>();
-        results.add(runCase("single-thread", 1, 5_000));
-        results.add(runCase("parallel-2", 2, 10_000));
-        results.add(runCase("parallel-4", 4, 20_000));
+        results.add(runClusteredRateCase("clustered-2000ps", 2_000, 10));
+        results.add(runClusteredRateCase("clustered-2500ps", 2_500, 10));
+        results.add(runClusteredRateCase("clustered-3000ps", 3_000, 10));
         writeSummary(results);
     }
 
@@ -85,10 +85,12 @@ class TelemetryStreamRedisBenchmarkIT {
             }
         }
         long elapsedNanos = System.nanoTime() - startedAt;
+        waitForRows(before.redisXaddRows() + records, TimeUnit.SECONDS.toNanos(30));
         TelemetryStreamMetrics after = telemetryStreamService.metrics();
         long success = after.xaddSuccess() - before.xaddSuccess();
         long failure = after.xaddFailure() - before.xaddFailure();
-        assertTrue(success >= records);
+        long dropped = after.admissionDropped() - before.admissionDropped();
+        assertTrue(success >= records - dropped);
         assertEquals(0L, failure);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -102,6 +104,54 @@ class TelemetryStreamRedisBenchmarkIT {
         result.put("latencyP99Ms", percentileMillis(latencies, 0.99D));
         result.put("xaddSuccessObserved", success);
         result.put("xaddFailure", failure);
+        result.put("admissionDropped", dropped);
+        result.put("bufferPeak", after.bufferPeak());
+        result.put("redisPipelineCalls", after.redisPipelineCalls() - before.redisPipelineCalls());
+        result.put("redisBatchLatencyP95Ms", after.redisBatchLatencyP95Ms());
+        return result;
+    }
+
+    private Map<String, Object> runClusteredRateCase(String name, int targetRowsPerSecond, int seconds) throws Exception {
+        TelemetryStreamMetrics before = telemetryStreamService.metrics();
+        int totalRows = targetRowsPerSecond * seconds;
+        List<Long> admissionLatencies = new ArrayList<>(totalRows);
+        long startedAt = System.nanoTime();
+        for (int second = 0; second < seconds; second++) {
+            long secondStart = System.nanoTime();
+            for (int index = 0; index < targetRowsPerSecond; index++) {
+                appendOne(name, second * targetRowsPerSecond + index, admissionLatencies);
+            }
+            long targetElapsed = TimeUnit.SECONDS.toNanos(second + 1L);
+            long remaining = startedAt + targetElapsed - System.nanoTime();
+            if (remaining > 0L) {
+                TimeUnit.NANOSECONDS.sleep(remaining);
+            } else if (System.nanoTime() - secondStart < TimeUnit.MILLISECONDS.toNanos(100)) {
+                Thread.yield();
+            }
+        }
+        waitForRows(before.redisXaddRows() + totalRows, TimeUnit.SECONDS.toNanos(30));
+        long elapsedNanos = System.nanoTime() - startedAt;
+        TelemetryStreamMetrics after = telemetryStreamService.metrics();
+        long success = after.redisXaddRows() - before.redisXaddRows();
+        long failure = after.redisXaddFailures() - before.redisXaddFailures();
+        long dropped = after.admissionDropped() - before.admissionDropped();
+        assertEquals(0L, failure);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("case", name);
+        result.put("threads", 1);
+        result.put("records", totalRows);
+        result.put("elapsedMs", TimeUnit.NANOSECONDS.toMillis(elapsedNanos));
+        result.put("throughputPerSecond", success * 1_000_000_000.0D / Math.max(1L, elapsedNanos));
+        result.put("latencyP50Ms", percentileMillis(admissionLatencies, 0.50D));
+        result.put("latencyP95Ms", percentileMillis(admissionLatencies, 0.95D));
+        result.put("latencyP99Ms", percentileMillis(admissionLatencies, 0.99D));
+        result.put("xaddSuccessObserved", success);
+        result.put("xaddFailure", failure);
+        result.put("admissionDropped", dropped);
+        result.put("bufferPeak", after.bufferPeak());
+        result.put("redisPipelineCalls", after.redisPipelineCalls() - before.redisPipelineCalls());
+        result.put("redisBatchLatencyP95Ms", after.redisBatchLatencyP95Ms());
         return result;
     }
 
@@ -125,7 +175,7 @@ class TelemetryStreamRedisBenchmarkIT {
         summary.put("results", results);
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.resolve("summary.json").toFile(), summary);
         List<String> lines = new ArrayList<>();
-        lines.add("case,threads,records,elapsedMs,throughputPerSecond,latencyP50Ms,latencyP95Ms,latencyP99Ms,xaddSuccessObserved,xaddFailure");
+        lines.add("case,threads,records,elapsedMs,throughputPerSecond,latencyP50Ms,latencyP95Ms,latencyP99Ms,xaddSuccessObserved,xaddFailure,admissionDropped,bufferPeak,redisPipelineCalls,redisBatchLatencyP95Ms");
         for (Map<String, Object> result : results) {
             lines.add(String.join(",",
                     String.valueOf(result.get("case")),
@@ -137,9 +187,24 @@ class TelemetryStreamRedisBenchmarkIT {
                     String.valueOf(result.get("latencyP95Ms")),
                     String.valueOf(result.get("latencyP99Ms")),
                     String.valueOf(result.get("xaddSuccessObserved")),
-                    String.valueOf(result.get("xaddFailure"))));
+                    String.valueOf(result.get("xaddFailure")),
+                    String.valueOf(result.get("admissionDropped")),
+                    String.valueOf(result.get("bufferPeak")),
+                    String.valueOf(result.get("redisPipelineCalls")),
+                    String.valueOf(result.get("redisBatchLatencyP95Ms"))));
         }
         Files.write(output.resolve("summary.csv"), lines, StandardCharsets.UTF_8);
+    }
+
+    private void waitForRows(long expectedRows, long timeoutNanos) throws InterruptedException {
+        long deadline = System.nanoTime() + timeoutNanos;
+        while (System.nanoTime() < deadline) {
+            if (telemetryStreamService.metrics().redisXaddRows() >= expectedRows) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(10);
+        }
+        assertTrue(telemetryStreamService.metrics().redisXaddRows() >= expectedRows);
     }
 
     private double percentileMillis(List<Long> values, double percentile) {

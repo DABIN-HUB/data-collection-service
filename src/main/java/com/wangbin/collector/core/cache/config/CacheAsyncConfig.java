@@ -66,6 +66,15 @@ public class CacheAsyncConfig {
     /**
      * 执行当前业务逻辑。
      */
+    /**
+     * 创建 Redis Stream pipeline 写入执行器，只承载缓冲区 drain 和 Redis I/O。
+     */
+    @Bean(TelemetryExecutorNames.STREAM_WRITE)
+    public Executor telemetryStreamWriteExecutor() {
+        return createStageExecutor(TelemetryExecutorNames.STREAM_WRITE,
+                "telemetry-stream-write-", 1, 1, 1);
+    }
+
     @Bean(TelemetryExecutorNames.HISTORY_STAGE)
     public Executor telemetryHistoryStageExecutor() {
         TelemetryExecutorProperties.Stage stage = telemetryExecutorProperties.getHistory();

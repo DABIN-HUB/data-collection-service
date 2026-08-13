@@ -127,6 +127,10 @@ class TelemetryPipelineBackpressureTest {
         assertTrue(streamService.awaitEntered());
         waitUntil(() -> rejected.count() >= 3);
         assertTrue(rejected.count() >= 3);
+        waitUntil(() -> streamService.compensatedCount() >= 3L);
+        assertEquals(streamService.compensatedCount(),
+                pipeline.metrics().stageRejectedCompensatedEvents());
+        assertEquals(0L, pipeline.metrics().stageRejectedUncompensatedEvents());
         streamService.release();
     }
 
@@ -271,6 +275,7 @@ class TelemetryPipelineBackpressureTest {
         private final CountDownLatch entered = new CountDownLatch(1);
         private final CountDownLatch release = new CountDownLatch(1);
         private final LongAdder attempts = new LongAdder();
+        private final LongAdder compensated = new LongAdder();
 
         @Override
         public void append(String deviceId, DataPoint point, ProcessResult processResult) {
@@ -284,6 +289,13 @@ class TelemetryPipelineBackpressureTest {
         }
 
         @Override
+        public boolean appendBestEffort(String deviceId, DataPoint point, ProcessResult processResult) {
+            attempts.increment();
+            compensated.increment();
+            return true;
+        }
+
+        @Override
         public TelemetryStreamMetrics metrics() {
             return TelemetryStreamMetrics.empty();
         }
@@ -294,6 +306,10 @@ class TelemetryPipelineBackpressureTest {
 
         private void release() {
             release.countDown();
+        }
+
+        private long compensatedCount() {
+            return compensated.sum();
         }
     }
 

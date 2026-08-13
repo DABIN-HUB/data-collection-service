@@ -524,6 +524,9 @@ class RealEnvironmentSoakIT {
         TelemetryIngressBufferMetrics entry = telemetryIngressBufferProvider.getIfAvailable() != null
                 ? telemetryIngressBufferProvider.getIfAvailable().metrics()
                 : TelemetryIngressBufferMetrics.empty();
+        TelemetryStreamMetrics stream = telemetryStreamServiceProvider.getIfAvailable() != null
+                ? telemetryStreamServiceProvider.getIfAvailable().metrics()
+                : TelemetryStreamMetrics.empty();
         HistoryBatchWriter batchWriter = historyBatchWriterProvider.getIfAvailable();
         HistoryBatchMetrics batch = batchWriter != null ? batchWriter.metrics() : emptyHistoryBatchMetrics();
         observed.put("entry.redisPending", entry.redisPending());
@@ -536,11 +539,13 @@ class RealEnvironmentSoakIT {
         observed.put("historyBatch.inFlightFlushes", (long) batch.inFlightFlushes());
         observed.put("historyBatch.flushExecutorQueueCurrent", (long) batch.flushExecutorQueueCurrent());
         observed.put("historyBatch.flushExecutorActiveCurrent", (long) batch.flushExecutorActiveCurrent());
+        observed.put("stream.bufferSize", (long) stream.bufferSize());
         observed.put("scheduler.inFlightPointClaims", schedulerLongMethod("getInFlightPointScheduleSizeForTest"));
         SystemResourceSnapshot resources = systemResourceMonitorService.getResources();
         addExecutorQuiescence(observed, resources, "cacheAsyncExecutor");
         addExecutorQuiescence(observed, resources, "telemetryCacheStageExecutor");
         addExecutorQuiescence(observed, resources, "telemetryStreamStageExecutor");
+        addExecutorQuiescence(observed, resources, "telemetryStreamWriteExecutor", false);
         addExecutorQuiescence(observed, resources, "telemetryHistoryStageExecutor");
         addExecutorQuiescence(observed, resources, "batchDispatcherExecutor");
         addExecutorQuiescence(observed, resources, "asyncCollectorExecutor");
@@ -551,6 +556,13 @@ class RealEnvironmentSoakIT {
     private void addExecutorQuiescence(Map<String, Long> observed,
                                        SystemResourceSnapshot resources,
                                        String executorName) {
+        addExecutorQuiescence(observed, resources, executorName, true);
+    }
+
+    private void addExecutorQuiescence(Map<String, Long> observed,
+                                       SystemResourceSnapshot resources,
+                                       String executorName,
+                                       boolean requireInactive) {
         if (resources == null || resources.getThreadPools() == null) {
             return;
         }
@@ -559,7 +571,9 @@ class RealEnvironmentSoakIT {
             return;
         }
         observed.put(executorName + ".queue", (long) pool.getQueueSize());
-        observed.put(executorName + ".active", (long) pool.getActiveCount());
+        if (requireInactive) {
+            observed.put(executorName + ".active", (long) pool.getActiveCount());
+        }
     }
 
     private void configureRuntimeCollectorFactory(SoakCounters counters) {
@@ -883,7 +897,15 @@ class RealEnvironmentSoakIT {
                 new StreamSnapshot(stream.appendAttempts(), stream.skippedAppends(), stream.serializationFailures(),
                         stream.xaddSuccess(), stream.xaddFailure(), stream.appendLatencyP50Ms(),
                         stream.appendLatencyP95Ms(), stream.appendLatencyP99Ms(), stream.xaddLatencyP50Ms(),
-                        stream.xaddLatencyP95Ms(), stream.xaddLatencyP99Ms()),
+                        stream.xaddLatencyP95Ms(), stream.xaddLatencyP99Ms(), stream.admissionAccepted(),
+                        stream.admissionRejected(), stream.admissionDropped(), stream.bufferSize(),
+                        stream.bufferPeak(), stream.bufferCapacity(), stream.writerBatchCount(), stream.writerRows(),
+                        stream.writerBatchSizeP50(), stream.writerBatchSizeP95(), stream.writerBatchSizeP99(),
+                        stream.redisPipelineCalls(), stream.redisXaddRows(), stream.redisXaddFailures(),
+                        stream.admissionLatencyP50Ms(), stream.admissionLatencyP95Ms(),
+                        stream.admissionLatencyP99Ms(), stream.redisBatchLatencyP50Ms(),
+                        stream.redisBatchLatencyP95Ms(), stream.redisBatchLatencyP99Ms(),
+                        stream.shutdownDroppedRows(), stream.writerLoopFailures()),
                 new HistorySnapshot(history.redisPending(), history.redisProcessing(), history.redisDeadLetter(),
                         history.localPending(), history.localCapacity(),
                         history.writeFailureRedisBuffered(), history.rejectedRedisBuffered(),
@@ -1218,6 +1240,16 @@ class RealEnvironmentSoakIT {
                 "rejectedExecutionHandler", "ObservedRejectedExecutionHandler+AbortPolicy"));
         config.put("cacheStage", stageConfiguration(telemetryExecutorProperties.getCache()));
         config.put("streamStage", stageConfiguration(telemetryExecutorProperties.getStream()));
+        config.put("streamWriter", Map.of(
+                "coreSize", 1,
+                "maxSize", 1,
+                "queueCapacity", 1,
+                "rejectedExecutionHandler", "ObservedRejectedExecutionHandler+AbortPolicy"));
+        config.put("streamBuffer", Map.of(
+                "capacity", telemetryStreamProperties.getBuffer().getCapacity(),
+                "batchSize", telemetryStreamProperties.getBuffer().getBatchSize(),
+                "flushIntervalMs", telemetryStreamProperties.getBuffer().getFlushIntervalMs(),
+                "shutdownTimeoutMs", telemetryStreamProperties.getBuffer().getShutdownTimeoutMs()));
         config.put("historyStage", stageConfiguration(telemetryExecutorProperties.getHistory()));
         config.put("reportStage", stageConfiguration(telemetryExecutorProperties.getReport()));
         return config;
@@ -1368,6 +1400,22 @@ class RealEnvironmentSoakIT {
                 runStartSample.stream().xaddSuccess());
         long streamXaddFailureDelta = delta(loadEndSample.stream().xaddFailure(),
                 runStartSample.stream().xaddFailure());
+        long streamAdmissionAcceptedDelta = delta(loadEndSample.stream().admissionAccepted(),
+                runStartSample.stream().admissionAccepted());
+        long streamAdmissionRejectedDelta = delta(loadEndSample.stream().admissionRejected(),
+                runStartSample.stream().admissionRejected());
+        long streamAdmissionDroppedDelta = delta(loadEndSample.stream().admissionDropped(),
+                runStartSample.stream().admissionDropped());
+        long streamWriterBatchCountDelta = delta(loadEndSample.stream().writerBatchCount(),
+                runStartSample.stream().writerBatchCount());
+        long streamWriterRowsDelta = delta(loadEndSample.stream().writerRows(),
+                runStartSample.stream().writerRows());
+        long streamRedisPipelineCallsDelta = delta(loadEndSample.stream().redisPipelineCalls(),
+                runStartSample.stream().redisPipelineCalls());
+        long streamRedisXaddRowsDelta = delta(loadEndSample.stream().redisXaddRows(),
+                runStartSample.stream().redisXaddRows());
+        long streamRedisXaddFailuresDelta = delta(loadEndSample.stream().redisXaddFailures(),
+                runStartSample.stream().redisXaddFailures());
         long entryRejectedItemsDelta = delta(loadEndSample.entry().rejectedItems(),
                 runStartSample.entry().rejectedItems());
         long entryDroppedItemsDelta = delta(loadEndSample.entry().droppedItems(),
@@ -1519,6 +1567,28 @@ class RealEnvironmentSoakIT {
         summary.put("streamAppendAttempts", streamAppendAttemptsDelta);
         summary.put("streamXaddSuccess", streamXaddSuccessDelta);
         summary.put("streamXaddFailure", streamXaddFailureDelta);
+        summary.put("streamAdmissionAccepted", streamAdmissionAcceptedDelta);
+        summary.put("streamAdmissionRejected", streamAdmissionRejectedDelta);
+        summary.put("streamAdmissionDropped", streamAdmissionDroppedDelta);
+        summary.put("streamBufferPeak", loadEndSample.stream().bufferPeak());
+        summary.put("streamBufferFinal", finalSample.stream().bufferSize());
+        summary.put("streamBufferCapacity", loadEndSample.stream().bufferCapacity());
+        summary.put("streamWriterBatchCount", streamWriterBatchCountDelta);
+        summary.put("streamWriterRows", streamWriterRowsDelta);
+        summary.put("streamWriterBatchSizeP50", loadEndSample.stream().writerBatchSizeP50());
+        summary.put("streamWriterBatchSizeP95", loadEndSample.stream().writerBatchSizeP95());
+        summary.put("streamWriterBatchSizeP99", loadEndSample.stream().writerBatchSizeP99());
+        summary.put("streamRedisPipelineCalls", streamRedisPipelineCallsDelta);
+        summary.put("streamRedisXaddRows", streamRedisXaddRowsDelta);
+        summary.put("streamRedisXaddFailures", streamRedisXaddFailuresDelta);
+        summary.put("streamAdmissionLatencyP50Ms", loadEndSample.stream().admissionLatencyP50Ms());
+        summary.put("streamAdmissionLatencyP95Ms", loadEndSample.stream().admissionLatencyP95Ms());
+        summary.put("streamAdmissionLatencyP99Ms", loadEndSample.stream().admissionLatencyP99Ms());
+        summary.put("streamRedisBatchLatencyP50Ms", loadEndSample.stream().redisBatchLatencyP50Ms());
+        summary.put("streamRedisBatchLatencyP95Ms", loadEndSample.stream().redisBatchLatencyP95Ms());
+        summary.put("streamRedisBatchLatencyP99Ms", loadEndSample.stream().redisBatchLatencyP99Ms());
+        summary.put("streamShutdownDroppedRows", loadEndSample.stream().shutdownDroppedRows());
+        summary.put("streamWriterLoopFailures", loadEndSample.stream().writerLoopFailures());
         summary.put("streamAppendLatencyP50Ms", loadEndSample.stream().appendLatencyP50Ms());
         summary.put("streamAppendLatencyP95Ms", loadEndSample.stream().appendLatencyP95Ms());
         summary.put("streamAppendLatencyP99Ms", loadEndSample.stream().appendLatencyP99Ms());
@@ -2093,6 +2163,14 @@ class RealEnvironmentSoakIT {
                 + "streamAppendAttempts,streamSkippedAppends,streamSerializationFailures,streamXaddSuccess,"
                 + "streamXaddFailure,streamAppendLatencyP50Ms,streamAppendLatencyP95Ms,streamAppendLatencyP99Ms,"
                 + "streamXaddLatencyP50Ms,streamXaddLatencyP95Ms,streamXaddLatencyP99Ms,"
+                + "streamAdmissionAccepted,streamAdmissionRejected,streamAdmissionDropped,"
+                + "streamBufferSize,streamBufferPeak,streamBufferCapacity,"
+                + "streamWriterBatchCount,streamWriterRows,streamWriterBatchSizeP50,"
+                + "streamWriterBatchSizeP95,streamWriterBatchSizeP99,streamRedisPipelineCalls,"
+                + "streamRedisXaddRows,streamRedisXaddFailures,streamAdmissionLatencyP50Ms,"
+                + "streamAdmissionLatencyP95Ms,streamAdmissionLatencyP99Ms,streamRedisBatchLatencyP50Ms,"
+                + "streamRedisBatchLatencyP95Ms,streamRedisBatchLatencyP99Ms,"
+                + "streamShutdownDroppedRows,streamWriterLoopFailures,"
                 + "pipelineProcessedItems,pipelineStageSubmissions,pipelineStageRejected,pipelineStageRejectedCompensated,"
                 + "pipelineStageRejectedUncompensated,pipelineStageRejectedShutdown,pipelineLatencyP50Ms,"
                 + "pipelineLatencyP95Ms,pipelineLatencyP99Ms,pipelineLatencySampleCount,"
@@ -2206,6 +2284,28 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.stream().xaddLatencyP50Ms()),
                 String.valueOf(sample.stream().xaddLatencyP95Ms()),
                 String.valueOf(sample.stream().xaddLatencyP99Ms()),
+                String.valueOf(sample.stream().admissionAccepted()),
+                String.valueOf(sample.stream().admissionRejected()),
+                String.valueOf(sample.stream().admissionDropped()),
+                String.valueOf(sample.stream().bufferSize()),
+                String.valueOf(sample.stream().bufferPeak()),
+                String.valueOf(sample.stream().bufferCapacity()),
+                String.valueOf(sample.stream().writerBatchCount()),
+                String.valueOf(sample.stream().writerRows()),
+                String.valueOf(sample.stream().writerBatchSizeP50()),
+                String.valueOf(sample.stream().writerBatchSizeP95()),
+                String.valueOf(sample.stream().writerBatchSizeP99()),
+                String.valueOf(sample.stream().redisPipelineCalls()),
+                String.valueOf(sample.stream().redisXaddRows()),
+                String.valueOf(sample.stream().redisXaddFailures()),
+                String.valueOf(sample.stream().admissionLatencyP50Ms()),
+                String.valueOf(sample.stream().admissionLatencyP95Ms()),
+                String.valueOf(sample.stream().admissionLatencyP99Ms()),
+                String.valueOf(sample.stream().redisBatchLatencyP50Ms()),
+                String.valueOf(sample.stream().redisBatchLatencyP95Ms()),
+                String.valueOf(sample.stream().redisBatchLatencyP99Ms()),
+                String.valueOf(sample.stream().shutdownDroppedRows()),
+                String.valueOf(sample.stream().writerLoopFailures()),
                 String.valueOf(sample.pipeline().processedItems()),
                 String.valueOf(sample.pipeline().stageSubmissions()),
                 String.valueOf(sample.pipeline().stageRejectedEvents()),
@@ -2389,15 +2489,29 @@ class RealEnvironmentSoakIT {
                 batchWriter.flushDueBuckets();
             }
             SystemResourceSnapshot resources = systemResourceMonitorService.getResources();
-            boolean queuesEmpty = resources.getThreadPools().values().stream()
-                    .filter(Objects::nonNull)
-                    .allMatch(pool -> pool.getQueueSize() <= 0 && pool.getActiveCount() <= 0);
+            boolean queuesEmpty = resources.getThreadPools().entrySet().stream()
+                    .filter(entry -> entry.getValue() != null)
+                    .allMatch(entry -> isDrainQuiescentThreadPool(entry.getKey(), entry.getValue()));
             boolean historyBatchEmpty = batchWriter == null || batchWriter.metrics().currentBufferedRows() <= 0;
-            if (queuesEmpty && historyBatchEmpty) {
+            TelemetryStreamMetrics stream = telemetryStreamServiceProvider.getIfAvailable() != null
+                    ? telemetryStreamServiceProvider.getIfAvailable().metrics()
+                    : TelemetryStreamMetrics.empty();
+            boolean streamBufferEmpty = stream.bufferSize() <= 0;
+            if (queuesEmpty && historyBatchEmpty && streamBufferEmpty) {
                 return;
             }
             Thread.sleep(500L);
         }
+    }
+
+    private boolean isDrainQuiescentThreadPool(String poolName, SystemResourceSnapshot.ThreadPoolSnapshot pool) {
+        if (pool.getQueueSize() > 0) {
+            return false;
+        }
+        if ("telemetryStreamWriteExecutor".equals(poolName)) {
+            return true;
+        }
+        return pool.getActiveCount() <= 0;
     }
 
     private void cleanupDevices(List<DevicePoints> devicePoints) {
@@ -2629,7 +2743,29 @@ class RealEnvironmentSoakIT {
                                   double appendLatencyP99Ms,
                                   double xaddLatencyP50Ms,
                                   double xaddLatencyP95Ms,
-                                  double xaddLatencyP99Ms) {
+                                  double xaddLatencyP99Ms,
+                                  long admissionAccepted,
+                                  long admissionRejected,
+                                  long admissionDropped,
+                                  int bufferSize,
+                                  int bufferPeak,
+                                  int bufferCapacity,
+                                  long writerBatchCount,
+                                  long writerRows,
+                                  int writerBatchSizeP50,
+                                  int writerBatchSizeP95,
+                                  int writerBatchSizeP99,
+                                  long redisPipelineCalls,
+                                  long redisXaddRows,
+                                  long redisXaddFailures,
+                                  double admissionLatencyP50Ms,
+                                  double admissionLatencyP95Ms,
+                                  double admissionLatencyP99Ms,
+                                  double redisBatchLatencyP50Ms,
+                                  double redisBatchLatencyP95Ms,
+                                  double redisBatchLatencyP99Ms,
+                                  long shutdownDroppedRows,
+                                  long writerLoopFailures) {
     }
 
     private record HistorySnapshot(long redisPending,

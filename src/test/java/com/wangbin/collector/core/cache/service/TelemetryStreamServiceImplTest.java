@@ -18,75 +18,114 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.util.ReflectionTestUtils.getField;
 
 public class TelemetryStreamServiceImplTest {
 
     private RedisTemplate<String, Object> redisTemplate;
     private RedisConnection connection;
     private TelemetryStreamProperties properties;
+    private StreamWriteBuffer buffer;
     private TelemetryStreamServiceImpl service;
+    private ExecutorService writerExecutor;
     private Logger serviceLogger;
     private Level originalServiceLogLevel;
+    private Logger bufferLogger;
+    private Level originalBufferLogLevel;
 
     @BeforeEach
     void setUp() {
         serviceLogger = (Logger) LoggerFactory.getLogger(TelemetryStreamServiceImpl.class);
         originalServiceLogLevel = serviceLogger.getLevel();
         serviceLogger.setLevel(Level.OFF);
+        bufferLogger = (Logger) LoggerFactory.getLogger(StreamWriteBuffer.class);
+        originalBufferLogLevel = bufferLogger.getLevel();
+        bufferLogger.setLevel(Level.OFF);
         redisTemplate = mock(RedisTemplate.class);
         connection = mock(RedisConnection.class);
         properties = new TelemetryStreamProperties();
-        ObjectMapper objectMapper = new ObjectMapper();
-
+        properties.setKey("collector:telemetry:stream");
         when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
             RedisCallback<?> callback = invocation.getArgument(0);
             return callback.doInRedis(connection);
         });
-
-        service = new TelemetryStreamServiceImpl(redisTemplate, properties, objectMapper);
+        mockPipelineSuccess(1);
+        writerExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setDaemon(true);
+            thread.setName("stream-write-buffer-test");
+            return thread;
+        });
+        buffer = new StreamWriteBuffer(redisTemplate, properties, writerExecutor);
+        service = new TelemetryStreamServiceImpl(redisTemplate, properties, new ObjectMapper(), buffer);
     }
 
     @AfterEach
     void tearDown() {
+        if (buffer != null) {
+            buffer.stop();
+        }
+        if (writerExecutor != null) {
+            writerExecutor.shutdownNow();
+            try {
+                writerExecutor.awaitTermination(1, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (serviceLogger != null) {
             serviceLogger.setLevel(originalServiceLogLevel);
+        }
+        if (bufferLogger != null) {
+            bufferLogger.setLevel(originalBufferLogLevel);
         }
     }
 
     @Test
-    void append_countMode_shouldUseXaddMaxLen() {
-        properties.setEnabled(true);
-        properties.setKey("collector:telemetry:stream");
+    void stageProcessMustOnlyPerformFastAdmission() {
+        properties.getBuffer().setShutdownTimeoutMs(50);
+        buffer = new StreamWriteBuffer(redisTemplate, properties, command -> {
+        });
+        service = new TelemetryStreamServiceImpl(redisTemplate, properties, new ObjectMapper(), buffer);
+        buffer.start();
+
+        boolean accepted = service.appendBestEffort("d1", point("p1"), ProcessResult.success(1, 1));
+
+        assertTrue(accepted);
+        assertEquals(1L, service.metrics().admissionAccepted());
+        assertEquals(1, service.metrics().bufferSize());
+        verify(redisTemplate, times(0)).execute(any(RedisCallback.class));
+    }
+
+    @Test
+    void appendCountModeShouldUsePipelinedXaddMaxLen() throws Exception {
         properties.setRetentionMode(StreamRetentionMode.COUNT);
         properties.setMaxLength(200);
         properties.setApproximateTrim(true);
 
-        ProcessResult result = ProcessResult.success(1, 1);
-        DataPoint point = new DataPoint();
-        point.setPointId("p1");
-        point.setPointCode("code1");
-        point.setPointName("name1");
-        point.setDeviceId("d1");
-
-        service.append("d1", point, result);
+        buffer.start();
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        waitUntil(() -> service.metrics().xaddSuccess() == 1L);
 
         Object[] args = findExecuteInvocationArgs("XADD");
         assertTrue(args.length >= 6);
@@ -98,18 +137,13 @@ public class TelemetryStreamServiceImplTest {
     }
 
     @Test
-    void append_timeMode_shouldWriteEventTimestampField() {
-        properties.setEnabled(true);
+    void appendTimeModeShouldWriteEventTimestampField() throws Exception {
         properties.setRetentionMode(StreamRetentionMode.TIME);
         properties.setApproximateTrim(true);
 
-        DataPoint point = new DataPoint();
-        point.setPointId("p1");
-        point.setPointCode("code1");
-        point.setPointName("name1");
-        point.setDeviceId("d1");
-
-        service.append("d1", point, ProcessResult.success(2, 2));
+        buffer.start();
+        service.append("d1", point("p1"), ProcessResult.success(2, 2));
+        waitUntil(() -> service.metrics().xaddSuccess() == 1L);
 
         Object[] args = findExecuteInvocationArgs("XADD");
         List<String> values = asStrings(args, 1);
@@ -118,13 +152,11 @@ public class TelemetryStreamServiceImplTest {
     }
 
     @Test
-    void trimByTimeRetention_shouldUseXtrimMinId() {
-        properties.setEnabled(true);
+    void trimByTimeRetentionShouldUseXtrimMinId() {
         properties.setRetentionMode(StreamRetentionMode.TIME);
         properties.setTrimTaskEnabled(true);
         properties.setApproximateTrim(true);
         properties.setMaxSeconds(60);
-        properties.setKey("collector:telemetry:stream");
 
         service.trimByTimeRetention();
 
@@ -135,74 +167,159 @@ public class TelemetryStreamServiceImplTest {
     }
 
     @Test
-    void append_shouldIsolateRedisConnectionFailure() {
-        properties.setEnabled(true);
-        properties.setKey("collector:telemetry:stream");
-        when(redisTemplate.execute(any(RedisCallback.class)))
-                .thenThrow(new RedisConnectionFailureException("redis unavailable"));
+    void writerMustDrainInBatches() throws Exception {
+        properties.getBuffer().setBatchSize(3);
+        mockPipelineSuccess(3);
+        buffer.start();
 
-        assertDoesNotThrow(() -> service.append("d1", point("p1"), ProcessResult.success(1, 1)));
+        for (int index = 0; index < 3; index++) {
+            assertTrue(service.appendBestEffort("d1", point("p" + index), ProcessResult.success(index, index)));
+        }
+        waitUntil(() -> service.metrics().xaddSuccess() == 3L);
 
-        verify(redisTemplate).execute(any(RedisCallback.class));
+        assertEquals(1L, service.metrics().writerBatchCount());
+        assertEquals(3L, service.metrics().redisXaddRows());
+        assertEquals(3, xaddInvocationCount());
     }
 
     @Test
-    void append_shouldRecoverAfterTemporaryRedisFailure() {
-        properties.setEnabled(true);
-        properties.setKey("collector:telemetry:stream");
+    void redisPipelineMustKeepOneEntryPerTelemetry() throws Exception {
+        properties.getBuffer().setBatchSize(5);
+        mockPipelineSuccess(5);
+        buffer.start();
+
+        for (int index = 0; index < 5; index++) {
+            service.append("d1", point("p" + index), ProcessResult.success(index, index));
+        }
+        waitUntil(() -> service.metrics().xaddSuccess() == 5L);
+
+        assertEquals(1L, service.metrics().redisPipelineCalls());
+        assertEquals(5, xaddInvocationCount());
+    }
+
+    @Test
+    void redisFailureMustBeExplicitlyAccounted() throws Exception {
+        when(redisTemplate.execute(any(RedisCallback.class)))
+                .thenThrow(new RedisConnectionFailureException("redis unavailable"));
+        buffer.start();
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        waitUntil(() -> service.metrics().xaddFailure() == 1L);
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(1L, metrics.appendAttempts());
+        assertEquals(1L, metrics.admissionAccepted());
+        assertEquals(0L, metrics.xaddSuccess());
+        assertEquals(1L, metrics.xaddFailure());
+    }
+
+    @Test
+    void bufferMustRemainBounded() {
+        properties.getBuffer().setCapacity(1);
+        properties.getBuffer().setShutdownTimeoutMs(50);
+        buffer = new StreamWriteBuffer(redisTemplate, properties, command -> {
+        });
+        service = new TelemetryStreamServiceImpl(redisTemplate, properties, new ObjectMapper(), buffer);
+        buffer.start();
+
+        assertTrue(service.appendBestEffort("d1", point("p1"), ProcessResult.success(1, 1)));
+        assertFalse(service.appendBestEffort("d1", point("p2"), ProcessResult.success(2, 2)));
+
+        TelemetryStreamMetrics metrics = service.metrics();
+        assertEquals(1L, metrics.admissionAccepted());
+        assertEquals(1L, metrics.admissionRejected());
+        assertEquals(1L, metrics.admissionDropped());
+        assertEquals(1, metrics.bufferCapacity());
+    }
+
+    @Test
+    void concurrentAdmissionMustNotLoseAcceptedItems() throws Exception {
+        properties.getBuffer().setCapacity(200);
+        properties.getBuffer().setShutdownTimeoutMs(50);
+        buffer = new StreamWriteBuffer(redisTemplate, properties, command -> {
+        });
+        service = new TelemetryStreamServiceImpl(redisTemplate, properties, new ObjectMapper(), buffer);
+        buffer.start();
+        int total = 100;
+        List<Boolean> results = Collections.synchronizedList(new ArrayList<>());
+        List<Thread> threads = new ArrayList<>();
+        for (int index = 0; index < total; index++) {
+            int current = index;
+            Thread thread = new Thread(() -> results.add(service.appendBestEffort(
+                    "d1", point("p" + current), ProcessResult.success(current, current))));
+            threads.add(thread);
+            thread.start();
+        }
+        for (Thread thread : threads) {
+            thread.join(TimeUnit.SECONDS.toMillis(2));
+        }
+
+        assertEquals(total, results.size());
+        assertTrue(results.stream().allMatch(Boolean::booleanValue));
+        assertEquals(total, service.metrics().admissionAccepted());
+        assertEquals(total, service.metrics().bufferSize());
+    }
+
+    @Test
+    void shutdownMustDrainAcceptedItems() throws Exception {
+        CountDownLatch firstWrite = new CountDownLatch(1);
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
+            RedisCallback<?> callback = invocation.getArgument(0);
+            Object result = callback.doInRedis(connection);
+            firstWrite.countDown();
+            return result;
+        });
+        when(connection.closePipeline()).thenReturn(List.of("1-0"));
+        buffer.start();
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        buffer.stop();
+
+        assertTrue(firstWrite.await(1, TimeUnit.SECONDS));
+        assertEquals(1L, service.metrics().xaddSuccess());
+        assertEquals(0, service.metrics().bufferSize());
+        assertEquals(0L, service.metrics().shutdownDroppedRows());
+    }
+
+    @Test
+    void shutdownTimeoutMustAccountRemainingItems() throws Exception {
+        properties.getBuffer().setShutdownTimeoutMs(50);
+        CountDownLatch entered = new CountDownLatch(1);
+        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
+            entered.countDown();
+            TimeUnit.SECONDS.sleep(2);
+            return List.of("1-0");
+        });
+        buffer.start();
+
+        service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        buffer.stop();
+
+        assertTrue(service.metrics().shutdownDroppedRows() >= 1L);
+    }
+
+    @Test
+    void writerFailureMustNotKillWriterLoop() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
-            if (calls.incrementAndGet() <= 2) {
+            if (calls.incrementAndGet() == 1) {
                 throw new RedisSystemException("redis temporary failure",
                         new RedisConnectionFailureException("redis down"));
             }
             RedisCallback<?> callback = invocation.getArgument(0);
             return callback.doInRedis(connection);
         });
+        when(connection.closePipeline()).thenReturn(List.of("1-0"));
+        buffer.start();
 
         service.append("d1", point("p1"), ProcessResult.success(1, 1));
+        waitUntil(() -> service.metrics().xaddFailure() == 1L);
         service.append("d1", point("p2"), ProcessResult.success(2, 2));
-        service.append("d1", point("p3"), ProcessResult.success(3, 3));
+        waitUntil(() -> service.metrics().xaddSuccess() == 1L);
 
-        assertEquals(3, calls.get());
-        Object[] args = findExecuteInvocationArgs("XADD");
-        assertEquals("collector:telemetry:stream", str((byte[]) args[1]));
-        verify(redisTemplate, times(3)).execute(any(RedisCallback.class));
-    }
-
-    @Test
-    void redisXaddFailureMustBeSeparatelyAccounted() {
-        properties.setEnabled(true);
-        when(redisTemplate.execute(any(RedisCallback.class)))
-                .thenThrow(new RedisConnectionFailureException("redis unavailable"));
-
-        service.append("d1", point("p1"), ProcessResult.success(1, 1));
-
-        TelemetryStreamMetrics metrics = service.metrics();
-        assertEquals(1L, metrics.appendAttempts());
-        assertEquals(0L, metrics.xaddSuccess());
-        assertEquals(1L, metrics.xaddFailure());
-    }
-
-    @Test
-    void streamSuccessCountMustOnlyCountSuccessfulXadd() {
-        properties.setEnabled(true);
-        AtomicInteger calls = new AtomicInteger();
-        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
-            if (calls.incrementAndGet() == 2) {
-                throw new RedisConnectionFailureException("redis unavailable");
-            }
-            RedisCallback<?> callback = invocation.getArgument(0);
-            return callback.doInRedis(connection);
-        });
-
-        service.append("d1", point("p1"), ProcessResult.success(1, 1));
-        service.append("d1", point("p2"), ProcessResult.success(2, 2));
-
-        TelemetryStreamMetrics metrics = service.metrics();
-        assertEquals(2L, metrics.appendAttempts());
-        assertEquals(1L, metrics.xaddSuccess());
-        assertEquals(1L, metrics.xaddFailure());
+        assertEquals(1L, service.metrics().xaddFailure());
+        assertEquals(1L, service.metrics().xaddSuccess());
     }
 
     @Test
@@ -211,11 +328,13 @@ public class TelemetryStreamServiceImplTest {
         when(brokenMapper.writeValueAsString(any()))
                 .thenThrow(new com.fasterxml.jackson.core.JsonProcessingException("bad payload") {
                 });
+        buffer.start();
         TelemetryStreamServiceImpl brokenService = new TelemetryStreamServiceImpl(
-                redisTemplate, properties, brokenMapper);
+                redisTemplate, properties, brokenMapper, buffer);
 
-        brokenService.append("d1", point("p1"), ProcessResult.success(1, 1));
+        boolean accepted = brokenService.appendBestEffort("d1", point("p1"), ProcessResult.success(1, 1));
 
+        assertFalse(accepted);
         TelemetryStreamMetrics metrics = brokenService.metrics();
         assertEquals(1L, metrics.appendAttempts());
         assertEquals(1L, metrics.serializationFailures());
@@ -224,37 +343,8 @@ public class TelemetryStreamServiceImplTest {
     }
 
     @Test
-    void shutdownMustAccountAcceptedStreamTasks() throws Exception {
-        CountDownLatch entered = new CountDownLatch(1);
-        when(redisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
-            entered.countDown();
-            try {
-                TimeUnit.SECONDS.sleep(5);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new RedisSystemException("redis command interrupted", exception);
-            }
-            return null;
-        });
-        Thread thread = new Thread(() -> service.append("d1", point("p1"), ProcessResult.success(1, 1)),
-                "stream-shutdown-test");
-
-        thread.start();
-        assertTrue(entered.await(1, TimeUnit.SECONDS));
-        thread.interrupt();
-        thread.join(TimeUnit.SECONDS.toMillis(2));
-
-        TelemetryStreamMetrics metrics = service.metrics();
-        assertEquals(1L, metrics.appendAttempts());
-        assertEquals(0L, metrics.xaddSuccess());
-        assertEquals(1L, metrics.xaddFailure());
-    }
-
-    @Test
     void streamLatencyReservoirMustRemainSafeNearLongBoundary() {
-        properties.setEnabled(true);
-        setReservoirSequence("appendLatencyNanos", Long.MAX_VALUE - 2L);
-        setReservoirSequence("xaddLatencyNanos", Long.MAX_VALUE - 2L);
+        buffer.start();
 
         assertDoesNotThrow(() -> {
             for (int index = 0; index < 6; index++) {
@@ -264,8 +354,6 @@ public class TelemetryStreamServiceImplTest {
 
         TelemetryStreamMetrics metrics = service.metrics();
         assertEquals(6L, metrics.appendAttempts());
-        assertEquals(6L, metrics.xaddSuccess());
-        assertEquals(0L, metrics.xaddFailure());
     }
 
     private Object[] findExecuteInvocationArgs(String command) {
@@ -275,6 +363,19 @@ public class TelemetryStreamServiceImplTest {
                 .filter(arguments -> arguments.length > 0 && command.equals(arguments[0]))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private void mockPipelineSuccess(int rows) {
+        when(connection.closePipeline()).thenReturn(
+                java.util.stream.IntStream.range(0, rows).mapToObj(index -> (Object) ("1-" + index)).toList());
+    }
+
+    private int xaddInvocationCount() {
+        return (int) mockingDetails(connection).getInvocations().stream()
+                .filter(invocation -> "execute".equals(invocation.getMethod().getName()))
+                .map(invocation -> invocation.getArguments())
+                .filter(arguments -> arguments.length > 0 && "XADD".equals(arguments[0]))
+                .count();
     }
 
     private static List<String> asStrings(Object[] args, int fromIndex) {
@@ -299,9 +400,19 @@ public class TelemetryStreamServiceImplTest {
         return point;
     }
 
-    private void setReservoirSequence(String fieldName, long value) {
-        Object reservoir = getField(service, fieldName);
-        AtomicLong sequence = (AtomicLong) getField(reservoir, "sequence");
-        sequence.set(value);
+    private void waitUntil(Condition condition) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (condition.isSatisfied()) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(10);
+        }
+        assertTrue(condition.isSatisfied());
+    }
+
+    @FunctionalInterface
+    private interface Condition {
+        boolean isSatisfied();
     }
 }

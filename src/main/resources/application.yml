@@ -72,6 +72,11 @@ spring:
         approximate-trim: true  # 为 true 时使用近似裁剪
         trim-task-enabled: true # 为 true 时启用 TIME 模式定时裁剪
         trim-interval-ms: 5000  # 裁剪周期
+        buffer:
+          capacity: 10000
+          batch-size: 100
+          flush-interval-ms: 20
+          shutdown-timeout-ms: 30000
 
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss

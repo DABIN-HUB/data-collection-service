@@ -19,6 +19,7 @@ public final class MonitorThreadPoolNames {
             "reportExecutor",
             TelemetryExecutorNames.CACHE_STAGE,
             TelemetryExecutorNames.STREAM_STAGE,
+            TelemetryExecutorNames.STREAM_WRITE,
             TelemetryExecutorNames.HISTORY_STAGE,
             TelemetryExecutorNames.REPORT_STAGE,
             "timeSliceScheduler",

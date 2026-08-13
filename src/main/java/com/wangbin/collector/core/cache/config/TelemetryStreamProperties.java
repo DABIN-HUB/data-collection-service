@@ -52,5 +52,34 @@ public class TelemetryStreamProperties {
      * 定时裁剪周期，单位毫秒。
      */
     private long trimIntervalMs = 5000L;
+
+    /**
+     * Redis Stream 写入缓冲配置，用于把阶段提交和 Redis I/O 解耦。
+     */
+    private Buffer buffer = new Buffer();
+
+    @Data
+    public static class Buffer {
+
+        /**
+         * 内存缓冲最大遥测条数，达到上限后显式丢弃并计数。
+         */
+        private int capacity = 10000;
+
+        /**
+         * 每次 Redis pipeline 最大写入条数，仍保持一条遥测对应一条 Stream entry。
+         */
+        private int batchSize = 100;
+
+        /**
+         * writer 等待凑批的最长时间，单位毫秒。
+         */
+        private long flushIntervalMs = 20L;
+
+        /**
+         * 应用关闭时等待 Stream buffer 排空的最长时间，单位毫秒。
+         */
+        private long shutdownTimeoutMs = 30000L;
+    }
 }
 

@@ -14,6 +14,14 @@ public interface TelemetryStreamService {
     void append(String deviceId, DataPoint point, ProcessResult processResult);
 
     /**
+     * 尝试进入 Redis Stream best-effort 写入路径，返回是否成功接收。
+     */
+    default boolean appendBestEffort(String deviceId, DataPoint point, ProcessResult processResult) {
+        append(deviceId, point, processResult);
+        return true;
+    }
+
+    /**
      * 返回 Redis Stream 写入路径的内部观测快照。
      */
     default TelemetryStreamMetrics metrics() {

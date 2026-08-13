@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.RejectedExecutionException;
+
 /**
  * 定义当前模块的业务组件。
  */
@@ -51,5 +53,14 @@ class StreamTelemetryPostProcessStage implements TelemetryPostProcessStage {
     @Override
     public void process(TelemetryPostProcessContext context) {
         telemetryStreamService.append(context.deviceId(), context.point(), context.processResult());
+    }
+
+    /**
+     * Stream stage executor 拒绝时直接进入同一个有界写缓冲，成功 admission 视为已补偿。
+     */
+    @Override
+    public boolean onRejected(TelemetryPostProcessContext context, RejectedExecutionException exception) {
+        return telemetryStreamService.appendBestEffort(
+                context.deviceId(), context.point(), context.processResult());
     }
 }

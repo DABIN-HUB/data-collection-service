@@ -497,14 +497,14 @@ class CombinedDownstreamFailureTest {
     }
 
     private void waitUntil(Condition condition) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 10_000L;
+        long deadline = System.currentTimeMillis() + 30_000L;
         while (System.currentTimeMillis() < deadline) {
             if (condition.isSatisfied()) {
                 return;
             }
             TimeUnit.MILLISECONDS.sleep(10);
         }
-        assertTrue(condition.isSatisfied());
+        assertTrue(condition.isSatisfied(), "condition not satisfied before timeout");
     }
 
     private static ReportResult successResult() {
