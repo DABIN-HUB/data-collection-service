@@ -1,6 +1,7 @@
 package com.wangbin.collector.storage.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
@@ -9,6 +10,7 @@ import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
+import com.wangbin.collector.storage.repository.TelemetryInsertRow;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @MybatisTest
 @EnableConfigurationProperties(TdengineProperties.class)
@@ -184,6 +187,113 @@ class TimeSeriesServiceTdengineIT {
         assertThat(service.writeMetrics().singleTableWriteRequests()).isEqualTo(1L);
         assertThat(service.writeMetrics().writtenRows()).isEqualTo(2L);
         assertThat(service.writeMetrics().writeFailures()).isZero();
+    }
+
+    @Test
+    void singleQuoteMustRoundTrip() throws Exception {
+        assertDirectRestStringRoundTrip("single_quote", "O'Brien");
+    }
+
+    @Test
+    void backslashMustRoundTrip() throws Exception {
+        assertDirectRestStringRoundTrip("backslash", "a\\b\\c");
+    }
+
+    @Test
+    void windowsPathMustRoundTrip() throws Exception {
+        assertDirectRestStringRoundTrip("windows_path", "C:\\temp\\data");
+    }
+
+    @Test
+    void newlineCarriageReturnTabMustRoundTrip() throws Exception {
+        assertDirectRestStringRoundTrip("control_chars", "line1\nline2\r\t");
+    }
+
+    @Test
+    void jsonEscapesMustRoundTrip() throws Exception {
+        String json = "{\"path\":\"C:\\\\temp\",\"name\":\"O'Brien\"}";
+        String value = assertDirectRestStringRoundTrip("json_escapes", json);
+        assertThat(objectMapper.readTree(value)).isEqualTo(objectMapper.readTree(json));
+    }
+
+    @Test
+    void unicodeMustRoundTrip() throws Exception {
+        assertDirectRestStringRoundTrip("unicode", "中文 emoji 😀");
+    }
+
+    @Test
+    void emptyAndNullMustPreserveSemantics() throws Exception {
+        long eventTs = System.currentTimeMillis();
+        String suffix = "literal_empty_null_" + eventTs;
+        String database = sanitizeIdentifier(properties.getDatabase());
+        String superTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSuperTable()));
+        String subTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSubTablePrefix())
+                + sanitizeIdentifier("tdengine_" + suffix));
+        prepareV2Table(database, superTable, subTable, "tdengine-" + suffix);
+
+        DirectJdbcTdengineTelemetryWriter writer = new DirectJdbcTdengineTelemetryWriter(dataSource);
+        writer.writeBatch(new TdengineWriteTarget(database, subTable), List.of(
+                literalRow(eventTs, "empty-" + suffix, "", "", "{}", "{}", "{}"),
+                literalRow(eventTs + 1, "null-" + suffix, null, null, null, null, null)));
+
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        Map<String, Object> emptyRow = jdbcTemplate.queryForMap("SELECT value_text,message,raw_json,processed_json,metadata_json FROM "
+                + database + "." + subTable + " WHERE point_key = 'empty-" + suffix + "'");
+        assertThat(valueOf(emptyRow, "value_text", "valueText")).isEqualTo("");
+        assertThat(valueOf(emptyRow, "message")).isEqualTo("");
+        assertThat(valueOf(emptyRow, "raw_json", "rawJson")).isEqualTo("{}");
+
+        Map<String, Object> nullRow = jdbcTemplate.queryForMap("SELECT value_text,message,raw_json,processed_json,metadata_json FROM "
+                + database + "." + subTable + " WHERE point_key = 'null-" + suffix + "'");
+        assertThat(valueOf(nullRow, "value_text", "valueText")).isNull();
+        assertThat(valueOf(nullRow, "message")).isNull();
+        assertThat(valueOf(nullRow, "raw_json", "rawJson")).isNull();
+        assertThat(valueOf(nullRow, "processed_json", "processedJson")).isNull();
+        assertThat(valueOf(nullRow, "metadata_json", "metadataJson")).isNull();
+    }
+
+    @Test
+    void unsupportedCharacterMustNotBeSilentlyModified() {
+        DirectJdbcTdengineTelemetryWriter writer = new DirectJdbcTdengineTelemetryWriter(dataSource);
+        assertThatThrownBy(() -> writer.writeBatch(
+                new TdengineWriteTarget(properties.getDatabase(), "d_literal_fail_v2"),
+                List.of(literalRow(System.currentTimeMillis(), "bad-nul", "bad\u0000value", "msg", "{}", "{}", "{}"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NUL");
+    }
+
+    @Test
+    void directRestWriterMustPreserveAllStringColumns() throws Exception {
+        long eventTs = System.currentTimeMillis();
+        String suffix = "literal_all_" + eventTs;
+        String database = sanitizeIdentifier(properties.getDatabase());
+        String superTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSuperTable()));
+        String subTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSubTablePrefix())
+                + sanitizeIdentifier("tdengine_" + suffix));
+        prepareV2Table(database, superTable, subTable, "tdengine-" + suffix);
+        String rawJson = "{\"path\":\"C:\\\\temp\",\"name\":\"O'Brien\",\"text\":\"中文😀\"}";
+        String processedJson = "{\"line\":\"line1\\nline2\",\"tab\":\"\\t\"}";
+        String metadataJson = "{\"quote\":\"O'Brien\",\"slash\":\"a\\\\b\\\\c\"}";
+
+        DirectJdbcTdengineTelemetryWriter writer = new DirectJdbcTdengineTelemetryWriter(dataSource);
+        writer.writeBatch(new TdengineWriteTarget(database, subTable), List.of(literalRow(
+                eventTs,
+                "all-" + suffix,
+                "C:\\temp\\data\n中文😀",
+                "O'Brien\r\tmessage",
+                rawJson,
+                processedJson,
+                metadataJson)));
+
+        Map<String, Object> row = new JdbcTemplate(dataSource).queryForMap(
+                "SELECT value_text,message,raw_json,processed_json,metadata_json FROM "
+                        + database + "." + subTable + " WHERE point_key = 'all-" + suffix + "'");
+
+        assertThat(valueOf(row, "value_text", "valueText")).isEqualTo("C:\\temp\\data\n中文😀");
+        assertThat(valueOf(row, "message")).isEqualTo("O'Brien\r\tmessage");
+        assertJsonRoundTrip(row, "raw_json", "rawJson", rawJson);
+        assertJsonRoundTrip(row, "processed_json", "processedJson", processedJson);
+        assertJsonRoundTrip(row, "metadata_json", "metadataJson", metadataJson);
     }
 
     @Test
@@ -627,6 +737,75 @@ class TimeSeriesServiceTdengineIT {
     private Map<String, Object> readMap(String json) throws Exception {
         return objectMapper.readValue(json, new TypeReference<>() {
         });
+    }
+
+    private String assertDirectRestStringRoundTrip(String scenario, String value) throws Exception {
+        long eventTs = System.currentTimeMillis();
+        String suffix = scenario + "_" + eventTs;
+        String database = sanitizeIdentifier(properties.getDatabase());
+        String superTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSuperTable()));
+        String subTable = TimeSeriesService.resolveV2Name(sanitizeIdentifier(properties.getSubTablePrefix())
+                + sanitizeIdentifier("tdengine_" + suffix));
+        prepareV2Table(database, superTable, subTable, "tdengine-" + suffix);
+        String json = objectMapper.writeValueAsString(Map.of("value", value));
+
+        DirectJdbcTdengineTelemetryWriter writer = new DirectJdbcTdengineTelemetryWriter(dataSource);
+        writer.writeBatch(new TdengineWriteTarget(database, subTable), List.of(literalRow(
+                eventTs,
+                "point-" + suffix,
+                value,
+                value,
+                json,
+                json,
+                json)));
+
+        Map<String, Object> row = new JdbcTemplate(dataSource).queryForMap(
+                "SELECT value_text,message,raw_json,processed_json,metadata_json FROM "
+                        + database + "." + subTable + " WHERE point_key = 'point-" + suffix + "'");
+        assertThat(valueOf(row, "value_text", "valueText")).isEqualTo(value);
+        assertThat(valueOf(row, "message")).isEqualTo(value);
+        assertJsonRoundTrip(row, "raw_json", "rawJson", json);
+        assertJsonRoundTrip(row, "processed_json", "processedJson", json);
+        assertJsonRoundTrip(row, "metadata_json", "metadataJson", json);
+        return String.valueOf(valueOf(row, "value_text", "valueText"));
+    }
+
+    private void assertJsonRoundTrip(Map<String, Object> row, String snakeKey, String camelKey, String expected)
+            throws Exception {
+        Object actual = valueOf(row, snakeKey, camelKey);
+        assertThat(actual).isNotNull();
+        JsonNode actualTree = objectMapper.readTree(String.valueOf(actual));
+        JsonNode expectedTree = objectMapper.readTree(expected);
+        assertThat(actualTree).isEqualTo(expectedTree);
+    }
+
+    private void prepareV2Table(String database, String superTable, String subTable, String deviceId) {
+        dataRepository.createDatabase(database, properties.getKeepDays());
+        dataRepository.createStableV2(database, superTable);
+        deviceRepository.createChildTable(database, subTable, superTable, deviceId, "MODBUS_TCP");
+    }
+
+    private TelemetryInsertRow literalRow(long eventTs,
+                                          String pointKey,
+                                          String value,
+                                          String message,
+                                          String rawJson,
+                                          String processedJson,
+                                          String metadataJson) {
+        return new TelemetryInsertRow(
+                eventTs,
+                pointKey,
+                pointKey,
+                "code-" + pointKey,
+                "name-" + pointKey,
+                value,
+                "C",
+                100,
+                true,
+                message,
+                rawJson,
+                processedJson,
+                metadataJson);
     }
 
     private DataPoint point(Long id, String pointId, String pointCode, String address) {

@@ -160,11 +160,25 @@ public class DirectJdbcTdengineTelemetryWriter implements TdengineTelemetryWrite
         return raw;
     }
 
-    private static String stringLiteral(String value) {
+    static String stringLiteral(String value) {
         if (value == null) {
             return "NULL";
         }
-        return "'" + value.replace("'", "''").replace("\u0000", "") + "'";
+        StringBuilder builder = new StringBuilder(value.length() + 16);
+        builder.append('\'');
+        for (int index = 0; index < value.length(); index++) {
+            char ch = value.charAt(index);
+            switch (ch) {
+                case '\u0000' -> throw new IllegalArgumentException("TDengine NCHAR 字符串不支持 NUL 字符，拒绝静默修改数据");
+                case '\'' -> builder.append("\\'");
+                case '\\' -> builder.append("\\\\");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                default -> builder.append(ch);
+            }
+        }
+        return builder.append('\'').toString();
     }
 
     private static String integerLiteral(Integer value) {
