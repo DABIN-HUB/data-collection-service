@@ -117,6 +117,7 @@ class HistoryLiveWriteThroughputIT {
             deleteRunKeys();
             HistoryBatchMetrics batchStart = historyBatchWriter.metrics();
             HistoryBufferMetrics bufferStart = historyWriteBuffer.metrics();
+            timeSeriesService.resetWriteMetrics();
             TdengineWriteMetrics writeStart = timeSeriesService.writeMetrics();
             long startedAt = System.nanoTime();
             long submitted = submitRows(RUN_ID, startedAt);
@@ -275,6 +276,7 @@ class HistoryLiveWriteThroughputIT {
         config.put("flushThreads", historyBatchProperties.getFlushExecutor().getCoreSize());
         config.put("flushQueue", historyBatchProperties.getFlushExecutor().getQueueCapacity());
         config.put("multiTableEnabled", tdengineProperties.getWrite().isMultiTableEnabled());
+        config.put("tdengineWriteMode", tdengineProperties.getWrite().getMode());
         config.put("maxTablesPerRequest", tdengineProperties.getWrite().getMaxTablesPerRequest());
         config.put("maxRowsPerRequest", tdengineProperties.getWrite().getMaxRowsPerRequest());
         config.put("aggregationWaitMs", tdengineProperties.getWrite().getAggregationWaitMs());
@@ -302,6 +304,12 @@ class HistoryLiveWriteThroughputIT {
                 batchEnd.tdengineTablesPerRequest(), batchEnd.tdengineTablesPerRequestP95(),
                 batchEnd.tdengineTablesPerRequestMax(), writeEnd.writeLatencyP50Ms(),
                 writeEnd.writeLatencyP95Ms(), writeEnd.writeLatencyP99Ms(),
+                writeEnd.connectionAcquireP50Ms(), writeEnd.connectionAcquireP95Ms(),
+                writeEnd.connectionAcquireP99Ms(), writeEnd.sqlBuildP50Ms(), writeEnd.sqlBuildP95Ms(),
+                writeEnd.sqlBuildP99Ms(), writeEnd.dbExecuteP50Ms(), writeEnd.dbExecuteP95Ms(),
+                writeEnd.dbExecuteP99Ms(), writeEnd.totalWriteP50Ms(), writeEnd.totalWriteP95Ms(),
+                writeEnd.totalWriteP99Ms(), writeEnd.sampleCount(), writeEnd.totalRecordedSamples(),
+                writeEnd.overwrittenSamples(),
                 batchEnd.dbQueueWaitP50Ms(), batchEnd.dbQueueWaitP95Ms(), batchEnd.dbQueueWaitP99Ms(),
                 batchEnd.dbExecuteLatencyP50Ms(), batchEnd.dbExecuteLatencyP95Ms(),
                 batchEnd.dbExecuteLatencyP99Ms(), batchEnd.maxConcurrentWritesSameSubTable(),
@@ -376,6 +384,21 @@ class HistoryLiveWriteThroughputIT {
                            double tdengineWriteP50Ms,
                            double tdengineWriteP95Ms,
                            double tdengineWriteP99Ms,
+                           double connectionAcquireP50Ms,
+                           double connectionAcquireP95Ms,
+                           double connectionAcquireP99Ms,
+                           double sqlBuildP50Ms,
+                           double sqlBuildP95Ms,
+                           double sqlBuildP99Ms,
+                           double dbExecuteP50Ms,
+                           double dbExecuteP95Ms,
+                           double dbExecuteP99Ms,
+                           double totalWriteP50Ms,
+                           double totalWriteP95Ms,
+                           double totalWriteP99Ms,
+                           int latencySampleCount,
+                           long latencyTotalRecorded,
+                           long latencyOverwrittenSamples,
                            double dbQueueWaitP50Ms,
                            double dbQueueWaitP95Ms,
                            double dbQueueWaitP99Ms,

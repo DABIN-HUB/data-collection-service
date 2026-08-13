@@ -17,6 +17,7 @@ import com.wangbin.collector.storage.repository.TdengineTableRows;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ class TimeSeriesServiceTest {
         properties.setDatabase("wangbin_collector");
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
         when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
 
@@ -178,6 +180,8 @@ class TimeSeriesServiceTest {
         properties.setDatabase("wangbin_collector");
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
         properties.setQueryDefaultLimit(10);
         properties.setQueryMaxLimit(10);
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
@@ -228,6 +232,7 @@ class TimeSeriesServiceTest {
         properties.setDatabase("wangbin_collector");
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
         when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
         TimeSeriesService service = new TimeSeriesService(
@@ -271,6 +276,7 @@ class TimeSeriesServiceTest {
         properties.setDatabase("wangbin_collector");
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
         properties.getWrite().setMultiTableEnabled(true);
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
         when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
@@ -303,6 +309,7 @@ class TimeSeriesServiceTest {
         properties.setDatabase("wangbin_collector");
         properties.setSuperTable("telemetry_super");
         properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.MYBATIS_REST);
         when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
         when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
         TimeSeriesService service = new TimeSeriesService(
@@ -321,6 +328,62 @@ class TimeSeriesServiceTest {
         verify(dataRepository).insertTelemetryV2Batch(eq("wangbin_collector"), eq("d_dev_single_b_v2"), any());
         verify(dataRepository, never()).insertTelemetryV2MultiTableBatch(any(), any());
         assertThat(service.writeMetrics().singleTableWriteRequests()).isEqualTo(2L);
+    }
+
+    @Test
+    void writerSwitchMustNotChangeHistorySemantics() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.DIRECT_REST);
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        CapturingWriter writer = new CapturingWriter(TdengineWriteMode.DIRECT_REST);
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService(),
+                List.of(writer),
+                new TdengineWriteMetricRecorder());
+
+        service.appendBatch(List.of(
+                appendRequest("dev-switch", point(1L, "p-a"), ProcessResult.success(1L, 1L), 1_000L)));
+
+        assertThat(writer.targets).extracting(TdengineWriteTarget::subTable)
+                .containsExactly("d_dev_switch_v2");
+        assertThat(writer.rows).hasSize(1);
+        assertThat(writer.rows.get(0).getPointKey()).isEqualTo("p-a");
+        assertThat(service.writeMetrics().writtenRows()).isEqualTo(1L);
+    }
+
+    @Test
+    void directRestFailureMustPropagateToExistingFallback() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        properties.setDatabase("wangbin_collector");
+        properties.setSuperTable("telemetry_super");
+        properties.setSubTablePrefix("d_");
+        properties.getWrite().setMode(TdengineWriteMode.DIRECT_REST);
+        when(dataRepository.countColumn("wangbin_collector", "telemetry_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "telemetry_super_v2")).thenReturn(v2CreateSql());
+        FailingWriter writer = new FailingWriter(TdengineWriteMode.DIRECT_REST);
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                new PointRuntimeStateService(),
+                List.of(writer),
+                new TdengineWriteMetricRecorder());
+
+        assertThatThrownBy(() -> service.appendBatch(List.of(
+                appendRequest("dev-fail", point(1L, "p-a"), ProcessResult.success(1L, 1L), 1_000L))))
+                .isInstanceOf(TdengineWriteException.class);
+        assertThat(service.writeMetrics().writeFailures()).isEqualTo(1L);
     }
 
     private DataPoint point(Long id, String pointId) {
@@ -356,5 +419,53 @@ class TimeSeriesServiceTest {
     private Map<String, Object> readMap(String json) throws Exception {
         return objectMapper.readValue(json, new TypeReference<>() {
         });
+    }
+
+    private static class CapturingWriter implements TdengineTelemetryWriter {
+
+        private final TdengineWriteMode mode;
+        private final List<TdengineWriteTarget> targets = new ArrayList<>();
+        private final List<TelemetryInsertRow> rows = new ArrayList<>();
+
+        private CapturingWriter(TdengineWriteMode mode) {
+            this.mode = mode;
+        }
+
+        @Override
+        public TdengineWriteMode mode() {
+            return mode;
+        }
+
+        @Override
+        public TdengineWriteOutcome writeSingle(TdengineWriteTarget target, TelemetryInsertRow row) {
+            targets.add(target);
+            rows.add(row);
+            return TdengineWriteOutcome.success(1, 1, false, 1L, 2L, 3L, 4L);
+        }
+
+        @Override
+        public TdengineWriteOutcome writeBatch(TdengineWriteTarget target, List<TelemetryInsertRow> rows) {
+            targets.add(target);
+            this.rows.addAll(rows);
+            return TdengineWriteOutcome.success(rows.size(), 1, false, 1L, 2L, 3L, 4L);
+        }
+
+        @Override
+        public TdengineWriteOutcome writeMultiTableBatch(String database, List<TdengineTableRows> tables) {
+            throw new UnsupportedOperationException("not used");
+        }
+    }
+
+    private static final class FailingWriter extends CapturingWriter {
+
+        private FailingWriter(TdengineWriteMode mode) {
+            super(mode);
+        }
+
+        @Override
+        public TdengineWriteOutcome writeBatch(TdengineWriteTarget target, List<TelemetryInsertRow> rows) {
+            throw new TdengineWriteException("failed", new IllegalStateException("down"),
+                    TdengineWriteOutcome.success(rows.size(), 1, false, 0L, 0L, 1L, 1L));
+        }
     }
 }

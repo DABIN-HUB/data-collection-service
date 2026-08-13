@@ -43,7 +43,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "telemetry.tdengine.auto-create=true",
         "telemetry.tdengine.keep-days=30",
         "telemetry.tdengine.query-default-limit=10",
-        "telemetry.tdengine.query-max-limit=20"
+        "telemetry.tdengine.query-max-limit=20",
+        "telemetry.tdengine.write.mode=MYBATIS_REST"
 })
 class TimeSeriesServiceTdengineIT {
 
@@ -150,6 +151,39 @@ class TimeSeriesServiceTdengineIT {
         Map<String, Object> processed = readMap(String.valueOf(valueOf(row, "processedJson", "processed_json")));
         assertThat(processed.get("value")).isEqualTo(12.34);
         assertThat(processed.get("quality")).isEqualTo("GOOD");
+    }
+
+    @Test
+    void directRestWriterMustPreserveV2SemanticsInRealTdengine() throws Exception {
+        TdengineProperties directProperties = copyProperties();
+        directProperties.getWrite().setMode(TdengineWriteMode.DIRECT_REST);
+        TimeSeriesService service = new TimeSeriesService(
+                dataRepository,
+                deviceRepository,
+                directProperties,
+                objectMapper,
+                new PointRuntimeStateService(),
+                List.of(new MybatisTdengineTelemetryWriter(dataRepository),
+                        new DirectJdbcTdengineTelemetryWriter(dataSource)),
+                new TdengineWriteMetricRecorder());
+
+        long eventTs = System.currentTimeMillis();
+        String suffix = "direct_" + eventTs;
+        String deviceId = "tdengine-direct-" + suffix;
+        DataPoint pointA = point(1301L, "point-a-" + suffix, "direct_a_" + suffix, "40001");
+        DataPoint pointB = point(1302L, "point-b-" + suffix, "direct_b_" + suffix, "40002");
+
+        service.appendBatch(List.of(
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", pointA,
+                        ProcessResult.success(111, 11.1, "direct point A"), eventTs),
+                new TimeSeriesService.AppendRequest(deviceId, "MODBUS_TCP", pointB,
+                        ProcessResult.success(222, 22.2, "direct point B"), eventTs)));
+
+        assertThat(service.query(deviceId, pointA.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.query(deviceId, pointB.getPointId(), eventTs, eventTs, 5)).hasSize(1);
+        assertThat(service.writeMetrics().singleTableWriteRequests()).isEqualTo(1L);
+        assertThat(service.writeMetrics().writtenRows()).isEqualTo(2L);
+        assertThat(service.writeMetrics().writeFailures()).isZero();
     }
 
     @Test
@@ -629,6 +663,28 @@ class TimeSeriesServiceTdengineIT {
                 "{}",
                 "{}",
                 "{}");
+    }
+
+    private TdengineProperties copyProperties() {
+        TdengineProperties copy = new TdengineProperties();
+        copy.setEnabled(properties.isEnabled());
+        copy.setDatabase(properties.getDatabase());
+        copy.setSuperTable(properties.getSuperTable());
+        copy.setSubTablePrefix(properties.getSubTablePrefix());
+        copy.setAlarmSuperTable(properties.getAlarmSuperTable());
+        copy.setAlarmSubTablePrefix(properties.getAlarmSubTablePrefix());
+        copy.setKeepDays(properties.getKeepDays());
+        copy.setAutoCreate(properties.isAutoCreate());
+        copy.setQueryDefaultLimit(properties.getQueryDefaultLimit());
+        copy.setQueryMaxLimit(properties.getQueryMaxLimit());
+        copy.getWrite().setMultiTableEnabled(properties.getWrite().isMultiTableEnabled());
+        copy.getWrite().setMaxTablesPerRequest(properties.getWrite().getMaxTablesPerRequest());
+        copy.getWrite().setMaxRowsPerRequest(properties.getWrite().getMaxRowsPerRequest());
+        copy.getWrite().setAggregationWaitMs(properties.getWrite().getAggregationWaitMs());
+        copy.getWrite().setWebsocketUrl(properties.getWrite().getWebsocketUrl());
+        copy.getWrite().setWebsocketUsername(properties.getWrite().getWebsocketUsername());
+        copy.getWrite().setWebsocketPassword(properties.getWrite().getWebsocketPassword());
+        return copy;
     }
 
     private static Object valueOf(Map<String, Object> row, String... keys) {

@@ -39,6 +39,9 @@ import com.wangbin.collector.storage.buffer.HistoryBatchWriter;
 import com.wangbin.collector.storage.buffer.HistoryBufferProperties;
 import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
+import com.wangbin.collector.storage.config.TdengineProperties;
+import com.wangbin.collector.storage.service.TimeSeriesService;
+import com.wangbin.collector.storage.service.TdengineWriteMetrics;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -160,6 +163,9 @@ class RealEnvironmentSoakIT {
     private HistoryBufferProperties historyBufferProperties;
 
     @Autowired
+    private TdengineProperties tdengineProperties;
+
+    @Autowired
     private TelemetryIngressBufferProperties telemetryIngressBufferProperties;
 
     @Autowired
@@ -188,6 +194,9 @@ class RealEnvironmentSoakIT {
 
     @Autowired
     private ObjectProvider<TelemetryStreamService> telemetryStreamServiceProvider;
+
+    @Autowired
+    private ObjectProvider<TimeSeriesService> timeSeriesServiceProvider;
 
     @Autowired
     private ObjectProvider<DataSource> dataSourceProvider;
@@ -427,6 +436,10 @@ class RealEnvironmentSoakIT {
             collectionScheduler.resetPhaseWheelStats();
             telemetryPostProcessPipeline.resetMetrics();
             collectorDataPostProcessor.resetMetrics();
+            TimeSeriesService timeSeriesService = timeSeriesServiceProvider.getIfAvailable();
+            if (timeSeriesService != null) {
+                timeSeriesService.resetWriteMetrics();
+            }
             counters.activateRuntimeCollector();
             counters.startMeasurement();
             lifecycle.measurementValid.set(true);
@@ -789,6 +802,10 @@ class RealEnvironmentSoakIT {
         HikariSnapshot hikari = hikariSnapshot();
         TelemetryPipelineMetrics pipelineMetrics = telemetryPostProcessPipeline.metrics();
         CollectorDataPostProcessorMetrics postProcessorMetrics = collectorDataPostProcessor.metrics();
+        TimeSeriesService timeSeriesService = timeSeriesServiceProvider.getIfAvailable();
+        TdengineWriteMetrics tdengineWrite = timeSeriesService != null
+                ? timeSeriesService.writeMetrics()
+                : emptyTdengineWriteMetrics();
         long now = System.currentTimeMillis();
         return new MetricSample(
                 now,
@@ -915,8 +932,18 @@ class RealEnvironmentSoakIT {
                         batch.dbQueueWaitP50Ms(), batch.dbQueueWaitP95Ms(), batch.dbQueueWaitP99Ms(),
                         batch.dbExecuteLatencyP50Ms(), batch.dbExecuteLatencyP95Ms(),
                         batch.dbExecuteLatencyP99Ms(), batch.subTableWriteLatencyP95Ms()),
+                tdengineWrite,
                 cloud
         );
+    }
+
+    private TdengineWriteMetrics emptyTdengineWriteMetrics() {
+        return new TdengineWriteMetrics(
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                0D, 0, 0, 0D, 0, 0,
+                0D, 0D, 0D, 0D, 0D, 0D,
+                0D, 0D, 0D, 0D, 0D, 0D,
+                0D, 0D, 0D, 0, 0L, 0L, 0D, 0D);
     }
 
     private HistoryBatchMetrics emptyHistoryBatchMetrics() {
@@ -1133,6 +1160,10 @@ class RealEnvironmentSoakIT {
         info.put("maxMemoryBytes", Runtime.getRuntime().maxMemory());
         info.put("redis", redisSnapshot(options));
         info.put("tdengine", tdengineInfo());
+        info.put("tdengineWriteMode", tdengineProperties.getWrite().getMode());
+        info.put("tdengineWriteWebsocketConfigured",
+                tdengineProperties.getWrite().getWebsocketUrl() != null
+                        && !tdengineProperties.getWrite().getWebsocketUrl().isBlank());
         info.put("hikari", hikariSnapshot());
         info.put("cloudEnabled", options.cloudEnabled());
         info.put("reportServiceEnabled", reportProperties.isEnabled());
@@ -1350,6 +1381,20 @@ class RealEnvironmentSoakIT {
                 runStartSample.historyBatch().tdengineWriteRequests());
         long tdengineWriteRowsDelta = delta(loadEndSample.historyBatch().tdengineWriteRows(),
                 runStartSample.historyBatch().tdengineWriteRows());
+        TdengineWriteMetrics writerStart = runStartSample.tdengineWrite();
+        TdengineWriteMetrics writerEnd = loadEndSample.tdengineWrite();
+        long writerRequestsDelta = delta(writerEnd.writeRequests(), writerStart.writeRequests());
+        long writerRowsDelta = delta(writerEnd.writtenRows(), writerStart.writtenRows());
+        long writerSingleRequestsDelta = delta(writerEnd.singleTableWriteRequests(),
+                writerStart.singleTableWriteRequests());
+        long writerMultiRequestsDelta = delta(writerEnd.multiTableWriteRequests(),
+                writerStart.multiTableWriteRequests());
+        long writerFailuresDelta = delta(writerEnd.writeFailures(), writerStart.writeFailures());
+        long writerEnsureCallsDelta = delta(writerEnd.ensureSubTableCalls(), writerStart.ensureSubTableCalls());
+        long writerEnsureHitsDelta = delta(writerEnd.ensureSubTableCacheHits(),
+                writerStart.ensureSubTableCacheHits());
+        long writerEnsureMissesDelta = delta(writerEnd.ensureSubTableCacheMisses(),
+                writerStart.ensureSubTableCacheMisses());
         SchedulerStateSnapshot schedulerLoadDelta = schedulerDelta(runStartSample.scheduler(), loadEndSample.scheduler());
         if (!loadProfile.valid()) {
             lifecycle.measurementValid.set(false);
@@ -1369,6 +1414,8 @@ class RealEnvironmentSoakIT {
         summary.put("drainSeconds", options.drainWaitSeconds());
         summary.put("capacityProfile", options.capacityProfile());
         summary.put("fixedCapacityMode", options.fixedCapacityMode());
+        summary.put("tdengineWriteMode", tdengineProperties.getWrite().getMode());
+        summary.put("tdengineWriteTransport", tdengineProperties.getWrite().getMode());
         summary.put("lifecycle", lifecycle.asMap());
         summary.put("warmupBacklogClean", lifecycle.warmupBacklogClean.get());
         summary.put("warmupQuiescence", lifecycle.warmupQuiescence.get().asMap());
@@ -1532,6 +1579,38 @@ class RealEnvironmentSoakIT {
         summary.put("historyBatchTdengineWriteRowsDelta", tdengineWriteRowsDelta);
         summary.put("historyBatchTdengineWriteRequestsPerSecondDelta", tdengineWriteRequestsDelta * 1000.0d / loadElapsedMs);
         summary.put("historyBatchTdengineWriteRowsPerSecondDelta", tdengineWriteRowsDelta * 1000.0d / loadElapsedMs);
+        summary.put("tdengineWriterRequestsDelta", writerRequestsDelta);
+        summary.put("tdengineWriterRowsDelta", writerRowsDelta);
+        summary.put("tdengineWriterSingleTableRequestsDelta", writerSingleRequestsDelta);
+        summary.put("tdengineWriterMultiTableRequestsDelta", writerMultiRequestsDelta);
+        summary.put("tdengineWriterFailuresDelta", writerFailuresDelta);
+        summary.put("tdengineWriterRequestsPerSecondDelta", writerRequestsDelta * 1000.0d / loadElapsedMs);
+        summary.put("tdengineWriterRowsPerSecondDelta", writerRowsDelta * 1000.0d / loadElapsedMs);
+        summary.put("tdengineWriterRowsPerRequest", writerRequestsDelta > 0L
+                ? writerRowsDelta / (double) writerRequestsDelta : 0D);
+        summary.put("tdengineWriterRowsPerRequestP95", writerEnd.rowsPerRequestP95());
+        summary.put("tdengineWriterRowsPerRequestMax", writerEnd.rowsPerRequestMax());
+        summary.put("tdengineWriterTablesPerRequest", writerEnd.averageTablesPerRequest());
+        summary.put("tdengineWriterTablesPerRequestP95", writerEnd.tablesPerRequestP95());
+        summary.put("tdengineWriterTablesPerRequestMax", writerEnd.tablesPerRequestMax());
+        summary.put("tdengineWriterConnectionAcquireP50Ms", writerEnd.connectionAcquireP50Ms());
+        summary.put("tdengineWriterConnectionAcquireP95Ms", writerEnd.connectionAcquireP95Ms());
+        summary.put("tdengineWriterConnectionAcquireP99Ms", writerEnd.connectionAcquireP99Ms());
+        summary.put("tdengineWriterSqlBuildP50Ms", writerEnd.sqlBuildP50Ms());
+        summary.put("tdengineWriterSqlBuildP95Ms", writerEnd.sqlBuildP95Ms());
+        summary.put("tdengineWriterSqlBuildP99Ms", writerEnd.sqlBuildP99Ms());
+        summary.put("tdengineWriterDbExecuteP50Ms", writerEnd.dbExecuteP50Ms());
+        summary.put("tdengineWriterDbExecuteP95Ms", writerEnd.dbExecuteP95Ms());
+        summary.put("tdengineWriterDbExecuteP99Ms", writerEnd.dbExecuteP99Ms());
+        summary.put("tdengineWriterTotalWriteP50Ms", writerEnd.totalWriteP50Ms());
+        summary.put("tdengineWriterTotalWriteP95Ms", writerEnd.totalWriteP95Ms());
+        summary.put("tdengineWriterTotalWriteP99Ms", writerEnd.totalWriteP99Ms());
+        summary.put("tdengineWriterLatencySampleCount", writerEnd.sampleCount());
+        summary.put("tdengineWriterLatencyTotalRecorded", writerEnd.totalRecordedSamples());
+        summary.put("tdengineWriterLatencyOverwrittenSamples", writerEnd.overwrittenSamples());
+        summary.put("tdengineWriterEnsureSubTableCallsDelta", writerEnsureCallsDelta);
+        summary.put("tdengineWriterEnsureSubTableCacheHitsDelta", writerEnsureHitsDelta);
+        summary.put("tdengineWriterEnsureSubTableCacheMissesDelta", writerEnsureMissesDelta);
         summary.put("historyBatchDbQueueWaitP50Ms", loadEndSample.historyBatch().dbQueueWaitP50Ms());
         summary.put("historyBatchDbQueueWaitP95Ms", loadEndSample.historyBatch().dbQueueWaitP95Ms());
         summary.put("historyBatchDbQueueWaitP99Ms", loadEndSample.historyBatch().dbQueueWaitP99Ms());
@@ -2793,6 +2872,7 @@ class RealEnvironmentSoakIT {
                                 StreamSnapshot stream,
                                 HistorySnapshot history,
                                 HistoryBatchSnapshot historyBatch,
+                                TdengineWriteMetrics tdengineWrite,
                                 CloudSnapshot cloud) {
     }
 

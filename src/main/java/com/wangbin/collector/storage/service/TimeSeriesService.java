@@ -14,13 +14,14 @@ import com.wangbin.collector.storage.repository.DataRepository;
 import com.wangbin.collector.storage.repository.DeviceRepository;
 import com.wangbin.collector.storage.repository.TelemetryInsertRow;
 import com.wangbin.collector.storage.repository.TdengineTableRows;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,14 +29,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * 处理当前模块的业务服务。
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class TimeSeriesService {
 
@@ -44,7 +43,6 @@ public class TimeSeriesService {
     private static final String COMPOSITE_KEY_NOTE = "COMPOSITE KEY";
     private static final String V2_SUFFIX = "_v2";
     private static final int POINT_KEY_MAX_BYTES = 128;
-    private static final int METRIC_SAMPLE_LIMIT = 10_000;
     private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
             ProcessResultMetadataKeys.RAW_VALUE,
             ProcessResultMetadataKeys.PROCESSED_VALUE,
@@ -60,20 +58,41 @@ public class TimeSeriesService {
     private final TdengineProperties properties;
     private final ObjectMapper objectMapper;
     private final PointRuntimeStateService pointRuntimeStateService;
+    private final Map<TdengineWriteMode, TdengineTelemetryWriter> writersByMode;
+    private final TdengineWriteMetricRecorder writeMetricRecorder;
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
-    private final LongAdder writeRequests = new LongAdder();
-    private final LongAdder writtenRows = new LongAdder();
-    private final LongAdder singleTableWriteRequests = new LongAdder();
-    private final LongAdder multiTableWriteRequests = new LongAdder();
-    private final LongAdder writeFailures = new LongAdder();
-    private final LongAdder ensureSubTableCalls = new LongAdder();
-    private final LongAdder ensureSubTableCacheHits = new LongAdder();
-    private final LongAdder ensureSubTableCacheMisses = new LongAdder();
-    private final List<Integer> rowsPerRequestSamples = java.util.Collections.synchronizedList(new ArrayList<>());
-    private final List<Integer> tablesPerRequestSamples = java.util.Collections.synchronizedList(new ArrayList<>());
-    private final List<Long> writeLatencyNanos = java.util.Collections.synchronizedList(new ArrayList<>());
-    private final long metricsStartedAtNanos = System.nanoTime();
+
+    @Autowired
+    public TimeSeriesService(DataRepository dataRepository,
+                             DeviceRepository deviceRepository,
+                             TdengineProperties properties,
+                             ObjectMapper objectMapper,
+                             PointRuntimeStateService pointRuntimeStateService,
+                             List<TdengineTelemetryWriter> telemetryWriters,
+                             TdengineWriteMetricRecorder writeMetricRecorder) {
+        this.dataRepository = dataRepository;
+        this.deviceRepository = deviceRepository;
+        this.properties = properties;
+        this.objectMapper = objectMapper;
+        this.pointRuntimeStateService = pointRuntimeStateService;
+        this.writersByMode = resolveWriters(telemetryWriters);
+        this.writeMetricRecorder = writeMetricRecorder;
+    }
+
+    TimeSeriesService(DataRepository dataRepository,
+                      DeviceRepository deviceRepository,
+                      TdengineProperties properties,
+                      ObjectMapper objectMapper,
+                      PointRuntimeStateService pointRuntimeStateService) {
+        this(dataRepository,
+                deviceRepository,
+                properties,
+                objectMapper,
+                pointRuntimeStateService,
+                List.of(new MybatisTdengineTelemetryWriter(dataRepository)),
+                new TdengineWriteMetricRecorder());
+    }
 
     /**
      * 写入或持久化业务数据。
@@ -88,31 +107,16 @@ public class TimeSeriesService {
         String superTable = sanitizeIdentifier(properties.getSuperTable());
         String superTableV2 = resolveV2Name(superTable);
         AppendRequest request = new AppendRequest(deviceId, protocolType, point, processResult, eventTs);
-        WriteTarget target = resolveWriteTarget(database, superTableV2, request);
+        TdengineWriteTarget target = resolveWriteTarget(database, superTableV2, request);
         TelemetryInsertRow row = buildInsertRow(request);
 
-        long startedAt = System.nanoTime();
         try {
-            dataRepository.insertTelemetryV2(
-                    database,
-                    target.subTable(),
-                    row.getEventTs(),
-                    row.getPointKey(),
-                    row.getPointId(),
-                    row.getPointCode(),
-                    row.getPointName(),
-                    row.getValueText(),
-                    row.getUnit(),
-                    row.getQuality(),
-                    row.getSuccess(),
-                    row.getMessage(),
-                    row.getRawJson(),
-                    row.getProcessedJson(),
-                    row.getMetadataJson()
-            );
-            recordWriteRequest(1, 1, false, System.nanoTime() - startedAt);
+            recordWriteSuccess(activeWriter().writeSingle(target, row));
+        } catch (TdengineWriteException exception) {
+            recordWriteFailure(exception.outcome());
+            throw exception;
         } catch (RuntimeException exception) {
-            writeFailures.increment();
+            recordWriteFailure(null);
             throw exception;
         }
     }
@@ -128,16 +132,17 @@ public class TimeSeriesService {
             appendMultiTableBatch(requests);
             return;
         }
-        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
-        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
+        Map<TdengineWriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
+        for (Map.Entry<TdengineWriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
             List<TelemetryInsertRow> rows = entry.getValue();
             if (!rows.isEmpty()) {
-                long startedAt = System.nanoTime();
                 try {
-                    dataRepository.insertTelemetryV2Batch(entry.getKey().database(), entry.getKey().subTable(), rows);
-                    recordWriteRequest(rows.size(), 1, false, System.nanoTime() - startedAt);
+                    recordWriteSuccess(activeWriter().writeBatch(entry.getKey(), rows));
+                } catch (TdengineWriteException exception) {
+                    recordWriteFailure(exception.outcome());
+                    throw exception;
                 } catch (RuntimeException exception) {
-                    writeFailures.increment();
+                    recordWriteFailure(null);
                     throw exception;
                 }
             }
@@ -155,11 +160,11 @@ public class TimeSeriesService {
             appendBatch(requests);
             return;
         }
-        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
+        Map<TdengineWriteTarget, List<TelemetryInsertRow>> groupedRows = groupRows(requests);
         List<TdengineTableRows> tables = new ArrayList<>();
         int rows = 0;
         String database = null;
-        for (Map.Entry<WriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
+        for (Map.Entry<TdengineWriteTarget, List<TelemetryInsertRow>> entry : groupedRows.entrySet()) {
             List<TelemetryInsertRow> tableRows = entry.getValue();
             if (tableRows.isEmpty()) {
                 continue;
@@ -173,22 +178,25 @@ public class TimeSeriesService {
         }
         if (tables.size() == 1) {
             List<TelemetryInsertRow> tableRows = tables.get(0).rows();
-            long startedAt = System.nanoTime();
             try {
-                dataRepository.insertTelemetryV2Batch(database, tables.get(0).subTable(), tableRows);
-                recordWriteRequest(tableRows.size(), 1, false, System.nanoTime() - startedAt);
+                recordWriteSuccess(activeWriter().writeBatch(
+                        new TdengineWriteTarget(database, tables.get(0).subTable()), tableRows));
+            } catch (TdengineWriteException exception) {
+                recordWriteFailure(exception.outcome());
+                throw exception;
             } catch (RuntimeException exception) {
-                writeFailures.increment();
+                recordWriteFailure(null);
                 throw exception;
             }
             return;
         }
-        long startedAt = System.nanoTime();
         try {
-            dataRepository.insertTelemetryV2MultiTableBatch(database, tables);
-            recordWriteRequest(rows, tables.size(), true, System.nanoTime() - startedAt);
+            recordWriteSuccess(activeWriter().writeMultiTableBatch(database, tables));
+        } catch (TdengineWriteException exception) {
+            recordWriteFailure(exception.outcome());
+            throw exception;
         } catch (RuntimeException exception) {
-            writeFailures.increment();
+            recordWriteFailure(null);
             throw exception;
         }
     }
@@ -197,41 +205,27 @@ public class TimeSeriesService {
      * 返回 TDengine 写入请求级指标，用于容量测试区分 rows/s 和 request/s。
      */
     public TdengineWriteMetrics writeMetrics() {
-        long requests = writeRequests.sum();
-        long rows = writtenRows.sum();
-        return new TdengineWriteMetrics(
-                requests,
-                rows,
-                singleTableWriteRequests.sum(),
-                multiTableWriteRequests.sum(),
-                writeFailures.sum(),
-                ensureSubTableCalls.sum(),
-                ensureSubTableCacheHits.sum(),
-                ensureSubTableCacheMisses.sum(),
-                requests <= 0L ? 0D : (double) rows / requests,
-                percentileInt(rowsPerRequestSamples, 0.95D),
-                maxInt(rowsPerRequestSamples),
-                requests <= 0L ? 0D : (double) sumSamples(tablesPerRequestSamples) / requests,
-                percentileInt(tablesPerRequestSamples, 0.95D),
-                maxInt(tablesPerRequestSamples),
-                percentileMillis(writeLatencyNanos, 0.50D),
-                percentileMillis(writeLatencyNanos, 0.95D),
-                percentileMillis(writeLatencyNanos, 0.99D),
-                ratePerSecond(requests),
-                ratePerSecond(rows));
+        return writeMetricRecorder.snapshot();
     }
 
-    private Map<WriteTarget, List<TelemetryInsertRow>> groupRows(List<AppendRequest> requests) {
+    /**
+     * 清理写入路径观测窗口，用于 warmup 之后重新统计 measurement latency。
+     */
+    public void resetWriteMetrics() {
+        writeMetricRecorder.reset();
+    }
+
+    private Map<TdengineWriteTarget, List<TelemetryInsertRow>> groupRows(List<AppendRequest> requests) {
         ensureSchema();
         String database = sanitizeIdentifier(properties.getDatabase());
         String superTable = sanitizeIdentifier(properties.getSuperTable());
         String superTableV2 = resolveV2Name(superTable);
-        Map<WriteTarget, List<TelemetryInsertRow>> groupedRows = new LinkedHashMap<>();
+        Map<TdengineWriteTarget, List<TelemetryInsertRow>> groupedRows = new LinkedHashMap<>();
         for (AppendRequest request : requests) {
             if (request == null) {
                 continue;
             }
-            WriteTarget target = resolveWriteTarget(database, superTableV2, request);
+            TdengineWriteTarget target = resolveWriteTarget(database, superTableV2, request);
             groupedRows.computeIfAbsent(target, ignored -> new ArrayList<>())
                     .add(buildInsertRow(request));
         }
@@ -259,10 +253,10 @@ public class TimeSeriesService {
         return identity;
     }
 
-    private WriteTarget resolveWriteTarget(String database, String superTableV2, AppendRequest request) {
+    private TdengineWriteTarget resolveWriteTarget(String database, String superTableV2, AppendRequest request) {
         String subTableV2 = resolveV2Name(resolveSubTableName(request.deviceId()));
         ensureSubTable(database, superTableV2, subTableV2, request.deviceId(), request.protocolType());
-        return new WriteTarget(database, subTableV2);
+        return new TdengineWriteTarget(database, subTableV2);
     }
 
     private TelemetryInsertRow buildInsertRow(AppendRequest request) {
@@ -523,17 +517,17 @@ public class TimeSeriesService {
                                 String subTable,
                                 String deviceTag,
                                 String protocolTag) {
-        ensureSubTableCalls.increment();
+        writeMetricRecorder.recordEnsureSubTableCall();
         if (Boolean.TRUE.equals(ensuredTables.get(subTable))) {
-            ensureSubTableCacheHits.increment();
+            writeMetricRecorder.recordEnsureSubTableCacheHit();
             return;
         }
         synchronized (ensuredTables) {
             if (Boolean.TRUE.equals(ensuredTables.get(subTable))) {
-                ensureSubTableCacheHits.increment();
+                writeMetricRecorder.recordEnsureSubTableCacheHit();
                 return;
             }
-            ensureSubTableCacheMisses.increment();
+            writeMetricRecorder.recordEnsureSubTableCacheMiss();
             deviceRepository.createChildTable(
                     database,
                     subTable,
@@ -811,79 +805,33 @@ public class TimeSeriesService {
     /**
      * 批量写入入口参数，保持与单条 append 相同的业务字段。
      */
-    private void recordWriteRequest(int rows, int tables, boolean multiTable, long latencyNanos) {
-        writeRequests.increment();
-        writtenRows.add(Math.max(0, rows));
-        if (multiTable) {
-            multiTableWriteRequests.increment();
-        } else {
-            singleTableWriteRequests.increment();
+    private TdengineTelemetryWriter activeWriter() {
+        TdengineWriteMode mode = properties.getWrite().getMode();
+        TdengineTelemetryWriter writer = writersByMode.get(mode);
+        if (writer == null) {
+            throw new IllegalStateException("TDengine 写入模式未装配: " + mode);
         }
-        recordIntSample(rowsPerRequestSamples, Math.max(0, rows));
-        recordIntSample(tablesPerRequestSamples, Math.max(0, tables));
-        recordLongSample(writeLatencyNanos, latencyNanos);
+        return writer;
     }
 
-    private void recordIntSample(List<Integer> samples, int value) {
-        synchronized (samples) {
-            if (samples.size() < METRIC_SAMPLE_LIMIT) {
-                samples.add(value);
-            }
-        }
+    private void recordWriteSuccess(TdengineWriteOutcome outcome) {
+        writeMetricRecorder.recordSuccess(outcome);
     }
 
-    private void recordLongSample(List<Long> samples, long value) {
-        synchronized (samples) {
-            if (samples.size() < METRIC_SAMPLE_LIMIT) {
-                samples.add(value);
-            }
-        }
+    private void recordWriteFailure(TdengineWriteOutcome outcome) {
+        writeMetricRecorder.recordFailure(outcome);
     }
 
-    private int percentileInt(List<Integer> values, double percentile) {
-        List<Integer> sorted = snapshot(values);
-        if (sorted.isEmpty()) {
-            return 0;
-        }
-        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
-        return sorted.get(Math.max(0, index));
-    }
-
-    private int maxInt(List<Integer> values) {
-        List<Integer> sorted = snapshot(values);
-        return sorted.isEmpty() ? 0 : sorted.get(sorted.size() - 1);
-    }
-
-    private double percentileMillis(List<Long> values, double percentile) {
-        List<Long> sorted = snapshot(values);
-        if (sorted.isEmpty()) {
-            return 0D;
-        }
-        int index = Math.min(sorted.size() - 1, (int) Math.ceil(sorted.size() * percentile) - 1);
-        return sorted.get(Math.max(0, index)) / 1_000_000.0D;
-    }
-
-    private <T extends Comparable<? super T>> List<T> snapshot(List<T> values) {
-        synchronized (values) {
-            return values.stream().sorted().toList();
-        }
-    }
-
-    private long sumSamples(List<Integer> values) {
-        synchronized (values) {
-            long sum = 0L;
-            for (Integer value : values) {
-                if (value != null) {
-                    sum += value;
+    private Map<TdengineWriteMode, TdengineTelemetryWriter> resolveWriters(List<TdengineTelemetryWriter> telemetryWriters) {
+        Map<TdengineWriteMode, TdengineTelemetryWriter> result = new EnumMap<>(TdengineWriteMode.class);
+        if (telemetryWriters != null) {
+            for (TdengineTelemetryWriter writer : telemetryWriters) {
+                if (writer != null) {
+                    result.put(writer.mode(), writer);
                 }
             }
-            return sum;
         }
-    }
-
-    private double ratePerSecond(long count) {
-        long elapsedNanos = Math.max(1L, System.nanoTime() - metricsStartedAtNanos);
-        return count * 1_000_000_000.0D / elapsedNanos;
+        return Map.copyOf(result);
     }
 
     public record AppendRequest(String deviceId,
@@ -891,9 +839,6 @@ public class TimeSeriesService {
                                 DataPoint point,
                                 ProcessResult processResult,
                                 long eventTs) {
-    }
-
-    private record WriteTarget(String database, String subTable) {
     }
 
     private record TelemetryPayload(String rawJson, String processedJson, String metadataJson) {

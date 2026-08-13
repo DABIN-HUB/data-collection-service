@@ -1,5 +1,6 @@
 package com.wangbin.collector.storage.config;
 
+import com.wangbin.collector.storage.service.TdengineWriteMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -81,6 +82,11 @@ public class TdengineProperties {
     public static class Write {
 
         /**
+         * TDengine 历史写入实现模式，默认配置为直接 JDBC 写入，仍可回滚到既有 MyBatis 路径。
+         */
+        private TdengineWriteMode mode = TdengineWriteMode.DIRECT_REST;
+
+        /**
          * 是否启用跨子表 multi-table INSERT。
          */
         private boolean multiTableEnabled = false;
@@ -105,5 +111,20 @@ public class TdengineProperties {
         @Min(0)
         @Max(100)
         private long aggregationWaitMs = 5L;
+
+        /**
+         * WebSocket STMT 专用 JDBC URL；未配置时使用本地 6041 和当前数据库名。
+         */
+        private String websocketUrl;
+
+        /**
+         * WebSocket STMT 专用用户名；为空时由 driver 使用默认值或 URL 参数。
+         */
+        private String websocketUsername = "root";
+
+        /**
+         * WebSocket STMT 专用密码；为空时由 driver 使用默认值或 URL 参数。
+         */
+        private String websocketPassword = "taosdata";
     }
 }
