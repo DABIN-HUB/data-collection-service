@@ -1137,6 +1137,139 @@ class HistoryBatchWriterTest {
     }
 
     @Test
+    void logicalQueueMustBeDistinguishedFromActualExecutorQueue() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        CountDownLatch firstWriteEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(buffer.writeBatchOrBuffer(anyList())).thenAnswer(invocation -> {
+            firstWriteEntered.countDown();
+            release.await(3, TimeUnit.SECONDS);
+            List<HistoryWriteRequest> batch = invocation.getArgument(0);
+            return HistoryBatchWriteResult.directSuccess(batch.size());
+        });
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(20), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-logical-a", 2, 1_000L);
+        assertTrue(firstWriteEntered.await(3, TimeUnit.SECONDS));
+        addRows(writer, "dev-logical-b", 2, 2_000L);
+        HistoryBatchMetrics pending = writer.metrics();
+
+        assertTrue(pending.logicalPendingBatches() >= 1);
+        assertTrue(pending.logicalPendingRows() >= 2);
+        assertTrue(pending.actualExecutorQueueSize() >= 1);
+        assertEquals(pending.logicalPendingBatches(), pending.flushExecutorQueueCurrent());
+        release.countDown();
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void outstandingRowsMustRemainBounded() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchWriter writer = writer(buffer, properties(true, 50, 10_000, 1_000), flushExecutor);
+
+        addRows(writer, "dev-outstanding", 150, 1_000L);
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(3, metrics.logicalPendingBatches());
+        assertEquals(150, metrics.logicalPendingRows());
+        assertTrue(metrics.logicalPendingRows() <= 12_800);
+    }
+
+    @Test
+    void mergedFiveBatchesMustNotConsumeFivePermanentCapacitySlots() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        TdengineProperties tdengineProperties = multiTableProperties(1, 250, 0);
+        HistoryBatchWriter writer = writer(buffer, properties(true, 50, 10_000, 1_000),
+                tdengineProperties, flushExecutor);
+
+        addRows(writer, "dev-merge-five", 250, 1_000L);
+        assertEquals(5, writer.metrics().logicalPendingBatches());
+        assertEquals(250, writer.metrics().logicalPendingRows());
+        flushExecutor.runNext();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.logicalPendingBatches());
+        assertEquals(0, metrics.logicalPendingRows());
+        assertEquals(250, metrics.mergeRowsPerRequestMax());
+        assertEquals(5, metrics.mergeBatchesPerRequestMax());
+    }
+
+    @Test
+    void claimMustReleaseOutstandingRowsExactlyOnce() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-claim-release", 4, 1_000L);
+        assertEquals(4, writer.metrics().logicalPendingRows());
+        flushExecutor.runNext();
+        flushExecutor.runNext();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.logicalPendingRows());
+        assertEquals(0, metrics.logicalPendingBatches());
+    }
+
+    @Test
+    void fallbackMustReleaseOutstandingRowsExactlyOnce() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        RejectingExecutor flushExecutor = new RejectingExecutor();
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-fallback-release", 2, 1_000L);
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.logicalPendingRows());
+        assertEquals(0, metrics.logicalPendingBatches());
+        assertEquals(2L, metrics.fallbackRows());
+        assertEquals(1L, metrics.flushExecutorRejectedBatches());
+    }
+
+    @Test
+    void shutdownMustNotLeakOutstandingRows() {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        stubDirectSuccess(buffer);
+        ManualExecutor flushExecutor = new ManualExecutor();
+        HistoryBatchProperties properties = properties(true, 2, 10_000, 100);
+        properties.setShutdownFlushTimeoutMs(1);
+        HistoryBatchWriter writer = writer(buffer, properties, flushExecutor);
+
+        addRows(writer, "dev-shutdown-release", 2, 1_000L);
+        assertEquals(2, writer.metrics().logicalPendingRows());
+        writer.shutdown();
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertEquals(0, metrics.logicalPendingRows());
+        assertEquals(0, metrics.logicalPendingBatches());
+    }
+
+    @Test
+    void concurrentClaimAndFallbackMustNotProduceNegativeAccounting() throws Exception {
+        HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
+        when(buffer.writeBatchOrBuffer(anyList())).thenThrow(new RuntimeException("tdengine down"));
+        ThreadPoolExecutor flushExecutor = new ThreadPoolExecutor(
+                2, 2, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(4), new ThreadPoolExecutor.AbortPolicy());
+        HistoryBatchWriter writer = writer(buffer, properties(true, 2, 10_000, 100), flushExecutor);
+
+        addRows(writer, "dev-concurrent-negative", 20, 1_000L);
+        waitUntilNoInFlight(writer, 3);
+
+        HistoryBatchMetrics metrics = writer.metrics();
+        assertTrue(metrics.logicalPendingRows() >= 0);
+        assertTrue(metrics.logicalPendingBatches() >= 0);
+        flushExecutor.shutdown();
+        assertTrue(flushExecutor.awaitTermination(3, TimeUnit.SECONDS));
+    }
+
+    @Test
     void sameSubTableQueuedBatchesMustPreserveOrder() {
         HistoryWriteBuffer buffer = mock(HistoryWriteBuffer.class);
         stubDirectSuccess(buffer);
@@ -1404,6 +1537,14 @@ class HistoryBatchWriterTest {
             if (!tasks.isEmpty()) {
                 tasks.remove(0).run();
             }
+        }
+    }
+
+    private static final class RejectingExecutor implements Executor {
+
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("test rejected");
         }
     }
 

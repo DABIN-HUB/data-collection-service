@@ -537,7 +537,8 @@ class RealEnvironmentSoakIT {
         observed.put("history.localPending", (long) history.localPending());
         observed.put("historyBatch.currentBufferedRows", (long) batch.currentBufferedRows());
         observed.put("historyBatch.inFlightFlushes", (long) batch.inFlightFlushes());
-        observed.put("historyBatch.flushExecutorQueueCurrent", (long) batch.flushExecutorQueueCurrent());
+        observed.put("historyBatch.logicalPendingBatches", (long) batch.logicalPendingBatches());
+        observed.put("historyBatch.logicalPendingRows", (long) batch.logicalPendingRows());
         observed.put("historyBatch.flushExecutorActiveCurrent", (long) batch.flushExecutorActiveCurrent());
         observed.put("stream.bufferSize", (long) stream.bufferSize());
         observed.put("scheduler.inFlightPointClaims", schedulerLongMethod("getInFlightPointScheduleSizeForTest"));
@@ -953,7 +954,15 @@ class RealEnvironmentSoakIT {
                         batch.maxConcurrentWritesSameSubTable(), batch.sameSubTableConcurrentWriteCount(),
                         batch.dbQueueWaitP50Ms(), batch.dbQueueWaitP95Ms(), batch.dbQueueWaitP99Ms(),
                         batch.dbExecuteLatencyP50Ms(), batch.dbExecuteLatencyP95Ms(),
-                        batch.dbExecuteLatencyP99Ms(), batch.subTableWriteLatencyP95Ms()),
+                        batch.dbExecuteLatencyP99Ms(), batch.subTableWriteLatencyP95Ms(),
+                        batch.logicalPendingBatches(), batch.logicalPendingBatchesPeak(),
+                        batch.logicalPendingRows(), batch.logicalPendingRowsPeak(),
+                        batch.actualExecutorQueueSize(), batch.actualExecutorQueuePeak(),
+                        batch.actualExecutorActiveCount(), batch.actualExecutorActivePeak(),
+                        batch.subTableQueueRows(), batch.oldestPendingAgeMs(),
+                        batch.mergeRowsPerRequest(), batch.mergeRowsPerRequestP95(),
+                        batch.mergeRowsPerRequestMax(), batch.mergeBatchesPerRequest(),
+                        batch.mergeBatchesPerRequestP95(), batch.mergeBatchesPerRequestMax()),
                 tdengineWrite,
                 cloud
         );
@@ -977,7 +986,9 @@ class RealEnvironmentSoakIT {
                 0, 0, 0, 0L, 0L, 0L, 0L, 0D,
                 0, 0, 0, 0D, 0, 0, 0, 0D, 0D, 0D,
                 0L, 0L, 0D, 0D, 0, 0, 0D, 0, 0, 0L, 0L, 0L,
-                Map.of(), 0, 0L, 0D, 0D, 0D, 0D, 0D, 0D, Map.of());
+                Map.of(), 0, 0L, 0D, 0D, 0D, 0D, 0D, 0D, Map.of(),
+                0, 0, 0, 0, 0, 0, 0, 0, Map.of(), 0L,
+                0D, 0, 0, 0D, 0, 0);
     }
 
     private RedisSnapshot redisSnapshot(SoakOptions options) {
@@ -1693,6 +1704,25 @@ class RealEnvironmentSoakIT {
                 loadEndSample.historyBatch().sameSubTableConcurrentWriteCount());
         summary.put("historyBatchSubTableWriteLatencyP95Ms",
                 loadEndSample.historyBatch().subTableWriteLatencyP95Ms());
+        summary.put("historyBatchLogicalPendingBatches", loadEndSample.historyBatch().logicalPendingBatches());
+        summary.put("historyBatchLogicalPendingBatchesPeak",
+                loadEndSample.historyBatch().logicalPendingBatchesPeak());
+        summary.put("historyBatchLogicalPendingRows", loadEndSample.historyBatch().logicalPendingRows());
+        summary.put("historyBatchLogicalPendingRowsPeak", loadEndSample.historyBatch().logicalPendingRowsPeak());
+        summary.put("historyBatchActualExecutorQueueSize", loadEndSample.historyBatch().actualExecutorQueueSize());
+        summary.put("historyBatchActualExecutorQueuePeak", loadEndSample.historyBatch().actualExecutorQueuePeak());
+        summary.put("historyBatchActualExecutorActiveCount", loadEndSample.historyBatch().actualExecutorActiveCount());
+        summary.put("historyBatchActualExecutorActivePeak", loadEndSample.historyBatch().actualExecutorActivePeak());
+        summary.put("historyBatchSubTableQueueRows", loadEndSample.historyBatch().subTableQueueRows());
+        summary.put("historyBatchOldestPendingAgeMs", loadEndSample.historyBatch().oldestPendingAgeMs());
+        summary.put("historyBatchMergeRowsPerRequest", loadEndSample.historyBatch().mergeRowsPerRequest());
+        summary.put("historyBatchMergeRowsPerRequestP95", loadEndSample.historyBatch().mergeRowsPerRequestP95());
+        summary.put("historyBatchMergeRowsPerRequestMax", loadEndSample.historyBatch().mergeRowsPerRequestMax());
+        summary.put("historyBatchMergeBatchesPerRequest", loadEndSample.historyBatch().mergeBatchesPerRequest());
+        summary.put("historyBatchMergeBatchesPerRequestP95",
+                loadEndSample.historyBatch().mergeBatchesPerRequestP95());
+        summary.put("historyBatchMergeBatchesPerRequestMax",
+                loadEndSample.historyBatch().mergeBatchesPerRequestMax());
         summary.put("schedulerFinal", finalSample.scheduler());
         summary.put("schedulerLoadDelta", schedulerLoadDelta);
         summary.put("hikariFinal", finalSample.hikari());
@@ -2215,7 +2245,15 @@ class RealEnvironmentSoakIT {
                 + "historyBatchSameSubTableConcurrentWriteCount,historyBatchDbQueueWaitP50Ms,"
                 + "historyBatchDbQueueWaitP95Ms,historyBatchDbQueueWaitP99Ms,"
                 + "historyBatchDbExecuteLatencyP50Ms,historyBatchDbExecuteLatencyP95Ms,"
-                + "historyBatchDbExecuteLatencyP99Ms,"
+                + "historyBatchDbExecuteLatencyP99Ms,historyBatchLogicalPendingBatches,"
+                + "historyBatchLogicalPendingBatchesPeak,historyBatchLogicalPendingRows,"
+                + "historyBatchLogicalPendingRowsPeak,historyBatchActualExecutorQueueSize,"
+                + "historyBatchActualExecutorQueuePeak,historyBatchActualExecutorActiveCount,"
+                + "historyBatchActualExecutorActivePeak,historyBatchSubTableQueueRowsJson,"
+                + "historyBatchOldestPendingAgeMs,historyBatchMergeRowsPerRequest,"
+                + "historyBatchMergeRowsPerRequestP95,historyBatchMergeRowsPerRequestMax,"
+                + "historyBatchMergeBatchesPerRequest,historyBatchMergeBatchesPerRequestP95,"
+                + "historyBatchMergeBatchesPerRequestMax,"
                 + "cloudTotal,cloudPending,cloudPublishing,cloudWaitingAck,cloudIsolated,"
                 + "ackReceived,ackSent,ackFailed,schedulerTimeSliceCount,schedulerTimeSliceIntervalMs,"
                 + "schedulerDueScanIntervalMs,schedulerTimeSliceRevision,schedulerBatchDispatchRejected,schedulerCollectRejected,"
@@ -2428,6 +2466,22 @@ class RealEnvironmentSoakIT {
                 String.valueOf(sample.historyBatch().dbExecuteLatencyP50Ms()),
                 String.valueOf(sample.historyBatch().dbExecuteLatencyP95Ms()),
                 String.valueOf(sample.historyBatch().dbExecuteLatencyP99Ms()),
+                String.valueOf(sample.historyBatch().logicalPendingBatches()),
+                String.valueOf(sample.historyBatch().logicalPendingBatchesPeak()),
+                String.valueOf(sample.historyBatch().logicalPendingRows()),
+                String.valueOf(sample.historyBatch().logicalPendingRowsPeak()),
+                String.valueOf(sample.historyBatch().actualExecutorQueueSize()),
+                String.valueOf(sample.historyBatch().actualExecutorQueuePeak()),
+                String.valueOf(sample.historyBatch().actualExecutorActiveCount()),
+                String.valueOf(sample.historyBatch().actualExecutorActivePeak()),
+                csvJson(sample.historyBatch().subTableQueueRows()),
+                String.valueOf(sample.historyBatch().oldestPendingAgeMs()),
+                String.valueOf(sample.historyBatch().mergeRowsPerRequest()),
+                String.valueOf(sample.historyBatch().mergeRowsPerRequestP95()),
+                String.valueOf(sample.historyBatch().mergeRowsPerRequestMax()),
+                String.valueOf(sample.historyBatch().mergeBatchesPerRequest()),
+                String.valueOf(sample.historyBatch().mergeBatchesPerRequestP95()),
+                String.valueOf(sample.historyBatch().mergeBatchesPerRequestMax()),
                 String.valueOf(sample.cloud().total()),
                 String.valueOf(sample.cloud().pending()),
                 String.valueOf(sample.cloud().publishing()),
@@ -2876,7 +2930,23 @@ class RealEnvironmentSoakIT {
                                         double dbExecuteLatencyP50Ms,
                                         double dbExecuteLatencyP95Ms,
                                         double dbExecuteLatencyP99Ms,
-                                        Map<String, Double> subTableWriteLatencyP95Ms) {
+                                        Map<String, Double> subTableWriteLatencyP95Ms,
+                                        int logicalPendingBatches,
+                                        int logicalPendingBatchesPeak,
+                                        int logicalPendingRows,
+                                        int logicalPendingRowsPeak,
+                                        int actualExecutorQueueSize,
+                                        int actualExecutorQueuePeak,
+                                        int actualExecutorActiveCount,
+                                        int actualExecutorActivePeak,
+                                        Map<String, Integer> subTableQueueRows,
+                                        long oldestPendingAgeMs,
+                                        double mergeRowsPerRequest,
+                                        int mergeRowsPerRequestP95,
+                                        int mergeRowsPerRequestMax,
+                                        double mergeBatchesPerRequest,
+                                        int mergeBatchesPerRequestP95,
+                                        int mergeBatchesPerRequestMax) {
     }
 
     private record CloudSnapshot(long total,
