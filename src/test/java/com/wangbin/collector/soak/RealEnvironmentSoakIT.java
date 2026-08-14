@@ -81,7 +81,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -95,6 +94,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,6 +124,10 @@ class RealEnvironmentSoakIT {
     private static final String DEFAULT_SOURCE = "REAL_SOAK";
     private static final long BYTES_PER_MIB = 1024L * 1024L;
     private static final int MIN_PHASE_WHEEL_TICK_MS = 50;
+    private static final long LONG_SOAK_CHECKPOINT_INTERVAL_MS = TimeUnit.HOURS.toMillis(1L);
+    private static final int LONG_SOAK_RESERVOIR_CAPACITY = 20_000;
+    private static final long THREAD_GROWTH_DEGRADED_THRESHOLD = 10L;
+    private static final double HEAP_GROWTH_DEGRADED_RATIO = 0.25D;
     static final double DEFAULT_LOAD_DEVIATION_TOLERANCE_PERCENT = 5.0d;
 
     @Autowired
@@ -414,7 +418,7 @@ class RealEnvironmentSoakIT {
         MetricSample measurementStart = null;
         try {
             observeRuntimeWindow(options, counters, roundDurations, samples, metricsWriter,
-                    ackBridge, options.warmupSeconds(), false);
+                    ackBridge, options.warmupSeconds(), false, null);
             lifecycle.warmupCompletedAt.set(System.currentTimeMillis());
             counters.deactivateRuntimeCollector();
             lifecycle.settleStartedAt.set(System.currentTimeMillis());
@@ -447,8 +451,10 @@ class RealEnvironmentSoakIT {
             measurementStart = collectSample(options, counters, roundDurations, ackBridge, false);
             samples.add(measurementStart);
             writeMetric(metricsWriter, measurementStart);
+            LongSoakCheckpointWriter checkpointWriter = new LongSoakCheckpointWriter(outputDir, options,
+                    measurementStart);
             observeRuntimeWindow(options, counters, roundDurations, samples, metricsWriter,
-                    ackBridge, options.durationSeconds(), true);
+                    ackBridge, options.durationSeconds(), true, checkpointWriter);
         } finally {
             counters.finishMeasurement();
             counters.deactivateRuntimeCollector();
@@ -481,7 +487,8 @@ class RealEnvironmentSoakIT {
                                       BufferedWriter metricsWriter,
                                       MqttAckBridge ackBridge,
                                       long durationSeconds,
-                                      boolean recordSamples) throws Exception {
+                                      boolean recordSamples,
+                                      LongSoakCheckpointWriter checkpointWriter) throws Exception {
         long start = System.currentTimeMillis();
         long end = start + TimeUnit.SECONDS.toMillis(Math.max(0L, durationSeconds));
         long nextSample = start + TimeUnit.SECONDS.toMillis(options.sampleIntervalSeconds());
@@ -492,6 +499,9 @@ class RealEnvironmentSoakIT {
                 samples.add(sample);
                 writeMetric(metricsWriter, sample);
                 metricsWriter.flush();
+                if (checkpointWriter != null) {
+                    checkpointWriter.maybeWrite(samples, sample);
+                }
                 nextSample = now + TimeUnit.SECONDS.toMillis(options.sampleIntervalSeconds());
             }
             Thread.sleep(200L);
@@ -1154,6 +1164,10 @@ class RealEnvironmentSoakIT {
         info.put("durationSeconds", options.durationSeconds());
         info.put("measurementSeconds", options.durationSeconds());
         info.put("drainSeconds", options.drainWaitSeconds());
+        info.put("sampleIntervalSeconds", options.sampleIntervalSeconds());
+        info.put("longSoakCheckpointIntervalSeconds",
+                TimeUnit.MILLISECONDS.toSeconds(LONG_SOAK_CHECKPOINT_INTERVAL_MS));
+        info.put("longSoakReservoirCapacity", LONG_SOAK_RESERVOIR_CAPACITY);
         info.put("capacityProfile", options.capacityProfile());
         info.put("fixedCapacityMode", options.fixedCapacityMode());
         info.put("adaptiveCollectionEnabled", collectorProperties.getAdaptiveCollection().isEnabled());
@@ -1361,6 +1375,10 @@ class RealEnvironmentSoakIT {
         summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         summary.put("measurementSeconds", options.durationSeconds());
         summary.put("drainSeconds", options.drainWaitSeconds());
+        summary.put("sampleIntervalSeconds", options.sampleIntervalSeconds());
+        summary.put("longSoakCheckpointIntervalSeconds",
+                TimeUnit.MILLISECONDS.toSeconds(LONG_SOAK_CHECKPOINT_INTERVAL_MS));
+        summary.put("longSoakReservoirCapacity", LONG_SOAK_RESERVOIR_CAPACITY);
         summary.put("measurementValid", false);
         summary.put("invalidReason", lifecycle.invalidReason.get());
         summary.put("warmupBacklogClean", lifecycle.warmupBacklogClean.get());
@@ -1471,6 +1489,10 @@ class RealEnvironmentSoakIT {
         summary.put("settleTimeoutSeconds", options.settleTimeoutSeconds());
         summary.put("measurementSeconds", options.durationSeconds());
         summary.put("drainSeconds", options.drainWaitSeconds());
+        summary.put("sampleIntervalSeconds", options.sampleIntervalSeconds());
+        summary.put("longSoakCheckpointIntervalSeconds",
+                TimeUnit.MILLISECONDS.toSeconds(LONG_SOAK_CHECKPOINT_INTERVAL_MS));
+        summary.put("longSoakReservoirCapacity", LONG_SOAK_RESERVOIR_CAPACITY);
         summary.put("capacityProfile", options.capacityProfile());
         summary.put("fixedCapacityMode", options.fixedCapacityMode());
         summary.put("tdengineWriteMode", tdengineProperties.getWrite().getMode());
@@ -1529,6 +1551,8 @@ class RealEnvironmentSoakIT {
         summary.put("runtimeCadenceP99Ms", percentile(runtimeCadenceIntervalsMs, 0.99d));
         summary.put("runtimeCadenceMinMs", runtimeCadenceIntervalsMs.stream().mapToLong(Long::longValue).min().orElse(0L));
         summary.put("runtimeCadenceMaxMs", max(runtimeCadenceIntervalsMs));
+        summary.put("runtimeReadPointSizeSampling", counters.runtimeReadPointSizeSampling());
+        summary.put("runtimeCadenceSampling", counters.runtimeCadenceSampling());
         summary.put("max100msBurstItems", counters.maxBurst100Ms());
         summary.put("max500msBurstItems", counters.maxBurst500Ms());
         summary.put("max1sBurstItems", counters.maxBurst1s());
@@ -1730,6 +1754,14 @@ class RealEnvironmentSoakIT {
         summary.put("hikariWaitingPeak", measurementSamples.stream().mapToInt(sample -> sample.hikari().threadsAwaitingConnection()).max().orElse(-1));
         summary.put("historyPendingPeak", measurementSamples.stream().mapToLong(sample -> sample.history().redisPending()).max().orElse(-1L));
         summary.put("entryPendingPeak", measurementSamples.stream().mapToLong(sample -> sample.entry().redisPending()).max().orElse(-1L));
+        summary.put("longRunningCheckpoints", longRunningCheckpointFiles(outputDir));
+        summary.put("longRunningTrend", buildLongRunningTrend(measurementSamples));
+        Map<String, HealthStatus> moduleHealth = buildModuleHealth(summary, measurementSamples, finalSample,
+                schedulerLoadDelta, executorRejectedDelta, entryRejectedItemsDelta, entryDroppedItemsDelta,
+                streamXaddFailureDelta, historyDeferredDelta, historyRejectedDroppedDelta,
+                flushExecutorRejectedBatchesDelta);
+        summary.put("moduleHealth", moduleHealth);
+        summary.put("overallHealth", overallHealth(moduleHealth));
         summary.put("redisFinal", finalSample.redis());
         summary.put("telemetryEntryFinal", finalSample.entry());
         summary.put("streamFinal", finalSample.stream());
@@ -1752,6 +1784,322 @@ class RealEnvironmentSoakIT {
         writeRuntimeCapacitySummary(outputDir, summary);
     }
 
+    private List<String> longRunningCheckpointFiles(Path outputDir) throws IOException {
+        try (var stream = Files.list(outputDir)) {
+            return stream
+                    .filter(path -> path.getFileName().toString().matches("hour-\\d+\\.json"))
+                    .map(path -> path.getFileName().toString())
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private Map<String, Object> buildLongRunningTrend(List<MetricSample> measurementSamples) {
+        Map<String, Object> trend = new LinkedHashMap<>();
+        trend.put("postGcHeapTrendAvailable", false);
+        trend.put("postGcHeapTrendNote", "当前SystemResourceSnapshot未暴露post-GC/old-gen，长测按heap used和GC time/hour趋势判断");
+        if (measurementSamples == null || measurementSamples.isEmpty()) {
+            trend.put("sampleCount", 0);
+            return trend;
+        }
+        long start = measurementSamples.get(0).timestamp();
+        long end = measurementSamples.get(measurementSamples.size() - 1).timestamp();
+        long duration = Math.max(1L, end - start);
+        long middleStart = start + Math.max(0L, (duration - LONG_SOAK_CHECKPOINT_INTERVAL_MS) / 2L);
+        trend.put("sampleCount", measurementSamples.size());
+        trend.put("measurementStart", SoakLifecycle.instantString(start));
+        trend.put("measurementEnd", SoakLifecycle.instantString(end));
+        trend.put("firstHour", sampleWindowTrend(windowSamples(measurementSamples,
+                start, Math.min(end, start + LONG_SOAK_CHECKPOINT_INTERVAL_MS))));
+        trend.put("middleHour", sampleWindowTrend(windowSamples(measurementSamples,
+                middleStart, Math.min(end, middleStart + LONG_SOAK_CHECKPOINT_INTERVAL_MS))));
+        trend.put("lastHour", sampleWindowTrend(windowSamples(measurementSamples,
+                Math.max(start, end - LONG_SOAK_CHECKPOINT_INTERVAL_MS), end)));
+        trend.put("fullMeasurement", sampleWindowTrend(measurementSamples));
+        trend.put("executorQueueBaselineGrowth", executorQueueBaselineGrowth(measurementSamples));
+        return trend;
+    }
+
+    private List<MetricSample> windowSamples(List<MetricSample> samples, long startInclusive, long endInclusive) {
+        List<MetricSample> selected = samples.stream()
+                .filter(sample -> sample.timestamp() >= startInclusive && sample.timestamp() <= endInclusive)
+                .toList();
+        return selected.isEmpty() ? List.of() : selected;
+    }
+
+    private Map<String, Object> sampleWindowTrend(List<MetricSample> samples) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (samples == null || samples.isEmpty()) {
+            result.put("sampleCount", 0);
+            return result;
+        }
+        MetricSample first = samples.get(0);
+        MetricSample last = samples.get(samples.size() - 1);
+        long elapsedMs = Math.max(1L, last.timestamp() - first.timestamp());
+        result.put("sampleCount", samples.size());
+        result.put("startedAt", SoakLifecycle.instantString(first.timestamp()));
+        result.put("endedAt", SoakLifecycle.instantString(last.timestamp()));
+        result.put("durationSeconds", elapsedMs / 1000.0d);
+        result.put("collectorRate", delta(last.submitted(), first.submitted()) * 1000.0d / elapsedMs);
+        result.put("pipelineRate", delta(last.historyBatch().acceptedRows(),
+                first.historyBatch().acceptedRows()) * 1000.0d / elapsedMs);
+        result.put("tdengineRate", delta(last.historyBatch().flushedRows(),
+                first.historyBatch().flushedRows()) * 1000.0d / elapsedMs);
+        result.put("streamXaddRate", delta(last.stream().redisXaddRows(),
+                first.stream().redisXaddRows()) * 1000.0d / elapsedMs);
+        result.put("heapStartBytes", first.heapUsed());
+        result.put("heapEndBytes", last.heapUsed());
+        result.put("heapPeakBytes", samples.stream().mapToLong(MetricSample::heapUsed).max().orElse(-1L));
+        result.put("heapEndMinusStartBytes", last.heapUsed() - first.heapUsed());
+        result.put("threadStart", first.threadCount());
+        result.put("threadEnd", last.threadCount());
+        result.put("threadPeak", samples.stream().mapToInt(MetricSample::threadCount).max().orElse(-1));
+        result.put("gcCountDelta", delta(last.gcCount(), first.gcCount()));
+        result.put("gcTimeMsDelta", delta(last.gcTimeMs(), first.gcTimeMs()));
+        result.put("processCpuAvg", averageDouble(samples.stream().map(MetricSample::processCpuLoad).toList()));
+        result.put("processCpuPeak", samples.stream().mapToDouble(MetricSample::processCpuLoad).max().orElse(-1D));
+        result.put("entryPendingStart", first.entry().redisPending());
+        result.put("entryPendingEnd", last.entry().redisPending());
+        result.put("entryPendingPeak", samples.stream().mapToLong(sample -> sample.entry().redisPending()).max().orElse(0L));
+        result.put("streamBufferStart", first.stream().bufferSize());
+        result.put("streamBufferEnd", last.stream().bufferSize());
+        result.put("streamBufferPeak", samples.stream().mapToInt(sample -> sample.stream().bufferSize()).max().orElse(0));
+        result.put("historyPendingStart", first.history().redisPending());
+        result.put("historyPendingEnd", last.history().redisPending());
+        result.put("historyPendingPeak", samples.stream().mapToLong(sample -> sample.history().redisPending()).max().orElse(0L));
+        result.put("historyProcessingStart", first.history().redisProcessing());
+        result.put("historyProcessingEnd", last.history().redisProcessing());
+        result.put("historyLogicalPendingRowsStart", first.historyBatch().logicalPendingRows());
+        result.put("historyLogicalPendingRowsEnd", last.historyBatch().logicalPendingRows());
+        result.put("historyLogicalPendingRowsPeak",
+                samples.stream().mapToInt(sample -> sample.historyBatch().logicalPendingRows()).max().orElse(0));
+        result.put("historyActualExecutorQueuePeak",
+                samples.stream().mapToInt(sample -> sample.historyBatch().actualExecutorQueueSize()).max().orElse(0));
+        result.put("hikariActiveStart", first.hikari().activeConnections());
+        result.put("hikariActiveEnd", last.hikari().activeConnections());
+        result.put("hikariActivePeak", samples.stream().mapToInt(sample -> sample.hikari().activeConnections()).max().orElse(-1));
+        result.put("hikariWaitingPeak", samples.stream().mapToInt(sample -> sample.hikari().threadsAwaitingConnection()).max().orElse(-1));
+        result.put("executorQueuePeaks", executorQueuePeaks(samples));
+        result.put("executorActivePeaks", executorActivePeaks(samples));
+        return result;
+    }
+
+    private Map<String, Long> executorQueueBaselineGrowth(List<MetricSample> samples) {
+        Map<String, Long> growth = new LinkedHashMap<>();
+        if (samples == null || samples.size() < 2) {
+            return growth;
+        }
+        int windowSize = Math.min(samples.size(), 12);
+        List<MetricSample> firstWindow = samples.subList(0, windowSize);
+        List<MetricSample> lastWindow = samples.subList(samples.size() - windowSize, samples.size());
+        samples.get(samples.size() - 1).threadPools().forEach((name, ignored) -> {
+            int firstBaseline = minExecutorQueue(firstWindow, name);
+            int lastBaseline = minExecutorQueue(lastWindow, name);
+            long delta = Math.max(0L, (long) lastBaseline - firstBaseline);
+            if (delta > 0L) {
+                growth.put(name, delta);
+            }
+        });
+        return growth;
+    }
+
+    private int minExecutorQueue(List<MetricSample> samples, String name) {
+        return samples.stream()
+                .map(sample -> sample.threadPools().get(name))
+                .filter(Objects::nonNull)
+                .mapToInt(SystemResourceSnapshot.ThreadPoolSnapshot::getQueueSize)
+                .min()
+                .orElse(0);
+    }
+
+    private Map<String, HealthStatus> buildModuleHealth(Map<String, Object> summary,
+                                                        List<MetricSample> samples,
+                                                        MetricSample finalSample,
+                                                        SchedulerStateSnapshot schedulerLoadDelta,
+                                                        Map<String, Long> executorRejectedDelta,
+                                                        long entryRejectedItemsDelta,
+                                                        long entryDroppedItemsDelta,
+                                                        long streamXaddFailureDelta,
+                                                        long historyDeferredDelta,
+                                                        long historyRejectedDroppedDelta,
+                                                        long flushExecutorRejectedBatchesDelta) {
+        Map<String, HealthStatus> health = new LinkedHashMap<>();
+        double collectorRate = doubleValue(summary.get("actualCollectorRate"));
+        double theoreticalRate = doubleValue(summary.get("theoreticalCollectorRate"));
+        double pipelineRate = doubleValue(summary.get("actualPipelinePointsPerSecond"));
+        double tdengineRate = doubleValue(summary.get("actualTdengineRowsPerSecond"));
+        health.put("Collection", healthStatus(
+                Boolean.TRUE.equals(summary.get("measurementValid"))
+                        && schedulerLoadDelta.batchDispatchRejectedCount() == 0L
+                        && schedulerLoadDelta.collectRejectedCount() == 0L
+                        && schedulerLoadDelta.processRejectedCount() == 0L,
+                "collector rate must match theoretical load and scheduler rejects must remain zero",
+                firstObservedAt(samples, sample -> sample.scheduler().batchDispatchRejectedCount() > 0L
+                        || sample.scheduler().collectRejectedCount() > 0L
+                        || sample.scheduler().processRejectedCount() > 0L),
+                Map.of("collectorRate", collectorRate, "theoreticalRate", theoreticalRate),
+                Map.of("batchDispatchRejected", schedulerLoadDelta.batchDispatchRejectedCount(),
+                        "collectRejected", schedulerLoadDelta.collectRejectedCount(),
+                        "processRejected", schedulerLoadDelta.processRejectedCount()),
+                Boolean.TRUE.equals(summary.get("measurementValid"))));
+        health.put("Pipeline", healthStatus(
+                finalSample.pipeline().stageRejectedUncompensatedEvents() == 0L
+                        && finalSample.pipeline().metricsInternalErrors() == 0L
+                        && rateDeviationPercent(pipelineRate, Math.max(1.0d, collectorRate)) <= 5.0d,
+                "pipeline must keep up with collector without uncompensated stage rejection",
+                firstObservedAt(samples, sample -> sample.pipeline().stageRejectedUncompensatedEvents() > 0L
+                        || sample.pipeline().metricsInternalErrors() > 0L),
+                Map.of("pipelineRate", pipelineRate, "collectorRate", collectorRate),
+                Map.of("stageRejectedUncompensated", finalSample.pipeline().stageRejectedUncompensatedEvents(),
+                        "metricsInternalErrors", finalSample.pipeline().metricsInternalErrors()),
+                finalSample.pipeline().stageRejectedUncompensatedEvents() == 0L));
+        health.put("Stream", healthStatus(
+                streamXaddFailureDelta == 0L
+                        && longValue(summary.get("streamAdmissionDropped")) == 0L
+                        && finalSample.stream().redisXaddFailures() == 0L
+                        && finalSample.stream().bufferSize() == 0
+                        && finalSample.stream().writerLoopFailures() == 0L,
+                "stream must not drop, fail XADD, or keep final buffered rows",
+                firstObservedAt(samples, sample -> sample.stream().admissionDropped() > 0L
+                        || sample.stream().redisXaddFailures() > 0L
+                        || sample.stream().bufferSize() > 0),
+                Map.of("bufferFinal", finalSample.stream().bufferSize(),
+                        "xaddFailureDelta", streamXaddFailureDelta),
+                Map.of("bufferPeak", finalSample.stream().bufferPeak(),
+                        "admissionDroppedDelta", longValue(summary.get("streamAdmissionDropped"))),
+                finalSample.stream().bufferSize() == 0));
+        health.put("History", healthStatus(
+                historyDeferredDelta == 0L
+                        && historyRejectedDroppedDelta == 0L
+                        && flushExecutorRejectedBatchesDelta == 0L
+                        && finalSample.history().redisPending() == 0L
+                        && finalSample.history().redisProcessing() == 0L
+                        && finalSample.history().localPending() == 0
+                        && finalSample.historyBatch().logicalPendingRows() == 0
+                        && finalSample.historyBatch().currentBufferedRows() == 0
+                        && finalSample.historyBatch().inFlightFlushes() == 0,
+                "history must not defer/drop and all buffers must drain",
+                firstObservedAt(samples, sample -> sample.history().redisPending() > 0L
+                        || sample.history().redisProcessing() > 0L
+                        || sample.historyBatch().logicalPendingRows() > 0
+                        || sample.historyBatch().flushExecutorRejectedBatches() > 0L),
+                Map.of("pendingFinal", finalSample.history().redisPending(),
+                        "logicalPendingRowsFinal", finalSample.historyBatch().logicalPendingRows()),
+                Map.of("historyDeferredDelta", historyDeferredDelta,
+                        "flushRejectedBatchesDelta", flushExecutorRejectedBatchesDelta),
+                finalSample.history().redisPending() == 0L));
+        health.put("Redis", healthStatus(
+                finalSample.redis().connected()
+                        && finalSample.entry().redisPending() == 0L
+                        && finalSample.history().redisPending() == 0L,
+                "redis must stay connected and reliable backlogs must not remain",
+                firstObservedAt(samples, sample -> !sample.redis().connected()
+                        || sample.entry().redisPending() > 0L
+                        || sample.history().redisPending() > 0L),
+                Map.of("connected", finalSample.redis().connected(),
+                        "usedMemory", finalSample.redis().usedMemory()),
+                Map.of("usedMemoryPeak", samples.stream().mapToLong(sample -> sample.redis().usedMemory()).max().orElse(-1L)),
+                finalSample.redis().connected()));
+        health.put("TDengine", healthStatus(
+                longValue(summary.get("tdengineWriterFailuresDelta")) == 0L
+                        && rateDeviationPercent(tdengineRate, Math.max(1.0d, collectorRate)) <= 5.0d,
+                "tdengine writer must keep up with live collector rows without write failures",
+                firstObservedAt(samples, sample -> sample.tdengineWrite().writeFailures() > 0L),
+                Map.of("tdengineRate", tdengineRate, "collectorRate", collectorRate),
+                Map.of("writerFailuresDelta", longValue(summary.get("tdengineWriterFailuresDelta")),
+                        "dbExecuteP95Ms", summary.get("tdengineWriterDbExecuteP95Ms")),
+                longValue(summary.get("tdengineWriterFailuresDelta")) == 0L));
+        health.put("JVM", jvmHealth(samples));
+        health.put("Scheduler", healthStatus(
+                finalSample.scheduler().inFlightPointClaims() == 0
+                        && finalSample.scheduler().cadenceStateSize() <= Math.max(1, longValue(summary.get("totalPoints")))
+                        && cadenceWithinLongSoakEnvelope(summary),
+                "scheduler must not leak claims and cadence P95 must stay within long soak envelope",
+                firstObservedAt(samples, sample -> sample.scheduler().inFlightPointClaims() > 0),
+                Map.of("inFlightPointClaims", finalSample.scheduler().inFlightPointClaims(),
+                        "cadenceStateSize", finalSample.scheduler().cadenceStateSize()),
+                Map.of("runtimeCadenceP95Ms", summary.get("runtimeCadenceP95Ms")),
+                finalSample.scheduler().inFlightPointClaims() == 0));
+        if (executorQueueBaselineGrowth(samples).isEmpty() && executorRejectedDelta.values().stream().allMatch(value -> value == 0L)) {
+            health.put("Executors", new HealthStatus("HEALTHY", "executor queues have no sustained baseline growth",
+                    null, Map.of("queueGrowth", 0), executorQueuePeaks(samples), true));
+        } else {
+            health.put("Executors", new HealthStatus("FAILED", "executor queue or rejection grew during measurement",
+                    firstObservedAt(samples, sample -> sample.threadPools().values().stream()
+                            .anyMatch(pool -> pool.getQueueSize() > 0 || pool.getRejectedCount() > 0L)),
+                    executorQueueBaselineGrowth(samples), executorQueuePeaks(samples), false));
+        }
+        return health;
+    }
+
+    private HealthStatus jvmHealth(List<MetricSample> samples) {
+        if (samples == null || samples.isEmpty()) {
+            return new HealthStatus("DEGRADED", "no JVM samples were recorded", null, 0, 0, false);
+        }
+        MetricSample first = samples.get(0);
+        MetricSample last = samples.get(samples.size() - 1);
+        long heapGrowth = Math.max(0L, last.heapUsed() - first.heapUsed());
+        double heapGrowthRatio = first.heapUsed() > 0L ? heapGrowth / (double) first.heapUsed() : 0D;
+        long threadGrowth = Math.max(0L, (long) last.threadCount() - first.threadCount());
+        if (threadGrowth > THREAD_GROWTH_DEGRADED_THRESHOLD) {
+            return new HealthStatus("FAILED", "thread count increased beyond long soak threshold",
+                    SoakLifecycle.instantString(last.timestamp()), last.threadCount(),
+                    samples.stream().mapToInt(MetricSample::threadCount).max().orElse(last.threadCount()), false);
+        }
+        if (heapGrowthRatio > HEAP_GROWTH_DEGRADED_RATIO) {
+            return new HealthStatus("DEGRADED", "heap used grew materially across measurement; verify post-GC externally",
+                    SoakLifecycle.instantString(last.timestamp()), last.heapUsed(),
+                    samples.stream().mapToLong(MetricSample::heapUsed).max().orElse(last.heapUsed()), false);
+        }
+        return new HealthStatus("HEALTHY", "heap and thread trend stayed within long soak envelope",
+                null, Map.of("heapGrowthBytes", heapGrowth, "threadGrowth", threadGrowth),
+                Map.of("heapPeakBytes", samples.stream().mapToLong(MetricSample::heapUsed).max().orElse(last.heapUsed()),
+                        "threadPeak", samples.stream().mapToInt(MetricSample::threadCount).max().orElse(last.threadCount())),
+                true);
+    }
+
+    private HealthStatus healthStatus(boolean healthy,
+                                      String reason,
+                                      String firstObservedAt,
+                                      Object currentValue,
+                                      Object peakValue,
+                                      boolean recovered) {
+        return new HealthStatus(healthy ? "HEALTHY" : "FAILED", reason,
+                healthy ? null : firstObservedAt, currentValue, peakValue, recovered);
+    }
+
+    static String overallHealth(Map<String, HealthStatus> moduleHealth) {
+        if (moduleHealth == null || moduleHealth.isEmpty()) {
+            return "DEGRADED";
+        }
+        boolean failed = moduleHealth.values().stream().anyMatch(status -> "FAILED".equals(status.status()));
+        if (failed) {
+            return "FAILED";
+        }
+        boolean degraded = moduleHealth.values().stream().anyMatch(status -> "DEGRADED".equals(status.status()));
+        return degraded ? "DEGRADED" : "HEALTHY";
+    }
+
+    private String firstObservedAt(List<MetricSample> samples, Predicate<MetricSample> predicate) {
+        if (samples == null || predicate == null) {
+            return null;
+        }
+        return samples.stream()
+                .filter(predicate)
+                .findFirst()
+                .map(sample -> SoakLifecycle.instantString(sample.timestamp()))
+                .orElse(null);
+    }
+
+    private boolean cadenceWithinLongSoakEnvelope(Map<String, Object> summary) {
+        long configuredInterval = longValue(summary.get("configuredCollectionIntervalMs"));
+        long cadenceP95 = longValue(summary.get("runtimeCadenceP95Ms"));
+        if (configuredInterval <= 0L || cadenceP95 <= 0L) {
+            return true;
+        }
+        return cadenceP95 <= Math.round(configuredInterval * 1.2D);
+    }
+
     private Map<String, Long> castLongMap(Object value) {
         if (value instanceof Map<?, ?> map) {
             Map<String, Long> result = new LinkedHashMap<>();
@@ -1767,6 +2115,10 @@ class RealEnvironmentSoakIT {
 
     private long longValue(Object value) {
         return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private double doubleValue(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0D;
     }
 
     private long delta(long end, long start) {
@@ -2704,6 +3056,185 @@ class RealEnvironmentSoakIT {
     record LoadProfileResult(boolean valid, String invalidReason) {
     }
 
+    record HealthStatus(String status,
+                        String reason,
+                        String firstObservedAt,
+                        Object currentValue,
+                        Object peakValue,
+                        boolean whetherRecovered) {
+    }
+
+    private final class LongSoakCheckpointWriter {
+        private final Path outputDir;
+        private final SoakOptions options;
+        private final MetricSample measurementStart;
+        private int nextHour = 1;
+
+        private LongSoakCheckpointWriter(Path outputDir, SoakOptions options, MetricSample measurementStart) {
+            this.outputDir = outputDir;
+            this.options = options;
+            this.measurementStart = measurementStart;
+        }
+
+        private void maybeWrite(List<MetricSample> samples, MetricSample current) throws IOException {
+            long elapsedMs = current.timestamp() - measurementStart.timestamp();
+            while (elapsedMs >= nextHour * LONG_SOAK_CHECKPOINT_INTERVAL_MS) {
+                write(nextHour, samples, current);
+                nextHour++;
+            }
+        }
+
+        private void write(int hour, List<MetricSample> samples, MetricSample current) throws IOException {
+            List<MetricSample> measurementSamples = samplesBetween(samples, measurementStart.timestamp(), current.timestamp());
+            Map<String, Object> checkpoint = new LinkedHashMap<>();
+            checkpoint.put("runId", options.runId());
+            checkpoint.put("scenario", options.scenario());
+            checkpoint.put("hour", hour);
+            checkpoint.put("checkpointAt", SoakLifecycle.instantString(current.timestamp()));
+            checkpoint.put("measurementStartedAt", SoakLifecycle.instantString(measurementStart.timestamp()));
+            checkpoint.put("measurementElapsedSeconds",
+                    Math.max(0L, current.timestamp() - measurementStart.timestamp()) / 1000.0d);
+            checkpoint.put("theoreticalCollectorRate",
+                    theoreticalCollectorRate(options.points(), options.collectionIntervalMs()));
+            checkpoint.put("trendSinceMeasurementStart", sampleWindowTrend(measurementSamples));
+            checkpoint.put("currentSample", checkpointSample(current));
+            objectMapper.writerWithDefaultPrettyPrinter()
+                    .writeValue(outputDir.resolve("hour-" + hour + ".json").toFile(), checkpoint);
+        }
+
+        private Map<String, Object> checkpointSample(MetricSample sample) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("collectorRows", sample.submitted());
+            result.put("pipelineProcessedItems", sample.pipeline().processedItems());
+            result.put("tdengineRows", sample.historyBatch().flushedRows());
+            result.put("entryPending", sample.entry().redisPending());
+            result.put("streamBuffer", sample.stream().bufferSize());
+            result.put("streamDropped", sample.stream().admissionDropped());
+            result.put("streamXaddFailure", sample.stream().redisXaddFailures());
+            result.put("historyPending", sample.history().redisPending());
+            result.put("historyProcessing", sample.history().redisProcessing());
+            result.put("historyDeferredRows", sample.history().rejectedRedisBuffered()
+                    + sample.history().rejectedLocalBuffered()
+                    + sample.history().writeFailureRedisBuffered()
+                    + sample.history().writeFailureLocalBuffered());
+            result.put("historyFlushRejectedBatches", sample.historyBatch().flushExecutorRejectedBatches());
+            result.put("historyLogicalPendingRows", sample.historyBatch().logicalPendingRows());
+            result.put("schedulerInFlightPointClaims", sample.scheduler().inFlightPointClaims());
+            result.put("heapUsedBytes", sample.heapUsed());
+            result.put("threadCount", sample.threadCount());
+            result.put("gcCount", sample.gcCount());
+            result.put("gcTimeMs", sample.gcTimeMs());
+            result.put("hikari", sample.hikari());
+            result.put("executorQueuePeaks", executorQueuePeaks(List.of(sample)));
+            return result;
+        }
+    }
+
+    static final class BoundedIntSamples {
+        private final int[] values;
+        private long sequence;
+
+        BoundedIntSamples(int capacity) {
+            this.values = new int[Math.max(1, capacity)];
+        }
+
+        synchronized void add(int value) {
+            values[(int) (Math.floorMod(sequence, values.length))] = value;
+            sequence++;
+        }
+
+        synchronized void clear() {
+            sequence = 0L;
+        }
+
+        synchronized List<Integer> snapshot() {
+            int size = (int) Math.min(sequence, values.length);
+            List<Integer> result = new ArrayList<>(size);
+            long start = sequence > values.length ? sequence - values.length : 0L;
+            for (int index = 0; index < size; index++) {
+                result.add(values[(int) (Math.floorMod(start + index, values.length))]);
+            }
+            return result;
+        }
+
+        synchronized Map<String, Object> stats() {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("capacity", values.length);
+            result.put("sampleCount", Math.min(sequence, values.length));
+            result.put("totalRecorded", sequence);
+            result.put("overwrittenSamples", Math.max(0L, sequence - values.length));
+            return result;
+        }
+    }
+
+    static final class BoundedLongSamples {
+        private final long[] values;
+        private long sequence;
+
+        BoundedLongSamples(int capacity) {
+            this.values = new long[Math.max(1, capacity)];
+        }
+
+        synchronized void add(long value) {
+            values[(int) (Math.floorMod(sequence, values.length))] = value;
+            sequence++;
+        }
+
+        synchronized void clear() {
+            sequence = 0L;
+        }
+
+        synchronized List<Long> snapshot() {
+            int size = (int) Math.min(sequence, values.length);
+            List<Long> result = new ArrayList<>(size);
+            long start = sequence > values.length ? sequence - values.length : 0L;
+            for (int index = 0; index < size; index++) {
+                result.add(values[(int) (Math.floorMod(start + index, values.length))]);
+            }
+            return result;
+        }
+
+        synchronized Map<String, Object> stats() {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("capacity", values.length);
+            result.put("sampleCount", Math.min(sequence, values.length));
+            result.put("totalRecorded", sequence);
+            result.put("overwrittenSamples", Math.max(0L, sequence - values.length));
+            return result;
+        }
+    }
+
+    static final class BurstTracker {
+        private final long bucketWidthMs;
+        private long currentBucket = Long.MIN_VALUE;
+        private long currentCount;
+        private long maxCount;
+
+        BurstTracker(long bucketWidthMs) {
+            this.bucketWidthMs = Math.max(1L, bucketWidthMs);
+        }
+
+        synchronized void record(long nowMs, int pointCount) {
+            long bucket = nowMs / bucketWidthMs;
+            if (bucket != currentBucket) {
+                currentBucket = bucket;
+                currentCount = 0L;
+            }
+            currentCount += Math.max(0, pointCount);
+            maxCount = Math.max(maxCount, currentCount);
+        }
+
+        synchronized void clear() {
+            currentBucket = Long.MIN_VALUE;
+            currentCount = 0L;
+            maxCount = 0L;
+        }
+
+        synchronized long max() {
+            return maxCount;
+        }
+    }
+
     private static final class SoakLifecycle {
         private final AtomicLong createdAt = new AtomicLong();
         private final AtomicLong setupStartedAt = new AtomicLong();
@@ -3092,12 +3623,14 @@ class RealEnvironmentSoakIT {
         private final AtomicLong runtimeReadPointsItems = new AtomicLong();
         private final AtomicLong loadStartedAt = new AtomicLong();
         private final AtomicLong loadFinishedAt = new AtomicLong();
-        private final List<Integer> runtimeReadPointSizes = Collections.synchronizedList(new ArrayList<>());
-        private final List<Long> runtimeCadenceIntervalsMs = Collections.synchronizedList(new ArrayList<>());
+        private final BoundedIntSamples runtimeReadPointSizes =
+                new BoundedIntSamples(LONG_SOAK_RESERVOIR_CAPACITY);
+        private final BoundedLongSamples runtimeCadenceIntervalsMs =
+                new BoundedLongSamples(LONG_SOAK_RESERVOIR_CAPACITY);
         private final ConcurrentMap<String, Long> lastRuntimeReadNanosByPoint = new ConcurrentHashMap<>();
-        private final ConcurrentMap<Long, AtomicLong> burst100MsBuckets = new ConcurrentHashMap<>();
-        private final ConcurrentMap<Long, AtomicLong> burst500MsBuckets = new ConcurrentHashMap<>();
-        private final ConcurrentMap<Long, AtomicLong> burst1SBuckets = new ConcurrentHashMap<>();
+        private final BurstTracker burst100Ms = new BurstTracker(100L);
+        private final BurstTracker burst500Ms = new BurstTracker(500L);
+        private final BurstTracker burst1s = new BurstTracker(1_000L);
         private final AtomicBoolean collectorActive = new AtomicBoolean(false);
         private final AtomicBoolean measurementActive = new AtomicBoolean(false);
 
@@ -3148,9 +3681,9 @@ class RealEnvironmentSoakIT {
             runtimeReadPointSizes.clear();
             runtimeCadenceIntervalsMs.clear();
             lastRuntimeReadNanosByPoint.clear();
-            burst100MsBuckets.clear();
-            burst500MsBuckets.clear();
-            burst1SBuckets.clear();
+            burst100Ms.clear();
+            burst500Ms.clear();
+            burst1s.clear();
             loadStartedAt.set(System.currentTimeMillis());
             loadFinishedAt.set(0L);
             measurementActive.set(true);
@@ -3180,41 +3713,37 @@ class RealEnvironmentSoakIT {
 
         private void recordBurst(long nowNanos, int pointCount) {
             long nowMs = TimeUnit.NANOSECONDS.toMillis(nowNanos);
-            addBurst(burst100MsBuckets, nowMs / 100L, pointCount);
-            addBurst(burst500MsBuckets, nowMs / 500L, pointCount);
-            addBurst(burst1SBuckets, nowMs / 1000L, pointCount);
-        }
-
-        private void addBurst(ConcurrentMap<Long, AtomicLong> buckets, long bucket, int pointCount) {
-            buckets.computeIfAbsent(bucket, ignored -> new AtomicLong()).addAndGet(pointCount);
+            burst100Ms.record(nowMs, pointCount);
+            burst500Ms.record(nowMs, pointCount);
+            burst1s.record(nowMs, pointCount);
         }
 
         private List<Integer> runtimeReadPointSizesSnapshot() {
-            synchronized (runtimeReadPointSizes) {
-                return List.copyOf(runtimeReadPointSizes);
-            }
+            return runtimeReadPointSizes.snapshot();
         }
 
         private List<Long> runtimeCadenceIntervalsMsSnapshot() {
-            synchronized (runtimeCadenceIntervalsMs) {
-                return List.copyOf(runtimeCadenceIntervalsMs);
-            }
+            return runtimeCadenceIntervalsMs.snapshot();
+        }
+
+        private Map<String, Object> runtimeReadPointSizeSampling() {
+            return runtimeReadPointSizes.stats();
+        }
+
+        private Map<String, Object> runtimeCadenceSampling() {
+            return runtimeCadenceIntervalsMs.stats();
         }
 
         private long maxBurst100Ms() {
-            return maxBurst(burst100MsBuckets);
+            return burst100Ms.max();
         }
 
         private long maxBurst500Ms() {
-            return maxBurst(burst500MsBuckets);
+            return burst500Ms.max();
         }
 
         private long maxBurst1s() {
-            return maxBurst(burst1SBuckets);
-        }
-
-        private long maxBurst(ConcurrentMap<Long, AtomicLong> buckets) {
-            return buckets.values().stream().mapToLong(AtomicLong::get).max().orElse(0L);
+            return burst1s.max();
         }
     }
 
