@@ -13,6 +13,9 @@ public class EventMessage extends IoTMessage {
     private String eventCode;
     private Map<String, Object> eventData;
 
+    /**
+     * 创建当前组件实例。
+     */
     public EventMessage() {
         setMethod("thing.event.post");
     }

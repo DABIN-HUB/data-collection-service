@@ -6,5 +6,8 @@ package com.wangbin.collector.core.report.inbound;
 @FunctionalInterface
 public interface MqttAckReplySink {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void complete(MqttAckReply ackReply);
 }

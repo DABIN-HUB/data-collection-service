@@ -12,6 +12,7 @@ class CollectedDataProcessorContextTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withBean(CollectorProperties.class)
             .withBean(PointRuntimeStateService.class)
+            .withBean(PerformanceMonitor.class)
             .withBean(CollectedDataProcessor.class);
 
     @Test

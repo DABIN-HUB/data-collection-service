@@ -3,6 +3,9 @@ package com.wangbin.collector.core.collector.protocol.mc.plan;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.mc.domain.McAddress;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class McWritePlanItem {
 
     private final DataPoint point;
@@ -12,6 +15,9 @@ public class McWritePlanItem {
     private final int payloadByteOffset;
     private final int payloadByteLength;
 
+    /**
+     * 创建当前组件实例。
+     */
     public McWritePlanItem(DataPoint point,
                            McAddress address,
                            int unitOffset,

@@ -35,11 +35,17 @@ public class GracefulShutdown implements TomcatConnectorCustomizer,
     private volatile Connector connector;
     private final AtomicBoolean closing = new AtomicBoolean(false);
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void customize(Connector connector) {
         this.connector = connector;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void onApplicationEvent(ContextClosedEvent event) {
         if (!closing.compareAndSet(false, true)) {
@@ -58,6 +64,9 @@ public class GracefulShutdown implements TomcatConnectorCustomizer,
         log.info("采集服务优雅停机流程完成");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void waitForActiveRequests(Connector currentConnector) {
         if (currentConnector == null) {
             return;

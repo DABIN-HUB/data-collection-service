@@ -10,8 +10,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class FinsReadPlanBuilder {
 
+    /**
+     * 创建并返回业务对象。
+     */
     public List<FinsReadPlan> build(List<DataPoint> points,
                                     int maxWordsPerRequest,
                                     int maxBitsPerRequest) {
@@ -71,6 +77,9 @@ public class FinsReadPlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private FinsReadPlan buildPlan(FinsMemoryArea memoryArea,
                                    boolean bitUnit,
                                    int startWord,
@@ -96,6 +105,9 @@ public class FinsReadPlanBuilder {
         return new FinsReadPlan(key, memoryArea, bitUnit, startWord, endWordExclusive, List.copyOf(items));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlanCandidate toCandidate(DataPoint point, FinsAddress address) {
         int startWord = address.getWordAddress();
         int unitCount = address.readUnitCount();
@@ -110,6 +122,9 @@ public class FinsReadPlanBuilder {
         );
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PlanCandidate(DataPoint point,
                                  FinsAddress address,
                                  FinsMemoryArea memoryArea,

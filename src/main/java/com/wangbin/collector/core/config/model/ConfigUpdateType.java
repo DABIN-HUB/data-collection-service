@@ -19,6 +19,9 @@ public enum ConfigUpdateType {
 
     private final String value;
 
+    /**
+     * 创建当前组件实例。
+     */
     ConfigUpdateType(String value) {
         this.value = value;
     }
@@ -27,6 +30,9 @@ public enum ConfigUpdateType {
         return value;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Optional<ConfigUpdateType> fromValue(String value) {
         if (value == null || value.isBlank()) {
             return Optional.empty();

@@ -18,6 +18,9 @@ public class AuthRequest {
 
     private AuthParams params;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class AuthParams {
         @NotBlank(message = "产品Key不能为空")

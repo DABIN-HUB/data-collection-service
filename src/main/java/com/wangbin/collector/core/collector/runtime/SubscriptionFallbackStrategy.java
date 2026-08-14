@@ -10,6 +10,9 @@ public enum SubscriptionFallbackStrategy {
     FAIL_FAST,
     FALLBACK_TO_POLLING;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static SubscriptionFallbackStrategy fromValue(String value) {
         if (value == null || value.isBlank()) {
             return FAIL_FAST;

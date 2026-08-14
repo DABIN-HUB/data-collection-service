@@ -5,11 +5,20 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetTransportFrameSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetTransportFrameSupport() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static byte[] unwrapBvlc(byte[] frame) {
         if (frame == null || frame.length < 4) {
             throw new IllegalArgumentException("BACnet frame is too short");
@@ -32,6 +41,9 @@ public final class BacnetTransportFrameSupport {
         return Arrays.copyOfRange(frame, offset, frame.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static byte[] wrapNpdu(byte[] npdu) {
         if (npdu == null || npdu.length < 2) {
             throw new IllegalArgumentException("BACnet NPDU is too short");

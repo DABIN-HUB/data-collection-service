@@ -15,32 +15,62 @@ public interface CloudProtocolAdapter {
 
     String DEFAULT_PROVIDER = "alink";
 
+    /**
+     * 执行当前业务逻辑。
+     */
     String provider();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     default List<String> aliases() {
         return List.of(provider());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     String buildPublishTopic(ReportData data, ReportConfig config);
 
+    /**
+     * 解析或转换业务数据。
+     */
     default byte[] encodeReportData(ReportData data) {
         return encodeReportData(data, CloudPayloadOptions.defaults());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     byte[] encodeReportData(ReportData data, CloudPayloadOptions options);
 
+    /**
+     * 解析或转换业务数据。
+     */
     CloudProtocolMessage decode(String topic, byte[] payload) throws IOException;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     List<String> downlinkTopicPaths();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     default List<String> businessReplyTopicPaths() {
         return List.of();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     default List<String> ackMethods() {
         return MessageConstant.getAckMethods();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     default CloudInboundRoute classifyInbound(String topic, String replySuffix) {
         String topicPath = extractTopicPath(topic);
         if (topicPath == null || topicPath.isBlank()) {
@@ -66,6 +96,9 @@ public interface CloudProtocolAdapter {
         return CloudInboundRoute.ignored();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean containsAckMethod(String methodPath) {
         for (String method : ackMethods()) {
             if (MessageConstant.methodToTopicPath(method).equals(methodPath)) {
@@ -75,6 +108,9 @@ public interface CloudProtocolAdapter {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean containsTopicPath(List<String> paths, String topicPath) {
         if (paths == null || topicPath == null) {
             return false;
@@ -87,6 +123,9 @@ public interface CloudProtocolAdapter {
         return false;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String extractTopicPath(String topic) {
         if (topic == null || topic.isBlank()) {
             return null;
@@ -115,10 +154,16 @@ public interface CloudProtocolAdapter {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeReplySuffix(String replySuffix) {
         return replySuffix == null || replySuffix.isBlank() ? "_reply" : replySuffix.trim();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toMethod(String topicPath) {
         return topicPath == null ? null : topicPath.replace('/', '.');
     }

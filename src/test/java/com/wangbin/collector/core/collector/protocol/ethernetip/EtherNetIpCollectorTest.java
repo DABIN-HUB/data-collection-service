@@ -134,7 +134,7 @@ class EtherNetIpCollectorTest {
 
     private void prepareCommandCollector(EtherNetIpCollector collector, ConfigManager configManager) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "devicePointResolver", new DevicePointResolver(configManager));
 

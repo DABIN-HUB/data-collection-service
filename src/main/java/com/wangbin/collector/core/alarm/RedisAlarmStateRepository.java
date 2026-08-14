@@ -28,6 +28,9 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
     private final AlarmStateProperties properties;
     private final ConcurrentMap<String, AlarmStateSnapshot> pendingSnapshots = new ConcurrentHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public RedisAlarmStateRepository(StringRedisTemplate redisTemplate,
                                      ObjectMapper objectMapper,
                                      AlarmStateProperties properties) {
@@ -36,6 +39,9 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
         this.properties = properties;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Optional<AlarmStateSnapshot> find(String stateKey) {
         AlarmStateSnapshot pending = pendingSnapshots.get(stateKey);
@@ -49,11 +55,14 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
             String json = redisTemplate.opsForValue().get(redisKey(stateKey));
             return json == null ? Optional.empty() : Optional.of(deserialize(json));
         } catch (RuntimeException exception) {
-            log.warn("读取告警状态失败，当前规则使用本地状态: stateKey={}", stateKey, exception);
+            log.warn("读取告警状态失败，当前规则使用本地状态: 状态键={}", stateKey, exception);
             return Optional.empty();
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public void save(AlarmStateSnapshot snapshot) {
         if (snapshot == null || snapshot.getStateKey() == null) {
@@ -81,7 +90,7 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
                         Duration.ofSeconds(Math.max(1L, properties.getTtlSeconds())));
                 pendingSnapshots.remove(entry.getKey(), snapshot);
             } catch (RuntimeException exception) {
-                log.warn("持久化告警状态失败，保留本地快照等待重试: stateKey={}", entry.getKey(), exception);
+                log.warn("持久化告警状态失败，保留本地快照等待重试: 状态键={}", entry.getKey(), exception);
                 return;
             }
         }
@@ -91,11 +100,17 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
         return pendingSnapshots.size();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String redisKey(String stateKey) {
         String prefix = properties.getKeyPrefix();
         return prefix.endsWith(":") ? prefix + stateKey : prefix + ":" + stateKey;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String serialize(AlarmStateSnapshot snapshot) {
         try {
             return objectMapper.writeValueAsString(snapshot);
@@ -104,6 +119,9 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private AlarmStateSnapshot deserialize(String json) {
         try {
             return objectMapper.readValue(json, AlarmStateSnapshot.class);

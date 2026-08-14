@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 
 /**
  * 云端聚合目标，表示一组本地点位最终汇聚到哪个云端设备。
@@ -9,6 +9,9 @@ public record CloudAggregateTarget(String aggregateTargetId,
                                    CloudDeviceIdentity cloudIdentity,
                                    CloudAggregationPolicy policy) {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String key() {
         if (aggregateTargetId != null && !aggregateTargetId.isBlank()) {
             return aggregateTargetId;

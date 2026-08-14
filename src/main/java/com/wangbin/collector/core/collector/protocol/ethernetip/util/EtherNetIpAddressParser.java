@@ -10,14 +10,23 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class EtherNetIpAddressParser {
 
     private static final Pattern LOGIX_TYPED_PATTERN = Pattern.compile("^(.+):([A-Z][A-Z0-9_]*)(?:\\[(\\d+)])?$");
     private static final Pattern EIP_SEGMENT_PATTERN = Pattern.compile("^%(.+?)(?::(\\d+))?(?::([A-Z][A-Z0-9_]*))?$");
 
+    /**
+     * 创建当前组件实例。
+     */
     private EtherNetIpAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static EtherNetIpTagAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -32,10 +41,16 @@ public final class EtherNetIpAddressParser {
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static EtherNetIpTagAddress parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static EtherNetIpTagAddress parse(String address, String dataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("EtherNet/IP tag address cannot be empty");
@@ -51,6 +66,9 @@ public final class EtherNetIpAddressParser {
         return parseLogixAddress(rawAddress, inferredType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static EtherNetIpTagAddress parseEipAddress(String rawAddress, EtherNetIpPlcType inferredType) {
         Matcher matcher = EIP_SEGMENT_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
         if (!matcher.matches()) {
@@ -93,6 +111,9 @@ public final class EtherNetIpAddressParser {
                 finalType != null ? finalType.toTypeExpression() : null, arraySize);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static EtherNetIpTagAddress parseLogixAddress(String rawAddress, EtherNetIpPlcType inferredType) {
         Matcher matcher = LOGIX_TYPED_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
         String tagName = rawAddress;
@@ -120,6 +141,9 @@ public final class EtherNetIpAddressParser {
                 finalType != null ? finalType.toTypeExpression() : null, arraySize);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static EtherNetIpPlcType inferType(String dataType) {
         if (dataType == null || dataType.isBlank()) {
             return null;
@@ -127,6 +151,9 @@ public final class EtherNetIpAddressParser {
         return EtherNetIpPlcType.fromPlatformDataType(dataType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static EtherNetIpPlcType resolveExplicitType(Map<String, Object> config) {
         String type = firstNonBlank(
                 asString(config.get("driverDataType")),
@@ -138,6 +165,9 @@ public final class EtherNetIpAddressParser {
         return type != null ? EtherNetIpPlcType.fromDriverText(type) : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static EtherNetIpPlcType tryParseDriverType(String text) {
         if (text == null || text.isBlank()) {
             return null;
@@ -149,6 +179,9 @@ public final class EtherNetIpAddressParser {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -161,6 +194,9 @@ public final class EtherNetIpAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

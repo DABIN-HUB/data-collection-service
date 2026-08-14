@@ -15,6 +15,9 @@ public record Iec101LinkConfig(int linkAddressSize,
         requireRange("信息对象地址长度", informationObjectAddressSize, 1, 3);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static void requireRange(String name, int value, int min, int max) {
         if (value < min || value > max) {
             throw new IllegalArgumentException(name + "必须在 " + min + " 到 " + max + " 之间");

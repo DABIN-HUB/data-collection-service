@@ -15,6 +15,9 @@ public class MqttDownlinkCommandHandler {
     private final MqttDownlinkResponsePublisher responsePublisher;
     private final String replySuffix;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttDownlinkCommandHandler(MqttDownlinkService downlinkService,
                                       MqttDownlinkResponsePublisher responsePublisher,
                                       String replySuffix) {
@@ -23,6 +26,9 @@ public class MqttDownlinkCommandHandler {
         this.replySuffix = replySuffix == null || replySuffix.isBlank() ? "_reply" : replySuffix.trim();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public void handle(MqttInboundMessage message, CloudInboundRoute route) {
         if (downlinkService == null || message == null || message.payload().length == 0) {
             return;
@@ -39,17 +45,20 @@ public class MqttDownlinkCommandHandler {
             int qos = Math.max(0, Math.min(1, message.qos()));
             responsePublisher.publish(replyTopic, downlinkService.buildResponsePayload(result), qos);
             if (result.getCode() != 0) {
-                log.warn("MQTT 下行命令执行失败，已回复平台：method={} topic={} code={} msg={}",
+                log.warn("MQTT 下行命令执行失败，已回复平台：method={} 主题={} 状态码={} msg={}",
                         route != null ? route.method() : result.getMethod(),
                         replyTopic,
                         result.getCode(),
                         result.getMessage());
             }
         } catch (Exception e) {
-            log.warn("MQTT 下行响应发布失败：topic={} err={}", replyTopic, e.getMessage());
+            log.warn("MQTT 下行响应发布失败：主题={} err={}", replyTopic, e.getMessage());
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveReplyTopic(String inboundTopic) {
         if (inboundTopic == null || inboundTopic.isBlank() || inboundTopic.endsWith(replySuffix)) {
             return null;

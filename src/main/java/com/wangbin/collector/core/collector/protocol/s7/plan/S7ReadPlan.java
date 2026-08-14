@@ -6,6 +6,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class S7ReadPlan {
 
     private final String segmentKey;
@@ -19,6 +22,9 @@ public class S7ReadPlan {
     private final List<S7ReadPlanItem> items;
     private final List<DataPoint> points;
 
+    /**
+     * 创建当前组件实例。
+     */
     public S7ReadPlan(String segmentKey,
                       String area,
                       Integer dbNumber,
@@ -94,6 +100,9 @@ public class S7ReadPlan {
         return points.size();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean canUseBlockRead() {
         return blockOptimizable && blockReadAddress != null && points.size() > 1;
     }

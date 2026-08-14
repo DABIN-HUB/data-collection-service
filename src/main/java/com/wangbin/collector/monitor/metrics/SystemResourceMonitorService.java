@@ -1,6 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
+import com.wangbin.collector.core.port.SystemResourceProbe;
 import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import java.lang.management.ThreadMXBean;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.ToDoubleFunction;
+import java.util.function.ToLongFunction;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
@@ -24,7 +26,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
  */
 @Service
 @RequiredArgsConstructor
-public class SystemResourceMonitorService {
+public class SystemResourceMonitorService implements SystemResourceProbe {
 
     private final BeanFactory beanFactory;
     private final CloudOutboxService cloudOutboxService;
@@ -34,6 +36,9 @@ public class SystemResourceMonitorService {
     private OperatingSystemMXBean operatingSystemMXBean;
     private com.sun.management.OperatingSystemMXBean extendedOperatingSystemMXBean;
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         memoryMXBean = ManagementFactory.getMemoryMXBean();
@@ -59,6 +64,8 @@ public class SystemResourceMonitorService {
                 .heapMax(memoryMXBean != null ? memoryMXBean.getHeapMemoryUsage().getMax() : -1L)
                 .nonHeapUsed(memoryMXBean != null ? memoryMXBean.getNonHeapMemoryUsage().getUsed() : -1L)
                 .nonHeapCommitted(memoryMXBean != null ? memoryMXBean.getNonHeapMemoryUsage().getCommitted() : -1L)
+                .totalPhysicalMemorySize(readMemorySize(com.sun.management.OperatingSystemMXBean::getTotalMemorySize))
+                .freePhysicalMemorySize(readMemorySize(com.sun.management.OperatingSystemMXBean::getFreeMemorySize))
                 .processCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getProcessCpuLoad))
                 .systemCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getSystemCpuLoad))
                 .threadCount(threadMXBean != null ? threadMXBean.getThreadCount() : -1)
@@ -70,6 +77,14 @@ public class SystemResourceMonitorService {
                 .build();
     }
 
+    @Override
+    public double getProcessCpuLoad() {
+        return readCpuLoad(com.sun.management.OperatingSystemMXBean::getProcessCpuLoad);
+    }
+
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> collectThreadPoolStats() {
         Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> result = new LinkedHashMap<>();
         for (String beanName : MonitorThreadPoolNames.ALL) {
@@ -78,6 +93,9 @@ public class SystemResourceMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private SystemResourceSnapshot.ThreadPoolSnapshot inspectThreadPool(String beanName) {
         if (!beanFactory.containsBean(beanName)) {
             return emptyThreadPoolSnapshot();
@@ -128,6 +146,9 @@ public class SystemResourceMonitorService {
         return emptyThreadPoolSnapshot();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private SystemResourceSnapshot.ThreadPoolSnapshot buildSnapshot(int core,
                                                                     int max,
                                                                     int active,
@@ -144,6 +165,9 @@ public class SystemResourceMonitorService {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private SystemResourceSnapshot.ThreadPoolSnapshot emptyThreadPoolSnapshot() {
         return SystemResourceSnapshot.ThreadPoolSnapshot.builder()
                 .corePoolSize(-1)
@@ -155,6 +179,9 @@ public class SystemResourceMonitorService {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long rejectedCount(ThreadPoolExecutor executor) {
         if (executor == null) {
             return -1L;
@@ -165,6 +192,9 @@ public class SystemResourceMonitorService {
         return -1L;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private double readCpuLoad(ToDoubleFunction<com.sun.management.OperatingSystemMXBean> reader) {
         if (extendedOperatingSystemMXBean == null) {
             return -1.0;
@@ -174,6 +204,21 @@ public class SystemResourceMonitorService {
             return load >= 0.0 ? load * 100.0 : -1.0;
         } catch (Exception ignored) {
             return -1.0;
+        }
+    }
+
+    /**
+     * 查询并返回业务数据。
+     */
+    private long readMemorySize(ToLongFunction<com.sun.management.OperatingSystemMXBean> reader) {
+        if (extendedOperatingSystemMXBean == null) {
+            return -1L;
+        }
+        try {
+            long value = reader.applyAsLong(extendedOperatingSystemMXBean);
+            return value >= 0L ? value : -1L;
+        } catch (Exception ignored) {
+            return -1L;
         }
     }
 }

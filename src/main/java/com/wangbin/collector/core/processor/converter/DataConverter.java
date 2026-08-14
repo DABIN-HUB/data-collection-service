@@ -16,6 +16,9 @@ import java.util.Map;
 @Component
 public class DataConverter extends AbstractDataProcessor {
 
+    /**
+     * 创建当前组件实例。
+     */
     public DataConverter() {
         this.name = "DataConverter";
         this.type = "CONVERTER";
@@ -23,11 +26,17 @@ public class DataConverter extends AbstractDataProcessor {
         this.priority = 20;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("数据转换器初始化完成: {}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         try {
@@ -37,7 +46,7 @@ public class DataConverter extends AbstractDataProcessor {
             return ProcessResult.success(rawValue, processedValue, "数据转换完成");
 
         } catch (Exception e) {
-            log.error("数据转换异常: point={}, value={}", point.getPointName(), rawValue, e);
+            log.error("数据转换异常: 点位={}, 值={}", point.getPointName(), rawValue, e);
             return ProcessResult.error(rawValue, "数据转换异常: " + e.getMessage());
         }
     }
@@ -112,7 +121,7 @@ public class DataConverter extends AbstractDataProcessor {
                     return value.toString();
             }
         } catch (Exception e) {
-            log.warn("数据类型转换失败: value={}, targetType={}", value, targetType);
+            log.warn("数据类型转换失败: 值={}, targetType={}", value, targetType);
         }
 
         return value;
@@ -179,6 +188,9 @@ public class DataConverter extends AbstractDataProcessor {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("数据转换器销毁完成: {}", getName());

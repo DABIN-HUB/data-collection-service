@@ -16,6 +16,9 @@ public enum SnmpDataType {
     NULL,
     AUTO;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static SnmpDataType fromText(String text) {
         if (text == null || text.isBlank()) {
             return AUTO;

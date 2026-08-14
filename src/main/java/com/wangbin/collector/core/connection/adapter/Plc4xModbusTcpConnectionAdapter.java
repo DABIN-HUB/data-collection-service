@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * PLC4X-backed Modbus TCP adapter.
+ * PLC4X-backed Modbus TCP 适配器.
  */
 @Slf4j
 public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
@@ -18,10 +18,16 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Plc4xModbusTcpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -30,9 +36,12 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X Modbus TCP connection created: {}", connectionString);
+        log.info("PLC4X Modbus TCP 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -44,6 +53,9 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -51,9 +63,12 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // Modbus TCP does not require a separate authentication phase here.
+        // Modbus TCP does not require a separate 认证 phase here.
     }
 
     @Override
@@ -70,6 +85,9 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -103,6 +121,9 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -115,6 +136,9 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         return 5000L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

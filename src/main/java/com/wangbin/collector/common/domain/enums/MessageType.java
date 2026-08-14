@@ -38,6 +38,9 @@ public enum MessageType {
     private final String code;
     private final String description;
 
+    /**
+     * 创建当前组件实例。
+     */
     MessageType(String code, String description) {
         this.code = code;
         this.description = description;
@@ -52,6 +55,9 @@ public enum MessageType {
     }
 
     // 根据code获取枚举
+    /**
+     * 创建并返回业务对象。
+     */
     public static MessageType fromCode(String code) {
         for (MessageType type : values()) {
             if (type.getCode().equals(code)) {
@@ -74,6 +80,9 @@ public enum MessageType {
     }
 
     // 判断是否需要认证
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needAuth() {
         return this != AUTH && this != PING && this != PONG;
     }

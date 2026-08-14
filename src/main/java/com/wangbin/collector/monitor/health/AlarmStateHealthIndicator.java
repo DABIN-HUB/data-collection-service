@@ -18,6 +18,9 @@ public class AlarmStateHealthIndicator implements HealthIndicator {
     private final RedisAlarmStateRepository alarmStateRepository;
     private final AlarmStateProperties properties;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Health health() {
         int pending = alarmStateRepository.getPendingWriteCount();

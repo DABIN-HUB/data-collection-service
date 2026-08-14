@@ -1,13 +1,14 @@
 package com.wangbin.collector.core.report.inbound;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.cloud.protocol.CloudInboundRoute;
 import com.wangbin.collector.core.cloud.register.CloudSubDeviceRegisterService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -17,37 +18,51 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MqttBusinessReplyService {
 
     private final ObjectMapper objectMapper;
-    @Autowired(required = false)
-    private CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
+    @Nullable
+    private final CloudSubDeviceRegisterService cloudSubDeviceRegisterService;
 
+    /**
+     * 创建 MQTT 业务回执服务。
+     */
+    public MqttBusinessReplyService(ObjectMapper objectMapper,
+                                    @Nullable CloudSubDeviceRegisterService cloudSubDeviceRegisterService) {
+        this.objectMapper = objectMapper;
+        this.cloudSubDeviceRegisterService = cloudSubDeviceRegisterService;
+    }
+
+    /**
+     * 处理当前业务流程。
+     */
     public MqttBusinessReplyResult handle(MqttInboundMessage message, CloudInboundRoute route) {
         if (message == null || route == null) {
             return MqttBusinessReplyResult.ignored(null);
         }
         if (!MessageConstant.MESSAGE_TYPE_AUTH_REGISTER_SUB.equals(route.method())) {
-            log.trace("忽略未支持的 MQTT 业务回执：method={} topic={}", route.method(), message.topic());
+            log.trace("忽略未支持的 MQTT 业务回执：method={} 主题={}", route.method(), message.topic());
             return MqttBusinessReplyResult.ignored(route.method());
         }
         return handleSubDeviceRegisterReply(message, route.method());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private MqttBusinessReplyResult handleSubDeviceRegisterReply(MqttInboundMessage message, String method) {
         if (cloudSubDeviceRegisterService == null) {
-            log.warn("子设备动态注册回执服务未初始化，无法处理 MQTT 业务回执：topic={}", message.topic());
+            log.warn("子设备动态注册回执服务未初始化，无法处理 MQTT 业务回执：主题={}", message.topic());
             return MqttBusinessReplyResult.failure(method, "sub device register service unavailable");
         }
         try {
             JsonNode root = objectMapper.readTree(message.payload());
             Map<String, Object> data = cloudSubDeviceRegisterService.applyRegisterReply(root);
-            log.info("子设备动态注册回执处理完成：topic={} registered={} total={}",
-                    message.topic(), data.get("registered"), data.get("total"));
+            log.info("子设备动态注册回执处理完成：主题={} registered={} total={}",
+                    message.topic(), data.get("registered"), data.get(CommonMapKeys.TOTAL));
             return MqttBusinessReplyResult.success(method, data);
         } catch (Exception e) {
-            log.warn("处理子设备动态注册回执失败：topic={} err={}", message.topic(), e.getMessage());
+            log.warn("处理子设备动态注册回执失败：主题={} err={}", message.topic(), e.getMessage());
             return MqttBusinessReplyResult.failure(method, e.getMessage());
         }
     }

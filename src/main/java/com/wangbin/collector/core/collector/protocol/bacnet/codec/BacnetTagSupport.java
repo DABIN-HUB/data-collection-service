@@ -2,11 +2,20 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
 import java.io.ByteArrayOutputStream;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class BacnetTagSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetTagSupport() {
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeTag(ByteArrayOutputStream out, int tagNumber, boolean contextTag, long length) {
         int classValue = contextTag ? 0x08 : 0x00;
         boolean extendedTag = tagNumber > 14;
@@ -37,14 +46,23 @@ final class BacnetTagSupport {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeContextOpeningTag(ByteArrayOutputStream out, int contextId) {
         writeContextTag(out, contextId, true);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeContextClosingTag(ByteArrayOutputStream out, int contextId) {
         writeContextTag(out, contextId, false);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeContextTag(ByteArrayOutputStream out, int contextId, boolean start) {
         if (contextId <= 14) {
             out.write((contextId << 4) | (start ? 0x0E : 0x0F));
@@ -54,30 +72,45 @@ final class BacnetTagSupport {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeUnsigned(ByteArrayOutputStream out, long value, int bytes) {
         for (int i = bytes - 1; i >= 0; i--) {
             out.write((int) ((value >> (i * 8)) & 0xFF));
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeObjectIdentifier(ByteArrayOutputStream out, int objectTypeId, int instanceNumber) {
         writeTag(out, 12, false, 4);
         int value = ((objectTypeId & 0x03FF) << 22) | (instanceNumber & 0x3FFFFF);
         writeUnsigned(out, value, 4);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeEnumerated(ByteArrayOutputStream out, int value) {
         int length = unsignedLength(value);
         writeTag(out, 9, false, length);
         writeUnsigned(out, value, length);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     static void writeUnsignedInteger(ByteArrayOutputStream out, long value) {
         int length = unsignedLength(value);
         writeTag(out, 2, false, length);
         writeUnsigned(out, value, length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static int unsignedLength(long value) {
         if (value <= 0xFFL) {
             return 1;

@@ -14,7 +14,7 @@
 系统目标：
 
 - 统一多协议采集模型
-- 提供高性能、可扩展的采集调度能力
+- 提供可扩展、可观测并经过真实下游链路验证的采集调度能力
 - 将设备点位数据统一收敛为标准处理结果
 - 支持缓存、实时流、历史存储、云端上报的全链路闭环
 - 提供在线配置治理、运行态监控和问题可追踪能力
@@ -43,11 +43,16 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 
 `ops-token` 仅用于本机开发，不能作为生产令牌。本地临时设备只保存在当前进程内存中，应用重启后会丢失；需要长期保存时，应将配置导出并接入文件配置或远程配置源。Redis、TDengine 和云端 MQTT 的启用方式见[配置说明](#配置说明)。
 
+控制台按“工作台、资产与配置、操作中心、系统运维”分组，提供运行总览、实时数据、告警中心、设备管理、采集配置、云端上报、手动控制、设备影子、系统诊断、系统日志和网络检测 11 个入口。页面使用真实接口，不包含墨刀原型中的随机设备、随机告警或随机网络结果。
+
 控制台前端资源位置：
 
 - `src/main/resources/static/admin/index.html`
 - `src/main/resources/static/admin/app.js`
 - `src/main/resources/static/admin/styles.css`
+- `src/main/resources/static/admin/modao-console.js`
+- `src/main/resources/static/admin/modao-console.css`
+- `src/main/resources/static/admin/icons/`
 
 ## 界面预览
 
@@ -62,6 +67,14 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 ### 点位建模
 
 ![本地点位建模](./images/point-modeling.png)
+
+### 告警中心
+
+![控制台告警中心](./images/console-alarm-center.png)
+
+### 网络检测
+
+![控制台网络检测](./images/console-network-diagnostic.png)
 
 ## 项目优势
 
@@ -84,6 +97,59 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - 健康检查、性能监控、访问日志治理
 
 从架构上看，它是“采集协议框架 + 调度系统 + 数据处理总线 + 运维治理层”的组合。
+
+## 性能与容量验证
+
+截至 2026-08-13，项目已经完成一轮面向真实 Redis + TDengine 下游链路的固定节奏容量验证。下面的数据是 **当前代码、当前测试环境和当前测试边界下的实测基线**，不是理论值，也不应直接解释为所有生产现场的 SLA。
+
+### 测试边界
+
+- Java 17（本轮 soak JVM 为 17.0.15），`RealEnvironmentSoakIT` 固定节奏 Runtime 场景；测试 JVM `availableProcessors=16`，max heap 约 8.1 GiB。
+- Redis `7.4.6`。
+- TDengine `3.4.0.0.community`，时间精度 `ms`。
+- TDengine 默认写入模式：`DIRECT_REST`，即通过 `TAOS-RS` DataSource + JDBC `Statement` 直接执行单表 multi-values INSERT；MyBatis 写路径保留为可切换兼容模式，但不是当前性能基线默认路径。
+- Redis Stream 开启，采用有界 `StreamWriteBuffer` + 独立 writer + Redis pipeline；一条 telemetry 仍对应一条 Redis Stream entry。
+- 历史写入开启，采用 `HistoryBatchWriter` 批写、同 subtable single-flight、有界同表 batch merge、Redis fallback/replay。
+- Fixed Capacity 场景强制 `collector.adaptive-collection.enabled=false`，并校验实际采集速率与理论速率偏差不超过 ±5%。
+- 正式统计采用 `setup -> warmup -> quiescence -> measurement -> drain -> shutdown`，容量 measurement 为 300 秒，warmup/drain 不混入正式吞吐。
+- **Cloud/MQTT 上报关闭**。当前结果还没有覆盖完整 Cloud ACK、真实 PLC/OPC UA/S7 网络抖动、长时间 8h/24h soak，因此不能把下面的数值直接作为最终生产 SLA。
+
+### Clean 判定
+
+一次容量运行只有同时满足下面条件，才记为 clean：
+
+- load profile 有效，实际 collector rate 在理论值 ±5% 内；
+- Entry 无 rejected/drop；
+- Stream 无 uncompensated drop，Redis XADD failure 为 0，结束时 Stream buffer 清空；
+- History 无 deferred，flush rejected 为 0，Redis pending/processing/local 最终归零；
+- collector、pipeline、TDengine 写入速率能够长期跟随，不存在持续增长的 backlog；
+- 没有 unknown silent loss。
+
+### 全链路实测结果
+
+| 场景 | 负载 | Collector | Pipeline | TDengine | Stream / Entry / History | 结论 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| R2 | 10,000 点 / 10s，理论 1,000 points/s | 约 964.7/s | 约 964.7/s | 约 964.7/s | rejected/drop/deferred/pending 均为 0 | clean |
+| R1 | 10,000 点 / 5s，理论 2,000 points/s | 约 1,926.9/s | 约 1,926.9/s | 约 1,921.5/s | Stream drop=0，Entry rejected=0，History deferred/pending/rejected=0 | clean |
+| R1 repeat | 同 R1 | 约 1,928.8/s | 约 1,928.8/s | 约 1,928.8/s | Stream drop=0，Entry rejected=0，History deferred/pending/rejected=0 | clean |
+| R3 边界 | 目标约 2,500 points/s，实测约 2,450 points/s | 能接近目标 | 能接近目标 | 存在尾延迟放大 | 重复运行会出现 History fallback / flush reject | **非稳定 clean 容量** |
+
+因此，当前已重复验证的 **全链路 clean stable 基线约为 1,930 points/s**（真实 Redis + TDengine、Cloud disabled、Fixed Runtime）。这个数字用于说明当前代码已经验证到什么程度，不代表建议把生产长期负载配置在 1,930 points/s。最终生产持续负载和安全余量要在 `4C Production Readiness & Stability Validation` 的 8h/24h 长稳态、故障恢复和 Cloud-enabled 验证完成后再确定。
+
+### 关键性能优化结果
+
+- **History TDengine 写入**：默认从 MyBatis 参数化写路径切换到 `DIRECT_REST`。在 clustered 2,000 rows/s isolated benchmark 中，DB execute P95 从 MyBatis REST 约 `769 ms` 降到 Direct REST 约 `46 ms`；Direct REST isolated 2,500 rows/s 也能 clean。
+- **History 批形成**：修复 timer 每次扫描都提前 flush 未满 bucket 的问题；当前默认 `batchSize=50`、最大等待 `flushInterval=300ms`，正式 R1/R2 中主要由 size-trigger 形成满批。
+- **History 恢复**：Redis pending replay 从旧的逐条写库、理论约 `66.7 rows/s`，改为 batch replay；20,000 条 pending 的实测恢复约 `500+ rows/s`，并保留 at-least-once ownership、processing、dead-letter 和本地有界 fallback。
+- **Redis Stream**：从“stage task 内同步 XADD”改为 bounded admission + 独立 writer + Redis pipeline。isolated benchmark 已验证约 `3,000 rows/s` 时 drop=0、XADD failure=0；因此 R3 的首要限制已经不在 Stream。
+- **R3 边界定位**：约 2,500 points/s 下，真实 flush executor queue 并没有打满；失败时是 TDengine burst tail latency 上升，使逻辑 outstanding rows 达到有界上限。重复 R3 中 DB execute P95/P99 可升到约 `1~1.7s / 2.3~3.1s`，1 秒 burst 可达到 `5,150~8,250`，因此目前不建议把 2,500 points/s 宣称为稳定容量。
+
+### 如何理解这些数字
+
+- `1,930 points/s` 是**当前测试边界下重复通过的 clean baseline**。
+- `2,500 points/s` 是**当前容量边界探索值**，不是稳定 SLA。
+- 早期 synthetic 10k/50k/100k 的极高内存基准不能代表真实 Redis + TDengine 全链路容量，README 不再用 synthetic throughput 作为生产能力宣传。
+- CPU、Heap、GC、数据库尾延迟都受测试机器、JVM、Redis/TDengine部署方式和真实协议流量形态影响，应通过相同 soak 脚本在目标部署环境重新建立基线。
 
 ## 核心能力
 
@@ -199,29 +265,42 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 
 ### 5. Redis Stream 实时流
 
-项目已经把“处理后的采集结果实时写入 Redis Stream”作为正式能力接入主链路。
+项目已经把“处理后的采集结果实时写入 Redis Stream”作为正式能力接入主链路。当前写入链路不是在 Stream stage worker 中同步执行单条 XADD，而是通过有界 admission buffer 与 Redis 网络 I/O 解耦：
+
+`StreamTelemetryPostProcessStage -> StreamWriteBuffer -> telemetryStreamWriteExecutor -> Redis pipeline XADD`
 
 特点：
 
-- 保持原有缓存和上报逻辑不变，仅新增实时流分支
 - 写入的是处理后的结果，不是裸原始值
+- `StreamWriteBuffer` 使用固定容量，避免通过无界内存吸收下游故障
+- writer 按批次 drain 并通过 Redis pipeline 执行 XADD；仍保持 `1 telemetry = 1 Stream entry`
+- 原 Stream stage executor 被拒绝时，可直接尝试进入同一个 buffer；只有 buffer 满或关闭时才记为真正 uncompensated/drop
+- Redis pipeline 失败会显式计入失败指标，不会把 best-effort 丢失伪装成成功
 - 支持两种保留模式：
   - `COUNT`：保留最近 N 条
   - `TIME`：保留最近 N 秒
 - `TIME` 模式通过 `XTRIM MINID` 实现时间窗口裁剪
 
-这让项目天然具备实时消费接口，适合后续接流式分析、实时告警或下游订阅服务。
+Stream 分支仍是 **best-effort 实时流**，不是 History 那样的持久可靠队列；需要跨故障可靠恢复的数据应使用 History/Outbox 等可靠链路。
 
 ### 6. 历史存储
 
-项目已支持将 `ProcessResult` 持久化到 TDengine：
+项目已支持将 `ProcessResult` 持久化到 TDengine。当前默认写入链路为：
+
+`HistoryTelemetryPostProcessStage -> HistoryBatchWriter -> TimeSeriesService -> DirectJdbcTdengineTelemetryWriter -> TAOS-RS`
+
+主要能力：
 
 - Spring Boot 单数据源接入
-- MyBatis 执行 TDengine SQL
-- 自动建库、建超级表、建设备子表
+- 默认 `DIRECT_REST` writer：复用 DataSource，直接使用 JDBC `Statement` 执行单表 multi-values INSERT，绕过 MyBatis 写入参数绑定热点
+- MyBatis writer 仍作为可切换兼容模式保留，MyBatis 继续承担历史查询等 repository 能力
+- `HistoryBatchWriter` 按设备/subtable 形成有界批次，同 subtable single-flight，不同 subtable 可并行
+- 同一 subtable 的连续 owned batch 可以有界合并，减少 burst 下的数据库 request 数
+- 自动建库、建超级表、建设备子表，并缓存已经确认的 subtable
+- TDengine 写失败后进入 Redis `pending/processing/dead-letter` 恢复链；Redis 同时不可用时再退化到 JVM 本地有界队列
 - 支持按设备 / 点位 / 时间范围查询历史
 
-这部分不是独立 Demo，而是已经接入采集后的标准链路。
+历史链路按 **at-least-once** 设计，不承诺 exactly-once；成功写库后删除 processing 失败时存在明确的 duplicate window，但不能 silent loss。
 
 ### 7. 云端上报
 
@@ -273,11 +352,12 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 5. 采集器建立连接并构建读计划
 6. 调度器按时间片触发批次读取
 7. `BaseCollector.readPoint/readPoints` 统一生成 `ProcessResult`
-8. `CollectorDataCacheAspect` 执行：
-   - 多级缓存写入
-   - 上报聚合
-   - Redis Stream 写入
-   - 历史存储写入
+8. `CollectorDataCacheAspect / CollectorDataPostProcessor` 将标准结果送入 `TelemetryPostProcessPipeline`
+9. Pipeline 将缓存、Redis Stream、历史存储和云端上报拆到独立 stage：
+   - Cache stage：多级缓存/影子
+   - Stream stage：bounded admission + Redis pipeline
+   - History stage：HistoryBatchWriter + TDengine DIRECT_REST + reliable fallback
+   - Report stage：云端上报/Outbox
 
 从这里可以看出，采集、处理、缓存、实时流、历史存储、上报不是离散模块，而是单条闭环数据链。
 
@@ -517,6 +597,12 @@ collector:
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
         required-scope: CONFIG_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/network/diagnose]
+        required-scope: SECURITY_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/alarms/*/acknowledge]
+        required-scope: DEVICE_CONTROL
       - methods: [GET]
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE
@@ -771,6 +857,11 @@ spring:
         approximate-trim: true
         trim-task-enabled: true
         trim-interval-ms: 5000
+        buffer:
+          capacity: 10000
+          batch-size: 100
+          flush-interval-ms: 20
+          shutdown-timeout-ms: 30000
 ```
 
 - `COUNT`：保留最近 `max-length` 条。
@@ -795,6 +886,9 @@ telemetry:
     keep-days: 30
     query-default-limit: 500
     query-max-limit: 5000
+    write:
+      mode: ${TDENGINE_WRITE_MODE:DIRECT_REST}
+      multi-table-enabled: ${TDENGINE_WRITE_MULTI_TABLE_ENABLED:false}
 ```
 
 数据源配置：
@@ -820,21 +914,26 @@ telemetry:
       pending-key: "collector:prod:history:pending:v1"
       processing-key: "collector:prod:history:processing:v1"
       dead-letter-key: "collector:prod:history:dead:v1"
-      replay-interval-ms: 3000
-      replay-batch-size: 200
+      replay-interval-ms: 500
+      replay-batch-size: 500
+      replay-max-batches-per-cycle: 2
+      replay-limited-batches-per-cycle: 1
+      replay-live-queue-limited-threshold-percent: 30
+      replay-live-queue-pause-threshold-percent: 70
       local-queue-capacity: 10000
 ```
 
 处理顺序：
 
-1. 正常情况下直接写 TDengine。
-2. TDengine 写失败后，把消息放入 Redis `pending-key`。
-3. 回放时将消息原子移动到 `processing-key`，成功写入后删除。
-4. 消息无法反序列化时移动到 `dead-letter-key`。
-5. TDengine 和 Redis 同时不可用时进入 JVM 本地有界队列。
-6. 本地队列只用于短时降级，进程异常退出后无法恢复。
+1. 正常数据先进入 `HistoryBatchWriter`，按设备/subtable 形成批次后通过当前 writer 写 TDengine。
+2. TDengine 写失败或 flush ownership 转移失败时，以批量方式进入 Redis `pending-key`。
+3. replay 将消息 claim 到 `processing-key`，按 batch 调用现有 `TimeSeriesService.appendBatch()` 恢复，不再逐条执行 TDengine INSERT。
+4. 成功写库后删除 owned processing；删除失败保留 processing，因此可能重复写入，但不会 silent loss。
+5. 无法反序列化的 poison message 进入 `dead-letter-key`；dead-letter 写入失败时继续保留 processing。
+6. TDengine 和 Redis 同时不可用时进入 JVM 本地有界队列；本地队列仅用于短时降级，进程异常退出后无法恢复。
+7. replay 会根据 live flush queue 压力限速或暂停，避免恢复流量反过来拖垮正常实时写入。
 
-`replay-batch-size` 越大，恢复越快，但会增加 TDengine 和 Redis 瞬时压力。三个 Redis Key 必须按环境隔离并保留结构版本，不能让测试环境消费生产待写数据。隔离队列不应直接删除，应先导出内容分析格式或配置版本问题。
+`replay-batch-size`、每轮 batch 数量和 live-pressure 阈值共同控制恢复速度。三个 Redis Key 必须按环境隔离并保留结构版本，不能让测试环境消费生产待写数据。隔离队列不应直接删除，应先导出内容分析格式或配置版本问题。
 
 #### 7. 采集后处理线程池
 
@@ -848,11 +947,11 @@ collector:
       max-size: 4
       queue-capacity: 2000
     stream:
-      core-size: 2
+      core-size: 4
       max-size: 4
       queue-capacity: 2000
     history:
-      core-size: 2
+      core-size: 4
       max-size: 4
       queue-capacity: 5000
     report:
@@ -861,7 +960,7 @@ collector:
       queue-capacity: 5000
 ```
 
-这些线程池不会改变设备协议采集线程，只负责采集完成后的四个下游阶段。某个下游变慢时，不会直接占住采集线程，也不会阻塞其他阶段。
+这些线程池不会改变设备协议采集线程，只负责采集完成后的四个下游阶段。Stream stage 只负责快速 admission，真正的 Redis pipeline I/O 由独立 `telemetryStreamWriteExecutor` 执行；History stage 只负责把数据交给 `HistoryBatchWriter`，TDengine I/O 由独立 history batch flush executor 执行。这样下游网络 I/O 不会长期占住 stage worker。
 
 控制台显示 `activeCount=0` 表示采样时没有任务正在该线程池执行，不代表线程池未创建。短任务通常在两次监控采样之间完成，因此长时间看到 0 是正常现象。判断是否异常应同时看：
 
@@ -886,6 +985,7 @@ collector:
     state:
       enabled: true
       key-prefix: "collector:prod:alarm:state:v1:"
+      acknowledgement-key-prefix: "collector:prod:alarm:ack:v1:"
       ttl-seconds: 2592000
       retry-interval-ms: 5000
       retry-batch-size: 500
@@ -897,9 +997,10 @@ collector:
 - `retry-interval-ms` 控制重试周期。
 - `retry-batch-size` 限制每次重试数量。
 - `ttl-seconds` 默认 30 天，必须覆盖最长告警处理和审计周期。
-- 多环境共用 Redis 时必须修改 `key-prefix`。
+- 控制台告警确认使用 `acknowledgement-key-prefix`，通过 Redis `setIfAbsent` 保证首次确认语义。
+- 多环境共用 Redis 时必须同时修改 `key-prefix` 和 `acknowledgement-key-prefix`。
 
-关闭 `enabled` 后仍可进行当前进程内的告警判定，但状态不能跨重启恢复。
+关闭 `enabled` 后仍可进行当前进程内的告警判定和告警确认，但状态不能跨重启恢复。Redis 临时不可用时，告警确认降级保存在当前进程有界内存中，不阻断采集链路。
 
 #### 9. 云端上报总开关和设备映射
 
@@ -1290,6 +1391,9 @@ docker compose logs -f app
 | `/collector/monitor/system` | 需要 `VIEW` | JVM、CPU、线程池、Outbox 指标 |
 | `/collector/monitor/report` | 需要 `VIEW` | 云上报链路状态 |
 | `/collector/api/cache/stats` | 需要 `VIEW` | 缓存统计 |
+| `/collector/api/ops/logs` | 需要 `VIEW` | 脱敏后的最近运行日志 |
+| `/collector/api/ops/network/diagnose` | 需要 `SECURITY_MANAGE` | 受限 Ping、Traceroute 和 TCP 检测 |
+| `/collector/api/ops/alarms/acknowledgements/query` | 需要 `VIEW` | 批量查询告警确认状态 |
 
 新增健康项：
 
@@ -1357,6 +1461,9 @@ Slave 显示的保持寄存器 `4001` 到 `4010`，在控制台点位地址中�
 | `DataController` | `/api/data/history/device/{deviceId}/point/{pointId}` | 查询历史 |
 | `ConfigController` | `/api/config/**` | 配置治理、导入导出、同步 |
 | `MonitorController` | `/monitor/**` | 性能、缓存、系统、异常监控 |
+| `OpsController` | `/api/ops/logs` | 查询有界、脱敏的运行日志 |
+| `OpsController` | `/api/ops/network/diagnose` | 对本机或已配置设备执行受限网络检测 |
+| `OpsController` | `/api/ops/alarms/**` | 查询和幂等确认告警 |
 | `HealthController` | `/health` | 健康检查 |
 
 表内路径均为应用相对路径，默认访问时需要在前面加 `/collector`。
@@ -1397,6 +1504,9 @@ Slave 显示的保持寄存器 `4001` 到 `4010`，在控制台点位地址中�
 - 缓存 / 实时流 / 历史存储 / 上报闭环
 - 在线配置治理
 - 健康检查、监控与访问日志治理
+- 真实 Redis + TDengine、Cloud disabled、严格 Fixed Runtime 下约 `1,930 points/s` 全链路 clean stable 基线
+
+当前性能优化阶段已经冻结，下一阶段转入 `4C Production Readiness & Stability Validation`：长时间 soak、Redis/TDengine 故障恢复、Cloud-enabled、进程重启/恢复和真实协议设备稳定性。生产 SLA 将以这些验证完成后的结果为准。
 
 仍在持续完善的部分，见：
 

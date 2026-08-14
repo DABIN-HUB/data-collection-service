@@ -1,10 +1,19 @@
 package com.wangbin.collector.core.collector.protocol.ads.util;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class AmsNetIdParser {
 
+    /**
+     * 创建当前组件实例。
+     */
     private AmsNetIdParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("AMS Net ID cannot be empty");

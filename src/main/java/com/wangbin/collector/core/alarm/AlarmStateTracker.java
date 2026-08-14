@@ -2,7 +2,6 @@ package com.wangbin.collector.core.alarm;
 
 import com.wangbin.collector.common.domain.entity.AlarmRule;
 import org.springframework.util.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -21,15 +20,17 @@ public class AlarmStateTracker {
     private final ConcurrentMap<String, RuleState> states = new ConcurrentHashMap<>();
     private final AlarmStateRepository stateRepository;
 
-    public AlarmStateTracker() {
-        this(new InMemoryAlarmStateRepository());
-    }
 
-    @Autowired
+    /**
+     * 创建当前组件实例。
+     */
     public AlarmStateTracker(AlarmStateRepository stateRepository) {
         this.stateRepository = stateRepository;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public AlarmTransition evaluate(String deviceId,
                                     String pointId,
                                     AlarmRule rule,
@@ -47,6 +48,9 @@ public class AlarmStateTracker {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean acknowledge(String deviceId, String pointId, AlarmRule rule) {
         String stateKey = stateKey(deviceId, pointId, rule);
         RuleState state = states.computeIfAbsent(stateKey, this::restoreState);
@@ -60,6 +64,9 @@ public class AlarmStateTracker {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private RuleState restoreState(String stateKey) {
         return stateRepository.find(stateKey)
                 .map(snapshot -> new RuleState(
@@ -70,6 +77,9 @@ public class AlarmStateTracker {
                 .orElseGet(RuleState::new);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistState(String stateKey, RuleState state, long updatedAt) {
         stateRepository.save(new AlarmStateSnapshot(
                 stateKey,
@@ -80,6 +90,9 @@ public class AlarmStateTracker {
                 updatedAt));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private AlarmTransition evaluateState(String stateKey,
                                           RuleState state,
                                           AlarmRule rule,
@@ -124,6 +137,9 @@ public class AlarmStateTracker {
         return AlarmTransition.none(state.lifecycleState);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private AlarmTransition activate(String stateKey,
                                      RuleState state,
                                      long startedAt,
@@ -150,6 +166,9 @@ public class AlarmStateTracker {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private double resolveHysteresis(Map<String, Object> additionalConfig) {
         if (additionalConfig == null) {
             return 0D;
@@ -168,6 +187,9 @@ public class AlarmStateTracker {
         return 0D;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String stateKey(String deviceId, String pointId, AlarmRule rule) {
         String ruleKey = StringUtils.hasText(rule.getRuleId())
                 ? rule.getRuleId()
@@ -175,15 +197,24 @@ public class AlarmStateTracker {
         return String.valueOf(deviceId) + "|" + pointId + "|" + ruleKey;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class RuleState {
         private AlarmLifecycleState lifecycleState = AlarmLifecycleState.NORMAL;
         private long pendingSince;
         private long activeSince;
         private String alarmId;
 
+        /**
+         * 创建当前组件实例。
+         */
         private RuleState() {
         }
 
+        /**
+         * 创建当前组件实例。
+         */
         private RuleState(AlarmLifecycleState lifecycleState,
                           long pendingSince,
                           long activeSince,

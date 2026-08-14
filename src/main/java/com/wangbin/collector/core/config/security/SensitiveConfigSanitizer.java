@@ -21,6 +21,9 @@ public class SensitiveConfigSanitizer {
             "password", "devicesecret", "authtoken", "token", "secret",
             "apikey", "accesskey", "accesskeysecret", "privatekey", "clientsecret");
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public DeviceConnection sanitize(DeviceConnection source) {
         if (source == null) {
             return null;
@@ -35,6 +38,9 @@ public class SensitiveConfigSanitizer {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void restoreMaskedValues(DeviceConnection incoming, DeviceConnection existing) {
         if (incoming == null || existing == null) {
             return;
@@ -52,10 +58,16 @@ public class SensitiveConfigSanitizer {
         incoming.setAuthParams(restoreStringMap(incoming.getAuthParams(), existing.getAuthParams()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String mask(String value) {
         return value == null || value.isBlank() ? null : MASKED_VALUE;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> sanitizeMap(Map<String, Object> source) {
         if (source == null) {
             return null;
@@ -66,6 +78,9 @@ public class SensitiveConfigSanitizer {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, String> sanitizeStringMap(Map<String, String> source) {
         if (source == null) {
             return null;
@@ -75,6 +90,9 @@ public class SensitiveConfigSanitizer {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> restoreMap(Map<String, Object> incoming, Map<String, Object> existing) {
         if (incoming == null || existing == null) {
             return incoming;
@@ -85,6 +103,9 @@ public class SensitiveConfigSanitizer {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, String> restoreStringMap(Map<String, String> incoming, Map<String, String> existing) {
         if (incoming == null || existing == null) {
             return incoming;

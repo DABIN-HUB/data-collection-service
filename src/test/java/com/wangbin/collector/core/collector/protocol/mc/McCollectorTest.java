@@ -186,7 +186,7 @@ class McCollectorTest {
 
     private void prepareCollector(TestableMcCollector collector) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         DeviceConnection connection = new DeviceConnection();
         connection.setTimeout(1000);
         connection.setReadTimeout(1000);

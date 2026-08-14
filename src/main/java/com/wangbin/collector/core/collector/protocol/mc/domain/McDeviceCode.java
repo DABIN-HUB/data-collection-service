@@ -4,6 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum McDeviceCode {
     M("M", 0x90, 10, true),
     X("X", 0x9C, 16, true),
@@ -21,6 +24,9 @@ public enum McDeviceCode {
     private final int radix;
     private final boolean bitDevice;
 
+    /**
+     * 创建当前组件实例。
+     */
     McDeviceCode(String symbol, int code, int radix, boolean bitDevice) {
         this.symbol = symbol;
         this.code = code;
@@ -48,6 +54,9 @@ public enum McDeviceCode {
         return !bitDevice;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static McDeviceCode fromPrefix(String prefix) {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalArgumentException("MC device code cannot be empty");
@@ -59,6 +68,9 @@ public enum McDeviceCode {
         throw new IllegalArgumentException("Unsupported MC device code: " + prefix);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static Map<String, McDeviceCode> buildLookup() {
         Map<String, McDeviceCode> lookup = new LinkedHashMap<>();
         for (McDeviceCode value : values()) {

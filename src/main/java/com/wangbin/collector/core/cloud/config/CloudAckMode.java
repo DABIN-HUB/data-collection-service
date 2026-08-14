@@ -22,6 +22,9 @@ public enum CloudAckMode {
      */
     DISABLED;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudAckMode from(String value) {
         if (value == null || value.isBlank()) {
             return ASYNC;

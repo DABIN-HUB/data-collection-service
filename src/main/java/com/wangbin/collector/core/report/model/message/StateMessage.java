@@ -12,6 +12,9 @@ import java.util.Map;
 public class StateMessage extends IoTMessage {
     private Map<String, Object> state;
 
+    /**
+     * 创建当前组件实例。
+     */
     public StateMessage() {
         setMethod("thing.state.update");
     }

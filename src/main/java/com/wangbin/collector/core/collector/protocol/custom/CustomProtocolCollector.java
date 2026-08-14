@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.custom;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -38,6 +40,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return resolveProtocolType();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -52,7 +57,7 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
             exchangeAdapter = customAdapter;
             connectionConfig = createdAdapter.getConnectionConfig();
             timeoutMs = resolveTimeout(connectionConfig);
-            log.info("自定义协议采集器已连接: deviceId={}, protocolType={}",
+            log.info("自定义协议采集器已连接: 设备={}, 协议类型={}",
                     deviceInfo.getDeviceId(), resolveProtocolType());
         } catch (RuntimeException exception) {
             removeManagedConnection("自定义协议");
@@ -60,16 +65,22 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("自定义协议");
         exchangeAdapter = null;
         connectionAdapter = null;
         connectionConfig = null;
-        log.info("自定义协议采集器已断开: deviceId={}, protocolType={}",
+        log.info("自定义协议采集器已断开: 设备={}, 协议类型={}",
                 deviceInfo.getDeviceId(), resolveProtocolType());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         byte[] request = CustomRequestEncoder.encodeRead(point, requireConfig());
@@ -77,6 +88,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return CustomValueCodec.decode(response, point);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -90,7 +104,7 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
             try {
                 results.put(resolvePointCacheKey(point), doReadPoint(point));
             } catch (Exception exception) {
-                log.warn("自定义协议点位读取失败: deviceId={}, pointId={}",
+                log.warn("自定义协议点位读取失败: 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), exception);
                 results.put(resolvePointCacheKey(point), null);
             }
@@ -98,6 +112,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         DeviceConnection config = requireConfig();
@@ -118,6 +135,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
                 .startsWith(successHex.replaceAll("[^0-9A-Fa-f]", "").toUpperCase(Locale.ROOT));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -132,7 +152,7 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
             try {
                 results.put(resolvePointCacheKey(point), doWritePoint(point, entry.getValue()));
             } catch (Exception exception) {
-                log.warn("自定义协议点位写入失败: deviceId={}, pointId={}",
+                log.warn("自定义协议点位写入失败: 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), exception);
                 results.put(resolvePointCacheKey(point), false);
             }
@@ -140,24 +160,33 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         throw new UnsupportedOperationException("自定义请求响应协议暂不支持主动订阅");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         // 当前自定义协议没有主动订阅资源，无需释放额外句柄。
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", resolveProtocolType());
+        status.put(CommonMapKeys.PROTOCOL, resolveProtocolType());
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", false);
-        status.put("transport", resolveProtocolType().endsWith("UDP") ? "UDP" : "TCP");
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, false);
+        status.put(CommonMapKeys.TRANSPORT, resolveProtocolType().endsWith("UDP") ? "UDP" : "TCP");
         status.put("frameMode", connectionConfig != null
                 ? connectionConfig.getString("frameMode", resolveProtocolType().endsWith("UDP") ? "DATAGRAM" : "LENGTH_FIELD")
                 : null);
@@ -168,6 +197,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         if (!"RAW_EXCHANGE".equalsIgnoreCase(command)) {
@@ -181,12 +213,18 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
                 "responseText", new String(response, StandardCharsets.UTF_8));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        log.debug("自定义协议按点位请求响应执行，不生成跨点位批量计划: deviceId={}, pointCount={}",
+        log.debug("自定义协议按点位请求响应执行，不生成跨点位批量计划: 设备={}, 点位数量={}",
                 deviceId, points == null ? 0 : points.size());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private byte[] resolveRawCommandRequest(Map<String, Object> params) {
         Object requestHex = params.get("requestHex");
         if (requestHex != null && !requestHex.toString().isBlank()) {
@@ -199,6 +237,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         throw new IllegalArgumentException("RAW_EXCHANGE必须提供requestHex或requestText");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProtocolType() {
         if (deviceInfo != null && deviceInfo.getProtocolType() != null && !deviceInfo.getProtocolType().isBlank()) {
             return deviceInfo.getProtocolType().trim().toUpperCase(Locale.ROOT).replace('-', '_');
@@ -206,6 +247,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return "CUSTOM_TCP";
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private CustomExchangeAdapter requireExchangeAdapter() {
         if (exchangeAdapter == null) {
             throw new IllegalStateException("自定义协议连接尚未建立");
@@ -213,6 +257,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return exchangeAdapter;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private DeviceConnection requireConfig() {
         if (connectionConfig == null) {
             throw new IllegalStateException("自定义协议连接配置不存在");
@@ -220,6 +267,9 @@ public class CustomProtocolCollector extends ConnectionBackedCollector {
         return connectionConfig;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveTimeout(DeviceConnection config) {
         Integer configured = config.getReadTimeout();
         if (configured != null && configured > 0) {

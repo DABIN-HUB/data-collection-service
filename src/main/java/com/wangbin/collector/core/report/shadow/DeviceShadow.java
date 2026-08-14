@@ -62,6 +62,9 @@ public class DeviceShadow {
     /** 影子文档最后更新时间，reported 或 desired 变化时刷新。 */
     private volatile long updatedAt;
 
+    /**
+     * 创建当前组件实例。
+     */
     public DeviceShadow(String deviceId) {
         this.deviceId = deviceId;
         long now = System.currentTimeMillis();
@@ -70,6 +73,9 @@ public class DeviceShadow {
         this.updatedAt = now;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void update(String field, ValueMeta valueMeta, DataPoint point) {
         if (field == null || field.isBlank() || valueMeta == null) {
             return;
@@ -87,14 +93,23 @@ public class DeviceShadow {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, ValueMeta> snapshot() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(latest));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, ValueMeta> desiredSnapshot() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(desired));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, ValueMeta> deltaSnapshot() {
         Map<String, ValueMeta> delta = new LinkedHashMap<>();
         desired.forEach((field, meta) -> {
@@ -105,10 +120,16 @@ public class DeviceShadow {
         return Collections.unmodifiableMap(delta);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, PointInfo> snapshotPointInfos() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(pointInfos));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, Object> snapshotLastReportedValues() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(lastReportedValues));
     }
@@ -121,14 +142,23 @@ public class DeviceShadow {
         return latest.isEmpty();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public long nextSeq() {
         return sequence.incrementAndGet();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public long currentVersion() {
         return version.get();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void updateDesired(Map<String, Object> values, String source) {
         if (values == null || values.isEmpty()) {
             return;
@@ -155,6 +185,9 @@ public class DeviceShadow {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clearDesired(Collection<String> fields) {
         boolean changed = false;
         if (fields == null || fields.isEmpty()) {
@@ -172,22 +205,34 @@ public class DeviceShadow {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void restoreReported(String field, ValueMeta valueMeta) {
         if (field != null && !field.isBlank() && valueMeta != null) {
             latest.put(field, valueMeta);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void restoreDesired(String field, ValueMeta valueMeta) {
         if (field != null && !field.isBlank() && valueMeta != null) {
             desired.put(field, valueMeta);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void restoreVersion(long version) {
         this.version.set(Math.max(0, version));
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedWindowCommitted(long reportTimestamp, long start, long end) {
         this.lastReportAt = reportTimestamp;
         this.lastWindowStart = start;
@@ -204,6 +249,9 @@ public class DeviceShadow {
         return lastReportedValues.get(field);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedValues(Map<String, Object> values) {
         if (values == null) {
             return;
@@ -244,6 +292,9 @@ public class DeviceShadow {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void restoreLastReportedValues(Map<String, Object> values) {
         if (values == null || values.isEmpty()) {
             return;
@@ -255,6 +306,9 @@ public class DeviceShadow {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public long latestValueTimestamp() {
         long latestTimestamp = 0L;
         for (ValueMeta meta : latest.values()) {
@@ -269,6 +323,9 @@ public class DeviceShadow {
         return lastChangeTriggerAt.getOrDefault(field, 0L);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markChangeTrigger(String field, long timestamp) {
         if (field != null) {
             lastChangeTriggerAt.put(field, timestamp);
@@ -279,6 +336,9 @@ public class DeviceShadow {
         return lastEventTriggerAt.getOrDefault(field, 0L);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markEventTrigger(String field, long timestamp) {
         if (field != null) {
             lastEventTriggerAt.put(field, timestamp);
@@ -289,12 +349,18 @@ public class DeviceShadow {
         return eventSignatureTimes.getOrDefault(signature, 0L);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markEventSignature(String signature, long timestamp) {
         if (signature != null) {
             eventSignatureTimes.put(signature, timestamp);
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private boolean clearDesiredIfSatisfied(String field, Object reportedValue) {
         ValueMeta desiredMeta = desired.get(field);
         if (desiredMeta == null || !valuesEqual(desiredMeta.getValue(), reportedValue)) {
@@ -322,6 +388,9 @@ public class DeviceShadow {
                 || !Objects.equals(previous.getMetadata(), current.getMetadata());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean valuesEqual(Object left, Object right) {
         if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
             return Double.compare(leftNumber.doubleValue(), rightNumber.doubleValue()) == 0;
@@ -329,16 +398,25 @@ public class DeviceShadow {
         return Objects.equals(left, right);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void touch() {
         updatedAt = System.currentTimeMillis();
         version.incrementAndGet();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private void touchReportedState() {
         updatedAt = System.currentTimeMillis();
         version.incrementAndGet();
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record PointInfo(String pointId, String pointCode, String pointName) {
     }
 }

@@ -63,7 +63,7 @@ public final class SegmentedBacnetTestServer implements AutoCloseable {
                 System.arraycopy(request.getData(), request.getOffset(), payload, 0, request.getLength());
                 handleRequest(payload, request.getSocketAddress());
             } catch (SocketTimeoutException ignored) {
-                // Poll loop.
+                // 轮询循环。
             } catch (Exception ex) {
                 if (running) {
                     asyncFailure.compareAndSet(null, new RuntimeException("Segmented BACnet test server failed", ex));

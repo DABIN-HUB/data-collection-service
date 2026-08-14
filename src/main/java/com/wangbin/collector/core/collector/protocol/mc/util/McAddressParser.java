@@ -11,15 +11,24 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class McAddressParser {
 
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
             "^(ZR|[MXYBDRW])([0-9A-Fa-f]+)(?:\\.(\\d+))?(?:\\[(\\d+)])?$",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * 创建当前组件实例。
+     */
     private McAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -32,10 +41,16 @@ public final class McAddressParser {
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McAddress parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static McAddress parse(String address, String platformDataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("MC address cannot be empty");
@@ -76,6 +91,9 @@ public final class McAddressParser {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String canonicalize(McDeviceCode deviceCode, int deviceNumber, Integer bitIndex, int arraySize) {
         String addressNumber = Integer.toString(deviceNumber, deviceCode.getRadix()).toUpperCase(Locale.ROOT);
         StringBuilder builder = new StringBuilder(deviceCode.getSymbol()).append(addressNumber);
@@ -88,6 +106,9 @@ public final class McAddressParser {
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolveBitIndex(String explicitBitIndex, Map<String, Object> config) {
         String value = explicitBitIndex;
         if ((value == null || value.isBlank()) && config != null && !config.isEmpty()) {
@@ -106,6 +127,9 @@ public final class McAddressParser {
         return parsed;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveArraySize(String explicitArraySize, Map<String, Object> config) {
         if (explicitArraySize != null && !explicitArraySize.isBlank()) {
             return parseArraySize(explicitArraySize);
@@ -117,6 +141,9 @@ public final class McAddressParser {
         return parseArraySize(String.valueOf(configured));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseArraySize(String value) {
         int parsed = Integer.parseInt(value.trim());
         if (parsed <= 0) {
@@ -125,6 +152,9 @@ public final class McAddressParser {
         return parsed;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> config, String... keys) {
         for (String key : keys) {
             if (config.containsKey(key)) {
@@ -134,6 +164,9 @@ public final class McAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -146,6 +179,9 @@ public final class McAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

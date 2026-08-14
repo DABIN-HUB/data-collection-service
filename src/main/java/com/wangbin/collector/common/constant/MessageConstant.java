@@ -3,6 +3,9 @@ package com.wangbin.collector.common.constant;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class MessageConstant {
 
     // 消息类型

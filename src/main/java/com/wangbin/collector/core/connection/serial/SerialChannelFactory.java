@@ -6,5 +6,8 @@ package com.wangbin.collector.core.connection.serial;
 @FunctionalInterface
 public interface SerialChannelFactory {
 
+    /**
+     * 创建并返回业务对象。
+     */
     SerialChannel create(SerialEndpoint endpoint);
 }

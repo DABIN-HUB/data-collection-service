@@ -20,6 +20,9 @@ public class DateUtil {
     private static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd HH:mm:ss";
     private static final String DEFAULT_DATETIME_MS_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
 
+    /**
+     * 创建当前组件实例。
+     */
     private DateUtil() {
         // 工具类，防止实例化
     }
@@ -134,7 +137,7 @@ public class DateUtil {
             SimpleDateFormat sdf = new SimpleDateFormat(pattern);
             return sdf.parse(dateStr);
         } catch (ParseException e) {
-            log.error("解析日期失败: {}, pattern: {}", dateStr, pattern, e);
+            log.error("解析日期失败: {}, 模式={}", dateStr, pattern, e);
             return null;
         }
     }
@@ -152,6 +155,9 @@ public class DateUtil {
         return calendar.getTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Date addHours(Date date, int hours) {
         if (date == null) {
             return null;
@@ -162,6 +168,9 @@ public class DateUtil {
         return calendar.getTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Date addMinutes(Date date, int minutes) {
         if (date == null) {
             return null;
@@ -172,6 +181,9 @@ public class DateUtil {
         return calendar.getTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Date addSeconds(Date date, int seconds) {
         if (date == null) {
             return null;

@@ -9,15 +9,18 @@ import org.openmuc.j60870.ie.IeRegulatingStepCommand;
 import java.util.Locale;
 
 /**
- * IEC 104 utility helpers.
+ * IEC104 工具方法。
  */
 public class Iec104Utils {
 
+    /**
+     * 创建当前组件实例。
+     */
     private Iec104Utils() {
     }
 
     /**
-     * Parse IEC 104 address.
+     * 解析 IEC104 地址。
      */
     public static Iec104Address parseAddress(String commonAddress, String addressStr) {
         if (addressStr == null || addressStr.isEmpty()) {
@@ -48,7 +51,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse IEC 104 address and require an explicit type token.
+     * 解析 IEC104 地址，并要求显式类型标记。
      */
     public static Iec104Address parseTypedAddress(String commonAddress, String addressStr, String usage) {
         Iec104Address address = parseAddress(commonAddress, addressStr);
@@ -60,7 +63,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Resolve a configured IEC 104 type token into the canonical type id used for matching.
+     * 将 IEC104 配置类型标记解析为匹配使用的规范类型 ID。
      */
     public static Integer resolveTypeIdToken(Object raw) {
         Integer rawTypeId = resolveRawTypeIdToken(raw);
@@ -68,7 +71,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Resolve a configured IEC 104 type token into the protocol raw type id.
+     * Resolve a configured IEC 104 type token into the 协议 raw type id.
      */
     public static Integer resolveRawTypeIdToken(Object raw) {
         if (raw == null) {
@@ -81,7 +84,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Resolve a configured IEC 104 type token into enum metadata.
+     * Resolve a configured IEC 104 type token into enum 元数据.
      */
     public static Iec104Type resolveType(Object raw) {
         if (raw == null || (!(raw instanceof Number) && raw.toString().isBlank())) {
@@ -91,7 +94,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Resolve ASDU type to the canonical type id used by matching logic.
+     * 将 ASDU 类型解析为匹配逻辑使用的规范类型 ID。
      */
     public static Integer resolveTypeId(ASduType type) {
         if (type == null) {
@@ -101,7 +104,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse double command state.
+     * 解析双点命令状态。
      */
     public static IeDoubleCommand.DoubleCommandState parseDoubleCommandState(Object value) {
         if (value instanceof IeDoubleCommand.DoubleCommandState state) {
@@ -126,7 +129,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse regulating step command state.
+     * 解析调节步命令状态。
      */
     public static IeRegulatingStepCommand.StepCommandState parseStepCommandState(Object value) {
         if (value instanceof IeRegulatingStepCommand.StepCommandState state) {
@@ -153,7 +156,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse boolean-style command value.
+     * Parse boolean-style command 值.
      */
     public static boolean parseBooleanValue(Object value) {
         if (value == null) {
@@ -181,7 +184,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse integer-style command value, supporting decimal, hex and binary literals.
+     * Parse integer-style command 值, supporting decimal, hex and binary literals.
      */
     public static int parseIntegerValue(Object value) {
         if (value == null) {
@@ -228,7 +231,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Parse float-style command value.
+     * Parse float-style command 值.
      */
     public static float parseFloatValue(Object value) {
         if (value == null) {
@@ -246,7 +249,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Whether the type id is a readable telemetry type.
+     * Whether the type id is a readable 遥测 type.
      */
     public static boolean isReadType(int typeId) {
         return Iec104Type.fromTypeId(typeId)
@@ -255,7 +258,7 @@ public class Iec104Utils {
     }
 
     /**
-     * Whether the type id is a writable command type.
+     * 判断类型 ID 是否为可写命令类型。
      */
     public static boolean isWriteType(int typeId) {
         return Iec104Type.fromTypeId(typeId)
@@ -263,6 +266,9 @@ public class Iec104Utils {
                 .orElse(false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeTypeToken(String raw) {
         return raw.trim()
                 .toUpperCase(Locale.ROOT)
@@ -270,6 +276,9 @@ public class Iec104Utils {
                 .replace(' ', '_');
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeToken(Object raw) {
         if (raw == null) {
             return "";

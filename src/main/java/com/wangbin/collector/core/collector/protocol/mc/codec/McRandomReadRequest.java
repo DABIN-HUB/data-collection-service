@@ -6,10 +6,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 承载当前模块的数据传输内容。
+ */
 public class McRandomReadRequest {
 
     private final List<McAddress> wordAddresses;
 
+    /**
+     * 创建当前组件实例。
+     */
     public McRandomReadRequest(List<McAddress> wordAddresses) {
         List<McAddress> safeAddresses = wordAddresses == null
                 ? Collections.emptyList()

@@ -1,5 +1,7 @@
 package com.wangbin.collector.common.exception;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +29,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ApiResult<?> handleBusinessException(BusinessException e, HttpServletRequest request) {
         log.error("业务异常: {} - {}", e.getCode(), e.getMessage(), e);
-        //ApiResult.error(e.getCode(), e.getMessage(), e.getData());
         return ApiResult.error(e.getCode(), e.getMessage());
     }
 
@@ -36,15 +37,15 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(CollectorException.class)
     public ApiResult<?> handleCollectorException(CollectorException e, HttpServletRequest request) {
-        log.error("采集器异常 - Device: {}, Point: {}, Quality: {}",
+        log.error("采集器异常 - 设备={}，点位={}，质量={}",
                 e.getDeviceId(), e.getPointId(), e.getDataQuality(), e);
 
         ApiResult<Object> result = ApiResult.error(e.getCode(), e.getMessage());
         result.setData(e.getData());
 
         // 添加额外信息
-        result.addExtra("deviceId", e.getDeviceId());
-        result.addExtra("pointId", e.getPointId());
+        result.addExtra(CommonMapKeys.DEVICE_ID, e.getDeviceId());
+        result.addExtra(CommonMapKeys.POINT_ID, e.getPointId());
         result.addExtra("dataQuality", e.getDataQuality().getCode());
 
         return result;

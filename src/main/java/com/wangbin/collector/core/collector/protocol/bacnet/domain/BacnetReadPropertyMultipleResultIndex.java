@@ -4,15 +4,24 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetReadPropertyMultipleResultIndex {
 
     private final Map<String, BacnetReadPropertyMultipleResponse.PropertyValueResult> resultByKey;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetReadPropertyMultipleResultIndex(
             Map<String, BacnetReadPropertyMultipleResponse.PropertyValueResult> resultByKey) {
         this.resultByKey = resultByKey;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetReadPropertyMultipleResultIndex from(BacnetReadPropertyMultipleResponse response) {
         Map<String, BacnetReadPropertyMultipleResponse.PropertyValueResult> index = new HashMap<>();
         List<BacnetReadPropertyMultipleResponse.ReadAccessResult> results =
@@ -34,11 +43,17 @@ public final class BacnetReadPropertyMultipleResultIndex {
         return new BacnetReadPropertyMultipleResultIndex(index);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetReadPropertyMultipleResponse.PropertyValueResult get(BacnetAddress address) {
         return resultByKey.get(key(BacnetObjectType.fromId(address.getObjectTypeId()), address.getInstanceNumber(),
                 BacnetPropertyIdentifier.fromId(address.getPropertyIdentifierId()), address.getArrayIndex()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String key(BacnetObjectType objectType,
                               int objectInstance,
                               BacnetPropertyIdentifier propertyIdentifier,

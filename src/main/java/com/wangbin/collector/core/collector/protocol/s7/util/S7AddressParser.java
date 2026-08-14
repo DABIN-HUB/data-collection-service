@@ -11,6 +11,9 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class S7AddressParser {
 
     private static final Pattern DB_TIA_PATTERN = Pattern.compile("^DB(\\d+)\\.DB([XBWD])(\\d+)(?:\\.(\\d+))?$");
@@ -22,13 +25,22 @@ public final class S7AddressParser {
                     + "(?:\\[(\\d+)])?$",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * 创建当前组件实例。
+     */
     private S7AddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static S7Address parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static S7Address parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -41,6 +53,9 @@ public final class S7AddressParser {
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static S7Address parse(String address, String dataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("S7 address cannot be empty");
@@ -94,6 +109,9 @@ public final class S7AddressParser {
         throw new IllegalArgumentException("Unsupported S7 address format: " + rawAddress);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String canonicalizeTypedAddress(String addressPart, String typePart, int arraySize) {
         boolean explicitPercent = addressPart.startsWith("%");
         String normalizedAddress = addressPart.toUpperCase(Locale.ROOT);
@@ -107,6 +125,9 @@ public final class S7AddressParser {
         return builder.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildDbCanonicalAddress(String dbNumber, String byteOffset, String bitOffset, String typeExpression, int arraySize) {
         StringBuilder builder;
         if ("BOOL".equalsIgnoreCase(typeExpression)) {
@@ -132,6 +153,9 @@ public final class S7AddressParser {
         return builder.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildAreaCanonicalAddress(String area, String byteOffset, String bitOffset, String typeExpression, int arraySize) {
         StringBuilder builder;
         if ("BOOL".equalsIgnoreCase(typeExpression)) {
@@ -155,6 +179,9 @@ public final class S7AddressParser {
         return builder.toString();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String detectArea(String normalized) {
         String candidate = normalized.startsWith("%") ? normalized.substring(1) : normalized;
         if (candidate.startsWith("DB")) {
@@ -172,6 +199,9 @@ public final class S7AddressParser {
         return "TAG";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String inferTypeExpression(String dataType, String shortCode, Map<String, Object> config) {
         String overrideType = firstNonBlank(
                 asString(config.get("driverDataType")),
@@ -196,6 +226,9 @@ public final class S7AddressParser {
         return normalizeTypeExpression(normalizedDataType, config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeTypeExpression(String typeExpression, Map<String, Object> config) {
         S7PlcType plcType = S7PlcType.fromText(typeExpression);
         if (plcType == S7PlcType.STRING) {
@@ -207,6 +240,9 @@ public final class S7AddressParser {
         return plcType.toTypeExpression();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveStringLength(Map<String, Object> config, int defaultValue) {
         Object value = firstPresent(config, "stringLength", "s7StringLength");
         if (value instanceof Number number) {
@@ -221,6 +257,9 @@ public final class S7AddressParser {
         return defaultValue;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> config, String... keys) {
         for (String key : keys) {
             if (config.containsKey(key)) {
@@ -230,6 +269,9 @@ public final class S7AddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -239,10 +281,16 @@ public final class S7AddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveArraySize(String explicitArrayPart, Map<String, Object> config) {
         if (explicitArrayPart != null && !explicitArrayPart.isBlank()) {
             return parseArraySize(explicitArrayPart);
@@ -254,6 +302,9 @@ public final class S7AddressParser {
         return parseArraySize(String.valueOf(configured));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseArraySize(String arrayPart) {
         if (arrayPart == null || arrayPart.isBlank()) {
             return 1;
@@ -265,6 +316,9 @@ public final class S7AddressParser {
         return arraySize;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void appendArraySuffix(StringBuilder builder, int arraySize) {
         if (arraySize > 1) {
             builder.append('[').append(arraySize).append(']');

@@ -3,6 +3,9 @@ package com.wangbin.collector.core.collector.protocol.s7.plan;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class S7ReadPlanItem {
 
     private final DataPoint point;
@@ -12,6 +15,9 @@ public class S7ReadPlanItem {
     private final int byteLength;
     private final boolean blockOptimizable;
 
+    /**
+     * 创建当前组件实例。
+     */
     public S7ReadPlanItem(DataPoint point,
                           S7Address address,
                           int byteOffset,

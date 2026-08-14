@@ -15,6 +15,9 @@ public record MqttInboundMessage(
         payload = payload == null ? new byte[0] : Arrays.copyOf(payload, payload.length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public byte[] payload() {
         return Arrays.copyOf(payload, payload.length);

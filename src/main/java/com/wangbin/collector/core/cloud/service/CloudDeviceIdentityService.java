@@ -1,8 +1,8 @@
 package com.wangbin.collector.core.cloud.service;
 
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +26,9 @@ public class CloudDeviceIdentityService {
     private final ConcurrentMap<String, CloudTargetConfig> targetByLocalDevice = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> localDeviceByCloudIdentity = new ConcurrentHashMap<>();
 
+    /**
+     * 解析或转换业务数据。
+     */
     public CloudTargetConfig resolveTarget(String localDeviceId) {
         if (!StringUtils.hasText(localDeviceId)) {
             return null;
@@ -44,6 +47,9 @@ public class CloudDeviceIdentityService {
         return target;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public CloudTargetConfig requireTarget(String localDeviceId) {
         CloudTargetConfig target = resolveTarget(localDeviceId);
         if (target == null || !target.valid()) {
@@ -52,6 +58,9 @@ public class CloudDeviceIdentityService {
         return target;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public String resolveLocalDeviceId(CloudDeviceIdentity identity) {
         if (identity == null || !identity.valid()) {
             return null;
@@ -64,11 +73,17 @@ public class CloudDeviceIdentityService {
         return localDeviceByCloudIdentity.get(identity.key());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, String> snapshotCloudIdentityIndex() {
         rebuildIndex();
         return Map.copyOf(localDeviceByCloudIdentity);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         if (event == null || !StringUtils.hasText(event.getDeviceId())) {
@@ -80,6 +95,9 @@ public class CloudDeviceIdentityService {
         localDeviceByCloudIdentity.entrySet().removeIf(entry -> localDeviceId.equals(entry.getValue()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rebuildIndex() {
         targetByLocalDevice.clear();
         localDeviceByCloudIdentity.clear();
@@ -100,11 +118,17 @@ public class CloudDeviceIdentityService {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void clear() {
         targetByLocalDevice.clear();
         localDeviceByCloudIdentity.clear();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudTargetConfig normalize(CloudTargetConfig source) {
         if (source == null || !source.isEnabled()) {
             return null;
@@ -118,6 +142,9 @@ public class CloudDeviceIdentityService {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String trim(String value) {
         return value == null ? null : value.trim();
     }

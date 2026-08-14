@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.protocol.bacnet.BacnetIpCollector;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetDeviceSnapshot;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetPropertyIdentifier;
@@ -10,15 +12,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 public class BacnetDeviceSnapshotService {
 
     private final Map<String, Object> propertyCache = new ConcurrentHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetDeviceSnapshot capture(BacnetIpCollector collector) {
         Map<String, Object> deviceInfo = new LinkedHashMap<>();
         deviceInfo.put("remoteDeviceInstance", collector.requireRemoteDeviceInstanceForSnapshot());
         deviceInfo.put("objectName", readAndCache(collector, BacnetPropertyIdentifier.OBJECT_NAME, null));
-        deviceInfo.put("description", readAndCache(collector, BacnetPropertyIdentifier.DESCRIPTION, null));
+        deviceInfo.put(CommonMapKeys.DESCRIPTION, readAndCache(collector, BacnetPropertyIdentifier.DESCRIPTION, null));
         deviceInfo.put("modelName", readAndCache(collector, BacnetPropertyIdentifier.MODEL_NAME, null));
         deviceInfo.put("vendorIdentifier", readAndCache(collector, BacnetPropertyIdentifier.VENDOR_IDENTIFIER, null));
         deviceInfo.put("protocolVersion", readAndCache(collector, BacnetPropertyIdentifier.PROTOCOL_VERSION, null));
@@ -46,6 +54,9 @@ public class BacnetDeviceSnapshotService {
                 .build();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Object readAndCache(BacnetIpCollector collector,
                                BacnetPropertyIdentifier propertyIdentifier,
                                Integer arrayIndex) {
@@ -55,14 +66,23 @@ public class BacnetDeviceSnapshotService {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Object> currentPropertyCache() {
         return new LinkedHashMap<>(propertyCache);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clear() {
         propertyCache.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String cacheKey(int deviceInstance,
                             BacnetPropertyIdentifier propertyIdentifier,
                             Integer arrayIndex) {

@@ -24,6 +24,9 @@ public final class Iec101Session implements AutoCloseable {
     private final Iec101Bus bus;
     private final SharedSerialChannelManager.Lease lease;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec101Session(int linkAddress,
                          int commonAddress,
                          Iec101LinkConfig config,
@@ -36,39 +39,63 @@ public final class Iec101Session implements AutoCloseable {
         this.lease = lease;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void initialize() throws Exception {
         bus.resetLink(linkAddress);
         bus.requestLinkStatus(linkAddress);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<Iec101Sample> generalInterrogation(int qualifier) throws Exception {
         byte[] request = Iec101AsduCodec.encodeInterrogation(commonAddress, qualifier, config);
         return decodeResponses(bus.sendAsdu(linkAddress, request, DEFAULT_MAX_CLASS_POLLS));
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public List<Iec101Sample> counterInterrogation(int qualifier) throws Exception {
         byte[] request = Iec101AsduCodec.encodeCounterInterrogation(commonAddress, qualifier, config);
         return decodeResponses(bus.sendAsdu(linkAddress, request, DEFAULT_MAX_CLASS_POLLS));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<Iec101Sample> read(int informationObjectAddress) throws Exception {
         byte[] request = Iec101AsduCodec.encodeRead(commonAddress, informationObjectAddress, config);
         return decodeResponses(bus.sendAsdu(linkAddress, request, 4));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<Iec101Sample> pollClassOne() throws Exception {
         return decodeResponses(bus.requestClass(linkAddress, true));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<Iec101Sample> pollClassTwo() throws Exception {
         return decodeResponses(bus.requestClass(linkAddress, false));
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void synchronizeClock(long timestamp) throws Exception {
         byte[] request = Iec101AsduCodec.encodeClockSynchronization(commonAddress, timestamp, config);
         validateCommandResponses(bus.sendAsdu(linkAddress, request, 4), 103);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void command(int typeId,
                         int informationObjectAddress,
                         Object value,
@@ -83,19 +110,31 @@ public final class Iec101Session implements AutoCloseable {
         return bus.isOpen();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int linkAddress() {
         return linkAddress;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int commonAddress() {
         return commonAddress;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() throws Exception {
         lease.close();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<Iec101Sample> decodeResponses(List<byte[]> responses) {
         List<Iec101Sample> samples = new ArrayList<>();
         for (byte[] response : responses) {
@@ -120,6 +159,9 @@ public final class Iec101Session implements AutoCloseable {
         return samples;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateCommandResponses(List<byte[]> responses,
                                           int expectedTypeId) throws Iec101ProtocolException {
         boolean confirmed = false;

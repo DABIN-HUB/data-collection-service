@@ -17,15 +17,24 @@ public record AlarmTransition(AlarmTransitionType type,
                               long occurredAt,
                               long durationMillis) {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static AlarmTransition none(AlarmLifecycleState state) {
         return new AlarmTransition(AlarmTransitionType.NONE, state, null, 0L, 0L, 0L);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static AlarmTransition activated(String alarmId, long startedAt, long occurredAt) {
         return new AlarmTransition(AlarmTransitionType.ACTIVATED, AlarmLifecycleState.ACTIVE,
                 alarmId, startedAt, occurredAt, 0L);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static AlarmTransition recovered(String alarmId,
                                             long startedAt,
                                             long occurredAt) {

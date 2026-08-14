@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.websocket;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -17,6 +19,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class WebSocketCollector extends ConnectionBackedCollector {
 
@@ -36,12 +41,18 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         return "WEBSOCKET";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection connectionConfig = prepareConnectionConfig();
         this.webSocketConnection = createAndConnectAdapter(connectionConfig, WebSocketConnectionAdapter.class, "WebSocket");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         removeManagedConnection("WebSocket");
@@ -52,6 +63,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         pointDefinitions.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) {
         try {
@@ -63,22 +77,25 @@ public class WebSocketCollector extends ConnectionBackedCollector {
 
             JSONObject request = new JSONObject(new LinkedHashMap<>());
             request.put("action", "read");
-            request.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-            request.put("pointId", point.getPointId());
-            request.put("pointCode", point.getPointCode());
-            request.put("address", point.getAddress());
-            request.put("timestamp", System.currentTimeMillis());
+            request.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            request.put(CommonMapKeys.POINT_ID, point.getPointId());
+            request.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+            request.put(CommonMapKeys.ADDRESS, point.getAddress());
+            request.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
             webSocketConnection.send(request.toJSONString().getBytes(StandardCharsets.UTF_8));
 
             byte[] response = receiveOnce();
             applyInboundPayload(response);
             return latestValues.get(point.getPointId());
         } catch (Exception e) {
-            log.error("WebSocket read point failed, pointId={}", point.getPointId(), e);
+            log.error("WebSocket 读取 点位 失败, 点位={}", point.getPointId(), e);
             return latestValues.get(point.getPointId());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new HashMap<>();
@@ -91,15 +108,15 @@ public class WebSocketCollector extends ConnectionBackedCollector {
 
             JSONObject request = new JSONObject(new LinkedHashMap<>());
             request.put("action", "batchRead");
-            request.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-            request.put("timestamp", System.currentTimeMillis());
+            request.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            request.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
             JSONArray pointArray = new JSONArray();
             for (DataPoint point : points) {
                 JSONObject p = new JSONObject(new LinkedHashMap<>());
-                p.put("pointId", point.getPointId());
-                p.put("pointCode", point.getPointCode());
-                p.put("address", point.getAddress());
+                p.put(CommonMapKeys.POINT_ID, point.getPointId());
+                p.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+                p.put(CommonMapKeys.ADDRESS, point.getAddress());
                 pointArray.add(p);
             }
             request.put("points", pointArray);
@@ -113,7 +130,7 @@ public class WebSocketCollector extends ConnectionBackedCollector {
             }
             return results;
         } catch (Exception e) {
-            log.error("WebSocket batch read failed, size={}", points.size(), e);
+            log.error("WebSocket 批量 读取 失败, 数量={}", points.size(), e);
             for (DataPoint point : points) {
                 results.put(point.getPointId(), latestValues.get(point.getPointId()));
             }
@@ -121,6 +138,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) {
         try {
@@ -135,11 +155,14 @@ public class WebSocketCollector extends ConnectionBackedCollector {
             }
             return parseAck(ack);
         } catch (Exception e) {
-            log.error("WebSocket write point failed, pointId={}", point.getPointId(), e);
+            log.error("WebSocket 写入 点位 失败, 点位={}", point.getPointId(), e);
             return false;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new HashMap<>();
@@ -155,6 +178,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
@@ -167,12 +193,15 @@ public class WebSocketCollector extends ConnectionBackedCollector {
                 String subscribeMessage = buildSubscribeMessage(point);
                 webSocketConnection.send(subscribeMessage.getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) {
-                log.error("WebSocket subscribe failed, pointId={}", point.getPointId(), e);
+                log.error("WebSocket 订阅失败，点位={}", point.getPointId(), e);
             }
         }
         drainInboundSilently();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
@@ -188,24 +217,30 @@ public class WebSocketCollector extends ConnectionBackedCollector {
                 String unsubscribeMessage = buildUnsubscribeMessage(point);
                 webSocketConnection.send(unsubscribeMessage.getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) {
-                log.error("WebSocket unsubscribe failed, pointId={}", point.getPointId(), e);
+                log.error("WebSocket 取消订阅失败, 点位={}", point.getPointId(), e);
             }
         }
         drainInboundSilently();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("isConnected", isConnected());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
         status.put("protocolType", getProtocolType());
-        status.put("pointCount", pointDefinitions.size());
+        status.put(CommonMapKeys.POINT_COUNT, pointDefinitions.size());
         status.put("cachedValueCount", latestValues.size());
         status.put("lastTimestamps", latestTimestamps);
         status.put("connectionStats", webSocketConnection != null ? webSocketConnection.getStatistics() : Map.of());
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) {
         try {
@@ -217,11 +252,14 @@ public class WebSocketCollector extends ConnectionBackedCollector {
             }
             return parseAnyPayload(response);
         } catch (Exception e) {
-            log.error("WebSocket execute command failed, command={}", command, e);
+            log.error("WebSocket 执行命令失败, 命令={}", command, e);
             return Map.of("status", "error", "message", e.getMessage());
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         pointDefinitions.clear();
@@ -233,6 +271,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void drainInboundMessages() {
         if (webSocketConnection == null || !webSocketConnection.isConnected()) {
             return;
@@ -253,6 +294,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void drainInboundSilently() {
         try {
             drainInboundMessages();
@@ -260,6 +304,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private byte[] receiveOnce() {
         if (webSocketConnection == null || !webSocketConnection.isConnected()) {
             return null;
@@ -276,6 +323,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void applyInboundPayload(byte[] payload) {
         if (payload == null || payload.length == 0) {
             return;
@@ -284,6 +334,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         handleWebSocketMessage(message);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleWebSocketMessage(String message) {
         if (message == null || message.isBlank()) {
             return;
@@ -293,10 +346,10 @@ public class WebSocketCollector extends ConnectionBackedCollector {
             Object parsed = JSON.parse(message);
 
             if (parsed instanceof JSONObject obj) {
-                if (obj.containsKey("pointId") && obj.containsKey("value")) {
-                    String pointId = Objects.toString(obj.get("pointId"), null);
+                if (obj.containsKey(CommonMapKeys.POINT_ID) && obj.containsKey(CommonMapKeys.VALUE)) {
+                    String pointId = Objects.toString(obj.get(CommonMapKeys.POINT_ID), null);
                     if (pointId != null) {
-                        recordInboundValue(pointId, obj.get("value"));
+                        recordInboundValue(pointId, obj.get(CommonMapKeys.VALUE));
                     }
                     return;
                 }
@@ -316,19 +369,22 @@ public class WebSocketCollector extends ConnectionBackedCollector {
                     if (!(item instanceof JSONObject itemObj)) {
                         continue;
                     }
-                    if (itemObj.containsKey("pointId") && itemObj.containsKey("value")) {
-                        String pointId = Objects.toString(itemObj.get("pointId"), null);
+                    if (itemObj.containsKey(CommonMapKeys.POINT_ID) && itemObj.containsKey(CommonMapKeys.VALUE)) {
+                        String pointId = Objects.toString(itemObj.get(CommonMapKeys.POINT_ID), null);
                         if (pointId != null) {
-                            recordInboundValue(pointId, itemObj.get("value"));
+                            recordInboundValue(pointId, itemObj.get(CommonMapKeys.VALUE));
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            log.debug("WebSocket message parse failed, payload={}", message, e);
+            log.debug("WebSocket 消息 parse 失败, 载荷={}", message, e);
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateFromValueMap(JSONObject source) {
         for (Map.Entry<String, Object> entry : source.entrySet()) {
             String key = entry.getKey();
@@ -343,6 +399,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordInboundValue(String pointId, Object value) {
         latestValues.put(pointId, value);
         latestTimestamps.put(pointId, System.currentTimeMillis());
@@ -353,6 +412,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolvePointIdByKey(String key) {
         if (pointDefinitions.containsKey(key)) {
             return key;
@@ -365,15 +427,18 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean parseAck(byte[] payload) {
         try {
             Object parsed = parseAnyPayload(payload);
             if (parsed instanceof JSONObject obj) {
-                Object success = obj.get("success");
+                Object success = obj.get(CommonMapKeys.SUCCESS);
                 if (success instanceof Boolean bool) {
                     return bool;
                 }
-                Object status = obj.get("status");
+                Object status = obj.get(CommonMapKeys.STATUS);
                 if (status != null) {
                     String text = status.toString().toLowerCase();
                     return Objects.equals(text, "ok") || Objects.equals(text, "success");
@@ -385,6 +450,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object parseAnyPayload(byte[] payload) {
         String text = new String(payload, StandardCharsets.UTF_8).trim();
         if (text.isEmpty()) {
@@ -397,6 +465,9 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DeviceConnection prepareConnectionConfig() {
         DeviceConnection config = requireConnectionConfig();
         if (config.getConnectionType() == null || config.getConnectionType().isBlank()) {
@@ -415,47 +486,59 @@ public class WebSocketCollector extends ConnectionBackedCollector {
         return config;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildSubscribeMessage(DataPoint point) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "subscribe");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildUnsubscribeMessage(DataPoint point) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "unsubscribe");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildWriteMessage(DataPoint point, Object value) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "write");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("pointId", point.getPointId());
-        payload.put("pointCode", point.getPointCode());
-        payload.put("address", point.getAddress());
-        payload.put("value", value);
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.POINT_ID, point.getPointId());
+        payload.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        payload.put(CommonMapKeys.ADDRESS, point.getAddress());
+        payload.put(CommonMapKeys.VALUE, value);
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildCommandMessage(String command, Map<String, Object> params) {
         JSONObject payload = new JSONObject(new LinkedHashMap<>());
         payload.put("action", "command");
-        payload.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
-        payload.put("command", command);
+        payload.put(CommonMapKeys.DEVICE_ID, deviceInfo != null ? deviceInfo.getDeviceId() : null);
+        payload.put(CommonMapKeys.COMMAND, command);
         payload.put("params", params != null ? params : Map.of());
-        payload.put("timestamp", System.currentTimeMillis());
+        payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
         return payload.toJSONString();
     }
 }

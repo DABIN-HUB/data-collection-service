@@ -5,6 +5,9 @@ import lombok.RequiredArgsConstructor;
 
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 @RequiredArgsConstructor
 public class MqttMessageEnvelope {

@@ -13,9 +13,15 @@ import java.util.function.Function;
  */
 public final class Plc4xArrayValueSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private Plc4xArrayValueSupport() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object decode(PlcValue plcValue,
                                 int expectedSize,
                                 Function<PlcValue, Object> elementDecoder,
@@ -49,6 +55,9 @@ public final class Plc4xArrayValueSupport {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object encode(Object value,
                                 int expectedSize,
                                 Function<Object, Object> elementEncoder,
@@ -69,6 +78,9 @@ public final class Plc4xArrayValueSupport {
         return encodedValues;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static List<Object> toObjectList(Object value, String protocolName) {
         if (value instanceof List<?> list) {
             return new ArrayList<>(list);

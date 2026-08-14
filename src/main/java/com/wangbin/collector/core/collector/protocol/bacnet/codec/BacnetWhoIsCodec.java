@@ -2,14 +2,23 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
 import java.io.ByteArrayOutputStream;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetWhoIsCodec {
 
     private static final int APDU_TYPE_UNCONFIRMED_REQUEST = 0x01;
     private static final int SERVICE_CHOICE_WHO_IS = 0x08;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetWhoIsCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(Integer lowLimit, Integer highLimit) {
         ByteArrayOutputStream apdu = new ByteArrayOutputStream();
         apdu.write(APDU_TYPE_UNCONFIRMED_REQUEST << 4);

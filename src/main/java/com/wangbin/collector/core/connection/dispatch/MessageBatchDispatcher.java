@@ -26,6 +26,9 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
     private final Thread workerThread;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
+    /**
+     * 创建当前组件实例。
+     */
     public MessageBatchDispatcher(int capacity,
                                   int batchSize,
                                   long flushIntervalMillis,
@@ -38,30 +41,45 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
         this.workerThread.setDaemon(true);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void start() {
         if (running.compareAndSet(false, true)) {
             workerThread.start();
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void stop() {
         running.set(false);
         workerThread.interrupt();
         queue.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addListener(Consumer<List<T>> listener) {
         if (listener != null) {
             listeners.add(listener);
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeListener(Consumer<List<T>> listener) {
         if (listener != null) {
             listeners.remove(listener);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void enqueue(T item) throws InterruptedException {
         if (item == null) {
             return;
@@ -82,10 +100,16 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clear() {
         queue.clear();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processLoop() {
         List<T> batch = new ArrayList<>(batchSize);
         while (running.get()) {
@@ -125,6 +149,9 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private T fetchNext() throws InterruptedException {
         if (!running.get()) {
             return null;
@@ -135,6 +162,9 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
         return queue.take();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchBatch(List<T> batch) {
         if (batch.isEmpty() || listeners.isEmpty()) {
             return;
@@ -149,6 +179,9 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         stop();

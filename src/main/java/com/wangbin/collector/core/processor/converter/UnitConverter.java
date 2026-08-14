@@ -19,6 +19,9 @@ public class UnitConverter extends AbstractDataProcessor {
     private String contextUnitAttribute = "rawUnit";
     private String additionalConfigUnitKey = "sourceUnit";
 
+    /**
+     * 创建当前组件实例。
+     */
     public UnitConverter() {
         this.name = "UnitConverter";
         this.type = "CONVERTER";
@@ -26,11 +29,17 @@ public class UnitConverter extends AbstractDataProcessor {
         this.priority = 30;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("单位转换器初始化完成: {}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         try {
@@ -50,7 +59,7 @@ public class UnitConverter extends AbstractDataProcessor {
                     String.format("单位转换: %s -> %s", sourceUnit, targetUnit));
 
         } catch (Exception e) {
-            log.error("单位转换异常: point={}, value={}", point.getPointName(), rawValue, e);
+            log.error("单位转换异常: 点位={}, 值={}", point.getPointName(), rawValue, e);
             return ProcessResult.error(rawValue, "单位转换异常: " + e.getMessage());
         }
     }
@@ -116,11 +125,17 @@ public class UnitConverter extends AbstractDataProcessor {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("单位转换器销毁完成: {}", getName());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     protected void loadConfig(Map<String, Object> config) {
         super.loadConfig(config);

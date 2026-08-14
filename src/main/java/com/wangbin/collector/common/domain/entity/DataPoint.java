@@ -73,9 +73,9 @@ public class DataPoint {
     /**
      * 地址信息：根据不同协议有不同的格式
      * - Modbus: "40001" (保持寄存器)
-     * - OPC: "Channel1.Device1.Tag1"
-     * - SNMP: "1.3.6.1.4.1.2021.10.1.3.1"
-     * - MQTT: "sensor/temperature"
+     * - OPC 协议地址示例："Channel1.Device1.Tag1"
+     * - SNMP 协议 OID 地址示例："1.3.6.1.4.1.2021.10.1.3.1"
+     * - MQTT 主题地址示例："sensor/temperature"
      */
     private String address;
 
@@ -132,7 +132,7 @@ public class DataPoint {
     /**
      * 采集模式
      * POLLING: 轮询采集（固定频率）
-     * SUBSCRIPTION: 订阅采集（数据变化时上报）
+     * 订阅模式：数据变化时上报
      * EVENT: 事件触发采集
      */
     private String collectionMode;
@@ -394,14 +394,14 @@ public class DataPoint {
 
     /**
      * 获取数据点完整标识
-     * @return deviceId.pointCode
+     * @return 本地设备 ID 与点位编码拼接结果。
      */
     public String getFullIdentifier() {
         return deviceId + "." + pointCode;
     }
 
     /**
-     * 是否因字段冲突被降级为 raw-only
+     * 是否因字段冲突被降级为原始字段上报
      */
     private boolean reportFieldConflict;
 
@@ -424,6 +424,9 @@ public class DataPoint {
         resetReportConfig();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void resetReportConfig() {
         configuredReportEnabled = null;
         configuredReportField = null;
@@ -436,6 +439,9 @@ public class DataPoint {
         parsedAdditionalConfigHash = 0;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureReportConfigParsed() {
         int currentHash = additionalConfig != null ? additionalConfig.hashCode() : 0;
         if (reportConfigParsed
@@ -514,6 +520,9 @@ public class DataPoint {
         return parsed != null && parsed > 0 ? parsed : defaultValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Boolean parseBoolean(Object value) {
         if (value == null) {
             return null;
@@ -528,6 +537,9 @@ public class DataPoint {
         return Boolean.parseBoolean(text);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Double parseDouble(Object value) {
         if (value == null) {
             return null;
@@ -546,6 +558,9 @@ public class DataPoint {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long parseLong(Object value) {
         if (value == null) {
             return null;
@@ -564,6 +579,9 @@ public class DataPoint {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String parseString(Object value) {
         if (value == null) {
             return null;
@@ -579,7 +597,7 @@ public class DataPoint {
     @Override
     public String toString() {
         return String.format(
-                "DataPoint{id=%d, pointCode='%s', pointName='%s', deviceId='%s', address='%s', dataType='%s', unit='%s', status=%d}",
+                "DataPoint{id=%d, 点位编码='%s', 点位名称='%s', 设备='%s', 地址='%s', 数据类型='%s', 单位='%s', 状态=%d}",
                 id, pointCode, pointName, deviceId, address, dataType, unit, status
         );
     }
@@ -593,6 +611,9 @@ public class DataPoint {
         private static final TypeReference<LinkedHashMap<String, Object>> TYPE =
                 new TypeReference<LinkedHashMap<String, Object>>() {};
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public Map<String, Object> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);

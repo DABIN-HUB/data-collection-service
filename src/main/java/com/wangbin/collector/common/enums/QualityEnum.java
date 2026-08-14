@@ -29,6 +29,9 @@ public enum QualityEnum {
     private final String text;
     private final String description;
 
+    /**
+     * 创建当前组件实例。
+     */
     QualityEnum(int code, String text, String description) {
         this.code = code;
         this.text = text;

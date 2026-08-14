@@ -1,11 +1,11 @@
 package com.wangbin.collector.core.config.loader;
 
-import com.wangbin.collector.common.domain.entity.ApiResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.web.result.ApiResult;
+import com.wangbin.collector.core.config.CollectorProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.ParameterizedTypeReference;
@@ -24,6 +24,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 通过远程配置接口加载设备、点位和连接配置。
+ */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "collector.config", name = "loader", havingValue = "remote", matchIfMissing = true)
@@ -32,32 +35,29 @@ public class RemoteConfigLoader implements ConfigLoader {
     private static final String API_TOKEN_HEADER = "X-API-Token";
     private static final String TENANT_ID_HEADER = "tenant-id";
 
-    @Value("${collector.config.yun-url:http://localhost:8080/admin-api}")
-    private String runUrl;
-
-    @Value("${collector.config.tenant-id:1}")
-    private String tenantId;
-
-    @Value("${collector.config.service-id:collector-1}")
-    private String serviceId;
-
-    @Value("${collector.config.api-token:}")
-    private String apiToken;
-
+    private final CollectorProperties.ConfigConfig configProperties;
     private final RestTemplate restTemplate;
 
-    public RemoteConfigLoader(RestTemplateBuilder restTemplateBuilder) {
+    /**
+     * 创建远程配置加载器并设置接口调用超时。
+     */
+    public RemoteConfigLoader(RestTemplateBuilder restTemplateBuilder,
+                              CollectorProperties collectorProperties) {
+        this.configProperties = collectorProperties.getConfig();
         this.restTemplate = restTemplateBuilder
                 .setConnectTimeout(Duration.ofSeconds(5))
                 .setReadTimeout(Duration.ofSeconds(10))
                 .build();
     }
 
+    /**
+     * 加载全部远程设备配置。
+     */
     @Override
     public List<DeviceInfo> loadAllDevices() {
-        String url = runUrl + "/iot/collector/config/devices?serviceId=" + serviceId;
+        String url = configProperties.getYunUrl() + "/iot/collector/config/devices?serviceId=" + configProperties.getServiceId();
         try {
-            ResponseEntity<ApiResponse<List<DeviceInfo>>> response = restTemplate.exchange(
+            ResponseEntity<ApiResult<List<DeviceInfo>>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -73,17 +73,20 @@ public class RemoteConfigLoader implements ConfigLoader {
         }
     }
 
+    /**
+     * 加载单个远程设备配置。
+     */
     @Override
     public DeviceInfo loadDevice(String deviceId) {
         try {
-            String url = runUrl + "/iot/collector/config/device/" + deviceId;
-            ResponseEntity<ApiResponse<DeviceInfo>> response = restTemplate.exchange(
+            String url = configProperties.getYunUrl() + "/iot/collector/config/device/" + deviceId;
+            ResponseEntity<ApiResult<DeviceInfo>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 return response.getBody().getData();
             }
-            throw new ConfigLoadException("远程设备配置响应异常，deviceId=" + deviceId
+            throw new ConfigLoadException("远程设备配置响应异常，设备=" + deviceId
                     + "，状态码=" + response.getStatusCode());
         } catch (HttpClientErrorException.NotFound exception) {
             return null;
@@ -91,63 +94,72 @@ public class RemoteConfigLoader implements ConfigLoader {
             if (exception instanceof ConfigLoadException configLoadException) {
                 throw configLoadException;
             }
-            throw new ConfigLoadException("加载远程设备配置失败，deviceId=" + deviceId, exception);
+            throw new ConfigLoadException("加载远程设备配置失败，设备=" + deviceId, exception);
         }
     }
 
+    /**
+     * 加载远程点位配置。
+     */
     @Override
     public List<DataPoint> loadDataPoints(String deviceId) {
         try {
-            String url = runUrl + "/iot/collector/config/points/" + deviceId;
-            ResponseEntity<ApiResponse<List<DataPoint>>> response = restTemplate.exchange(
+            String url = configProperties.getYunUrl() + "/iot/collector/config/points/" + deviceId;
+            ResponseEntity<ApiResult<List<DataPoint>>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 List<DataPoint> points = response.getBody().getData();
                 return points != null ? points : Collections.emptyList();
             }
-            throw new ConfigLoadException("远程点位配置响应异常，deviceId=" + deviceId
+            throw new ConfigLoadException("远程点位配置响应异常，设备=" + deviceId
                     + "，状态码=" + response.getStatusCode());
         } catch (Exception exception) {
             if (exception instanceof ConfigLoadException configLoadException) {
                 throw configLoadException;
             }
-            throw new ConfigLoadException("加载远程点位配置失败，deviceId=" + deviceId, exception);
+            throw new ConfigLoadException("加载远程点位配置失败，设备=" + deviceId, exception);
         }
     }
 
+    /**
+     * 加载远程连接配置。
+     */
     @Override
     public DeviceConnection loadConnectionConfig(String deviceId) {
         try {
-            String url = runUrl + "/iot/collector/config/connection/" + deviceId;
-            ResponseEntity<ApiResponse<DeviceConnection>> response = restTemplate.exchange(
+            String url = configProperties.getYunUrl() + "/iot/collector/config/connection/" + deviceId;
+            ResponseEntity<ApiResult<DeviceConnection>> response = restTemplate.exchange(
                     url, HttpMethod.GET, createAuthRequest(), new ParameterizedTypeReference<>() {
                     });
             if (response.getStatusCode() == HttpStatus.OK) {
                 return Objects.requireNonNull(response.getBody()).getData();
             }
-            throw new ConfigLoadException("远程连接配置响应异常，deviceId=" + deviceId
+            throw new ConfigLoadException("远程连接配置响应异常，设备=" + deviceId
                     + "，状态码=" + response.getStatusCode());
         } catch (Exception exception) {
             if (exception instanceof ConfigLoadException configLoadException) {
                 throw configLoadException;
             }
-            throw new ConfigLoadException("加载远程连接配置失败，deviceId=" + deviceId, exception);
+            throw new ConfigLoadException("加载远程连接配置失败，设备=" + deviceId, exception);
         }
     }
 
+    /**
+     * 创建远程配置接口鉴权请求头。
+     */
     private HttpEntity<String> createAuthRequest() {
         HttpHeaders headers = new HttpHeaders();
         headers.set(API_TOKEN_HEADER, getApiToken());
-        headers.set(TENANT_ID_HEADER, tenantId);
+        headers.set(TENANT_ID_HEADER, configProperties.getTenantId());
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
         return new HttpEntity<>(headers);
     }
 
     private String getApiToken() {
-        if (apiToken != null && !apiToken.trim().isEmpty()) {
-            return apiToken.trim();
+        if (configProperties.getApiToken() != null && !configProperties.getApiToken().trim().isEmpty()) {
+            return configProperties.getApiToken().trim();
         }
         String envToken = System.getenv("COLLECTOR_API_TOKEN");
         if (envToken != null && !envToken.trim().isEmpty()) {

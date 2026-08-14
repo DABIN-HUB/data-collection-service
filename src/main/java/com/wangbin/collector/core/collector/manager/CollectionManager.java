@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.manager;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -14,8 +16,8 @@ import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,58 +28,62 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages device collector lifecycle and protocol operations.
+ * 管理设备采集器生命周期和协议操作。
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CollectionManager {
 
-    @Autowired
-    private CollectorFactory collectorFactory;
-
-    @Autowired
-    private ConnectionManager connectionManager;
+    private final CollectorFactory collectorFactory;
+    private final ConnectionManager connectionManager;
 
     @Getter
     private final Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
-        log.info("Collection manager initialized");
-    }
-
-    @PreDestroy
-    public void destroy() {
-        log.info("Destroying collection manager");
-        destroyAllCollectors();
-        log.info("Collection manager destroyed");
+        log.info("采集 管理器 已初始化");
     }
 
     /**
-     * Register a device collector.
+     * 处理组件生命周期。
+     */
+    @PreDestroy
+    public void destroy() {
+        log.info("正在销毁 采集 管理器");
+        destroyAllCollectors();
+        log.info("采集 管理器 已销毁");
+    }
+
+    /**
+     * 注册设备采集器。
      */
     public void registerDevice(DeviceInfo deviceInfo) throws CollectorException {
         String deviceId = deviceInfo.getDeviceId();
 
         synchronized (collectors) {
             if (collectors.containsKey(deviceId)) {
-                log.warn("Device already registered: {}", deviceId);
+                log.warn("设备 已存在 已注册:{}", deviceId);
                 return;
             }
 
             try {
                 ProtocolCollector collector = collectorFactory.createCollector(deviceInfo);
                 collectors.put(deviceId, collector);
-                log.info("Device registered: {}", deviceId);
+                log.info("设备 已注册:{}", deviceId);
             } catch (Exception e) {
-                log.error("Failed to register device: {}", deviceId, e);
+                log.error("注册设备失败:{}", deviceId, e);
                 throw new CollectorException("Failed to register device", deviceId, null, e);
             }
         }
     }
 
     /**
-     * Rebuild protocol read plans for a device.
+     * 重建设备协议读取计划。
      */
     public void rebuildReadPlans(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -87,7 +93,7 @@ public class CollectionManager {
     }
 
     /**
-     * Unregister a device collector.
+     * 注销设备采集器。
      */
     public void unregisterDevice(String deviceId) throws CollectorException {
         synchronized (collectors) {
@@ -96,10 +102,10 @@ public class CollectionManager {
             if (collector != null) {
                 try {
                     collector.destroy();
-                    log.info("Device unregistered: {}", deviceId);
+                    log.info("设备 已注销:{}", deviceId);
                 } catch (Exception e) {
                     destroyFailure = e;
-                    log.error("Failed to unregister device: {}", deviceId, e);
+                    log.error("注销设备失败:{}", deviceId, e);
                 }
             }
             cleanupConnection(deviceId);
@@ -110,7 +116,7 @@ public class CollectionManager {
     }
 
     /**
-     * Best-effort cleanup for failed startup paths.
+     * 启动失败路径下尽力清理设备资源。
      */
     public void cleanupDevice(String deviceId) {
         synchronized (collectors) {
@@ -119,7 +125,7 @@ public class CollectionManager {
                 try {
                     collector.destroy();
                 } catch (Exception e) {
-                    log.warn("Cleanup collector failed, device={}", deviceId, e);
+                    log.warn("清理采集器失败, 设备={}", deviceId, e);
                 }
             }
             cleanupConnection(deviceId);
@@ -127,7 +133,7 @@ public class CollectionManager {
     }
 
     /**
-     * Connect a registered device.
+     * 连接已注册设备。
      */
     public void connectDevice(String deviceId) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -137,15 +143,15 @@ public class CollectionManager {
 
         try {
             collector.connect();
-            log.info("Device connected: {}", deviceId);
+            log.info("设备 已连接:{}", deviceId);
         } catch (Exception e) {
-            log.error("Failed to connect device: {}", deviceId, e);
+            log.error("连接设备失败:{}", deviceId, e);
             throw new CollectorException("Failed to connect device", deviceId, null, e);
         }
     }
 
     /**
-     * Disconnect a registered device.
+     * 断开已注册设备。
      */
     public void disconnectDevice(String deviceId) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -155,15 +161,15 @@ public class CollectionManager {
 
         try {
             collector.disconnect();
-            log.info("Device disconnected: {}", deviceId);
+            log.info("设备 已断开:{}", deviceId);
         } catch (Exception e) {
-            log.error("Failed to disconnect device: {}", deviceId, e);
+            log.error("断开设备失败:{}", deviceId, e);
             throw new CollectorException("Failed to disconnect device", deviceId, null, e);
         }
     }
 
     /**
-     * Reconnect a registered device.
+     * 重连已注册设备。
      */
     public void reconnectDevice(String deviceId) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -176,15 +182,15 @@ public class CollectionManager {
                 collector.disconnect();
             }
             collector.connect();
-            log.info("Device reconnected: {}", deviceId);
+            log.info("设备重连成功:{}", deviceId);
         } catch (Exception e) {
-            log.error("Failed to reconnect device: {}", deviceId, e);
+            log.error("重连设备失败:{}", deviceId, e);
             throw new CollectorException("Failed to reconnect device", deviceId, null, e);
         }
     }
 
     /**
-     * Read a single point.
+     * 读取单个点位。
      */
     public Object readPoint(String deviceId, DataPoint point) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -194,7 +200,7 @@ public class CollectionManager {
     }
 
     /**
-     * Read multiple points.
+     * 批量读取点位。
      */
     public Map<String, Object> readPoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -204,7 +210,7 @@ public class CollectionManager {
     }
 
     /**
-     * Write a single point.
+     * 写入单个点位。
      */
     public boolean writePoint(String deviceId, DataPoint point, Object value) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -214,7 +220,7 @@ public class CollectionManager {
     }
 
     /**
-     * Write multiple points.
+     * 批量写入点位。
      */
     public Map<String, Boolean> writePoints(String deviceId, Map<DataPoint, Object> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -224,7 +230,7 @@ public class CollectionManager {
     }
 
     /**
-     * Subscribe points.
+     * 订阅点位。
      */
     public void subscribePoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -234,7 +240,7 @@ public class CollectionManager {
     }
 
     /**
-     * Unsubscribe points.
+     * 取消订阅点位。
      */
     public void unsubscribePoints(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -244,7 +250,7 @@ public class CollectionManager {
     }
 
     /**
-     * Get protocol collector status.
+     * 获取协议采集器状态。
      */
     public Map<String, Object> getDeviceStatus(String deviceId) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
@@ -255,7 +261,7 @@ public class CollectionManager {
     }
 
     /**
-     * Execute a collector command.
+     * 执行采集器命令。
      */
     public Object executeCommand(String deviceId, String command, Map<String, Object> params)
             throws CollectorException {
@@ -266,21 +272,21 @@ public class CollectionManager {
     }
 
     /**
-     * Get a registered collector.
+     * 获取已注册采集器。
      */
     public ProtocolCollector getCollector(String deviceId) {
         return collectors.get(deviceId);
     }
 
     /**
-     * Get all registered device ids.
+     * 获取全部已注册设备 ID。
      */
     public List<String> getAllDeviceIds() {
         return new ArrayList<>(collectors.keySet());
     }
 
     /**
-     * Get currently connected collectors.
+     * 获取当前已连接采集器。
      */
     public List<ProtocolCollector> getActiveCollectors() {
         return collectors.values().stream()
@@ -289,7 +295,7 @@ public class CollectionManager {
     }
 
     /**
-     * Whether a device is connected.
+     * 判断设备是否已连接。
      */
     public boolean isDeviceConnected(String deviceId) {
         ProtocolCollector collector = collectors.get(deviceId);
@@ -297,7 +303,7 @@ public class CollectionManager {
     }
 
     /**
-     * Basic status for management views.
+     * 提供管理页面使用的基础状态。
      */
     public Map<String, Object> getDeviceBasicInfo(String deviceId) {
         ProtocolCollector collector = collectors.get(deviceId);
@@ -306,12 +312,15 @@ public class CollectionManager {
         }
 
         Map<String, Object> info = new HashMap<>();
-        info.put("deviceId", deviceId);
+        info.put(CommonMapKeys.DEVICE_ID, deviceId);
         info.put("collectorType", collector.getCollectorType());
-        info.put("isConnected", collector.isConnected());
+        info.put(CommonMapKeys.IS_CONNECTED, collector.isConnected());
         return info;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private <T> T requireCapability(String deviceId,
                                     ProtocolCollector collector,
                                     Class<T> capabilityType,
@@ -326,27 +335,30 @@ public class CollectionManager {
     }
 
     /**
-     * Destroy all registered collectors.
+     * 销毁全部已注册采集器。
      */
     private void destroyAllCollectors() {
         for (ProtocolCollector collector : collectors.values()) {
             try {
                 collector.destroy();
             } catch (Exception e) {
-                log.error("Failed to destroy collector: {}", collector.getCollectorType(), e);
+                log.error("销毁采集器失败:{}", collector.getCollectorType(), e);
             }
         }
         collectors.clear();
-        log.info("All collectors destroyed");
+        log.info("全部 采集器 已销毁");
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void cleanupConnection(String deviceId) {
         try {
             if (connectionManager != null) {
                 connectionManager.removeConnection(deviceId);
             }
         } catch (Exception e) {
-            log.warn("Cleanup connection failed, device={}", deviceId, e);
+            log.warn("清理连接失败, 设备={}", deviceId, e);
         }
     }
 }

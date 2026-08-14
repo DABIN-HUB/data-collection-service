@@ -34,15 +34,24 @@ public class ProcessorNode {
      */
     private Object config;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessorNode() {
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessorNode(String processorName, String alias, int priority) {
         this.processorName = processorName;
         this.alias = alias;
         this.priority = priority;
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessorNode(String processorName, String alias, int priority, boolean enabled) {
         this.processorName = processorName;
         this.alias = alias;

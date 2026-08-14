@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec101;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -31,10 +33,15 @@ public class Iec101Collector extends ConnectionBackedCollector {
 
     private final Map<SampleKey, Iec101Sample> sampleCache = new ConcurrentHashMap<>();
     private final Map<SampleKey, DataPoint> subscribedPointIndex = new ConcurrentHashMap<>();
-
-    @Autowired(required = false)
-    @Qualifier("timeSliceScheduler")
     private ScheduledExecutorService protocolScheduler;
+
+    /**
+     * 注入协议调度线程池。
+     */
+    @Autowired(required = false)
+    public void setProtocolScheduler(@Qualifier("timeSliceScheduler") ScheduledExecutorService protocolScheduler) {
+        this.protocolScheduler = protocolScheduler;
+    }
 
     private Iec101Session session;
     private ScheduledFuture<?> classOneTask;
@@ -50,6 +57,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return "IEC101";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection connectionConfig = requireConnectionConfig();
@@ -71,6 +81,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         cancelPollingTasks();
@@ -80,6 +93,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         subscribedPointIndex.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         Iec101PointAddress address = resolveAddress(point);
@@ -98,6 +114,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return cached.value();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         boolean hasMiss = points.stream().map(this::resolveAddress).anyMatch(address -> findSample(address) == null);
@@ -119,6 +138,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String writeAddress = pointConfig(point, "writeAddress", point.getAddress());
@@ -137,6 +159,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -151,6 +176,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         for (DataPoint point : points) {
@@ -160,6 +188,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         startPollingTasks();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
@@ -177,23 +208,29 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("protocol", "IEC101");
-        status.put("connected", session != null && session.isOpen());
+        status.put(CommonMapKeys.PROTOCOL, "IEC101");
+        status.put(CommonMapKeys.CONNECTED, session != null && session.isOpen());
         status.put("linkAddress", session != null ? session.linkAddress() : null);
         status.put("commonAddress", session != null ? session.commonAddress() : null);
         status.put("cachedPoints", sampleCache.size());
-        status.put("subscribedPoints", subscribedPointMap.size());
+        status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
         status.put("classOnePolling", classOneTask != null && !classOneTask.isCancelled());
         status.put("classTwoPolling", classTwoTask != null && !classTwoTask.isCancelled());
-        status.put("lastActivityTime", lastActivityTime);
-        status.put("totalErrorCount", totalErrorCount.get());
+        status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+        status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         status.put("lastError", lastError);
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
@@ -219,11 +256,17 @@ public class Iec101Collector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         // IEC101 由总召唤和链路级一级/二级数据轮询聚合，不按连续 IOA 合并请求。
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startPollingTasks() {
         if (protocolScheduler == null || session == null || subscribedPointMap.isEmpty()) {
             return;
@@ -241,6 +284,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void pollClassData(boolean classOne) {
         try {
             List<Iec101Sample> samples = classOne
@@ -267,6 +313,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cancelPollingTasks() {
         if (classOneTask != null) {
             classOneTask.cancel(true);
@@ -278,10 +327,16 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheSamples(List<Iec101Sample> samples) {
         samples.forEach(this::cacheSample);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheSample(Iec101Sample sample) {
         sampleCache.put(new SampleKey(sample.commonAddress(), sample.typeId(),
                 sample.informationObjectAddress()), sample);
@@ -289,6 +344,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
                 sample.informationObjectAddress()), sample);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Iec101Sample findSample(Iec101PointAddress address) {
         int commonAddress = requireSession().commonAddress();
         Iec101Sample exact = address.typeId() == null ? null
@@ -298,6 +356,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
                 new SampleKey(commonAddress, null, address.informationObjectAddress()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void indexSubscribedPoint(DataPoint point) {
         Iec101PointAddress address = resolveAddress(point);
         int commonAddress = requireSession().commonAddress();
@@ -309,6 +370,9 @@ public class Iec101Collector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private DataPoint findSubscribedPoint(Iec101Sample sample) {
         DataPoint exact = subscribedPointIndex.get(new SampleKey(
                 sample.commonAddress(), sample.typeId(), sample.informationObjectAddress()));
@@ -316,15 +380,24 @@ public class Iec101Collector extends ConnectionBackedCollector {
                 sample.commonAddress(), null, sample.informationObjectAddress()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void rebuildSubscribedPointIndex() {
         subscribedPointIndex.clear();
         subscribedPointMap.values().forEach(this::indexSubscribedPoint);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Iec101PointAddress resolveAddress(DataPoint point) {
         return Iec101PointAddress.parse(point.getAddress());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Iec101Session requireSession() {
         if (session == null || !session.isOpen()) {
             throw new IllegalStateException("IEC101 会话尚未连接");
@@ -332,32 +405,50 @@ public class Iec101Collector extends ConnectionBackedCollector {
         return session;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> pointConfigMap(DataPoint point) {
         return point.getAdditionalConfig() == null ? Collections.emptyMap() : point.getAdditionalConfig();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String pointConfig(DataPoint point, String key, String defaultValue) {
         Object value = pointConfigMap(point).get(key);
         return value == null || value.toString().isBlank() ? defaultValue : value.toString();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int pointIntConfig(DataPoint point, String key, int defaultValue) {
         Object value = pointConfigMap(point).get(key);
         return value instanceof Number number ? number.intValue()
                 : value == null ? defaultValue : Integer.parseInt(value.toString());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean pointBooleanConfig(DataPoint point, String key, boolean defaultValue) {
         Object value = pointConfigMap(point).get(key);
         return value == null ? defaultValue : Boolean.parseBoolean(value.toString());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int intParam(Map<String, Object> params, String key, int defaultValue) {
         Object value = params.get(key);
         return value instanceof Number number ? number.intValue()
                 : value == null ? defaultValue : Integer.parseInt(value.toString());
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record SampleKey(int commonAddress, Integer typeId, int informationObjectAddress) {
     }
 }

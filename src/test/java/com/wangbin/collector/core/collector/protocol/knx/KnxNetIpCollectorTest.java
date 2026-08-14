@@ -61,7 +61,7 @@ class KnxNetIpCollectorTest {
     void shouldRegisterKnxSubscriptionsAndProcessIncomingValues() throws Exception {
         KnxNetIpCollector collector = new KnxNetIpCollector();
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         KnxNetIpConnectionAdapter connectionAdapter = mock(KnxNetIpConnectionAdapter.class);
         PlcConnection connection = mock(PlcConnection.class);
@@ -113,7 +113,7 @@ class KnxNetIpCollectorTest {
 
     private void prepareCommandCollector(TestableKnxNetIpCollector collector, ConfigManager configManager) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "devicePointResolver", new DevicePointResolver(configManager));
 

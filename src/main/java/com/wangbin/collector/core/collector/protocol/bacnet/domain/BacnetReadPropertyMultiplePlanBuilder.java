@@ -5,13 +5,22 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetReadPropertyMultiplePlanBuilder {
 
     private static final int DEFAULT_MAX_PROPERTIES_PER_REQUEST = 16;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetReadPropertyMultiplePlanBuilder() {
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static List<BacnetReadPropertyMultiplePlan> build(List<BacnetReadPointPlan> pointPlans,
                                                               Integer maxPropertiesPerRequest) {
         List<BacnetReadPropertyMultiplePlan> plans = new ArrayList<>();

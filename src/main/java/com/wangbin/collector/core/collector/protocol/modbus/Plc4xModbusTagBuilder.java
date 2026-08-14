@@ -14,9 +14,15 @@ final class Plc4xModbusTagBuilder {
     private static final String BIT_DATA_TYPE = "BOOL";
     private static final String REGISTER_DATA_TYPE = "UINT";
 
+    /**
+     * 创建当前组件实例。
+     */
     private Plc4xModbusTagBuilder() {
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     static String build(RegisterType registerType, int zeroBasedAddress, int quantity, int unitId) {
         Objects.requireNonNull(registerType, "registerType 不能为空");
         if (zeroBasedAddress < 0) {
@@ -33,6 +39,9 @@ final class Plc4xModbusTagBuilder {
         return area + ":" + logicalAddress + ":" + dataType + quantityPart + "{unit-id: " + unitId + "}";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveArea(RegisterType registerType) {
         return switch (registerType) {
             case COIL -> "coil";
@@ -42,6 +51,9 @@ final class Plc4xModbusTagBuilder {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveDataType(RegisterType registerType) {
         return switch (registerType) {
             case COIL, DISCRETE_INPUT -> BIT_DATA_TYPE;

@@ -1,15 +1,19 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.stats.CacheStats;
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -24,23 +28,17 @@ import java.util.concurrent.TimeUnit;
 @ConditionalOnExpression("'${collector.cache.type:local}' != 'redis'")
 public class LocalCacheManager extends AbstractCacheManager {
 
-    @Value("${collector.cache.local.max-size:10000}")
-    private long maxSize;
-
-    @Value("${collector.cache.local.expire-after-write:300}")
-    private long expireAfterWrite; // 秒
-
-    @Value("${collector.cache.local.expire-after-access:60}")
-    private long expireAfterAccess; // 秒
-
-    @Value("${collector.cache.local.initial-capacity:1000}")
-    private int initialCapacity;
+    private final CacheProperties.LocalCache localProperties;
 
     private Cache<String, CacheData<?>> cache;
     private final Map<String, CacheKey> keyMapping = new ConcurrentHashMap<>();
 
-    public LocalCacheManager() {
+    /**
+     * 创建当前组件实例。
+     */
+    public LocalCacheManager(CacheProperties cacheProperties) {
         super("LOCAL_CAFFEINE", 1);
+        this.localProperties = cacheProperties.getLocal();
     }
 
     // 移除监听器声明
@@ -48,28 +46,34 @@ public class LocalCacheManager extends AbstractCacheManager {
             (key, value, cause) -> {
                 if (key != null) {
                     keyMapping.remove(key);
-                    log.debug("本地缓存条目被移除: key={}, cause={}, value={}",
+                    log.debug("本地缓存条目被移除: 键={}, 原因={}, 值={}",
                             key, cause, value != null ? value.getDataSummary() : "null");
                 }
             };
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         // 使用具体的泛型类型
         Caffeine<String, CacheData<?>> caffeine = Caffeine.newBuilder()
-                .initialCapacity(initialCapacity)
-                .maximumSize(maxSize)
-                .expireAfterWrite(expireAfterWrite, TimeUnit.SECONDS)
-                .expireAfterAccess(expireAfterAccess, TimeUnit.SECONDS)
+                .initialCapacity(localProperties.getInitialCapacity())
+                .maximumSize(localProperties.getMaxSize())
+                .expireAfterWrite(localProperties.getExpireAfterWrite(), TimeUnit.SECONDS)
+                .expireAfterAccess(localProperties.getExpireAfterAccess(), TimeUnit.SECONDS)
                 .recordStats()
                 .removalListener(removalListener);
 
         cache = caffeine.build();
 
-        log.info("本地缓存管理器初始化完成: maxSize={}, expireAfterWrite={}s, expireAfterAccess={}s",
-                maxSize, expireAfterWrite, expireAfterAccess);
+        log.info("本地缓存管理器初始化完成: 最大数量={}, 写入后过期秒数={}s, 访问后过期秒数={}s",
+                localProperties.getMaxSize(), localProperties.getExpireAfterWrite(), localProperties.getExpireAfterAccess());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         if (cache != null) {
@@ -80,6 +84,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         log.info("本地缓存管理器已销毁");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected <T> boolean doPut(CacheKey key, T value, long expireTime) throws Exception {
         String cacheKey = key.getFullKey();
@@ -96,6 +103,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     @SuppressWarnings("unchecked")
     protected <T> T doGet(CacheKey key) throws Exception {
@@ -119,13 +129,16 @@ public class LocalCacheManager extends AbstractCacheManager {
         try {
             return (T) cacheData.getValue();
         } catch (ClassCastException e) {
-            log.warn("缓存值类型转换失败: key={}, expected={}, actual={}",
+            log.warn("缓存值类型转换失败: 键={}, 期望={}, 实际={}",
                     key.getKey(), cacheData.getValue().getClass().getName(),
                     e.getMessage());
             return null;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doDelete(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -134,6 +147,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected int doDeleteByPattern(String pattern) throws Exception {
         int deletedCount = 0;
@@ -154,6 +170,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return deletedCount;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExists(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -161,6 +180,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return cacheData != null && !cacheData.isExpired();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExpire(CacheKey key, long expireTime) throws Exception {
         String cacheKey = key.getFullKey();
@@ -180,6 +202,9 @@ public class LocalCacheManager extends AbstractCacheManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doGetExpire(CacheKey key) throws Exception {
         String cacheKey = key.getFullKey();
@@ -192,22 +217,34 @@ public class LocalCacheManager extends AbstractCacheManager {
         return cacheData.getRemainingTime();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doClear() throws Exception {
         cache.invalidateAll();
         keyMapping.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doSize() throws Exception {
         return cache.estimatedSize();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys() throws Exception {
         return new HashSet<>(keyMapping.values());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys(String pattern) throws Exception {
         Set<CacheKey> result = new HashSet<>();
@@ -267,19 +304,19 @@ public class LocalCacheManager extends AbstractCacheManager {
             CacheData<?> cacheData = cache.getIfPresent(entry.getKey());
             if (cacheData != null) {
                 Map<String, Object> info = new HashMap<>();
-                info.put("key", entry.getKey());
-                info.put("cacheKey", cacheData.getKey());
-                info.put("cacheTime", cacheData.getCacheTime());
-                info.put("expireTime", cacheData.getExpireTime());
-                info.put("remainingTime", cacheData.getRemainingTime());
-                info.put("cacheLevel", cacheData.getCacheLevel());
-                info.put("quality", cacheData.getQuality());
-                info.put("expired", cacheData.isExpired());
+                info.put(CacheMetricKeys.KEY, entry.getKey());
+                info.put(CacheMetricKeys.CACHE_KEY, cacheData.getKey());
+                info.put(CacheMetricKeys.CACHE_TIME, cacheData.getCacheTime());
+                info.put(CacheMetricKeys.EXPIRE_TIME, cacheData.getExpireTime());
+                info.put(CacheMetricKeys.REMAINING_TIME, cacheData.getRemainingTime());
+                info.put(CacheMetricKeys.CACHE_LEVEL, cacheData.getCacheLevel());
+                info.put(CommonMapKeys.QUALITY, cacheData.getQuality());
+                info.put(CacheMetricKeys.EXPIRED, cacheData.isExpired());
 
                 Object value = cacheData.getValue();
                 if (value != null) {
-                    info.put("valueType", value.getClass().getName());
-                    info.put("valueSize", getValueSize(value));
+                    info.put(CacheMetricKeys.VALUE_TYPE, value.getClass().getName());
+                    info.put(CacheMetricKeys.VALUE_SIZE, getValueSize(value));
                 }
 
                 entries.add(info);

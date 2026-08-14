@@ -29,10 +29,16 @@ public class LogFilter extends OncePerRequestFilter {
     private final AccessLogProperties properties;
     private final AntPathMatcher matcher = new AntPathMatcher();
 
+    /**
+     * 创建当前组件实例。
+     */
     public LogFilter(AccessLogProperties properties) {
         this.properties = properties;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         if (!properties.isEnabled()) {
@@ -42,6 +48,9 @@ public class LogFilter extends OncePerRequestFilter {
         return !matches(path, properties.getIncludePaths()) || matches(path, properties.getExcludePaths());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -61,6 +70,9 @@ public class LogFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void logAccess(HttpServletRequest request,
                            ContentCachingResponseWrapper response,
                            long durationMs) {
@@ -76,23 +88,23 @@ public class LogFilter extends OncePerRequestFilter {
 
         StringBuilder builder = new StringBuilder(256)
                 .append("config_access")
-                .append(" requestId=").append(requestId)
-                .append(" method=").append(method)
-                .append(" uri=").append(path)
-                .append(" query=").append(StringUtils.hasText(query) ? query : "-")
-                .append(" status=").append(response.getStatus())
-                .append(" success=").append(success)
-                .append(" latencyMs=").append(durationMs)
-                .append(" ip=").append(clientIp)
-                .append(" principal=").append(resolvePrincipal(principal));
+                .append(" 请求=").append(requestId)
+                .append(" 方法=").append(method)
+                .append(" 路径=").append(path)
+                .append(" 查询=").append(StringUtils.hasText(query) ? query : "-")
+                .append(" 状态=").append(response.getStatus())
+                .append(" 成功=").append(success)
+                .append(" 耗时毫秒=").append(durationMs)
+                .append(" 客户端IP=").append(clientIp)
+                .append(" 主体=").append(resolvePrincipal(principal));
 
         if (properties.isLogBodySize()) {
-            builder.append(" reqSize=").append(Math.max(request.getContentLengthLong(), 0))
-                    .append(" respSize=").append(response.getContentSize());
+            builder.append(" 请求字节=").append(Math.max(request.getContentLengthLong(), 0))
+                    .append(" 响应字节=").append(response.getContentSize());
         }
 
         if (StringUtils.hasText(deviceId)) {
-            builder.append(" deviceId=").append(deviceId);
+            builder.append(" 设备=").append(deviceId);
         }
 
         List<String> extraHeaders = properties.getAdditionalHeaders();
@@ -116,6 +128,9 @@ public class LogFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolvePrincipal(Object principal) {
         if (principal instanceof AuthFilter.AuthPrincipal authPrincipal) {
             return authPrincipal.getType() + ":" + authPrincipal.getId();
@@ -123,6 +138,9 @@ public class LogFilter extends OncePerRequestFilter {
         return "-";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveRequestId(HttpServletRequest request) {
         String headerName = StringUtils.hasText(properties.getRequestIdHeader())
                 ? properties.getRequestIdHeader()
@@ -136,6 +154,9 @@ public class LogFilter extends OncePerRequestFilter {
         return generated;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (StringUtils.hasText(forwarded)) {
@@ -149,6 +170,9 @@ public class LogFilter extends OncePerRequestFilter {
         return request.getRemoteAddr();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String truncate(String value, int maxLength) {
         if (!StringUtils.hasText(value)) {
             return value;
@@ -159,6 +183,9 @@ public class LogFilter extends OncePerRequestFilter {
         return value.substring(0, maxLength) + "...";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveDeviceId(HttpServletRequest request) {
         String param = request.getParameter("deviceId");
         if (StringUtils.hasText(param)) {
@@ -201,6 +228,9 @@ public class LogFilter extends OncePerRequestFilter {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matches(String path, List<String> patterns) {
         if (CollectionUtils.isEmpty(patterns)) {
             return false;

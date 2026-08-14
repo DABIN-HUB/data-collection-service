@@ -105,6 +105,12 @@
 
     enhanceLocalDeviceEntry();
 
+    window.localDeviceEditor = Object.freeze({
+      open: openLocalDeviceForm,
+      close: closeLocalDeviceForm,
+      save: saveLocalDevice,
+      edit: editLocalDeviceOverride
+    });
     window.openLocalDeviceForm = openLocalDeviceForm;
     window.closeLocalDeviceForm = closeLocalDeviceForm;
     window.renderLocalProtocolSelection = renderLocalProtocolSelection;
@@ -152,14 +158,19 @@
 
   function enhanceLocalDeviceEntry() {
     const workspace = document.querySelector(".local-device-panel");
+    const content = document.querySelector("main.content");
+    const backdrop = $("#localEditorBackdrop");
     const legacyOpenButton = $("#openLocalDeviceBtn");
     const inlineOpenButton = $("#openLocalDeviceInlineBtn");
     const devicePanelHead = document.querySelector("#devices .panel-head");
     const miniActions = devicePanelHead?.querySelector(".mini-actions");
-    const plusButton = inlineOpenButton || miniActions?.querySelector(".icon-button.small.plus");
+    const plusButton = miniActions?.querySelector(".icon-button.small.plus");
 
     if (workspace) {
       workspace.classList.add("hidden");
+      if (content && backdrop && workspace.closest(".workspace-grid")) {
+        content.insertBefore(workspace, backdrop);
+      }
     }
 
     if (legacyOpenButton) {
@@ -185,15 +196,18 @@
       miniActions.insertBefore(help, plusButton || null);
     }
 
-    if (plusButton && !plusButton.dataset.localDeviceBound) {
-      plusButton.dataset.localDeviceBound = "true";
-      plusButton.setAttribute("aria-label", "新增本地临时设备");
-      plusButton.setAttribute("title", "新增本地临时设备");
-      plusButton.addEventListener("click", (event) => {
+    [plusButton, inlineOpenButton].filter(Boolean).forEach((button) => {
+      if (button.dataset.localDeviceBound) {
+        return;
+      }
+      button.dataset.localDeviceBound = "true";
+      button.setAttribute("aria-label", "新增本地临时设备");
+      button.setAttribute("title", "新增本地临时设备");
+      button.addEventListener("click", (event) => {
         event.preventDefault();
         openLocalDeviceForm();
       });
-    }
+    });
   }
 
   function intercept(selector, eventName, handler) {
@@ -310,13 +324,15 @@
   function renderLocalEditorSections() {
     const active = normalizeLocalEditorSection(state.localEditorSection);
     state.localEditorSection = active;
+    const currentIndex = LOCAL_EDITOR_SECTIONS.indexOf(active);
     document.querySelectorAll(".local-editor-tab[data-local-editor-section]").forEach((button) => {
+      const buttonIndex = LOCAL_EDITOR_SECTIONS.indexOf(button.dataset.localEditorSection);
       button.classList.toggle("is-active", button.dataset.localEditorSection === active);
+      button.classList.toggle("is-complete", buttonIndex >= 0 && buttonIndex < currentIndex);
     });
     document.querySelectorAll("[data-local-editor-pane]").forEach((pane) => {
       pane.classList.toggle("is-active", pane.dataset.localEditorPane === active);
     });
-    const currentIndex = LOCAL_EDITOR_SECTIONS.indexOf(active);
     if ($("#localEditorPrevBtn")) {
       $("#localEditorPrevBtn").disabled = currentIndex <= 0;
     }

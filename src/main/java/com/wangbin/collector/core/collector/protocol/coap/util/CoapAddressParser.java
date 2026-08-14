@@ -12,9 +12,15 @@ import java.util.Map;
  */
 public final class CoapAddressParser {
 
+    /**
+     * 创建当前组件实例。
+     */
     private CoapAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static CoapPoint parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("数据点不能为空");
@@ -54,6 +60,9 @@ public final class CoapAddressParser {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean resolveObserve(DataPoint point, Map<String, Object> extra) {
         if (extra != null && extra.containsKey("observe")) {
             return Boolean.parseBoolean(extra.get("observe").toString());
@@ -61,6 +70,9 @@ public final class CoapAddressParser {
         return "SUBSCRIPTION".equalsIgnoreCase(point.getCollectionMode());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean resolveBinary(DataPoint point, Map<String, Object> extra) {
         if (extra != null && extra.containsKey("binary")) {
             return Boolean.parseBoolean(extra.get("binary").toString());
@@ -72,6 +84,9 @@ public final class CoapAddressParser {
         return false;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseMediaType(String text) {
         if (text == null || text.isBlank()) {
             return MediaTypeRegistry.TEXT_PLAIN;
@@ -86,6 +101,9 @@ public final class CoapAddressParser {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String toString(Object value) {
         return value != null ? value.toString() : null;
     }

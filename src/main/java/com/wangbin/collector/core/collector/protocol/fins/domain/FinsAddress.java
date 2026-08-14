@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.fins.domain;
 
 import lombok.Getter;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 public class FinsAddress {
 
@@ -16,6 +19,9 @@ public class FinsAddress {
     private final FinsByteOrder byteOrder;
     private final FinsWordOrder wordOrder;
 
+    /**
+     * 创建当前组件实例。
+     */
     public FinsAddress(String rawAddress,
                        String canonicalAddress,
                        FinsMemoryArea memoryArea,
@@ -54,6 +60,9 @@ public class FinsAddress {
         return !isArrayType();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int scalarWordCount() {
         return switch (dataType) {
             case "BOOLEAN", "INT8", "UINT8", "INT16", "UINT16" -> 1;
@@ -64,6 +73,9 @@ public class FinsAddress {
         };
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public int readUnitCount() {
         if (isBitUnit()) {
             return Math.max(1, elementCount);
@@ -74,10 +86,16 @@ public class FinsAddress {
         return scalarWordCount() * elementCount;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int responseByteLength() {
         return isBitUnit() ? readUnitCount() : readUnitCount() * 2;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public int requiredStringWordCount() {
         if (stringLength == null || stringLength <= 0) {
             throw new IllegalStateException("STRING address requires stringLength");

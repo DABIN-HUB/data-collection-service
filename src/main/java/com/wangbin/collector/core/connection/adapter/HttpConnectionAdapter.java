@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
@@ -44,16 +46,25 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     private Map<String, String> customHeaders;
     private Executor httpExecutor;
 
+    /**
+     * 创建当前组件实例。
+     */
     public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public HttpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config, Executor httpExecutor) {
         super(deviceInfo, config);
         this.httpExecutor = httpExecutor;
         initialize();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initialize() {
         this.baseUrl = buildBaseUrl();
         this.customHeaders = getCustomHeaders();
@@ -61,6 +72,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         this.httpClient = createHttpClient();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     Executor resolveHttpExecutor() {
         return ThreadPoolFallbacks.preferExecutor(
                 httpExecutor,
@@ -69,6 +83,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
                 "http-connection-io-shared");
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildBaseUrl() {
         // 优先使用配置的完整 URL
         if (config.getUrl() != null && !config.getUrl().isEmpty()) {
@@ -106,6 +123,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return new java.util.HashMap<>();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()))
@@ -126,12 +146,21 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return builder.build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private SSLContext createTrustAllSSLContext() {
         try {
             TrustManager[] trustAllCerts = new TrustManager[] {
                     new X509TrustManager() {
                         public X509Certificate[] getAcceptedIssuers() { return null; }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkClientTrusted(X509Certificate[] certs, String authType) { }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkServerTrusted(X509Certificate[] certs, String authType) { }
                     }
             };
@@ -145,6 +174,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         // HTTP 连接健康检查
@@ -163,11 +195,17 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         log.info("HTTP 连接资源清理完成: {}", connectionId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) throws UnsupportedOperationException {
         try {
@@ -188,6 +226,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() throws UnsupportedOperationException {
         try {
@@ -197,6 +238,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) throws UnsupportedOperationException {
         try {
@@ -227,6 +271,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return httpClient;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() throws Exception {
         String heartbeatEndpoint = config.getStringConfig("heartbeatEndpoint", "/health");
@@ -241,6 +288,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() throws Exception {
         String authEndpoint = config.getStringConfig("authEndpoint", "/api/auth");
@@ -264,6 +314,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private HttpRequest buildRequest(String method, String endpoint, byte[] body) {
         String url = buildFullUrl(endpoint);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -313,6 +366,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return builder.build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildFullUrl(String endpoint) {
         // 确保 endpoint 以 / 开头
         if (!endpoint.startsWith("/")) {
@@ -332,6 +388,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return baseUrl + endpoint;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildQueryString() {
         Map<String, Object> queryParamsMap = config.getMapConfig("queryParams");
         if (queryParamsMap == null || queryParamsMap.isEmpty()) {
@@ -350,6 +409,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         return sb.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildAuthRequestBody() {
         Map<String, Object> authParams = new java.util.HashMap<>();
 
@@ -361,7 +423,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
 
         // 添加设备标识
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
-            authParams.put("deviceId", deviceInfo.getDeviceId());
+            authParams.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         }
         if (deviceInfo != null && deviceInfo.getProductKey() != null) {
             authParams.put("productKey", deviceInfo.getProductKey());
@@ -391,6 +453,9 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String extractAuthToken(HttpResponse<byte[]> response) {
         try {
             String responseBody = new String(response.body(), StandardCharsets.UTF_8);

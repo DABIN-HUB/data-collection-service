@@ -15,3 +15,11 @@ tmp
 !.env.example
 logs/
 docs
+scripts/*
+!scripts/soak/
+!scripts/soak/**
+AGENTS.md
+.m2-local
+scripts
+AGENTS1.md
+IDEA.md

@@ -12,15 +12,24 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class FinsAddressParser {
 
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
             "^([A-Za-z0-9]+):(\\d+)(?:\\.(\\d+))?(?:#(\\d+))?$",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * 创建当前组件实例。
+     */
     private FinsAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -28,6 +37,9 @@ public final class FinsAddressParser {
         return parse(point.getAddress(), point.getDataType(), point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsAddress parse(String address, String dataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("FINS address cannot be empty");
@@ -85,10 +97,16 @@ public final class FinsAddressParser {
         );
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static FinsAddress parse(String address) {
         return parse(address, "UINT16", Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String normalizeType(String dataType) {
         if (dataType == null || dataType.isBlank()) {
             return "UINT16";
@@ -111,6 +129,9 @@ public final class FinsAddressParser {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveType(String dataType, Map<String, Object> config) {
         if (dataType != null && !dataType.isBlank()) {
             return dataType;
@@ -119,6 +140,9 @@ public final class FinsAddressParser {
         return driverType != null ? driverType.toString() : "UINT16";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolveBitOffset(String explicitBit, Map<String, Object> config) {
         Integer bitOffset = resolvePositiveInt(explicitBit, null, "bit offset", false);
         if (bitOffset == null && config.containsKey("bitIndex")) {
@@ -130,6 +154,9 @@ public final class FinsAddressParser {
         return bitOffset;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolveStringLength(Integer explicitLength, Map<String, Object> config) {
         if (explicitLength != null && explicitLength > 0) {
             return explicitLength;
@@ -140,6 +167,9 @@ public final class FinsAddressParser {
         throw new IllegalArgumentException("FINS STRING requires address #length or additionalConfig.stringLength");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveArraySize(Integer explicitLength, Map<String, Object> config) {
         if (explicitLength != null && explicitLength > 0) {
             return explicitLength;
@@ -151,6 +181,9 @@ public final class FinsAddressParser {
         return 1;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolvePositiveInt(String value, Integer defaultValue, String field, boolean strictPositive) {
         if (value == null || value.isBlank()) {
             return defaultValue;

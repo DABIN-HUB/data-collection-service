@@ -2,15 +2,27 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
 import java.io.ByteArrayOutputStream;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class BacnetFrameSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetFrameSupport() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static byte[] wrapConfirmedRequest(byte[] apdu) {
         return wrapApdu(apdu, 0x04, BacnetReadPropertyCodec.BVLC_ORIGINAL_UNICAST_NPDU);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static byte[] wrapApdu(byte[] apdu, int npduControl, int bvlcFunction) {
         ByteArrayOutputStream npdu = new ByteArrayOutputStream();
         npdu.write(BacnetReadPropertyCodec.BACNET_PROTOCOL_VERSION);

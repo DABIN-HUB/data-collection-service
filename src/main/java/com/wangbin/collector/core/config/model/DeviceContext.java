@@ -3,7 +3,7 @@ package com.wangbin.collector.core.config.model;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import lombok.Getter;
 import lombok.ToString;
 import org.springframework.beans.BeanUtils;
@@ -25,6 +25,9 @@ public class DeviceContext {
     private final DeviceConnection connectionConfig;
     private final List<DataPoint> dataPoints;
 
+    /**
+     * 创建当前组件实例。
+     */
     private DeviceContext(String deviceId,
                           DeviceInfo deviceInfo,
                           DeviceConnection connectionConfig,
@@ -35,6 +38,9 @@ public class DeviceContext {
         this.dataPoints = dataPoints;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static DeviceContext of(DeviceInfo deviceInfo,
                                    DeviceConnection connectionConfig,
                                    List<DataPoint> dataPoints) {
@@ -45,14 +51,23 @@ public class DeviceContext {
         return new DeviceContext(deviceId, deviceSnapshot, connectionSnapshot, pointSnapshot);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public DeviceConnection copyConnectionConfig() {
         return copyConnection(this.connectionConfig);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<DataPoint> copyDataPoints() {
         return snapshotPoints(dataPoints);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static DeviceInfo copyDevice(DeviceInfo source) {
         if (source == null) {
             return null;
@@ -68,6 +83,9 @@ public class DeviceContext {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static DeviceConnection copyConnection(DeviceConnection source) {
         if (source == null) {
             return null;
@@ -77,6 +95,9 @@ public class DeviceContext {
         return target;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static List<DataPoint> snapshotPoints(List<DataPoint> points) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
@@ -95,6 +116,9 @@ public class DeviceContext {
         return Collections.unmodifiableList(snapshot);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -102,6 +126,9 @@ public class DeviceContext {
         return Objects.equals(deviceId, that.deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public int hashCode() {
         return Objects.hashCode(deviceId);

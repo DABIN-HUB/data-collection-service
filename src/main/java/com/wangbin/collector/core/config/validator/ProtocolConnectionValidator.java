@@ -10,7 +10,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Validates protocol-specific connection requirements before adapters are built.
+ * 在连接适配器创建前校验各协议的连接必填项和参数边界。
  */
 @Component
 public class ProtocolConnectionValidator {
@@ -22,6 +22,9 @@ public class ProtocolConnectionValidator {
             "PG_OR_PC", "OS", "OTHERS"
     );
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public void validate(DeviceInfo deviceInfo, DeviceConnection connection) {
         if (deviceInfo == null || isBlank(deviceInfo.getDeviceId())) {
             throw CollectorException.configException("deviceId is required", null, null);
@@ -78,6 +81,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateS7(DeviceInfo deviceInfo, DeviceConnection connection) {
         String connectionString = firstNonBlank(
                 connection.getStringConfig("plc4xConnectionString", null),
@@ -125,6 +131,9 @@ public class ProtocolConnectionValidator {
         validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateMc(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "MITSUBISHI_MC");
 
@@ -147,6 +156,9 @@ public class ProtocolConnectionValidator {
         validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateOmronFins(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "OMRON_FINS");
 
@@ -176,6 +188,9 @@ public class ProtocolConnectionValidator {
         validateFinsOrder(deviceInfo, connection.getStringConfig("byteOrder", null), "byteOrder");
         validateFinsOrder(deviceInfo, connection.getStringConfig("wordOrder", null), "wordOrder");
     }
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateBacnetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "BACNET_IP");
 
@@ -245,6 +260,9 @@ public class ProtocolConnectionValidator {
     }
 
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateBacnetMstp(DeviceInfo deviceInfo, DeviceConnection connection) {
         String serialPort = firstNonBlank(
                 connection.getStringConfig("serialPort", null),
@@ -309,6 +327,9 @@ public class ProtocolConnectionValidator {
         validateBooleanFlag(deviceInfo, connection.getProperty("remoteIsMaster"), "BACNET_MSTP remoteIsMaster");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateDlt645(DeviceInfo deviceInfo, DeviceConnection connection) {
         validateSerialConnection(deviceInfo, connection, "DL/T 645");
         String meterAddress = connection.getStringConfig("meterAddress", null);
@@ -326,6 +347,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateIec101(DeviceInfo deviceInfo, DeviceConnection connection) {
         validateSerialConnection(deviceInfo, connection, "IEC101");
         String linkMode = connection.getStringConfig("linkMode", "UNBALANCED");
@@ -345,6 +369,9 @@ public class ProtocolConnectionValidator {
         validatePositive(deviceInfo, connection.getIntConfig("class2PollIntervalMs", null), "IEC101 二级数据轮询周期");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSerialConnection(DeviceInfo deviceInfo,
                                           DeviceConnection connection,
                                           String protocolName) {
@@ -362,12 +389,18 @@ public class ProtocolConnectionValidator {
         validatePositive(deviceInfo, connection.getIntConfig("writeTimeout", null), protocolName + " 写入超时");
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateHexCredential(DeviceInfo deviceInfo, String value, String fieldName) {
         if (isBlank(value) || !value.replace(" ", "").matches("(?i)[0-9a-f]{8}")) {
             fail(deviceInfo, "DL/T 645 " + fieldName + "必须是 4 字节十六进制字符");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSizedAddress(DeviceInfo deviceInfo, Integer address, Integer size, String fieldName) {
         validateRange(deviceInfo, size, 1, 2, fieldName + "长度");
         int maximum = size != null && size == 1 ? 0xFF : 0xFFFF;
@@ -376,12 +409,18 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateRange(DeviceInfo deviceInfo, Integer value, int min, int max, String fieldName) {
         if (value == null || value < min || value > max) {
             fail(deviceInfo, fieldName + "必须在 " + min + " 到 " + max + " 之间");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateBacnetSc(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireUrlOrHostPort(deviceInfo, connection, "BACNET_SC");
 
@@ -416,6 +455,9 @@ public class ProtocolConnectionValidator {
         validatePositive(deviceInfo, connection.getTimeout(), "BACNET_SC timeout");
         validatePositive(deviceInfo, connection.getConnectTimeout(), "BACNET_SC connectTimeout");
     }
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
         String connectionString = connection.getStringConfig("plc4xConnectionString", null);
         if (!hasOpcUaEndpoint(deviceInfo, connection)
@@ -430,6 +472,9 @@ public class ProtocolConnectionValidator {
         validateOpcUaSecurity(deviceInfo, connection, protocolLabel, true);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateMiloOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
         if (!hasOpcUaEndpoint(deviceInfo, connection)) {
             fail(deviceInfo, "OPC_UA_MILO requires url, endpointUrl, endpoint, or host");
@@ -437,6 +482,9 @@ public class ProtocolConnectionValidator {
         validateOpcUaSecurity(deviceInfo, connection, "OPC_UA_MILO", false);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateOpcUaSecurity(DeviceInfo deviceInfo,
                                        DeviceConnection connection,
                                        String protocolLabel,
@@ -490,6 +538,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateOpcDa(DeviceInfo deviceInfo, DeviceConnection connection) {
         String bridgeMode = firstNonBlank(
                 connection.getStringConfig("bridgeMode", null),
@@ -508,6 +559,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void requireUrlOrHostPort(DeviceInfo deviceInfo,
                                       DeviceConnection connection,
                                       String protocol) {
@@ -524,6 +578,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void requireHostPort(DeviceInfo deviceInfo, DeviceConnection connection, String protocol) {
         boolean hasHost = hasText(connection.getHost()) || hasText(deviceInfo.getIpAddress());
         boolean hasPort = firstPositive(connection.getPort(), deviceInfo.getPort()) != null;
@@ -532,12 +589,18 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void requireHost(DeviceInfo deviceInfo, DeviceConnection connection, String protocol) {
         if (!hasText(connection.getHost()) && !hasText(deviceInfo.getIpAddress())) {
             fail(deviceInfo, protocol + " requires host or device ipAddress");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSnmp(DeviceInfo deviceInfo, DeviceConnection connection) {
         String version = connection.getStringConfig("snmpVersion", "2c").trim().toLowerCase();
         if (!("3".equals(version) || "v3".equals(version))) {
@@ -563,6 +626,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateAds(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "ADS");
 
@@ -595,6 +661,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateKnxNetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
         String connectionString = firstNonBlank(
                 connection.getStringConfig("plc4xConnectionString", null),
@@ -629,6 +698,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProtocol(DeviceInfo deviceInfo, DeviceConnection connection) {
         return firstNonBlank(
                 deviceInfo.getProtocolType(),
@@ -636,6 +708,9 @@ public class ProtocolConnectionValidator {
                 connection.getConnectionType());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String canonicalize(String protocol) {
         if (protocol == null) {
             return "";
@@ -668,6 +743,9 @@ public class ProtocolConnectionValidator {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasOpcUaEndpoint(DeviceInfo deviceInfo, DeviceConnection connection) {
         return hasText(connection.getUrl())
                 || hasText(connection.getStringConfig("endpointUrl", null))
@@ -676,6 +754,9 @@ public class ProtocolConnectionValidator {
                 || hasText(deviceInfo.getIpAddress());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstPositive(Integer... values) {
         if (values == null) {
             return null;
@@ -688,6 +769,9 @@ public class ProtocolConnectionValidator {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstNonNull(Integer... values) {
         if (values == null) {
             return null;
@@ -700,6 +784,9 @@ public class ProtocolConnectionValidator {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String authParam(DeviceConnection connection, String key) {
         if (connection.getAuthParams() == null) {
             return null;
@@ -707,6 +794,9 @@ public class ProtocolConnectionValidator {
         return connection.getAuthParams().get(key);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -719,6 +809,9 @@ public class ProtocolConnectionValidator {
         return null;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateMcRange(DeviceInfo deviceInfo,
                                  Integer value,
                                  int min,
@@ -732,6 +825,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateOmronFinsRange(DeviceInfo deviceInfo,
                                         Integer value,
                                         int min,
@@ -745,6 +841,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateFinsOrder(DeviceInfo deviceInfo, String value, String fieldName) {
         if (isBlank(value)) {
             return;
@@ -754,6 +853,9 @@ public class ProtocolConnectionValidator {
             fail(deviceInfo, "OMRON_FINS " + fieldName + " must be BIG_ENDIAN or LITTLE_ENDIAN");
         }
     }
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateMcFrameType(DeviceInfo deviceInfo, String value) {
         if (isBlank(value)) {
             return;
@@ -764,18 +866,27 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validatePositive(DeviceInfo deviceInfo, Integer value, String fieldName) {
         if (value != null && value <= 0) {
             fail(deviceInfo, fieldName + " must be greater than 0");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateNonNegative(DeviceInfo deviceInfo, Integer value, String fieldName) {
         if (value != null && value < 0) {
             fail(deviceInfo, fieldName + " must be greater than or equal to 0");
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateBooleanFlag(DeviceInfo deviceInfo, Object value, String fieldName) {
         if (value == null) {
             return;
@@ -789,6 +900,9 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateS7DeviceGroup(DeviceInfo deviceInfo, Object value, String fieldName) {
         if (value == null || value.toString().isBlank()) {
             return;
@@ -799,10 +913,16 @@ public class ProtocolConnectionValidator {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeValue(String value) {
         return value == null ? "" : value.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -811,6 +931,9 @@ public class ProtocolConnectionValidator {
         return !hasText(value);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     private void fail(DeviceInfo deviceInfo, String message) {
         throw CollectorException.configException(message, deviceInfo.getDeviceId(), null);
     }

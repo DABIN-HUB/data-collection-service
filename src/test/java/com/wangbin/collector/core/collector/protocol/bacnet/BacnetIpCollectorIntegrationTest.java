@@ -427,7 +427,7 @@ class BacnetIpCollectorIntegrationTest {
 
         BacnetIpCollector collector = new BacnetIpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connectionManager", connectionManager);
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);

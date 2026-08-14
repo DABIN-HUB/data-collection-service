@@ -1,11 +1,12 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.*;
 import org.springframework.stereotype.Component;
@@ -22,37 +23,42 @@ import java.util.concurrent.TimeUnit;
 @ConditionalOnExpression("'${collector.cache.type:local}' != 'local'")
 public class RedisCacheManager extends AbstractCacheManager {
 
-    @Autowired
-    @Qualifier("cacheRedisTemplate")
-    private RedisTemplate<String, Object> redisTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final CacheProperties.RedisCache redisProperties;
 
-    @Value("${collector.cache.redis.key-prefix:collector:}")
-    private String keyPrefix;
-
-    @Value("${collector.cache.redis.default-expire:3600}")
-    private long defaultExpire; // 秒
-
-    @Value("${collector.cache.redis.connection-timeout:3000}")
-    private long connectionTimeout;
-
-    public RedisCacheManager() {
+    /**
+     * 创建当前组件实例。
+     */
+    public RedisCacheManager(@Qualifier("cacheRedisTemplate") RedisTemplate<String, Object> redisTemplate,
+                             CacheProperties cacheProperties) {
         super("REDIS", 2);
+        this.redisTemplate = redisTemplate;
+        this.redisProperties = cacheProperties.getRedis();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         // 测试Redis连接
         testConnection();
 
-        log.info("Redis缓存管理器初始化完成: keyPrefix={}, defaultExpire={}s",
-                keyPrefix, defaultExpire);
+        log.info("Redis缓存管理器初始化完成: 键前缀={}, 默认过期秒数={}",
+                redisProperties.getKeyPrefix(), redisProperties.getDefaultExpire());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("Redis缓存管理器已销毁");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected <T> boolean doPut(CacheKey key, T value, long expireTime) throws Exception {
         String redisKey = buildRedisKey(key);
@@ -72,16 +78,19 @@ public class RedisCacheManager extends AbstractCacheManager {
             } else {
                 // 使用默认过期时间
                 redisTemplate.opsForValue().set(redisKey, serializedValue,
-                        defaultExpire, TimeUnit.SECONDS);
+                        redisProperties.getDefaultExpire(), TimeUnit.SECONDS);
             }
 
             return true;
         } catch (Exception e) {
-            log.error("Redis缓存写入失败: key={}", redisKey, e);
+            log.error("Redis缓存写入失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     @SuppressWarnings("unchecked")
     protected <T> T doGet(CacheKey key) throws Exception {
@@ -97,11 +106,14 @@ public class RedisCacheManager extends AbstractCacheManager {
             // 反序列化值
             return (T) deserializeValue(value, key);
         } catch (Exception e) {
-            log.error("Redis缓存读取失败: key={}", redisKey, e);
+            log.error("Redis缓存读取失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doDelete(CacheKey key) throws Exception {
         String redisKey = buildRedisKey(key);
@@ -110,11 +122,14 @@ public class RedisCacheManager extends AbstractCacheManager {
             Boolean deleted = redisTemplate.delete(redisKey);
             return deleted != null && deleted;
         } catch (Exception e) {
-            log.error("Redis缓存删除失败: key={}", redisKey, e);
+            log.error("Redis缓存删除失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected int doDeleteByPattern(String pattern) throws Exception {
         try {
@@ -133,6 +148,9 @@ public class RedisCacheManager extends AbstractCacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExists(CacheKey key) throws Exception {
         String redisKey = buildRedisKey(key);
@@ -141,11 +159,14 @@ public class RedisCacheManager extends AbstractCacheManager {
             Boolean exists = redisTemplate.hasKey(redisKey);
             return exists != null && exists;
         } catch (Exception e) {
-            log.error("Redis检查缓存存在失败: key={}", redisKey, e);
+            log.error("Redis检查缓存存在失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doExpire(CacheKey key, long expireTime) throws Exception {
         String redisKey = buildRedisKey(key);
@@ -163,11 +184,14 @@ public class RedisCacheManager extends AbstractCacheManager {
                 return false;
             }
         } catch (Exception e) {
-            log.error("Redis设置缓存过期时间失败: key={}", redisKey, e);
+            log.error("Redis设置缓存过期时间失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doGetExpire(CacheKey key) throws Exception {
         String redisKey = buildRedisKey(key);
@@ -189,15 +213,18 @@ public class RedisCacheManager extends AbstractCacheManager {
 
             return TimeUnit.SECONDS.toMillis(expireSeconds);
         } catch (Exception e) {
-            log.error("Redis获取缓存过期时间失败: key={}", redisKey, e);
+            log.error("Redis获取缓存过期时间失败: 键={}", redisKey, e);
             throw e;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doClear() throws Exception {
         try {
-            String pattern = keyPrefix + "*";
+            String pattern = redisProperties.getKeyPrefix() + "*";
             scanKeysBatch(pattern, redisTemplate::delete);
         } catch (Exception e) {
             log.error("Redis清空缓存失败", e);
@@ -205,10 +232,13 @@ public class RedisCacheManager extends AbstractCacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected long doSize() throws Exception {
         try {
-            String pattern = keyPrefix + "*";
+            String pattern = redisProperties.getKeyPrefix() + "*";
             final long[] count = {0L};
             scanKeysBatch(pattern, keys -> count[0] += keys.size());
             return count[0];
@@ -218,18 +248,24 @@ public class RedisCacheManager extends AbstractCacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys() throws Exception {
         return doKeys("*");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Set<CacheKey> doKeys(String pattern) throws Exception {
         try {
             Set<CacheKey> cacheKeys = new HashSet<>();
             scanKeysBatch(buildRedisPattern(pattern), redisKeys -> {
                 for (String redisKey : redisKeys) {
-                    String originalKey = redisKey.substring(keyPrefix.length());
+                    String originalKey = redisKey.substring(redisProperties.getKeyPrefix().length());
                     cacheKeys.add(new CacheKey(originalKey, 0));
                 }
             });
@@ -251,12 +287,12 @@ public class RedisCacheManager extends AbstractCacheManager {
                     redisTemplate.getConnectionFactory()).getConnection()) {
                 Properties info = connection.info();
                 assert info != null;
-                stats.put("redisVersion", info.getProperty("redis_version"));
-                stats.put("usedMemory", info.getProperty("used_memory_human"));
-                stats.put("connectedClients", info.getProperty("connected_clients"));
-                stats.put("totalCommandsProcessed", info.getProperty("total_commands_processed"));
-                stats.put("keyspaceHits", info.getProperty("keyspace_hits"));
-                stats.put("keyspaceMisses", info.getProperty("keyspace_misses"));
+                stats.put(CacheMetricKeys.REDIS_VERSION, info.getProperty("redis_version"));
+                stats.put(CacheMetricKeys.USED_MEMORY, info.getProperty("used_memory_human"));
+                stats.put(CacheMetricKeys.CONNECTED_CLIENTS, info.getProperty("connected_clients"));
+                stats.put(CacheMetricKeys.TOTAL_COMMANDS_PROCESSED, info.getProperty("total_commands_processed"));
+                stats.put(CacheMetricKeys.KEYSPACE_HITS, info.getProperty("keyspace_hits"));
+                stats.put(CacheMetricKeys.KEYSPACE_MISSES, info.getProperty("keyspace_misses"));
 
                 // 计算命中率
                 long hits = Long.parseLong(info.getProperty("keyspace_hits", "0"));
@@ -265,8 +301,8 @@ public class RedisCacheManager extends AbstractCacheManager {
                 double hitRate = total > 0 ? (double) hits / total * 100 : 0.0;
                 double missRate = total > 0 ? (double) misses / total * 100 : 0.0;
 
-                stats.put("redisHitRate", String.format("%.2f%%", hitRate));
-                stats.put("redisMissRate", String.format("%.2f%%", missRate));
+                stats.put(CacheMetricKeys.REDIS_HIT_RATE, String.format("%.2f%%", hitRate));
+                stats.put(CacheMetricKeys.REDIS_MISS_RATE, String.format("%.2f%%", missRate));
             }
 
             return stats;
@@ -312,11 +348,11 @@ public class RedisCacheManager extends AbstractCacheManager {
                 boolean success = put(new CacheKey(entry.getKey()), entry.getValue(), expireTime);
                 if (!success) {
                     allSuccess = false;
-                    log.warn("Redis批量设置失败: key={}", entry.getKey());
+                    log.warn("Redis批量设置失败: 键={}", entry.getKey());
                 }
             } catch (Exception e) {
                 allSuccess = false;
-                log.error("Redis批量设置异常: key={}", entry.getKey(), e);
+                log.error("Redis批量设置异常: 键={}", entry.getKey(), e);
             }
         }
 
@@ -332,6 +368,9 @@ public class RedisCacheManager extends AbstractCacheManager {
         }
 
         List<Object> results = redisTemplate.executePipelined(new SessionCallback<Object>() {
+            /**
+             * 处理当前业务流程。
+             */
             @Override
             public <K, V> Object execute(RedisOperations<K, V> operations) {
                 for (String key : keys) {
@@ -356,6 +395,9 @@ public class RedisCacheManager extends AbstractCacheManager {
         return typedResults;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public <T> Map<CacheKey, T> pipelineGetAll(List<CacheKey> keys, Class<T> type) {
         if (keys == null || keys.isEmpty()) {
             return Collections.emptyMap();
@@ -385,7 +427,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             redisTemplate.opsForHash().put(hashKey, field, serializeValue(value));
             return true;
         } catch (Exception e) {
-            log.error("Redis Hash写入失败: hashKey={}, field={}", hashKey, field, e);
+            log.error("Redis Hash写入失败: 哈希键={}, 字段={}", hashKey, field, e);
             return false;
         }
     }
@@ -399,7 +441,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             Object value = redisTemplate.opsForHash().get(hashKey, field);
             return value != null ? (T) deserializeValue(value, null) : null;
         } catch (Exception e) {
-            log.error("Redis Hash读取失败: hashKey={}, field={}", hashKey, field, e);
+            log.error("Redis Hash读取失败: 哈希键={}, 字段={}", hashKey, field, e);
             return null;
         }
     }
@@ -419,13 +461,13 @@ public class RedisCacheManager extends AbstractCacheManager {
                     T value = (T) deserializeValue(entry.getValue(), null);
                     result.put(field, value);
                 } catch (Exception e) {
-                    log.warn("Redis Hash条目转换失败: hashKey={}", hashKey, e);
+                    log.warn("Redis Hash条目转换失败: 哈希键={}", hashKey, e);
                 }
             }
 
             return result;
         } catch (Exception e) {
-            log.error("Redis Hash获取全部失败: hashKey={}", hashKey, e);
+            log.error("Redis Hash获取全部失败: 哈希键={}", hashKey, e);
             return Collections.emptyMap();
         }
     }
@@ -442,7 +484,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             }
             return true;
         } catch (Exception e) {
-            log.error("Redis List写入失败: listKey={}", listKey, e);
+            log.error("Redis List写入失败: 列表键={}", listKey, e);
             return false;
         }
     }
@@ -461,7 +503,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             }
             return value != null ? (T) deserializeValue(value, null) : null;
         } catch (Exception e) {
-            log.error("Redis List读取失败: listKey={}", listKey, e);
+            log.error("Redis List读取失败: 列表键={}", listKey, e);
             return null;
         }
     }
@@ -474,7 +516,7 @@ public class RedisCacheManager extends AbstractCacheManager {
             redisTemplate.opsForSet().add(setKey, serializeValue(value));
             return true;
         } catch (Exception e) {
-            log.error("Redis Set写入失败: setKey={}", setKey, e);
+            log.error("Redis Set写入失败: 集合键={}", setKey, e);
             return false;
         }
     }
@@ -488,7 +530,7 @@ public class RedisCacheManager extends AbstractCacheManager {
                     redisTemplate.opsForSet().isMember(setKey, serializeValue(value))
             );
         } catch (Exception e) {
-            log.error("Redis Set检查成员失败: setKey={}", setKey, e);
+            log.error("Redis Set检查成员失败: 集合键={}", setKey, e);
             return false;
         }
     }
@@ -506,13 +548,13 @@ public class RedisCacheManager extends AbstractCacheManager {
                 try {
                     result.add((T) deserializeValue(member, null));
                 } catch (Exception e) {
-                    log.warn("Redis Set成员转换失败: setKey={}", setKey, e);
+                    log.warn("Redis Set成员转换失败: 集合键={}", setKey, e);
                 }
             }
 
             return result;
         } catch (Exception e) {
-            log.error("Redis Set获取成员失败: setKey={}", setKey, e);
+            log.error("Redis Set获取成员失败: 集合键={}", setKey, e);
             return Collections.emptySet();
         }
     }
@@ -523,7 +565,7 @@ public class RedisCacheManager extends AbstractCacheManager {
      * 构建Redis键
      */
     private String buildRedisKey(CacheKey key) {
-        return keyPrefix + key.getFullKey();
+        return redisProperties.getKeyPrefix() + key.getFullKey();
     }
 
     /**
@@ -531,11 +573,14 @@ public class RedisCacheManager extends AbstractCacheManager {
      */
     private String buildRedisPattern(String pattern) {
         if (pattern == null || pattern.isEmpty()) {
-            return keyPrefix + "*";
+            return redisProperties.getKeyPrefix() + "*";
         }
-        return keyPrefix + pattern;
+        return redisProperties.getKeyPrefix() + pattern;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void scanKeysBatch(String pattern, Consumer<List<String>> batchConsumer) {
         if (pattern == null || pattern.isEmpty() || batchConsumer == null) {
             return;
@@ -586,7 +631,7 @@ public class RedisCacheManager extends AbstractCacheManager {
      */
     private void testConnection() throws Exception {
         try {
-            String testKey = keyPrefix + "test:connection";
+            String testKey = redisProperties.getKeyPrefix() + "test:connection";
             redisTemplate.opsForValue().set(testKey, "test", 10, TimeUnit.SECONDS);
             Object result = redisTemplate.opsForValue().get(testKey);
 

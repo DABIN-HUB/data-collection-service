@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc.da;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -17,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class RemoteOpcDaBridge implements OpcDaBridge {
 
     private static final String DEFAULT_BASE_PATH = "/api/v1/opcda";
@@ -32,6 +37,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
     private long retryBackoffMs;
     private HttpClient httpClient;
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void connect(OpcDaConfig config) throws Exception {
         this.bridgeBaseUrl = resolveBaseUrl(config);
@@ -45,7 +53,7 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
 
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("serverProgId", config.serverProgId());
-        request.put("host", config.host());
+        request.put(CommonMapKeys.HOST, config.host());
         request.put("endpoint", config.endpoint());
         request.put("username", config.username());
         request.put("password", config.password());
@@ -65,6 +73,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         this.connected = true;
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void disconnect() throws Exception {
         if (!connected) {
@@ -78,12 +89,15 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object read(String itemId) throws Exception {
         ensureConnected();
         JsonNode response = post("/read", Map.of("sessionId", sessionId, "itemId", itemId));
         JsonNode data = readDataNode(response);
-        JsonNode valueNode = data.get("value");
+        JsonNode valueNode = data.get(CommonMapKeys.VALUE);
         if (valueNode != null) {
             return objectMapper.convertValue(valueNode, Object.class);
         }
@@ -93,6 +107,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return objectMapper.convertValue(data, Object.class);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Map<String, Object> readBatch(List<String> itemIds) throws Exception {
         ensureConnected();
@@ -110,21 +127,27 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return values;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public boolean write(String itemId, Object value) throws Exception {
         ensureConnected();
         JsonNode response = post("/write", Map.of("sessionId", sessionId, "itemId", itemId, "value", value));
         JsonNode data = readDataNode(response);
         if (data.has("success")) {
-            return data.get("success").asBoolean(false);
+            return data.get(CommonMapKeys.SUCCESS).asBoolean(false);
         }
         if (data.has("status")) {
-            String status = data.get("status").asText("");
+            String status = data.get(CommonMapKeys.STATUS).asText("");
             return "success".equalsIgnoreCase(status) || "ok".equalsIgnoreCase(status);
         }
         return true;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public void subscribe(List<String> itemIds) throws Exception {
         ensureConnected();
@@ -134,6 +157,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         post("/subscribe", Map.of("sessionId", sessionId, "itemIds", itemIds));
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public void unsubscribe(List<String> itemIds) throws Exception {
         ensureConnected();
@@ -143,6 +169,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         post("/unsubscribe", Map.of("sessionId", sessionId, "itemIds", itemIds));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public List<Map<String, Object>> browse(String branch) throws Exception {
         ensureConnected();
@@ -166,6 +195,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return connected;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private JsonNode post(String path, Object payload) throws Exception {
         Exception lastError = null;
         int attempts = retryCount + 1;
@@ -197,12 +229,15 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         throw lastError;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateBridgeResponse(JsonNode response) {
         if (response == null || response.isNull()) {
             throw new IllegalStateException("Bridge response is empty");
         }
         if (response.has("success")) {
-            if (!response.get("success").asBoolean(false)) {
+            if (!response.get(CommonMapKeys.SUCCESS).asBoolean(false)) {
                 throw new IllegalStateException("Bridge request failed: " + readText(response, "message"));
             }
             return;
@@ -215,9 +250,12 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private JsonNode readDataNode(JsonNode response) {
         if (response != null && response.has("data")) {
-            JsonNode data = response.get("data");
+            JsonNode data = response.get(CommonMapKeys.DATA);
             if (data != null && !data.isNull()) {
                 return data;
             }
@@ -225,6 +263,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return objectMapper.createObjectNode();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private String readText(JsonNode node, String field) {
         if (node == null || field == null || !node.has(field) || node.get(field).isNull()) {
             return null;
@@ -232,6 +273,9 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return node.get(field).asText(null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveBaseUrl(OpcDaConfig config) {
         String candidate = firstNonBlank(config.bridgeBaseUrl(), config.endpoint());
         if (candidate == null || candidate.isBlank()) {
@@ -250,12 +294,18 @@ public class RemoteOpcDaBridge implements OpcDaBridge {
         return normalized;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureConnected() {
         if (!connected || sessionId == null || sessionId.isBlank()) {
             throw new IllegalStateException("OPC DA bridge is not connected");
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;

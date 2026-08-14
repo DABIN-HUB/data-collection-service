@@ -5,6 +5,9 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 
 import java.io.ByteArrayOutputStream;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetReadPropertyCodec {
 
     public static final int BVLC_TYPE_IP = 0x81;
@@ -27,9 +30,15 @@ public final class BacnetReadPropertyCodec {
     public static final int MAX_SEGMENTS_UNSPECIFIED = 0x00;
     public static final int MAX_APDU_UP_TO_480 = 0x03;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetReadPropertyCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(BacnetReadPropertyRequest request) {
         ByteArrayOutputStream apdu = new ByteArrayOutputStream();
         apdu.write((APDU_TYPE_CONFIRMED_REQUEST << 4) | 0x02);
@@ -58,6 +67,9 @@ public final class BacnetReadPropertyCodec {
         return BacnetFrameSupport.wrapConfirmedRequest(apdu.toByteArray());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static String describeProperty(BacnetPropertyIdentifier propertyIdentifier) {
         return propertyIdentifier != null ? propertyIdentifier.getName() : "unknown";
     }

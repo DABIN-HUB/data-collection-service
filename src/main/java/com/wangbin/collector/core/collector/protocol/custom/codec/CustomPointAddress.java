@@ -11,6 +11,9 @@ public record CustomPointAddress(AddressMode mode,
                                  Integer length,
                                  String jsonPath) {
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static CustomPointAddress parse(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("自定义协议点位地址不能为空");
@@ -48,6 +51,9 @@ public record CustomPointAddress(AddressMode mode,
         return new CustomPointAddress(AddressMode.BYTE, parseNonNegative(trimmed, "字节偏移"), 0, null, null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseNonNegative(String value, String name) {
         try {
             int parsed = Integer.parseInt(value.trim());
@@ -60,6 +66,9 @@ public record CustomPointAddress(AddressMode mode,
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parsePositive(String value, String name) {
         int parsed = parseNonNegative(value, name);
         if (parsed == 0) {
@@ -68,6 +77,9 @@ public record CustomPointAddress(AddressMode mode,
         return parsed;
     }
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum AddressMode {
         BYTE,
         BIT,

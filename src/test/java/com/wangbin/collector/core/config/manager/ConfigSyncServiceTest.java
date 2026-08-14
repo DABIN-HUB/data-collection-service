@@ -3,6 +3,7 @@ package com.wangbin.collector.core.config.manager;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.loader.ConfigLoader;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ public class ConfigSyncServiceTest {
         CountDownLatch release = new CountDownLatch(1);
         loader.blockLoadAllDevices(entered, release);
 
-        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run);
+        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run, new CollectorProperties());
         List<ConfigUpdateEvent> events = new CopyOnWriteArrayList<>();
         service.registerConfigListener(events::add);
 
@@ -59,7 +60,7 @@ public class ConfigSyncServiceTest {
                 Map.of("dev-1", connection("dev-1", "127.0.0.1", 502))
         );
 
-        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run);
+        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run, new CollectorProperties());
         service.loadAllDevices();
         service.loadDataPoints("dev-1");
         service.loadConnectionConfig("dev-1");
@@ -98,7 +99,7 @@ public class ConfigSyncServiceTest {
                 Map.of("dev-1", connection("dev-1", "127.0.0.1", 502))
         );
 
-        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run);
+        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run, new CollectorProperties());
         service.loadAllDevices();
         service.loadDataPoints("dev-1");
         service.loadConnectionConfig("dev-1");
@@ -120,7 +121,7 @@ public class ConfigSyncServiceTest {
                 Map.of("dev-1", List.of(point("dev-1", "temperature", "40001"))),
                 Map.of("dev-1", connection("dev-1", "127.0.0.1", 502))
         );
-        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run);
+        ConfigSyncService service = new ConfigSyncService(loader, Runnable::run, new CollectorProperties());
         service.loadAllDevices();
         service.loadDataPoints("dev-1");
         service.loadConnectionConfig("dev-1");

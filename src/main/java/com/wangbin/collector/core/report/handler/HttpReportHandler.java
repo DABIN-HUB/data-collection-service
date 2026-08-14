@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.handler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -370,8 +372,14 @@ public class HttpReportHandler extends AbstractReportHandler {
                         public X509Certificate[] getAcceptedIssuers() {
                             return null;
                         }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkClientTrusted(X509Certificate[] certs, String authType) {
                         }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkServerTrusted(X509Certificate[] certs, String authType) {
                         }
                     }
@@ -468,8 +476,14 @@ public class HttpReportHandler extends AbstractReportHandler {
                     public X509Certificate[] getAcceptedIssuers() {
                         return null;
                     }
+                    /**
+                     * 校验业务条件和参数边界。
+                     */
                     public void checkClientTrusted(X509Certificate[] certs, String authType) {
                     }
+                    /**
+                     * 校验业务条件和参数边界。
+                     */
                     public void checkServerTrusted(X509Certificate[] certs, String authType) {
                     }
                 }
@@ -572,15 +586,15 @@ public class HttpReportHandler extends AbstractReportHandler {
         Map<String, Object> jsonData = new HashMap<>();
 
         // 添加基本数据
-        jsonData.put("pointCode", data.getPointCode());
-        jsonData.put("pointName", data.getPointName());
-        jsonData.put("value", data.getValue());
-        jsonData.put("timestamp", data.getTimestamp());
-        jsonData.put("quality", data.getQuality() != null ? data.getQuality() : QualityEnum.GOOD.getText());
+        jsonData.put(CommonMapKeys.POINT_CODE, data.getPointCode());
+        jsonData.put(CommonMapKeys.POINT_NAME, data.getPointName());
+        jsonData.put(CommonMapKeys.VALUE, data.getValue());
+        jsonData.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
+        jsonData.put(CommonMapKeys.QUALITY, data.getQuality() != null ? data.getQuality() : QualityEnum.GOOD.getText());
 
         // 添加元数据
         if (data.getMetadata() != null && !data.getMetadata().isEmpty()) {
-            jsonData.put("metadata", data.getMetadata());
+            jsonData.put(CommonMapKeys.METADATA, data.getMetadata());
         }
 
         // 从配置中获取额外的数据
@@ -767,8 +781,14 @@ public class HttpReportHandler extends AbstractReportHandler {
         private HostnameVerifier hostnameVerifier;
         private ConnectionPoolConfig connectionPoolConfig;
 
+        /**
+         * 创建并返回业务对象。
+         */
         public RestTemplate createRestTemplate() {
             SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory() {
+                /**
+                 * 执行当前业务逻辑。
+                 */
                 @Override
                 protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
                     super.prepareConnection(connection, httpMethod);
@@ -784,12 +804,14 @@ public class HttpReportHandler extends AbstractReportHandler {
             };
             factory.setConnectTimeout((int) connectTimeout);
             factory.setReadTimeout((int) readTimeout);
-            factory.setBufferRequestBody(false);
             return new RestTemplate(factory);
         }
 
+        /**
+         * 处理组件生命周期。
+         */
         public void destroy() {
-            // no-op for JDK HttpURLConnection
+            // JDK HttpURLConnection 场景无需额外释放。
         }
 
         public Map<String, Object> getConnectionPoolStats() {

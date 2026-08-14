@@ -8,11 +8,17 @@ import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusGrouping
 import java.util.*;
 import java.util.function.Function;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class ModbusReadPlanBuilder {
 
     private static final int MAX_REGISTER_QUANTITY = 125;
     private static final int MAX_COIL_QUANTITY = 2000;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static List<ModbusReadPlan> build(String deviceId,List<DataPoint> points,
                                              Function<DataPoint, Integer> unitIdResolver,
                                              Function<String, ModbusAddress> addressParser) {
@@ -48,6 +54,9 @@ public class ModbusReadPlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static void buildPlansForGroup(String deviceId,
                                            int unitId,
                                            RegisterType type,
@@ -94,6 +103,9 @@ public class ModbusReadPlanBuilder {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static ModbusReadPlan buildPlan(String deviceId,
                                             int unitId,
                                             RegisterType type,

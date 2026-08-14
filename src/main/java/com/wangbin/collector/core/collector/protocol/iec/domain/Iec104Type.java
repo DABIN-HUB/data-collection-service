@@ -7,10 +7,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * IEC 60870-5-104 type identification registry.
+ * IEC60870-5-104 类型标识注册表。
  *
- * <p>The enum keeps the protocol raw type id. Code that needs a base matching
- * family, such as telemetry cache matching, should use {@link #familyTypeId()}.
+ * <p>The enum keeps the 协议 raw type id. Code that needs a base matching
+ * family, such as 遥测 缓存 matching, should use {@link #familyTypeId()}.
  */
 public enum Iec104Type {
 
@@ -151,6 +151,9 @@ public enum Iec104Type {
     private final boolean writeSupported;
     private final String[] aliases;
 
+    /**
+     * 创建当前组件实例。
+     */
     Iec104Type(int typeId,
                Category category,
                ValueKind valueKind,
@@ -169,10 +172,16 @@ public enum Iec104Type {
         this.aliases = aliases;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Optional<Iec104Type> fromTypeId(int typeId) {
         return Optional.ofNullable(BY_ID.get(typeId));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Optional<Iec104Type> fromToken(Object raw) {
         if (raw == null) {
             return Optional.empty();
@@ -192,57 +201,96 @@ public enum Iec104Type {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public static Iec104Type requireToken(Object raw) {
         return fromToken(raw)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid IEC 104 type token: " + raw));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static int canonicalTypeId(int typeId) {
         return fromTypeId(typeId)
                 .map(Iec104Type::familyTypeId)
                 .orElse(typeId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int typeId() {
         return typeId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String typeName() {
         return name();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Category category() {
         return category;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public ValueKind valueKind() {
         return valueKind;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public TimestampKind timestampKind() {
         return timestampKind;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int familyTypeId() {
         return familyTypeId;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public boolean readSupported() {
         return readSupported;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public boolean writeSupported() {
         return writeSupported;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean timed() {
         return timestampKind != TimestampKind.NONE;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private static void registerToken(Map<String, Iec104Type> map, String token, Iec104Type type) {
         map.put(normalizeToken(token), type);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeToken(String raw) {
         return raw.trim()
                 .toUpperCase(Locale.ROOT)
@@ -250,6 +298,9 @@ public enum Iec104Type {
                 .replace(' ', '_');
     }
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum Category {
         MONITOR,
         CONTROL,
@@ -258,6 +309,9 @@ public enum Iec104Type {
         FILE
     }
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum TimestampKind {
         NONE,
         CP16,
@@ -265,6 +319,9 @@ public enum Iec104Type {
         CP56
     }
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum ValueKind {
         SINGLE_POINT,
         DOUBLE_POINT,

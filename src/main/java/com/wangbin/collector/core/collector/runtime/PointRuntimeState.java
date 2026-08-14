@@ -11,6 +11,9 @@ final class PointRuntimeState {
     private double changeRate;
     private long lastAdjustTime;
 
+    /**
+     * 创建当前组件实例。
+     */
     PointRuntimeState(long currentCollectionInterval) {
         this.currentCollectionInterval = currentCollectionInterval;
     }
@@ -55,6 +58,9 @@ final class PointRuntimeState {
         this.lastAdjustTime = lastAdjustTime;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     PointRuntimeStateSnapshot snapshot() {
         return new PointRuntimeStateSnapshot(
                 currentCollectionInterval, stableCount, lastValue, changeRate, lastAdjustTime);

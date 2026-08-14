@@ -66,7 +66,7 @@ class AdsCollectorTest {
     void shouldRegisterAdsSubscriptionsAndProcessIncomingValues() throws Exception {
         AdsCollector collector = new AdsCollector();
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         AdsConnectionAdapter connectionAdapter = mock(AdsConnectionAdapter.class);
         PlcConnection connection = mock(PlcConnection.class);
@@ -184,7 +184,7 @@ class AdsCollectorTest {
 
     private void prepareCommandCollector(AdsCollector collector, ConfigManager configManager) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "devicePointResolver", new DevicePointResolver(configManager));
 

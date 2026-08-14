@@ -23,6 +23,9 @@ public class HealthStatus {
     @Builder.Default
     private final Map<String, ComponentHealth> components = new LinkedHashMap<>();
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum Status {
         UP,
         DOWN,
@@ -31,7 +34,7 @@ public class HealthStatus {
     }
 
     /**
-     * 根据组件状态推导整体状态：优先级 DOWN > DEGRADED > UNKNOWN > UP。
+     * 根据组件状态推导整体状态，优先级依次为故障、降级、未知和正常。
      */
     public static Status aggregate(Collection<ComponentHealth> componentHealths) {
         boolean hasDegraded = false;

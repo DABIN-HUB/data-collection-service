@@ -22,6 +22,9 @@ public class QualityFilter extends AbstractDataProcessor {
      */
     private int minQuality = 60;
 
+    /**
+     * 创建当前组件实例。
+     */
     public QualityFilter() {
         this.name = "QualityFilter";
         this.type = "FILTER";
@@ -29,11 +32,17 @@ public class QualityFilter extends AbstractDataProcessor {
         this.priority = 50;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("质量过滤器初始化完成: {}", getName());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         // 获取上下文中的原始数据质量
@@ -60,12 +69,18 @@ public class QualityFilter extends AbstractDataProcessor {
                 String.format("数据质量 %d 符合要求", rawQuality));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     protected void loadConfig(Map<String, Object> config) {
         super.loadConfig(config);
         minQuality = getIntConfig("minQuality", 60);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         log.info("质量过滤器销毁完成: {}", getName());

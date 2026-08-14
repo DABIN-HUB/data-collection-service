@@ -1,6 +1,5 @@
 package com.wangbin.collector.core.report.handler;
 
-import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.constant.ProtocolConstant;
 import com.wangbin.collector.core.report.model.ReportConfig;
@@ -9,7 +8,6 @@ import com.wangbin.collector.core.report.model.ReportResult;
 import com.wangbin.collector.core.report.model.message.IoTMessage;
 import com.wangbin.collector.core.report.service.IoTProtocolService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -25,36 +23,33 @@ import java.util.concurrent.*;
 @Component
 public class TcpReportHandler extends AbstractReportHandler {
 
-    private static final ScheduledExecutorService DEFAULT_HEARTBEAT_EXECUTOR =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread thread = new Thread(r, "tcp-report-heartbeat-shared");
-                thread.setDaemon(true);
-                return thread;
-            });
-
     private final Map<String, Socket> connectionPool = new ConcurrentHashMap<>();
     private final IoTProtocolService protocolService;
-    @Autowired(required = false)
-    @Qualifier("monitorExecutor")
-    private ScheduledExecutorService heartbeatExecutor;
+    private final ScheduledExecutorService heartbeatExecutor;
 
-    public TcpReportHandler(IoTProtocolService protocolService) {
+    /**
+     * 创建当前组件实例。
+     */
+    public TcpReportHandler(IoTProtocolService protocolService,
+                            @Qualifier("monitorExecutor") ScheduledExecutorService heartbeatExecutor) {
         super("TcpReportHandler", ProtocolConstant.PROTOCOL_TCP, "TCP协议上报处理器（支持物联网协议）");
         this.protocolService = protocolService;
+        this.heartbeatExecutor = heartbeatExecutor;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doInit() throws Exception {
         log.info("初始化TCP上报处理器...");
-        heartbeatExecutor = ThreadPoolFallbacks.preferScheduler(
-                heartbeatExecutor,
-                DEFAULT_HEARTBEAT_EXECUTOR,
-                "TcpReportHandler",
-                "tcp-report-heartbeat-shared");
         heartbeatExecutor.scheduleAtFixedRate(this::checkConnections,
                 30, 30, TimeUnit.SECONDS);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected ReportResult doReport(ReportData data, ReportConfig config) throws Exception {
         long startTime = System.currentTimeMillis();
@@ -121,6 +116,9 @@ public class TcpReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected List<ReportResult> doBatchReport(List<ReportData> dataList, ReportConfig config) throws Exception {
         List<ReportResult> results = new ArrayList<>(dataList.size());
@@ -258,6 +256,9 @@ public class TcpReportHandler extends AbstractReportHandler {
         return authInfo;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean needsAuthentication(ReportConfig config) {
         Map<String, Object> authParams = config.getParams();
         return authParams != null &&
@@ -265,6 +266,9 @@ public class TcpReportHandler extends AbstractReportHandler {
                 authParams.containsKey(MessageConstant.FIELD_DEVICE_NAME);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void performAuthentication(Socket socket, ReportConfig config) throws Exception {
         Map<String, Object> authParams = config.getParams();
         String productKey = (String) authParams.get(MessageConstant.FIELD_PRODUCT_KEY);
@@ -335,6 +339,9 @@ public class TcpReportHandler extends AbstractReportHandler {
         return "json"; // 默认JSON格式
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private ReportResult handleResponse(Socket socket, ReportData data,
                                         ReportConfig config, long startTime) throws Exception {
         ReportResult result = ReportResult.success(data.getPointCode(), config.getTargetId());
@@ -367,6 +374,9 @@ public class TcpReportHandler extends AbstractReportHandler {
         return result;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void checkConnections() {
         Iterator<Map.Entry<String, Socket>> iterator = connectionPool.entrySet().iterator();
         while (iterator.hasNext()) {
@@ -387,6 +397,9 @@ public class TcpReportHandler extends AbstractReportHandler {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConfigUpdate(ReportConfig config) throws Exception {
         // 清理旧的连接
@@ -402,11 +415,17 @@ public class TcpReportHandler extends AbstractReportHandler {
         log.info("TCP配置已更新: {}", config.getTargetId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConfigRemove(ReportConfig config) throws Exception {
         doConfigUpdate(config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDestroy() throws Exception {
         // 关闭所有连接

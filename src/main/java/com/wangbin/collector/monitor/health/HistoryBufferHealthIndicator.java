@@ -19,6 +19,9 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
     private static final double LOCAL_QUEUE_WARNING_RATIO = 0.9D;
     private final HistoryWriteBuffer historyWriteBuffer;
 
+    /**
+     * 输出历史缓冲队列健康状态和补偿计数。
+     */
     @Override
     public Health health() {
         HistoryBufferMetrics metrics = historyWriteBuffer.metrics();
@@ -38,6 +41,14 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
                 .withDetail("Redis隔离数量", metrics.redisDeadLetter())
                 .withDetail("本地待写数量", metrics.localPending())
                 .withDetail("本地队列容量", metrics.localCapacity())
+                .withDetail("写失败Redis缓冲累计", metrics.writeFailureRedisBuffered())
+                .withDetail("拒绝Redis缓冲累计", metrics.rejectedRedisBuffered())
+                .withDetail("写失败本地缓冲累计", metrics.writeFailureLocalBuffered())
+                .withDetail("拒绝本地缓冲累计", metrics.rejectedLocalBuffered())
+                .withDetail("写失败丢弃累计", metrics.writeFailureDropped())
+                .withDetail("拒绝丢弃累计", metrics.rejectedDropped())
+                .withDetail("写失败缓冲关闭累计", metrics.writeFailureDisabled())
+                .withDetail("拒绝缓冲关闭累计", metrics.rejectedDisabled())
                 .build();
     }
 }

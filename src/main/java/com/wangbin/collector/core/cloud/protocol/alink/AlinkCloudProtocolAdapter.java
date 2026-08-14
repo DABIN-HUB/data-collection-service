@@ -3,7 +3,7 @@ package com.wangbin.collector.core.cloud.protocol.alink;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.cloud.config.CloudPayloadOptions;
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolAdapter;
 import com.wangbin.collector.core.cloud.protocol.CloudProtocolMessage;
 import com.wangbin.collector.core.cloud.protocol.alink.codec.AlinkMessageEnvelope;
@@ -13,7 +13,6 @@ import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicBuilder;
 import com.wangbin.collector.core.cloud.protocol.alink.topic.AlinkTopicParser;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -43,7 +42,9 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
     private final AlinkPayloadEncoder payloadEncoder;
     private final AlinkPayloadDecoder payloadDecoder;
 
-    @Autowired
+    /**
+     * 创建当前组件实例。
+     */
     public AlinkCloudProtocolAdapter(AlinkTopicBuilder topicBuilder,
                                      AlinkPayloadEncoder payloadEncoder,
                                      AlinkPayloadDecoder payloadDecoder) {
@@ -52,6 +53,9 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
         this.payloadDecoder = payloadDecoder;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static AlinkCloudProtocolAdapter standalone(ObjectMapper objectMapper) {
         return new AlinkCloudProtocolAdapter(
                 new AlinkTopicBuilder(),
@@ -59,27 +63,42 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
                 new AlinkPayloadDecoder(objectMapper, new AlinkTopicParser()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public String provider() {
         return PROVIDER;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public List<String> aliases() {
         return List.of(PROVIDER, "aliyun", "ali");
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     public String buildPublishTopic(ReportData data, ReportConfig config) {
         CloudDeviceIdentity identity = resolveCloudIdentity(data, config);
         return topicBuilder.build(identity, resolveMethod(data));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public byte[] encodeReportData(ReportData data, CloudPayloadOptions options) {
         return payloadEncoder.encodeReportData(data, options);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public CloudProtocolMessage decode(String topic, byte[] payload) throws IOException {
         AlinkMessageEnvelope envelope = payloadDecoder.decode(topic, payload);
@@ -92,16 +111,25 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
                 envelope.params());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public List<String> downlinkTopicPaths() {
         return DOWNLINK_TOPIC_PATHS;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public List<String> businessReplyTopicPaths() {
         return BUSINESS_REPLY_TOPIC_PATHS;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CloudDeviceIdentity resolveCloudIdentity(ReportData data, ReportConfig config) {
         String productKey = firstText(
                 metadataText(data, "productKey"),
@@ -119,11 +147,17 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
         return identity;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveMethod(ReportData data) {
         String method = data != null ? data.getMethod() : null;
         return StringUtils.hasText(method) ? method : MessageConstant.MESSAGE_TYPE_PROPERTY_POST;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String metadataText(ReportData data, String key) {
         if (data == null || data.getMetadata() == null || key == null) {
             return null;
@@ -132,6 +166,9 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
         return value == null ? null : String.valueOf(value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String configText(ReportConfig config, String key) {
         if (config == null || key == null) {
             return null;
@@ -144,6 +181,9 @@ public class AlinkCloudProtocolAdapter implements CloudProtocolAdapter {
         return raw == null ? null : String.valueOf(raw);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstText(String... values) {
         if (values == null) {
             return null;

@@ -7,11 +7,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class PointTypeResolverSupport {
 
+    /**
+     * 创建当前组件实例。
+     */
     private PointTypeResolverSupport() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static <A, T extends PlcTypeDescriptor> T resolveOrNull(
             DataPoint point,
             A address,
@@ -46,6 +55,9 @@ public final class PointTypeResolverSupport {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveDriverTypeText(DataPoint point, boolean includePointDataTypeInDriverChain,
                                                 String... driverTypeConfigKeys) {
         List<String> candidates = new ArrayList<>();
@@ -60,6 +72,9 @@ public final class PointTypeResolverSupport {
         return firstNonBlank(candidates.toArray(String[]::new));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String additionalConfigAsString(DataPoint point, String key) {
         if (point == null || key == null || key.isBlank()) {
             return null;
@@ -68,6 +83,9 @@ public final class PointTypeResolverSupport {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -80,6 +98,9 @@ public final class PointTypeResolverSupport {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

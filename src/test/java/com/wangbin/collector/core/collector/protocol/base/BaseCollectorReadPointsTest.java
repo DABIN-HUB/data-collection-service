@@ -2,7 +2,8 @@ package com.wangbin.collector.core.collector.protocol.base;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.Test;
 
@@ -11,8 +12,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class BaseCollectorReadPointsTest {
 
@@ -27,7 +31,7 @@ class BaseCollectorReadPointsTest {
         deviceInfo.setDeviceName("test-device");
         collector.init(deviceInfo);
         collector.connected = true;
-        collector.dataQualityProcessor = new DataQualityProcessor(null);
+        collector.dataQualityProcessor = com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create();
 
         Map<String, Object> result = collector.readPoints(List.of(point("p1"), point("p2")));
 
@@ -64,6 +68,7 @@ class BaseCollectorReadPointsTest {
 
         assertEquals(10.0D, firstRound.get("p1").getFinalValue());
         assertEquals(20.0D, secondRound.get("p1").getFinalValue());
+        assertTrue(collector.takeInvocationProcessResults().isEmpty());
     }
 
     @Test
@@ -90,13 +95,79 @@ class BaseCollectorReadPointsTest {
         assertEquals(3, longResult);
     }
 
-    private TestCollector connectedCollector(TestCollector collector) throws Exception {
+    @Test
+    void shouldReportReadExceptionThroughExceptionReporterPort() throws Exception {
+        TestCollector collector = connectedCollector(new TestCollector(Map.of()));
+        ExceptionReporter exceptionReporter = mock(ExceptionReporter.class);
+        collector.exceptionReporter = exceptionReporter;
+        collector.failReadPoint = true;
+        DataPoint point = point("p1");
+
+        assertThrows(CollectorException.class, () -> collector.readPoint(point));
+
+        verify(exceptionReporter).record(collector.readFailure, "dev-1", "p1");
+    }
+
+    @Test
+    void shouldKeepProtectedConversionFacadesDelegatingToConverter() throws Exception {
+        TestCollector collector = connectedCollector(new TestCollector(Map.of()));
+        DataPoint point = point("p1");
+        point.setScalingFactor(2.0D);
+        point.setOffset(1.0D);
+        point.setMinValue(0.0D);
+        point.setMaxValue(10.0D);
+
+        assertEquals(7.0D, collector.exposeConvertData(point, 3));
+        assertEquals(2.0D, collector.exposeConvertDataForWrite(point, 6));
+        assertDoesNotThrow(() -> collector.exposeValidateData(point, 7));
+    }
+
+    @Test
+    void readPointShouldUseProtectedTelemetryMetadataFacade() throws Exception {
+        MetadataOverrideCollector collector = connectedCollector(new MetadataOverrideCollector(Map.of("p1", 7)));
+
+        assertEquals(7.0D, collector.readPoint(point("p1")));
+
+        assertEquals(1, collector.enrichCount);
+        assertEquals(7, collector.rawValue);
+        assertEquals(7.0D, collector.processedValue);
+        assertEquals("POLLING", collector.source);
+        assertTrue(collector.collectTime > 0);
+    }
+
+    @Test
+    void ingestPushedValueShouldUseProtectedTelemetryMetadataFacade() throws Exception {
+        MetadataOverrideCollector collector = connectedCollector(new MetadataOverrideCollector(Map.of()));
+
+        ProcessResult result = collector.exposeIngestPushedValue(point("p1"), 8);
+
+        assertEquals(8.0D, result.getFinalValue());
+        assertEquals(1, collector.enrichCount);
+        assertEquals(8, collector.rawValue);
+        assertEquals(8.0D, collector.processedValue);
+        assertEquals("PUSH", collector.source);
+        assertTrue(collector.collectTime > 0);
+    }
+
+    @Test
+    void writePointShouldUseSubclassConvertDataForWriteOverride() throws Exception {
+        OverrideWriteCollector collector = connectedCollector(new OverrideWriteCollector(Map.of()));
+        DataPoint point = point("p1");
+        point.setReadWrite("W");
+
+        assertTrue(collector.writePoint(point, 12));
+
+        assertTrue(collector.overrideCalled);
+        assertEquals("OVERRIDDEN", collector.writtenValue);
+    }
+
+    private <T extends TestCollector> T connectedCollector(T collector) throws Exception {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId("dev-1");
         deviceInfo.setDeviceName("test-device");
         collector.init(deviceInfo);
         collector.connected = true;
-        collector.dataQualityProcessor = new DataQualityProcessor(null);
+        collector.dataQualityProcessor = com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create();
         return collector;
     }
 
@@ -109,10 +180,12 @@ class BaseCollectorReadPointsTest {
         return point;
     }
 
-    private static final class TestCollector extends BaseCollector {
+    private static class TestCollector extends BaseCollector {
 
         private final Map<String, Object> rawValues;
         private boolean failUnsubscribe;
+        private boolean failReadPoint;
+        private final RuntimeException readFailure = new RuntimeException("read failed");
         private int disconnectCount;
 
         private TestCollector(Map<String, Object> rawValues) {
@@ -130,6 +203,9 @@ class BaseCollectorReadPointsTest {
 
         @Override
         protected Object doReadPoint(DataPoint point) {
+            if (failReadPoint) {
+                throw readFailure;
+            }
             return rawValues.get(point.getPointId());
         }
 
@@ -181,6 +257,71 @@ class BaseCollectorReadPointsTest {
         @Override
         public String getProtocolType() {
             return "TEST";
+        }
+
+        Object exposeConvertData(DataPoint point, Object rawValue) {
+            return convertData(point, rawValue);
+        }
+
+        Object exposeConvertDataForWrite(DataPoint point, Object value) {
+            return convertDataForWrite(point, value);
+        }
+
+        void exposeValidateData(DataPoint point, Object value) {
+            validateData(point, value);
+        }
+    }
+
+    private static class MetadataOverrideCollector extends TestCollector {
+
+        private int enrichCount;
+        private Object rawValue;
+        private Object processedValue;
+        private long collectTime;
+        private String source;
+
+        private MetadataOverrideCollector(Map<String, Object> rawValues) {
+            super(rawValues);
+        }
+
+        @Override
+        protected void enrichTelemetryMetadata(ProcessResult result,
+                                               Object rawValue,
+                                               Object processedValue,
+                                               long collectTime,
+                                               String source) {
+            enrichCount++;
+            this.rawValue = rawValue;
+            this.processedValue = processedValue;
+            this.collectTime = collectTime;
+            this.source = source;
+            super.enrichTelemetryMetadata(result, rawValue, processedValue, collectTime, source);
+        }
+
+        ProcessResult exposeIngestPushedValue(DataPoint point, Object rawValue) {
+            return ingestPushedValue(point, rawValue);
+        }
+    }
+
+    private static class OverrideWriteCollector extends TestCollector {
+
+        private boolean overrideCalled;
+        private Object writtenValue;
+
+        private OverrideWriteCollector(Map<String, Object> rawValues) {
+            super(rawValues);
+        }
+
+        @Override
+        protected Object convertDataForWrite(DataPoint point, Object value) {
+            overrideCalled = true;
+            return "OVERRIDDEN";
+        }
+
+        @Override
+        protected boolean doWritePoint(DataPoint point, Object value) {
+            writtenValue = value;
+            return true;
         }
     }
 }

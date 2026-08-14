@@ -7,6 +7,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Component
 @Order(10)
 @RequiredArgsConstructor
@@ -14,21 +17,33 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     private final MultiLevelCacheManager multiLevelCacheManager;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public TelemetryStageType type() {
         return TelemetryStageType.CACHE;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public String name() {
         return "cache";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean enabled(TelemetryPostProcessContext context) {
         return context.cacheValue() != null && context.point() != null && context.point().needCache();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     public void process(TelemetryPostProcessContext context) {
         DataPoint point = context.point();

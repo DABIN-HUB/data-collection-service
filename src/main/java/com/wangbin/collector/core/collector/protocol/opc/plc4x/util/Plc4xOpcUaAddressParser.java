@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Converts the current OPC UA point model into PLC4X OPC UA tag addresses.
+ * Converts the 当前 OPC UA 点位 model into PLC4X OPC UA tag addresses.
  */
 public final class Plc4xOpcUaAddressParser {
 
@@ -20,9 +20,15 @@ public final class Plc4xOpcUaAddressParser {
     private static final Pattern EXPLICIT_TYPE_PATTERN = Pattern.compile(
             "^ns=\\d+;[isgb]=[^;{}]+(?:;a=[^;{}]+)?;[A-Za-z_]+$");
 
+    /**
+     * 创建当前组件实例。
+     */
     private Plc4xOpcUaAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Plc4xOpcUaAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -55,10 +61,16 @@ public final class Plc4xOpcUaAddressParser {
                 arraySize);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Plc4xOpcUaAddress parse(String address) {
         return parse(address, null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Plc4xOpcUaAddress parse(String address, String dataType) {
         String normalizedType = resolveDriverDataType(dataType, null);
         String rawAddress = normalizeNodeId(address);
@@ -73,6 +85,9 @@ public final class Plc4xOpcUaAddressParser {
                 1);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveAddress(DataPoint point, Map<String, Object> config) {
         String explicit = firstNonBlank(
                 asString(firstPresent(config, "nodeId", "id")),
@@ -93,6 +108,9 @@ public final class Plc4xOpcUaAddressParser {
         return buildNodeId(namespace, identifierType, identifier);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeNodeId(String rawAddress) {
         if (rawAddress == null || rawAddress.isBlank()) {
             throw new IllegalArgumentException("OPC UA address cannot be blank");
@@ -110,6 +128,9 @@ public final class Plc4xOpcUaAddressParser {
         throw new IllegalArgumentException("Invalid OPC UA NodeId: " + rawAddress);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildNodeId(int namespace, String identifierType, Object identifier) {
         String type = identifierType != null ? identifierType.trim().toLowerCase(Locale.ROOT) : "s";
         String value = Objects.toString(identifier, "");
@@ -122,6 +143,9 @@ public final class Plc4xOpcUaAddressParser {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeAddress(String rawAddress, String dataType) {
         String normalized = normalizeNodeId(rawAddress);
         if (!FULL_NODE_ID_PATTERN.matcher(normalized).matches()) {
@@ -140,11 +164,17 @@ public final class Plc4xOpcUaAddressParser {
         return base + ";" + dataType + configSuffix;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String resolveDriverDataType(Object preferredType, String fallbackType) {
         Plc4xOpcUaType type = Plc4xOpcUaType.fromDriverTextOrNull(firstNonBlank(asString(preferredType), fallbackType));
         return type != null ? type.toTypeExpression() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean resolveSubscription(DataPoint point, Map<String, Object> config) {
         Object flag = firstPresent(config, "subscribe", "monitor");
         if (flag != null) {
@@ -154,6 +184,9 @@ public final class Plc4xOpcUaAddressParser {
                 && point.getCollectionMode().equalsIgnoreCase("SUBSCRIPTION");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> map, String... keys) {
         for (String key : keys) {
             if (map.containsKey(key)) {
@@ -163,6 +196,9 @@ public final class Plc4xOpcUaAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -175,10 +211,16 @@ public final class Plc4xOpcUaAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseInt(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -193,6 +235,9 @@ public final class Plc4xOpcUaAddressParser {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static double parseDouble(Object value, double defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -207,6 +252,9 @@ public final class Plc4xOpcUaAddressParser {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean parseBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;

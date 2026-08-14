@@ -19,6 +19,9 @@ public class PointRuntimeStateService {
 
     private final ConcurrentMap<String, PointRuntimeState> states = new ConcurrentHashMap<>();
 
+    /**
+     * 处理组件生命周期。
+     */
     public void initializeDevice(String deviceId, List<DataPoint> points) {
         removeDevice(deviceId);
         if (points == null) {
@@ -31,6 +34,9 @@ public class PointRuntimeStateService {
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public PointRuntimeStateSnapshot initialize(String deviceId, DataPoint point) {
         AdaptiveCollectionUtil.normalizeConfiguration(point);
         PointRuntimeState state = new PointRuntimeState(resolveBaseInterval(point));
@@ -38,6 +44,9 @@ public class PointRuntimeStateService {
         return state.snapshot();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public PointRuntimeStateSnapshot adjust(String deviceId,
                                             DataPoint point,
                                             Object currentValue,
@@ -59,6 +68,9 @@ public class PointRuntimeStateService {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public PointRuntimeStateSnapshot reset(String deviceId, DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("数据点不能为空");
@@ -76,6 +88,9 @@ public class PointRuntimeStateService {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public PointRuntimeStateSnapshot snapshot(String deviceId, DataPoint point) {
         if (point == null) {
             return new PointRuntimeStateSnapshot(0L, 0, null, 0D, 0L);
@@ -89,6 +104,9 @@ public class PointRuntimeStateService {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Map<String, PointRuntimeStateSnapshot> snapshots(String deviceId) {
         String prefix = String.valueOf(deviceId) + "|";
         Map<String, PointRuntimeStateSnapshot> result = new ConcurrentHashMap<>();
@@ -102,11 +120,17 @@ public class PointRuntimeStateService {
         return Map.copyOf(result);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeDevice(String deviceId) {
         String prefix = String.valueOf(deviceId) + "|";
         states.keySet().removeIf(key -> key.startsWith(prefix));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void adjustState(DataPoint point,
                              PointRuntimeState state,
                              Object currentValue,
@@ -137,16 +161,22 @@ public class PointRuntimeStateService {
         state.setChangeRate(changeRate);
         state.setStableCount(stableCount);
         state.setCurrentCollectionInterval(newInterval);
-        log.debug("点位自适应运行态已更新: pointId={}, interval={}ms, changeRate={}",
+        log.debug("点位自适应运行态已更新: 点位={}, interval={}ms, changeRate={}",
                 point.getPointId(), newInterval, changeRate);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveBaseInterval(DataPoint point) {
         Long configured = point.getBaseCollectionInterval();
         return configured != null && configured > 0
                 ? configured : AdaptiveCollectionUtil.DEFAULT_BASE_COLLECTION_INTERVAL;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String stateKey(String deviceId, String pointId) {
         return String.valueOf(deviceId) + "|" + String.valueOf(pointId);
     }

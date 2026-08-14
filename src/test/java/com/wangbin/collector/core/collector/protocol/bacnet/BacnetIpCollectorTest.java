@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.bacnet;
 
+import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import org.junit.jupiter.api.Test;
 
@@ -29,10 +30,30 @@ class BacnetIpCollectorTest {
         assertTrue(status.get("message").toString().contains("WriteProperty"));
     }
 
+    @Test
+    void shouldUseBacnetWriteConversionOverrideBeforeBaseConverter() {
+        TestableBacnetIpCollector collector = new TestableBacnetIpCollector();
+
+        assertEquals("123", collector.exposeConvertDataForWrite(point("STRING"), 123));
+        assertEquals(Boolean.TRUE, collector.exposeConvertDataForWrite(point("BOOLEAN"), 1));
+    }
+
     private static class TestableBacnetIpCollector extends BacnetIpCollector {
 
         Map<String, Object> exposeStatus() {
             return doGetDeviceStatus();
         }
+
+        Object exposeConvertDataForWrite(DataPoint point, Object value) {
+            return convertDataForWrite(point, value);
+        }
+    }
+
+    private DataPoint point(String dataType) {
+        DataPoint point = new DataPoint();
+        point.setPointId("p1");
+        point.setAddress("analogInput:1.presentValue");
+        point.setDataType(dataType);
+        return point;
     }
 }

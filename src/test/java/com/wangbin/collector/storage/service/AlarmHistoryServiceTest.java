@@ -1,7 +1,7 @@
 package com.wangbin.collector.storage.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.monitor.alert.AlertNotification;
+import com.wangbin.collector.common.domain.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
 import com.wangbin.collector.storage.repository.DataRepository;
@@ -139,5 +139,34 @@ class AlarmHistoryServiceTest {
         assertThat(rows.get(0).get("alarm_event_type")).isEqualTo("QUALITY");
         assertThat(rows.get(0).get("eventType")).isEqualTo("QUALITY");
         assertThat(rows.get(0).get("event_type")).isEqualTo("QUALITY");
+    }
+
+    @Test
+    void countRecentAlarmHistoryShouldReturnRepositoryTotal() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        when(dataRepository.countColumn("wangbin_collector", "alarm_super", "alarm_event_type")).thenReturn(1L);
+        when(alarmRepository.countRecentAlarmHistory(
+                "wangbin_collector",
+                "alarm_super",
+                null,
+                null,
+                null,
+                null,
+                null,
+                1000L,
+                2000L
+        )).thenReturn(23L);
+        AlarmHistoryService service = new AlarmHistoryService(
+                alarmRepository,
+                dataRepository,
+                properties,
+                objectMapper,
+                directExecutor
+        );
+
+        long total = service.countRecentAlarmHistory(null, null, null, null, null, 1000L, 2000L);
+
+        assertThat(total).isEqualTo(23L);
     }
 }

@@ -22,6 +22,9 @@ public class MqttReceivedMessage {
     private final Map<String, String> userProperties;
     private final long receivedTime;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttReceivedMessage(String topic,
                                byte[] payload,
                                int qos,
@@ -30,6 +33,9 @@ public class MqttReceivedMessage {
         this(topic, payload, qos, retained, userProperties, System.currentTimeMillis());
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttReceivedMessage(String topic,
                                byte[] payload,
                                int qos,

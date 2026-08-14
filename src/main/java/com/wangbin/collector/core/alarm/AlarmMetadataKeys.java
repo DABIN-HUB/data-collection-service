@@ -15,6 +15,9 @@ public final class AlarmMetadataKeys {
     public static final String ALARM_OCCURRED_AT = "alarmOccurredAt";
     public static final String ALARM_DURATION_MILLIS = "alarmDurationMillis";
 
+    /**
+     * 创建当前组件实例。
+     */
     private AlarmMetadataKeys() {
     }
 }

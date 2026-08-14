@@ -15,6 +15,9 @@ import java.util.Map;
 @Slf4j
 public class JsonUtil {
 
+    /**
+     * 创建当前组件实例。
+     */
     private JsonUtil() {
         // 工具类，防止实例化
     }
@@ -212,6 +215,9 @@ public class JsonUtil {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void deepMerge(JSONObject target, JSONObject source) {
         for (String key : source.keySet()) {
             Object sourceValue = source.get(key);

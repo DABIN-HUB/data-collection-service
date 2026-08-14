@@ -1,11 +1,15 @@
 package com.wangbin.collector.core.collector.protocol.base;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.converter.CollectorValueConverter;
+import com.wangbin.collector.core.collector.telemetry.CollectorTelemetryMetadataEnricher;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
@@ -13,15 +17,15 @@ import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
 import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
-import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
-import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.*;
@@ -42,26 +46,31 @@ public abstract class BaseCollector implements ProtocolCollector,
 
     @Getter
     protected DeviceInfo deviceInfo;
-
-    @Autowired
     protected CollectorProperties collectorProperties;
-
-    @Autowired
     protected ConnectionManager connectionManager;
-
-    @Autowired
     protected ConfigManager configManager;
-
-    @Autowired
     protected DataQualityProcessor dataQualityProcessor;
-
-    @Autowired(required = false)
-    protected ExceptionMonitorService exceptionMonitorService;
-
-    @Autowired(required = false)
+    protected ExceptionReporter exceptionReporter;
     protected TelemetryIngressService telemetryIngressService;
 
-    protected volatile boolean connected = false;
+    /**
+     * 注入采集器通用依赖。
+     */
+    @Autowired
+    public void setBaseCollectorDependencies(CollectorProperties collectorProperties,
+                                             ConnectionManager connectionManager,
+                                             ConfigManager configManager,
+                                             DataQualityProcessor dataQualityProcessor,
+                                             ObjectProvider<ExceptionReporter> exceptionReporterProvider,
+                                             ObjectProvider<TelemetryIngressService> telemetryIngressServiceProvider) {
+        this.collectorProperties = collectorProperties;
+        this.connectionManager = connectionManager;
+        this.configManager = configManager;
+        this.dataQualityProcessor = dataQualityProcessor;
+        this.exceptionReporter = exceptionReporterProvider.getIfAvailable();
+        this.telemetryIngressService = telemetryIngressServiceProvider.getIfAvailable();
+    }
+protected volatile boolean connected = false;
     protected volatile String connectionStatus = "DISCONNECTED";
     protected volatile String lastError;
     protected volatile long lastConnectTime;
@@ -80,12 +89,11 @@ public abstract class BaseCollector implements ProtocolCollector,
     // 处理结果
     protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
     private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
+    private final CollectorValueConverter valueConverter = new CollectorValueConverter();
+    private final CollectorTelemetryMetadataEnricher telemetryMetadataEnricher = new CollectorTelemetryMetadataEnricher();
 
     // 订阅的点位
     protected final Set<String> subscribedPointsSet = ConcurrentHashMap.newKeySet();
-
-    // 数据转换器
-    protected Map<String, DataConverter> dataConverters = new HashMap<>();
 
     // 使用Map存储订阅的点位对象，而不是Set只存ID
     protected final Map<String, DataPoint> subscribedPointMap = new ConcurrentHashMap<>();
@@ -94,15 +102,19 @@ public abstract class BaseCollector implements ProtocolCollector,
     private volatile String subscriptionDegradedReason;
     private volatile int subscriptionFallbackPointCount;
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void init(DeviceInfo deviceInfo) throws CollectorException {
         this.deviceInfo = deviceInfo;
-        // 初始化数据转换器
-        initDataConverters();
 
         log.info("采集器初始化完成: {} [{}]", deviceInfo.getDeviceName(), getCollectorType());
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void connect() throws CollectorException {
         if (isConnected()) {
@@ -134,6 +146,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     @Override
     public void disconnect() throws CollectorException {
         if (!isConnected()) {
@@ -150,7 +165,7 @@ public abstract class BaseCollector implements ProtocolCollector,
                 unsubscribe(new ArrayList<>());
             } catch (Exception e) {
                 unsubscribeFailure = e;
-                log.warn("unsubscribe before disconnect failed, device={}", deviceInfo.getDeviceId(), e);
+                log.warn("断开前取消订阅失败, 设备={}", deviceInfo.getDeviceId(), e);
             }
 
             // 执行实际断开逻辑
@@ -176,6 +191,9 @@ public abstract class BaseCollector implements ProtocolCollector,
             throw new CollectorException("设备断开失败", deviceInfo.getDeviceId(), null, DataQuality.DEVICE_ERROR);
         }
     }
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
@@ -183,20 +201,20 @@ public abstract class BaseCollector implements ProtocolCollector,
 
         long startTime = System.currentTimeMillis();
         try {
-            log.debug("Read point {}.{}", deviceInfo.getDeviceId(), point.getPointName());
+            log.debug("读取 点位 {}.{}", deviceInfo.getDeviceId(), point.getPointName());
 
             Object rawValue = doReadPoint(point);
             Object processedValue = convertData(point, rawValue);
 
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", deviceInfo.getDeviceId());
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
             enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
             invocationProcessResults.set(Map.of(point.getPointId(), processResult.snapshot()));
 
             if (!processResult.isSuccess()) {
-                log.warn("Data quality check failed {}.{}, reason: {}",
+                log.warn("数据质量检查失败 {}.{}, 原因:{}",
                         deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
             }
 
@@ -205,7 +223,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             lastActivityTime = System.currentTimeMillis();
 
             Object finalValue = processResult.getFinalValue();
-            log.debug("Point read success {}.{} = {}",
+            log.debug("点位 读取 成功 {}.{} = {}",
                     deviceInfo.getDeviceId(), point.getPointName(), finalValue);
 
             return finalValue;
@@ -213,7 +231,7 @@ public abstract class BaseCollector implements ProtocolCollector,
             invocationProcessResults.remove();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
-            log.error("Point read failed {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            log.error("点位 读取 失败 {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
             recordException(e, point);
             throw new CollectorException("点位读取失败", deviceInfo.getDeviceId(),
                     point.getPointId(), DataQuality.DEVICE_ERROR);
@@ -221,6 +239,9 @@ public abstract class BaseCollector implements ProtocolCollector,
     }
 
 
+/**
+ * 查询并返回业务数据。
+ */
 @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         checkConnection();
@@ -231,7 +252,7 @@ public abstract class BaseCollector implements ProtocolCollector,
         Map<String, ProcessResult> batchProcessResults = new LinkedHashMap<>();
 
         try {
-            log.debug("Batch read points: {}, size: {}", deviceInfo.getDeviceId(), points.size());
+            log.debug("批量 读取 点位:{}, 数量:{}", deviceInfo.getDeviceId(), points.size());
 
             // 1. 提前过滤：移除无效的数据点
             List<DataPoint> validPoints = points.stream()
@@ -264,14 +285,14 @@ public abstract class BaseCollector implements ProtocolCollector,
                     Object processedValue = convertData(point, rawValue);
 
                     ProcessContext context = new ProcessContext();
-                    context.addAttribute("deviceId", deviceInfo.getDeviceId());
+                    context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
                     ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
                     enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
                     batchProcessResults.put(pointId, processResult.snapshot());
 
                     if (!processResult.isSuccess()) {
-                        log.warn("Data quality check failed {}.{}, reason: {}",
+                        log.warn("数据质量检查失败 {}.{}, 原因:{}",
                                 deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
                     }
 
@@ -303,6 +324,9 @@ public abstract class BaseCollector implements ProtocolCollector,
     }
 
 
+/**
+ * 写入或持久化业务数据。
+ */
 @Override
     public boolean writePoint(DataPoint point, Object value) throws CollectorException {
         checkConnection();
@@ -319,7 +343,7 @@ public abstract class BaseCollector implements ProtocolCollector,
 
             // 数据质量检查
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", deviceInfo.getDeviceId());
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, value);
 
             // 如果数据无效，不允许写入
@@ -352,6 +376,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
         checkConnection();
@@ -377,7 +404,7 @@ public abstract class BaseCollector implements ProtocolCollector,
 
                 // 数据质量检查
                 ProcessContext context = new ProcessContext();
-                context.addAttribute("deviceId", deviceInfo.getDeviceId());
+                context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
                 ProcessResult processResult = dataQualityProcessor.process(context, point, value);
 
                 // 如果数据无效，不允许写入
@@ -417,6 +444,9 @@ public abstract class BaseCollector implements ProtocolCollector,
     }
 
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public void subscribe(List<DataPoint> points) throws CollectorException {
         checkConnection();
@@ -437,7 +467,7 @@ public abstract class BaseCollector implements ProtocolCollector,
                 actualSubscriptionMode = SubscriptionRuntimeMode.POLLING;
                 subscriptionDegradedReason = exception.getMessage();
                 subscriptionFallbackPointCount = points.size();
-                log.warn("设备订阅已降级为轮询: deviceId={}, pointCount={}, reason={}",
+                log.warn("设备订阅已降级为轮询: 设备={}, 点位数量={}, 原因={}",
                         deviceInfo.getDeviceId(), points.size(), exception.getMessage());
                 return;
             }
@@ -462,6 +492,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     @Override
     public void unsubscribe(List<DataPoint> points) throws CollectorException {
         if (!isConnected()) {
@@ -513,20 +546,20 @@ public abstract class BaseCollector implements ProtocolCollector,
     public Map<String, Object> getDeviceStatus() throws CollectorException {
         try {
             Map<String, Object> status = new HashMap<>();
-            status.put("deviceId", deviceInfo.getDeviceId());
+            status.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             status.put("deviceName", deviceInfo.getDeviceName());
-            status.put("connected", connected);
-            status.put("connectionStatus", connectionStatus);
+            status.put(CommonMapKeys.CONNECTED, connected);
+            status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
             status.put("lastConnectTime", lastConnectTime);
-            status.put("lastActivityTime", lastActivityTime);
-            status.put("subscribedPoints", subscribedPointMap.size());
+            status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+            status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
             status.put("requestedSubscriptionMode", requestedSubscriptionMode.name());
             status.put("actualSubscriptionMode", actualSubscriptionMode.name());
             status.put("subscriptionDegradedReason", subscriptionDegradedReason);
             status.put("subscriptionFallbackPointCount", subscriptionFallbackPointCount);
-            status.put("totalReadCount", totalReadCount.get());
-            status.put("totalWriteCount", totalWriteCount.get());
-            status.put("totalErrorCount", totalErrorCount.get());
+            status.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+            status.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+            status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
 
             // 获取设备特定状态
             Map<String, Object> deviceSpecificStatus = doGetDeviceStatus();
@@ -542,6 +575,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     public Object executeCommand(String command, Map<String, Object> params) throws CollectorException {
         checkConnection();
@@ -587,9 +623,9 @@ public abstract class BaseCollector implements ProtocolCollector,
     @Override
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalReadCount", totalReadCount.get());
-        stats.put("totalWriteCount", totalWriteCount.get());
-        stats.put("totalErrorCount", totalErrorCount.get());
+        stats.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+        stats.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+        stats.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
         stats.put("totalBytesRead", totalBytesRead.get());
         stats.put("totalBytesWrite", totalBytesWrite.get());
 
@@ -600,13 +636,16 @@ public abstract class BaseCollector implements ProtocolCollector,
 
         stats.put("averageReadTime", avgReadTime);
         stats.put("averageWriteTime", avgWriteTime);
-        stats.put("lastActivityTime", lastActivityTime);
+        stats.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
         stats.put("connectionDuration", connected ? System.currentTimeMillis() - lastConnectTime : 0);
-        stats.put("subscribedPoints", subscribedPointMap.size());
+        stats.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
 
         return stats;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public void resetStatistics() {
         totalReadCount.set(0);
@@ -618,6 +657,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         totalWriteTime.set(0);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void destroy() {
         try {
@@ -627,6 +669,9 @@ public abstract class BaseCollector implements ProtocolCollector,
             log.error("采集器销毁失败: {}", deviceInfo.getDeviceId(), e);
         }
     }
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void rebuildReadPlans(String deviceId, List<DataPoint> points){
         try {
@@ -639,16 +684,49 @@ public abstract class BaseCollector implements ProtocolCollector,
 
     // =============== 抽象方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doConnect() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doDisconnect() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Object doReadPoint(DataPoint point) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doWritePoint(DataPoint point, Object value) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doSubscribe(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doUnsubscribe(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Map<String, Object> doGetDeviceStatus() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Object doExecuteCommand(int unitId,String command, Map<String, Object> params) throws Exception;
+    /**
+     * 创建并返回业务对象。
+     */
     protected abstract void buildReadPlans(String deviceId, List<DataPoint> points) throws Exception;
 
     // =============== 辅助方法 ===============
@@ -663,151 +741,24 @@ public abstract class BaseCollector implements ProtocolCollector,
     }
 
     /**
-     * 初始化数据转换器
-     */
-    protected void initDataConverters() {
-        // 注册默认的数据转换器
-        dataConverters.put("default", new DefaultDataConverter());
-        dataConverters.put("scale", new ScaleDataConverter());
-        dataConverters.put("boolean", new BooleanDataConverter());
-    }
-
-    /**
      * 数据转换
      */
     protected Object convertData(DataPoint point, Object rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-
-        // 应用缩放因子和偏移量
-        Double scaledValue = point.getActualValue(convertToDouble(rawValue));
-
-        // 应用数据转换器
-        DataConverter converter = dataConverters.get(point.getDataType());
-        if (converter != null) {
-            return converter.convert(scaledValue, point);
-        }
-
-        return scaledValue;
+        return valueConverter.convertData(point, rawValue);
     }
 
     /**
      * 写入数据转换
      */
     protected Object convertDataForWrite(DataPoint point, Object value) {
-        if (value == null) {
-            return null;
-        }
-
-        // 反向应用缩放因子和偏移量
-        Double rawValue = convertToDouble(value);
-        if (point.getScalingFactor() != null && point.getScalingFactor() != 0) {
-            rawValue = rawValue / point.getScalingFactor();
-        }
-        if (point.getOffset() != null) {
-            rawValue = rawValue - point.getOffset();
-        }
-
-        return rawValue;
+        return valueConverter.convertDataForWrite(point, value);
     }
 
     /**
      * 数据验证
      */
     protected void validateData(DataPoint point, Object value) {
-        if (value == null) {
-            return;
-        }
-
-        if (value instanceof Number) {
-            double doubleValue = ((Number) value).doubleValue();
-
-            // 检查值范围
-            if (!point.isValueValid(doubleValue)) {
-                /*throw new IllegalArgumentException(
-                        String.format("点位值超出范围: %s, 值: %f, 范围: [%f, %f]",
-                                point.getPointName(), doubleValue,
-                                point.getMinValue(), point.getMaxValue()));*/
-                log.warn(String.format("点位值超出范围: %s, 值: %f, 范围: [%f, %f]",point.getPointName(), doubleValue,point.getMinValue(), point.getMaxValue()));
-            }
-        }
-    }
-
-    /**
-     * 转换为Double
-     */
-    private Double convertToDouble(Object value) {
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
-        } else if (value instanceof String) {
-            try {
-                return Double.parseDouble((String) value);
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("无法转换为数字: " + value);
-            }
-        } else if (value instanceof Boolean) {
-            return ((Boolean) value) ? 1.0 : 0.0;
-        } else {
-            throw new IllegalArgumentException("不支持的数据类型: " + value.getClass().getName());
-        }
-    }
-
-    // =============== 数据转换器接口和实现 ===============
-
-    /**
-     * 数据转换器接口
-     */
-    protected interface DataConverter {
-        Object convert(Object value, DataPoint point);
-    }
-
-    /**
-     * 默认数据转换器
-     */
-    protected class DefaultDataConverter implements DataConverter {
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            return value;
-        }
-    }
-
-    /**
-     * 缩放数据转换器
-     */
-    protected class ScaleDataConverter implements DataConverter {
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            if (value instanceof Number) {
-                double scaledValue = ((Number) value).doubleValue();
-
-                // 应用精度（小数位数）
-                if (point.getPrecision() != null) {
-                    double factor = Math.pow(10, point.getPrecision());
-                    scaledValue = Math.round(scaledValue * factor) / factor;
-                }
-
-                return scaledValue;
-            }
-            return value;
-        }
-    }
-
-    /**
-     * 布尔数据转换器
-     */
-    protected class BooleanDataConverter implements DataConverter {
-        @Override
-        public Object convert(Object value, DataPoint point) {
-            if (value instanceof Number) {
-                double numValue = ((Number) value).doubleValue();
-                return numValue != 0;
-            } else if (value instanceof String) {
-                String strValue = ((String) value).toLowerCase();
-                return "true".equals(strValue) || "1".equals(strValue) || "on".equals(strValue);
-            }
-            return value;
-        }
+        valueConverter.validateData(point, value);
     }
     
     public ProcessResult getLatestProcessResult(String pointId) {
@@ -825,6 +776,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         return snapshot == null ? Map.of() : snapshot;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
         if (point == null) {
             return null;
@@ -840,13 +794,13 @@ public abstract class BaseCollector implements ProtocolCollector,
             Object processedValue = convertData(point, rawValue);
 
             ProcessContext context = new ProcessContext();
-            context.addAttribute("deviceId", resolvedDeviceId);
+            context.addAttribute(CommonMapKeys.DEVICE_ID, resolvedDeviceId);
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
             enrichTelemetryMetadata(processResult, rawValue, processedValue, collectTime, "PUSH");
             lastProcessResults.put(point.getPointId(), processResult);
 
             if (!processResult.isSuccess()) {
-                log.warn("Pushed data quality check failed {}.{}, reason: {}",
+                log.warn("推送数据质量检查失败 {}.{}, 原因:{}",
                         resolvedDeviceId, point.getPointName(), processResult.getMessage());
             }
 
@@ -872,39 +826,27 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void enrichTelemetryMetadata(ProcessResult result,
                                            Object rawValue,
                                            Object processedValue,
                                            long collectTime,
                                            String source) {
-        if (result == null) {
-            return;
-        }
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.RAW_VALUE, rawValue);
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.PROCESSED_VALUE, processedValue);
-        if (collectTime > 0) {
-            putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.COLLECT_TIME, collectTime);
-        }
-        putProcessMetadataIfAbsent(result, ProcessResultMetadataKeys.SOURCE, source);
-    }
-
-    private void putProcessMetadataIfAbsent(ProcessResult result, String key, Object value) {
-        if (result.getMetadata() == null || key == null || value == null) {
-            return;
-        }
-        result.getMetadata().putIfAbsent(key, value);
+        telemetryMetadataEnricher.enrich(result, rawValue, processedValue, collectTime, source);
     }
 
     /**
-     * Hook for exception monitoring.
+     * 异常监控扩展钩子。
      */
     protected void recordException(Throwable throwable, DataPoint point) {
-        if (exceptionMonitorService == null) {
+        if (exceptionReporter == null) {
             return;
         }
         String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
         String pointId = point != null ? point.getPointId() : null;
-        exceptionMonitorService.record(throwable, deviceId, pointId);
+        exceptionReporter.record(throwable, deviceId, pointId);
     }
 
     protected DeviceContext getDeviceContextSnapshot() {
@@ -924,6 +866,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         return context != null ? context.getConnectionConfig() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected SubscriptionFallbackStrategy resolveSubscriptionFallbackStrategy() {
         DeviceConnection connection = getCurrentConnectionConfig();
         String configuredStrategy = connection != null
@@ -932,6 +877,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         return SubscriptionFallbackStrategy.fromValue(configuredStrategy);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     protected DeviceConnection requireConnectionConfig() {
         DeviceConnection connection = getConnectionConfigSnapshot();
         if (connection == null) {
@@ -941,6 +889,9 @@ public abstract class BaseCollector implements ProtocolCollector,
         return connection;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveIntParameter(Object value, int defaultValue, String name) {
         if (value == null) {
             return defaultValue;

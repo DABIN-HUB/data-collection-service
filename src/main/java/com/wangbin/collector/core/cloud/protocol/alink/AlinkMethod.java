@@ -28,23 +28,38 @@ public enum AlinkMethod {
     private final String method;
     private final boolean upstream;
 
+    /**
+     * 创建当前组件实例。
+     */
     AlinkMethod(String method, boolean upstream) {
         this.method = method;
         this.upstream = upstream;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String method() {
         return method;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean upstream() {
         return upstream;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String path() {
         return method.replace('.', '/');
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Optional<AlinkMethod> fromMethod(String method) {
         if (method == null || method.isBlank()) {
             return Optional.empty();
@@ -54,6 +69,9 @@ public enum AlinkMethod {
                 .findFirst();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Optional<AlinkMethod> fromPath(String path) {
         if (path == null || path.isBlank()) {
             return Optional.empty();

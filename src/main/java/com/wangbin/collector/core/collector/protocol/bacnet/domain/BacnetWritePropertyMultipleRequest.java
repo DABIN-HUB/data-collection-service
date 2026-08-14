@@ -6,6 +6,9 @@ import lombok.Value;
 
 import java.util.List;
 
+/**
+ * 承载当前模块的数据传输内容。
+ */
 @Value
 @Builder
 public class BacnetWritePropertyMultipleRequest {
@@ -15,6 +18,9 @@ public class BacnetWritePropertyMultipleRequest {
     int invokeId;
     int remoteDeviceInstance;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Value
     @Builder
     public static class WriteAccessSpec {
@@ -24,6 +30,9 @@ public class BacnetWritePropertyMultipleRequest {
         List<PropertyValueSpec> propertyValues;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Value
     @Builder
     public static class PropertyValueSpec {

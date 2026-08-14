@@ -16,6 +16,9 @@ public record ConfigLoadResult(
         long loadedAt,
         String errorMessage) {
 
+    /**
+     * 构造标准业务结果。
+     */
     public static ConfigLoadResult success(ConfigSnapshot snapshot) {
         String version = snapshot == null ? null
                 : Integer.toUnsignedString(snapshot.hashCode(), 16);
@@ -23,11 +26,17 @@ public record ConfigLoadResult(
                 System.currentTimeMillis(), null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static ConfigLoadResult notModified(String sourceVersion) {
         return new ConfigLoadResult(ConfigLoadStatus.NOT_MODIFIED, null, sourceVersion,
                 System.currentTimeMillis(), null);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static ConfigLoadResult failed(String errorMessage) {
         return new ConfigLoadResult(ConfigLoadStatus.FAILED, null, null,
                 System.currentTimeMillis(), errorMessage);

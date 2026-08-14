@@ -1,18 +1,20 @@
 package com.wangbin.collector.core.cache.aspect;
 
-import com.wangbin.collector.storage.service.HistoryDataService;
+import com.wangbin.collector.core.port.HistoryTelemetrySink;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.RejectedExecutionException;
+
 @Component
 @Order(30)
 @RequiredArgsConstructor
-@ConditionalOnBean(HistoryDataService.class)
+@ConditionalOnBean(HistoryTelemetrySink.class)
 class HistoryTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
-    private final HistoryDataService historyDataService;
+    private final HistoryTelemetrySink historyTelemetrySink;
 
     @Override
     public TelemetryStageType type() {
@@ -26,7 +28,7 @@ class HistoryTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     @Override
     public boolean enabled(TelemetryPostProcessContext context) {
-        return historyDataService.isEnabled()
+        return historyTelemetrySink.isEnabled()
                 && context.point() != null
                 && context.point().isEnabled()
                 && context.processResult() != null
@@ -35,6 +37,12 @@ class HistoryTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     @Override
     public void process(TelemetryPostProcessContext context) {
-        historyDataService.savePoint(context.deviceId(), context.point(), context.processResult());
+        historyTelemetrySink.savePoint(context.deviceId(), context.point(), context.processResult());
+    }
+
+    @Override
+    public boolean onRejected(TelemetryPostProcessContext context, RejectedExecutionException exception) {
+        return historyTelemetrySink.deferPoint(
+                context.deviceId(), context.point(), context.processResult(), exception);
     }
 }

@@ -12,10 +12,16 @@ public class JSerialCommSerialChannel implements SerialChannel {
     private final SerialEndpoint endpoint;
     private volatile SerialPort serialPort;
 
+    /**
+     * 创建当前组件实例。
+     */
     public JSerialCommSerialChannel(SerialEndpoint endpoint) {
         this.endpoint = endpoint;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void open() {
         if (isOpen()) {
@@ -39,6 +45,9 @@ public class JSerialCommSerialChannel implements SerialChannel {
         return port != null && port.isOpen();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public synchronized void write(byte[] data) {
         ensureOpen();
@@ -51,6 +60,9 @@ public class JSerialCommSerialChannel implements SerialChannel {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public synchronized int read(byte[] buffer, int offset, int length, long timeoutMs) {
         ensureOpen();
@@ -68,6 +80,9 @@ public class JSerialCommSerialChannel implements SerialChannel {
         return count;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public synchronized void close() {
         SerialPort port = serialPort;
@@ -78,10 +93,16 @@ public class JSerialCommSerialChannel implements SerialChannel {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveStopBits() {
         return endpoint.stopBits() == 2 ? SerialPort.TWO_STOP_BITS : SerialPort.ONE_STOP_BIT;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveParity() {
         return switch (endpoint.parity()) {
             case "EVEN" -> SerialPort.EVEN_PARITY;
@@ -90,6 +111,9 @@ public class JSerialCommSerialChannel implements SerialChannel {
         };
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureOpen() {
         if (!isOpen()) {
             throw new IllegalStateException("串口尚未打开: " + endpoint.portName());

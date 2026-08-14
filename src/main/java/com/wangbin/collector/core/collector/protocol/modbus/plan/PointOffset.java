@@ -3,6 +3,9 @@ package com.wangbin.collector.core.collector.protocol.modbus.plan;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 @AllArgsConstructor
 public class PointOffset {

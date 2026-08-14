@@ -31,6 +31,9 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetMstpClient implements AutoCloseable {
 
@@ -46,6 +49,9 @@ public class BacnetMstpClient implements AutoCloseable {
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetMstpClient(BacnetMstpTokenManager tokenManager, int remoteMacAddress) {
         this.tokenManager = tokenManager;
         this.remoteMacAddress = remoteMacAddress;
@@ -56,6 +62,9 @@ public class BacnetMstpClient implements AutoCloseable {
         this.covNotificationHandler = handler;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request,
                                                    long timeoutMs,
                                                    long segmentTimeoutMs,
@@ -65,6 +74,9 @@ public class BacnetMstpClient implements AutoCloseable {
                 frame -> BacnetReadPropertyResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                    long timeoutMs,
                                                                    long segmentTimeoutMs,
@@ -74,6 +86,9 @@ public class BacnetMstpClient implements AutoCloseable {
                 frame -> BacnetReadPropertyMultipleResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writeProperty(BacnetWritePropertyRequest request, long timeoutMs, int retries) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetWritePropertyCodec.encode(request));
         exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
@@ -84,6 +99,9 @@ public class BacnetMstpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs, int retries) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetWritePropertyMultipleCodec.encode(request));
         exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
@@ -94,6 +112,9 @@ public class BacnetMstpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs, int retries) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetSubscribeCovCodec.encode(request));
         exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
@@ -104,6 +125,9 @@ public class BacnetMstpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs, int retries) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetSubscribeCovPropertyCodec.encode(request));
         exchangeConfirmed(npdu, timeoutMs, timeoutMs, retries, frame -> {
@@ -114,6 +138,9 @@ public class BacnetMstpClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         byte[] npdu = BacnetTransportFrameSupport.unwrapBvlc(BacnetConfirmedCovNotificationCodec.encodeAck(invokeId));
         tokenManager.sendUnconfirmed(remoteMacAddress, npdu, 1000);
@@ -125,11 +152,17 @@ public class BacnetMstpClient implements AutoCloseable {
     public long getCovNotificationCount() { return covNotificationCount.get(); }
     public long getSegmentedResponseCount() { return segmentedResponseCount.get(); }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         tokenManager.setIncomingFrameHandler(null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T exchangeConfirmed(byte[] requestNpdu,
                                     long timeoutMs,
                                     long segmentTimeoutMs,
@@ -176,13 +209,16 @@ public class BacnetMstpClient implements AutoCloseable {
             requestTimeoutCount.incrementAndGet();
             if (attempt < attempts) {
                 requestRetryCount.incrementAndGet();
-                log.debug("Retry BACnet MS/TP request after timeout, remoteMac={}, attempt={}/{}",
+                log.debug("BACnet MS/TP 请求超时后重试, 远端MAC={}, 重试次数={}/{}",
                         remoteMacAddress, attempt + 1, attempts);
             }
         }
         throw lastFailure;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private byte[] collectSegmentedComplexAck(BacnetMstpFrame firstFrame, int segmentTimeoutMs) throws Exception {
         com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSegmentAssembler assembler =
                 new com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetSegmentAssembler();
@@ -201,6 +237,9 @@ public class BacnetMstpClient implements AutoCloseable {
                         true));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleIncomingFrame(BacnetMstpFrame frame) {
         if (frame == null || !frame.frameType().isDataFrame()) {
             return;
@@ -223,10 +262,13 @@ public class BacnetMstpClient implements AutoCloseable {
                     },
                     covNotificationHandler);
         } catch (Exception ex) {
-            log.warn("Decode BACnet MS/TP COV notification failed, remoteMac={}", remoteMacAddress, ex);
+            log.warn("解码 BACnet MS/TP COV 通知 失败, 远端MAC={}", remoteMacAddress, ex);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveTimeout(long timeoutMs) {
         if (timeoutMs <= 0) {
             return 5000;
@@ -237,8 +279,14 @@ public class BacnetMstpClient implements AutoCloseable {
         return (int) timeoutMs;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface FrameDecoder<T> {
+        /**
+         * 解析或转换业务数据。
+         */
         T decode(byte[] frame) throws Exception;
     }
 }

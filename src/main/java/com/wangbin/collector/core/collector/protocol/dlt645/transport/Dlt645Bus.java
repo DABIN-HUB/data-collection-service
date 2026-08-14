@@ -25,6 +25,9 @@ public class Dlt645Bus {
     private final int wakeUpByteCount;
     private final int interFrameDelayMs;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Dlt645Bus(SharedSerialChannelManager.Lease lease,
                      int timeoutMs,
                      int retryCount,
@@ -37,11 +40,17 @@ public class Dlt645Bus {
         this.interFrameDelayMs = Math.max(0, interFrameDelayMs);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public byte[] readData(Dlt645Address address, String identifier) throws Exception {
         byte[] dataIdentifier = Dlt645DataCodec.encodeDataIdentifier(identifier);
         return lease.execute(channel -> readDataLocked(channel, address, dataIdentifier));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public boolean writeData(Dlt645Address address,
                              String identifier,
                              byte[] password,
@@ -61,6 +70,9 @@ public class Dlt645Bus {
         return true;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Dlt645Address readAddress() throws Exception {
         Dlt645Frame response = lease.execute(channel -> exchange(channel,
                 new Dlt645Frame(Dlt645Address.BROADCAST,
@@ -73,6 +85,9 @@ public class Dlt645Bus {
         return lease.isOpen();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] readDataLocked(SerialChannel channel,
                                   Dlt645Address address,
                                   byte[] identifier) throws Exception {
@@ -102,6 +117,9 @@ public class Dlt645Bus {
         return payload.toByteArray();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Dlt645Frame exchange(SerialChannel channel, Dlt645Frame request) throws Exception {
         Exception lastFailure = null;
         for (int attempt = 0; attempt <= retryCount; attempt++) {
@@ -118,6 +136,9 @@ public class Dlt645Bus {
         throw new Dlt645ProtocolException("DL/T 645 请求失败，已达到最大重试次数", lastFailure);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateResponse(Dlt645Frame response,
                                   Dlt645Address expectedAddress,
                                   Dlt645ControlCode expectedCode) throws Dlt645ProtocolException {
@@ -137,6 +158,9 @@ public class Dlt645Bus {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateIdentifier(byte[] responseData, byte[] identifier) throws Dlt645ProtocolException {
         if (responseData.length < 4 || !Arrays.equals(identifier, Arrays.copyOf(responseData, 4))) {
             throw new Dlt645ProtocolException("DL/T 645 响应数据标识不匹配");

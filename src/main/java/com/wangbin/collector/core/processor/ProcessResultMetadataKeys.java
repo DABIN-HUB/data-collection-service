@@ -1,7 +1,7 @@
 package com.wangbin.collector.core.processor;
 
 /**
- * Metadata keys shared by collectors and downstream persistence builders.
+ * Metadata keys 共享 by 采集器 and 下游 persistence builders.
  */
 public final class ProcessResultMetadataKeys {
 
@@ -15,6 +15,9 @@ public final class ProcessResultMetadataKeys {
     public static final String GROUP_ID = "groupId";
     public static final String PROCESSING_VERSION = "processingVersion";
 
+    /**
+     * 创建当前组件实例。
+     */
     private ProcessResultMetadataKeys() {
     }
 }

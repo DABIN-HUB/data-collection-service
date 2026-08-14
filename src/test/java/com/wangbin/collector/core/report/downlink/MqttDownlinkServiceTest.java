@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
-import com.wangbin.collector.core.cloud.model.CloudDeviceType;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceType;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.cloud.service.CloudDeviceIdentityService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -36,7 +36,7 @@ class MqttDownlinkServiceTest {
         ConfigSyncService configSyncService = mock(ConfigSyncService.class);
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
-        ShadowManager shadowManager = new ShadowManager(reportProperties);
+        ShadowManager shadowManager = new ShadowManager(reportProperties, null, null, null);
         MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
                 shadowManager);
 
@@ -70,7 +70,7 @@ class MqttDownlinkServiceTest {
         ConfigSyncService configSyncService = mock(ConfigSyncService.class);
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
-        ShadowManager shadowManager = new ShadowManager(reportProperties);
+        ShadowManager shadowManager = new ShadowManager(reportProperties, null, null, null);
         MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
                 shadowManager);
 
@@ -100,7 +100,7 @@ class MqttDownlinkServiceTest {
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
         reportProperties.getMqtt().getServiceCommandMappings().put("reset", "restart");
-        ShadowManager shadowManager = new ShadowManager(reportProperties);
+        ShadowManager shadowManager = new ShadowManager(reportProperties, null, null, null);
         MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
                 shadowManager);
 
@@ -130,7 +130,7 @@ class MqttDownlinkServiceTest {
         ConfigSyncService configSyncService = mock(ConfigSyncService.class);
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
-        ShadowManager shadowManager = new ShadowManager(reportProperties);
+        ShadowManager shadowManager = new ShadowManager(reportProperties, null, null, null);
         MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
                 shadowManager);
 
@@ -157,7 +157,7 @@ class MqttDownlinkServiceTest {
         ConfigSyncService configSyncService = mock(ConfigSyncService.class);
         CollectionManager collectionManager = mock(CollectionManager.class);
         ReportProperties reportProperties = new ReportProperties();
-        ShadowManager shadowManager = new ShadowManager(reportProperties);
+        ShadowManager shadowManager = new ShadowManager(reportProperties, null, null, null);
         MqttDownlinkService service = service(configManager, configSyncService, collectionManager, reportProperties,
                 shadowManager);
 
@@ -201,7 +201,11 @@ class MqttDownlinkServiceTest {
                 reportProperties,
                 collectionManager,
                 shadowManager,
-                new CloudDeviceIdentityService(configManager));
+                new CloudDeviceIdentityService(configManager),
+                null,
+                null,
+                null,
+                null);
     }
 
     private DataPoint point(String pointId, String pointCode, String readWrite) {

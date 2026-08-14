@@ -159,7 +159,7 @@ public class DeviceConnection {
                 return (T) map;
             }
         } catch (Exception ignore) {
-            // ignore conversion
+            // 忽略兼容字段转换失败。
         }
         return defaultValue;
     }
@@ -261,18 +261,30 @@ public class DeviceConnection {
                 || hasText(getStringConfig("opcDaBridgeUrl", null));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasUrlOrHostPort() {
         return hasText(url) || hasHostPort();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasHostPort() {
         return hasHost() && port != null && port > 0;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasHost() {
         return hasText(host);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeConnectionType(String type) {
         String normalized = type.toUpperCase().replace("-", "_");
         return switch (normalized) {
@@ -302,6 +314,9 @@ public class DeviceConnection {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -311,14 +326,23 @@ public class DeviceConnection {
                 && (System.currentTimeMillis() - lastHeartbeatTime.getTime()) < 120000;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void updateHeartbeat() {
         lastHeartbeatTime = new Date();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void updateDataTime() {
         lastDataTime = new Date();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void calculateDuration() {
         if (connectTime != null) {
             Date endTime = disconnectTime != null ? disconnectTime : new Date();
@@ -326,6 +350,9 @@ public class DeviceConnection {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class ConnectionStats {
         private Long totalBytesSent = 0L;
@@ -337,22 +364,37 @@ public class DeviceConnection {
         private Double maxResponseTime;
         private Date lastResponseTime;
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void addBytesSent(long bytes) {
             totalBytesSent += bytes;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void addBytesReceived(long bytes) {
             totalBytesReceived += bytes;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void addMessageSent() {
             totalMessagesSent++;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void addMessageReceived() {
             totalMessagesReceived++;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public void addError() {
             totalErrors++;
         }
@@ -374,6 +416,9 @@ public class DeviceConnection {
         private static final TypeReference<LinkedHashMap<String, Object>> TYPE =
                 new TypeReference<LinkedHashMap<String, Object>>() {};
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public Map<String, Object> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
@@ -394,11 +439,17 @@ public class DeviceConnection {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     public static class StringStringMapDeserializer extends JsonDeserializer<Map<String, String>> {
         private static final ObjectMapper MAPPER = new ObjectMapper();
         private static final TypeReference<LinkedHashMap<String, String>> TYPE =
                 new TypeReference<LinkedHashMap<String, String>>() {};
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public Map<String, String> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);

@@ -1,7 +1,10 @@
 package com.wangbin.collector.core.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -11,6 +14,7 @@ import java.util.Map;
  */
 @Data
 @Component
+@Validated
 @ConfigurationProperties(prefix = "collector")
 public class CollectorProperties {
 
@@ -64,8 +68,17 @@ public class CollectorProperties {
      */
     private AdaptiveCollectionConfig adaptiveCollection = new AdaptiveCollectionConfig();
 
+    /**
+     * 配置加载配置。
+     */
+    @Valid
+    private ConfigConfig config = new ConfigConfig();
+
     // =============== 配置类定义 ===============
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class SnmpConfig {
         private String community = "public";
@@ -84,6 +97,9 @@ public class CollectorProperties {
         private String contextEngineId;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class OpcUaConfig {
         private String securityPolicy = "None";
@@ -93,6 +109,9 @@ public class CollectorProperties {
         private Map<String, String> endpoints;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class MqttConfig {
         private String brokerUrl = "tcp://localhost:1883";
@@ -115,6 +134,9 @@ public class CollectorProperties {
         private int maxConcurrentConnects = 1;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class ModbusConfig {
         private int timeout = 3000;
@@ -123,6 +145,9 @@ public class CollectorProperties {
         private Map<String, String> connections;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class CoapConfig {
         private int timeout = 3000;
@@ -131,6 +156,9 @@ public class CollectorProperties {
         private Map<String, String> servers;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class Iec104Config {
         private int timeout = 5000;
@@ -144,6 +172,9 @@ public class CollectorProperties {
         private Map<String, String> stations;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class Iec61850Config {
         private int timeout = 5000;
@@ -152,6 +183,9 @@ public class CollectorProperties {
         private Map<String, String> servers;
     }
 
+    /**
+     * 装配当前模块的配置。
+     */
     @Data
     public static class CommonConfig {
         private int heartbeatInterval = 30000;
@@ -179,6 +213,18 @@ public class CollectorProperties {
         private int reconnectExecutorSize = 4;
         private long reconnectBaseDelayMs = 1000;
         private long reconnectMaxDelayMs = 30000;
+        /**
+         * 每个时间片期望承载的批量采集任务数量，用于根据真实批任务负载计算分片数。
+         */
+        private int targetTasksPerTimeSlice = 8;
+        /**
+         * 每个时间片期望承载的点位数量，用于避免少量大批次设备形成瞬时突发。
+         */
+        private int targetPointsPerTimeSlice = 1000;
+        /**
+         * due 扫描间隔，只控制已经分片的任务多久重新检查一次到期状态，不改变业务采集周期。
+         */
+        private int dueScanIntervalMs = 500;
     }
 
     /**
@@ -188,5 +234,36 @@ public class CollectorProperties {
     public static class AdaptiveCollectionConfig {
         private boolean enabled = true;
         private long adjustWindowMs = 60000;
+    }
+
+    /**
+     * 配置加载与同步配置。
+     */
+    @Data
+    public static class ConfigConfig {
+        private String yunUrl = "http://localhost:8080/admin-api";
+
+        @Min(1000)
+        private long syncInterval = 30000;
+
+        @Min(1000)
+        private long syncInitialDelay = 30000;
+
+        private String serviceId = "collector-1";
+        private String tenantId = "1";
+        private String apiToken = "";
+
+        @Valid
+        private FileConfig file = new FileConfig();
+    }
+
+    /**
+     * 本地文件配置加载路径。
+     */
+    @Data
+    public static class FileConfig {
+        private String devices = "";
+        private String pointsDir = "";
+        private String connectionsDir = "";
     }
 }

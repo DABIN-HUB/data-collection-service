@@ -109,6 +109,9 @@ public class ConnectionMetrics {
     }
 
     // 重置指标
+    /**
+     * 记录或统计业务状态。
+     */
     public void reset() {
         bytesSent = 0;
         bytesReceived = 0;

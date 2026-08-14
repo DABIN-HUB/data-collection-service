@@ -63,6 +63,9 @@ public enum ResultCode {
     private final int code;
     private final String message;
 
+    /**
+     * 创建当前组件实例。
+     */
     ResultCode(int code, String message) {
         this.code = code;
         this.message = message;

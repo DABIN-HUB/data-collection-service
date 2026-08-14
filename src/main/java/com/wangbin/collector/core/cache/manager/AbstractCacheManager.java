@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.cache.manager;
 
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
+
 import com.wangbin.collector.core.cache.model.CacheData;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import lombok.extern.slf4j.Slf4j;
@@ -30,11 +32,17 @@ public abstract class AbstractCacheManager implements CacheManager {
     // 缓存统计锁
     protected final Object statsLock = new Object();
 
+    /**
+     * 创建当前组件实例。
+     */
     public AbstractCacheManager(String cacheType, int cacheLevel) {
         this.cacheType = cacheType;
         this.cacheLevel = cacheLevel;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void init() {
         if (initialized) {
@@ -52,6 +60,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void destroy() {
         if (!initialized) {
@@ -67,11 +78,17 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value) {
         return put(key, value, key.getExpireTime());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean put(CacheKey key, T value, long expireTime) {
         checkInitialized();
@@ -106,6 +123,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> boolean putAll(Map<CacheKey, T> dataMap) {
         checkInitialized();
@@ -135,6 +155,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key) {
         checkInitialized();
@@ -169,6 +192,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public <T> T get(CacheKey key, Class<T> type) {
         T value = get(key);
@@ -233,6 +259,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         return result;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean delete(CacheKey key) {
         checkInitialized();
@@ -265,6 +294,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteAll(List<CacheKey> keys) {
         checkInitialized();
@@ -294,6 +326,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public boolean deleteByPattern(String pattern) {
         checkInitialized();
@@ -321,11 +356,14 @@ public abstract class AbstractCacheManager implements CacheManager {
         } finally {
             long cost = System.currentTimeMillis() - startTime;
             if (cost > 1000) {
-                log.warn("模式删除缓存耗时过长: {}ms, pattern: {}", cost, pattern);
+                log.warn("模式删除缓存耗时过长: {}ms, 模式={}", cost, pattern);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean exists(CacheKey key) {
         checkInitialized();
@@ -343,6 +381,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean expire(CacheKey key, long expireTime) {
         checkInitialized();
@@ -357,7 +398,7 @@ public abstract class AbstractCacheManager implements CacheManager {
 
             if (success) {
                 totalExpires.incrementAndGet();
-                log.debug("缓存过期时间设置成功: {}, expireTime={}", key, expireTime);
+                log.debug("缓存过期时间设置成功: {}, 过期时间={}", key, expireTime);
             } else {
                 log.debug("缓存过期时间设置失败: {}", key);
             }
@@ -392,6 +433,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     @Override
     public void clear() {
         checkInitialized();
@@ -411,6 +455,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public long size() {
         checkInitialized();
@@ -424,6 +471,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys() {
         checkInitialized();
@@ -437,6 +487,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Set<CacheKey> keys(String pattern) {
         checkInitialized();
@@ -459,16 +512,16 @@ public abstract class AbstractCacheManager implements CacheManager {
         synchronized (statsLock) {
             Map<String, Object> stats = new HashMap<>();
 
-            stats.put("cacheType", cacheType);
-            stats.put("cacheLevel", cacheLevel);
-            stats.put("initialized", initialized);
-            stats.put("totalPuts", totalPuts.get());
-            stats.put("totalGets", totalGets.get());
-            stats.put("totalHits", totalHits.get());
-            stats.put("totalMisses", totalMisses.get());
-            stats.put("totalDeletes", totalDeletes.get());
-            stats.put("totalExpires", totalExpires.get());
-            stats.put("totalErrors", totalErrors.get());
+            stats.put(CacheMetricKeys.CACHE_TYPE, cacheType);
+            stats.put(CacheMetricKeys.CACHE_LEVEL, cacheLevel);
+            stats.put(CacheMetricKeys.INITIALIZED, initialized);
+            stats.put(CacheMetricKeys.TOTAL_PUTS, totalPuts.get());
+            stats.put(CacheMetricKeys.TOTAL_GETS, totalGets.get());
+            stats.put(CacheMetricKeys.TOTAL_HITS, totalHits.get());
+            stats.put(CacheMetricKeys.TOTAL_MISSES, totalMisses.get());
+            stats.put(CacheMetricKeys.TOTAL_DELETES, totalDeletes.get());
+            stats.put(CacheMetricKeys.TOTAL_EXPIRES, totalExpires.get());
+            stats.put(CacheMetricKeys.TOTAL_ERRORS, totalErrors.get());
 
             long totalAccess = totalGets.get();
             double hitRate = totalAccess > 0 ?
@@ -476,9 +529,9 @@ public abstract class AbstractCacheManager implements CacheManager {
             double missRate = totalAccess > 0 ?
                     (double) totalMisses.get() / totalAccess * 100 : 0.0;
 
-            stats.put("hitRate", String.format("%.2f%%", hitRate));
-            stats.put("missRate", String.format("%.2f%%", missRate));
-            stats.put("cacheSize", size());
+            stats.put(CacheMetricKeys.HIT_RATE, String.format("%.2f%%", hitRate));
+            stats.put(CacheMetricKeys.MISS_RATE, String.format("%.2f%%", missRate));
+            stats.put(CacheMetricKeys.CACHE_SIZE, size());
 
             // 添加具体实现的统计信息
             Map<String, Object> implStats = getImplementationStatistics();
@@ -490,6 +543,9 @@ public abstract class AbstractCacheManager implements CacheManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public void resetStatistics() {
         synchronized (statsLock) {
@@ -516,18 +572,57 @@ public abstract class AbstractCacheManager implements CacheManager {
 
     // =============== 抽象方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doInit() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doDestroy() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract <T> boolean doPut(CacheKey key, T value, long expireTime) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract <T> T doGet(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doDelete(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract int doDeleteByPattern(String pattern) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doExists(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract boolean doExpire(CacheKey key, long expireTime) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract long doGetExpire(CacheKey key) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract void doClear() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract long doSize() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Set<CacheKey> doKeys() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
     protected abstract Set<CacheKey> doKeys(String pattern) throws Exception;
 
     /**
@@ -578,17 +673,17 @@ public abstract class AbstractCacheManager implements CacheManager {
         Map<String, Object> stats = getStatistics();
         StringBuilder report = new StringBuilder();
         report.append("=== 缓存统计报告 ===\n");
-        report.append("缓存类型: ").append(stats.get("cacheType")).append("\n");
-        report.append("缓存层级: ").append(stats.get("cacheLevel")).append("\n");
-        report.append("缓存大小: ").append(stats.get("cacheSize")).append("\n");
-        report.append("总写入次数: ").append(stats.get("totalPuts")).append("\n");
-        report.append("总读取次数: ").append(stats.get("totalGets")).append("\n");
-        report.append("命中次数: ").append(stats.get("totalHits")).append("\n");
-        report.append("未命中次数: ").append(stats.get("totalMisses")).append("\n");
-        report.append("命中率: ").append(stats.get("hitRate")).append("\n");
-        report.append("未命中率: ").append(stats.get("missRate")).append("\n");
-        report.append("总删除次数: ").append(stats.get("totalDeletes")).append("\n");
-        report.append("总错误次数: ").append(stats.get("totalErrors")).append("\n");
+        report.append("缓存类型: ").append(stats.get(CacheMetricKeys.CACHE_TYPE)).append("\n");
+        report.append("缓存层级: ").append(stats.get(CacheMetricKeys.CACHE_LEVEL)).append("\n");
+        report.append("缓存大小: ").append(stats.get(CacheMetricKeys.CACHE_SIZE)).append("\n");
+        report.append("总写入次数: ").append(stats.get(CacheMetricKeys.TOTAL_PUTS)).append("\n");
+        report.append("总读取次数: ").append(stats.get(CacheMetricKeys.TOTAL_GETS)).append("\n");
+        report.append("命中次数: ").append(stats.get(CacheMetricKeys.TOTAL_HITS)).append("\n");
+        report.append("未命中次数: ").append(stats.get(CacheMetricKeys.TOTAL_MISSES)).append("\n");
+        report.append("命中率: ").append(stats.get(CacheMetricKeys.HIT_RATE)).append("\n");
+        report.append("未命中率: ").append(stats.get(CacheMetricKeys.MISS_RATE)).append("\n");
+        report.append("总删除次数: ").append(stats.get(CacheMetricKeys.TOTAL_DELETES)).append("\n");
+        report.append("总错误次数: ").append(stats.get(CacheMetricKeys.TOTAL_ERRORS)).append("\n");
         return report.toString();
     }
 }

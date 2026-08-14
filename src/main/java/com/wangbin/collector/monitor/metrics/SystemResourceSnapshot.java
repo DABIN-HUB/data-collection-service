@@ -19,6 +19,8 @@ public class SystemResourceSnapshot {
     private final long heapMax;
     private final long nonHeapUsed;
     private final long nonHeapCommitted;
+    private final long totalPhysicalMemorySize;
+    private final long freePhysicalMemorySize;
 
     private final double processCpuLoad;
     private final double systemCpuLoad;
@@ -34,6 +36,9 @@ public class SystemResourceSnapshot {
     @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     @Builder
     public static class ThreadPoolSnapshot {

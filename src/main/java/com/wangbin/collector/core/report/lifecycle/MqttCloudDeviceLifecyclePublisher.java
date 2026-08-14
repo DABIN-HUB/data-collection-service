@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.report.lifecycle;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 import com.wangbin.collector.core.cloud.protocol.alink.lifecycle.AlinkLifecycleCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.mqttv5.client.IMqttToken;
@@ -17,10 +17,16 @@ public class MqttCloudDeviceLifecyclePublisher {
 
     private final AlinkLifecycleCodec lifecycleCodec;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttCloudDeviceLifecyclePublisher(AlinkLifecycleCodec lifecycleCodec) {
         this.lifecycleCodec = lifecycleCodec;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean publishGatewayOnline(MqttAsyncClient client,
                                         CloudDeviceIdentity gatewayIdentity,
                                         int qos,
@@ -33,6 +39,9 @@ public class MqttCloudDeviceLifecyclePublisher {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean publishGatewayOffline(MqttAsyncClient client,
                                          CloudDeviceIdentity gatewayIdentity,
                                          int qos,
@@ -45,13 +54,16 @@ public class MqttCloudDeviceLifecyclePublisher {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean publish(MqttAsyncClient client,
                             AlinkLifecycleCodec.LifecycleMessage message,
                             int qos,
                             long timeoutMs,
                             String action) {
         if (client == null || !client.isConnected()) {
-            log.warn("跳过 MQTT 生命周期{}上报，客户端未连接：topic={}", action, message.topic());
+            log.warn("跳过 MQTT 生命周期{}上报，客户端未连接：主题={}", action, message.topic());
             return false;
         }
         try {
@@ -60,10 +72,10 @@ public class MqttCloudDeviceLifecyclePublisher {
             mqttMessage.setRetained(false);
             IMqttToken token = client.publish(message.topic(), mqttMessage);
             token.waitForCompletion(Math.max(1000L, timeoutMs));
-            log.info("MQTT 生命周期{}上报完成：topic={}", action, message.topic());
+            log.info("MQTT 生命周期{}上报完成：主题={}", action, message.topic());
             return true;
         } catch (Exception e) {
-            log.warn("MQTT 生命周期{}上报失败：topic={} err={}", action, message.topic(), e.getMessage(), e);
+            log.warn("MQTT 生命周期{}上报失败：主题={} err={}", action, message.topic(), e.getMessage(), e);
             return false;
         }
     }

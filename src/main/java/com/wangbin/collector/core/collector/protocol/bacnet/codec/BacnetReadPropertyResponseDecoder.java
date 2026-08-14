@@ -11,11 +11,20 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetReadPropertyResponseDecoder {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetReadPropertyResponseDecoder() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetReadPropertyResponse decode(byte[] frame, int expectedInvokeId) {
         BacnetFrameHeader header = readFrameHeader(frame);
         ByteBuffer buffer = header.payload();
@@ -30,11 +39,17 @@ public final class BacnetReadPropertyResponseDecoder {
         };
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetFrameHeader readFrameHeader(byte[] frame) {
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         return readFrameHeader(buffer);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static BacnetFrameHeader readFrameHeader(ByteBuffer buffer) {
         int actualFrameLength = buffer.limit();
         int bvlcType = Byte.toUnsignedInt(buffer.get());
@@ -68,6 +83,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return new BacnetFrameHeader(buffer, pduHeader, pduType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetReadPropertyResponse decodeComplexAck(ByteBuffer buffer, int pduHeader, int expectedInvokeId) {
         boolean segmented = (pduHeader & 0x08) != 0;
         boolean moreFollows = (pduHeader & 0x04) != 0;
@@ -128,6 +146,9 @@ public final class BacnetReadPropertyResponseDecoder {
                 .build();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static PrimitiveValue readAnyPrimitiveValue(ByteBuffer buffer) {
         BacnetTagReader.TagHeader tag = BacnetTagReader.readTag(buffer);
         if (tag.contextSpecific() || tag.openingTag() || tag.closingTag()) {
@@ -137,6 +158,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return new PrimitiveValue(value.getValue(), value.getValueType());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     static IllegalStateException decodeError(ByteBuffer buffer) {
         int invokeId = Byte.toUnsignedInt(buffer.get());
         int errorChoice = Byte.toUnsignedInt(buffer.get());
@@ -147,6 +171,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return new IllegalStateException("BACnet Error APDU received: " + detail);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     static IllegalStateException decodeReject(ByteBuffer buffer, int pduHeader) {
         int invokeId = Byte.toUnsignedInt(buffer.get());
         int reason = Byte.toUnsignedInt(buffer.get());
@@ -155,6 +182,9 @@ public final class BacnetReadPropertyResponseDecoder {
                 + Integer.toHexString(pduHeader));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     static IllegalStateException decodeAbort(ByteBuffer buffer, int pduHeader) {
         boolean server = (pduHeader & 0x01) != 0;
         int invokeId = Byte.toUnsignedInt(buffer.get());
@@ -163,6 +193,9 @@ public final class BacnetReadPropertyResponseDecoder {
                 + invokeId + ", server=" + server + ", reason=" + abortReasonName(reason));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void skipNpduAddresses(ByteBuffer buffer, int control) {
         boolean destinationSpecified = (control & 0x20) != 0;
         boolean sourceSpecified = (control & 0x08) != 0;
@@ -189,6 +222,9 @@ public final class BacnetReadPropertyResponseDecoder {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     static void requireContextTag(BacnetTagReader.TagHeader tag, int expectedContext) {
         if (!tag.contextSpecific() || tag.openingTag() || tag.closingTag() || tag.tagNumber() != expectedContext) {
             throw new IllegalArgumentException("Unexpected BACnet context tag: expected=" + expectedContext
@@ -196,6 +232,9 @@ public final class BacnetReadPropertyResponseDecoder {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static int readUnsigned(ByteBuffer buffer, int length) {
         int value = 0;
         for (int i = 0; i < length; i++) {
@@ -204,6 +243,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static long readUnsigned(byte[] payload) {
         long value = 0;
         for (byte item : payload) {
@@ -212,6 +254,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static long readSigned(byte[] payload) {
         long value = 0;
         for (byte item : payload) {
@@ -226,6 +271,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return value;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static String readCharacterStringPayload(byte[] payload) {
         if (payload.length == 0) {
             return "";
@@ -251,6 +299,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return new String(bytes, charset);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static boolean[] readBitStringPayload(byte[] payload) {
         if (payload.length == 0) {
             return new boolean[0];
@@ -265,6 +316,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return bits;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static String readObjectIdentifier(byte[] payload) {
         if (payload.length != 4) {
             throw new IllegalArgumentException("BACnet objectIdentifier payload length must be 4");
@@ -275,6 +329,9 @@ public final class BacnetReadPropertyResponseDecoder {
         return objectType.getName() + ":" + instance;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String rejectReasonName(int reason) {
         return switch (reason) {
             case 0 -> "other";
@@ -291,6 +348,9 @@ public final class BacnetReadPropertyResponseDecoder {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String abortReasonName(int reason) {
         return switch (reason) {
             case 0 -> "other";
@@ -309,9 +369,15 @@ public final class BacnetReadPropertyResponseDecoder {
         };
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     static record PrimitiveValue(Object value, String type) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     static record BacnetFrameHeader(ByteBuffer payload, int pduHeader, int pduType) {
     }
 }

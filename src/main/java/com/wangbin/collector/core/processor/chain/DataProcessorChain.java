@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor.chain;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.processor.DataProcessor;
 import com.wangbin.collector.core.processor.ProcessContext;
@@ -196,7 +198,7 @@ public class DataProcessorChain {
 
                     // 检查处理结果
                     if (!nodeResult.isSuccess() && !nodeResult.isSkipped()) {
-                        log.warn("处理器执行失败: processor={}, point={}, error={}",
+                        log.warn("处理器执行失败: 处理器={}, 点位={}, 错误={}",
                                 processor.getName(), point.getPointName(), nodeResult.getError());
 
                         if (!continueOnError) {
@@ -240,7 +242,7 @@ public class DataProcessorChain {
 
         } catch (Exception e) {
             failedExecutions.incrementAndGet();
-            log.error("处理器链执行异常: {}, point={}", name, point.getPointName(), e);
+            log.error("处理器链执行异常: {}, 点位={}", name, point.getPointName(), e);
             return ProcessResult.error(rawValue, "处理器链执行异常: " + e.getMessage());
 
         } finally {
@@ -284,7 +286,7 @@ public class DataProcessorChain {
         // 重新排序
         nodes.sort(Comparator.comparingInt(ProcessorNode::getPriority));
 
-        log.debug("添加处理器节点: chain={}, node={}, priority={}",
+        log.debug("添加处理器节点: 处理链={}, node={}, priority={}",
                 name, node.getProcessorName(), node.getPriority());
     }
 
@@ -294,7 +296,7 @@ public class DataProcessorChain {
     public boolean removeNode(String processorName) {
         boolean removed = nodes.removeIf(node -> processorName.equals(node.getProcessorName()));
         if (removed) {
-            log.debug("删除处理器节点: chain={}, node={}", name, processorName);
+            log.debug("删除处理器节点: 处理链={}, node={}", name, processorName);
         }
         return removed;
     }
@@ -306,7 +308,7 @@ public class DataProcessorChain {
         for (ProcessorNode node : nodes) {
             if (processorName.equals(node.getProcessorName())) {
                 node.setEnabled(enabled);
-                log.debug("设置处理器节点状态: chain={}, node={}, enabled={}",
+                log.debug("设置处理器节点状态: 处理链={}, node={}, enabled={}",
                         name, processorName, enabled);
                 break;
             }
@@ -345,9 +347,9 @@ public class DataProcessorChain {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        stats.put("name", name);
-        stats.put("description", description);
-        stats.put("enabled", enabled);
+        stats.put(CommonMapKeys.NAME, name);
+        stats.put(CommonMapKeys.DESCRIPTION, description);
+        stats.put(CommonMapKeys.ENABLED, enabled);
         stats.put("running", running);
         stats.put("continueOnError", continueOnError);
         stats.put("nodeCount", getNodeCount());
@@ -355,7 +357,7 @@ public class DataProcessorChain {
         stats.put("totalExecutions", totalExecutions.get());
         stats.put("successfulExecutions", successfulExecutions.get());
         stats.put("failedExecutions", failedExecutions.get());
-        stats.put("successRate", getSuccessRate());
+        stats.put(CommonMapKeys.SUCCESS_RATE, getSuccessRate());
         stats.put("totalExecutionTime", totalExecutionTime.get());
         stats.put("averageExecutionTime", getAverageExecutionTime());
         stats.put("currentConcurrency", currentConcurrency.get());
@@ -368,7 +370,7 @@ public class DataProcessorChain {
             nodeInfo.put("processorName", node.getProcessorName());
             nodeInfo.put("alias", node.getAlias());
             nodeInfo.put("priority", node.getPriority());
-            nodeInfo.put("enabled", node.isEnabled());
+            nodeInfo.put(CommonMapKeys.ENABLED, node.isEnabled());
             nodeStats.add(nodeInfo);
         }
         stats.put("nodes", nodeStats);

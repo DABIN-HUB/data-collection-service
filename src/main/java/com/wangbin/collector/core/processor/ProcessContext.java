@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import lombok.Data;
 
@@ -39,10 +41,16 @@ public class ProcessContext {
     // 处理选项
     private Map<String, Object> options = new HashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessContext() {
         this.processTime = System.currentTimeMillis();
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public ProcessContext(DeviceInfo deviceInfo, long collectTime) {
         this();
         this.deviceInfo = deviceInfo;
@@ -140,7 +148,7 @@ public class ProcessContext {
      */
     public static ProcessContext simpleContext(String deviceId) {
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceId);
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         return context;
     }
 

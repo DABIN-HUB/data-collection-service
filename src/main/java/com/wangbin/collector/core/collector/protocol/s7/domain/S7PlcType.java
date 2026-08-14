@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum S7PlcType implements CodecBackedPlcType<S7ValueCodec> {
     BOOL(S7ValueCodec.BOOL, "BOOLEAN"),
     SINT(S7ValueCodec.INT8_SIGNED, "INT8"),
@@ -33,6 +36,9 @@ public enum S7PlcType implements CodecBackedPlcType<S7ValueCodec> {
     private final S7ValueCodec codec;
     private final String[] aliases;
 
+    /**
+     * 创建当前组件实例。
+     */
     S7PlcType(S7ValueCodec codec, String... aliases) {
         this.codec = codec;
         this.aliases = aliases;
@@ -42,10 +48,16 @@ public enum S7PlcType implements CodecBackedPlcType<S7ValueCodec> {
         return codec;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public String toTypeExpression() {
         return name();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static S7PlcType fromText(String text) {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("S7 PLC type cannot be empty");
@@ -58,6 +70,9 @@ public enum S7PlcType implements CodecBackedPlcType<S7ValueCodec> {
         throw new IllegalArgumentException("Unsupported S7 PLC type: " + text);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static Map<String, S7PlcType> buildLookup() {
         Map<String, S7PlcType> lookup = new LinkedHashMap<>();
         for (S7PlcType type : values()) {
@@ -69,6 +84,9 @@ public enum S7PlcType implements CodecBackedPlcType<S7ValueCodec> {
         return lookup;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalize(String text) {
         String normalized = text.trim().toUpperCase(Locale.ROOT);
         if (normalized.startsWith("STRING(")) {

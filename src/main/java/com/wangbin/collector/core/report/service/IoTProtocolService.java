@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import com.wangbin.collector.core.report.adapter.*;
 import com.wangbin.collector.core.report.model.ReportData;
@@ -81,22 +83,28 @@ public class IoTProtocolService {
         return message;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildStateUpdateMessage(ReportData data) {
         StateMessage stateMessage = new StateMessage();
         Map<String, Object> state = new HashMap<>();
         state.put(MessageConstant.FIELD_VERSION, MessageConstant.MESSAGE_VERSION_1_0);
-        state.put("status", data.getValue());
-        state.put("timestamp", data.getTimestamp());
+        state.put(CommonMapKeys.STATUS, data.getValue());
+        state.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
         stateMessage.setState(state);
         return stateMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildEventMessage(ReportData data) {
         EventMessage eventMessage = new EventMessage();
         eventMessage.setEventCode(data.getPointCode());
         Map<String, Object> eventData = new HashMap<>();
-        eventData.put("value", data.getValue());
-        eventData.put("timestamp", data.getTimestamp());
+        eventData.put(CommonMapKeys.VALUE, data.getValue());
+        eventData.put(CommonMapKeys.TIMESTAMP, data.getTimestamp());
         if (data.getMetadata() != null) {
             eventData.putAll(data.getMetadata());
         }
@@ -104,6 +112,9 @@ public class IoTProtocolService {
         return eventMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildOtaProgressMessage(ReportData data) {
         IoTMessage otaMessage = new IoTMessage();
         otaMessage.setMethod(MessageConstant.MESSAGE_TYPE_OTA_PROGRESS);
@@ -114,6 +125,9 @@ public class IoTProtocolService {
         return otaMessage;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private IoTMessage buildPropertyMessage(ReportData data) {
         PropertyMessage propertyMessage = new PropertyMessage();
         Map<String, Object> propertyParams = new HashMap<>();
@@ -218,6 +232,9 @@ public class IoTProtocolService {
         return batchConvert(dataMap, authInfo, MessageConstant.MESSAGE_TYPE_PROPERTY_POST);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String generateMessageId() {
         return System.currentTimeMillis() + "_" + (int)(Math.random() * 1000);
     }

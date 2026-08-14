@@ -37,6 +37,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class BacnetScClient implements AutoCloseable {
 
@@ -59,6 +62,9 @@ public class BacnetScClient implements AutoCloseable {
 
     private volatile Consumer<BacnetCovNotification> covNotificationHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetScClient(BacnetScConnectionAdapter connectionAdapter) {
         this.connectionAdapter = connectionAdapter;
         this.receiverThread = new Thread(this::receiveLoop, "bacnet-sc-client-" + connectionAdapter.getDeviceId());
@@ -70,6 +76,9 @@ public class BacnetScClient implements AutoCloseable {
         this.covNotificationHandler = handler;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request,
                                                    long timeoutMs,
                                                    long segmentTimeoutMs,
@@ -81,6 +90,9 @@ public class BacnetScClient implements AutoCloseable {
                 frame -> BacnetReadPropertyResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                                    long timeoutMs,
                                                                    long segmentTimeoutMs,
@@ -92,6 +104,9 @@ public class BacnetScClient implements AutoCloseable {
                 frame -> BacnetReadPropertyMultipleResponseDecoder.decode(frame, request.getInvokeId()));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writeProperty(BacnetWritePropertyRequest request, long timeoutMs, int retries) throws Exception {
         exchange(BacnetWritePropertyCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
@@ -101,6 +116,9 @@ public class BacnetScClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs, int retries) throws Exception {
         exchange(BacnetWritePropertyMultipleCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
@@ -110,6 +128,9 @@ public class BacnetScClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs, int retries) throws Exception {
         exchange(BacnetSubscribeCovCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
@@ -119,6 +140,9 @@ public class BacnetScClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs, int retries) throws Exception {
         exchange(BacnetSubscribeCovPropertyCodec.encode(request), timeoutMs, timeoutMs, retries, frame -> {
             BacnetSimpleAckDecoder.verify(frame,
@@ -128,6 +152,9 @@ public class BacnetScClient implements AutoCloseable {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
         connectionAdapter.send(BacnetConfirmedCovNotificationCodec.encodeAck(invokeId));
     }
@@ -138,28 +165,43 @@ public class BacnetScClient implements AutoCloseable {
     public long getCovNotificationCount() { return covNotificationCount.get(); }
     public long getSegmentedResponseCount() { return segmentedResponseCount.get(); }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         running.set(false);
         receiverThread.interrupt();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T exchange(byte[] requestFrame,
                            long timeoutMs,
                            long segmentTimeoutMs,
                            int retries,
                            FrameDecoder<T> decoder) throws Exception {
         return requestSession.execute(new BacnetRequestSession.RequestExchange<>() {
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void beforeAttempt() {
                 responseQueue.clear();
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void sendRequest() throws Exception {
                 connectionAdapter.send(requestFrame);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public byte[] pollResponse(long timeout, TimeUnit unit, int resolvedSegmentTimeoutMs) throws Exception {
                 byte[] response = responseQueue.poll(timeout, unit);
@@ -178,18 +220,27 @@ public class BacnetScClient implements AutoCloseable {
                                         invokeId, sequenceNumber, proposedWindowSize)));
             }
 
+            /**
+             * 解析或转换业务数据。
+             */
             @Override
             public T decode(byte[] response) throws Exception {
                 return decoder.decode(response);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public String timeoutMessage(int resolvedTimeoutMs) {
-                return "BACnet/SC receive timed out after " + resolvedTimeoutMs + "ms";
+                return "BACnet/SC 接收超时，耗时毫秒=" + resolvedTimeoutMs;
             }
-        }, timeoutMs, segmentTimeoutMs, retries, "BACnet/SC request deviceId=" + connectionAdapter.getDeviceId());
+        }, timeoutMs, segmentTimeoutMs, retries, "BACnet/SC 请求设备=" + connectionAdapter.getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void receiveLoop() {
         while (running.get()) {
             try {
@@ -200,13 +251,16 @@ public class BacnetScClient implements AutoCloseable {
                 dispatchIncoming(data);
             } catch (Exception ex) {
                 if (running.get() && connectionAdapter.isConnected()) {
-                    log.warn("BACnet/SC receive loop stopped unexpectedly, deviceId={}",
+                    log.warn("BACnet/SC 接收循环 异常停止, 设备={}",
                             connectionAdapter.getDeviceId(), ex);
                 }
             }
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void dispatchIncoming(byte[] frame) {
         if (BacnetCovNotificationDecoder.isUnconfirmedCovNotification(frame)
                 || BacnetCovNotificationDecoder.isConfirmedCovNotification(frame)) {
@@ -219,10 +273,13 @@ public class BacnetScClient implements AutoCloseable {
         responseQueue.offer(frame);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleCovNotification(byte[] frame) {
         clientSupport.handleCovNotification(
                 frame,
-                "deviceId=" + connectionAdapter.getDeviceId(),
+                "设备=" + connectionAdapter.getDeviceId(),
                 invokeId -> {
                     try {
                         acknowledgeConfirmedCovNotification(invokeId);
@@ -260,8 +317,14 @@ public class BacnetScClient implements AutoCloseable {
             return false;
         }
     }
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     private interface FrameDecoder<T> {
+        /**
+         * 解析或转换业务数据。
+         */
         T decode(byte[] frame) throws Exception;
     }
 }

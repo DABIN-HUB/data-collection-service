@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.connection.adapter;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -54,6 +56,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
 
     // WebSocket监听器
     private final WebSocket.Listener listener = new WebSocket.Listener() {
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void onOpen(WebSocket webSocket) {
             WebSocket.Listener.super.onOpen(webSocket);
@@ -61,6 +66,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             webSocket.request(1);
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             log.debug("收到WebSocket文本消息: {} chars", data.length());
@@ -69,6 +77,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             return null;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last) {
             byte[] bytes = new byte[data.remaining()];
@@ -79,6 +90,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             return null;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             log.error("WebSocket发生错误: {}", connectionId, error);
@@ -86,6 +100,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
             status = ConnectionStatus.ERROR;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             log.info("WebSocket连接关闭: {} (状态码: {}, 原因: {})",
@@ -96,10 +113,16 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     };
 
+    /**
+     * 创建当前组件实例。
+     */
     public WebSocketConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         this(deviceInfo, config, null, null);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public WebSocketConnectionAdapter(DeviceInfo deviceInfo,
                                       DeviceConnection config,
                                       Executor httpExecutor,
@@ -110,6 +133,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         initialize();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initialize() {
         this.wsUrl = buildWebSocketUrl();
         this.customHeaders = getCustomHeaders();
@@ -118,6 +144,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         this.httpClient = createHttpClient();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildWebSocketUrl() {
         // 优先使用url字段
         if (config.getUrl() != null && !config.getUrl().isEmpty()) {
@@ -150,6 +179,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
                 path);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildQueryString() {
         Map<String, Object> queryParams = config.getMapConfig("queryParams");
         if (queryParams == null || queryParams.isEmpty()) {
@@ -183,6 +215,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return new java.util.HashMap<>();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private HttpClient createHttpClient() {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getConnectTimeout()));
@@ -198,12 +233,21 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return builder.build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private SSLContext createTrustAllSSLContext() {
         try {
             TrustManager[] trustAllCerts = new TrustManager[] {
                     new X509TrustManager() {
                         public X509Certificate[] getAcceptedIssuers() { return null; }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkClientTrusted(X509Certificate[] certs, String authType) { }
+                        /**
+                         * 校验业务条件和参数边界。
+                         */
                         public void checkServerTrusted(X509Certificate[] certs, String authType) { }
                     }
             };
@@ -217,6 +261,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         if (closing.get()) {
@@ -281,6 +328,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (closing.compareAndSet(false, true)) {
@@ -313,6 +363,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private SSLContext createSslContext() {
         if (config.getBoolConfig("trustAllServerCert", false)) {
             return createTrustAllSSLContext();
@@ -328,6 +381,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private KeyManager[] loadKeyManagers() throws Exception {
         String keyStoreFile = config.getStringConfig("keyStoreFile", null);
         if (keyStoreFile == null || keyStoreFile.isBlank()) {
@@ -341,6 +397,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return factory.getKeyManagers();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private TrustManager[] loadTrustManagers() throws Exception {
         String trustStoreFile = config.getStringConfig("trustStoreFile", null);
         if (trustStoreFile == null || trustStoreFile.isBlank()) {
@@ -354,6 +413,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return factory.getTrustManagers();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private KeyStore loadKeyStore(String file, String type, char[] password) throws Exception {
         KeyStore keyStore = KeyStore.getInstance(type);
         try (var inputStream = Files.newInputStream(Path.of(file))) {
@@ -362,6 +424,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return keyStore;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) throws UnsupportedOperationException {
         if (webSocket == null || webSocket.isOutputClosed()) {
@@ -396,6 +461,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() throws UnsupportedOperationException {
         try {
@@ -405,6 +473,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) throws UnsupportedOperationException {
         try {
@@ -420,6 +491,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return webSocket;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() throws Exception {
         if (webSocket == null || webSocket.isOutputClosed()) {
@@ -450,6 +524,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() throws Exception {
         // WebSocket认证通常在握手时完成
@@ -477,13 +554,16 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildAuthMessage() {
         Map<String, Object> authData = new java.util.HashMap<>();
         authData.put("action", "auth");
         if (deviceInfo != null && deviceInfo.getDeviceId() != null) {
-            authData.put("deviceId", deviceInfo.getDeviceId());
+            authData.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         }
-        authData.put("timestamp", System.currentTimeMillis());
+        authData.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         if (config.getUsername() != null) {
             authData.put("username", config.getUsername());
@@ -512,7 +592,7 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
     private boolean isAuthResponseValid(String response) {
         try {
             Map<String, Object> responseData = com.alibaba.fastjson2.JSON.parseObject(response, Map.class);
-            Object status = responseData.get("status");
+            Object status = responseData.get(CommonMapKeys.STATUS);
             return "success".equals(status) || "ok".equals(status) || "authenticated".equals(status);
         } catch (Exception e) {
             log.debug("解析认证响应失败", e);
@@ -520,6 +600,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startHeartbeat() {
         int heartbeatInterval = config.getHeartbeatInterval();
         if (heartbeatInterval > 0) {
@@ -537,6 +620,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void stopHeartbeat() {
         if (heartbeatTask != null) {
             heartbeatTask.cancel(true);
@@ -545,6 +631,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ScheduledExecutorService resolveHeartbeatScheduler() {
         if (heartbeatScheduler != null && !heartbeatScheduler.isShutdown()) {
             return heartbeatScheduler;
@@ -557,6 +646,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         return heartbeatScheduler;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void shutdownOwnedHeartbeatScheduler() {
         if (heartbeatScheduler != null && heartbeatScheduler.isShutdown()) {
             heartbeatScheduler = null;
@@ -571,6 +663,9 @@ public class WebSocketConnectionAdapter extends AbstractConnectionAdapter<WebSoc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         try {

@@ -30,11 +30,17 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
     private EventLoopGroup workerGroup;
     private TcpClientHandler clientHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public TcpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
         initialize();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initialize() {
         this.workerGroup = new NioEventLoopGroup();
         this.clientHandler = new TcpClientHandler(this);
@@ -46,6 +52,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout())
                 .handler(new ChannelInitializer<SocketChannel>() {
+                    /**
+                     * 处理组件生命周期。
+                     */
                     @Override
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline pipeline = ch.pipeline();
@@ -73,6 +82,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
                 });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         ChannelFuture future = bootstrap.connect(config.getHost(), config.getPort()).sync();
@@ -94,6 +106,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         log.info("TCP连接建立成功: {}:{}", config.getHost(), config.getPort());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (channel != null && channel.isActive()) {
@@ -106,6 +121,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) throws UnsupportedOperationException {
         try {
@@ -126,6 +144,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() throws UnsupportedOperationException {
         try {
@@ -135,6 +156,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) throws UnsupportedOperationException {
         try {
@@ -144,6 +168,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() throws Exception {
         // TCP心跳通常是一个特定的心跳包
@@ -151,6 +178,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         doSend(heartbeatData);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() throws Exception {
         // TCP认证通常是发送认证消息
@@ -206,16 +236,25 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
         private final BlockingQueue<byte[]> receiveQueue;
         private byte[] lastReceivedData;
 
+        /**
+         * 创建当前组件实例。
+         */
         public TcpClientHandler(TcpConnectionAdapter adapter) {
             this.adapter = adapter;
             this.receiveQueue = new LinkedBlockingQueue<>();
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
             log.debug("TCP通道激活: {}", adapter.getConnectionId());
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void channelInactive(ChannelHandlerContext ctx) {
             log.debug("TCP通道关闭: {}", adapter.getConnectionId());
@@ -223,6 +262,9 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
             adapter.status = ConnectionStatus.DISCONNECTED;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             if (msg instanceof byte[]) {
@@ -234,12 +276,18 @@ public class TcpConnectionAdapter extends AbstractConnectionAdapter<Channel> {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
             log.error("TCP连接异常: {}", adapter.getConnectionId(), cause);
             ctx.close();
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
             // 处理空闲事件

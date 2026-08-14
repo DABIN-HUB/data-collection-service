@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Protocol metadata APIs used by the visual admin console.
+ * 为可视化控制台提供协议元数据接口。
  */
 @RestController
 @RequestMapping("/api/protocols")
@@ -23,6 +23,9 @@ public class ProtocolController {
 
     private final ProtocolSchemaService protocolSchemaService;
 
+    /**
+     * 查询并返回业务数据。
+     */
     @GetMapping
     public ApiResult<List<ProtocolSchema>> listProtocols() {
         return ApiResult.success(protocolSchemaService.getAllSchemas());

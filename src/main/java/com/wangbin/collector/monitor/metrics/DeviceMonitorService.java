@@ -66,6 +66,9 @@ public class DeviceMonitorService {
                 .build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private DeviceConnectionSnapshot buildSnapshot(ConnectionAdapter connection) {
         ConnectionMetrics metrics = connection.getMetrics();
         long idleTime = metrics != null ? metrics.getIdleTime() : 0;
@@ -85,6 +88,9 @@ public class DeviceMonitorService {
                 .build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private DeviceConnectionSnapshot buildMissingSnapshot(String deviceId) {
         return DeviceConnectionSnapshot.builder()
                 .deviceId(deviceId)
@@ -101,11 +107,17 @@ public class DeviceMonitorService {
                 .build();
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static class HealthCounter {
         private int healthy;
         private int warning;
         private int danger;
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void accept(DeviceConnectionSnapshot snapshot) {
             if (snapshot.isConnected() && snapshot.getErrors() == 0) {
                 healthy++;
@@ -120,6 +132,9 @@ public class DeviceMonitorService {
             warning++;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void combine(HealthCounter other) {
             this.healthy += other.healthy;
             this.warning += other.warning;
