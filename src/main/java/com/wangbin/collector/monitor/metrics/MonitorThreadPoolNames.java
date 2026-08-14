@@ -13,10 +13,13 @@ public final class MonitorThreadPoolNames {
             "batchDispatcherExecutor",
             "asyncCollectorExecutor",
             "dataProcessorExecutor",
+            "deviceStartExecutor",
+            "deviceReconnectExecutor",
             "cacheAsyncExecutor",
             "reportExecutor",
             TelemetryExecutorNames.CACHE_STAGE,
             TelemetryExecutorNames.STREAM_STAGE,
+            TelemetryExecutorNames.STREAM_WRITE,
             TelemetryExecutorNames.HISTORY_STAGE,
             TelemetryExecutorNames.REPORT_STAGE,
             "timeSliceScheduler",
@@ -25,6 +28,9 @@ public final class MonitorThreadPoolNames {
             "ioIntensiveExecutor",
             "cpuIntensiveExecutor");
 
+    /**
+     * 创建当前组件实例。
+     */
     private MonitorThreadPoolNames() {
     }
 }

@@ -1,8 +1,10 @@
 package com.wangbin.collector.storage.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.monitor.alert.AlertNotification;
+import com.wangbin.collector.common.domain.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
 import com.wangbin.collector.storage.repository.DataRepository;
@@ -19,6 +21,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
@@ -34,6 +39,9 @@ public class AlarmHistoryService {
     private final AtomicBoolean schemaReady = new AtomicBoolean(false);
     private final Map<String, Boolean> ensuredTables = new ConcurrentHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     public AlarmHistoryService(AlarmRepository alarmRepository,
                                DataRepository dataRepository,
                                TdengineProperties properties,
@@ -46,6 +54,9 @@ public class AlarmHistoryService {
         this.executor = executor;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void saveAsync(AlertNotification notification) {
         if (!shouldSave(notification)) {
             return;
@@ -55,16 +66,19 @@ public class AlarmHistoryService {
                 try {
                     save(notification);
                 } catch (Exception e) {
-                    log.error("save alarm history failed, device={}, point={}",
+                    log.error("save 告警 历史 失败, 设备={}, 点位={}",
                             notification.getDeviceId(), notification.getPointId(), e);
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.warn("alarm history write rejected, device={}, point={}, reason={}",
+            log.warn("告警 历史 写入 被拒绝, 设备={}, 点位={}, 原因={}",
                     notification.getDeviceId(), notification.getPointId(), e.getMessage());
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public void save(AlertNotification notification) {
         if (!shouldSave(notification)) {
             return;
@@ -104,6 +118,9 @@ public class AlarmHistoryService {
         );
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public List<Map<String, Object>> queryAlarmHistory(String deviceId,
                                                        String pointId,
                                                        String pointCode,
@@ -165,10 +182,41 @@ public class AlarmHistoryService {
         rows.forEach(this::addCompatibilityKeys);
         return rows;
     }
+
+    /**
+     * 记录或统计业务状态。
+     */
+    public long countRecentAlarmHistory(String deviceId,
+                                        String pointId,
+                                        String pointCode,
+                                        String level,
+                                        String ruleId,
+                                        Long startTs,
+                                        Long endTs) {
+        if (!properties.isEnabled()) {
+            return 0L;
+        }
+        ensureSchema();
+        return alarmRepository.countRecentAlarmHistory(
+                sanitizeIdentifier(properties.getDatabase()),
+                sanitizeIdentifier(properties.getAlarmSuperTable()),
+                blankToNull(deviceId),
+                blankToNull(pointId),
+                blankToNull(pointCode),
+                blankToNull(level),
+                blankToNull(ruleId),
+                startTs,
+                endTs
+        );
+    }
+
     public boolean isEnabled() {
         return properties.isEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldSave(AlertNotification notification) {
         return properties.isEnabled()
                 && notification != null
@@ -176,6 +224,9 @@ public class AlarmHistoryService {
                 && !notification.getDeviceId().isBlank();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSchema() {
         if (schemaReady.get() || !properties.isAutoCreate()) {
             return;
@@ -193,16 +244,22 @@ public class AlarmHistoryService {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureAlarmEventTypeColumn(String database, String superTable) {
         Long count = dataRepository.countColumn(database, superTable, ALARM_EVENT_TYPE_COLUMN);
         if (count != null && count > 0) {
             return;
         }
         alarmRepository.addAlarmEventTypeColumn(database, superTable);
-        log.info("TDengine alarm stable upgraded with column {}: {}.{}",
+        log.info("TDengine 告警 超级表 已升级 with 字段 {}:{}.{}",
                 ALARM_EVENT_TYPE_COLUMN, database, superTable);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSubTable(String database,
                                 String superTable,
                                 String subTable,
@@ -216,23 +273,32 @@ public class AlarmHistoryService {
             }
             alarmRepository.createChildTable(database, subTable, superTable, escapeTag(deviceTag));
             ensuredTables.put(subTable, true);
-            log.info("TDengine alarm child table ready: {}", subTable);
+            log.info("TDengine 告警 子表 ready:{}", subTable);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void addCompatibilityKeys(Map<String, Object> row) {
         if (row == null || !row.containsKey("alarm_event_type")) {
             return;
         }
         Object value = row.get("alarm_event_type");
-        row.putIfAbsent("eventType", value);
+        row.putIfAbsent(CommonMapKeys.EVENT_TYPE, value);
         row.putIfAbsent("event_type", value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveSubTableName(String deviceId) {
         return sanitizeIdentifier(properties.getAlarmSubTablePrefix()) + sanitizeIdentifier(deviceId);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String sanitizeIdentifier(String raw) {
         if (raw == null || raw.isBlank()) {
             return "unknown";
@@ -244,10 +310,16 @@ public class AlarmHistoryService {
         return value.toLowerCase();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String escapeTag(String value) {
         return value == null ? "" : value.replace("'", "''");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toJson(Object value) {
         if (value == null) {
             return null;
@@ -255,11 +327,14 @@ public class AlarmHistoryService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            log.debug("serialize alarm notification to json failed", e);
+            log.debug("序列化 告警 通知 to json 失败", e);
             return String.valueOf(value);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
     }

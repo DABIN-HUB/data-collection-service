@@ -7,14 +7,23 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetIAmDecoder {
 
     private static final int APDU_TYPE_UNCONFIRMED_REQUEST = 0x01;
     private static final int SERVICE_CHOICE_I_AM = 0x00;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetIAmDecoder() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetRemoteDevice decode(byte[] frame, InetSocketAddress transportSource) {
         InetSocketAddress resolvedSource = BacnetBvlcCodec.resolveMessageSource(frame, transportSource);
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
@@ -55,6 +64,9 @@ public final class BacnetIAmDecoder {
                 .build();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static Integer readUnsignedPrimitive(ByteBuffer buffer, int expectedTypeId) {
         BacnetTagReader.TagHeader tag = BacnetTagReader.readTag(buffer);
         if (tag.contextSpecific() || tag.openingTag() || tag.closingTag() || tag.tagNumber() != expectedTypeId) {
@@ -68,6 +80,9 @@ public final class BacnetIAmDecoder {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String segmentationName(Integer value) {
         if (value == null) {
             return null;

@@ -12,16 +12,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public KnxNetIpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -30,9 +39,12 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X KNXnet/IP connection created: {}", connectionString);
+        log.info("PLC4X KNXnet/IP 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -44,6 +56,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -51,9 +66,12 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // KNXnet/IP access has no separate authentication phase here.
+        // KNXnet/IP access has no separate 认证 phase here.
     }
 
     @Override
@@ -70,6 +88,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = firstNonBlank(
                 config.getString("plc4xConnectionString", null),
@@ -124,6 +145,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveGroupAddressNumLevels() {
         Integer configured = firstNonNull(
                 config.getInt("groupAddressNumLevels", null),
@@ -137,6 +161,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return configured;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Integer configured = firstPositive(
                 config.getInt("requestTimeout", null),
@@ -146,6 +173,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return configured != null ? configured : 10000L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstPositive(Integer... values) {
         if (values == null) {
             return null;
@@ -158,6 +188,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstNonNull(Integer... values) {
         if (values == null) {
             return null;
@@ -170,6 +203,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeKnxConnectionType(String value) {
         if (!hasText(value)) {
             return "LINK_LAYER";
@@ -177,6 +213,9 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return value.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -189,10 +228,16 @@ public class KnxNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConn
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

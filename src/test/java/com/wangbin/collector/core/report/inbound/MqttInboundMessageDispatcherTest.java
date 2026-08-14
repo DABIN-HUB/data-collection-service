@@ -80,7 +80,7 @@ class MqttInboundMessageDispatcherTest {
         private final AtomicInteger count = new AtomicInteger();
 
         private RecordingBusinessReplyService() {
-            super(new ObjectMapper());
+            super(new ObjectMapper(), null);
         }
 
         @Override

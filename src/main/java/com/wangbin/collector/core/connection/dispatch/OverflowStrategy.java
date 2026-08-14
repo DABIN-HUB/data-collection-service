@@ -8,6 +8,9 @@ public enum OverflowStrategy {
     DROP_LATEST,
     DROP_OLDEST;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static OverflowStrategy from(String text) {
         if (text == null || text.isBlank()) {
             return BLOCK;

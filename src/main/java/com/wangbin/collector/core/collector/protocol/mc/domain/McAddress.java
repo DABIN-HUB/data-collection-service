@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.mc.domain;
 
 import lombok.Value;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Value
 public class McAddress {
 
@@ -30,6 +33,9 @@ public class McAddress {
         return driverType != McDriverType.STRING && arraySize > 1;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasBitOffset() {
         return bitIndex != null;
     }

@@ -1,25 +1,32 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Scheduler performance monitor.
+ * 调度器性能监控器。
  */
 @Slf4j
+@Component
 public class PerformanceMonitor {
+    private static final int MAX_PHASE_WHEEL_SAMPLES = 20_000;
+
     final Map<String, DevicePerformance> devicePerformance = new ConcurrentHashMap<>();
     private final AtomicLong totalProcessedPoints = new AtomicLong(0);
     private final AtomicLong totalSuccessfulBatches = new AtomicLong(0);
     private final AtomicLong totalFailedBatches = new AtomicLong(0);
     private final Map<Integer, Long> timeSliceExecutionTimes = new ConcurrentHashMap<>();
+    private final List<Long> timeSliceExecutionSamplesMs = Collections.synchronizedList(new ArrayList<>());
 
     private final AtomicLong peakMemoryUsage = new AtomicLong(0);
     private final AtomicLong cpuUsage = new AtomicLong(0);
@@ -27,9 +34,20 @@ public class PerformanceMonitor {
     private final Map<String, Long> slowestDevices = new ConcurrentHashMap<>();
     private final Map<Integer, Long> overloadedSlices = new ConcurrentHashMap<>();
     private final AtomicBoolean recentTimeSliceTimeout = new AtomicBoolean(false);
+    private final AtomicLong phaseWheelTickCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelCatchUpTickCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelConsecutiveCatchUpCount = new AtomicLong(0);
+    private final AtomicLong phaseWheelMaxScansPer100Ms = new AtomicLong(0);
+    private final AtomicLong lastPhaseWheelTickNanos = new AtomicLong(Long.MIN_VALUE);
+    private final AtomicBoolean previousPhaseWheelTickWasCatchUp = new AtomicBoolean(false);
+    private final List<Long> phaseWheelTickGapSamplesMs = Collections.synchronizedList(new ArrayList<>());
+    private final Map<Long, AtomicLong> phaseWheelScan100MsBuckets = new ConcurrentHashMap<>();
 
     private long lastStatisticsTime = System.currentTimeMillis();
 
+    /**
+     * 处理组件生命周期。
+     */
     void initializeDeviceBatchSize(String deviceId, int initialBatchSize, int maxBatchSize) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -38,14 +56,85 @@ public class PerformanceMonitor {
                 .initializeBatchWindow(initialBatchSize, maxBatchSize);
     }
 
-    void recordTimeSliceExecution(int sliceIndex, long executionTime, AtomicInteger timeSliceInterval) {
+    /**
+     * 记录或统计业务状态。
+     */
+    void recordTimeSliceExecution(int sliceIndex, long executionTime, int timeSliceIntervalMs) {
         timeSliceExecutionTimes.put(sliceIndex, executionTime);
-        if (executionTime > timeSliceInterval.get()) {
+        addBoundedSample(timeSliceExecutionSamplesMs, Math.max(0L, executionTime));
+        if (executionTime > timeSliceIntervalMs) {
             overloadedSlices.put(sliceIndex, executionTime);
             recentTimeSliceTimeout.set(true);
         }
     }
 
+    /**
+     * 记录 phase-wheel 的真实 tick 间隔，用于识别 fixed-rate 补 tick 造成的突发。
+     */
+    void recordPhaseWheelTick(int sliceIndex, long tickNanos, int expectedTickMs) {
+        phaseWheelTickCount.incrementAndGet();
+        long bucket = TimeUnit.NANOSECONDS.toMillis(tickNanos) / 100L;
+        long bucketCount = phaseWheelScan100MsBuckets
+                .computeIfAbsent(bucket, ignored -> new AtomicLong())
+                .incrementAndGet();
+        updateMax(phaseWheelMaxScansPer100Ms, bucketCount);
+
+        long previous = lastPhaseWheelTickNanos.getAndSet(tickNanos);
+        if (previous == Long.MIN_VALUE) {
+            previousPhaseWheelTickWasCatchUp.set(false);
+            return;
+        }
+        long gapNanos = Math.max(0L, tickNanos - previous);
+        addBoundedSample(phaseWheelTickGapSamplesMs, TimeUnit.NANOSECONDS.toMillis(gapNanos));
+        long catchUpThresholdNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1, expectedTickMs)) / 2L;
+        boolean catchUp = gapNanos < catchUpThresholdNanos;
+        if (catchUp) {
+            phaseWheelCatchUpTickCount.incrementAndGet();
+            if (previousPhaseWheelTickWasCatchUp.get()) {
+                phaseWheelConsecutiveCatchUpCount.incrementAndGet();
+            }
+        }
+        previousPhaseWheelTickWasCatchUp.set(catchUp);
+    }
+
+    /**
+     * 重置 phase-wheel 观测窗口，不影响真实调度状态。
+     */
+    public void resetPhaseWheelStats() {
+        phaseWheelTickCount.set(0L);
+        phaseWheelCatchUpTickCount.set(0L);
+        phaseWheelConsecutiveCatchUpCount.set(0L);
+        phaseWheelMaxScansPer100Ms.set(0L);
+        lastPhaseWheelTickNanos.set(Long.MIN_VALUE);
+        previousPhaseWheelTickWasCatchUp.set(false);
+        phaseWheelTickGapSamplesMs.clear();
+        phaseWheelScan100MsBuckets.clear();
+        timeSliceExecutionSamplesMs.clear();
+    }
+
+    public PhaseWheelStatsSnapshot getPhaseWheelStatsSnapshot() {
+        List<Long> gaps = copySorted(phaseWheelTickGapSamplesMs);
+        List<Long> executions = copySorted(timeSliceExecutionSamplesMs);
+        return new PhaseWheelStatsSnapshot(
+                phaseWheelTickCount.get(),
+                phaseWheelCatchUpTickCount.get(),
+                phaseWheelConsecutiveCatchUpCount.get(),
+                phaseWheelMaxScansPer100Ms.get(),
+                percentile(gaps, 0.50D),
+                percentile(gaps, 0.95D),
+                percentile(gaps, 0.99D),
+                gaps.stream().mapToLong(Long::longValue).min().orElse(0L),
+                gaps.stream().mapToLong(Long::longValue).max().orElse(0L),
+                percentile(executions, 0.50D),
+                percentile(executions, 0.95D),
+                percentile(executions, 0.99D),
+                executions.stream().mapToLong(Long::longValue).max().orElse(0L)
+        );
+    }
+
+    /**
+     * 记录或统计业务状态。
+     */
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
         totalProcessedPoints.addAndGet(pointCount);
         totalSuccessfulBatches.incrementAndGet();
@@ -60,6 +149,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordBatchFailure(String deviceId) {
         totalFailedBatches.incrementAndGet();
 
@@ -69,6 +161,9 @@ public class PerformanceMonitor {
         perf.recordFailure();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordDataProcessed(String deviceId) {
         DevicePerformance perf = devicePerformance.get(deviceId);
         if (perf != null) {
@@ -76,6 +171,9 @@ public class PerformanceMonitor {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void adjustBatchSize(String deviceId, int percentChange) {
         DevicePerformance perf = devicePerformance.get(deviceId);
         if (perf != null) {
@@ -83,7 +181,10 @@ public class PerformanceMonitor {
         }
     }
 
-    void logStatistics(AtomicInteger timeSliceInterval) {
+    /**
+     * 执行当前业务逻辑。
+     */
+    void logStatistics(int timeSliceIntervalMs) {
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - lastStatisticsTime;
         lastStatisticsTime = currentTime;
@@ -96,7 +197,7 @@ public class PerformanceMonitor {
         double batchSuccessRate = successfulBatches + failedBatches > 0 ?
                 successfulBatches * 100.0 / (successfulBatches + failedBatches) : 0;
 
-        log.info("performance stats - points={}, pointsPerSecond={}, batchSuccessRate={}%, activeDevices={}",
+        log.info("performance stats - 点位={}, pointsPerSecond={}, batchSuccessRate={}%, activeDevices={}",
                 totalPoints,
                 String.format("%.2f", pointsPerSecond),
                 String.format("%.2f", batchSuccessRate),
@@ -105,7 +206,7 @@ public class PerformanceMonitor {
         StringBuilder sliceInfo = new StringBuilder("time-slice execution: ");
         for (Map.Entry<Integer, Long> entry : timeSliceExecutionTimes.entrySet()) {
             sliceInfo.append(String.format("[%d:%dms]", entry.getKey(), entry.getValue()));
-            if (entry.getValue() > timeSliceInterval.get()) {
+            if (entry.getValue() > timeSliceIntervalMs) {
                 sliceInfo.append("(OVERLOAD)");
             }
             sliceInfo.append(", ");
@@ -119,6 +220,9 @@ public class PerformanceMonitor {
         reportDeviceHealth();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void analyzeBottlenecks() {
         if (!slowestDevices.isEmpty()) {
             List<Map.Entry<String, Long>> sortedSlowest = slowestDevices.entrySet().stream()
@@ -151,12 +255,15 @@ public class PerformanceMonitor {
             peakMemoryUsage.set(currentMemory);
         }
 
-        log.debug("system resources: heapUsed={}MB, peakHeap={}MB, processors={}",
+        log.debug("系统资源快照：堆已用={}MB，峰值堆={}MB，处理器数量={}",
                 currentMemory / (1024 * 1024),
                 peakMemoryUsage.get() / (1024 * 1024),
                 Runtime.getRuntime().availableProcessors());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void reportDeviceHealth() {
         long healthyDevices = 0;
         long warningDevices = 0;
@@ -175,7 +282,7 @@ public class PerformanceMonitor {
             }
 
             if ("HIGH".equals(risk) || healthScore < 50) {
-                log.warn("device {} health degraded: score={}%, risk={}, consecutiveFailures={}",
+                log.warn("设备 {} 健康状态 degraded:score={}%, 风险={}, consecutiveFailures={}",
                         perf.deviceId,
                         String.format("%.1f", healthScore),
                         risk,
@@ -183,7 +290,7 @@ public class PerformanceMonitor {
             }
         }
 
-        log.info("device health summary: healthy={}, warning={}, critical={}", healthyDevices, warningDevices, criticalDevices);
+        log.info("设备 健康状态 summary:健康={}, 警告={}, 严重={}", healthyDevices, warningDevices, criticalDevices);
     }
 
     Map<String, Object> getDevicePerformance(String deviceId) {
@@ -209,6 +316,9 @@ public class PerformanceMonitor {
         return count == 0 ? 0 : sum / count;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     boolean consumeTimeSliceTimeout() {
         return recentTimeSliceTimeout.getAndSet(false);
     }
@@ -229,5 +339,53 @@ public class PerformanceMonitor {
         Map<String, Map<String, Object>> stats = new ConcurrentHashMap<>();
         devicePerformance.forEach((deviceId, perf) -> stats.put(deviceId, perf.getStatistics()));
         return stats;
+    }
+
+    private void addBoundedSample(List<Long> samples, long value) {
+        synchronized (samples) {
+            if (samples.size() >= MAX_PHASE_WHEEL_SAMPLES) {
+                samples.remove(0);
+            }
+            samples.add(value);
+        }
+    }
+
+    private List<Long> copySorted(List<Long> samples) {
+        synchronized (samples) {
+            return samples.stream().sorted(Comparator.naturalOrder()).toList();
+        }
+    }
+
+    private long percentile(List<Long> sortedValues, double percentile) {
+        if (sortedValues == null || sortedValues.isEmpty()) {
+            return 0L;
+        }
+        int index = (int) Math.ceil(percentile * sortedValues.size()) - 1;
+        return sortedValues.get(Math.max(0, Math.min(index, sortedValues.size() - 1)));
+    }
+
+    private void updateMax(AtomicLong target, long value) {
+        long current;
+        do {
+            current = target.get();
+            if (value <= current) {
+                return;
+            }
+        } while (!target.compareAndSet(current, value));
+    }
+
+    public record PhaseWheelStatsSnapshot(long tickCount,
+                                          long catchUpTickCount,
+                                          long consecutiveCatchUpCount,
+                                          long maxScansPer100Ms,
+                                          long tickGapP50Ms,
+                                          long tickGapP95Ms,
+                                          long tickGapP99Ms,
+                                          long tickGapMinMs,
+                                          long tickGapMaxMs,
+                                          long sliceExecutionP50Ms,
+                                          long sliceExecutionP95Ms,
+                                          long sliceExecutionP99Ms,
+                                          long sliceExecutionMaxMs) {
     }
 }

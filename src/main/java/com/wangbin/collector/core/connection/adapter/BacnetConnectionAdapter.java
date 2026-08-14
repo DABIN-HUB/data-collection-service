@@ -13,25 +13,49 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePr
 
 import java.util.function.Consumer;
 
+/**
+ * 定义当前模块的业务契约。
+ */
 public interface BacnetConnectionAdapter {
 
     void setCovNotificationListener(Consumer<BacnetCovNotification> listener);
 
+    /**
+     * 查询并返回业务数据。
+     */
     BacnetReadPropertyResponse readProperty(BacnetReadPropertyRequest request, long timeoutMs) throws Exception;
 
+    /**
+     * 查询并返回业务数据。
+     */
     BacnetReadPropertyMultipleResponse readPropertyMultiple(BacnetReadPropertyMultipleRequest request,
                                                             long timeoutMs) throws Exception;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     void writeProperty(BacnetWritePropertyRequest request, long timeoutMs) throws Exception;
 
+    /**
+     * 写入或持久化业务数据。
+     */
     default void writePropertyMultiple(BacnetWritePropertyMultipleRequest request, long timeoutMs) throws Exception {
         throw new UnsupportedOperationException("BACnet WritePropertyMultiple is not supported");
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     void subscribeCov(BacnetSubscribeCovRequest request, long timeoutMs) throws Exception;
 
+    /**
+     * 维护注册或订阅关系。
+     */
     void subscribeCovProperty(BacnetSubscribeCovPropertyRequest request, long timeoutMs) throws Exception;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     default void acknowledgeConfirmedCovNotification(int invokeId) throws Exception {
     }
 

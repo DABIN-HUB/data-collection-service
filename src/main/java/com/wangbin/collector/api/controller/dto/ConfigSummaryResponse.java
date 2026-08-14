@@ -3,8 +3,6 @@ package com.wangbin.collector.api.controller.dto;
 import lombok.Builder;
 import lombok.Data;
 
-import java.util.Map;
-
 /**
  * 配置治理概览响应
  */
@@ -15,7 +13,7 @@ public class ConfigSummaryResponse {
     /**
      * ConfigManager 缓存统计
      */
-    private Map<String, Object> cacheStats;
+    private ConfigCacheStatsResponse cacheStats;
 
     /**
      * 最近一次触发同步的时间戳（毫秒）

@@ -10,8 +10,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class McReadPlanBuilder {
 
+    /**
+     * 创建并返回业务对象。
+     */
     public List<McReadPlan> build(List<DataPoint> points,
                                   int maxWordsPerRequest,
                                   int maxBitsPerRequest) {
@@ -73,6 +79,9 @@ public class McReadPlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private McReadPlan buildPlan(McDeviceCode deviceCode,
                                  boolean bitUnit,
                                  int startDeviceNumber,
@@ -104,6 +113,9 @@ public class McReadPlanBuilder {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildSegmentKey(McDeviceCode deviceCode,
                                    int startDeviceNumber,
                                    int endDeviceNumberExclusive) {
@@ -113,6 +125,9 @@ public class McReadPlanBuilder {
         return deviceCode.getSymbol() + ":" + start + "-" + endExclusive;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlanCandidate toCandidate(DataPoint point, McAddress address) {
         int startDeviceNumber = address.getDeviceNumber();
         int unitCount = address.getReadUnitCount();
@@ -127,6 +142,9 @@ public class McReadPlanBuilder {
         );
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PlanCandidate(DataPoint point,
                                  McAddress address,
                                  McDeviceCode deviceCode,

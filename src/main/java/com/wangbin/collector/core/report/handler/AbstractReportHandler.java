@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.handler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.report.model.ReportConfig;
 import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
@@ -365,10 +367,10 @@ public abstract class AbstractReportHandler implements ReportHandler {
     public Map<String, Object> getStatus() {
         Map<String, Object> status = new HashMap<>();
 
-        status.put("name", name);
-        status.put("protocol", protocol);
-        status.put("description", description);
-        status.put("enabled", enabled);
+        status.put(CommonMapKeys.NAME, name);
+        status.put(CommonMapKeys.PROTOCOL, protocol);
+        status.put(CommonMapKeys.DESCRIPTION, description);
+        status.put(CommonMapKeys.ENABLED, enabled);
         status.put("maxRetryCount", maxRetryCount);
         status.put("retryInterval", retryInterval);
         status.put("connectTimeout", connectTimeout);
@@ -406,7 +408,7 @@ public abstract class AbstractReportHandler implements ReportHandler {
 
         // 计算成功率
         double successRate = total > 0 ? (double) success / total * 100 : 0;
-        stats.put("successRate", String.format("%.2f%%", successRate));
+        stats.put(CommonMapKeys.SUCCESS_RATE, String.format("%.2f%%", successRate));
 
         // 计算平均耗时
         long avgCostTime = total > 0 ? totalTime / total : 0;

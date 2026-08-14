@@ -87,7 +87,7 @@ public final class FakeBbmdServer implements AutoCloseable {
                     socket.send(packet);
                 }
             } catch (SocketTimeoutException ignored) {
-                // Poll loop.
+                // 轮询循环。
             } catch (Exception ex) {
                 if (running) {
                     asyncFailure.compareAndSet(null, new RuntimeException("Fake BBMD server failed", ex));

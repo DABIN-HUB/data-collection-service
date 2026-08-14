@@ -16,14 +16,23 @@ public record MqttBusinessReplyResult(
         data = data == null ? new LinkedHashMap<>() : new LinkedHashMap<>(data);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static MqttBusinessReplyResult success(String method, Map<String, Object> data) {
         return new MqttBusinessReplyResult(method, 0, "success", data);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static MqttBusinessReplyResult ignored(String method) {
         return new MqttBusinessReplyResult(method, 0, "ignored", Map.of());
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static MqttBusinessReplyResult failure(String method, String message) {
         return new MqttBusinessReplyResult(method, 500, message, Map.of());
     }

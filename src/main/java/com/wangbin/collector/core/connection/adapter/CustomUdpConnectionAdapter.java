@@ -20,10 +20,16 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
     private DatagramSocket socket;
     private InetSocketAddress remoteAddress;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CustomUdpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -40,6 +46,9 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         log.info("自定义UDP连接已建立: {}:{}", host, port);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         if (socket != null) {
@@ -49,6 +58,9 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         remoteAddress = null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (socket == null || socket.isClosed() || !socket.isConnected()) {
@@ -56,11 +68,17 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // 私有协议认证必须通过显式请求模板完成，连接层不执行隐式认证。
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         try {
@@ -73,16 +91,25 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         return receiveDatagram(resolveReadTimeout());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         return receiveDatagram(timeout > 0 ? (int) timeout : resolveReadTimeout());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public byte[] exchange(byte[] request, long timeoutMs) throws Exception {
         synchronized (exchangeLock) {
@@ -91,6 +118,9 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void sendOnly(byte[] request) throws Exception {
         synchronized (exchangeLock) {
@@ -108,6 +138,9 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         return super.isConnected() && socket != null && socket.isConnected() && !socket.isClosed();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private byte[] receiveDatagram(int timeoutMs) {
         try {
             if (socket == null) {
@@ -126,6 +159,9 @@ public class CustomUdpConnectionAdapter extends AbstractConnectionAdapter<Datagr
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         Integer timeout = config.getReadTimeout();
         if (timeout != null && timeout > 0) {

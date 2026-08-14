@@ -6,8 +6,8 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.fins.domain.FinsMemoryArea;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
-import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.connection.factory.ConnectionFactory;
+import com.wangbin.collector.core.connection.factory.ConnectionAdapterTestProviders;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import org.junit.jupiter.api.Test;
@@ -206,14 +206,12 @@ class OmronFinsCollectorIntegrationTest {
         when(configManager.getDeviceContext("dev-fins")).thenReturn(DeviceContext.of(deviceInfo, connection, points));
         when(configManager.getDataPoints("dev-fins")).thenReturn(points);
 
-        ConnectionFactory connectionFactory = new ConnectionFactory(new ProtocolDescriptorRegistry());
-        ConnectionManager connectionManager = new ConnectionManager();
-        ReflectionTestUtils.setField(connectionManager, "connectionFactory", connectionFactory);
-        ReflectionTestUtils.setField(connectionManager, "configManager", configManager);
+        ConnectionFactory connectionFactory = ConnectionAdapterTestProviders.factory();
+        ConnectionManager connectionManager = new ConnectionManager(connectionFactory, configManager, null, null);
 
         OmronFinsCollector collector = new OmronFinsCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connectionManager", connectionManager);
         collector.connect();

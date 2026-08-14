@@ -9,12 +9,12 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.factory.ConnectionFactory;
 import com.wangbin.collector.core.connection.model.ConnectionMetrics;
-import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
+import com.wangbin.collector.core.port.ExceptionReporter;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 
@@ -34,14 +33,10 @@ import java.util.stream.Collectors;
 @Component
 public class ConnectionManager {
 
-    @Autowired
-    private ConnectionFactory connectionFactory;
-
-    @Autowired
-    private ConfigManager configManager;
-
-    @Autowired(required = false)
-    private ExceptionMonitorService exceptionMonitorService;
+    private final ConnectionFactory connectionFactory;
+    private final ConfigManager configManager;
+    @Nullable
+    private final ExceptionReporter exceptionReporter;
 
     // 连接存储：deviceId -> ConnectionAdapter
     private final Map<String, ConnectionAdapter> connections = new ConcurrentHashMap<>();
@@ -55,21 +50,35 @@ public class ConnectionManager {
     // 连接事件处理器
     private final List<ConnectionEventHandler> eventHandlers = new CopyOnWriteArrayList<>();
 
-    @Autowired
-    @Qualifier("monitorExecutor")
-    private ScheduledExecutorService monitorExecutor;
-
-    @Autowired(required = false)
-    @Qualifier("heartbeatExecutor")
-    private ExecutorService heartbeatExecutor;
+    @Nullable
+    private final ExecutorService heartbeatExecutor;
 
     private final Set<String> heartbeatInProgress = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 创建连接管理器。
+     */
+    public ConnectionManager(ConnectionFactory connectionFactory,
+                             ConfigManager configManager,
+                             @Nullable ExceptionReporter exceptionReporter,
+                             @Qualifier("heartbeatExecutor") @Nullable ExecutorService heartbeatExecutor) {
+        this.connectionFactory = connectionFactory;
+        this.configManager = configManager;
+        this.exceptionReporter = exceptionReporter;
+        this.heartbeatExecutor = heartbeatExecutor;
+    }
+
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         log.info("连接管理器初始化完成");
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void destroy() {
         log.info("开始关闭所有连接...");
@@ -85,6 +94,9 @@ public class ConnectionManager {
         return createConnection(deviceInfo, null);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public ConnectionAdapter createConnection(DeviceInfo deviceInfo, DeviceConnection overrideConfig) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new CollectorException("设备信息无效", null, null);
@@ -362,6 +374,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void submitHeartbeat(ConnectionAdapter connection) {
         if (connection == null) {
             return;
@@ -372,7 +387,7 @@ public class ConnectionManager {
             return;
         }
         if (!heartbeatInProgress.add(deviceId)) {
-            log.debug("skip duplicated heartbeat task: {}", deviceId);
+            log.debug("跳过重复心跳任务:设备={}", deviceId);
             return;
         }
         if (heartbeatExecutor == null) {
@@ -393,10 +408,13 @@ public class ConnectionManager {
             });
         } catch (RejectedExecutionException e) {
             heartbeatInProgress.remove(deviceId);
-            log.warn("heartbeat task rejected: device={}, queueSize={}", deviceId, heartbeatQueueSize(), e);
+            log.warn("心跳任务被拒绝:设备={}, 队列长度={}", deviceId, heartbeatQueueSize(), e);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int heartbeatQueueSize() {
         if (heartbeatExecutor instanceof ThreadPoolExecutor executor) {
             return executor.getQueue().size();
@@ -404,6 +422,9 @@ public class ConnectionManager {
         return -1;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleHeartbeat(ConnectionAdapter connection) {
         try {
             ConnectionMetrics metrics = connection.getMetrics();
@@ -427,6 +448,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveHeartbeatTimeout(ConnectionAdapter connection) {
         DeviceConnection config = connection.getConnectionConfig();
         long interval = Optional.ofNullable(config != null ? config.getHeartbeatInterval() : null)
@@ -483,6 +507,9 @@ public class ConnectionManager {
                 .add(deviceInfo.getDeviceId());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateGroupCapacity(DeviceInfo deviceInfo, DeviceConnection config) {
         if (deviceInfo == null) {
             return;
@@ -501,6 +528,9 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DeviceConnection resolveConnectionConfig(String deviceId) {
         if (configManager == null || deviceId == null) {
             return null;
@@ -594,9 +624,12 @@ public class ConnectionManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordException(String deviceId, Exception e) {
-        if (exceptionMonitorService != null) {
-            exceptionMonitorService.record(e, deviceId, null);
+        if (exceptionReporter != null) {
+            exceptionReporter.record(e, deviceId, null);
         }
     }
 
@@ -604,6 +637,9 @@ public class ConnectionManager {
      * 连接状态监听器接口
      */
     public interface ConnectionStateListener {
+        /**
+         * 执行当前业务逻辑。
+         */
         void onStateChanged(ConnectionAdapter connection, ConnectionStatus newStatus);
     }
 
@@ -611,10 +647,25 @@ public class ConnectionManager {
      * 连接事件处理器接口
      */
     public interface ConnectionEventHandler {
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionCreated(ConnectionAdapter connection);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionStateChanged(ConnectionAdapter connection, ConnectionStatus newStatus);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionError(ConnectionAdapter connection, Exception error);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onHeartbeatTimeout(ConnectionAdapter connection);
+        /**
+         * 执行当前业务逻辑。
+         */
         void onConnectionRemoved(ConnectionAdapter connection);
     }
 }

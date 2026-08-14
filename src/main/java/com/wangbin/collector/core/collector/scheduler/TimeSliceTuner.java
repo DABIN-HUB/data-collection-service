@@ -5,6 +5,9 @@ package com.wangbin.collector.core.collector.scheduler;
  */
 class TimeSliceTuner {
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     private enum Mode {
         SHRINKING, GROWING, STABLE
     }
@@ -28,6 +31,9 @@ class TimeSliceTuner {
         this.growStep = Math.max(10, growStep);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     synchronized int adjustInterval(int currentInterval, long averageExecution, boolean timeoutDetected) {
         return switch (mode) {
             case SHRINKING -> handleShrinking(currentInterval, timeoutDetected);
@@ -40,6 +46,9 @@ class TimeSliceTuner {
         return mode;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private int handleShrinking(int currentInterval, boolean timeoutDetected) {
         if (timeoutDetected) {
             mode = Mode.GROWING;
@@ -52,6 +61,9 @@ class TimeSliceTuner {
         return next;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private int handleGrowing(int currentInterval, boolean timeoutDetected) {
         if (timeoutDetected) {
             return grow(currentInterval);
@@ -60,6 +72,9 @@ class TimeSliceTuner {
         return currentInterval;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private int handleStable(int currentInterval, boolean timeoutDetected) {
         if (timeoutDetected) {
             mode = Mode.GROWING;
@@ -68,11 +83,17 @@ class TimeSliceTuner {
         return currentInterval;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int shrink(int currentInterval) {
         int next = Math.max(minInterval, currentInterval - shrinkStep);
         return next;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int grow(int currentInterval) {
         int next = Math.min(maxInterval, currentInterval + growStep);
         return next;

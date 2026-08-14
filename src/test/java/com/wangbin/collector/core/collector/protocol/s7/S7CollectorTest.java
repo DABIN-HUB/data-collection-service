@@ -128,7 +128,7 @@ class S7CollectorTest {
     void shouldRegisterS7SubscriptionsAndProcessIncomingValues() throws Exception {
         S7Collector collector = new S7Collector();
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         DataPoint point = point("p1", "temperature", "DB1.DBW0", "R");
         point.setCollectionMode("SUBSCRIPTION");
@@ -191,7 +191,7 @@ class S7CollectorTest {
     void shouldAutoSubscribeEventPointsAndServeLatestEventPayloadFromCache() throws Exception {
         S7Collector collector = new S7Collector();
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         DataPoint point = point("p1", "modeEvent", "MODE", "R");
         point.setCollectionMode("EVENT");
@@ -401,7 +401,7 @@ class S7CollectorTest {
 
     private void prepareCommandCollector(TestableS7Collector collector, ConfigManager configManager) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "devicePointResolver", new DevicePointResolver(configManager));
 
@@ -413,7 +413,7 @@ class S7CollectorTest {
 
     private void prepareArrayCollector(TestableS7Collector collector) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
         when(connectionAdapter.isConnected()).thenReturn(true);
@@ -422,7 +422,7 @@ class S7CollectorTest {
 
     private void preparePlannedReadCollector(PlannedReadS7Collector collector) throws Exception {
         collector.init(device());
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
         S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
         when(connectionAdapter.isConnected()).thenReturn(true);

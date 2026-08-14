@@ -6,7 +6,6 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
-import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,13 +33,13 @@ class ConfigManagerLocalDeviceTest {
 
     @BeforeEach
     void setUp() {
-        configManager = new ConfigManager();
         configSyncService = mock(ConfigSyncService.class);
-        ReflectionTestUtils.setField(configManager, "configSyncService", configSyncService);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        ReflectionTestUtils.setField(configManager, "eventPublisher", eventPublisher);
-        ReflectionTestUtils.setField(configManager, "fieldUniquenessValidator", new FieldUniquenessValidator());
-        ReflectionTestUtils.setField(configManager, "protocolConnectionValidator", new ProtocolConnectionValidator());
+        configManager = new ConfigManager(
+                configSyncService,
+                eventPublisher,
+                new FieldUniquenessValidator(),
+                null);
     }
 
     @Test

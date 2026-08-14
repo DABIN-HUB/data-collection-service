@@ -72,6 +72,11 @@ spring:
         approximate-trim: true  # 为 true 时使用近似裁剪
         trim-task-enabled: true # 为 true 时启用 TIME 模式定时裁剪
         trim-interval-ms: 5000  # 裁剪周期
+        buffer:
+          capacity: 10000
+          batch-size: 100
+          flush-interval-ms: 20
+          shutdown-timeout-ms: 30000
 
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -144,13 +149,26 @@ telemetry:
     auto-create: true
     keep-days: 30
     query-default-limit: 500
+    write:
+      mode: ${TDENGINE_WRITE_MODE:DIRECT_REST}
+      multi-table-enabled: ${TDENGINE_WRITE_MULTI_TABLE_ENABLED:false}
+      max-tables-per-request: ${TDENGINE_WRITE_MAX_TABLES_PER_REQUEST:5}
+      max-rows-per-request: ${TDENGINE_WRITE_MAX_ROWS_PER_REQUEST:250}
+      aggregation-wait-ms: ${TDENGINE_WRITE_AGGREGATION_WAIT_MS:5}
+      websocket-url: ${TDENGINE_WRITE_WEBSOCKET_URL:}
+      websocket-username: ${TDENGINE_WRITE_WEBSOCKET_USERNAME:root}
+      websocket-password: ${TDENGINE_WRITE_WEBSOCKET_PASSWORD:taosdata}
     buffer:
       enabled: true
       pending-key: "collector:${spring.profiles.active:default}:history:pending:v1"
       processing-key: "collector:${spring.profiles.active:default}:history:processing:v1"
       dead-letter-key: "collector:${spring.profiles.active:default}:history:dead:v1"
-      replay-interval-ms: 3000
-      replay-batch-size: 200
+      replay-interval-ms: 500
+      replay-batch-size: 500
+      replay-max-batches-per-cycle: 2
+      replay-limited-batches-per-cycle: 1
+      replay-live-queue-limited-threshold-percent: 30
+      replay-live-queue-pause-threshold-percent: 70
       local-queue-capacity: 10000
     query-max-limit: 5000
 
@@ -174,6 +192,12 @@ collector:
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
         required-scope: CONFIG_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/network/diagnose]
+        required-scope: SECURITY_MANAGE
+      - methods: [POST]
+        paths: [/api/ops/alarms/*/acknowledge]
+        required-scope: DEVICE_CONTROL
       - methods: [GET]
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE
@@ -209,17 +233,25 @@ collector:
       max-size: 4
       queue-capacity: 2000
     stream:
-      core-size: 2
+      core-size: 4
       max-size: 4
       queue-capacity: 2000
     history:
-      core-size: 2
+      core-size: 4
       max-size: 4
       queue-capacity: 5000
     report:
       core-size: 2
       max-size: 4
       queue-capacity: 5000
+  telemetry-ingress-buffer:
+    enabled: true
+    pending-key: "collector:${spring.profiles.active:default}:telemetry:ingress:pending:v1"
+    processing-key: "collector:${spring.profiles.active:default}:telemetry:ingress:processing:v1"
+    dead-letter-key: "collector:${spring.profiles.active:default}:telemetry:ingress:dead:v1"
+    replay-interval-ms: 1000
+    replay-batch-size: 100
+    local-queue-capacity: 10000
 
   ## 从云端获取配置数据地址，配套服务
   config:

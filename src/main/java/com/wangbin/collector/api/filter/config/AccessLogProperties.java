@@ -67,6 +67,9 @@ public class AccessLogProperties {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class RiskRule {
         /**

@@ -11,12 +11,18 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class S7ReadPlanBuilder {
 
     private static final int DEFAULT_MAX_SEGMENT_SPAN_BYTES = 256;
     private static final Pattern DB_PATTERN = Pattern.compile("^%?DB(\\d+):(\\d+)(?:\\.(\\d+))?:(.+)$");
     private static final Pattern AREA_PATTERN = Pattern.compile("^%([IQM])(\\d+)(?:\\.(\\d+))?:(.+)$");
 
+    /**
+     * 创建并返回业务对象。
+     */
     public List<S7ReadPlan> build(List<DataPoint> points, int maxFieldsPerRequest) {
         if (points == null || points.isEmpty()) {
             return List.of();
@@ -77,6 +83,9 @@ public class S7ReadPlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private S7ReadPlan buildPlan(String segmentKey,
                                  String area,
                                  Integer dbNumber,
@@ -103,6 +112,9 @@ public class S7ReadPlanBuilder {
                 blockOptimizable, blockReadAddress, items);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlanCandidate toCandidate(DataPoint point, S7Address address) {
         AddressLocation location = resolveLocation(address);
         int elementByteSize = estimateByteSize(address.getBasePlcType());
@@ -136,6 +148,9 @@ public class S7ReadPlanBuilder {
                 && !baseType.startsWith("WSTRING");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private AddressLocation resolveLocation(S7Address address) {
         String plc4xAddress = address.getPlc4xAddress();
         Matcher dbMatcher = DB_PATTERN.matcher(plc4xAddress);
@@ -163,6 +178,9 @@ public class S7ReadPlanBuilder {
         return new AddressLocation(address.getArea(), address.getArea(), null, 0, 0, false);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildBlockReadAddress(String area, Integer dbNumber, int startOffset, int byteSpan) {
         if (byteSpan <= 0) {
             return null;
@@ -176,10 +194,16 @@ public class S7ReadPlanBuilder {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeArea(String area) {
         return area != null ? area.trim().toUpperCase(Locale.ROOT) : "";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int estimateByteSize(String typeExpression) {
         if (typeExpression == null || typeExpression.isBlank()) {
             return 1;
@@ -200,6 +224,9 @@ public class S7ReadPlanBuilder {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int parseLength(String normalized, int defaultValue) {
         int start = normalized.indexOf('(');
         int end = normalized.indexOf(')');
@@ -213,6 +240,9 @@ public class S7ReadPlanBuilder {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int parseOptionalInt(String value) {
         if (value == null || value.isBlank()) {
             return 0;
@@ -220,6 +250,9 @@ public class S7ReadPlanBuilder {
         return Integer.parseInt(value);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PlanCandidate(DataPoint point,
                                  S7Address address,
                                  String segmentKey,
@@ -232,6 +265,9 @@ public class S7ReadPlanBuilder {
                                  boolean blockOptimizable) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record AddressLocation(String segmentKey,
                                    String area,
                                    Integer dbNumber,

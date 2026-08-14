@@ -1,7 +1,7 @@
 package com.wangbin.collector.storage.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wangbin.collector.monitor.alert.AlertNotification;
+import com.wangbin.collector.common.domain.alert.AlertNotification;
 import com.wangbin.collector.storage.config.TdengineProperties;
 import com.wangbin.collector.storage.repository.AlarmRepository;
 import com.wangbin.collector.storage.repository.DataRepository;

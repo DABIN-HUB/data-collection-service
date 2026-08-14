@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.api.application.ConfigConsoleApplicationService;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -37,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ConfigController.class)
-@Import(SensitiveConfigSanitizer.class)
+@Import({ConfigConsoleApplicationService.class, SensitiveConfigSanitizer.class})
 class ConfigControllerTest {
 
     @Autowired
@@ -60,7 +61,11 @@ class ConfigControllerTest {
 
     @Test
     void shouldReturnSummary() throws Exception {
-        when(configManager.getCacheStats()).thenReturn(Map.of("deviceCount", 1));
+        when(configManager.getCacheStats()).thenReturn(Map.of(
+                "deviceCount", 1,
+                "pointCount", 2,
+                "connectionCount", 1,
+                "contextCount", 1));
         when(configSyncService.getLastSyncTime()).thenReturn(100L);
         when(configSyncService.getSyncInterval()).thenReturn(1000L);
         when(configSyncService.getServiceId()).thenReturn("collector-1");
@@ -68,8 +73,12 @@ class ConfigControllerTest {
 
         mockMvc.perform(get("/api/config/summary"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.cacheStats.deviceCount", is(1)))
+                .andExpect(jsonPath("$.data.cacheStats.pointCount", is(2)))
+                .andExpect(jsonPath("$.data.cacheStats.connectionCount", is(1)))
+                .andExpect(jsonPath("$.data.cacheStats.contextCount", is(1)))
                 .andExpect(jsonPath("$.data.serviceId", is("collector-1")));
     }
 
@@ -150,6 +159,7 @@ class ConfigControllerTest {
 
         mockMvc.perform(delete("/api/config/local/device/remote-1"))
                 .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("error")));
     }
 

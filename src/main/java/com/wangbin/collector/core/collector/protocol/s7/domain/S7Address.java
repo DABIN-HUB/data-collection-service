@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.s7.domain;
 
 import lombok.Value;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Value
 public class S7Address {
 

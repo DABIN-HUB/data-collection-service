@@ -6,11 +6,17 @@ import com.wangbin.collector.core.collector.protocol.plc4x.util.PointTypeResolve
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7PlcType;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum S7PlcTypeResolver implements PointTypeResolver<S7Address, S7PlcType> {
     INSTANCE;
 
     private static final String[] DRIVER_TYPE_FIELDS = {"driverDataType", "s7Type", "plc4xType", "plcType"};
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public S7PlcType resolveOrNull(DataPoint point, S7Address address) {
         return PointTypeResolverSupport.resolveOrNull(

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.report.downlink;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.constant.MessageConstant;
 import lombok.Getter;
 
@@ -20,6 +22,9 @@ public class MqttDownlinkResult {
     private final Map<String, Object> data;
     private final boolean responseRequired;
 
+    /**
+     * 创建当前组件实例。
+     */
     private MqttDownlinkResult(String messageId,
                                String method,
                                String deviceId,
@@ -36,6 +41,9 @@ public class MqttDownlinkResult {
         this.responseRequired = responseRequired;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static MqttDownlinkResult success(String messageId,
                                              String method,
                                              String deviceId,
@@ -43,6 +51,9 @@ public class MqttDownlinkResult {
         return of(messageId, method, deviceId, 0, "success", data);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static MqttDownlinkResult of(String messageId,
                                         String method,
                                         String deviceId,
@@ -52,10 +63,16 @@ public class MqttDownlinkResult {
         return new MqttDownlinkResult(messageId, method, deviceId, code, message, data, true);
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static MqttDownlinkResult ignored(String method) {
         return new MqttDownlinkResult(null, method, null, 0, "ignored", Map.of(), false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Map<String, Object> toResponseBody() {
         Map<String, Object> body = new LinkedHashMap<>();
         if (messageId != null && !messageId.isBlank()) {
@@ -67,12 +84,12 @@ public class MqttDownlinkResult {
             body.put("method", method);
         }
         if (deviceId != null && !deviceId.isBlank()) {
-            body.put("deviceId", deviceId);
+            body.put(CommonMapKeys.DEVICE_ID, deviceId);
         }
         body.put("code", code);
         body.put("msg", message);
-        body.put("timestamp", System.currentTimeMillis());
-        body.put("data", data);
+        body.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
+        body.put(CommonMapKeys.DATA, data);
         return body;
     }
 }

@@ -1,9 +1,12 @@
 package com.wangbin.collector.api.controller;
 
-import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
+import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
+import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
+import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.api.validation.ApiValidationConstants;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import jakarta.validation.constraints.Pattern;
-import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,194 +15,129 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 
 /**
- * 设备管理控制器
- * 提供设备采集的启动、停止与状态查询接口
+ * 设备管理控制器。
+ *
+ * <p>只负责 HTTP 路由和参数校验，设备控制台业务编排由应用服务处理。</p>
  */
-@Slf4j
 @Validated
 @RestController
 @RequestMapping("/api/device")
 @RequiredArgsConstructor
 public class DeviceController {
 
-    private final CollectionService collectionService;
+    private final DeviceConsoleApplicationService deviceConsoleApplicationService;
 
+    /**
+     * 启动指定设备采集。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 设备启动结果
+     */
     @PostMapping("/{deviceId}/start")
-    public Map<String, Object> startDevice(
+    public ApiResult<Object> startDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
-        Map<String, Object> result = baseResult(deviceId);
-        try {
-            boolean success = collectionService.startDevice(deviceId);
-            if (success) {
-                result.put("status", "success");
-                result.put("message", "设备启动成功");
-            } else {
-                result.put("status", "error");
-                result.put("message", "设备已启动或启动失败");
-            }
-        } catch (Exception e) {
-            log.error("启动设备失败: {}", deviceId, e);
-            result.put("status", "error");
-            result.put("message", "启动异常: " + e.getMessage());
-        }
-        return result;
+        return deviceConsoleApplicationService.startDevice(deviceId);
     }
 
+    /**
+     * 启动本地临时设备采集。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 设备启动结果
+     */
     @PostMapping("/{deviceId}/start-local")
-    public Map<String, Object> startLocalDevice(
+    public ApiResult<Object> startLocalDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
-        Map<String, Object> result = baseResult(deviceId);
-        try {
-            boolean success = collectionService.startLocalDevice(deviceId);
-            if (success) {
-                result.put("status", "success");
-                result.put("message", "本地临时设备启动成功");
-            } else {
-                result.put("status", "error");
-                result.put("message", "设备不是本地临时设备，或启动失败");
-            }
-        } catch (Exception e) {
-            log.error("启动本地临时设备失败: {}", deviceId, e);
-            result.put("status", "error");
-            result.put("message", "启动异常: " + e.getMessage());
-        }
-        return result;
+        return deviceConsoleApplicationService.startLocalDevice(deviceId);
     }
 
+    /**
+     * 停止指定设备采集。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 设备停止结果
+     */
     @PostMapping("/{deviceId}/stop")
-    public Map<String, Object> stopDevice(
+    public ApiResult<Object> stopDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
-        Map<String, Object> result = baseResult(deviceId);
-        try {
-            boolean success = collectionService.stopDevice(deviceId);
-            if (success) {
-                result.put("status", "success");
-                result.put("message", "设备已停止");
-            } else {
-                result.put("status", "error");
-                result.put("message", "设备停止失败或已停止");
-            }
-        } catch (Exception e) {
-            log.error("停止设备失败: {}", deviceId, e);
-            result.put("status", "error");
-            result.put("message", "停止异常: " + e.getMessage());
-        }
-        return result;
+        return deviceConsoleApplicationService.stopDevice(deviceId);
     }
 
+    /**
+     * 重新加载全部设备配置。
+     *
+     * @return 重载结果
+     */
     @PostMapping("/reload")
-    public Map<String, Object> reloadAllDevices() {
-        Map<String, Object> result = new HashMap<>();
-        result.put("timestamp", System.currentTimeMillis());
-        try {
-            collectionService.reloadAllDevices();
-            result.put("status", "success");
-            result.put("message", "已重新加载所有设备");
-        } catch (Exception e) {
-            log.error("重新加载所有设备失败", e);
-            result.put("status", "error");
-            result.put("message", "重新加载异常: " + e.getMessage());
-        }
-        return result;
+    public ApiResult<Object> reloadAllDevices() {
+        return deviceConsoleApplicationService.reloadAllDevices();
     }
 
+    /**
+     * 查询指定设备采集器状态。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 设备状态响应
+     */
     @GetMapping("/{deviceId}/status")
-    public Map<String, Object> getDeviceStatus(
+    public ApiResult<DeviceStatusResponse> getDeviceStatus(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
-        Map<String, Object> result = baseResult(deviceId);
-        try {
-            Map<String, Object> status = collectionService.getDeviceStatus(deviceId);
-            result.put("status", "success");
-            result.put("data", status);
-        } catch (Exception e) {
-            log.error("获取设备状态失败: {}", deviceId, e);
-            result.put("status", "error");
-            result.put("message", "获取状态失败: " + e.getMessage());
-        }
-        return result;
+        return deviceConsoleApplicationService.getDeviceStatus(deviceId);
     }
 
+    /**
+     * 查询全部采集统计。
+     *
+     * @return 全部采集统计响应
+     */
     @GetMapping("/statistics")
-    public Map<String, Object> getAllStatistics() {
-        Map<String, Object> result = new HashMap<>();
-        result.put("timestamp", System.currentTimeMillis());
-        try {
-            Map<String, Map<String, Object>> stats = collectionService.getAllStatistics();
-            result.put("status", "success");
-            result.put("data", stats);
-        } catch (Exception e) {
-            log.error("获取采集统计失败", e);
-            result.put("status", "error");
-            result.put("message", "获取统计异常: " + e.getMessage());
-        }
-        return result;
+    public ApiResult<Map<String, DeviceStatisticsResponse>> getAllStatistics() {
+        return deviceConsoleApplicationService.getAllStatistics();
     }
 
+    /**
+     * 查询正在运行的设备列表。
+     *
+     * @return 正在运行的设备列表响应
+     */
     @GetMapping("/running")
-    public Map<String, Object> getRunningDevices() {
-        Map<String, Object> result = new HashMap<>();
-        result.put("timestamp", System.currentTimeMillis());
-        try {
-            List<String> devices = collectionService.getRunningDevices();
-            result.put("status", "success");
-            result.put("data", devices);
-            result.put("count", devices.size());
-        } catch (Exception e) {
-            log.error("获取运行设备列表失败", e);
-            result.put("status", "error");
-            result.put("message", "获取设备列表异常: " + e.getMessage());
-        }
-        return result;
+    public ApiResult<List<String>> getRunningDevices() {
+        return deviceConsoleApplicationService.getRunningDevices();
     }
 
+    /**
+     * 查询全部设备运行快照。
+     *
+     * @return 设备运行快照响应
+     */
     @GetMapping("/runtime")
-    public Map<String, Object> getDeviceRuntimeSnapshots() {
-        Map<String, Object> result = new HashMap<>();
-        List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
-        result.put("status", "success");
-        result.put("data", snapshots);
-        result.put("count", snapshots.size());
-        result.put("timestamp", System.currentTimeMillis());
-        return result;
+    public ApiResult<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
+        return deviceConsoleApplicationService.getDeviceRuntimeSnapshots();
     }
 
+    /**
+     * 查询指定设备是否正在运行。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 设备运行状态响应
+     */
     @GetMapping("/{deviceId}/running")
-    public Map<String, Object> isDeviceRunning(
+    public ApiResult<Object> isDeviceRunning(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
-        Map<String, Object> result = baseResult(deviceId);
-        try {
-            boolean running = collectionService.isDeviceRunning(deviceId);
-            result.put("status", "success");
-            result.put("running", running);
-        } catch (Exception e) {
-            log.error("查询设备运行状态失败: {}", deviceId, e);
-            result.put("status", "error");
-            result.put("message", "查询运行状态异常: " + e.getMessage());
-        }
-        return result;
-    }
-
-    private Map<String, Object> baseResult(String deviceId) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("deviceId", deviceId);
-        result.put("timestamp", System.currentTimeMillis());
-        return result;
+        return deviceConsoleApplicationService.isDeviceRunning(deviceId);
     }
 }
-

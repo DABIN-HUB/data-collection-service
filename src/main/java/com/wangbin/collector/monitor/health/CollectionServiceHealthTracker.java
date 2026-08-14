@@ -1,5 +1,6 @@
 package com.wangbin.collector.monitor.health;
 
+import com.wangbin.collector.core.port.CollectionHealthReporter;
 import com.wangbin.collector.monitor.health.HealthStatus.Status;
 import org.springframework.stereotype.Component;
 
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * 跟踪采集服务运行状态，供健康检查判断采集链路是否正在运行。
  */
 @Component
-public class CollectionServiceHealthTracker {
+public class CollectionServiceHealthTracker implements CollectionHealthReporter {
 
     private final Set<String> runningDevices = ConcurrentHashMap.newKeySet();
     private final AtomicReference<Status> currentStatus = new AtomicReference<>(Status.DOWN);
@@ -23,6 +24,7 @@ public class CollectionServiceHealthTracker {
     /**
      * 标记设备已开始采集。至少存在一个运行设备时，采集服务状态为正常。
      */
+    @Override
     public void markDeviceStarted(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -36,6 +38,7 @@ public class CollectionServiceHealthTracker {
     /**
      * 标记设备已停止采集。没有运行设备时，采集服务状态为停止。
      */
+    @Override
     public void markDeviceStopped(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -70,6 +73,9 @@ public class CollectionServiceHealthTracker {
         return lastStateChange.get();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void updateStatus(Status newStatus) {
         Status previous = currentStatus.getAndSet(newStatus);
         if (previous != newStatus) {

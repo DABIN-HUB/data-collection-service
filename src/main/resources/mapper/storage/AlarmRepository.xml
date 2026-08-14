@@ -97,4 +97,30 @@
         ORDER BY ts DESC
         LIMIT #{limit}
     </select>
+    <select id="countRecentAlarmHistory" resultType="long">
+        SELECT COUNT(*)
+        FROM ${database}.${superTable}
+        WHERE 1 = 1
+        <if test="deviceId != null and deviceId != ''">
+            AND device_id = #{deviceId}
+        </if>
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="pointCode != null and pointCode != ''">
+            AND point_code = #{pointCode}
+        </if>
+        <if test="alarmLevel != null and alarmLevel != ''">
+            AND alarm_level = #{alarmLevel}
+        </if>
+        <if test="ruleId != null and ruleId != ''">
+            AND rule_id = #{ruleId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND ts &lt;= #{endTs}
+        </if>
+    </select>
 </mapper>

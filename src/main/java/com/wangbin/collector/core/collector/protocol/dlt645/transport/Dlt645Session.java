@@ -12,6 +12,9 @@ public final class Dlt645Session implements AutoCloseable {
     private final Dlt645Bus bus;
     private final SharedSerialChannelManager.Lease lease;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Dlt645Session(Dlt645Address meterAddress,
                          Dlt645Bus bus,
                          SharedSerialChannelManager.Lease lease) {
@@ -20,10 +23,16 @@ public final class Dlt645Session implements AutoCloseable {
         this.lease = lease;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public byte[] readData(String identifier) throws Exception {
         return bus.readData(meterAddress, identifier);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     public boolean writeData(String identifier,
                              byte[] password,
                              byte[] operatorCode,
@@ -31,6 +40,9 @@ public final class Dlt645Session implements AutoCloseable {
         return bus.writeData(meterAddress, identifier, password, operatorCode, value);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     public Dlt645Address readAddress() throws Exception {
         return bus.readAddress();
     }
@@ -39,10 +51,16 @@ public final class Dlt645Session implements AutoCloseable {
         return bus.isOpen();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String meterAddress() {
         return meterAddress.value();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() throws Exception {
         lease.close();

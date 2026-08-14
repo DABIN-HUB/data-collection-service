@@ -17,6 +17,9 @@ public class CoapPoint {
     private final boolean binary;
     private final String query;
 
+    /**
+     * 解析或转换业务数据。
+     */
     public String resolveUri(String baseUri) {
         if (fullUri != null && !fullUri.isBlank()) {
             return appendQuery(fullUri);
@@ -26,6 +29,9 @@ public class CoapPoint {
         return appendQuery(normalizedBase + normalizedPath);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private String appendQuery(String uri) {
         if (query == null || query.isBlank()) {
             return uri;
@@ -36,6 +42,9 @@ public class CoapPoint {
         return uri + "?" + query;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasFullUri() {
         return fullUri != null && !fullUri.isBlank();
     }

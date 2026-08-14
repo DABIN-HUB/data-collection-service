@@ -2,16 +2,38 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.wangbin.collector.storage.repository.DataRepository">
 
-    <update id="createDatabase">
+    <update id="createDatabase" statementType="STATEMENT">
         CREATE DATABASE IF NOT EXISTS ${database}
         <if test="keepDays != null and keepDays > 0">
             KEEP ${keepDays}
         </if>
     </update>
 
-    <update id="createStable">
+    <update id="createStable" statementType="STATEMENT">
         CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
             ts TIMESTAMP,
+            event_ts BIGINT,
+            point_id NCHAR(128),
+            point_code NCHAR(128),
+            point_name NCHAR(256),
+            value_text NCHAR(1024),
+            unit NCHAR(64),
+            quality INT,
+            success BOOL,
+            message NCHAR(1024),
+            raw_json NCHAR(2048),
+            processed_json NCHAR(2048),
+            metadata_json NCHAR(4096)
+        ) TAGS (
+            device_id NCHAR(128),
+            protocol_type NCHAR(64)
+        )
+    </update>
+
+    <update id="createStableV2" statementType="STATEMENT">
+        CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
+            ts TIMESTAMP,
+            point_key VARCHAR(128) PRIMARY KEY,
             event_ts BIGINT,
             point_id NCHAR(128),
             point_code NCHAR(128),
@@ -45,7 +67,11 @@
           AND col_name = #{columnName}
     </select>
 
-    <update id="addTelemetryUnitColumn">
+    <select id="showCreateStable" resultType="java.util.Map">
+        SHOW CREATE STABLE ${database}.${tableName}
+    </select>
+
+    <update id="addTelemetryUnitColumn" statementType="STATEMENT">
         ALTER STABLE ${database}.${superTable} ADD COLUMN unit NCHAR(64)
     </update>
 
@@ -54,6 +80,34 @@
         (ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
         VALUES
         (#{eventTs},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+    </insert>
+
+    <insert id="insertTelemetryV2">
+        INSERT INTO ${database}.${subTable}
+        (ts,point_key,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+        VALUES
+        (#{eventTs},#{pointKey},#{eventTs},#{pointId},#{pointCode},#{pointName},#{valueText},#{unit},#{quality},#{success},#{message},#{rawJson},#{processedJson},#{metadataJson})
+    </insert>
+
+    <insert id="insertTelemetryV2Batch">
+        INSERT INTO ${database}.${subTable}
+        (ts,point_key,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+        VALUES
+        <foreach collection="rows" item="row" separator=",">
+            (#{row.eventTs},#{row.pointKey},#{row.eventTs},#{row.pointId},#{row.pointCode},#{row.pointName},#{row.valueText},#{row.unit},#{row.quality},#{row.success},#{row.message},#{row.rawJson},#{row.processedJson},#{row.metadataJson})
+        </foreach>
+    </insert>
+
+    <insert id="insertTelemetryV2MultiTableBatch">
+        INSERT INTO
+        <foreach collection="tables" item="table" separator=" ">
+            ${database}.${table.subTable}
+            (ts,point_key,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json)
+            VALUES
+            <foreach collection="table.rows" item="row" separator=",">
+                (#{row.eventTs},#{row.pointKey},#{row.eventTs},#{row.pointId},#{row.pointCode},#{row.pointName},#{row.valueText},#{row.unit},#{row.quality},#{row.success},#{row.message},#{row.rawJson},#{row.processedJson},#{row.metadataJson})
+            </foreach>
+        </foreach>
     </insert>
 
     <select id="queryPointHistory" resultType="java.util.Map">
@@ -65,12 +119,30 @@
             AND point_id = #{pointId}
         </if>
         <if test="startTs != null and startTs &gt; 0">
-            AND ts &gt;= #{startTs}
+            AND event_ts &gt;= #{startTs}
         </if>
         <if test="endTs != null and endTs &gt; 0">
-            AND ts &lt;= #{endTs}
+            AND event_ts &lt;= #{endTs}
         </if>
-        ORDER BY ts DESC
+        ORDER BY event_ts DESC, ts DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="queryPointHistoryV2" resultType="java.util.Map">
+        SELECT
+            ts,event_ts,point_id,point_code,point_name,value_text,unit,quality,success,message,raw_json,processed_json,metadata_json
+        FROM ${database}.${subTable}
+        WHERE 1 = 1
+        <if test="pointId != null and pointId != ''">
+            AND point_id = #{pointId}
+        </if>
+        <if test="startTs != null and startTs &gt; 0">
+            AND event_ts &gt;= #{startTs}
+        </if>
+        <if test="endTs != null and endTs &gt; 0">
+            AND event_ts &lt;= #{endTs}
+        </if>
+        ORDER BY event_ts DESC, ts DESC, point_key ASC
         LIMIT #{limit}
     </select>
 </mapper>

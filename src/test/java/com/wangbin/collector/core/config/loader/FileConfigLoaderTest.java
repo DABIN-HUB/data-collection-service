@@ -3,10 +3,10 @@ package com.wangbin.collector.core.config.loader;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.model.ConfigSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -55,10 +55,11 @@ public class FileConfigLoaderTest {
                 }
                 """);
 
-        FileConfigLoader loader = new FileConfigLoader();
-        ReflectionTestUtils.setField(loader, "devicesPath", devicesFile.toString());
-        ReflectionTestUtils.setField(loader, "pointsDir", pointsDir.toString());
-        ReflectionTestUtils.setField(loader, "connectionsDir", connectionsDir.toString());
+        CollectorProperties collectorProperties = new CollectorProperties();
+        collectorProperties.getConfig().getFile().setDevices(devicesFile.toString());
+        collectorProperties.getConfig().getFile().setPointsDir(pointsDir.toString());
+        collectorProperties.getConfig().getFile().setConnectionsDir(connectionsDir.toString());
+        FileConfigLoader loader = new FileConfigLoader(collectorProperties);
 
         List<DeviceInfo> devices = loader.loadAllDevices();
         List<DataPoint> points = loader.loadDataPoints("dev-1");

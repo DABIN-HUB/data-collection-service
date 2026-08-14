@@ -425,7 +425,7 @@ class McCollectorIntegrationTest {
 
         McCollector collector = new McCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
         ReflectionTestUtils.setField(collector, "connected", true);

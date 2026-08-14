@@ -140,7 +140,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
                     socket.send(packet);
                 }
             } catch (SocketTimeoutException ignored) {
-                // Poll loop.
+                // 轮询循环。
             } catch (Exception ex) {
                 if (running) {
                     asyncFailure.compareAndSet(null, new RuntimeException("Feature BACnet test server failed", ex));

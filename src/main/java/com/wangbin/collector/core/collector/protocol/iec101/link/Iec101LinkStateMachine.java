@@ -7,6 +7,9 @@ public class Iec101LinkStateMachine {
 
     private boolean frameCountBit;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int primaryControl(int functionCode, boolean useFrameCount) {
         int control = 0x40 | (functionCode & 0x0F);
         if (useFrameCount) {
@@ -18,14 +21,23 @@ public class Iec101LinkStateMachine {
         return control;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markConfirmedSuccess() {
         frameCountBit = !frameCountBit;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void reset() {
         frameCountBit = false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean frameCountBit() {
         return frameCountBit;
     }

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.opc;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
@@ -41,6 +43,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
 
@@ -70,6 +75,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return declaredProtocolType();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String declaredProtocolType() {
         if (deviceInfo == null || deviceInfo.getProtocolType() == null) {
             return "OPC_UA";
@@ -80,6 +88,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 : "OPC_UA";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -99,10 +110,13 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 requireConnection().getClient().getMetadata().isSubscribeSupported());
         this.browseSupported = requireConnection().getClient().getMetadata().isBrowseSupported();
         resetSubscriptionDiagnostics();
-        log.info("PLC4X OPC UA collector connected, deviceId={}, timeout={}, maxFieldsPerRequest={}",
+        log.info("PLC4X OPC UA 采集器 已连接, 设备={}, 超时={}, 单次最大字段数={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("PLC4X OPC UA");
@@ -112,9 +126,12 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         subscriptionSupported = false;
         browseSupported = false;
         resetSubscriptionDiagnostics();
-        log.info("PLC4X OPC UA collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("PLC4X OPC UA 采集器 已断开, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
@@ -129,6 +146,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return extractValue(response.getPlcValue(fieldName), point, address);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -153,6 +173,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         Plc4xOpcUaAddress address = requireAddress(point);
@@ -167,6 +190,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -195,7 +221,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             }
             return results;
         } catch (Exception ex) {
-            log.warn("PLC4X OPC UA batch write failed, falling back to point-by-point writes: {}", ex.getMessage());
+            log.warn("PLC4X OPC UA 批量 写入 失败, 降级为逐点写入:{}", ex.getMessage());
             for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
                 DataPoint point = entry.getKey();
                 if (point == null) {
@@ -204,7 +230,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 try {
                     results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
                 } catch (Exception singleEx) {
-                    log.error("PLC4X OPC UA point write failed, pointId={}", point.getPointId(), singleEx);
+                    log.error("PLC4X OPC UA 点位 写入 失败, 点位={}", point.getPointId(), singleEx);
                     results.put(point.getPointId(), false);
                 }
             }
@@ -212,6 +238,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         cacheAddresses(points);
@@ -243,13 +272,13 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             String fieldName = resolvePointTagName(point);
             PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
             if (responseCode != PlcResponseCode.OK) {
-                log.warn("PLC4X OPC UA subscription failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X OPC UA 订阅失败, 设备={}, 点位={}, 响应码={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 continue;
             }
             PlcSubscriptionHandle handle = response.getSubscriptionHandle(fieldName);
             if (handle == null) {
-                log.warn("PLC4X OPC UA subscription returned null handle, deviceId={}, pointId={}",
+                log.warn("PLC4X OPC UA 订阅返回空句柄, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId());
                 continue;
             }
@@ -260,10 +289,13 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         if (registered == 0) {
             throw new IllegalStateException("PLC4X OPC UA subscribe did not register any point");
         }
-        log.info("PLC4X OPC UA subscriptions registered, deviceId={}, count={}",
+        log.info("PLC4X OPC UA 订阅已注册, 设备={}, 数量={}",
                 deviceInfo.getDeviceId(), registered);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -286,18 +318,21 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         unsubscribeHandles(handlesToRemove);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new HashMap<>();
-        status.put("protocol", getProtocolType());
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.PROTOCOL, getProtocolType());
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("implemented", true);
-        status.put("writable", true);
-        status.put("subscribable", isRuntimeSubscriptionSupported());
+        status.put(CommonMapKeys.WRITABLE, true);
+        status.put(CommonMapKeys.SUBSCRIBABLE, isRuntimeSubscriptionSupported());
         status.put("browseable", isRuntimeBrowseSupported());
         status.put("parallelValidation", true);
-        status.put("isConnected", isConnected());
-        status.put("configuredPointCount", configuredAddresses.size());
+        status.put(CommonMapKeys.IS_CONNECTED, isConnected());
+        status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
         status.put("activeSubscriptions", subscriptionHandles.size());
         status.put("subscriptionEventCount", subscriptionEventCount.get());
@@ -308,8 +343,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
 
         DeviceConnection connection = getCurrentConnectionConfig();
         if (connection != null) {
-            status.put("host", connection.getHost());
-            status.put("port", connection.getPort());
+            status.put(CommonMapKeys.HOST, connection.getHost());
+            status.put(CommonMapKeys.PORT, connection.getPort());
             status.put("url", firstNonBlank(
                     connection.getUrl(),
                     connection.getString("endpointUrl", null),
@@ -330,6 +365,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = normalizeCommand(command);
@@ -343,11 +381,17 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         cacheAddresses(points);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void cacheAddresses(List<DataPoint> points) {
         configuredAddresses.clear();
         if (points == null) {
@@ -361,6 +405,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Plc4xOpcUaAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("Point cannot be null");
@@ -368,6 +415,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(resolvePointCacheKey(point), ignored -> Plc4xOpcUaAddressParser.parse(point));
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeReadBatch(List<DataPoint> batch, Map<String, Object> results) {
         try {
             PlcReadResponse response = executeReadBatchRequest(batch);
@@ -378,7 +428,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 results.put(point.getPointId(), extractValue(response.getPlcValue(resolvePointTagName(point)), point, requireAddress(point)));
             }
         } catch (Exception ex) {
-            log.warn("PLC4X OPC UA batch read failed, falling back to point-by-point reads: {}", ex.getMessage());
+            log.warn("PLC4X OPC UA 批量读取失败，降级为逐点读取：{}", ex.getMessage());
             for (DataPoint point : batch) {
                 if (point == null || point.getPointId() == null) {
                     continue;
@@ -386,13 +436,16 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 try {
                     results.put(point.getPointId(), doReadPoint(point));
                 } catch (Exception singleEx) {
-                    log.error("PLC4X OPC UA point read failed, pointId={}", point.getPointId(), singleEx);
+                    log.error("PLC4X OPC UA 点位 读取 失败, 点位={}", point.getPointId(), singleEx);
                     results.put(point.getPointId(), null);
                 }
             }
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private PlcReadResponse executeReadBatchRequest(List<DataPoint> batch) throws Exception {
         var builder = requireConnection().getClient().readRequestBuilder();
         for (DataPoint point : batch) {
@@ -412,6 +465,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return response;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleSubscriptionEvent(DataPoint point,
                                          String fieldName,
                                          Plc4xOpcUaAddress address,
@@ -420,7 +476,7 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             PlcResponseCode responseCode = event.getResponseCode(fieldName);
             if (responseCode != PlcResponseCode.OK) {
                 lastSubscriptionError = "responseCode=" + responseCode;
-                log.warn("PLC4X OPC UA subscription event failed, deviceId={}, pointId={}, responseCode={}",
+                log.warn("PLC4X OPC UA 订阅事件 失败, 设备={}, 点位={}, 响应码={}",
                         deviceInfo.getDeviceId(), point.getPointId(), responseCode);
                 return;
             }
@@ -433,11 +489,14 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             lastSubscriptionError = null;
         } catch (Exception ex) {
             lastSubscriptionError = ex.getMessage();
-            log.warn("PLC4X OPC UA subscription event process failed, deviceId={}, pointId={}",
+            log.warn("PLC4X OPC UA 订阅事件处理 失败, 设备={}, 点位={}",
                     deviceInfo.getDeviceId(), point.getPointId(), ex);
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void resetSubscriptionDiagnostics() {
         subscriptionEventCount.set(0L);
         lastSubscriptionEventTs = null;
@@ -446,6 +505,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         lastSubscriptionError = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object extractValue(PlcValue plcValue, DataPoint point, Plc4xOpcUaAddress address) {
         Plc4xOpcUaType pointType = resolvePointType(point, address);
         return Plc4xArrayValueSupport.decode(plcValue, address.getArraySize(),
@@ -453,6 +515,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 "OPC UA", address.getRawAddress());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object extractDefaultValue(PlcValue plcValue) {
         if (plcValue.isBoolean()) {
             return plcValue.getBoolean();
@@ -490,16 +555,25 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return plcValue.getObject();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Object coerceWriteValue(Object value, Plc4xOpcUaAddress address, DataPoint point) {
         Plc4xOpcUaType pointType = resolvePointType(point, address);
         return Plc4xArrayValueSupport.encode(value, address.getArraySize(),
                 item -> pointType != null ? pointType.write(item) : item, "OPC UA");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Plc4xOpcUaType resolvePointType(DataPoint point, Plc4xOpcUaAddress address) {
         return Plc4xOpcUaTypeResolver.INSTANCE.resolveOrNull(point, address);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandRead(Map<String, Object> params) throws Exception {
         List<String> nodeIds = extractNodeIds(params);
         if (nodeIds.isEmpty()) {
@@ -524,8 +598,8 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
             String fieldName = "node" + i;
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("nodeId", nodeIds.get(i));
-            entry.put("value", extractValue(response.getPlcValue(fieldName), null, addresses.get(i)));
-            entry.put("status", response.getResponseCode(fieldName) != null
+            entry.put(CommonMapKeys.VALUE, extractValue(response.getPlcValue(fieldName), null, addresses.get(i)));
+            entry.put(CommonMapKeys.STATUS, response.getResponseCode(fieldName) != null
                     ? response.getResponseCode(fieldName).name()
                     : null);
             results.add(entry);
@@ -533,14 +607,17 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandWrite(Map<String, Object> params) throws Exception {
         String nodeId = firstNonBlank(
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null));
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null));
         if (nodeId == null) {
             throw new IllegalArgumentException("nodeId is required");
         }
-        if (!params.containsKey("value")) {
+        if (!params.containsKey(CommonMapKeys.VALUE)) {
             throw new IllegalArgumentException("value is required");
         }
 
@@ -550,23 +627,26 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         Plc4xOpcUaAddress address = Plc4xOpcUaAddressParser.parse(nodeId, dataType);
         PlcWriteResponse response = await(requireConnection().getClient()
                 .writeRequestBuilder()
-                .addTagAddress("node", address.getPlc4xAddress(), coerceWriteValue(params.get("value"), address, null))
+                .addTagAddress("node", address.getPlc4xAddress(), coerceWriteValue(params.get(CommonMapKeys.VALUE), address, null))
                 .build()
                 .execute());
         ensureResponseOk(response, "node", "write");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("nodeId", nodeId);
-        result.put("status", "success");
+        result.put(CommonMapKeys.STATUS, "success");
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeCommandBrowse(Map<String, Object> params) throws Exception {
         ensureBrowseSupported();
         String query = firstNonBlank(
                 Objects.toString(params.get("query"), null),
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null),
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null),
                 DEFAULT_BROWSE_NODE);
         String normalizedQuery = Plc4xOpcUaAddressParser.parse(query).getPlc4xAddress();
 
@@ -591,13 +671,16 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return nodes;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> toBrowseNode(PlcBrowseItem item) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("name", item.getName());
+        result.put(CommonMapKeys.NAME, item.getName());
         result.put("tagAddress", item.getTag() != null ? item.getTag().toString() : null);
         result.put("readable", item.isReadable());
-        result.put("writable", item.isWritable());
-        result.put("subscribable", item.isSubscribable());
+        result.put(CommonMapKeys.WRITABLE, item.isWritable());
+        result.put(CommonMapKeys.SUBSCRIBABLE, item.isSubscribable());
         result.put("publishable", item.isPublishable());
         result.put("array", item.isArray());
         result.put("childrenCount", item.getChildren() != null ? item.getChildren().size() : 0);
@@ -624,12 +707,18 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureScalar(Plc4xOpcUaAddress address, DataPoint point, String operation) {
         if (!address.isScalar()) {
             throw new IllegalArgumentException("PLC4X OPC UA " + operation + " does not support array point: " + point.getPointId());
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
             throw new IllegalStateException("PLC4X OPC UA " + operation + " returned null response");
@@ -640,10 +729,16 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
         return future.get(timeout, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureSubscriptionSupported() {
         subscriptionSupported = isRuntimeSubscriptionSupported();
         if (!subscriptionSupported) {
@@ -652,6 +747,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureBrowseSupported() {
         browseSupported = isRuntimeBrowseSupported();
         if (!browseSupported) {
@@ -680,6 +778,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return connectionAdapter.getClient().getMetadata().isBrowseSupported();
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeExisting(List<DataPoint> points) throws Exception {
         List<PlcSubscriptionHandle> existingHandles = new ArrayList<>();
         for (DataPoint point : points) {
@@ -694,6 +795,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         unsubscribeHandles(existingHandles);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void unsubscribeHandles(Collection<PlcSubscriptionHandle> handles) throws Exception {
         if (handles == null || handles.isEmpty() || connectionAdapter == null) {
             return;
@@ -702,13 +806,16 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         builder.addHandles(handles);
         CompletableFuture<?> future = builder.build().execute();
         if (future == null) {
-            log.debug("PLC4X OPC UA unsubscribe returned null future, deviceId={}, count={}",
+            log.debug("PLC4X OPC UA 取消订阅返回空 Future，设备={}，数量={}",
                     deviceInfo != null ? deviceInfo.getDeviceId() : null, handles.size());
             return;
         }
         await(future);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Duration resolveSubscriptionInterval(DataPoint point, Plc4xOpcUaAddress address) {
         long intervalMs = address != null && address.getSamplingInterval() > 0
                 ? Math.round(address.getSamplingInterval())
@@ -720,6 +827,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return Duration.ofMillis(Math.max(100L, intervalMs));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Plc4xOpcUaConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("PLC4X OPC UA connection has not been established");
@@ -727,6 +837,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         return connectionAdapter;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<String> extractNodeIds(Map<String, Object> params) {
         Object multi = params.get("nodeIds");
         if (multi instanceof Collection<?> collection && !collection.isEmpty()) {
@@ -754,10 +867,13 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
         }
         String single = firstNonBlank(
                 Objects.toString(params.get("nodeId"), null),
-                Objects.toString(params.get("address"), null));
+                Objects.toString(params.get(CommonMapKeys.ADDRESS), null));
         return single != null ? List.of(single) : Collections.emptyList();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeCommand(String command) {
         if (command == null || command.isBlank()) {
             return "";
@@ -766,6 +882,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
     }
 
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;

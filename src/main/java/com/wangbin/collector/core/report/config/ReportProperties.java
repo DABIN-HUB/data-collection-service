@@ -131,6 +131,9 @@ public class ReportProperties {
      */
     private final Outbox outbox = new Outbox();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean mqttEnabled() {
         return mqtt.isEnabled() && isProtocolEnabled("MQTT");
     }
@@ -150,6 +153,9 @@ public class ReportProperties {
         return enabledProtocols.stream().anyMatch(item -> item.equalsIgnoreCase(protocol));
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class Mqtt {
         private boolean enabled = true;
@@ -241,6 +247,9 @@ public class ReportProperties {
             return value;
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         @Data
         public static class Lifecycle {
             /**
@@ -270,6 +279,9 @@ public class ReportProperties {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class Shadow {
         /**
@@ -322,6 +334,9 @@ public class ReportProperties {
          */
         private long historyTtlSeconds = 7 * 24 * 60 * 60;
     }
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class Cloud {
 
@@ -346,6 +361,9 @@ public class ReportProperties {
          */
         private Batch batch = new Batch();
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         @Data
         public static class Payload {
             private String profile = "compact";
@@ -355,6 +373,9 @@ public class ReportProperties {
             private boolean includeMessageId = true;
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         @Data
         public static class Ack {
             private String mode = "async";
@@ -364,6 +385,9 @@ public class ReportProperties {
             private String commitOn = "publish-success";
         }
 
+        /**
+         * 定义当前模块的业务组件。
+         */
         @Data
         public static class Batch {
             private boolean enabled = true;
@@ -375,6 +399,9 @@ public class ReportProperties {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class Outbox {
 

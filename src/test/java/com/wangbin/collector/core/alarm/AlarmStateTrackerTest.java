@@ -19,7 +19,7 @@ public class AlarmStateTrackerTest {
         rule.setThreshold(80D);
         rule.setDuration(2);
         rule.setAdditionalConfig(Map.of(AlarmConfigKeys.HYSTERESIS, 5D));
-        AlarmStateTracker tracker = new AlarmStateTracker();
+        AlarmStateTracker tracker = new AlarmStateTracker(new InMemoryAlarmStateRepository());
 
         assertEquals(AlarmTransitionType.NONE,
                 tracker.evaluate("device-1", "temperature", rule, 90D, 1_000L).type());

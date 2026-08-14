@@ -17,6 +17,9 @@ public class Iec104Address {
     /** 点位类型 ID，可用于写命令 */
     private final Integer typeId;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec104Address(int commonAddress, int ioAddress, Integer typeId) {
         this.commonAddress = commonAddress;
         this.ioAddress = ioAddress;

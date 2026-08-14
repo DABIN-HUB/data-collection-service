@@ -12,7 +12,7 @@ import java.util.Map;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 
 /**
- * Unified collection service facade.
+ * 统一采集服务门面。
  */
 @Slf4j
 @Service
@@ -23,31 +23,40 @@ public class CollectionService {
     private final CollectionStatistics collectionStatistics;
     private final ConfigManager configManager;
 
+    /**
+     * 处理组件生命周期。
+     */
     public boolean startDevice(String deviceId) {
         boolean prepared = configManager.refreshDeviceConfig(deviceId);
         if (!prepared) {
-            log.warn("Device {} config reload failed, skip start", deviceId);
+            log.warn("设备 {} 配置重载失败，跳过启动", deviceId);
             return false;
         }
         return collectionScheduler.startDevice(deviceId);
     }
 
     /**
-     * Start a local temporary device from the in-memory config cache.
-     * This intentionally bypasses remote refresh to avoid deleting local-only configs.
+     * 从内存配置缓存启动本地临时设备。
+     * 该流程会避开远端刷新，避免删除仅存在于本地的配置。
      */
     public boolean startLocalDevice(String deviceId) {
         if (!configManager.isLocalTemporaryDevice(deviceId)) {
-            log.warn("Device {} is not a local temporary device, skip local start", deviceId);
+            log.warn("设备 {} 不是本地临时设备，跳过本地启动", deviceId);
             return false;
         }
         return collectionScheduler.startDevice(deviceId);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public boolean stopDevice(String deviceId) {
         return collectionScheduler.stopDevice(deviceId);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void reloadAllDevices() {
         collectionScheduler.reloadAllDevices();
     }

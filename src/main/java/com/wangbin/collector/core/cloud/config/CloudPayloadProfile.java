@@ -22,6 +22,9 @@ public enum CloudPayloadProfile {
      */
     DIAGNOSTIC;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudPayloadProfile from(String value) {
         if (value == null || value.isBlank()) {
             return COMPACT;

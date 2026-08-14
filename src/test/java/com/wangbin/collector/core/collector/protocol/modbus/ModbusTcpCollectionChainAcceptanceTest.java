@@ -9,8 +9,8 @@ import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessContext;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessPipeline;
 import com.wangbin.collector.core.cache.aspect.TelemetryPostProcessStage;
 import com.wangbin.collector.core.cache.aspect.TelemetryStageType;
-import com.wangbin.collector.core.cloud.model.CloudDeviceType;
-import com.wangbin.collector.core.cloud.model.CloudTargetConfig;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceType;
+import com.wangbin.collector.common.domain.cloud.CloudTargetConfig;
 import com.wangbin.collector.core.collector.protocol.modbus.support.FakeModbusTcpServer;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.connection.adapter.Plc4xModbusTcpConnectionAdapter;
@@ -176,7 +176,7 @@ public class ModbusTcpCollectionChainAcceptanceTest {
                                                         List<DataPoint> points) throws Exception {
         Plc4xModbusTcpCollector collector = new Plc4xModbusTcpCollector();
         collector.init(deviceInfo);
-        ReflectionTestUtils.setField(collector, "dataQualityProcessor", new DataQualityProcessor(null));
+        ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "connected", true);
         ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);

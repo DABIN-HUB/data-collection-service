@@ -4,7 +4,7 @@ import lombok.Getter;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 
 /**
- * Holder for parsed OPC UA addressing metadata.
+ * Holder for parsed OPC UA addressing 元数据.
  */
 @Getter
 public class OpcUaAddress {
@@ -16,6 +16,9 @@ public class OpcUaAddress {
     private final double deadband;
     private final boolean subscribe;
 
+    /**
+     * 创建当前组件实例。
+     */
     public OpcUaAddress(NodeId nodeId,
                         OpcUaDataType dataType,
                         double samplingInterval,
@@ -30,10 +33,16 @@ public class OpcUaAddress {
         this.subscribe = subscribe;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public NodeId toNodeId() {
         return nodeId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needSubscribe() {
         return subscribe;
     }

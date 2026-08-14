@@ -55,6 +55,9 @@ public class AuthProperties {
      */
     private Map<String, ServiceClient> serviceClients = new LinkedHashMap<>();
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class ServiceClient {
         private boolean enabled = true;
@@ -66,6 +69,9 @@ public class AuthProperties {
         private List<String> allowIps = new ArrayList<>();
         private List<AuthScope> scopes = new ArrayList<>(List.of(AuthScope.VIEW));
 
+        /**
+         * 解析或转换业务数据。
+         */
         public String resolveSecret(String requestedVersion) {
             if (!CollectionUtils.isEmpty(keys)) {
                 if (StringUtils.hasText(requestedVersion) && keys.containsKey(requestedVersion)) {
@@ -79,11 +85,17 @@ public class AuthProperties {
             return null;
         }
 
+        /**
+         * 解析或转换业务数据。
+         */
         public long resolveMaxSkew(long defaultSkewSeconds) {
             return maxSkewSeconds > 0 ? maxSkewSeconds : defaultSkewSeconds;
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class AccessRule {
         private List<String> methods = new ArrayList<>();
@@ -91,6 +103,9 @@ public class AuthProperties {
         private AuthScope requiredScope = AuthScope.VIEW;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public List<AuthScope> resolveOpsScopes(String label) {
         List<AuthScope> configured = opsScopes.get(label);
         return CollectionUtils.isEmpty(configured) ? defaultOpsScopes : configured;

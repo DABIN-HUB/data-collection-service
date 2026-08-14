@@ -7,6 +7,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 public class MqttPointOptions {
 
@@ -19,6 +22,9 @@ public class MqttPointOptions {
     private final String publishTemplate;
     private final Charset charset;
 
+    /**
+     * 创建当前组件实例。
+     */
     private MqttPointOptions(String topic,
                              String writeTopic,
                              int qos,
@@ -37,6 +43,9 @@ public class MqttPointOptions {
         this.charset = charset;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static MqttPointOptions from(DataPoint point, int defaultQos) {
         String topic = Optional.ofNullable(point.getAdditionalConfig("topic"))
                 .map(Object::toString)

@@ -17,9 +17,15 @@ import java.util.Locale;
  */
 public final class Dlt645DataCodec {
 
+    /**
+     * 创建当前组件实例。
+     */
     private Dlt645DataCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String normalizeDataIdentifier(String address) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("DL/T 645 数据标识不能为空");
@@ -35,6 +41,9 @@ public final class Dlt645DataCodec {
         return normalized;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeDataIdentifier(String identifier) {
         String normalized = normalizeDataIdentifier(identifier);
         byte[] result = new byte[4];
@@ -45,6 +54,9 @@ public final class Dlt645DataCodec {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String decodeDataIdentifier(byte[] bytes) {
         if (bytes == null || bytes.length < 4) {
             throw new IllegalArgumentException("DL/T 645 数据标识至少需要 4 字节");
@@ -56,6 +68,9 @@ public final class Dlt645DataCodec {
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object decodeValue(byte[] payload,
                                      String valueType,
                                      String dataFormat,
@@ -75,6 +90,9 @@ public final class Dlt645DataCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encodeValue(Object value,
                                      String valueType,
                                      String dataFormat) throws Dlt645ProtocolException {
@@ -91,6 +109,9 @@ public final class Dlt645DataCodec {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] selectValue(byte[] payload, String format, int valueIndex)
             throws Dlt645ProtocolException {
         if (payload == null) {
@@ -107,6 +128,9 @@ public final class Dlt645DataCodec {
         return Arrays.copyOfRange(payload, offset, offset + length);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BigDecimal decodeBcd(byte[] bytes, int decimalPlaces) throws Dlt645ProtocolException {
         StringBuilder digits = new StringBuilder(bytes.length * 2);
         for (int index = bytes.length - 1; index >= 0; index--) {
@@ -121,6 +145,9 @@ public final class Dlt645DataCodec {
         return decimalPlaces > 0 ? value.movePointLeft(decimalPlaces) : value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeBcd(Object value, int length, int decimalPlaces)
             throws Dlt645ProtocolException {
         if (length <= 0) {
@@ -142,6 +169,9 @@ public final class Dlt645DataCodec {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static long decodeUnsignedLittleEndian(byte[] bytes) {
         long value = 0;
         for (int index = 0; index < bytes.length; index++) {
@@ -150,6 +180,9 @@ public final class Dlt645DataCodec {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static long decodeSignedLittleEndian(byte[] bytes) {
         long value = decodeUnsignedLittleEndian(bytes);
         int bits = bytes.length * 8;
@@ -159,6 +192,9 @@ public final class Dlt645DataCodec {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static float decodeFloatLittleEndian(byte[] bytes) throws Dlt645ProtocolException {
         if (bytes.length != Float.BYTES) {
             throw new Dlt645ProtocolException("FLOAT_LE 数据必须是 4 字节");
@@ -166,6 +202,9 @@ public final class Dlt645DataCodec {
         return ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getFloat();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String decodeDateTime(byte[] bytes) throws Dlt645ProtocolException {
         if (bytes.length != 6) {
             throw new Dlt645ProtocolException("DATETIME 数据必须是 6 字节");
@@ -180,6 +219,9 @@ public final class Dlt645DataCodec {
                 .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int bcdByte(byte value) throws Dlt645ProtocolException {
         int high = (value >>> 4) & 0x0F;
         int low = value & 0x0F;
@@ -189,6 +231,9 @@ public final class Dlt645DataCodec {
         return high * 10 + low;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeInteger(Object value, int length) throws Dlt645ProtocolException {
         if (length <= 0 || length > Long.BYTES) {
             throw new Dlt645ProtocolException("整数写入长度必须在 1 到 8 字节之间");
@@ -201,6 +246,9 @@ public final class Dlt645DataCodec {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeFloat(Object value) {
         return ByteBuffer.allocate(Float.BYTES)
                 .order(ByteOrder.LITTLE_ENDIAN)
@@ -208,6 +256,9 @@ public final class Dlt645DataCodec {
                 .array();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeAscii(Object value, int length) throws Dlt645ProtocolException {
         byte[] source = String.valueOf(value).getBytes(StandardCharsets.US_ASCII);
         if (length <= 0) {
@@ -219,6 +270,9 @@ public final class Dlt645DataCodec {
         return Arrays.copyOf(source, length);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int bytesPerValue(String format) {
         if (format == null || format.isBlank()) {
             return 0;
@@ -227,6 +281,9 @@ public final class Dlt645DataCodec {
         return (int) ((digits + 1) / 2);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int decimalPlaces(String format) {
         if (format == null) {
             return 0;
@@ -238,6 +295,9 @@ public final class Dlt645DataCodec {
         return (int) format.substring(point + 1).chars().filter(ch -> ch == 'X' || ch == '9').count();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String toHex(byte[] bytes) {
         StringBuilder builder = new StringBuilder(bytes.length * 2);
         for (byte value : bytes) {
@@ -246,6 +306,9 @@ public final class Dlt645DataCodec {
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] parseHex(String value) throws Dlt645ProtocolException {
         String normalized = value == null ? "" : value.replace(" ", "").replace("-", "");
         if (normalized.length() % 2 != 0 || !normalized.matches("[0-9a-fA-F]*")) {

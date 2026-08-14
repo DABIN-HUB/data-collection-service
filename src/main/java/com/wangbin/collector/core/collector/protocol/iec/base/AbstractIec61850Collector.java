@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.iec.base;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.beanit.iec61850bean.*;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -33,6 +35,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
 
     private final Map<String, BasicDataAttribute> attributeCache = new ConcurrentHashMap<>();
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void initIec61850Config(DeviceInfo deviceInfo) {
         this.iec61850Config = collectorProperties != null
                 ? collectorProperties.getIec61850()
@@ -44,13 +49,22 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         this.timeout = connectionConfig.getTimeout();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected ClientEventListener createClientEventListener() {
         return new ClientEventListener() {
+            /**
+             * 创建并返回业务对象。
+             */
             @Override
             public void newReport(Report report) {
                 handleReport(report);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void associationClosed(IOException e) {
                 handleAssociationClosed(e);
@@ -58,6 +72,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         };
     }
 
+    /**
+     * 处理连接生命周期。
+     */
     protected void connectAssociation() throws Exception {
         initIec61850Config(deviceInfo);
         clientSap = new ClientSap();
@@ -69,6 +86,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         reloadServerModel();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void closeAssociation() {
         if (association != null) {
             try {
@@ -84,15 +104,21 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         attributeCache.clear();
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     protected synchronized void reloadServerModel() throws ServiceError, IOException {
         if (association == null) {
             throw new IllegalStateException("IEC61850尚未建立连接");
         }
         serverModel = association.retrieveModel();
         attributeCache.clear();
-        log.info("IEC61850 模型加载完成, logical devices={}", serverModel.getChildren().size());
+        log.info("IEC61850 模型加载完成, 逻辑设备数量={}", serverModel.getChildren().size());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     protected Object readAttribute(Iec61850Address address) throws Exception {
         BasicDataAttribute attribute = resolveAttribute(address);
         association.getDataValues(attribute);
@@ -100,6 +126,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         return convertValue(attribute);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     protected boolean writeAttribute(Iec61850Address address, Object value) throws Exception {
         BasicDataAttribute attribute = resolveAttribute(address);
         applyWriteValue(attribute, value);
@@ -108,6 +137,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         return true;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     protected ModelNode findModelNode(Iec61850Address address) {
         if (serverModel == null) {
             throw new IllegalStateException("IEC61850 模型未加载");
@@ -115,6 +147,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         return serverModel.findModelNode(address.getObjectReference(), address.getFunctionalConstraint());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected BasicDataAttribute resolveAttribute(Iec61850Address address) {
         String key = address.getCacheKey();
         BasicDataAttribute cached = attributeCache.get(key);
@@ -133,6 +168,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         return attribute;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Object convertValue(BasicDataAttribute attribute) {
         if (attribute instanceof BdaBoolean bdaBoolean) {
             return bdaBoolean.getValue();
@@ -177,6 +215,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         return attribute.getValueString();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void applyWriteValue(BasicDataAttribute attribute, Object raw) {
         if (attribute instanceof BdaBoolean bdaBoolean) {
             bdaBoolean.setValue(parseBoolean(raw));
@@ -229,6 +270,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         throw new IllegalArgumentException("不支持写入的类型: " + attribute.getClass().getSimpleName());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Number parseNumber(Object raw) {
         if (raw instanceof Number number) {
             return number;
@@ -240,6 +284,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean parseBoolean(Object raw) {
         if (raw instanceof Boolean bool) {
             return bool;
@@ -254,6 +301,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         throw new IllegalArgumentException("不是有效的布尔值: " + raw);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void handleReport(Report report) {
         lastActivityTime = System.currentTimeMillis();
         if (report == null) {
@@ -277,6 +327,9 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processReportAttribute(BasicDataAttribute attribute) {
         if (attribute == null) {
             return;
@@ -290,14 +343,20 @@ public abstract class AbstractIec61850Collector extends ConnectionBackedCollecto
         Map<String, Object> payload = new HashMap<>();
         payload.put("reference", reference);
         payload.put("fc", fc.name());
-        payload.put("value", value);
+        payload.put(CommonMapKeys.VALUE, value);
         log.debug("IEC61850 报告: {}", payload);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void handleReportValue(BasicDataAttribute attribute, Object value) {
         // 默认不下发，由子类重写
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void handleAssociationClosed(IOException e) {
         log.warn("IEC61850 连接被关闭: {}", e != null ? e.getMessage() : "远端关闭");
         connected = false;

@@ -18,6 +18,9 @@ public record CloudBatchFlushPolicy(
     private static final int DEFAULT_MAX_PAYLOAD_BYTES = 128 * 1024;
     private static final long DEFAULT_MAX_DELAY_MS = 1000L;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CloudBatchFlushPolicy defaults() {
         return new CloudBatchFlushPolicy(
                 true,
@@ -28,6 +31,9 @@ public record CloudBatchFlushPolicy(
                 true);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CloudBatchFlushPolicy disabled() {
         return new CloudBatchFlushPolicy(
                 false,
@@ -38,6 +44,9 @@ public record CloudBatchFlushPolicy(
                 true);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudBatchFlushPolicy from(ReportProperties.Cloud.Batch batch) {
         if (batch == null) {
             return defaults();
@@ -51,10 +60,16 @@ public record CloudBatchFlushPolicy(
                 batch.isHighPriorityBypass());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int positiveOrDefault(int value, int defaultValue) {
         return value > 0 ? value : defaultValue;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static long positiveOrDefault(long value, long defaultValue) {
         return value > 0 ? value : defaultValue;
     }

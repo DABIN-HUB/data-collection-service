@@ -6,6 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Component
 @Order(40)
 @RequiredArgsConstructor
@@ -13,16 +16,25 @@ class ReportTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     private final CacheReportService cacheReportService;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public TelemetryStageType type() {
         return TelemetryStageType.REPORT;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public String name() {
         return "report";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean enabled(TelemetryPostProcessContext context) {
         return context.processResult() != null
@@ -30,6 +42,9 @@ class ReportTelemetryPostProcessStage implements TelemetryPostProcessStage {
                 && (context.point().isReportEnabled() || context.point().isEventReportingEnabled());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     public void process(TelemetryPostProcessContext context) {
         cacheReportService.reportPoint(

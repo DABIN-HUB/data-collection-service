@@ -19,6 +19,9 @@ public enum DataQuality {
     private final String description;
     private final String detail;
 
+    /**
+     * 创建当前组件实例。
+     */
     DataQuality(int code, String description, String detail) {
         this.code = code;
         this.description = description;
@@ -38,6 +41,9 @@ public enum DataQuality {
     }
 
     // 根据code获取枚举
+    /**
+     * 创建并返回业务对象。
+     */
     public static DataQuality fromCode(int code) {
         for (DataQuality quality : values()) {
             if (quality.getCode() == code) {
@@ -53,6 +59,9 @@ public enum DataQuality {
     }
 
     // 判断是否需要告警
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean needAlert() {
         return this.code < 50;
     }

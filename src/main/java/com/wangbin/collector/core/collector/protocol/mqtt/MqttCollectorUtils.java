@@ -2,10 +2,19 @@ package com.wangbin.collector.core.collector.protocol.mqtt;
 
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class MqttCollectorUtils {
+    /**
+     * 创建当前组件实例。
+     */
     private MqttCollectorUtils() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static int asInt(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -20,6 +29,9 @@ final class MqttCollectorUtils {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     static boolean asBoolean(Object value, boolean defaultValue) {
         if (value == null) {
             return defaultValue;

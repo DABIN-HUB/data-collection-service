@@ -7,6 +7,9 @@ public final class AlarmConfigKeys {
 
     public static final String HYSTERESIS = "hysteresis";
 
+    /**
+     * 创建当前组件实例。
+     */
     private AlarmConfigKeys() {
     }
 }

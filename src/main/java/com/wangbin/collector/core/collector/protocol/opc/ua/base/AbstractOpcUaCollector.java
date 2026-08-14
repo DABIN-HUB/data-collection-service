@@ -47,6 +47,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
     protected final Map<String, OpcUaSubscription> subscriptions = new ConcurrentHashMap<>();
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         log.info("开始建立 OPC UA 连接: {}", deviceInfo.getDeviceId());
@@ -62,9 +65,12 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         this.connectionAdapter = opcUaAdapter;
         this.client = opcUaAdapter.getClient();
 
-        log.info("OPC UA连接建立成功: endpoint={} securityPolicy={}", endpointUrl, securityPolicy);
+        log.info("OPC UA连接建立成功: end点位={} securityPolicy={}", endpointUrl, securityPolicy);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("OPC UA");
@@ -73,6 +79,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         subscriptions.clear();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void initOpcUaConfig(DeviceInfo deviceInfo, DeviceConnection connection) {
         endpointUrl = connection.getUrl();
         securityPolicy = connection.getSecurityPolicy();
@@ -82,12 +91,18 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         subscriptionInterval = connection.getSubscriptionInterval();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     protected Object readValue(OpcUaAddress address) throws Exception {
         NodeId nodeId = address.toNodeId();
         DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
         return value.getValue().getValue();
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     protected Map<String, Object> readValues(List<DataPoint> points) throws Exception {
         List<NodeId> nodeIds = new ArrayList<>();
         for (DataPoint point : points) {
@@ -104,6 +119,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     protected boolean writeValue(OpcUaAddress address, Object rawValue) throws Exception {
         Variant variant = OpcUaAddressParser.toVariant(rawValue, address.getDataType());
         List<StatusCode> results = client.writeValues(
@@ -113,6 +131,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         return !results.isEmpty() && results.get(0).isGood();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected OpcUaSubscription createSubscription() throws Exception {
         OpcUaSubscription subscription = new OpcUaSubscription(client, subscriptionInterval);
         subscription.create();
@@ -123,6 +144,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         return subscription;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected OpcUaMonitoredItem addMonitoredItem(OpcUaSubscription subscription,
                                                    OpcUaAddress address,
                                                    Consumer<OpcUaMonitoredItem> configurator) throws Exception {
@@ -152,6 +176,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         return item;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private MonitoringFilter buildFilter(OpcUaAddress address) {
         if (address.getDeadband() <= 0) {
             return null;

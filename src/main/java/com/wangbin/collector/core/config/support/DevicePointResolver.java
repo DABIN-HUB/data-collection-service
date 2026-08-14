@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Resolves point references consistently for manual control and downlink use cases.
+ * Resolves 点位 references consistently for 手动 control and downlink use cases.
  */
 @Component
 @RequiredArgsConstructor
@@ -19,10 +19,16 @@ public class DevicePointResolver {
 
     private final ConfigManager configManager;
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Optional<DataPoint> resolve(String deviceId, String pointRef) {
         return resolve(configManager.getDataPoints(deviceId), pointRef);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public Optional<DataPoint> resolve(List<DataPoint> points, String pointRef) {
         if (points == null || points.isEmpty() || !StringUtils.hasText(pointRef)) {
             return Optional.empty();
@@ -33,6 +39,9 @@ public class DevicePointResolver {
                 .findFirst();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matches(DataPoint point, String normalizedRef) {
         return point != null
                 && (normalizedRef.equals(normalize(point.getReportField()))
@@ -42,6 +51,9 @@ public class DevicePointResolver {
                 || normalizedRef.equals(normalize(point.getPointName())));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalize(String value) {
         if (!StringUtils.hasText(value)) {
             return "";

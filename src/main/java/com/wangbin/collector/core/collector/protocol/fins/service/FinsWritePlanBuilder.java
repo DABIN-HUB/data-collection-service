@@ -11,8 +11,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class FinsWritePlanBuilder {
 
+    /**
+     * 创建并返回业务对象。
+     */
     public List<FinsWritePlan> build(Map<DataPoint, Object> pointValues,
                                      int maxWordsPerRequest) {
         if (pointValues == null || pointValues.isEmpty()) {
@@ -73,6 +79,9 @@ public class FinsWritePlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private FinsWritePlan buildPlan(FinsMemoryArea memoryArea,
                                     int startWord,
                                     int endWordExclusive,
@@ -97,6 +106,9 @@ public class FinsWritePlanBuilder {
         return new FinsWritePlan(key, memoryArea, startWord, endWordExclusive, items);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlanCandidate toCandidate(DataPoint point, FinsAddress address) {
         int startWord = address.getWordAddress();
         int unitCount = address.readUnitCount();
@@ -110,6 +122,9 @@ public class FinsWritePlanBuilder {
         );
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PlanCandidate(DataPoint point,
                                  FinsAddress address,
                                  FinsMemoryArea memoryArea,

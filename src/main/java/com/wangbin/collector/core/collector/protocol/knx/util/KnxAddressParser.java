@@ -8,17 +8,29 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class KnxAddressParser {
 
     private static final Pattern DPT_PATTERN = Pattern.compile("^DPT[A-Z0-9._-]+$");
 
+    /**
+     * 创建当前组件实例。
+     */
     private KnxAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static KnxAddress parse(String address) {
         return parse(address, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static KnxAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -34,6 +46,9 @@ public final class KnxAddressParser {
         return parse(address, config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static KnxAddress parse(String address, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("KNX group address cannot be empty");
@@ -59,6 +74,9 @@ public final class KnxAddressParser {
         return new KnxAddress(rawAddress, groupAddress, plc4xAddress, levels, dptId);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeGroupAddress(String address) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("KNX group address cannot be empty");
@@ -94,16 +112,25 @@ public final class KnxAddressParser {
         return values[0] + "/" + values[1] + "/" + values[2];
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static int validateLevels(String groupAddress) {
         return groupAddress.split("/").length;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static void validateRange(int value, int min, int max, String address) {
         if (value < min || value > max) {
             throw new IllegalArgumentException("KNX group address out of range: " + address);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeDpt(String dpt) {
         if (dpt == null || dpt.isBlank()) {
             return null;
@@ -118,6 +145,9 @@ public final class KnxAddressParser {
         return normalized;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -130,6 +160,9 @@ public final class KnxAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

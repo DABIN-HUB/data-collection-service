@@ -135,7 +135,7 @@ public final class FakeBacnetIpServer implements AutoCloseable {
                 DatagramPacket packet = new DatagramPacket(response, response.length, request.getSocketAddress());
                 socket.send(packet);
             } catch (SocketTimeoutException ignored) {
-                // poll loop
+                // 轮询循环。
             } catch (Exception ex) {
                 if (running) {
                     asyncFailure.compareAndSet(null, new RuntimeException("Fake BACnet/IP server failed", ex));

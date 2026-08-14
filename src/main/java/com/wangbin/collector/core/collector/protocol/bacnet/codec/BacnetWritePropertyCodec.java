@@ -4,13 +4,22 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePr
 
 import java.io.ByteArrayOutputStream;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetWritePropertyCodec {
 
     public static final int SERVICE_CHOICE_WRITE_PROPERTY = 0x0F;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetWritePropertyCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(BacnetWritePropertyRequest request) {
         ByteArrayOutputStream apdu = new ByteArrayOutputStream();
         apdu.write((BacnetReadPropertyCodec.APDU_TYPE_CONFIRMED_REQUEST << 4) | 0x02);

@@ -16,10 +16,16 @@ public class ReportScheduler {
 
     private final Map<String, ReportTask> tasks = new ConcurrentHashMap<>();
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void registerTask(ReportTask task) {
         tasks.put(task.getId(), task);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Scheduled(fixedDelay = 60_000)
     public void schedule() {
         long now = System.currentTimeMillis() / 1000;
@@ -28,8 +34,8 @@ public class ReportScheduler {
                 continue;
             }
             if (now - task.getLastRun() >= task.getPeriodSeconds()) {
-                log.debug("Report task {} pending execution", task.getName());
-                // TODO implement actual reporting logic
+                log.debug("上报 任务 {} 等待中 execution", task.getName());
+                // 待接入真实监控上报逻辑。
             }
         }
     }

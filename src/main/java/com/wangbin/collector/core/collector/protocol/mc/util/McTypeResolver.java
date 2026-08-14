@@ -7,11 +7,20 @@ import com.wangbin.collector.core.collector.protocol.mc.domain.McDriverType;
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class McTypeResolver {
 
+    /**
+     * 创建当前组件实例。
+     */
     private McTypeResolver() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McDriverType resolveRequired(DataPoint point, McDeviceCode deviceCode) {
         String platformDataType = point != null ? point.getDataType() : null;
         Map<String, Object> config = point != null && point.getAdditionalConfig() != null
@@ -20,12 +29,18 @@ public final class McTypeResolver {
         return resolveRequired(platformDataType, config, deviceCode, false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McDriverType resolveRequired(String platformDataType,
                                                Map<String, Object> config,
                                                McDeviceCode deviceCode) {
         return resolveRequired(platformDataType, config, deviceCode, false);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static McDriverType resolveRequired(String platformDataType,
                                                Map<String, Object> config,
                                                McDeviceCode deviceCode,
@@ -51,12 +66,18 @@ public final class McTypeResolver {
         return resolved;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public static void validateCompatibility(McDeviceCode deviceCode,
                                              McDriverType driverType,
                                              Map<String, Object> config) {
         validateCompatibility(deviceCode, driverType, config, false);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     public static void validateCompatibility(McDeviceCode deviceCode,
                                              McDriverType driverType,
                                              Map<String, Object> config,
@@ -87,6 +108,9 @@ public final class McTypeResolver {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Integer resolveStringLength(Map<String, Object> config) {
         if (config == null || config.isEmpty()) {
             return null;
@@ -105,6 +129,9 @@ public final class McTypeResolver {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> config, String... keys) {
         for (String key : keys) {
             if (config.containsKey(key)) {
@@ -114,6 +141,9 @@ public final class McTypeResolver {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -126,6 +156,9 @@ public final class McTypeResolver {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

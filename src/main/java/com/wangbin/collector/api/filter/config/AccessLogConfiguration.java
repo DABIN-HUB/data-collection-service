@@ -13,6 +13,9 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(AccessLogProperties.class)
 public class AccessLogConfiguration {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean
     @ConditionalOnProperty(prefix = "logging.access", name = "enabled", havingValue = "true", matchIfMissing = true)
     public LogFilter accessLogFilter(AccessLogProperties properties) {

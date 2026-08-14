@@ -30,6 +30,9 @@ public class IdGenerator {
 
     private static final SnowflakeIdWorker snowflakeIdWorker = new SnowflakeIdWorker();
 
+    /**
+     * 创建当前组件实例。
+     */
     private IdGenerator() {
         // 工具类，防止实例化
     }
@@ -185,6 +188,9 @@ public class IdGenerator {
         private long sequence = 0L;
         private long lastTimestamp = -1L;
 
+        /**
+         * 创建当前组件实例。
+         */
         public SnowflakeIdWorker() {
             this.workerId = getWorkerId();
             this.datacenterId = getDatacenterId();
@@ -199,6 +205,9 @@ public class IdGenerator {
             }
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         public synchronized long nextId() {
             long timestamp = timeGen();
 
@@ -225,6 +234,9 @@ public class IdGenerator {
                     sequence;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private long tilNextMillis(long lastTimestamp) {
             long timestamp = timeGen();
             while (timestamp <= lastTimestamp) {
@@ -233,6 +245,9 @@ public class IdGenerator {
             return timestamp;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private long timeGen() {
             return System.currentTimeMillis();
         }
@@ -260,7 +275,7 @@ public class IdGenerator {
                     }
                 }
             } catch (Exception e) {
-                // ignore
+                // 忽略当前异常。
             }
             return 1L;
         }

@@ -13,16 +13,25 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Plc4xOpcUaConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -31,9 +40,12 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X OPC UA connection created: {}", connectionString);
+        log.info("PLC4X OPC UA 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -45,6 +57,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -52,9 +67,12 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // OPC UA authentication is handled inside the PLC4X connection handshake.
+        // OPC UA 认证 is handled inside the PLC4X 连接 handshake.
     }
 
     @Override
@@ -71,6 +89,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -107,6 +128,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return endpoint + "?" + String.join("&", options);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveEndpoint() {
         String endpoint = firstNonBlank(
                 config.getUrl(),
@@ -123,6 +147,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return normalizeEndpoint(endpoint);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeEndpoint(String endpoint) {
         String trimmed = endpoint.trim();
         String lower = trimmed.toLowerCase(Locale.ROOT);
@@ -138,6 +165,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return "opcua:tcp://" + trimmed;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long resolveRequestTimeout() {
         Long requestTimeout = config.getLong("requestTimeout", null);
         if (requestTimeout != null && requestTimeout > 0) {
@@ -158,6 +188,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Long resolveNegotiationTimeout() {
         Long negotiationTimeout = config.getLong("negotiationTimeout", null);
         if (negotiationTimeout != null && negotiationTimeout > 0) {
@@ -178,6 +211,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveUsername() {
         if ("ANONYMOUS".equals(resolveAuthType())) {
             return null;
@@ -188,6 +224,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
                 authParam("username"));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolvePassword() {
         if ("ANONYMOUS".equals(resolveAuthType())) {
             return null;
@@ -198,47 +237,71 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
                 authParam("password"));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveKeyStoreFile() {
         return firstNonBlank(
                 config.getString("keyStoreFile", null),
                 config.getString("clientCertPath", null));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveKeyStorePassword() {
         return firstNonBlank(
                 config.getString("keyStorePassword", null),
                 config.getString("clientCertPassword", null));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveAuthType() {
         String authType = firstNonBlank(config.getString("authType", null), "ANONYMOUS");
         return authType != null ? authType.trim().toUpperCase(Locale.ROOT) : "ANONYMOUS";
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendTextOption(List<String> options, String key, String value) {
         if (hasText(value)) {
             options.add(key + "=" + encode(value.trim()));
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendBooleanOption(List<String> options, String key, Boolean value) {
         if (value != null) {
             options.add(key + "=" + value);
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendIntOption(List<String> options, String key, Integer value) {
         if (value != null && value > 0) {
             options.add(key + "=" + value);
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendLongOption(List<String> options, String key, Long value) {
         if (value != null && value > 0) {
             options.add(key + "=" + value);
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeSecurityPolicy(String value) {
         if (!hasText(value)) {
             return null;
@@ -257,6 +320,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return trimmed;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeMessageSecurity(String value) {
         if (!hasText(value)) {
             return null;
@@ -270,10 +336,16 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String authParam(String key) {
         Map<String, String> authParams = config.getAuthParams();
         if (authParams == null || key == null) {
@@ -282,6 +354,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return authParams.get(key);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -294,6 +369,9 @@ public class Plc4xOpcUaConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

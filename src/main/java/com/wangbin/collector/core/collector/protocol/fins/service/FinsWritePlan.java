@@ -8,6 +8,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Getter
 public class FinsWritePlan {
 
@@ -20,6 +23,9 @@ public class FinsWritePlan {
     private final List<FinsWritePlanItem> items;
     private final List<DataPoint> points;
 
+    /**
+     * 创建当前组件实例。
+     */
     public FinsWritePlan(String segmentKey,
                          FinsMemoryArea memoryArea,
                          int startWord,

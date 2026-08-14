@@ -56,6 +56,9 @@ public class PerformanceMonitorService {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long longValue(Map<String, Object> stats, String key) {
         Object value = stats.get(key);
         if (value instanceof Number number) {
@@ -70,6 +73,9 @@ public class PerformanceMonitorService {
         return 0L;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> mapValue(Map<String, Object> stats, String key) {
         Object value = stats.get(key);

@@ -13,6 +13,9 @@ public enum CoapMethod {
 
     private final CoAP.Code code;
 
+    /**
+     * 创建当前组件实例。
+     */
     CoapMethod(CoAP.Code code) {
         this.code = code;
     }
@@ -21,6 +24,9 @@ public enum CoapMethod {
         return code;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CoapMethod fromText(String text) {
         if (text == null || text.isBlank()) {
             return GET;

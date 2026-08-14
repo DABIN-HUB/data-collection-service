@@ -15,6 +15,9 @@ public class AuthResponse {
     private Long timestamp;
     private AuthData data;
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     @Data
     public static class AuthData {
         private String token;
@@ -24,6 +27,9 @@ public class AuthResponse {
         private String firmwareVersion;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static AuthResponse success(String version, String method) {
         AuthResponse response = new AuthResponse();
         response.setVersion(version);
@@ -34,6 +40,9 @@ public class AuthResponse {
         return response;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static AuthResponse error(String version, String method, String message) {
         AuthResponse response = new AuthResponse();
         response.setVersion(version);

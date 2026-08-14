@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Per-device performance statistics.
+ * Per-设备 performance statistics.
  */
 class DevicePerformance {
 
@@ -37,10 +39,16 @@ class DevicePerformance {
     final Map<String, Double> pointChangeRates = new ConcurrentHashMap<>();
     final Map<String, Object> lastValues = new ConcurrentHashMap<>();
 
+    /**
+     * 创建当前组件实例。
+     */
     DevicePerformance(String deviceId) {
         this.deviceId = deviceId;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     void initializeBatchWindow(int initialBatchSize, int protocolMaxBatchSize) {
         int normalizedMax = Math.max(10, protocolMaxBatchSize);
         int normalizedInitial = Math.max(10, Math.min(initialBatchSize, normalizedMax));
@@ -48,6 +56,9 @@ class DevicePerformance {
         this.currentBatchSize = normalizedInitial;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordSuccess(int pointCount, long executionTime) {
         totalPoints.addAndGet(pointCount);
         successfulBatches.incrementAndGet();
@@ -57,16 +68,25 @@ class DevicePerformance {
         lastSuccessTime = System.currentTimeMillis();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordFailure() {
         failedBatches.incrementAndGet();
         consecutiveFailureCount++;
         updateResponseTimeHistory(-1);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     void recordDataProcessed() {
-        // hook for future use
+        // 预留后续扩展钩子。
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     void updateResponseTimeHistory(long executionTime) {
         synchronized (recentResponseTimes) {
             recentResponseTimes.add(executionTime);
@@ -76,6 +96,9 @@ class DevicePerformance {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     double calculateHealthScore() {
         double score = 100.0;
         double successRate = successfulBatches.get() /
@@ -117,6 +140,9 @@ class DevicePerformance {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     String predictFailureRisk() {
         if (consecutiveFailureCount >= 3) {
             return "HIGH";
@@ -128,6 +154,9 @@ class DevicePerformance {
         return "NONE";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     void adjustBatchSize(int percentChange) {
         long now = System.currentTimeMillis();
         if (now - lastAdjustTime < 10000) {
@@ -139,14 +168,14 @@ class DevicePerformance {
                 currentBatchSize * (100 + percentChange) / 100));
 
         if (oldSize != currentBatchSize) {
-            log.debug("device {} batch size adjusted {} -> {}", deviceId, oldSize, currentBatchSize);
+            log.debug("设备 {} 批量 数量 adjusted {} -> {}", deviceId, oldSize, currentBatchSize);
             lastAdjustTime = now;
         }
     }
 
     Map<String, Object> getStatistics() {
         Map<String, Object> stats = new ConcurrentHashMap<>();
-        stats.put("deviceId", deviceId);
+        stats.put(CommonMapKeys.DEVICE_ID, deviceId);
         stats.put("totalPoints", totalPoints.get());
         stats.put("successfulBatches", successfulBatches.get());
         stats.put("failedBatches", failedBatches.get());
@@ -154,7 +183,7 @@ class DevicePerformance {
                 totalExecutionTime.get() / successfulBatches.get() : 0);
         stats.put("currentBatchSize", currentBatchSize);
         stats.put("maxBatchSize", maxBatchSize);
-        stats.put("successRate", (successfulBatches.get() + failedBatches.get()) > 0 ?
+        stats.put(CommonMapKeys.SUCCESS_RATE, (successfulBatches.get() + failedBatches.get()) > 0 ?
                 successfulBatches.get() * 100.0 / (successfulBatches.get() + failedBatches.get()) : 0);
         stats.put("healthScore", calculateHealthScore());
         stats.put("failureRisk", predictFailureRisk());

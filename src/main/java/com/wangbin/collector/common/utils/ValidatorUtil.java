@@ -49,6 +49,9 @@ public class ValidatorUtil {
     private static final Pattern MAC_PATTERN = Pattern.compile(
             "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$");
 
+    /**
+     * 创建当前组件实例。
+     */
     private ValidatorUtil() {
         // 工具类，防止实例化
     }

@@ -164,11 +164,16 @@ public class CollectorDataPostProcessorTest {
                                                        CollectionTaskGuard collectionTaskGuard) {
         TelemetryStreamProperties streamProperties = new TelemetryStreamProperties();
         streamProperties.setEnabled(streamEnabled);
-        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(List.of(
-                new CacheTelemetryPostProcessStage(multiLevelCacheManager),
-                new StreamTelemetryPostProcessStage(telemetryStreamService, streamProperties),
-                new ReportTelemetryPostProcessStage(cacheReportService)
-        ));
+        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(
+                List.of(
+                        new CacheTelemetryPostProcessStage(multiLevelCacheManager),
+                        new StreamTelemetryPostProcessStage(telemetryStreamService, streamProperties),
+                        new ReportTelemetryPostProcessStage(cacheReportService)
+                ),
+                Runnable::run,
+                Runnable::run,
+                Runnable::run,
+                Runnable::run);
         return new CollectorDataPostProcessor(executor, pipeline, collectionTaskGuard);
     }
 

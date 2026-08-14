@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.mqtt;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONPath;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -28,6 +30,9 @@ import java.util.function.Consumer;
 import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUtils.asBoolean;
 import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUtils.asInt;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class MqttCollector extends ConnectionBackedCollector {
 
@@ -53,6 +58,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return "MQTT";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         initConfig();
@@ -64,6 +72,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         if (mqttConnection != null) {
@@ -78,11 +89,17 @@ public class MqttCollector extends ConnectionBackedCollector {
         latestTimestamps.clear();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) {
         return latestValues.get(point.getPointId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
         Map<String, Object> result = new ConcurrentHashMap<>();
@@ -95,6 +112,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         MqttPointOptions options = resolvePointOptions(point);
@@ -103,6 +123,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
         Map<String, Boolean> result = new ConcurrentHashMap<>();
@@ -116,6 +139,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -127,6 +153,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
@@ -156,13 +185,16 @@ public class MqttCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new ConcurrentHashMap<>();
         status.put("brokerUrl", getBrokerUrl());
         status.put("clientId", getClientId());
         status.put("protocolVersion", getProtocolVersion());
-        status.put("connected", mqttConnection != null && mqttConnection.isConnected());
+        status.put(CommonMapKeys.CONNECTED, mqttConnection != null && mqttConnection.isConnected());
         status.put("subscriptions", topicBindings.keySet());
         status.put("cachedPoints", latestValues.size());
         status.put("lastTimestamps", latestTimestamps);
@@ -170,6 +202,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         String normalized = command != null ? command.toLowerCase(Locale.ROOT) : "";
@@ -183,6 +218,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         };
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         if (points == null) {
@@ -193,9 +231,12 @@ public class MqttCollector extends ConnectionBackedCollector {
             pointDefinitions.put(point.getPointId(), point);
             pointOptions.put(point.getPointId(), MqttPointOptions.from(point, defaultQos));
         }
-        log.info("MQTT loaded {} points for device {}", pointOptions.size(), deviceId);
+        log.info("MQTT 点位加载完成，数量={}，设备={}", pointOptions.size(), deviceId);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void initConfig() {
         this.defaultConfig = collectorProperties != null
                 ? collectorProperties.getMqtt()
@@ -240,6 +281,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return parseTopics(getConnectionProperties().get("subscribeTopics"), getDefaultQos());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<MqttTopicSubscription> parseTopics(Object value, int defaultQos) {
         List<MqttTopicSubscription> topics = new ArrayList<>();
         if (value == null) {
@@ -305,6 +349,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return Boolean.parseBoolean(value.toString());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -314,10 +361,16 @@ public class MqttCollector extends ConnectionBackedCollector {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toString(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toString(Object value, String defaultValue) {
         return value != null ? value.toString() : defaultValue;
     }
@@ -330,11 +383,17 @@ public class MqttCollector extends ConnectionBackedCollector {
         return lower.startsWith("ssl") || lower.startsWith("tls") || lower.startsWith("mqtts");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private MqttPointOptions resolvePointOptions(DataPoint point) {
         return pointOptions.computeIfAbsent(point.getPointId(),
                 id -> MqttPointOptions.from(point, getDefaultQos()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void bindPointToTopic(DataPoint point, MqttPointOptions options) throws Exception {
         pointDefinitions.put(point.getPointId(), point);
         topicBindings.computeIfAbsent(options.getTopic(), t -> ConcurrentHashMap.newKeySet())
@@ -342,6 +401,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         ensureTopicSubscription(options.getTopic(), options.getQos());
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removePointFromTopic(String pointId, String topic) throws Exception {
         Set<String> bindings = topicBindings.get(topic);
         if (bindings != null) {
@@ -353,6 +415,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         decrementTopicSubscription(topic);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private synchronized void ensureTopicSubscription(String topic, int qos) throws Exception {
         if (topic == null || topic.isBlank()) {
             return;
@@ -367,6 +432,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         topicRefCount.put(topic, count + 1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private synchronized void decrementTopicSubscription(String topic) throws Exception {
         Integer current = topicRefCount.get(topic);
         if (current == null) {
@@ -382,6 +450,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void publish(String topic, byte[] payload, int qos, boolean retained) throws Exception {
         if (mqttConnection == null || !mqttConnection.isConnected()) {
             throw new IllegalStateException("MQTT client not connected");
@@ -389,6 +460,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         mqttConnection.publish(topic, payload, qos, retained);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildPayloadForWrite(Object value, MqttPointOptions options) {
         String payloadText;
         if (options.getPublishTemplate() != null && !options.getPublishTemplate().isBlank()) {
@@ -399,8 +473,11 @@ public class MqttCollector extends ConnectionBackedCollector {
         return payloadText.getBytes(options.getCharset());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executePublishCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
@@ -412,8 +489,11 @@ public class MqttCollector extends ConnectionBackedCollector {
         return Map.of("topic", topic, "status", "success");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeSubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
@@ -423,8 +503,11 @@ public class MqttCollector extends ConnectionBackedCollector {
         return Map.of("topic", topic, "status", "subscribed");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeUnsubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get("topic"), "");
+        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
@@ -437,6 +520,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return Map.of("topic", topic, "status", "unsubscribed");
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleInboundMessage(MqttReceivedMessage message) {
         if (message == null) {
             return;
@@ -449,10 +535,13 @@ public class MqttCollector extends ConnectionBackedCollector {
         handleIncomingMessage(message.getTopic(), envelope);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleIncomingMessage(String topic, MqttMessageEnvelope envelope) {
         Set<String> bindings = topicBindings.get(topic);
         if (bindings == null || bindings.isEmpty()) {
-            log.debug("收到无绑定点位的 MQTT 消息，topic={}", topic);
+            log.debug("收到无绑定点位的 MQTT 消息，主题={}", topic);
             return;
         }
         for (String pointId : bindings) {
@@ -469,11 +558,14 @@ public class MqttCollector extends ConnectionBackedCollector {
                     ingestPushedValue(point, converted);
                 }
             } catch (Exception ex) {
-                log.warn("解析 MQTT 消息失败，pointId={}, topic={}", pointId, topic, ex);
+                log.warn("解析 MQTT 消息失败，点位={}, 主题={}", pointId, topic, ex);
             }
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object convertPayload(DataPoint point, MqttPointOptions options, byte[] payload) {
         if (payload == null) {
             return null;
@@ -491,6 +583,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return convertToDataType(point.getDataType(), raw);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object convertToDataType(String dataType, Object raw) {
         if (raw == null) {
             return null;
@@ -511,11 +606,14 @@ public class MqttCollector extends ConnectionBackedCollector {
                 default -> raw.toString();
             };
         } catch (Exception ex) {
-            log.warn("MQTT 数据类型转换失败: type={}, value={}", type, raw, ex);
+            log.warn("MQTT 数据类型转换失败: type={}, 值={}", type, raw, ex);
             return null;
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Number toNumber(Object value) {
         if (value instanceof Number number) {
             return number;
@@ -523,6 +621,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         return Double.parseDouble(value.toString());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;

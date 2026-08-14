@@ -19,9 +19,15 @@ public final class CustomValueCodec {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    /**
+     * 创建当前组件实例。
+     */
     private CustomValueCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object decode(byte[] response, DataPoint point) throws Exception {
         CustomPointAddress address = CustomPointAddress.parse(point.getAddress());
         if (address.mode() == CustomPointAddress.AddressMode.JSON) {
@@ -54,6 +60,9 @@ public final class CustomValueCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(Object value, DataPoint point) {
         String dataType = normalizeDataType(point.getDataType());
         ByteOrder order = resolveByteOrder(point);
@@ -75,6 +84,9 @@ public final class CustomValueCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Object decodeJson(byte[] response, String path, Charset charset) throws Exception {
         JsonNode current = OBJECT_MAPPER.readTree(new String(response, charset));
         String normalized = path.trim();
@@ -109,6 +121,9 @@ public final class CustomValueCodec {
         return OBJECT_MAPPER.convertValue(current, Object.class);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static JsonNode resolveJsonSegment(JsonNode current, String segment) {
         int bracketIndex = segment.indexOf('[');
         if (bracketIndex < 0) {
@@ -124,6 +139,9 @@ public final class CustomValueCodec {
         return array.path(arrayIndex);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveLength(CustomPointAddress address,
                                      DataPoint point,
                                      String dataType,
@@ -145,6 +163,9 @@ public final class CustomValueCodec {
         };
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static void ensureRange(byte[] response, int offset, int length) {
         if (response == null || offset < 0 || length <= 0 || offset + length > response.length) {
             throw new IllegalArgumentException(
@@ -153,6 +174,9 @@ public final class CustomValueCodec {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static ByteOrder resolveByteOrder(DataPoint point) {
         String configured = point.getAdditionalConfig("byteOrder", "BIG_ENDIAN");
         return "LITTLE_ENDIAN".equalsIgnoreCase(configured)
@@ -160,15 +184,24 @@ public final class CustomValueCodec {
                 : ByteOrder.BIG_ENDIAN;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Charset resolveCharset(DataPoint point) {
         String configured = point.getAdditionalConfig("charset", StandardCharsets.UTF_8.name());
         return Charset.forName(configured);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeDataType(String value) {
         return value == null || value.isBlank() ? "INT16" : value.trim().toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] orderedUnsignedBytes(byte[] value, ByteOrder order) {
         if (order == ByteOrder.BIG_ENDIAN) {
             return value;
@@ -182,6 +215,9 @@ public final class CustomValueCodec {
         return reversed;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String trimTrailingZero(String value) {
         int end = value.length();
         while (end > 0 && value.charAt(end - 1) == '\0') {
@@ -190,6 +226,9 @@ public final class CustomValueCodec {
         return value.substring(0, end);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -200,6 +239,9 @@ public final class CustomValueCodec {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -207,6 +249,9 @@ public final class CustomValueCodec {
         return Long.parseLong(String.valueOf(value).trim());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static double toDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();

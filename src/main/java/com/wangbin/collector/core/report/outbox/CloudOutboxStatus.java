@@ -8,6 +8,9 @@ public enum CloudOutboxStatus {
     /** 等待发送。 */
     PENDING,
 
+    /** 已被分发并进入真实发布尝试窗口。 */
+    PUBLISHING,
+
     /** 已发布，等待平台业务确认。 */
     WAITING_ACK,
 

@@ -15,12 +15,21 @@ import java.util.Objects;
  */
 public final class Iec61850AddressParser {
 
+    /**
+     * 创建当前组件实例。
+     */
     private Iec61850AddressParser() {}
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec61850Address parse(DataPoint point) {
         return parse(point, Fc.ST);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec61850Address parse(DataPoint point, Fc defaultFc) {
         if (point == null) {
             throw new IllegalArgumentException("数据点不能为空");
@@ -52,6 +61,9 @@ public final class Iec61850AddressParser {
         return parse(rawAddress, fcSegment, defaultFc != null ? defaultFc : Fc.ST);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Iec61850Address parse(String expression, String fcOverride, Fc defaultFc) {
         String rawAddress = trim(expression);
         String fcSegment = trim(fcOverride);
@@ -74,6 +86,9 @@ public final class Iec61850AddressParser {
         return new Iec61850Address(rawAddress, fc, expression);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static int findSeparator(String raw) {
         int idx = raw.indexOf('@');
         if (idx >= 0) {
@@ -86,6 +101,9 @@ public final class Iec61850AddressParser {
         return -1;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildAddressFromConfig(Map<String, Object> config) {
         if (config == null || config.isEmpty()) {
             return null;
@@ -117,6 +135,9 @@ public final class Iec61850AddressParser {
         return ld + "/" + ln + "." + suffix;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private static String findFcFromConfig(Map<String, Object> config) {
         if (config == null || config.isEmpty()) {
             return null;
@@ -131,6 +152,9 @@ public final class Iec61850AddressParser {
         return trim(fc);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Fc parseFc(String fcText, Fc defaultFc) {
         if (fcText == null || fcText.isEmpty()) {
             return defaultFc != null ? defaultFc : Fc.ST;
@@ -142,6 +166,9 @@ public final class Iec61850AddressParser {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String trim(Object value) {
         if (value == null) {
             return null;

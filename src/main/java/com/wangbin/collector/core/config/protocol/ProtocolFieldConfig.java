@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * UI-friendly protocol connection field metadata.
+ * 界面-friendly 协议 连接 field 元数据.
  */
 @Data
 @Builder

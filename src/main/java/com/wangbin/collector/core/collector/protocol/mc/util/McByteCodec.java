@@ -10,11 +10,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class McByteCodec {
 
+    /**
+     * 创建当前组件实例。
+     */
     private McByteCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object decode(McAddress address, byte[] payload) {
         if (address == null) {
             throw new IllegalArgumentException("MC address cannot be null");
@@ -39,6 +48,9 @@ public final class McByteCodec {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(McAddress address, Object value) {
         if (address == null) {
             throw new IllegalArgumentException("MC address cannot be null");
@@ -60,6 +72,9 @@ public final class McByteCodec {
         return buffer.array();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static void validateWordPayloadLength(McAddress address, byte[] payload) {
         int expected = address.getWordCount() * 2;
         if (payload.length < expected) {
@@ -68,6 +83,9 @@ public final class McByteCodec {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Object decodeScalar(McDriverType driverType, byte[] payload, int offset) {
         ByteBuffer buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN);
         return switch (driverType) {
@@ -81,6 +99,9 @@ public final class McByteCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeScalar(McDriverType driverType, Object value) {
         ByteBuffer buffer = ByteBuffer.allocate(driverType.getWordLength() * 2).order(ByteOrder.LITTLE_ENDIAN);
         switch (driverType) {
@@ -95,6 +116,9 @@ public final class McByteCodec {
         return buffer.array();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static List<Boolean> decodeBitValues(byte[] payload, int count) {
         List<Boolean> values = new ArrayList<>(count);
         for (byte current : payload) {
@@ -115,6 +139,9 @@ public final class McByteCodec {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeBitValues(McAddress address, Object value) {
         List<?> rawValues = address.isScalar() ? List.of(value) : toValueList(value, address.getElementCount());
         int byteCount = (rawValues.size() + 1) / 2;
@@ -132,6 +159,9 @@ public final class McByteCodec {
         return payload;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String decodeString(byte[] payload, Integer stringLength) {
         int length = stringLength != null && stringLength > 0 ? stringLength : payload.length;
         int safeLength = Math.min(length, payload.length);
@@ -142,6 +172,9 @@ public final class McByteCodec {
         return new String(payload, 0, end, StandardCharsets.US_ASCII);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeString(McAddress address, Object value) {
         int length = address.getStringLength() != null ? address.getStringLength() : 0;
         if (length <= 0) {
@@ -156,6 +189,9 @@ public final class McByteCodec {
         return target;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static List<?> toValueList(Object value, int expectedSize) {
         if (value == null) {
             throw new IllegalArgumentException("MC array write requires a collection or array value");
@@ -178,6 +214,9 @@ public final class McByteCodec {
         return values;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static long coerceLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -188,6 +227,9 @@ public final class McByteCodec {
         return Long.parseLong(String.valueOf(value).trim());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static double coerceDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -198,6 +240,9 @@ public final class McByteCodec {
         return Double.parseDouble(String.valueOf(value).trim());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;

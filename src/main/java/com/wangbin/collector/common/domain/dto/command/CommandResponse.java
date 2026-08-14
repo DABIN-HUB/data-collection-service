@@ -16,6 +16,9 @@ public class CommandResponse {
     private Long timestamp;
     private Object data;
 
+    /**
+     * 构造标准业务结果。
+     */
     public static CommandResponse success(String version, String method, String messageId, Object data) {
         CommandResponse response = new CommandResponse();
         response.setVersion(version);
@@ -28,6 +31,9 @@ public class CommandResponse {
         return response;
     }
 
+    /**
+     * 构造标准业务结果。
+     */
     public static CommandResponse error(String version, String method, String messageId, String errorMessage) {
         CommandResponse response = new CommandResponse();
         response.setVersion(version);

@@ -13,6 +13,9 @@ public class AlertCondition {
     private final double threshold;
     private final Comparator comparator;
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum Comparator {
         GREATER_THAN,
         LESS_THAN,

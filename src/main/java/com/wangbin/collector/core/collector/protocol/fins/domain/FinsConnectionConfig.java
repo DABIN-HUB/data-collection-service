@@ -3,6 +3,9 @@ package com.wangbin.collector.core.collector.protocol.fins.domain;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import lombok.Getter;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Getter
 public class FinsConnectionConfig {
 
@@ -22,6 +25,9 @@ public class FinsConnectionConfig {
     private final FinsByteOrder byteOrder;
     private final FinsWordOrder wordOrder;
 
+    /**
+     * 创建当前组件实例。
+     */
     public FinsConnectionConfig(String host,
                                 int port,
                                 int plcNetwork,
@@ -54,6 +60,9 @@ public class FinsConnectionConfig {
         this.wordOrder = wordOrder;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static FinsConnectionConfig from(DeviceConnection connection) {
         if (connection == null) {
             throw new IllegalArgumentException("FINS connection config cannot be null");
@@ -78,6 +87,9 @@ public class FinsConnectionConfig {
         );
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Integer firstPositive(Integer first, Integer second) {
         if (first != null && first > 0) {
             return first;
@@ -85,10 +97,16 @@ public class FinsConnectionConfig {
         return second;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int positive(Integer value, int defaultValue) {
         return value != null && value > 0 ? value : defaultValue;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int bounded(Integer value, int min, int max, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -99,6 +117,9 @@ public class FinsConnectionConfig {
         return value;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private static Integer required(Integer value, String field) {
         if (value == null) {
             throw new IllegalArgumentException("FINS requires " + field);

@@ -2,12 +2,12 @@ package com.wangbin.collector.core.cache.manager;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import com.wangbin.collector.core.cache.config.CacheProperties;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -28,15 +28,14 @@ class RedisCacheManagerTest {
 
     @Test
     void redisCacheManagerShouldScanAndDeleteInBatches() {
-        RedisCacheManager manager = new RedisCacheManager();
         RedisTemplate<String, Object> redisTemplate = mock(RedisTemplate.class);
+        CacheProperties cacheProperties = new CacheProperties();
+        RedisCacheManager manager = new RedisCacheManager(redisTemplate, cacheProperties);
         RedisConnection connection = mock(RedisConnection.class);
         @SuppressWarnings("unchecked")
         Cursor<byte[]> cursor = mock(Cursor.class);
 
-        ReflectionTestUtils.setField(manager, "redisTemplate", redisTemplate);
-        ReflectionTestUtils.setField(manager, "keyPrefix", "collector:");
-        ReflectionTestUtils.setField(manager, "initialized", true);
+        manager.initialized = true;
 
         doAnswer(invocation -> {
             RedisCallback<?> callback = invocation.getArgument(0);

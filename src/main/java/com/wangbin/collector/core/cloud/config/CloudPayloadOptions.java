@@ -15,6 +15,9 @@ public record CloudPayloadOptions(
         boolean includeMetadata,
         boolean includeMessageId) {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CloudPayloadOptions defaults() {
         return new CloudPayloadOptions(
                 CloudPayloadProfile.COMPACT,
@@ -24,6 +27,9 @@ public record CloudPayloadOptions(
                 true);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudPayloadOptions from(ReportProperties.Cloud.Payload payload) {
         if (payload == null) {
             return defaults();
@@ -36,6 +42,9 @@ public record CloudPayloadOptions(
                 payload.isIncludeMessageId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean includeQuality(Map<String, String> qualityMap) {
         if (includeQuality == CloudPayloadFieldMode.ALWAYS) {
             return qualityMap != null && !qualityMap.isEmpty();
@@ -46,6 +55,9 @@ public record CloudPayloadOptions(
         return qualityMap.values().stream().anyMatch(this::isAbnormalQuality);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean includeTimestamp() {
         return profile != CloudPayloadProfile.COMPACT;
     }

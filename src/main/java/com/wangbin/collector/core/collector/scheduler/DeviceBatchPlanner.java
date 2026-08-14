@@ -2,6 +2,8 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.protocol.ProtocolAddressingMode;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptor;
@@ -15,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.ToLongFunction;
 
 /**
  * 设备批次规划器：负责点位分组、分批与时间片分配。
@@ -25,25 +28,36 @@ import java.util.Map;
 class DeviceBatchPlanner {
 
     private final ConfigManager configManager;
+    private final CollectorProperties collectorProperties;
+    private final PointRuntimeStateService pointRuntimeStateService;
     private final ProtocolBatchStrategy protocolBatchStrategy;
     private final ProtocolDescriptorRegistry protocolDescriptorRegistry;
+    private final PerformanceMonitor performanceMonitor;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     List<DeviceBatchTask> plan(String deviceId,
                                List<DataPoint> points,
                                int timeSliceCount,
                                long generation,
-                               long timeSliceRevision,
-                               PerformanceMonitor performanceMonitor) {
+                               long timeSliceRevision) {
         List<List<DataPoint>> batches = smartBatchGrouping(points, deviceId, performanceMonitor);
+        DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+        ToLongFunction<DataPoint> intervalResolver = buildCollectionIntervalResolver(deviceId, deviceInfo);
         List<DeviceBatchTask> tasks = new ArrayList<>(batches.size());
         for (int i = 0; i < batches.size(); i++) {
             int timeSliceIndex = calculateOptimalTimeSlice(deviceId, i, batches.size(), timeSliceCount);
-            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex, generation, timeSliceRevision));
+            tasks.add(new DeviceBatchTask(deviceId, batches.get(i), timeSliceIndex, generation, timeSliceRevision,
+                    intervalResolver, System::nanoTime));
         }
         log.debug("设备 {} 点位调度完成，批次数: {}", deviceId, tasks.size());
         return tasks;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<List<DataPoint>> smartBatchGrouping(List<DataPoint> points,
                                                      String deviceId,
                                                      PerformanceMonitor performanceMonitor) {
@@ -72,6 +86,9 @@ class DeviceBatchPlanner {
         return allBatches;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int comparePointsByAddress(DataPoint left,
                                        DataPoint right,
                                        ProtocolAddressingMode addressingMode) {
@@ -91,6 +108,9 @@ class DeviceBatchPlanner {
         return normalizeAddress(addr1).compareTo(normalizeAddress(addr2));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer extractNumberFromAddress(String address) {
         if (address == null) {
             return null;
@@ -106,6 +126,9 @@ class DeviceBatchPlanner {
         return null;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private List<List<DataPoint>> createSmartBatches(List<DataPoint> points,
                                                      String deviceId,
                                                      PerformanceMonitor performanceMonitor,
@@ -144,6 +167,9 @@ class DeviceBatchPlanner {
         return batches;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<List<DataPoint>> mergeSmallBatches(List<List<DataPoint>> batches, int minBatchSize, int maxBatchSize) {
         if (batches.size() <= 1) {
             return batches;
@@ -231,16 +257,54 @@ class DeviceBatchPlanner {
         return protocolBatchStrategy.maxBatchSize(protocol);
     }
 
+    private ToLongFunction<DataPoint> buildCollectionIntervalResolver(String deviceId, DeviceInfo deviceInfo) {
+        long deviceInterval = resolveDeviceCollectionInterval(deviceInfo);
+        return point -> {
+            if (point == null) {
+                return deviceInterval;
+            }
+            if (collectorProperties.getAdaptiveCollection().isEnabled()) {
+                long runtimeInterval = pointRuntimeStateService.snapshot(deviceId, point).currentCollectionInterval();
+                if (runtimeInterval > 0) {
+                    return runtimeInterval;
+                }
+            }
+            if (point.getCurrentCollectionInterval() > 0) {
+                return point.getCurrentCollectionInterval();
+            }
+            if (point.getBaseCollectionInterval() != null && point.getBaseCollectionInterval() > 0) {
+                return point.getBaseCollectionInterval();
+            }
+            return deviceInterval;
+        };
+    }
+
+    private long resolveDeviceCollectionInterval(DeviceInfo deviceInfo) {
+        if (deviceInfo != null && deviceInfo.getCollectionInterval() != null && deviceInfo.getCollectionInterval() > 0) {
+            return deviceInfo.getCollectionInterval();
+        }
+        return AdaptiveCollectionUtil.DEFAULT_BASE_COLLECTION_INTERVAL;
+    }
+
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProtocol(String deviceId) {
         DeviceInfo deviceInfo = configManager.getDevice(deviceId);
         return deviceInfo != null ? deviceInfo.getProtocolType() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private ProtocolAddressingMode resolveAddressingMode(String protocol) {
         ProtocolDescriptor descriptor = protocolDescriptorRegistry.resolve(protocol);
         return descriptor != null ? descriptor.addressingMode() : ProtocolAddressingMode.NUMERIC;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildGroupingKey(String dataType, String address, ProtocolAddressingMode addressingMode) {
         if (addressingMode == ProtocolAddressingMode.NUMERIC) {
             return dataType;
@@ -249,6 +313,9 @@ class DeviceBatchPlanner {
         return addressKey == null || addressKey.isBlank() ? dataType : dataType + "|" + addressKey;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldSplitBatch(ProtocolAddressingMode addressingMode,
                                      String lastAddress,
                                      String currentAddress,
@@ -271,6 +338,9 @@ class DeviceBatchPlanner {
         return currentNum - lastNum > addressGapThreshold;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String extractSymbolicGroupKey(String address) {
         if (address == null || address.isBlank()) {
             return "";
@@ -299,10 +369,16 @@ class DeviceBatchPlanner {
         return normalized.replaceAll("(\\d+|\\[[^\\]]+])$", "");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeAddress(String address) {
         return address == null ? "" : address.trim().toUpperCase();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int calculateOptimalTimeSlice(String deviceId, int batchIndex, int totalBatches, int timeSliceCount) {
         int sliceCount = Math.max(1, timeSliceCount);
         int deviceHash = Math.abs(deviceId.hashCode());

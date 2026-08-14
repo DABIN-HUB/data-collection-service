@@ -9,7 +9,6 @@ import com.wangbin.collector.core.report.model.ReportResult;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +35,9 @@ public class ReportManager {
     private final ReportProperties reportProperties;
     private final List<ReportHandler> handlerCandidates;
 
-    @Autowired
+    /**
+     * 创建当前组件实例。
+     */
     public ReportManager(ReportProperties reportProperties,
                          @Qualifier("reportExecutor") Executor reportExecutor,
                          List<ReportHandler> handlerCandidates) {
@@ -45,6 +46,9 @@ public class ReportManager {
         this.handlerCandidates = handlerCandidates;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PostConstruct
     public void init() {
         log.info("ReportManager 初始化...");
@@ -52,6 +56,9 @@ public class ReportManager {
         log.info("已启用的上报处理器: {}", handlers.keySet());
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private void registerHandlers() {
         if (!reportProperties.isEnabled()) {
             log.warn("collector.report.enabled=false，已关闭上报功能");
@@ -76,6 +83,9 @@ public class ReportManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public CompletableFuture<ReportResult> reportAsync(ReportData data, ReportConfig config) {
         if (!reportProperties.isEnabled()) {
             return CompletableFuture.completedFuture(disabledResult(data, config));
@@ -90,7 +100,7 @@ public class ReportManager {
                 }
             });
         } catch (RejectedExecutionException e) {
-            log.warn("report executor rejected task, targetId={}, pointCode={}",
+            log.warn("上报 执行器 被拒绝 任务, 目标ID={}, 点位编码={}",
                     config != null ? config.getTargetId() : "unknown",
                     data != null ? data.getPointCode() : "unknown",
                     e);
@@ -107,6 +117,9 @@ public class ReportManager {
         return future;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public ReportResult report(ReportData data, ReportConfig config) {
         if (!reportProperties.isEnabled()) {
             return disabledResult(data, config);
@@ -140,6 +153,9 @@ public class ReportManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<ReportResult> batchReport(List<ReportData> dataList, ReportConfig config) {
         if (!reportProperties.isEnabled()) {
             return Collections.emptyList();
@@ -181,6 +197,9 @@ public class ReportManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public List<ReportResult> reportWithMode(List<ReportData> dataList, ReportConfig config, String reportMode) {
         if (!reportProperties.isEnabled()) {
             return Collections.emptyList();
@@ -198,6 +217,9 @@ public class ReportManager {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<ReportResult> reportCompressed(List<ReportData> dataList, ReportConfig config) {
         log.debug("压缩模式暂未实现差异化处理，按批量上报执行，数据量: {}", dataList.size());
         return batchReport(dataList, config);
@@ -214,6 +236,9 @@ public class ReportManager {
         return new ArrayList<>(handlers.keySet());
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public void updateConfig(ReportConfig config) {
         if (config == null || !config.validate()) {
             log.warn("上报配置无效，忽略更新");
@@ -233,6 +258,9 @@ public class ReportManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeConfig(ReportConfig config) {
         if (config == null) {
             return;
@@ -265,6 +293,9 @@ public class ReportManager {
         return stats;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void resetAllStatistics() {
         for (ReportHandler handler : handlers.values()) {
             try {
@@ -276,6 +307,9 @@ public class ReportManager {
         log.info("已重置全部上报统计");
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @PreDestroy
     public void destroy() {
         log.info("ReportManager 销毁中...");
@@ -292,6 +326,9 @@ public class ReportManager {
         log.info("ReportManager 已销毁");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private ReportResult disabledResult(ReportData data, ReportConfig config) {
         String pointCode = data != null ? data.getPointCode() : "unknown";
         String targetId = config != null ? config.getTargetId() : "unknown";

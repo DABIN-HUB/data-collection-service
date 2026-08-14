@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Protocol metadata used by the visual admin console.
+ * 协议 元数据 used by the 可视化控制台.
  */
 @Data
 @Builder

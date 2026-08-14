@@ -8,6 +8,9 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetCovNotificationDecoder {
 
     public static final int APDU_TYPE_CONFIRMED_REQUEST = 0x00;
@@ -15,6 +18,9 @@ public final class BacnetCovNotificationDecoder {
     public static final int SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION = 0x01;
     public static final int SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION = 0x02;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetCovNotificationDecoder() {
     }
 
@@ -26,6 +32,9 @@ public final class BacnetCovNotificationDecoder {
         return hasServiceChoice(frame, APDU_TYPE_CONFIRMED_REQUEST, SERVICE_CHOICE_CONFIRMED_COV_NOTIFICATION);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static BacnetCovNotification decode(byte[] frame) {
         ByteBuffer buffer = ByteBuffer.wrap(frame).order(ByteOrder.BIG_ENDIAN);
         BacnetReadPropertyResponseDecoder.BacnetFrameHeader header =
@@ -37,6 +46,9 @@ public final class BacnetCovNotificationDecoder {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean hasServiceChoice(byte[] frame, int expectedPduType, int expectedServiceChoice) {
         if (frame == null || frame.length < 8) {
             return false;
@@ -61,6 +73,9 @@ public final class BacnetCovNotificationDecoder {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetCovNotification decodeUnconfirmed(ByteBuffer buffer) {
         int serviceChoice = Byte.toUnsignedInt(buffer.get());
         if (serviceChoice != SERVICE_CHOICE_UNCONFIRMED_COV_NOTIFICATION) {
@@ -69,6 +84,9 @@ public final class BacnetCovNotificationDecoder {
         return decodeNotificationBody(buffer, false, null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetCovNotification decodeConfirmed(ByteBuffer buffer, int pduHeader) {
         boolean segmented = (pduHeader & 0x08) != 0;
         boolean moreFollows = (pduHeader & 0x04) != 0;
@@ -87,6 +105,9 @@ public final class BacnetCovNotificationDecoder {
         return decodeNotificationBody(buffer, true, invokeId);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BacnetCovNotification decodeNotificationBody(ByteBuffer buffer,
                                                                 boolean confirmed,
                                                                 Integer invokeId) {

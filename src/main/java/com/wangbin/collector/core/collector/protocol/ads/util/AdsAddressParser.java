@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class AdsAddressParser {
 
     private static final Pattern DIRECT_TYPED_PATTERN = Pattern.compile(
@@ -22,13 +25,22 @@ public final class AdsAddressParser {
             "^((0[xX][0-9a-fA-F]+)|\\d+)/((0[xX][0-9a-fA-F]+)|\\d+)$",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * 创建当前组件实例。
+     */
     private AdsAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static AdsAddress parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static AdsAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -42,6 +54,9 @@ public final class AdsAddressParser {
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static AdsAddress parse(String address, String dataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("ADS address cannot be empty");
@@ -83,6 +98,9 @@ public final class AdsAddressParser {
                 resolveStringLengthIfNeeded(symbolicType));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeDirectStringAddress(Matcher matcher, int arraySize) {
         StringBuilder builder = new StringBuilder()
                 .append(matcher.group(1))
@@ -99,6 +117,9 @@ public final class AdsAddressParser {
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeDirectTypedAddress(Matcher matcher, String plcType, int arraySize) {
         StringBuilder builder = new StringBuilder()
                 .append(matcher.group(1))
@@ -112,6 +133,9 @@ public final class AdsAddressParser {
         return builder.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildInferredDirectAddress(Matcher matcher, String plcType, int arraySize) {
         StringBuilder builder = new StringBuilder()
                 .append(matcher.group(1))
@@ -125,6 +149,9 @@ public final class AdsAddressParser {
         return builder.toString();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String inferTypeExpression(String dataType, Map<String, Object> config) {
         String inferred = inferTypeExpressionOrNull(dataType, config);
         if (inferred == null) {
@@ -133,6 +160,9 @@ public final class AdsAddressParser {
         return inferred;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String inferTypeExpressionOrNull(String dataType, Map<String, Object> config) {
         String overrideType = firstNonBlank(
                 asString(config.get("driverDataType")),
@@ -149,6 +179,9 @@ public final class AdsAddressParser {
         return normalizeTypeExpression(AdsPlcType.fromPlatformDataType(dataType), config);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalizeTypeExpression(AdsPlcType plcType, Map<String, Object> config) {
         if (plcType == AdsPlcType.STRING) {
             return "STRING(" + resolveStringLength(config, 80) + ")";
@@ -159,6 +192,9 @@ public final class AdsAddressParser {
         return plcType.toTypeExpression();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer resolveStringLengthIfNeeded(String plcType) {
         if (plcType == null) {
             return null;
@@ -171,6 +207,9 @@ public final class AdsAddressParser {
         return Integer.parseInt(plcType.substring(start + 1, end));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveStringLength(Map<String, Object> config, int defaultValue) {
         Object value = firstPresent(config, "stringLength", "adsStringLength");
         if (value instanceof Number number) {
@@ -185,6 +224,9 @@ public final class AdsAddressParser {
         return defaultValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveArraySize(Map<String, Object> config, int defaultValue) {
         Object value = firstPresent(config, "arraySize", "numberOfElements");
         if (value instanceof Number number) {
@@ -199,6 +241,9 @@ public final class AdsAddressParser {
         return defaultValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseArraySize(String arrayPart, Map<String, Object> config) {
         if (arrayPart != null && !arrayPart.isBlank()) {
             return Math.max(1, Integer.parseInt(arrayPart.trim()));
@@ -206,6 +251,9 @@ public final class AdsAddressParser {
         return resolveArraySize(config, 1);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> config, String... keys) {
         for (String key : keys) {
             if (config.containsKey(key)) {
@@ -215,6 +263,9 @@ public final class AdsAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -227,6 +278,9 @@ public final class AdsAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

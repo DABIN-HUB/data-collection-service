@@ -50,10 +50,16 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
     private final CopyOnWriteArrayList<SnmpTrapListener> trapListeners = new CopyOnWriteArrayList<>();
     private final CommandResponder trapResponder = this::handleCommandResponderEvent;
 
+    /**
+     * 创建当前组件实例。
+     */
     public SnmpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         transport = createTransportMapping();
@@ -67,6 +73,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         log.info("SNMP 会话已建立 host={} port={}", config.getHost(), config.getPort());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         stopDispatcher();
@@ -92,6 +101,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         target = null;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> CompletableFuture<T> submit(SnmpCallable<T> callable) {
         Objects.requireNonNull(callable, "callable");
         if (dispatcher == null) {
@@ -109,6 +121,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return operation.future;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> T execute(SnmpCallable<T> callable, long timeoutMillis) throws Exception {
         long effectiveTimeout = timeoutMillis > 0 ? timeoutMillis : getDefaultTimeout();
         try {
@@ -126,38 +141,59 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return target;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addTrapListener(SnmpTrapListener listener) {
         if (listener != null) {
             trapListeners.addIfAbsent(listener);
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeTrapListener(SnmpTrapListener listener) {
         if (listener != null) {
             trapListeners.remove(listener);
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("SNMP 适配器不支持裸数据发送");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         // 由采集器根据需要发起探测
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // SNMPv1/2c 默认无额外认证
@@ -178,6 +214,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return 3000;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private TransportMapping<UdpAddress> createTransportMapping() throws java.io.IOException {
         int trapPort = firstPositive(
                 config.getIntConfig("snmpTrapPort", null),
@@ -193,6 +232,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return new DefaultUdpTransportMapping(new UdpAddress(listenHost + "/" + trapPort));
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Target<UdpAddress> buildTarget(int version) {
         if (version == SnmpConstants.version3) {
             return buildUserTarget();
@@ -200,6 +242,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return buildCommunityTarget(version);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Target<UdpAddress> buildCommunityTarget(int version) {
         CommunityTarget<UdpAddress> communityTarget = new CommunityTarget<>();
         String community = config.getStringConfig("community", "public");
@@ -214,6 +259,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return communityTarget;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Target<UdpAddress> buildUserTarget() {
         UserTarget<UdpAddress> userTarget = new UserTarget<>();
         userTarget.setVersion(SnmpConstants.version3);
@@ -228,6 +276,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return userTarget;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int parseVersion(String versionText) {
         if (versionText == null) {
             return SnmpConstants.version2c;
@@ -240,6 +291,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void configureSecurityModels(int version) {
         if (version != SnmpConstants.version3) {
             return;
@@ -281,6 +335,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         usm.addUser(securityName, user);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveSecurityLevel() {
         return SnmpUtils.parseSecurityLevel(config.getStringConfig("snmpSecurityLevel", "authPriv"));
     }
@@ -293,6 +350,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return securityName;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleCommandResponderEvent(CommandResponderEvent<?> event) {
         if (event == null || event.getPDU() == null || trapListeners.isEmpty()) {
             return;
@@ -318,6 +378,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return type == PDU.TRAP || type == PDU.V1TRAP || type == PDU.INFORM;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int firstPositive(Integer... values) {
         if (values == null) {
             return 0;
@@ -330,6 +393,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         return 0;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startDispatcher() {
         if (dispatcher != null) {
             return;
@@ -343,6 +409,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         dispatcher.start();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void stopDispatcher() {
         if (dispatcher != null) {
             dispatcher.stop();
@@ -350,6 +419,9 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processOperations(List<SnmpOperation<?>> operations) {
         if (operations == null || operations.isEmpty()) {
             return;
@@ -363,32 +435,59 @@ public class SnmpConnectionAdapter extends AbstractConnectionAdapter<Snmp> {
         }
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface SnmpCallable<T> {
+        /**
+         * 处理当前业务流程。
+         */
         T apply(Snmp snmp, Target<UdpAddress> target) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface SnmpTrapListener {
+        /**
+         * 执行当前业务逻辑。
+         */
         void onTrap(PDU pdu, List<VariableBinding> bindings, Address peerAddress);
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class SnmpOperation<T> {
         private final SnmpCallable<T> callable;
         private final CompletableFuture<T> future = new CompletableFuture<>();
 
+        /**
+         * 创建当前组件实例。
+         */
         private SnmpOperation(SnmpCallable<T> callable) {
             this.callable = callable;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void complete(T value) {
             future.complete(value);
         }
 
+        /**
+         * 构造标准业务结果。
+         */
         private void fail(Throwable throwable) {
             future.completeExceptionally(throwable);
         }
 
+        /**
+         * 处理当前业务流程。
+         */
         private void run(Snmp snmp, Target<UdpAddress> target) {
             try {
                 complete(callable.apply(snmp, target));

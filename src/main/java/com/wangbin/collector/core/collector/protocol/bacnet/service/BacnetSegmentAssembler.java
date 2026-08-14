@@ -6,8 +6,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class BacnetSegmentAssembler {
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public byte[] collect(byte[] firstFrame,
                           int segmentTimeoutMs,
                           SegmentFramePoller poller,
@@ -41,13 +47,25 @@ public class BacnetSegmentAssembler {
         return BacnetSegmentSupport.assembleComplexAckFrame(segments);
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface SegmentFramePoller {
+        /**
+         * 执行当前业务逻辑。
+         */
         byte[] poll(long timeout, TimeUnit unit) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface SegmentAckSender {
+        /**
+         * 执行当前业务逻辑。
+         */
         void send(int invokeId, int sequenceNumber, int proposedWindowSize) throws Exception;
     }
 }

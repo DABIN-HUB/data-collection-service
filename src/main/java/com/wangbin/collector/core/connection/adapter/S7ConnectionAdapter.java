@@ -10,16 +10,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public S7ConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -28,9 +37,12 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X S7 connection created: {}", connectionString);
+        log.info("PLC4X S7 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -42,6 +54,9 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -49,9 +64,12 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // S7 access has no separate authentication phase here.
+        // S7 access has no separate 认证 phase here.
     }
 
     @Override
@@ -68,6 +86,9 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -156,6 +177,9 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -168,10 +192,16 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         return 5000L;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeControllerType(String controllerType) {
         if (!hasText(controllerType)) {
             return null;
@@ -179,6 +209,9 @@ public class S7ConnectionAdapter extends AbstractConnectionAdapter<PlcConnection
         return controllerType.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeDeviceGroup(String deviceGroup) {
         if (!hasText(deviceGroup)) {
             return null;

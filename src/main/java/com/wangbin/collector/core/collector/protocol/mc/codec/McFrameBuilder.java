@@ -3,6 +3,9 @@ package com.wangbin.collector.core.collector.protocol.mc.codec;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.mc.domain.McAddress;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class McFrameBuilder {
 
     private static final int MC_3E_BINARY_HEADER_LENGTH = 21;
@@ -14,9 +17,15 @@ public final class McFrameBuilder {
     private static final int WORD_UNIT_SUBCOMMAND = 0x0000;
     private static final int BIT_UNIT_SUBCOMMAND = 0x0001;
 
+    /**
+     * 创建当前组件实例。
+     */
     private McFrameBuilder() {
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildBatchRead(McAddress address, DeviceConnection config) {
         byte[] frame = new byte[MC_3E_BINARY_HEADER_LENGTH];
         writeHeader(frame, 0, address, config, 12);
@@ -27,6 +36,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildBatchWrite(McAddress address, byte[] payload, DeviceConnection config) {
         byte[] safePayload = payload != null ? payload : new byte[0];
         byte[] frame = new byte[MC_3E_BINARY_HEADER_LENGTH + safePayload.length];
@@ -39,6 +51,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildRandomRead(McRandomReadRequest request, DeviceConnection config) {
         int wordCount = request != null ? request.getWordAddressCount() : 0;
         byte[] frame = new byte[15 + (wordCount * 4)];
@@ -56,6 +71,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildRandomWrite(McRandomWriteRequest request, DeviceConnection config) {
         int wordCount = request != null ? request.getWordItemCount() : 0;
         int payloadLength = request != null
@@ -79,12 +97,18 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildAsciiBatchRead(McAddress address, DeviceConnection config) {
         String body = buildAsciiRequestBody(BATCH_READ_COMMAND, subcommand(address), address, null)
                 + McAsciiCodecSupport.formatHex(address.getReadUnitCount(), 4);
         return buildAsciiHeader(config, body).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildAsciiBatchWrite(McAddress address, byte[] payload, DeviceConnection config) {
         byte[] safePayload = payload != null ? payload : new byte[0];
         String body = buildAsciiRequestBody(BATCH_WRITE_COMMAND, subcommand(address), address, null)
@@ -93,6 +117,9 @@ public final class McFrameBuilder {
         return buildAsciiHeader(config, body).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildAsciiRandomRead(McRandomReadRequest request, DeviceConnection config) {
         int wordCount = request != null ? request.getWordAddressCount() : 0;
         StringBuilder body = new StringBuilder()
@@ -109,6 +136,9 @@ public final class McFrameBuilder {
         return buildAsciiHeader(config, body.toString()).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildAsciiRandomWrite(McRandomWriteRequest request, DeviceConnection config) {
         int wordCount = request != null ? request.getWordItemCount() : 0;
         StringBuilder body = new StringBuilder()
@@ -126,6 +156,9 @@ public final class McFrameBuilder {
         return buildAsciiHeader(config, body.toString()).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] build4eBatchRead(McAddress address,
                                           DeviceConnection config,
                                           int serialNo) {
@@ -138,6 +171,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] build4eBatchWrite(McAddress address,
                                            byte[] payload,
                                            DeviceConnection config,
@@ -153,6 +189,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] build4eRandomRead(McRandomReadRequest request,
                                            DeviceConnection config,
                                            int serialNo) {
@@ -172,6 +211,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] build4eRandomWrite(McRandomWriteRequest request,
                                             DeviceConnection config,
                                             int serialNo) {
@@ -197,6 +239,9 @@ public final class McFrameBuilder {
         return frame;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeHeader(byte[] frame,
                                     int offset,
                                     McAddress address,
@@ -212,6 +257,9 @@ public final class McFrameBuilder {
         writeUInt16(frame, offset + 9, intValue(config, "monitoringTimer", 16));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void write4eHeader(byte[] frame,
                                       DeviceConnection config,
                                       int serialNo,
@@ -229,6 +277,9 @@ public final class McFrameBuilder {
         writeUInt16(frame, 13, intValue(config, "monitoringTimer", 16));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeDeviceSpec(byte[] frame, int offset, McAddress address) {
         int deviceNumber = address.getDeviceNumber();
         frame[offset] = (byte) (deviceNumber & 0xFF);
@@ -237,10 +288,16 @@ public final class McFrameBuilder {
         frame[offset + 3] = (byte) address.getDeviceCode().getCode();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int subcommand(McAddress address) {
         return address.isBitDevice() ? BIT_UNIT_SUBCOMMAND : WORD_UNIT_SUBCOMMAND;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildAsciiHeader(DeviceConnection config, String body) {
         String safeBody = body != null ? body : "";
         StringBuilder header = new StringBuilder()
@@ -255,6 +312,9 @@ public final class McFrameBuilder {
         return header.toString();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static String buildAsciiRequestBody(int command,
                                                 int subcommand,
                                                 McAddress address,
@@ -270,11 +330,17 @@ public final class McFrameBuilder {
         return body.toString();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private static void writeUInt16(byte[] frame, int offset, int value) {
         frame[offset] = (byte) (value & 0xFF);
         frame[offset + 1] = (byte) ((value >> 8) & 0xFF);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static int intValue(DeviceConnection config, String key, int defaultValue) {
         if (config == null) {
             return defaultValue;

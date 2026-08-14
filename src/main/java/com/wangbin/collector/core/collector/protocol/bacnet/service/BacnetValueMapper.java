@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.bacnet.service;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetAddress;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
@@ -14,8 +16,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class BacnetValueMapper {
 
+    /**
+     * 解析或转换业务数据。
+     */
     public ProcessResult map(DataQualityProcessor dataQualityProcessor,
                              DataPoint point,
                              BacnetAddress address,
@@ -25,7 +33,7 @@ public class BacnetValueMapper {
                              BiFunction<DataPoint, Object, Object> dataConverter) {
         BacnetReadValue readValue = normalize(point, address, rawValue, dataConverter);
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceId);
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         ProcessResult processResult = readValue.complex()
                 ? ProcessResult.success(readValue.rawValue(), readValue.processedValue(), "BACnet complex value passthrough")
                 : dataQualityProcessor.process(context, point, readValue.processedValue());
@@ -33,6 +41,9 @@ public class BacnetValueMapper {
         return processResult;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public BacnetReadValue normalize(DataPoint point,
                                      BacnetAddress address,
                                      Object rawValue,
@@ -88,15 +99,18 @@ public class BacnetValueMapper {
                 Collections.emptyMap());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void enrich(ProcessResult processResult,
                         BacnetAddress address,
                         String source,
                         BacnetReadValue readValue) {
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("objectType", address.getObjectType());
         processResult.addMetadata("instanceNumber", address.getInstanceNumber());
         processResult.addMetadata("propertyIdentifier", address.getPropertyIdentifier());
-        processResult.addMetadata("source", source);
+        processResult.addMetadata(CommonMapKeys.SOURCE, source);
         processResult.addMetadata("processingMode", readValue.processingMode());
         if (readValue.valueType() != null) {
             processResult.addMetadata("bacnetValueType", readValue.valueType());
@@ -107,6 +121,9 @@ public class BacnetValueMapper {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private BacnetValueKind inferValueKind(Object value) {
         if (value instanceof Map<?, ?>) {
             return BacnetValueKind.OBJECT;
@@ -126,10 +143,16 @@ public class BacnetValueMapper {
                 || "CHARACTER_STRING".equalsIgnoreCase(driverType));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetValueKind inferKind(Object value) {
         return inferValueKind(value);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record BacnetReadValue(Object rawValue,
                                   Object processedValue,
                                   String valueType,

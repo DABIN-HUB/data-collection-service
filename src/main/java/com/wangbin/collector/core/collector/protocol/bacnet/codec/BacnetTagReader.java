@@ -2,11 +2,20 @@ package com.wangbin.collector.core.collector.protocol.bacnet.codec;
 
 import java.nio.ByteBuffer;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 final class BacnetTagReader {
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetTagReader() {
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     static TagHeader readTag(ByteBuffer buffer) {
         int first = Byte.toUnsignedInt(buffer.get());
         int tagNumber = (first >> 4) & 0x0F;
@@ -39,6 +48,9 @@ final class BacnetTagReader {
         return new TagHeader(tagNumber, contextSpecific, false, false, length);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     record TagHeader(int tagNumber,
                      boolean contextSpecific,
                      boolean openingTag,

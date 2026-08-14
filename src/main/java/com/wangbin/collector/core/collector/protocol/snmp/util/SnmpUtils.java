@@ -15,9 +15,15 @@ import java.util.Locale;
  */
 public final class SnmpUtils {
 
+    /**
+     * 创建当前组件实例。
+     */
     private SnmpUtils() {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static List<List<SnmpAddress>> partition(List<SnmpAddress> source, int size) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyList();
@@ -29,6 +35,9 @@ public final class SnmpUtils {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static List<List<VariableBinding>> partitionBindings(List<VariableBinding> source, int size) {
         if (source == null || source.isEmpty()) {
             return Collections.emptyList();
@@ -40,6 +49,9 @@ public final class SnmpUtils {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Object variableToJava(Variable variable, SnmpDataType dataType) {
         if (variable == null || variable instanceof Null) {
             return null;
@@ -62,6 +74,9 @@ public final class SnmpUtils {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object autoConvert(Variable variable) {
         if (variable instanceof Integer32 int32) {
             return int32.getValue();
@@ -90,6 +105,9 @@ public final class SnmpUtils {
         return variable.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Variable toVariable(Object value, SnmpDataType dataType) {
         SnmpDataType type = dataType != null ? dataType : SnmpDataType.AUTO;
         if (value == null) {
@@ -109,6 +127,9 @@ public final class SnmpUtils {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Variable inferVariable(Object value) {
         if (value instanceof Number number) {
             long longValue = number.longValue();
@@ -120,6 +141,9 @@ public final class SnmpUtils {
         return new OctetString(value.toString());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int parseSecurityLevel(String text) {
         if (text == null) {
             return SecurityLevel.AUTH_PRIV;
@@ -133,6 +157,9 @@ public final class SnmpUtils {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static OID resolveAuthProtocol(String text) {
         if (text == null || text.isBlank()) {
             return AuthSHA.ID;
@@ -146,6 +173,9 @@ public final class SnmpUtils {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static OID resolvePrivProtocol(String text) {
         if (text == null || text.isBlank()) {
             return PrivAES128.ID;
@@ -162,6 +192,9 @@ public final class SnmpUtils {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static OctetString parseContextEngineId(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;

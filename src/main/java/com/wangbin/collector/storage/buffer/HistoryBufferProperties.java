@@ -16,6 +16,11 @@ public class HistoryBufferProperties {
     private String pendingKey = "collector:default:history:pending:v1";
     private String processingKey = "collector:default:history:processing:v1";
     private String deadLetterKey = "collector:default:history:dead:v1";
-    private int replayBatchSize = 200;
+    private long replayIntervalMs = 500L;
+    private int replayBatchSize = 500;
+    private int replayMaxBatchesPerCycle = 2;
+    private int replayLimitedBatchesPerCycle = 1;
+    private int replayLiveQueueLimitedThresholdPercent = 30;
+    private int replayLiveQueuePauseThresholdPercent = 70;
     private int localQueueCapacity = 10_000;
 }

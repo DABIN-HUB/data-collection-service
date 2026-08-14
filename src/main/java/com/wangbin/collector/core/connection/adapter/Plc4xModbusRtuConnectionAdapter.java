@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * PLC4X-backed Modbus RTU/ASCII serial adapter.
+ * PLC4X-backed Modbus RTU/ASCII 串口 适配器.
  */
 @Slf4j
 public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
@@ -19,10 +19,16 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Plc4xModbusRtuConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -31,9 +37,12 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X Modbus serial connection created: {}", connectionString);
+        log.info("PLC4X Modbus 串口 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -45,6 +54,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -52,9 +64,12 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // Modbus serial does not require a separate authentication phase here.
+        // Modbus 串口 does not require a separate 认证 phase here.
     }
 
     @Override
@@ -71,6 +86,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -103,6 +121,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveProtocolCode() {
         String configured = config.getString("plc4xProtocolCode", null);
         if (hasText(configured)) {
@@ -115,6 +136,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return "modbus-rtu";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveSerialPort() {
         String serialPort = config.getStringConfig("serialPort", null);
         if (hasText(serialPort)) {
@@ -127,6 +151,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return "COM1";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeSerialPort(String serialPort) {
         String normalized = serialPort.replace('\\', '/');
         while (normalized.startsWith("/")) {
@@ -135,6 +162,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return normalized;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -147,6 +177,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         return 5000L;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String resolveParityName() {
         String parityText = config.getStringConfig("parity", null);
         if (hasText(parityText)) {
@@ -154,7 +187,7 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
                 Parity parity = Parity.fromName(parityText.toLowerCase());
                 return toPlc4xParityName(parity);
             } catch (IllegalArgumentException ignore) {
-                log.warn("Unknown parity '{}', fallback to NO_PARITY", parityText);
+                log.warn("未知校验位 '{}', 降级到 NO_PARITY", parityText);
             }
         }
         Integer parityNumber = config.getIntConfig("parity", null);
@@ -162,12 +195,15 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
             try {
                 return toPlc4xParityName(Parity.fromValue(parityNumber));
             } catch (IllegalArgumentException ignore) {
-                log.warn("Unknown parity value '{}', fallback to NO_PARITY", parityNumber);
+                log.warn("未知校验位值 '{}', 降级到 NO_PARITY", parityNumber);
             }
         }
         return "NO_PARITY";
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String toPlc4xParityName(Parity parity) {
         return switch (parity) {
             case even -> "EVEN_PARITY";
@@ -176,6 +212,9 @@ public class Plc4xModbusRtuConnectionAdapter extends AbstractConnectionAdapter<P
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

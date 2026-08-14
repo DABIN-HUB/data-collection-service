@@ -47,6 +47,9 @@ public class IoTMessage {
     }
 
     // 添加参数
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addParam(String key, Object value) {
         if (params == null) {
             params = new HashMap<>();
@@ -59,6 +62,9 @@ public class IoTMessage {
         return params != null ? params.get(key) : null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addQuality(String field, String value) {
         if (qualityMap == null) {
             qualityMap = new HashMap<>();
@@ -66,6 +72,9 @@ public class IoTMessage {
         qualityMap.put(field, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addPropertyTimestamp(String field, Long value) {
         if (propertyTsMap == null) {
             propertyTsMap = new HashMap<>();
@@ -73,6 +82,9 @@ public class IoTMessage {
         propertyTsMap.put(field, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addPropertyMetadata(String field, Map<String, Object> value) {
         if (propertyMetadataMap == null) {
             propertyMetadataMap = new HashMap<>();

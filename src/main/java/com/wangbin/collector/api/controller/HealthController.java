@@ -15,6 +15,9 @@ public class HealthController {
 
     private final SystemHealthService systemHealthService;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @GetMapping("/health")
     public HealthStatus health() {
         return systemHealthService.getSystemHealth();

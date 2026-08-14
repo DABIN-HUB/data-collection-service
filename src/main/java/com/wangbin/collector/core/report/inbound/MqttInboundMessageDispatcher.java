@@ -17,6 +17,9 @@ public class MqttInboundMessageDispatcher {
     private final MqttBusinessReplyService businessReplyService;
     private final MqttDownlinkCommandHandler downlinkCommandHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MqttInboundMessageDispatcher(CloudProtocolAdapter protocolAdapter,
                                         String replySuffix,
                                         MqttAckReplyHandler ackReplyHandler,
@@ -29,6 +32,9 @@ public class MqttInboundMessageDispatcher {
         this.downlinkCommandHandler = downlinkCommandHandler;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public void dispatch(MqttInboundMessage message) {
         if (message == null || protocolAdapter == null) {
             return;
@@ -53,7 +59,7 @@ public class MqttInboundMessageDispatcher {
             return;
         }
         if (route.ignoredRoute()) {
-            log.trace("忽略未识别 MQTT 入站消息：topic={}", message.topic());
+            log.trace("忽略未识别 MQTT 入站消息：主题={}", message.topic());
         }
     }
 }

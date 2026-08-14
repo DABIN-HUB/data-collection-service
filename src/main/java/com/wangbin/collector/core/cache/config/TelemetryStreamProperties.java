@@ -5,49 +5,81 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+/**
+ * 承载当前模块的配置属性。
+ */
 @Data
 @Component
 @ConfigurationProperties(prefix = "spring.data.redis.stream")
 public class TelemetryStreamProperties {
 
     /**
-     * Whether stream writing is enabled.
+     * 是否启用 Redis Stream 写入。
      */
     private boolean enabled = true;
 
     /**
-     * Redis stream key.
+     * Redis Stream 键名。
      */
     private String key = "collector:telemetry:stream";
 
     /**
-     * COUNT or TIME.
+     * 保留模式，支持按数量或按时间。
      */
     private StreamRetentionMode retentionMode = StreamRetentionMode.COUNT;
 
     /**
-     * Keep latest N messages when retentionMode=COUNT.
+     * 按数量保留时保留最近 N 条消息。
      */
     private long maxLength = 200L;
 
     /**
-     * Keep latest N seconds when retentionMode=TIME.
+     * 按时间保留时保留最近 N 秒数据。
      */
     private long maxSeconds = 60L;
 
     /**
-     * Use approximate trim (~) when true.
+     * 启用时使用近似裁剪模式。
      */
     private boolean approximateTrim = true;
 
     /**
-     * Enable scheduled trim for TIME mode.
+     * 按时间保留模式下是否启用定时裁剪。
      */
     private boolean trimTaskEnabled = true;
 
     /**
-     * Scheduled trim period in milliseconds.
+     * 定时裁剪周期，单位毫秒。
      */
     private long trimIntervalMs = 5000L;
+
+    /**
+     * Redis Stream 写入缓冲配置，用于把阶段提交和 Redis I/O 解耦。
+     */
+    private Buffer buffer = new Buffer();
+
+    @Data
+    public static class Buffer {
+
+        /**
+         * 内存缓冲最大遥测条数，达到上限后显式丢弃并计数。
+         */
+        private int capacity = 10000;
+
+        /**
+         * 每次 Redis pipeline 最大写入条数，仍保持一条遥测对应一条 Stream entry。
+         */
+        private int batchSize = 100;
+
+        /**
+         * writer 等待凑批的最长时间，单位毫秒。
+         */
+        private long flushIntervalMs = 20L;
+
+        /**
+         * 应用关闭时等待 Stream buffer 排空的最长时间，单位毫秒。
+         */
+        private long shutdownTimeoutMs = 30000L;
+    }
 }
 

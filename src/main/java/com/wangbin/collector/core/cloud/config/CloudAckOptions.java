@@ -16,6 +16,9 @@ public record CloudAckOptions(
     private static final int DEFAULT_MAX_PENDING = 10000;
     private static final long DEFAULT_TIMEOUT_SCAN_MS = 500L;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static CloudAckOptions defaults() {
         return new CloudAckOptions(
                 CloudAckMode.ASYNC,
@@ -25,6 +28,9 @@ public record CloudAckOptions(
                 CloudAckCommitMode.PUBLISH_SUCCESS);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudAckOptions from(ReportProperties.Cloud.Ack ack) {
         if (ack == null) {
             return defaults();
@@ -40,6 +46,9 @@ public record CloudAckOptions(
                 CloudAckCommitMode.from(ack.getCommitOn()));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean enabled() {
         return mode != CloudAckMode.DISABLED;
     }

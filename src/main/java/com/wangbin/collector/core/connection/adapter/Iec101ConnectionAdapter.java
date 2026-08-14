@@ -18,6 +18,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
     private final SharedSerialChannelManager serialChannelManager;
     private Iec101Session session;
 
+    /**
+     * 创建当前组件实例。
+     */
     public Iec101ConnectionAdapter(DeviceInfo deviceInfo,
                                    DeviceConnection config,
                                    SharedSerialChannelManager serialChannelManager) {
@@ -25,6 +28,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         this.serialChannelManager = serialChannelManager;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String linkMode = config.getStringConfig("linkMode", "UNBALANCED");
@@ -66,6 +72,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         Iec101Session current = session;
@@ -75,6 +84,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (session == null || !session.isOpen()) {
@@ -82,6 +94,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // IEC101 当前实现不包含独立认证阶段。
@@ -92,6 +107,9 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         return session;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         if (config.getReadTimeout() != null && config.getReadTimeout() > 0) {
             return config.getReadTimeout();
@@ -102,11 +120,17 @@ public class Iec101ConnectionAdapter extends AbstractConnectionAdapter<Iec101Ses
         return 3000;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveWriteTimeout() {
         return config.getWriteTimeout() != null && config.getWriteTimeout() > 0
                 ? config.getWriteTimeout() : resolveReadTimeout();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveRetryCount() {
         return config.getRetries() != null && config.getRetries() >= 0 ? config.getRetries() : 2;
     }

@@ -1,5 +1,8 @@
 package com.wangbin.collector.common.constant;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class ProtocolConstant {
 
     // 协议类型
@@ -74,7 +77,7 @@ public class ProtocolConstant {
     // HTTP配置常量
     public static final String HTTP_PARAM_METHOD = "method";          // GET, POST等
     public static final String HTTP_PARAM_HEADERS = "headers";
-    public static final String HTTP_PARAM_DATA_FORMAT = "dataFormat"; // JSON, FORM, XML
+    public static final String HTTP_PARAM_DATA_FORMAT = "dataFormat"; // 数据格式，支持 JSON、FORM、XML。
 
     // 通用配置常量
     public static final String CONFIG_PARAM_QOS = "qos";              // QoS等级

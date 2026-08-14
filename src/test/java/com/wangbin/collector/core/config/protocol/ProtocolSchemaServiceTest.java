@@ -2,6 +2,7 @@ package com.wangbin.collector.core.config.protocol;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -13,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ProtocolSchemaServiceTest {
 
-    private final ProtocolDescriptorRegistry registry = new ProtocolDescriptorRegistry();
+    private final ProtocolDescriptorRegistry registry = ProtocolDescriptorTestProviders.registry();
     private final ProtocolSchemaService service = new ProtocolSchemaService(registry);
 
     @Test
@@ -40,12 +41,15 @@ public class ProtocolSchemaServiceTest {
             assertEquals(descriptor.writeCapability(), schema.getWriteCapability());
             assertEquals(descriptor.subscriptionCapability(), schema.getSubscriptionCapability());
             assertEquals(descriptor.browseCapability(), schema.getBrowseCapability());
-            assertEquals(expectedDataTypes(descriptor.code()), schema.getDataTypes());
-            assertEquals(expectedTypeMode(descriptor.code()), schema.getTypeMode());
-            assertEquals(expectedPrimaryTypeField(descriptor.code()), schema.getPrimaryTypeField());
-            assertEquals(expectedPlatformDataTypeMode(descriptor.code()), schema.getPlatformDataTypeMode());
-            assertNotNull(schema.getPointFields());
-            assertNotNull(schema.getDriverDataTypes());
+            assertEquals(descriptor.dataTypes(), schema.getDataTypes());
+            assertEquals(descriptor.typeMode(), schema.getTypeMode());
+            assertEquals(descriptor.primaryTypeField(), schema.getPrimaryTypeField());
+            assertEquals(descriptor.platformDataTypeMode(), schema.getPlatformDataTypeMode());
+            assertEquals(descriptor.driverTypeEnabled(), schema.isDriverTypeEnabled());
+            assertEquals(descriptor.driverTypeLabel(), schema.getDriverTypeLabel());
+            assertEquals(descriptor.driverTypeField(), schema.getDriverTypeField());
+            assertEquals(descriptor.driverDataTypes(), schema.getDriverDataTypes());
+            assertEquals(descriptor.pointFields(), schema.getPointFields());
         }
     }
 
@@ -161,7 +165,7 @@ public class ProtocolSchemaServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertNotNull(s7ControllerType.getDescription());
-        assertTrue(s7ControllerType.getDescription().contains("absolute addresses only"));
+        assertTrue(s7ControllerType.getDescription().contains("绝对地址"));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.stringLength".equals(field.getName())));
         assertTrue(s7.getPointFields().stream().anyMatch(field -> "additionalConfig.arraySize".equals(field.getName())));
 
@@ -235,7 +239,7 @@ public class ProtocolSchemaServiceTest {
         assertEquals("dataType", modbus.getPrimaryTypeField());
         assertEquals(PlatformDataTypeMode.REQUIRED, modbus.getPlatformDataTypeMode());
         assertFalse(modbus.isDriverTypeEnabled());
-        assertEquals(ProtocolDescriptorRegistry.MODBUS_DATA_TYPES, modbus.getDataTypes());
+        assertEquals(registry.resolve("MODBUS_TCP").dataTypes(), modbus.getDataTypes());
         assertTrue(modbus.getPointFields().stream().anyMatch(field -> "additionalConfig.registerType".equals(field.getName())));
 
         ProtocolSchema opcUa = service.getSchema("OPC_UA").orElseThrow();
@@ -254,6 +258,26 @@ public class ProtocolSchemaServiceTest {
     }
 
     @Test
+    void shouldKeepCriticalDynamicFormFieldsForRepresentativeProtocols() {
+        assertSchemaFields("MODBUS_TCP",
+                List.of("host", "port", "slaveId", "byteOrder", "maxRegistersPerRequest", "plc4xConnectionString"),
+                List.of("additionalConfig.registerType", "additionalConfig.byteOrder",
+                        "additionalConfig.wordOrder", "additionalConfig.stringLength"));
+        assertSchemaFields("SIEMENS_S7",
+                List.of("host", "port", "rack", "slot", "controllerType", "plc4xConnectionString"),
+                List.of("additionalConfig.subscriptionMode", "additionalConfig.stringLength",
+                        "additionalConfig.arraySize"));
+        assertSchemaFields("OPC_UA",
+                List.of("url", "endpointUrl", "host", "port", "authType", "securityPolicy",
+                        "requestTimeoutMs", "plc4xConnectionString"),
+                List.of("additionalConfig.nodeId", "additionalConfig.identifierType",
+                        "additionalConfig.samplingInterval", "additionalConfig.arraySize", "additionalConfig.subscribe"));
+        assertSchemaFields("BACNET_IP",
+                List.of("host", "port", "remoteDeviceInstance", "localDeviceInstance",
+                        "covEnabled", "readPropertyMultipleEnabled"),
+                List.of("additionalConfig.driverDataType", "additionalConfig.writePriority", "additionalConfig.covMode"));
+    }
+    @Test
     void shouldExposeFieldStorageMetadata() {
         ProtocolSchema modbus = service.getSchema("MODBUS_TCP").orElseThrow();
         ProtocolFieldConfig host = modbus.getConnectionFields().stream()
@@ -269,34 +293,24 @@ public class ProtocolSchemaServiceTest {
         assertEquals("extJson", connectionString.getStorage());
     }
 
-    private List<String> expectedDataTypes(String protocol) {
-        return switch (protocol) {
-            case "MODBUS_TCP", "MODBUS_RTU" -> ProtocolDescriptorRegistry.MODBUS_DATA_TYPES;
-            default -> ProtocolDescriptorRegistry.EXTENDED_DATA_TYPES;
-        };
+    private void assertSchemaFields(String protocol,
+                                    Collection<String> connectionFields,
+                                    Collection<String> pointFields) {
+        ProtocolSchema schema = service.getSchema(protocol).orElseThrow();
+        assertFieldNames(protocol + " 连接字段", schema.getConnectionFields(), connectionFields);
+        assertFieldNames(protocol + " 点位字段", schema.getPointFields(), pointFields);
     }
 
-    private ProtocolTypeMode expectedTypeMode(String protocol) {
-        return switch (protocol) {
-            case "SIEMENS_S7", "MITSUBISHI_MC", "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "ETHERNET_IP", "ADS", "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "SNMP" -> ProtocolTypeMode.DRIVER_PRIMARY;
-            case "KNXNET_IP" -> ProtocolTypeMode.PROTOCOL_FIELD_PRIMARY;
-            default -> ProtocolTypeMode.PLATFORM_ONLY;
-        };
-    }
-
-    private String expectedPrimaryTypeField(String protocol) {
-        return switch (expectedTypeMode(protocol)) {
-            case DRIVER_PRIMARY -> "additionalConfig.driverDataType";
-            case PROTOCOL_FIELD_PRIMARY -> "additionalConfig.dptId";
-            case PLATFORM_ONLY -> "dataType";
-        };
-    }
-
-    private PlatformDataTypeMode expectedPlatformDataTypeMode(String protocol) {
-        return switch (expectedTypeMode(protocol)) {
-            case DRIVER_PRIMARY, PROTOCOL_FIELD_PRIMARY -> PlatformDataTypeMode.DERIVED_EDITABLE;
-            case PLATFORM_ONLY -> PlatformDataTypeMode.REQUIRED;
-        };
+    private void assertFieldNames(String scope,
+                                  List<ProtocolFieldConfig> fields,
+                                  Collection<String> expectedNames) {
+        Set<String> names = fields.stream()
+                .map(ProtocolFieldConfig::getName)
+                .collect(Collectors.toSet());
+        assertTrue(names.containsAll(expectedNames), () -> scope + " 缺少字段: "
+                + expectedNames.stream()
+                .filter(name -> !names.contains(name))
+                .toList());
     }
 }
 

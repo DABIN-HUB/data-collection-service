@@ -13,6 +13,9 @@ public final class CloudOutboxMetadataKeys {
     public static final String ACK_TIMEOUT_MS = "ackTimeoutMs";
     public static final String ACK_COMMIT_ON = "ackCommitOn";
 
+    /**
+     * 创建当前组件实例。
+     */
     private CloudOutboxMetadataKeys() {
     }
 }

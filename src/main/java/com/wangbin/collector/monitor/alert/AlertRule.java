@@ -6,6 +6,9 @@ import lombok.Data;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Data
 @Builder
 public class AlertRule {

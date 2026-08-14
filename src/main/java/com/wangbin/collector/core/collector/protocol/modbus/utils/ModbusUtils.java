@@ -10,10 +10,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class ModbusUtils {
 
 
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static ByteOrder parseByteOrder(String orderStr) {
         return switch (orderStr) {
             case "BIG_ENDIAN" -> ByteOrder.BIG_ENDIAN;
@@ -94,6 +100,9 @@ public class ModbusUtils {
         return parseCoilValue(coilBytes, bitIndex, Parity.none);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Boolean parseCoilValue(byte[] coilBytes, int bitIndex, Parity parity) {
         if (coilBytes == null || coilBytes.length == 0) {
             return null;
@@ -131,6 +140,9 @@ public class ModbusUtils {
         return convertByteToValue(raw, dataType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object parseRegisterValue(byte[] raw, String dataType, ByteOrder byteOrder) {
         return convertByteToValue(raw, dataType, byteOrder);
     }
@@ -142,6 +154,9 @@ public class ModbusUtils {
         return convertByteToValue(raw, dataType, ByteOrder.BIG_ENDIAN);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object convertByteToValue(byte[] raw, String dataType, ByteOrder byteOrder) {
         if (raw == null || raw.length == 0) {
             return null;
@@ -152,6 +167,9 @@ public class ModbusUtils {
         return convertByteToValueInternal(working, dataType);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Object convertByteToValueInternal(byte[] raw, String dataType) {
         if (raw == null || raw.length == 0) {
             return null;
@@ -194,6 +212,9 @@ public class ModbusUtils {
     }
 
     // DOUBLE类型 - 标准Big-endian
+    /**
+     * 解析或转换业务数据。
+     */
     private static Double parseDouble(byte[] raw) {
         if (raw.length < 8) {
             byte[] padded = new byte[8];
@@ -204,6 +225,9 @@ public class ModbusUtils {
     }
 
     // DOUBLE_SWAP - 字节顺序为BADC FEGH
+    /**
+     * 解析或转换业务数据。
+     */
     private static Double parseDoubleWordSwap(byte[] raw) {
         if (raw.length < 8) {
             throw new IllegalArgumentException("DOUBLE_SWAP需要至少8字节");
@@ -226,11 +250,17 @@ public class ModbusUtils {
     }
 
     // FLOAT64_SWAP - 与DOUBLE_SWAP相同，但可能要求更高的精度处理
+    /**
+     * 解析或转换业务数据。
+     */
     private static Double parseFloat64WordSwap(byte[] raw) {
         return parseDoubleWordSwap(raw);
     }
 
     // FLOAT64_LITTLE - 小端序
+    /**
+     * 解析或转换业务数据。
+     */
     private static Double parseFloat64LittleEndian(byte[] raw) {
         if (raw.length < 8) {
             throw new IllegalArgumentException("FLOAT64_LITTLE需要至少8字节");
@@ -255,6 +285,9 @@ public class ModbusUtils {
         return parseValue(raw, offsetRegister, dataType, ByteOrder.BIG_ENDIAN);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object parseValue(byte[] raw, int offsetRegister, DataType dataType, ByteOrder byteOrder) {
         if (raw == null || raw.length == 0 || dataType == null) {
             return null;
@@ -276,37 +309,58 @@ public class ModbusUtils {
 
     // =============== 基本类型解析 ===============
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Integer parseInt16(byte[] bytes) {
         if (bytes == null || bytes.length < 2) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getShort() + 0;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Integer parseUInt16(byte[] bytes) {
         if (bytes == null || bytes.length < 2) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getShort() & 0xFFFF;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Integer parseInt32(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getInt();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Long parseUInt32(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         long value = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getInt();
         return value & 0xFFFFFFFFL;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Float parseFloat32(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getFloat();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Double parseFloat64(byte[] bytes) {
         if (bytes == null || bytes.length < 8) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getDouble();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Long parseInt64(byte[] bytes) {
         if (bytes == null || bytes.length < 8) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).getLong();
@@ -314,17 +368,26 @@ public class ModbusUtils {
 
     // =============== 特殊格式解析 ===============
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Float parseFloat32LittleEndian(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         return ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getFloat();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Float parseFloat32WordSwap(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         byte[] swapped = new byte[]{ bytes[2], bytes[3], bytes[0], bytes[1] };
         return parseFloat32(swapped);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Float parseFloat32ByteWordSwap(byte[] bytes) {
         if (bytes == null || bytes.length < 4) return null;
         byte[] swapped = new byte[]{ bytes[3], bytes[2], bytes[1], bytes[0] };
@@ -333,6 +396,9 @@ public class ModbusUtils {
 
     // =============== 带偏移量的解析 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] slice(byte[] raw, int offsetBytes, int length) {
         byte[] result = new byte[length];
         if (offsetBytes + length <= raw.length) {
@@ -341,16 +407,25 @@ public class ModbusUtils {
         return result;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static short parseInt16(byte[] raw, int offsetRegister) {
         int offsetBytes = offsetRegister * 2;
         byte[] b = slice(raw, offsetBytes, 2);
         return ByteBuffer.wrap(b).order(ByteOrder.BIG_ENDIAN).getShort();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int parseUInt16(byte[] raw, int offsetRegister) {
         return parseInt16(raw, offsetRegister) & 0xFFFF;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int parseInt32(byte[] raw, int offsetRegister, boolean swap) {
         int offsetBytes = offsetRegister * 2;
         byte[] b = slice(raw, offsetBytes, 4);
@@ -363,6 +438,9 @@ public class ModbusUtils {
         return ByteBuffer.wrap(b).order(ByteOrder.BIG_ENDIAN).getInt();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static long parseUInt32(byte[] raw, int offsetRegister, boolean swap) {
         int index = offsetRegister * 2;
         if (index + 3 >= raw.length) {
@@ -381,6 +459,9 @@ public class ModbusUtils {
         return ((long) high << 16) | (long) low;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static float parseFloat32(byte[] raw, int offsetRegister, boolean swap) {
         int offsetBytes = offsetRegister * 2;
         byte[] b = slice(raw, offsetBytes, 4);
@@ -393,6 +474,9 @@ public class ModbusUtils {
         return ByteBuffer.wrap(b).order(ByteOrder.BIG_ENDIAN).getFloat();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static double parseFloat64(byte[] raw, int offsetRegister, boolean swap) {
         int offsetBytes = offsetRegister * 2;
         byte[] b = slice(raw, offsetBytes, 8);
@@ -458,6 +542,9 @@ public class ModbusUtils {
         return buildCoilBytes(values, Parity.none);
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static byte[] buildCoilBytes(List<Boolean> values, Parity parity) {
         if (values == null || values.isEmpty()) {
             return new byte[0];
@@ -484,6 +571,9 @@ public class ModbusUtils {
         return coilBytes;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int resolveBitOffset(int bitIndex, Parity parity) {
         if (parity == null || parity == Parity.none) {
             return bitIndex % 8;
@@ -503,7 +593,7 @@ public class ModbusUtils {
         }
         int crc = crc16.getValue();
 
-        // Modbus RTU: Low byte first
+        // Modbus 协议族。 RTU:Low byte first
         return new byte[] {
                 (byte) (crc & 0xFF),
                 (byte) ((crc >> 8) & 0xFF)
@@ -516,15 +606,15 @@ public class ModbusUtils {
     public static byte[] buildRtuDiagnosticRequest(int slaveId, int subFunction, int data) {
         byte[] requestData = new byte[8];
         requestData[0] = (byte) slaveId;
-        requestData[1] = 0x08; // Diagnostics function code
+        requestData[1] = 0x08; // 诊断功能码。
         requestData[2] = (byte) ((subFunction >> 8) & 0xFF);
         requestData[3] = (byte) (subFunction & 0xFF);
         requestData[4] = (byte) ((data >> 8) & 0xFF);
         requestData[5] = (byte) (data & 0xFF);
 
         byte[] crc = calcModbusCrc(requestData, 6);
-        requestData[6] = crc[0]; // CRC Lo
-        requestData[7] = crc[1]; // CRC Hi
+        requestData[6] = crc[0]; // CRC 低字节。
+        requestData[7] = crc[1]; // CRC 高字节。
 
         return requestData;
     }
@@ -535,17 +625,20 @@ public class ModbusUtils {
     public static byte[] buildRtuExceptionStatusRequest(int slaveId) {
         byte[] requestData = new byte[4];
         requestData[0] = (byte) slaveId;
-        requestData[1] = 0x07; // Read Exception Status
+        requestData[1] = 0x07; // 读取 Exception 状态
 
         byte[] crc = calcModbusCrc(requestData, 2);
-        requestData[2] = crc[0]; // CRC Lo
-        requestData[3] = crc[1]; // CRC Hi
+        requestData[2] = crc[0]; // CRC 低字节。
+        requestData[3] = crc[1]; // CRC 高字节。
 
         return requestData;
     }
 
     // =============== 私有辅助方法 ===============
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static short[] int32ToRegisters(int value, ByteOrder byteOrder) {
         ByteBuffer buffer = ByteBuffer.allocate(4);
         buffer.order(byteOrder);
@@ -554,15 +647,24 @@ public class ModbusUtils {
         return new short[]{buffer.getShort(), buffer.getShort()};
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static short[] uint32ToRegisters(long value, ByteOrder byteOrder) {
         return int32ToRegisters((int) value, byteOrder);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static short[] floatToRegisters(float value, ByteOrder byteOrder) {
         int intBits = Float.floatToIntBits(value);
         return int32ToRegisters(intBits, byteOrder);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static short[] doubleToRegisters(double value, ByteOrder byteOrder) {
         long longBits = Double.doubleToLongBits(value);
         ByteBuffer buffer = ByteBuffer.allocate(8);
@@ -577,6 +679,9 @@ public class ModbusUtils {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static short[] stringToRegisters(String str, int registerCount, ByteOrder byteOrder) {
         short[] registers = new short[registerCount];
         int byteCount = registerCount * 2;
@@ -596,6 +701,9 @@ public class ModbusUtils {
         return registers;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Long parseLong(byte[] bytes) {
         if (bytes == null || bytes.length < 8) {
             return null;
@@ -611,6 +719,9 @@ public class ModbusUtils {
                 ((long) (bytes[7] & 0xFF));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BigInteger parseUint64(byte[] bytes) {
         if (bytes == null || bytes.length < 8) {
             return null;
@@ -621,6 +732,9 @@ public class ModbusUtils {
         return new BigInteger(paddedBytes);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean parseBoolean(byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
             return false;
@@ -641,10 +755,16 @@ public class ModbusUtils {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String parseString(byte[] bytes) {
         return parseString(bytes, "UTF-8");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String parseString(byte[] bytes, String charsetName) {
         if (bytes == null || bytes.length == 0) {
             return "";
@@ -666,6 +786,9 @@ public class ModbusUtils {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String parseStringWithLengthPrefix(byte[] bytes) {
         if (bytes == null || bytes.length < 1) {
             return "";
@@ -683,10 +806,16 @@ public class ModbusUtils {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String parseFixedLengthString(byte[] bytes) {
         return parseFixedLengthString(bytes, "UTF-8");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String parseFixedLengthString(byte[] bytes, String charsetName) {
         if (bytes == null) {
             return "";
@@ -703,55 +832,88 @@ public class ModbusUtils {
 
     // =============== 字节序相关方法 ===============
 
+    /**
+     * 定义当前模块的枚举值。
+     */
     public enum Endian {
-        BIG,       // ABCD
-        LITTLE,    // DCBA
-        SWAP,      // CDAB
-        REVERSE    // BADC
+        BIG,       // ABCD 字节序。
+        LITTLE,    // DCBA 字节序。
+        SWAP,      // CDAB 字节序。
+        REVERSE    // BADC 字节序。
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static short toInt16(byte[] raw) {
         return ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getShort();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static short toInt16(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getShort();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int toUInt16(byte[] raw) {
         return Short.toUnsignedInt(ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getShort());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int toUInt16(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return Short.toUnsignedInt(ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getShort());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static int toInt32(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getInt();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static long toUInt32(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return Integer.toUnsignedLong(ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getInt());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static float toFloat(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getFloat();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static double toDouble(byte[] raw, Endian endian) {
         raw = reorder(raw, endian);
         return ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN).getDouble();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static String toStringValue(byte[] raw) {
         return new String(raw).trim();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object parse(byte[] raw, String dataType, Endian endian) {
         switch (dataType.toUpperCase()) {
             case "INT16":
@@ -774,6 +936,9 @@ public class ModbusUtils {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] reorder(byte[] raw, Endian endian) {
         byte[] r = Arrays.copyOf(raw, raw.length);
         return switch (endian) {
@@ -788,6 +953,9 @@ public class ModbusUtils {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void reverse(byte[] arr) {
         for (int i = 0; i < arr.length / 2; i++) {
             byte tmp = arr[i];
@@ -796,10 +964,16 @@ public class ModbusUtils {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] swapWords(byte[] raw) {
         return new byte[]{ raw[2], raw[3], raw[0], raw[1] };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] reverseWords(byte[] raw) {
         return new byte[]{ raw[1], raw[0], raw[3], raw[2] };
     }

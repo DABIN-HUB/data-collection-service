@@ -11,8 +11,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public class McWritePlanBuilder {
 
+    /**
+     * 创建并返回业务对象。
+     */
     public List<McWritePlan> build(Map<DataPoint, Object> pointValues,
                                    int maxWordsPerRequest,
                                    int maxBitsPerRequest) {
@@ -76,6 +82,9 @@ public class McWritePlanBuilder {
         return plans;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private McWritePlan buildPlan(McDeviceCode deviceCode,
                                   boolean bitUnit,
                                   int startDeviceNumber,
@@ -107,6 +116,9 @@ public class McWritePlanBuilder {
         );
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildSegmentKey(McDeviceCode deviceCode,
                                    int startDeviceNumber,
                                    int endDeviceNumberExclusive) {
@@ -116,6 +128,9 @@ public class McWritePlanBuilder {
         return deviceCode.getSymbol() + ":" + start + "-" + endExclusive;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private PlanCandidate toCandidate(DataPoint point, McAddress address) {
         int startDeviceNumber = address.getDeviceNumber();
         int unitCount = address.getReadUnitCount();
@@ -130,6 +145,9 @@ public class McWritePlanBuilder {
         );
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PlanCandidate(DataPoint point,
                                  McAddress address,
                                  McDeviceCode deviceCode,

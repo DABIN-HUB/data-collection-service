@@ -10,6 +10,9 @@ class DeviceScheduleInfo {
     private final long generation;
     private volatile boolean running;
 
+    /**
+     * 创建当前组件实例。
+     */
     DeviceScheduleInfo(String deviceId, long generation, boolean running) {
         this.deviceId = deviceId;
         this.generation = generation;

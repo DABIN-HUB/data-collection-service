@@ -10,11 +10,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class FinsDataCodec {
 
+    /**
+     * 创建当前组件实例。
+     */
     private FinsDataCodec() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Object decode(byte[] payload, FinsAddress address) {
         if (address.isBitUnit()) {
             if (address.isArrayType()) {
@@ -48,6 +57,9 @@ public final class FinsDataCodec {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static byte[] encode(Object value, FinsAddress address) {
         if (address.isBitUnit()) {
             if (address.isArrayType()) {
@@ -83,6 +95,9 @@ public final class FinsDataCodec {
         return payload;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Object decodeScalar(byte[] payload,
                                        String dataType,
                                        int scalarWordCount,
@@ -106,6 +121,9 @@ public final class FinsDataCodec {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeScalar(Object value,
                                        String dataType,
                                        int scalarWordCount,
@@ -142,6 +160,9 @@ public final class FinsDataCodec {
         return denormalizeWordBytes(buffer.array(), scalarWordCount, byteOrder, wordOrder);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String decodeString(byte[] payload, FinsAddress address) {
         byte[] normalized = normalizeWordBytes(payload, address.requiredStringWordCount(), address.getByteOrder(), address.getWordOrder());
         int limit = Math.min(normalized.length, address.getStringLength());
@@ -152,6 +173,9 @@ public final class FinsDataCodec {
         return new String(normalized, 0, end, StandardCharsets.UTF_8);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] encodeString(Object value, FinsAddress address) {
         byte[] raw = value == null ? new byte[0] : String.valueOf(value).getBytes(StandardCharsets.UTF_8);
         int byteLength = address.requiredStringWordCount() * 2;
@@ -160,6 +184,9 @@ public final class FinsDataCodec {
         return denormalizeWordBytes(normalized, address.requiredStringWordCount(), address.getByteOrder(), address.getWordOrder());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static byte[] normalizeWordBytes(byte[] payload,
                                              int wordCount,
                                              FinsByteOrder byteOrder,
@@ -174,6 +201,9 @@ public final class FinsDataCodec {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static byte[] denormalizeWordBytes(byte[] payload,
                                                int wordCount,
                                                FinsByteOrder byteOrder,
@@ -188,6 +218,9 @@ public final class FinsDataCodec {
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void swapBytesInWords(byte[] payload) {
         for (int index = 0; index + 1 < payload.length; index += 2) {
             byte first = payload[index];
@@ -196,6 +229,9 @@ public final class FinsDataCodec {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static void reverseWordBlocks(byte[] payload, int wordCount) {
         for (int left = 0, right = wordCount - 1; left < right; left++, right--) {
             int leftOffset = left * 2;
@@ -209,6 +245,9 @@ public final class FinsDataCodec {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static List<?> asList(Object value, int expectedSize) {
         if (value instanceof List<?> list) {
             if (list.size() != expectedSize) {
@@ -219,6 +258,9 @@ public final class FinsDataCodec {
         throw new IllegalArgumentException("FINS array value must be a List");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Number coerceNumber(Object value) {
         if (value instanceof Number number) {
             return number;
@@ -232,6 +274,9 @@ public final class FinsDataCodec {
         throw new IllegalArgumentException("FINS value cannot be converted to number: " + value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static boolean coerceBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -246,6 +291,9 @@ public final class FinsDataCodec {
         throw new IllegalArgumentException("FINS value cannot be converted to boolean: " + value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static BigInteger toBigInteger(Object value) {
         if (value instanceof BigInteger bigInteger) {
             return bigInteger;

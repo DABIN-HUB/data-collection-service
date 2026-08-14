@@ -6,8 +6,8 @@ import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;
@@ -20,10 +20,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class DataProcessorManager {
 
-    @Autowired
-    private ApplicationContext applicationContext;
+    private final ApplicationContext applicationContext;
 
     /**
      * 所有处理器映射
@@ -171,7 +171,7 @@ public class DataProcessorManager {
      * 处理数据点
      */
     public ProcessResult process(ProcessContext context, DataPoint point, Object rawValue) {
-        log.debug("开始处理数据点: point={}, rawValue={}", point.getPointName(), rawValue);
+        log.debug("开始处理数据点: 点位={}, 原始值={}", point.getPointName(), rawValue);
 
         ProcessResult finalResult = null;
 
@@ -198,7 +198,7 @@ public class DataProcessorManager {
 
                 // 如果处理失败，可以决定是否继续处理
                 if (!result.isSuccess() && !result.isSkipped()) {
-                    log.warn("处理器执行失败，停止处理链: processor={}, point={}",
+                    log.warn("处理器执行失败，停止处理链: 处理器={}, 点位={}",
                             processor.getName(), point.getPointName());
                     break;
                 }
@@ -209,7 +209,7 @@ public class DataProcessorManager {
             finalResult = ProcessResult.success(rawValue, rawValue, "无可用处理器");
         }
 
-        log.debug("数据点处理完成: point={}, success={}, quality={}",
+        log.debug("数据点处理完成: 点位={}, 成功={}, 质量={}",
                 point.getPointName(), finalResult.isSuccess(), finalResult.getQuality());
 
         return finalResult;

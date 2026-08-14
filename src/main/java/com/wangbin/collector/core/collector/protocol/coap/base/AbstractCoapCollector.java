@@ -31,14 +31,20 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
 
     protected final Map<String, CoapObserveRelation> observeRelations = new ConcurrentHashMap<>();
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void initCoapConnection() throws Exception {
         CoapConnectionAdapter coapAdapter = createAndConnectAdapter(CoapConnectionAdapter.class, "CoAP");
         this.coapConnection = coapAdapter;
         this.timeout = Math.toIntExact(coapAdapter.getRequestTimeout());
         this.baseUri = coapAdapter.getBaseUri();
-        log.info("CoAP连接已建立 uri={} timeout={}", baseUri, timeout);
+        log.info("CoAP连接已建立 地址={} 超时={}", baseUri, timeout);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected void closeCoapConnection() {
         observeRelations.values().forEach(relation -> {
             try {
@@ -52,10 +58,16 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         coapConnection = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected CoapPoint parsePoint(DataPoint point) {
         return CoapAddressParser.parse(point);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     protected CoapResponse send(CoapPoint point, byte[] payload) throws Exception {
         if (coapConnection == null) {
             throw new IllegalStateException("CoAP连接尚未建立");
@@ -72,12 +84,18 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         }, (long) timeout);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void startObserve(CoapPoint point, CoapHandler handler) {
         CoapClient client = createClient(point);
         CoapObserveRelation relation = client.observe(handler);
         observeRelations.put(point.getObserveKey(), relation);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     protected void stopObserve(CoapPoint point) {
         CoapObserveRelation relation = observeRelations.remove(point.getObserveKey());
         if (relation != null) {
@@ -85,12 +103,15 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     protected Object convertResponse(CoapResponse response, CoapPoint point) {
         if (response == null) {
             return null;
         }
         if (!response.isSuccess()) {
-            log.warn("CoAP请求失败 code={} uri={}", response.getCode(), point.getPath());
+            log.warn("CoAP请求失败 状态码={} 地址={}", response.getCode(), point.getPath());
             return null;
         }
         if (point.isBinary()) {
@@ -99,6 +120,9 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         return response.getResponseText();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private CoapClient createClient(CoapPoint point) {
         String uri = point.resolveUri(baseUri);
         if (coapConnection != null) {
@@ -107,6 +131,9 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         return new CoapClient(uri);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizePath(String path) {
         if (path == null || path.isBlank() || "/".equals(path)) {
             return "";
@@ -114,20 +141,32 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         return path.startsWith("/") ? path : "/" + path;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     protected CoapHandler createHandler(CoapPoint point) {
         return new CoapHandler() {
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void onLoad(CoapResponse response) {
                 handleNotification(point, response);
             }
 
+            /**
+             * 执行当前业务逻辑。
+             */
             @Override
             public void onError() {
-                log.warn("CoAP观察发生错误 point={}", point.getObserveKey());
+                log.warn("CoAP观察发生错误 点位={}", point.getObserveKey());
             }
         };
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     protected void handleNotification(CoapPoint point, CoapResponse response) {
         // 子类覆盖处理
     }

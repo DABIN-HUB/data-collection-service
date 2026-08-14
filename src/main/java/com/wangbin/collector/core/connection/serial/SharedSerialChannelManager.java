@@ -15,14 +15,23 @@ public class SharedSerialChannelManager {
     private final Map<String, SharedEntry> entries = new HashMap<>();
     private final SerialChannelFactory channelFactory;
 
+    /**
+     * 创建当前组件实例。
+     */
     public SharedSerialChannelManager() {
         this(JSerialCommSerialChannel::new);
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public SharedSerialChannelManager(SerialChannelFactory channelFactory) {
         this.channelFactory = channelFactory;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public synchronized Lease acquire(SerialEndpoint endpoint, String owner) throws Exception {
         if (owner == null || owner.isBlank()) {
             throw new IllegalArgumentException("串口占用方不能为空");
@@ -42,10 +51,16 @@ public class SharedSerialChannelManager {
         return new Lease(this, key, created);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public synchronized int activePortCount() {
         return entries.size();
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validateSharedEntry(SharedEntry existing, SerialEndpoint endpoint, String owner) {
         if (!existing.endpoint.equals(endpoint)) {
             throw new IllegalStateException("同一串口存在冲突的通信参数: " + endpoint.portName());
@@ -55,6 +70,9 @@ public class SharedSerialChannelManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private synchronized void release(String key, SharedEntry expected) throws Exception {
         SharedEntry current = entries.get(key);
         if (current == null || current != expected) {
@@ -67,12 +85,21 @@ public class SharedSerialChannelManager {
         }
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface SerialOperation<T> {
 
+        /**
+         * 处理当前业务流程。
+         */
         T execute(SerialChannel channel) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     public static final class Lease implements AutoCloseable {
 
         private final SharedSerialChannelManager manager;
@@ -80,12 +107,18 @@ public class SharedSerialChannelManager {
         private final SharedEntry entry;
         private boolean closed;
 
+        /**
+         * 创建当前组件实例。
+         */
         private Lease(SharedSerialChannelManager manager, String key, SharedEntry entry) {
             this.manager = manager;
             this.key = key;
             this.entry = entry;
         }
 
+        /**
+         * 处理当前业务流程。
+         */
         public <T> T execute(SerialOperation<T> operation) throws Exception {
             if (closed) {
                 throw new IllegalStateException("串口租约已经释放");
@@ -102,6 +135,9 @@ public class SharedSerialChannelManager {
             return !closed && entry.channel.isOpen();
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         @Override
         public synchronized void close() throws Exception {
             if (closed) {
@@ -112,6 +148,9 @@ public class SharedSerialChannelManager {
         }
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class SharedEntry {
 
         private final SerialEndpoint endpoint;
@@ -120,6 +159,9 @@ public class SharedSerialChannelManager {
         private final ReentrantLock lock = new ReentrantLock(true);
         private int references;
 
+        /**
+         * 创建当前组件实例。
+         */
         private SharedEntry(SerialEndpoint endpoint, String owner, SerialChannel channel) {
             this.endpoint = endpoint;
             this.owner = owner;

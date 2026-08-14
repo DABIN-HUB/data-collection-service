@@ -6,7 +6,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Centralized protocol-specific batch limits.
+ * Centralized 协议-specific 批量 limits.
  */
 @Component
 class ProtocolBatchStrategy {
@@ -54,22 +54,37 @@ class ProtocolBatchStrategy {
             Map.entry("OPCUA_PLC4X", new BatchLimits(100, 200, 100, 50))
     );
 
+    /**
+     * 执行当前业务逻辑。
+     */
     int defaultBatchSize(String protocol) {
         return resolve(protocol).defaultBatchSize();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     int maxBatchSize(String protocol) {
         return resolve(protocol).maxBatchSize();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     int maxMergedBatchSize(String protocol) {
         return resolve(protocol).maxMergedBatchSize();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     int addressGapThreshold(String protocol) {
         return resolve(protocol).addressGapThreshold();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private BatchLimits resolve(String protocol) {
         if (protocol == null || protocol.isBlank()) {
             return DEFAULT_LIMITS;
@@ -77,6 +92,9 @@ class ProtocolBatchStrategy {
         return LIMITS.getOrDefault(protocol.toUpperCase(Locale.ROOT), DEFAULT_LIMITS);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record BatchLimits(int defaultBatchSize,
                                int maxBatchSize,
                                int maxMergedBatchSize,

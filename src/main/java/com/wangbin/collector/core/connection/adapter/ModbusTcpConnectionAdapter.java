@@ -23,10 +23,16 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
     private ModbusTcpClient client;
     private MessageBatchDispatcher<ModbusOperation<?>> dispatcher;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ModbusTcpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         startDispatcher();
@@ -39,6 +45,9 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         log.info("Modbus TCP 客户端创建完成: {}:{}", config.getHost(), config.getPort());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -89,26 +98,41 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         return client;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("Modbus TCP 连接不支持裸字节发送，请通过 submit() 执行协议操作");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         // Modbus TCP 无统一心跳指令，由采集器按需触发
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // Modbus TCP 无认证流程
@@ -124,6 +148,9 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         return 5000;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startDispatcher() {
         if (dispatcher != null) {
             return;
@@ -137,6 +164,9 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         dispatcher.start();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void stopDispatcher() {
         if (dispatcher != null) {
             dispatcher.stop();
@@ -144,6 +174,9 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processOperations(List<ModbusOperation<?>> operations) {
         if (operations == null || operations.isEmpty()) {
             return;
@@ -157,27 +190,48 @@ public class ModbusTcpConnectionAdapter extends AbstractConnectionAdapter {
         }
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface ModbusCallable<T> {
+        /**
+         * 处理当前业务流程。
+         */
         T apply(ModbusTcpClient client) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class ModbusOperation<T> {
         private final ModbusCallable<T> callable;
         private final CompletableFuture<T> future = new CompletableFuture<>();
 
+        /**
+         * 创建当前组件实例。
+         */
         private ModbusOperation(ModbusCallable<T> callable) {
             this.callable = callable;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void complete(T value) {
             future.complete(value);
         }
 
+        /**
+         * 构造标准业务结果。
+         */
         private void fail(Throwable throwable) {
             future.completeExceptionally(throwable);
         }
 
+        /**
+         * 处理当前业务流程。
+         */
         private void run(ModbusTcpClient client) {
             try {
                 complete(callable.apply(client));

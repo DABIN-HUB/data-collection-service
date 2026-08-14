@@ -7,6 +7,9 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * 承载当前模块的数据传输内容。
+ */
 @Data
 @Builder
 public class ReportResult {

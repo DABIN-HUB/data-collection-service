@@ -8,6 +8,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Data
 @Builder
 public class ExceptionStatsSnapshot {

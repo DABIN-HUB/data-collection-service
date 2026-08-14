@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.enums.DataType;
@@ -44,6 +46,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
     private Parity parity = Parity.none;
 
     private final ModbusTransport transport = new ModbusTransport() {
+        /**
+         * 查询并返回业务数据。
+         */
         @Override
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
             PlcReadResponse response = await(requireConnection().getClient()
@@ -62,6 +67,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             };
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleCoils(
                 int unitId, int startAddress, int quantity, byte[] coilBytes) throws Exception {
@@ -78,6 +86,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             return true;
         }
 
+        /**
+         * 写入或持久化业务数据。
+         */
         @Override
         public boolean writeMultipleRegisters(int unitId, int startAddress, short[] registers) throws Exception {
             PlcWriteResponse response = await(requireConnection().getClient()
@@ -104,9 +115,12 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         return "MODBUS_TCP";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
-        log.info("Starting PLC4X Modbus TCP connection: {}", deviceInfo.getDeviceId());
+        log.info("Starting PLC4X Modbus TCP 连接:{}", deviceInfo.getDeviceId());
         DeviceConnection desiredConfig = requireConnectionConfig();
         this.connectionAdapter = createAndConnectAdapter(
                 desiredConfig,
@@ -132,20 +146,26 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         String parityName = connectionConfig.getString("parity", Parity.none.name());
         parity = Parity.fromName(parityName != null ? parityName.toLowerCase() : Parity.none.name());
 
-        log.info("PLC4X Modbus TCP connected: {}:{} byteOrder={} parity={}",
+        log.info("PLC4X Modbus TCP 已连接:{}:{} byteOrder={} parity={}",
                 connectionConfig.getHost(),
                 connectionConfig.getPort(),
                 byteOrder,
                 parity.name());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         removeConnectionSilently();
         registerCache.clear();
-        log.info("PLC4X Modbus TCP disconnected");
+        log.info("PLC4X Modbus TCP 已断开");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         String address = point.getAddress();
@@ -165,6 +185,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         String address = point.getAddress();
@@ -190,25 +213,31 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = getBaseDeviceStatus("Modbus TCP");
         status.put("unitIds", collectUnitIds());
         status.put("byteOrder", byteOrder.toString());
         status.put("parity", parity.name());
-        status.put("driver", "PLC4X");
+        status.put(CommonMapKeys.DRIVER, "PLC4X");
         status.put("connectionString", connectionAdapter != null ? connectionAdapter.getConnectionString() : null);
 
         try {
-            status.put("deviceConnected", testConnection());
+            status.put(CommonMapKeys.DEVICE_CONNECTED, testConnection());
         } catch (Exception e) {
-            status.put("deviceConnected", false);
+            status.put(CommonMapKeys.DEVICE_CONNECTED, false);
             status.put("connectionError", e.getMessage());
         }
 
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         return switch (command.toUpperCase()) {
@@ -221,6 +250,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         int quantity = toInt(params.getOrDefault("quantity", 1), 1);
@@ -232,13 +264,16 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("address", address);
-        result.put("quantity", quantity);
+        result.put(CommonMapKeys.SUCCESS, true);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, quantity);
         result.put("values", values);
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteMultipleRegisters(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         List<?> values = (List<?>) params.get("values");
@@ -253,12 +288,15 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         boolean success = transport.writeMultipleRegisters(unitId, address, registers);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", success);
-        result.put("address", address);
-        result.put("quantity", values.size());
+        result.put(CommonMapKeys.SUCCESS, success);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, values.size());
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeReadCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         int quantity = toInt(params.getOrDefault("quantity", 1), 1);
@@ -266,13 +304,16 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         List<Boolean> values = ModbusUtils.getCoilValues(raw, quantity, parity);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("address", address);
-        result.put("quantity", quantity);
+        result.put(CommonMapKeys.SUCCESS, true);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, quantity);
         result.put("values", values);
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeWriteCoils(int unitId, Map<String, Object> params) throws Exception {
         int address = toInt(params.getOrDefault("address", 0), 0);
         List<?> values = (List<?>) params.get("values");
@@ -291,39 +332,48 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
                 ModbusUtils.buildCoilBytes(coilValues, parity));
 
         Map<String, Object> result = new HashMap<>();
-        result.put("success", success);
-        result.put("address", address);
-        result.put("quantity", coilValues.size());
+        result.put(CommonMapKeys.SUCCESS, success);
+        result.put(CommonMapKeys.ADDRESS, address);
+        result.put(CommonMapKeys.QUANTITY, coilValues.size());
         return result;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Object executeDiagnostic(int unitId) {
         Map<String, Object> result = new HashMap<>();
-        result.put("protocol", "Modbus TCP");
+        result.put(CommonMapKeys.PROTOCOL, "Modbus TCP");
         result.put("unitId", unitId);
-        result.put("timeout", timeout);
+        result.put(CommonMapKeys.TIMEOUT, timeout);
         result.put("masterConnected", connectionAdapter != null && connectionAdapter.isConnected());
-        result.put("timestamp", System.currentTimeMillis());
+        result.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
         try {
             boolean connected = testConnection();
-            result.put("deviceConnected", connected);
-            result.put("connectionTest", connected ? "SUCCESS" : "FAILED");
+            result.put(CommonMapKeys.DEVICE_CONNECTED, connected);
+            result.put(CommonMapKeys.CONNECTION_TEST, connected ? "SUCCESS" : "FAILED");
         } catch (Exception e) {
-            result.put("deviceConnected", false);
-            result.put("connectionTest", "FAILED");
-            result.put("error", e.getMessage());
+            result.put(CommonMapKeys.DEVICE_CONNECTED, false);
+            result.put(CommonMapKeys.CONNECTION_TEST, "FAILED");
+            result.put(CommonMapKeys.ERROR, e.getMessage());
         }
 
         return result;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean testConnection() throws Exception {
         int unitId = resolveHealthCheckUnitId();
         transport.read(unitId, RegisterType.HOLDING_REGISTER, 0, 1);
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<Integer> collectUnitIds() {
         Set<Integer> unitIds = new LinkedHashSet<>();
         for (ModbusReadPlan plan : readPlans) {
@@ -346,16 +396,25 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         return connection != null ? connection.getInt("slaveId", 1) : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveHealthCheckUnitId() {
         List<Integer> unitIds = collectUnitIds();
         return unitIds.isEmpty() ? 1 : unitIds.get(0);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removeConnectionSilently() {
         removeManagedConnection("PLC4X Modbus TCP");
         connectionAdapter = null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveQuantity(RegisterType registerType, String dataType) {
         return switch (registerType) {
             case COIL, DISCRETE_INPUT -> 1;
@@ -363,6 +422,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object[] toRegisterWriteValues(short[] registers) {
         Object[] values = new Object[registers.length];
         for (int i = 0; i < registers.length; i++) {
@@ -371,6 +433,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -381,6 +446,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         return Boolean.parseBoolean(String.valueOf(value));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureResponseOk(PlcTagResponse response, String fieldName, String operation) {
         if (response == null) {
             throw new IllegalStateException("PLC4X " + operation + " returned null response");
@@ -391,6 +459,9 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int toInt(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -401,10 +472,16 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
         return Integer.parseInt(String.valueOf(value));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T await(CompletableFuture<? extends T> future) throws Exception {
         return future.get(timeout, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private Plc4xModbusTcpConnectionAdapter requireConnection() {
         if (connectionAdapter == null) {
             throw new IllegalStateException("PLC4X Modbus TCP connection has not been established");

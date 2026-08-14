@@ -9,6 +9,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 public final class BacnetObjectType {
 
     private static final Map<String, BacnetObjectType> BY_NAME = new HashMap<>();
@@ -32,6 +35,9 @@ public final class BacnetObjectType {
     private final boolean known;
     private final String[] aliases;
 
+    /**
+     * 创建当前组件实例。
+     */
     private BacnetObjectType(int id, String name, boolean known, String... aliases) {
         this.id = id;
         this.name = name;
@@ -55,10 +61,16 @@ public final class BacnetObjectType {
         return Collections.unmodifiableList(Arrays.asList(aliases));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public static Collection<BacnetObjectType> knownValues() {
         return Collections.unmodifiableCollection(KNOWN_VALUES.values());
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetObjectType fromToken(String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("BACnet object type cannot be empty");
@@ -79,6 +91,9 @@ public final class BacnetObjectType {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static BacnetObjectType fromId(int id) {
         BacnetObjectType value = BY_ID.get(id);
         if (value != null) {
@@ -87,6 +102,9 @@ public final class BacnetObjectType {
         return new BacnetObjectType(id, "objectType#" + id, false);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public boolean equals(Object other) {
         if (this == other) {
@@ -98,16 +116,25 @@ public final class BacnetObjectType {
         return id == that.id;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public int hashCode() {
         return Objects.hash(id);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @Override
     public String toString() {
         return name;
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     private static BacnetObjectType registerKnown(int id, String name, String... aliases) {
         BacnetObjectType value = new BacnetObjectType(id, name, true, aliases);
         BY_ID.put(id, value);
@@ -121,6 +148,9 @@ public final class BacnetObjectType {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static Integer parseDynamicToken(String normalized, String prefix) {
         if (normalized.startsWith(prefix) && normalized.length() > prefix.length()) {
             return Integer.parseInt(normalized.substring(prefix.length()));
@@ -128,6 +158,9 @@ public final class BacnetObjectType {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalize(String token) {
         return token.trim()
                 .replace("-", "")

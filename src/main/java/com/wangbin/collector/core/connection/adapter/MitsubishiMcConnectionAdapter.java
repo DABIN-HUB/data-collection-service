@@ -10,6 +10,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Socket> {
 
@@ -21,10 +24,16 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
     private InputStream inputStream;
     private OutputStream outputStream;
 
+    /**
+     * 创建当前组件实例。
+     */
     public MitsubishiMcConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         String host = resolveHost();
@@ -35,7 +44,7 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         int resolvedPort = port != null && port > 0 ? port : 5000;
         int readTimeout = resolveReadTimeout();
 
-        log.info("Connecting Mitsubishi MC socket, host={}, port={}, connectTimeout={}, readTimeout={}",
+        log.info("正在连接 Mitsubishi MC 套接字, 主机={}, 端口={}, connectTimeout={}, readTimeout={}",
                 host, resolvedPort, config.getConnectTimeout(), readTimeout);
 
         socket = new Socket();
@@ -47,9 +56,12 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         outputStream = socket.getOutputStream();
         setConnectionParam("host", host);
         setConnectionParam("port", resolvedPort);
-        log.info("Mitsubishi MC connection created: {}:{}", host, resolvedPort);
+        log.info("Mitsubishi MC 连接 已创建:{}:{}", host, resolvedPort);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -75,6 +87,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (socket == null || socket.isClosed() || !socket.isConnected()) {
@@ -82,11 +97,17 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // MC over TCP has no separate authentication phase in this collector.
+        // MC over TCP has no separate 认证 phase in this 采集器.
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         try {
@@ -100,6 +121,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         try {
@@ -109,6 +133,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         try {
@@ -128,11 +155,17 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         return super.isConnected() && socket != null && socket.isConnected() && !socket.isClosed();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public synchronized byte[] exchange(byte[] request, long timeoutMs) throws Exception {
         send(request);
         return receive(timeoutMs);
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] readFrame(int timeoutMs) throws Exception {
         if (socket == null || inputStream == null) {
             throw new IllegalStateException("Mitsubishi MC socket is not initialized");
@@ -150,6 +183,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         };
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] read3eBinaryFrame(byte firstByte) throws Exception {
         byte[] remainder = readFully(HEADER_LENGTH - 1);
         byte[] header = new byte[HEADER_LENGTH];
@@ -157,7 +193,7 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         System.arraycopy(remainder, 0, header, 1, remainder.length);
         int declaredLength = (header[7] & 0xFF) | ((header[8] & 0xFF) << 8);
         if (declaredLength < 2) {
-            log.warn("Mitsubishi MC response declared length is abnormal, length={}", declaredLength);
+            log.warn("Mitsubishi MC response declared length is 异常, length={}", declaredLength);
         }
         byte[] body = readFully(declaredLength);
         byte[] frame = new byte[HEADER_LENGTH + declaredLength];
@@ -166,6 +202,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         return frame;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] read4eBinaryFrame(byte firstByte) throws Exception {
         byte[] remainder = readFully(HEADER_4E_LENGTH - 1);
         byte[] header = new byte[HEADER_4E_LENGTH];
@@ -173,7 +212,7 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         System.arraycopy(remainder, 0, header, 1, remainder.length);
         int declaredLength = (header[11] & 0xFF) | ((header[12] & 0xFF) << 8);
         if (declaredLength < 2) {
-            log.warn("Mitsubishi MC 4E response declared length is abnormal, length={}", declaredLength);
+            log.warn("Mitsubishi MC 4E response declared length is 异常, length={}", declaredLength);
         }
         byte[] body = readFully(declaredLength);
         byte[] frame = new byte[HEADER_4E_LENGTH + declaredLength];
@@ -182,6 +221,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         return frame;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] read3eAsciiFrame(byte firstByte) throws Exception {
         byte[] remainder = readFully(ASCII_HEADER_LENGTH - 1);
         byte[] header = new byte[ASCII_HEADER_LENGTH];
@@ -189,7 +231,7 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         System.arraycopy(remainder, 0, header, 1, remainder.length);
         int declaredLength = Integer.parseInt(new String(header, 14, 4, java.nio.charset.StandardCharsets.US_ASCII), 16);
         if (declaredLength < 4) {
-            log.warn("Mitsubishi MC ASCII response declared length is abnormal, length={}", declaredLength);
+            log.warn("Mitsubishi MC ASCII response declared length is 异常, length={}", declaredLength);
         }
         byte[] body = readFully(declaredLength);
         byte[] frame = new byte[ASCII_HEADER_LENGTH + declaredLength];
@@ -198,6 +240,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         return frame;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private byte[] readFully(int length) throws Exception {
         byte[] target = new byte[length];
         int offset = 0;
@@ -211,6 +256,9 @@ public class MitsubishiMcConnectionAdapter extends AbstractConnectionAdapter<Soc
         return target;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveReadTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {

@@ -1,6 +1,6 @@
 package com.wangbin.collector.core.cloud.aggregation;
 
-import com.wangbin.collector.core.cloud.model.CloudDeviceIdentity;
+import com.wangbin.collector.common.domain.cloud.CloudDeviceIdentity;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -19,6 +19,9 @@ public class CloudAggregateSnapshot {
     private final Map<String, Map<String, Object>> sourceTrace;
     private final Map<String, Object> events;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CloudAggregateSnapshot(String aggregateTargetId,
                                   CloudDeviceIdentity identity,
                                   Map<String, Object> properties,
@@ -28,6 +31,9 @@ public class CloudAggregateSnapshot {
         this(aggregateTargetId, identity, properties, propertyTs, propertyQuality, sourceTrace, Collections.emptyMap());
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public CloudAggregateSnapshot(String aggregateTargetId,
                                   CloudDeviceIdentity identity,
                                   Map<String, Object> properties,
@@ -44,30 +50,51 @@ public class CloudAggregateSnapshot {
         this.events = new LinkedHashMap<>(events);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String aggregateTargetId() {
         return aggregateTargetId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public CloudDeviceIdentity identity() {
         return identity;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Object> properties() {
         return Collections.unmodifiableMap(properties);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Long> propertyTs() {
         return Collections.unmodifiableMap(propertyTs);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, String> propertyQuality() {
         return Collections.unmodifiableMap(propertyQuality);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Map<String, Object>> sourceTrace() {
         return Collections.unmodifiableMap(sourceTrace);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public Map<String, Object> events() {
         return Collections.unmodifiableMap(events);
     }

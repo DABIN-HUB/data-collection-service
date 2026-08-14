@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.knx.domain;
 
 import lombok.Value;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Value
 public class KnxAddress {
 
@@ -11,6 +14,9 @@ public class KnxAddress {
     int levels;
     String dptId;
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean hasDpt() {
         return dptId != null && !dptId.isBlank();
     }

@@ -5,6 +5,9 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum FinsMemoryArea {
     CIO(0xB0, 0x30, "CIO", "C"),
     WR(0xB1, 0x31, "WR", "W"),
@@ -32,6 +35,9 @@ public enum FinsMemoryArea {
     private final int bitCode;
     private final Set<String> tokens;
 
+    /**
+     * 创建当前组件实例。
+     */
     FinsMemoryArea(int wordCode, int bitCode, String... tokens) {
         this.wordCode = wordCode;
         this.bitCode = bitCode;
@@ -40,10 +46,16 @@ public enum FinsMemoryArea {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public int code(boolean bitUnit) {
         return bitUnit ? bitCode : wordCode;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static FinsMemoryArea fromToken(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("FINS memory area cannot be empty");

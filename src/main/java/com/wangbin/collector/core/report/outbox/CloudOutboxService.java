@@ -28,6 +28,9 @@ public class CloudOutboxService {
     private final ReportConfigProvider reportConfigProvider;
     private final ReportProperties reportProperties;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CloudOutboxService(CloudOutboxRepository repository,
                               CloudOutboxCoordinator coordinator,
                               ReportManager reportManager,
@@ -40,6 +43,9 @@ public class CloudOutboxService {
         this.reportProperties = reportProperties;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String stage(String localDeviceId,
                         long shadowVersion,
                         long windowStart,
@@ -71,6 +77,9 @@ public class CloudOutboxService {
         return repository.saveIfAbsent(message, now + leaseMs()).getMessageId();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public String stageBatch(List<CloudOutboxMessage.CloudOutboxCommit> commits,
                              ReportData data) {
         if (!enabled()) {
@@ -110,6 +119,16 @@ public class CloudOutboxService {
                 CloudOutboxMessage.ReportDataSnapshot.from(data),
                 List.copyOf(commits));
         return repository.saveIfAbsent(message, now + leaseMs()).getMessageId();
+    }
+
+    /**
+     * 将已 claim 的消息推进到真实发布窗口。
+     */
+    public boolean markPublishing(String messageId) {
+        if (!enabled() || messageId == null) {
+            return true;
+        }
+        return coordinator.markPublishing(messageId, System.currentTimeMillis() + leaseMs());
     }
 
     public void handlePublishResult(String messageId, ReportResult result, Throwable throwable) {
@@ -166,6 +185,9 @@ public class CloudOutboxService {
 
     @Scheduled(fixedDelayString = "${collector.report.outbox.poll-interval-ms:1000}",
             initialDelayString = "${collector.report.outbox.poll-interval-ms:1000}")
+    /**
+     * 处理当前业务流程。
+     */
     public void dispatchDueMessages() {
         if (!enabled()) {
             return;
@@ -180,6 +202,9 @@ public class CloudOutboxService {
         }
     }
 
+    /**
+     * 调度到期发件箱消息，claim 后会先进入 PUBLISHING 再调用真实发送。
+     */
     private void dispatch(CloudOutboxMessage message) {
         ReportConfig config = reportConfigProvider.getConfig(message.getGatewayDeviceId());
         if (config == null || !config.validate()) {
@@ -192,10 +217,16 @@ public class CloudOutboxService {
                     message.getMessageId(), null, new IllegalStateException("发件箱消息缺少上报快照"));
             return;
         }
+        if (!markPublishing(message.getMessageId())) {
+            return;
+        }
         reportManager.reportAsync(data, config).whenComplete((result, throwable) ->
                 coordinator.handlePublishResult(message.getMessageId(), result, throwable));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private String ensureMessageId(ReportData data) {
         Object existing = data.getMetadata().get(MessageConstant.FIELD_MESSAGE_ID);
         if (existing != null && !String.valueOf(existing).isBlank()) {
@@ -206,6 +237,9 @@ public class CloudOutboxService {
         return messageId;
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void validate(String localDeviceId, ReportData data) {
         if (localDeviceId == null || localDeviceId.isBlank() || data == null) {
             throw new IllegalArgumentException("发件箱消息的本地设备ID和上报数据不能为空");
@@ -219,10 +253,16 @@ public class CloudOutboxService {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long leaseMs() {
         return Math.max(1000L, reportProperties.getOutbox().getLeaseMs());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean enabled() {
         return reportProperties.getOutbox().isEnabled() && reportProperties.mqttEnabled();
     }

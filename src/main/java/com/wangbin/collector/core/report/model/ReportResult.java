@@ -19,6 +19,9 @@ public class ReportResult {
     private Map<String, Object> metadata = new HashMap<>(); // 附加信息
 
     // 成功结果
+    /**
+     * 构造标准业务结果。
+     */
     public static ReportResult success(String pointCode, String targetId) {
         ReportResult result = new ReportResult();
         result.setPointCode(pointCode);
@@ -29,6 +32,9 @@ public class ReportResult {
     }
 
     // 错误结果
+    /**
+     * 构造标准业务结果。
+     */
     public static ReportResult error(String pointCode, String errorMessage, String targetId) {
         ReportResult result = new ReportResult();
         result.setPointCode(pointCode);
@@ -40,6 +46,9 @@ public class ReportResult {
     }
 
     // 添加元数据
+    /**
+     * 执行当前业务逻辑。
+     */
     public void addMetadata(String key, Object value) {
         if (metadata == null) {
             metadata = new HashMap<>();

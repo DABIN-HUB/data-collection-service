@@ -1,15 +1,16 @@
 package com.wangbin.collector.core.report.shadow;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.enums.QualityEnum;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.report.config.ReportProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.data.redis.connection.ReturnType;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -35,7 +36,6 @@ import java.util.function.Function;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ShadowManager {
 
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
@@ -43,15 +43,15 @@ public class ShadowManager {
     private static final String DEFAULT_SHADOW_KEY_PREFIX = "collector:shadow:";
     private static final String DEFAULT_DIRTY_SET_KEY = "collector:shadow:dirty";
     private static final Set<String> STABLE_VALUE_METADATA_KEYS = Set.of(
-            "address",
-            "objectType",
-            "instanceNumber",
-            "propertyIdentifier",
-            "processingMode",
-            "bacnetValueType",
-            "bacnetComplexValue",
-            "bacnetValueMetadata",
-            "source"
+            CommonMapKeys.ADDRESS,
+            ShadowDocumentKeys.OBJECT_TYPE,
+            ShadowDocumentKeys.INSTANCE_NUMBER,
+            ShadowDocumentKeys.PROPERTY_IDENTIFIER,
+            ShadowDocumentKeys.PROCESSING_MODE,
+            ShadowDocumentKeys.BACNET_VALUE_TYPE,
+            ShadowDocumentKeys.BACNET_COMPLEX_VALUE,
+            ShadowDocumentKeys.BACNET_VALUE_METADATA,
+            CommonMapKeys.SOURCE
     );
     private static final String SHADOW_CAS_SCRIPT = """
             local current = redis.call('GET', KEYS[1])
@@ -86,17 +86,29 @@ public class ShadowManager {
     private final ReportProperties reportProperties;
     private final Map<String, DeviceShadow> shadows = new ConcurrentHashMap<>();
     private final Set<String> dirtyDevices = ConcurrentHashMap.newKeySet();
+    @Nullable
+    private final RedisTemplate<String, Object> redisTemplate;
+    @Nullable
+    private final StringRedisTemplate stringRedisTemplate;
+    @Nullable
+    private final ObjectMapper objectMapper;
 
-    @Autowired(required = false)
-    @Qualifier("cacheRedisTemplate")
-    private RedisTemplate<String, Object> redisTemplate;
+    /**
+     * 创建设备影子管理器。
+     */
+    public ShadowManager(ReportProperties reportProperties,
+                         @Qualifier("cacheRedisTemplate") @Nullable RedisTemplate<String, Object> redisTemplate,
+                         @Nullable StringRedisTemplate stringRedisTemplate,
+                         @Nullable ObjectMapper objectMapper) {
+        this.reportProperties = reportProperties;
+        this.redisTemplate = redisTemplate;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
+    }
 
-    @Autowired(required = false)
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Autowired(required = false)
-    private ObjectMapper objectMapper;
-
+    /**
+     * 处理当前业务流程。
+     */
     public ShadowUpdateResult apply(String deviceId, DataPoint point, ProcessResult result) {
         if (deviceId == null || point == null || result == null) {
             return ShadowUpdateResult.EMPTY;
@@ -111,6 +123,9 @@ public class ShadowManager {
         return updateResult != null ? updateResult : ShadowUpdateResult.EMPTY;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private ShadowUpdateResult applyToShadow(DeviceShadow shadow,
                                              String deviceId,
                                              DataPoint point,
@@ -142,6 +157,9 @@ public class ShadowManager {
         return new ShadowUpdateResult(changeTriggered, eventInfo);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldTriggerChange(DeviceShadow shadow,
                                         DataPoint point,
                                         ProcessResult result,
@@ -174,6 +192,9 @@ public class ShadowManager {
         return true;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private EventInfo evaluateEvent(DeviceShadow shadow,
                                     DataPoint point,
                                     ProcessResult result,
@@ -202,25 +223,28 @@ public class ShadowManager {
         return info;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private EventInfo evaluateProcessResultEvent(ProcessResult result) {
         Map<String, Object> metadata = result.getMetadata();
         if (metadata != null) {
-            Object eventFlag = metadata.get("eventTriggered");
+            Object eventFlag = metadata.get(ShadowDocumentKeys.EVENT_TRIGGERED);
             if (eventFlag instanceof Boolean bool && bool) {
                 return new EventInfo(
-                        metadataToString(metadata, "ruleId"),
-                        metadataToString(metadata, "ruleName"),
-                        String.valueOf(metadata.getOrDefault("eventLevel", "WARNING")),
-                        String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
-                        String.valueOf(metadata.getOrDefault("eventType", "EVENT")));
+                        metadataToString(metadata, CommonMapKeys.RULE_ID),
+                        metadataToString(metadata, CommonMapKeys.RULE_NAME),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_LEVEL, "WARNING")),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_MESSAGE, result.getMessage())),
+                        String.valueOf(metadata.getOrDefault(CommonMapKeys.EVENT_TYPE, "EVENT")));
             }
-            if (metadata.get("eventType") != null) {
+            if (metadata.get(CommonMapKeys.EVENT_TYPE) != null) {
                 return new EventInfo(
-                        metadataToString(metadata, "ruleId"),
-                        metadataToString(metadata, "ruleName"),
-                        String.valueOf(metadata.getOrDefault("eventLevel", "INFO")),
-                        String.valueOf(metadata.getOrDefault("eventMessage", result.getMessage())),
-                        String.valueOf(metadata.get("eventType")));
+                        metadataToString(metadata, CommonMapKeys.RULE_ID),
+                        metadataToString(metadata, CommonMapKeys.RULE_NAME),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_LEVEL, "INFO")),
+                        String.valueOf(metadata.getOrDefault(ShadowDocumentKeys.EVENT_MESSAGE, result.getMessage())),
+                        String.valueOf(metadata.get(CommonMapKeys.EVENT_TYPE)));
             }
         }
 
@@ -232,6 +256,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String metadataToString(Map<String, Object> metadata, String key) {
         if (metadata == null) {
             return null;
@@ -240,6 +267,9 @@ public class ShadowManager {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Double toDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -276,6 +306,9 @@ public class ShadowManager {
         return Collections.unmodifiableSet(devices);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void clearDirty(String deviceId) {
         if (deviceId != null) {
             dirtyDevices.remove(deviceId);
@@ -283,6 +316,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedWindowCommitted(String deviceId, long windowStart, long windowEnd) {
         mutateReportedShadow(deviceId, shadow -> {
             shadow.markReportedWindowCommitted(System.currentTimeMillis(), windowStart, windowEnd);
@@ -291,6 +327,9 @@ public class ShadowManager {
         clearDirty(deviceId);
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     public void markReportedValuesChunk(String deviceId,
                                         Map<String, Object> properties) {
         mutateReportedShadow(deviceId, shadow -> {
@@ -326,6 +365,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public void removeShadow(String deviceId) {
         if (deviceId == null) {
             return;
@@ -346,11 +388,11 @@ public class ShadowManager {
             return null;
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("deviceId", shadow.getDeviceId());
-        result.put("version", shadow.currentVersion());
-        result.put("timestamp", shadow.getUpdatedAt());
-        result.put("delta", toValueMap(shadow.deltaSnapshot()));
-        result.put("metadata", toMetaMap(shadow.deltaSnapshot()));
+        result.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
+        result.put(ShadowDocumentKeys.VERSION, shadow.currentVersion());
+        result.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
+        result.put(ShadowDocumentKeys.DELTA, toValueMap(shadow.deltaSnapshot()));
+        result.put(CommonMapKeys.METADATA, toMetaMap(shadow.deltaSnapshot()));
         return result;
     }
 
@@ -375,15 +417,21 @@ public class ShadowManager {
             }
             return history;
         } catch (Exception e) {
-            log.warn("查询设备影子历史失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("查询设备影子历史失败 设备={} err={}", deviceId, e.getMessage());
             return List.of();
         }
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public Map<String, Object> updateDesired(String deviceId, Map<String, Object> desiredValues, String source) {
         return updateDesired(deviceId, desiredValues, source, null);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     public Map<String, Object> updateDesired(String deviceId,
                                              Map<String, Object> desiredValues,
                                              String source,
@@ -397,6 +445,9 @@ public class ShadowManager {
         return updateDesiredStrict(deviceId, desiredValues, source, expectedVersion);
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private Map<String, Object> updateDesiredStrict(String deviceId,
                                                     Map<String, Object> desiredValues,
                                                     String source,
@@ -422,7 +473,7 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, casExpectedVersion, "desired_update");
+            persistDocumentCas(deviceId, document, casExpectedVersion, ShadowDocumentKeys.DESIRED_UPDATE_ACTION);
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
@@ -430,6 +481,9 @@ public class ShadowManager {
         return document;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     public Map<String, Object> clearDesired(String deviceId, Collection<String> fields) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow == null) {
@@ -441,6 +495,9 @@ public class ShadowManager {
         return clearDesiredStrict(deviceId, fields, shadow);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private Map<String, Object> clearDesiredStrict(String deviceId,
                                                    Collection<String> fields,
                                                    DeviceShadow shadow) {
@@ -452,7 +509,7 @@ public class ShadowManager {
             document = buildShadowDocument(shadow);
         }
         try {
-            persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
+            persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_CLEAR_ACTION);
         } catch (IllegalStateException e) {
             reloadLocalShadow(deviceId);
             throw e;
@@ -460,6 +517,9 @@ public class ShadowManager {
         return document;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private Map<String, Object> updateDesiredWithAutoMerge(String deviceId,
                                                            Map<String, Object> desiredValues,
                                                            String source) {
@@ -475,13 +535,13 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "desired_update");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_UPDATE_ACTION);
                 shadows.put(deviceId, shadow);
                 return document;
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                log.debug("设备影子 desired CAS 冲突，准备自动合并重试 设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -494,6 +554,9 @@ public class ShadowManager {
         return updateDesiredStrict(deviceId, desiredValues, source, null);
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private Map<String, Object> clearDesiredWithAutoMerge(String deviceId, Collection<String> fields) {
         IllegalStateException lastConflict = null;
         int attempts = shadowMergeAttempts();
@@ -507,13 +570,13 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "desired_clear");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.DESIRED_CLEAR_ACTION);
                 shadows.put(deviceId, shadow);
                 return document;
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 clear desired CAS 冲突，准备自动合并重试 deviceId={} attempt={} err={}",
+                log.debug("设备影子 clear desired CAS 冲突，准备自动合并重试 设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -527,6 +590,9 @@ public class ShadowManager {
         return shadow == null ? null : clearDesiredStrict(deviceId, fields, shadow);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private <T> T mutateReportedShadow(String deviceId, Function<DeviceShadow, T> mutator) {
         if (deviceId == null || deviceId.isBlank() || mutator == null) {
             return null;
@@ -554,13 +620,13 @@ public class ShadowManager {
                 document = buildShadowDocument(shadow);
             }
             try {
-                persistDocumentCas(deviceId, document, previousVersion, "reported_update");
+                persistDocumentCas(deviceId, document, previousVersion, ShadowDocumentKeys.REPORTED_UPDATE_ACTION);
                 shadows.put(deviceId, shadow);
                 return result;
             } catch (ShadowVersionConflictException e) {
                 lastConflict = e;
                 reloadLocalShadow(deviceId);
-                log.debug("设备影子 reported CAS 冲突，准备重试，deviceId={} attempt={} err={}",
+                log.debug("设备影子 reported CAS 冲突，准备重试，设备={} 尝试次数={} err={}",
                         deviceId, attempt + 1, e.getMessage());
             } catch (IllegalStateException e) {
                 reloadLocalShadow(deviceId);
@@ -573,6 +639,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private DeviceShadow resolveWritableShadow(String deviceId) {
         DeviceShadow shadow = getShadow(deviceId);
         if (shadow != null) {
@@ -583,31 +652,37 @@ public class ShadowManager {
         return existing != null ? existing : created;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildShadowDocument(DeviceShadow shadow) {
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("deviceId", shadow.getDeviceId());
-        doc.put("version", shadow.currentVersion());
-        doc.put("timestamp", shadow.getUpdatedAt());
-        doc.put("createdAt", shadow.getCreatedAt());
-        doc.put("lastReportAt", shadow.getLastReportAt());
-        doc.put("lastWindowStart", shadow.getLastWindowStart());
-        doc.put("lastWindowEnd", shadow.getLastWindowEnd());
+        doc.put(CommonMapKeys.DEVICE_ID, shadow.getDeviceId());
+        doc.put(ShadowDocumentKeys.VERSION, shadow.currentVersion());
+        doc.put(CommonMapKeys.TIMESTAMP, shadow.getUpdatedAt());
+        doc.put(ShadowDocumentKeys.CREATED_AT, shadow.getCreatedAt());
+        doc.put(ShadowDocumentKeys.LAST_REPORT_AT, shadow.getLastReportAt());
+        doc.put(ShadowDocumentKeys.LAST_WINDOW_START, shadow.getLastWindowStart());
+        doc.put(ShadowDocumentKeys.LAST_WINDOW_END, shadow.getLastWindowEnd());
 
         Map<String, Object> state = new LinkedHashMap<>();
-        state.put("reported", toValueMap(shadow.snapshot()));
-        state.put("desired", toValueMap(shadow.desiredSnapshot()));
-        state.put("delta", toValueMap(shadow.deltaSnapshot()));
-        state.put("lastReported", new LinkedHashMap<>(shadow.snapshotLastReportedValues()));
-        doc.put("state", state);
+        state.put(ShadowDocumentKeys.REPORTED, toValueMap(shadow.snapshot()));
+        state.put(ShadowDocumentKeys.DESIRED, toValueMap(shadow.desiredSnapshot()));
+        state.put(ShadowDocumentKeys.DELTA, toValueMap(shadow.deltaSnapshot()));
+        state.put(ShadowDocumentKeys.LAST_REPORTED, new LinkedHashMap<>(shadow.snapshotLastReportedValues()));
+        doc.put(ShadowDocumentKeys.STATE, state);
 
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("reported", toMetaMap(shadow.snapshot()));
-        metadata.put("desired", toMetaMap(shadow.desiredSnapshot()));
-        doc.put("metadata", metadata);
+        metadata.put(ShadowDocumentKeys.REPORTED, toMetaMap(shadow.snapshot()));
+        metadata.put(ShadowDocumentKeys.DESIRED, toMetaMap(shadow.desiredSnapshot()));
+        doc.put(CommonMapKeys.METADATA, metadata);
 
         return doc;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> toValueMap(Map<String, ValueMeta> metas) {
         Map<String, Object> values = new LinkedHashMap<>();
         if (metas == null) {
@@ -621,6 +696,9 @@ public class ShadowManager {
         return values;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Map<String, Object> toMetaMap(Map<String, ValueMeta> metas) {
         Map<String, Object> values = new LinkedHashMap<>();
         if (metas == null) {
@@ -631,22 +709,25 @@ public class ShadowManager {
                 return;
             }
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("timestamp", meta.getTimestamp());
-            metadata.put("updatedAt", meta.getUpdatedAt());
+            metadata.put(CommonMapKeys.TIMESTAMP, meta.getTimestamp());
+            metadata.put(ShadowDocumentKeys.UPDATED_AT, meta.getUpdatedAt());
             if (meta.getQuality() != null) {
-                metadata.put("quality", meta.getQuality());
+                metadata.put(CommonMapKeys.QUALITY, meta.getQuality());
             }
             if (meta.getSource() != null) {
-                metadata.put("source", meta.getSource());
+                metadata.put(CommonMapKeys.SOURCE, meta.getSource());
             }
             if (meta.getMetadata() != null && !meta.getMetadata().isEmpty()) {
-                metadata.put("valueMetadata", meta.getMetadata());
+                metadata.put(ShadowDocumentKeys.VALUE_METADATA, meta.getMetadata());
             }
             values.put(field, metadata);
         });
         return values;
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocumentCas(String deviceId,
                                     Map<String, Object> document,
                                     long expectedVersion,
@@ -659,7 +740,7 @@ public class ShadowManager {
             String key = shadowKey(deviceId);
             String payload = objectMapper.writeValueAsString(document);
             long ttlMs = shadowTtlMillis();
-            long nextVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(expectedVersion);
+            long nextVersion = Optional.ofNullable(asLong(document.get(ShadowDocumentKeys.VERSION))).orElse(expectedVersion);
             Object result = stringRedisTemplate.execute((RedisCallback<Object>) connection -> connection.eval(
                     SHADOW_CAS_SCRIPT.getBytes(StandardCharsets.UTF_8),
                     ReturnType.MULTI,
@@ -684,6 +765,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistShadow(DeviceShadow shadow) {
         if (shadow == null) {
             return;
@@ -691,16 +775,22 @@ public class ShadowManager {
         persistDocument(shadow.getDeviceId(), buildShadowDocument(shadow));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocument(String deviceId, Map<String, Object> document) {
         persistDocument(deviceId, document, null);
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void persistDocument(String deviceId, Map<String, Object> document, String action) {
         if (!shadowPersistenceEnabled() || deviceId == null || document == null) {
             return;
         }
         long ttlMs = shadowTtlMillis();
-        long baseVersion = Optional.ofNullable(asLong(document.get("version"))).orElse(0L) - 1;
+        long baseVersion = Optional.ofNullable(asLong(document.get(ShadowDocumentKeys.VERSION))).orElse(0L) - 1;
         try {
             if (stringRedisTemplate != null && objectMapper != null) {
                 String payload = objectMapper.writeValueAsString(document);
@@ -709,7 +799,7 @@ public class ShadowManager {
                 } else {
                     stringRedisTemplate.opsForValue().set(shadowKey(deviceId), payload);
                 }
-                if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+                if (shouldRecordHistory(action, baseVersion, asLong(document.get(ShadowDocumentKeys.VERSION)))) {
                     appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
                 }
                 return;
@@ -722,14 +812,17 @@ public class ShadowManager {
             } else {
                 redisTemplate.opsForValue().set(shadowKey(deviceId), document);
             }
-            if (shouldRecordHistory(action, baseVersion, asLong(document.get("version")))) {
+            if (shouldRecordHistory(action, baseVersion, asLong(document.get(ShadowDocumentKeys.VERSION)))) {
                 appendShadowHistory(deviceId, action, document, Math.max(0, baseVersion));
             }
         } catch (Exception e) {
-            log.warn("设备影子持久化失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("设备影子持久化失败 设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private DeviceShadow loadShadow(String deviceId) {
         if (!shadowPersistenceEnabled() || deviceId == null) {
             return null;
@@ -744,7 +837,7 @@ public class ShadowManager {
                     }
                 }
             } catch (Exception e) {
-                log.warn("设备影子字符串格式恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+                log.warn("设备影子字符串格式恢复失败 设备={} err={}", deviceId, e.getMessage());
             }
         }
         if (redisTemplate != null) {
@@ -759,45 +852,51 @@ public class ShadowManager {
                 }
                 return restoreShadow(deviceId, document);
             } catch (Exception e) {
-                log.warn("设备影子恢复失败 deviceId={} err={}", deviceId, e.getMessage());
+                log.warn("设备影子恢复失败 设备={} err={}", deviceId, e.getMessage());
             }
         }
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private DeviceShadow restoreShadow(String fallbackDeviceId, Map<String, Object> document) {
-        String deviceId = asString(document.get("deviceId"));
+        String deviceId = asString(document.get(CommonMapKeys.DEVICE_ID));
         DeviceShadow shadow = new DeviceShadow(deviceId != null ? deviceId : fallbackDeviceId);
-        Long version = asLong(document.get("version"));
+        Long version = asLong(document.get(ShadowDocumentKeys.VERSION));
         if (version != null) {
             shadow.restoreVersion(version);
         }
-        Long createdAt = asLong(document.get("createdAt"));
+        Long createdAt = asLong(document.get(ShadowDocumentKeys.CREATED_AT));
         if (createdAt != null) {
             shadow.setCreatedAt(createdAt);
         }
-        Long updatedAt = asLong(document.get("timestamp"));
+        Long updatedAt = asLong(document.get(CommonMapKeys.TIMESTAMP));
         if (updatedAt != null) {
             shadow.setUpdatedAt(updatedAt);
         }
-        Long lastReportAt = asLong(document.get("lastReportAt"));
+        Long lastReportAt = asLong(document.get(ShadowDocumentKeys.LAST_REPORT_AT));
         if (lastReportAt != null) {
             shadow.setLastReportAt(lastReportAt);
         }
-        Long lastWindowStart = asLong(document.get("lastWindowStart"));
-        Long lastWindowEnd = asLong(document.get("lastWindowEnd"));
+        Long lastWindowStart = asLong(document.get(ShadowDocumentKeys.LAST_WINDOW_START));
+        Long lastWindowEnd = asLong(document.get(ShadowDocumentKeys.LAST_WINDOW_END));
         if (lastWindowStart != null && lastWindowEnd != null) {
             shadow.setLastWindow(lastWindowStart, lastWindowEnd);
         }
 
-        Map<String, Object> state = toMap(document.get("state"));
-        Map<String, Object> metadata = toMap(document.get("metadata"));
-        restoreValues(shadow, state.get("reported"), toMap(metadata.get("reported")), true);
-        restoreValues(shadow, state.get("desired"), toMap(metadata.get("desired")), false);
-        shadow.restoreLastReportedValues(toMap(state.get("lastReported")));
+        Map<String, Object> state = toMap(document.get(ShadowDocumentKeys.STATE));
+        Map<String, Object> metadata = toMap(document.get(CommonMapKeys.METADATA));
+        restoreValues(shadow, state.get(ShadowDocumentKeys.REPORTED), toMap(metadata.get(ShadowDocumentKeys.REPORTED)), true);
+        restoreValues(shadow, state.get(ShadowDocumentKeys.DESIRED), toMap(metadata.get(ShadowDocumentKeys.DESIRED)), false);
+        shadow.restoreLastReportedValues(toMap(state.get(ShadowDocumentKeys.LAST_REPORTED)));
         return shadow;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void restoreValues(DeviceShadow shadow,
                                Object valuesObject,
                                Map<String, Object> metadata,
@@ -805,17 +904,17 @@ public class ShadowManager {
         Map<String, Object> values = toMap(valuesObject);
         values.forEach((field, value) -> {
             Map<String, Object> metaMap = toMap(metadata.get(field));
-            long timestamp = Optional.ofNullable(asLong(metaMap.get("timestamp"))).orElse(System.currentTimeMillis());
-            long updatedAt = Optional.ofNullable(asLong(metaMap.get("updatedAt"))).orElse(timestamp);
-            String quality = asString(metaMap.get("quality"));
-            String source = asString(metaMap.get("source"));
+            long timestamp = Optional.ofNullable(asLong(metaMap.get(CommonMapKeys.TIMESTAMP))).orElse(System.currentTimeMillis());
+            long updatedAt = Optional.ofNullable(asLong(metaMap.get(ShadowDocumentKeys.UPDATED_AT))).orElse(timestamp);
+            String quality = asString(metaMap.get(CommonMapKeys.QUALITY));
+            String source = asString(metaMap.get(CommonMapKeys.SOURCE));
             ValueMeta meta = new ValueMeta(
                     value,
                     timestamp,
                     quality,
                     source,
                     updatedAt,
-                    toMap(metaMap.get("valueMetadata"))
+                    toMap(metaMap.get(ShadowDocumentKeys.VALUE_METADATA))
             );
             if (reported) {
                 shadow.restoreReported(field, meta);
@@ -825,6 +924,9 @@ public class ShadowManager {
         });
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Map<String, Object> stableValueMetadata(ProcessResult result) {
         Map<String, Object> metadata = result != null ? result.getMetadata() : null;
         if (metadata == null || metadata.isEmpty()) {
@@ -839,6 +941,9 @@ public class ShadowManager {
         return stable;
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void deletePersistedShadow(String deviceId) {
         if (deviceId == null) {
             return;
@@ -851,10 +956,13 @@ public class ShadowManager {
                 redisTemplate.delete(shadowKey(deviceId));
             }
         } catch (Exception e) {
-            log.warn("删除设备影子持久化数据失败 deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("删除设备影子持久化数据失败 设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String shadowKey(String deviceId) {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX : shadow.getKeyPrefix();
@@ -864,6 +972,9 @@ public class ShadowManager {
         return prefix + deviceId;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String historyKey(String deviceId) {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         String prefix = shadow == null ? DEFAULT_SHADOW_KEY_PREFIX + "history:" : shadow.getHistoryKeyPrefix();
@@ -873,6 +984,9 @@ public class ShadowManager {
         return prefix + deviceId;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void markDirty(String deviceId) {
         if (deviceId == null || deviceId.isBlank()) {
             return;
@@ -895,10 +1009,13 @@ public class ShadowManager {
                 }
             }
         } catch (Exception e) {
-            log.warn("标记影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("标记影子 dirty 设备失败，设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Set<String> loadPersistedDirtyDevices() {
         if (!shadowPersistenceEnabled()) {
             return Collections.emptySet();
@@ -927,6 +1044,9 @@ public class ShadowManager {
         return Collections.emptySet();
     }
 
+    /**
+     * 清理或删除业务数据。
+     */
     private void removePersistedDirty(String deviceId) {
         try {
             if (stringRedisTemplate != null) {
@@ -936,10 +1056,13 @@ public class ShadowManager {
                 redisTemplate.opsForSet().remove(dirtySetKey(), deviceId);
             }
         } catch (Exception e) {
-            log.warn("移除影子 dirty 设备失败，deviceId={} err={}", deviceId, e.getMessage());
+            log.warn("移除影子 dirty 设备失败，设备={} err={}", deviceId, e.getMessage());
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String dirtySetKey() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         if (shadow == null || shadow.getKeyPrefix() == null || shadow.getKeyPrefix().isBlank()) {
@@ -948,6 +1071,9 @@ public class ShadowManager {
         return shadow.getKeyPrefix() + "dirty";
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private DeviceShadow refreshLocalShadowIfVersionMismatch(String deviceId,
                                                              DeviceShadow current,
                                                              long expectedVersion) {
@@ -962,6 +1088,9 @@ public class ShadowManager {
         return restored;
     }
 
+    /**
+     * 更新或刷新业务状态。
+     */
     private void reloadLocalShadow(String deviceId) {
         DeviceShadow restored = loadShadow(deviceId);
         if (restored != null) {
@@ -971,6 +1100,9 @@ public class ShadowManager {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean redisCasEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadowPersistenceEnabled()
@@ -980,37 +1112,55 @@ public class ShadowManager {
                 && objectMapper != null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowAutoMergeEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null || shadow.isAutoMergeEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int shadowMergeAttempts() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         int retries = shadow == null ? 2 : Math.max(0, shadow.getMergeRetryTimes());
         return retries + 1;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowPersistenceEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null || shadow.isPersistenceEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shadowHistoryEnabled() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow != null && shadow.isHistoryEnabled();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean shouldRecordHistory(String action, long baseVersion, Long nextVersion) {
         if (!shadowHistoryEnabled() || action == null || action.isBlank() || nextVersion == null) {
             return false;
         }
-        if (!"desired_update".equals(action) && !"desired_clear".equals(action)) {
+        if (!ShadowDocumentKeys.DESIRED_UPDATE_ACTION.equals(action) && !ShadowDocumentKeys.DESIRED_CLEAR_ACTION.equals(action)) {
             return false;
         }
         return nextVersion != baseVersion;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long shadowTtlMillis() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         if (shadow == null || shadow.getTtlSeconds() <= 0) {
@@ -1019,16 +1169,25 @@ public class ShadowManager {
         return TimeUnit.SECONDS.toMillis(shadow.getTtlSeconds());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private long shadowHistoryTtlSeconds() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null ? 0 : shadow.getHistoryTtlSeconds();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int shadowHistoryMaxRecords() {
         ReportProperties.Shadow shadow = reportProperties.getShadow();
         return shadow == null ? 0 : shadow.getHistoryMaxRecords();
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void appendShadowHistory(String deviceId,
                                      String action,
                                      Map<String, Object> document,
@@ -1039,12 +1198,12 @@ public class ShadowManager {
         }
         try {
             Map<String, Object> history = new LinkedHashMap<>();
-            history.put("deviceId", deviceId);
-            history.put("action", action);
-            history.put("baseVersion", baseVersion);
-            history.put("version", document.get("version"));
-            history.put("timestamp", System.currentTimeMillis());
-            history.put("document", document);
+            history.put(CommonMapKeys.DEVICE_ID, deviceId);
+            history.put(ShadowDocumentKeys.ACTION, action);
+            history.put(ShadowDocumentKeys.BASE_VERSION, baseVersion);
+            history.put(ShadowDocumentKeys.VERSION, document.get(ShadowDocumentKeys.VERSION));
+            history.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
+            history.put(ShadowDocumentKeys.DOCUMENT, document);
 
             String key = historyKey(deviceId);
             stringRedisTemplate.opsForList().leftPush(key, objectMapper.writeValueAsString(history));
@@ -1057,10 +1216,13 @@ public class ShadowManager {
                 stringRedisTemplate.expire(key, ttlSeconds, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
-            log.warn("记录设备影子历史失败 deviceId={} action={} err={}", deviceId, action, e.getMessage());
+            log.warn("记录设备影子历史失败 设备={} action={} err={}", deviceId, action, e.getMessage());
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private CasResult parseCasResult(Object value) {
         if (value instanceof List<?> list && !list.isEmpty()) {
             Long success = asRedisLong(list.get(0));
@@ -1071,6 +1233,9 @@ public class ShadowManager {
         return new CasResult(success != null && success == 1, null);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long asRedisLong(Object value) {
         if (value instanceof byte[] bytes) {
             return asLong(new String(bytes, StandardCharsets.UTF_8));
@@ -1078,6 +1243,9 @@ public class ShadowManager {
         return asLong(value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> toMap(Object value) {
         if (value instanceof Map<?, ?> map) {
@@ -1119,6 +1287,9 @@ public class ShadowManager {
         return Collections.emptyMap();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Long asLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -1133,6 +1304,9 @@ public class ShadowManager {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String asString(Object value) {
         if (value == null) {
             return null;
@@ -1141,10 +1315,16 @@ public class ShadowManager {
         return text.isBlank() ? null : text;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record ShadowUpdateResult(boolean changeTriggered, EventInfo eventInfo) {
         public static final ShadowUpdateResult EMPTY = new ShadowUpdateResult(false, null);
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record EventInfo(String ruleId,
                             String ruleName,
                             String level,
@@ -1152,10 +1332,19 @@ public class ShadowManager {
                             String eventType) {
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record CasResult(boolean success, Long actualVersion) {
     }
 
+    /**
+     * 表示当前模块的异常语义。
+     */
     private static class ShadowVersionConflictException extends IllegalStateException {
+        /**
+         * 创建当前组件实例。
+         */
         ShadowVersionConflictException(long expectedVersion, Long actualVersion) {
             super("shadow version conflict: expected=" + expectedVersion + ", actual=" + actualVersion);
         }

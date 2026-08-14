@@ -2,6 +2,9 @@ package com.wangbin.collector.common.enums;
 
 import lombok.Getter;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 @Getter
 public enum DataType {
     INT(4),
@@ -11,22 +14,16 @@ public enum DataType {
     FLOAT64(8), INT64(8), UINT64(8),
     BOOLEAN(1), STRING(1),
     DOUBLE(8), DOUBLE_SWAP(8), FLOAT64_SWAP(8), FLOAT64_LITTLE(8),
-    /*BYTE(1), UINT8(1), INT8(1),
-    SHORT(2), SHORT_SWAP(2), UINT16_SWAP(2),
-    LONG(4), LONG_SWAP(4), INT32_SWAP(4), UINT32_SWAP(4),
-    DOUBLE(8), DOUBLE_SWAP(8), FLOAT64_SWAP(8), FLOAT64_LITTLE(8),
-    LONGLONG(8), LONGLONG_SWAP(8), INT64_SWAP(8), UINT64_SWAP(8),
-    DWORD(4), QWORD(8),
-    BCD16(2), BCD32(4),
-    BIT(1), BIT_ARRAY(1),*/
     ;
 
     /**
-     * -- GETTER --
-     *  返回数据类型最小字节长度
+     * 数据类型最小字节长度。
      */
     private final int minBytes;
 
+    /**
+     * 创建当前组件实例。
+     */
     DataType(int minBytes) {
         this.minBytes = minBytes;
     }

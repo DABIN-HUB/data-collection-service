@@ -25,10 +25,16 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
     private SerialPortClientTransport transport;
     private MessageBatchDispatcher<ModbusOperation<?>> dispatcher;
 
+    /**
+     * 创建当前组件实例。
+     */
     public ModbusRtuConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         startDispatcher();
@@ -47,6 +53,9 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
                 config.getIntConfig("baudRate", 9600));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -75,6 +84,9 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         stopDispatcher();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> CompletableFuture<T> submit(ModbusCallable<T> callable) {
         Objects.requireNonNull(callable, "callable");
         if (dispatcher == null) {
@@ -92,6 +104,9 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         return operation.future;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     public <T> T execute(ModbusCallable<T> callable, long timeoutMillis) throws Exception {
         long effectiveTimeout = timeoutMillis > 0 ? timeoutMillis : getDefaultTimeout();
         try {
@@ -105,26 +120,41 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         return client;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSend(byte[] data) {
         throw new UnsupportedOperationException("Modbus RTU 连接不支持裸字节发送，请通过 submit() 执行协议操作");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive() {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected byte[] doReceive(long timeout) {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         // 由采集器按需触发
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
         // 无内置认证
@@ -140,6 +170,9 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         return 3000;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void startDispatcher() {
         if (dispatcher != null) {
             return;
@@ -153,6 +186,9 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         dispatcher.start();
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     private void stopDispatcher() {
         if (dispatcher != null) {
             dispatcher.stop();
@@ -160,13 +196,16 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveParityValue() {
         String parityText = config.getStringConfig("parity", null);
         if (parityText != null && !parityText.isBlank()) {
             try {
                 return Parity.fromName(parityText.toLowerCase()).getValue();
             } catch (IllegalArgumentException ignore) {
-                log.warn("Unknown parity '{}', fallback to NONE", parityText);
+                log.warn("未知校验位 '{}', 降级到 NONE", parityText);
             }
         }
         Integer parityNumber = config.getIntConfig("parity", null);
@@ -174,12 +213,15 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
             try {
                 return Parity.fromValue(parityNumber).getValue();
             } catch (IllegalArgumentException ignore) {
-                log.warn("Unknown parity value '{}', fallback to NONE", parityNumber);
+                log.warn("未知校验位值 '{}', 降级到 NONE", parityNumber);
             }
         }
         return Parity.none.getValue();
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void processOperations(List<ModbusOperation<?>> operations) {
         if (operations == null || operations.isEmpty()) {
             return;
@@ -193,27 +235,48 @@ public class ModbusRtuConnectionAdapter extends AbstractConnectionAdapter {
         }
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface ModbusCallable<T> {
+        /**
+         * 处理当前业务流程。
+         */
         T apply(ModbusRtuClient client) throws Exception;
     }
 
+    /**
+     * 定义当前模块的业务组件。
+     */
     private static final class ModbusOperation<T> {
         private final ModbusCallable<T> callable;
         private final CompletableFuture<T> future = new CompletableFuture<>();
 
+        /**
+         * 创建当前组件实例。
+         */
         private ModbusOperation(ModbusCallable<T> callable) {
             this.callable = callable;
         }
 
+        /**
+         * 执行当前业务逻辑。
+         */
         private void complete(T value) {
             future.complete(value);
         }
 
+        /**
+         * 构造标准业务结果。
+         */
         private void fail(Throwable throwable) {
             future.completeExceptionally(throwable);
         }
 
+        /**
+         * 处理当前业务流程。
+         */
         private void run(ModbusRtuClient client) {
             try {
                 complete(callable.apply(client));

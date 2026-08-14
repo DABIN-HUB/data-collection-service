@@ -22,6 +22,9 @@ public enum CloudPayloadFieldMode {
      */
     ON_ERROR;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudPayloadFieldMode from(String value) {
         if (value == null || value.isBlank()) {
             return ON_ERROR;

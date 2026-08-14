@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.processor;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +50,9 @@ public abstract class AbstractDataProcessor implements DataProcessor {
         return priority;
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void init(Map<String, Object> config) {
         if (config != null) {
@@ -66,6 +71,9 @@ public abstract class AbstractDataProcessor implements DataProcessor {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     @Override
     public ProcessResult process(ProcessContext context, DataPoint point, Object rawValue) {
         if (!enabled) {
@@ -105,19 +113,22 @@ public abstract class AbstractDataProcessor implements DataProcessor {
                 averageProcessingTime.set(totalProcessingTime.get() / total);
             }
 
-            log.debug("数据处理完成: processor={}, point={}, rawValu={}，processedValue={}， success={}, time={}ms",
+            log.debug("数据处理完成: 处理器={}, 点位={}, 原始值={}，处理值={}， 成功={}, time={}ms",
                     getName(), point.getPointName(),result.getRawValue(),result.getProcessedValue(), result.isSuccess(), processingTime);
 
             return result;
         } catch (Exception e) {
             failedProcessed.incrementAndGet();
-            log.error("数据处理异常: processor={}, point={}", getName(), point.getPointName(), e);
+            log.error("数据处理异常: 处理器={}, 点位={}", getName(), point.getPointName(), e);
             ProcessResult errorResult = ProcessResult.error(rawValue, e.getMessage(), DataQuality.PROCESS_ERROR);
             errorResult.setProcessorName(getName());
             return errorResult;
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public Map<String, ProcessResult> batchProcess(ProcessContext context,
                                                    Map<DataPoint, Object> dataPoints) {
@@ -134,12 +145,12 @@ public abstract class AbstractDataProcessor implements DataProcessor {
                 results.put(entry.getKey().getPointId(), result);
             }
 
-            log.debug("批量数据处理完成: processor={}, count={}, time={}ms",
+            log.debug("批量数据处理完成: 处理器={}, 数量={}, time={}ms",
                     getName(), dataPoints.size(), System.currentTimeMillis() - startTime);
 
             return results;
         } catch (Exception e) {
-            log.error("批量数据处理异常: processor={}", getName(), e);
+            log.error("批量数据处理异常: 处理器={}", getName(), e);
             return results;
         }
     }
@@ -159,14 +170,14 @@ public abstract class AbstractDataProcessor implements DataProcessor {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
-        stats.put("name", getName());
-        stats.put("type", getType());
-        stats.put("enabled", enabled);
+        stats.put(CommonMapKeys.NAME, getName());
+        stats.put(CommonMapKeys.TYPE, getType());
+        stats.put(CommonMapKeys.ENABLED, enabled);
         stats.put("priority", priority);
         stats.put("totalProcessed", totalProcessed.get());
         stats.put("successfulProcessed", successfulProcessed.get());
         stats.put("failedProcessed", failedProcessed.get());
-        stats.put("successRate", getSuccessRate());
+        stats.put(CommonMapKeys.SUCCESS_RATE, getSuccessRate());
         stats.put("totalProcessingTime", totalProcessingTime.get());
         stats.put("averageProcessingTime", averageProcessingTime.get());
 
@@ -179,6 +190,9 @@ public abstract class AbstractDataProcessor implements DataProcessor {
         return stats;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     @Override
     public void resetStatistics() {
         totalProcessed.set(0);
@@ -189,6 +203,9 @@ public abstract class AbstractDataProcessor implements DataProcessor {
         log.info("数据处理器统计重置: {}", getName());
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     @Override
     public void destroy() {
         try {
@@ -228,16 +245,16 @@ public abstract class AbstractDataProcessor implements DataProcessor {
             return;
         }
 
-        if (config.containsKey("name")) {
-            name = (String) config.get("name");
+        if (config.containsKey(CommonMapKeys.NAME)) {
+            name = (String) config.get(CommonMapKeys.NAME);
         }
 
-        if (config.containsKey("type")) {
-            type = (String) config.get("type");
+        if (config.containsKey(CommonMapKeys.TYPE)) {
+            type = (String) config.get(CommonMapKeys.TYPE);
         }
 
-        if (config.containsKey("description")) {
-            description = (String) config.get("description");
+        if (config.containsKey(CommonMapKeys.DESCRIPTION)) {
+            description = (String) config.get(CommonMapKeys.DESCRIPTION);
         }
 
         if (config.containsKey("priority")) {
@@ -253,8 +270,8 @@ public abstract class AbstractDataProcessor implements DataProcessor {
             }
         }
 
-        if (config.containsKey("enabled")) {
-            Object enabledObj = config.get("enabled");
+        if (config.containsKey(CommonMapKeys.ENABLED)) {
+            Object enabledObj = config.get(CommonMapKeys.ENABLED);
             if (enabledObj instanceof Boolean) {
                 enabled = (Boolean) enabledObj;
             } else if (enabledObj instanceof String) {

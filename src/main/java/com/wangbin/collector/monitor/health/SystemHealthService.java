@@ -46,6 +46,9 @@ public class SystemHealthService {
                 .build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ComponentHealth buildCacheHealth() {
         try {
             Map<String, Object> cacheHealth = multiLevelCacheManager.getHealthStatus();
@@ -71,6 +74,9 @@ public class SystemHealthService {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ComponentHealth buildCollectionServiceHealth() {
         Status status = collectionServiceHealthTracker.getCurrentStatus();
         Map<String, Object> details = new LinkedHashMap<>();
@@ -93,6 +99,9 @@ public class SystemHealthService {
                 .build();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ComponentHealth buildConnectionHealth() {
         List<ConnectionAdapter> allConnections = connectionManager.getAllConnections();
         List<ConnectionAdapter> activeConnections = connectionManager.getActiveConnections();
@@ -146,6 +155,9 @@ public class SystemHealthService {
                 .build();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Status parseStatus(Object value) {
         if (value == null) {
             return Status.UNKNOWN;

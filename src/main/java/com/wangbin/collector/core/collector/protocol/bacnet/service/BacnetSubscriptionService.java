@@ -11,8 +11,14 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 
+/**
+ * 处理当前模块的业务服务。
+ */
 public class BacnetSubscriptionService {
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public SubscriptionBinding subscribe(DataPoint point,
                                          BacnetAddress address,
                                          boolean propertyLevel,
@@ -54,6 +60,9 @@ public class BacnetSubscriptionService {
         return new SubscriptionBinding(processIdentifier, address, propertyLevel, issueConfirmedNotifications);
     }
 
+    /**
+     * 维护注册或订阅关系。
+     */
     public void unsubscribe(SubscriptionBinding binding,
                             IntSupplier invokeIdSupplier,
                             int remoteDeviceInstance,
@@ -86,6 +95,9 @@ public class BacnetSubscriptionService {
         covExecutor.accept(request);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean usePropertySubscription(DataPoint point,
                                            BacnetAddress address,
                                            Boolean connectionEnabled) {
@@ -99,6 +111,9 @@ public class BacnetSubscriptionService {
         return address.getArrayIndex() != null || point.getAdditionalConfig("covIncrement", null) != null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public boolean matchesNotification(int objectTypeId,
                                        int instanceNumber,
                                        int propertyIdentifierId,
@@ -111,11 +126,20 @@ public class BacnetSubscriptionService {
                 && Objects.equals(address.getArrayIndex(), arrayIndex);
     }
 
+    /**
+     * 定义当前模块的业务契约。
+     */
     @FunctionalInterface
     public interface ThrowingConsumer<T> {
+        /**
+         * 执行当前业务逻辑。
+         */
         void accept(T value) throws Exception;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     public record SubscriptionBinding(int processIdentifier,
                                       BacnetAddress address,
                                       boolean propertyLevel,

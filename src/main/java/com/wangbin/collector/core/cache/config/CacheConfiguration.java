@@ -21,6 +21,9 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
 
+/**
+ * 装配当前模块的配置。
+ */
 @Configuration
 @EnableCaching
 @EnableConfigurationProperties(CacheProperties.class)
@@ -37,6 +40,9 @@ public class CacheConfiguration {
     @Bean("springLocalCacheManager")
     @ConditionalOnProperty(name = "collector.cache.type",
             havingValue = CacheMode.LOCAL_VALUE, matchIfMissing = true)
+    /**
+     * 执行当前业务逻辑。
+     */
     public CacheManager springLocalCacheManager() {
         com.github.benmanes.caffeine.cache.Cache<Object, Object> cache = Caffeine.newBuilder()
                 .initialCapacity(100)
@@ -46,6 +52,9 @@ public class CacheConfiguration {
                 .build();
 
         return new CaffeineCacheManager() {
+            /**
+             * 创建并返回业务对象。
+             */
             @Override
             protected Cache<Object, Object> createNativeCaffeineCache(String name) {
                 return cache;
@@ -79,6 +88,9 @@ public class CacheConfiguration {
                 .build();
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Bean("springMultiLevelCacheManager")
     @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.MULTI_LEVEL_VALUE)
     public CacheManager springMultiLevelCacheManager() {

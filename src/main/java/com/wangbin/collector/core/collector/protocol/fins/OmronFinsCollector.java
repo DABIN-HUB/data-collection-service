@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.fins;
 
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.exception.CollectorException;
@@ -40,6 +42,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+/**
+ * 实现当前协议或设备的采集能力。
+ */
 @Slf4j
 public class OmronFinsCollector extends ConnectionBackedCollector {
 
@@ -78,6 +83,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return "OMRON_FINS";
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
@@ -92,10 +100,13 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         resetProtocolMetrics();
         this.configuredReadPlans = Collections.emptyList();
         this.configuredReadPlanPointKeys = Collections.emptySet();
-        log.info("OMRON FINS collector connected, deviceId={}, host={}, port={}",
+        log.info("OMRON FINS 采集器 已连接, 设备={}, 主机={}, 端口={}",
                 deviceInfo.getDeviceId(), finsConfig.getHost(), finsConfig.getPort());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() {
         removeManagedConnection("OMRON FINS");
@@ -106,9 +117,12 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         configuredReadPlans = Collections.emptyList();
         configuredReadPlanPointKeys = Collections.emptySet();
         resetProtocolMetrics();
-        log.info("OMRON FINS collector disconnected, deviceId={}", deviceInfo.getDeviceId());
+        log.info("OMRON FINS 采集器 已断开, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
@@ -137,6 +151,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
         checkConnection();
@@ -170,7 +187,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                     lastProcessResults.put(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
-                    log.error("FINS batch point process failed, deviceId={}, pointId={}", deviceInfo.getDeviceId(), pointId, e);
+                    log.error("FINS 批量 点位 处理失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), pointId, e);
                     recordException(e, point);
                     results.put(pointId, null);
                 }
@@ -189,6 +206,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public boolean writePoint(DataPoint point, Object value) throws CollectorException {
         checkConnection();
@@ -221,6 +241,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     @Override
     public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
         checkConnection();
@@ -263,11 +286,17 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         return readAddressValue(requireAddress(point));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -299,7 +328,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
             } catch (Exception e) {
                 lastFallbackCount.incrementAndGet();
                 batchFallbackCount.incrementAndGet();
-                log.warn("FINS batch read fallback to single, deviceId={}, segmentKey={}", deviceInfo.getDeviceId(), plan.getSegmentKey(), e);
+                log.warn("FINS 批量读取降级到单点, 设备={}, 分段键={}", deviceInfo.getDeviceId(), plan.getSegmentKey(), e);
                 for (FinsReadPlanItem item : plan.getItems()) {
                     DataPoint point = item.getPoint();
                     try {
@@ -309,7 +338,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                         results.put(point.getPointId(), value);
                         completed.add(point.getPointId());
                     } catch (Exception singleError) {
-                        log.warn("FINS single fallback failed, deviceId={}, pointId={}", deviceInfo.getDeviceId(), point.getPointId(), singleError);
+                        log.warn("FINS 单点降级 失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), point.getPointId(), singleError);
                     }
                 }
             }
@@ -323,6 +352,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         FinsAddress address = requireAddress(point);
@@ -332,6 +364,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return writeAddressValue(address, value);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception {
         Map<String, Boolean> results = new LinkedHashMap<>();
@@ -407,7 +442,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
             } catch (Exception ex) {
                 batchFallbackCount.incrementAndGet();
                 lastFallbackCount.incrementAndGet();
-                log.warn("FINS batch write fallback to single, deviceId={}, segmentKey={}, startWord={}, unitCount={}, error={}",
+                log.warn("FINS 批量写入降级到单点, 设备={}, 分段键={}, 起始字={}, 单元数量={}, 错误={}",
                         deviceInfo.getDeviceId(),
                         writePlan.getSegmentKey(),
                         writePlan.getStartWord(),
@@ -437,7 +472,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
             } catch (Exception ex) {
                 batchFallbackCount.incrementAndGet();
                 lastFallbackCount.incrementAndGet();
-                log.warn("FINS protected bit group fallback to single, deviceId={}, wordKey={}, pointCount={}, error={}",
+                log.warn("FINS 受保护位组降级到单点, 设备={}, 字键={}, 点位数量={}, 错误={}",
                         deviceInfo.getDeviceId(), entry.getKey(), group.size(), ex.getMessage());
                 fallbackBitGroup(group, resolvedResults);
             }
@@ -458,23 +493,32 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return results;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doSubscribe(List<DataPoint> points) {
         throw new UnsupportedOperationException("OMRON FINS不支持原生点位订阅");
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doUnsubscribe(List<DataPoint> points) {
-        log.info("OMRON FINS collector unsubscribe noop, deviceId={}", deviceInfo.getDeviceId());
+        log.info("OMRON FINS 采集器 取消订阅无需处理, 设备={}", deviceInfo.getDeviceId());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
         FinsConnectionConfig config = finsConfig;
         if (config != null) {
-            status.put("host", config.getHost());
-            status.put("port", config.getPort());
+            status.put(CommonMapKeys.HOST, config.getHost());
+            status.put(CommonMapKeys.PORT, config.getPort());
             status.put("plcNetwork", config.getPlcNetwork());
             status.put("plcNode", config.getPlcNode());
             status.put("plcUnit", config.getPlcUnit());
@@ -500,11 +544,14 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         status.put("lastFinsEndCode", lastFinsEndCode);
         status.put("lastFinsResponseCode", lastFinsEndCode);
         status.put("lastRequestUnitCount", lastRequestUnitCount);
-        status.put("connected", connectionAdapter != null && connectionAdapter.isConnected());
+        status.put(CommonMapKeys.CONNECTED, connectionAdapter != null && connectionAdapter.isConnected());
         status.put("supportedCommands", Arrays.stream(FinsCommand.values()).map(Enum::name).toList());
         return status;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected Object doExecuteCommand(int unitId, String command, Map<String, Object> params) throws Exception {
         FinsCommand finsCommand = FinsCommand.fromValue(command);
@@ -530,6 +577,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
         configuredAddresses.clear();
@@ -553,10 +603,13 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         FinsConnectionConfig config = finsConfig != null ? finsConfig : FinsConnectionConfig.from(requireConnectionConfig());
         configuredReadPlans = readPlanBuilder.build(validPoints, config.getMaxWordsPerRequest(), config.getMaxBitsPerRequest());
         configuredReadPlanPointKeys = validPoints.stream().map(this::resolvePointCacheKey).collect(Collectors.toUnmodifiableSet());
-        log.info("OMRON FINS read plans rebuilt, deviceId={}, plans={}, points={}",
+        log.info("OMRON FINS 读取计划已重建, 设备={}, 计划={}, 点位={}",
                 deviceId, configuredReadPlans.size(), validPoints.size());
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private FinsAddress requireAddress(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -565,6 +618,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return configuredAddresses.computeIfAbsent(cacheKey, key -> FinsAddressParser.parse(point));
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private FinsConnectionConfig requireFinsConfig() {
         if (finsConfig == null) {
             throw new IllegalStateException("FINS connection config is not initialized");
@@ -572,6 +628,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return finsConfig;
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private Map<String, Object> executePlan(FinsReadPlan plan) throws Exception {
         int sid = nextSid();
         byte[] request = FinsFrameCodec.buildBatchReadRequest(requireFinsConfig(), sid,
@@ -601,6 +660,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void executeWritePlan(FinsWritePlan writePlan,
                                   Map<String, Object> valuesByPointKey) throws Exception {
         int sid = nextSid();
@@ -624,6 +686,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private byte[] buildBatchWritePayload(FinsWritePlan writePlan,
                                           Map<String, Object> valuesByPointKey) {
         byte[] payload = new byte[writePlan.getPayloadByteLength()];
@@ -636,6 +701,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return payload;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void fallbackWritePlan(FinsWritePlan writePlan,
                                    Map<String, Object> valuesByPointKey,
                                    Map<String, Boolean> results) {
@@ -650,13 +718,16 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                 Object value = valuesByPointKey.get(resolvePointCacheKey(point));
                 results.put(point.getPointId(), doWritePoint(point, value));
             } catch (Exception singleError) {
-                log.warn("FINS fallback point write failed, deviceId={}, pointId={}",
+                log.warn("FINS 降级 点位 写入 失败, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), singleError);
                 results.put(point.getPointId(), false);
             }
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void writeProtectedBitGroup(List<PreparedWrite> group) throws Exception {
         if (group == null || group.isEmpty()) {
             return;
@@ -677,6 +748,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void fallbackBitGroup(List<PreparedWrite> group,
                                   Map<String, Boolean> results) {
         for (PreparedWrite prepared : group) {
@@ -689,13 +763,16 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                 singlePointFallbackCount.incrementAndGet();
                 results.put(point.getPointId(), doWritePoint(point, prepared.value()));
             } catch (Exception singleError) {
-                log.warn("FINS protected bit fallback write failed, deviceId={}, pointId={}",
+                log.warn("FINS 受保护位降级写入失败, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), singleError);
                 results.put(point.getPointId(), false);
             }
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<PreparedWrite> prepareWrites(Map<DataPoint, Object> points) {
         List<PreparedWrite> preparedWrites = new ArrayList<>();
         for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
@@ -708,6 +785,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return preparedWrites;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private Map<String, Object> buildPointValueLookup(Map<DataPoint, Object> pointValues) {
         Map<String, Object> valuesByPointKey = new LinkedHashMap<>();
         for (Map.Entry<DataPoint, Object> entry : pointValues.entrySet()) {
@@ -720,6 +800,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return valuesByPointKey;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean sharesProtectedWord(FinsAddress address, Set<String> protectedWordKeys) {
         for (String wordKey : wordKeysForAddress(address)) {
             if (protectedWordKeys.contains(wordKey)) {
@@ -729,6 +812,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return false;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private List<String> wordKeysForAddress(FinsAddress address) {
         if (address.isBitUnit()) {
             return List.of(wordLockKey(toWordContainerAddress(address)));
@@ -742,6 +828,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return wordKeys;
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private Object readAddressValue(FinsAddress address) throws Exception {
         int sid = nextSid();
         byte[] request = FinsFrameCodec.buildReadRequest(requireFinsConfig(), sid, address);
@@ -761,6 +850,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeAddressValue(FinsAddress address, Object value) throws Exception {
         int sid = nextSid();
         byte[] payload = FinsDataCodec.encode(value, address);
@@ -781,6 +873,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private boolean writeProtectedBitPoint(FinsAddress address, Object value) throws Exception {
         FinsAddress wordAddress = toWordContainerAddress(address);
         ReentrantLock lock = wordWriteLocks.computeIfAbsent(wordLockKey(wordAddress), ignored -> new ReentrantLock());
@@ -795,6 +890,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     private int readWordContainerValue(FinsAddress wordAddress) throws Exception {
         Object rawWord = readAddressValue(wordAddress);
         return rawWord instanceof Number number
@@ -802,10 +900,16 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                 : Integer.parseInt(String.valueOf(rawWord));
     }
 
+    /**
+     * 写入或持久化业务数据。
+     */
     private void writeWordContainerValue(FinsAddress wordAddress, int value) throws Exception {
         writeAddressValue(wordAddress, value & 0xFFFF);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private FinsAddress toWordContainerAddress(FinsAddress address) {
         return new FinsAddress(
                 address.getCanonicalAddress(),
@@ -821,12 +925,18 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         );
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private int applyBitValue(int currentWordValue, Integer bitOffset, boolean targetBit) {
         int safeBitOffset = bitOffset != null ? bitOffset : 0;
         int bitMask = 1 << safeBitOffset;
         return targetBit ? (currentWordValue | bitMask) : (currentWordValue & ~bitMask);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private boolean toBooleanValue(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -838,14 +948,23 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return "true".equals(normalized) || "1".equals(normalized) || "on".equals(normalized);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String wordLockKey(FinsAddress address) {
         return wordLockKey(address.getMemoryArea().name(), address.getWordAddress());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String wordLockKey(String memoryArea, int wordAddress) {
         return deviceInfo.getDeviceId() + ":" + memoryArea + ":" + wordAddress;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void resetProtocolMetrics() {
 
         lastFallbackCount.set(0);
@@ -863,14 +982,23 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         lastRequestUnitCount = null;
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordProtocolRequestStart() {
         requestCount.incrementAndGet();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordProtocolRequestSuccess() {
         requestSuccessCount.incrementAndGet();
     }
 
+    /**
+     * 记录或统计业务状态。
+     */
     private void recordProtocolRequestFailure(Throwable throwable) {
         requestErrorCount.incrementAndGet();
         if (isTimeoutThrowable(throwable)) {
@@ -889,9 +1017,15 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return false;
     }
 
+    /**
+     * 定义当前模块的不可变数据记录。
+     */
     private record PreparedWrite(DataPoint point, FinsAddress address, Object value) {
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private byte[] exchange(byte[] request) throws Exception {
         OmronFinsUdpConnectionAdapter adapter = connectionAdapter;
         if (adapter == null) {
@@ -900,6 +1034,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return adapter.exchange(request, requireFinsConfig().getTimeoutMs());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private List<FinsReadPlan> resolveReadPlans(List<DataPoint> points) {
         if (points.isEmpty()) {
             return Collections.emptyList();
@@ -912,6 +1049,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                 requireFinsConfig().getMaxBitsPerRequest());
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean matchesConfiguredPoints(List<DataPoint> points) {
         if (configuredReadPlans.isEmpty() || configuredReadPlanPointKeys.isEmpty() || points.size() != configuredReadPlanPointKeys.size()) {
             return false;
@@ -924,16 +1064,22 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return true;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildScalarProcessResult(DataPoint point, FinsAddress address, Object rawValue) {
         Object processedValue = normalizeReadValue(point, rawValue);
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("processingMode", address.isStringType() ? "protocol_string_passthrough" : "protocol_scalar_normalized");
         return processResult;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildArrayProcessResult(DataPoint point,
                                                   FinsAddress address,
                                                   Object rawValue,
@@ -944,17 +1090,23 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
         processResult.addMetadata("arrayValue", true);
         processResult.addMetadata("arraySize", address.getElementCount());
-        processResult.addMetadata("address", address.getCanonicalAddress());
+        processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
         processResult.addMetadata("processingMode", "protocol_passthrough");
         return processResult;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private ProcessResult buildWriteValidationResult(DataPoint point, Object value) {
         ProcessContext context = new ProcessContext();
-        context.addAttribute("deviceId", deviceInfo.getDeviceId());
+        context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
         return dataQualityProcessor.process(context, point, value);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object normalizeReadValue(DataPoint point, Object rawValue) {
         if (rawValue instanceof Number number && (point.getScalingFactor() != null || point.getOffset() != null)) {
             return point.getActualValue(number.doubleValue());
@@ -962,6 +1114,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return rawValue;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Object normalizeWriteValue(DataPoint point, Object value) {
         if (value == null) {
             return null;
@@ -979,13 +1134,19 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
         return raw;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private int nextSid() {
         return sidSequence.getAndUpdate(current -> (current + 1) & 0xFF);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void invalidateConnectionIfNeeded(Throwable throwable) {
         if (throwable instanceof SocketTimeoutException || throwable instanceof SocketException) {
-            log.warn("Invalidate OMRON FINS connection after transport failure, deviceId={}", deviceInfo.getDeviceId(), throwable);
+            log.warn("作废OMRON FINS 连接 ，原因=传输失败, 设备={}", deviceInfo.getDeviceId(), throwable);
             connected = false;
             connectionStatus = "ERROR";
         }

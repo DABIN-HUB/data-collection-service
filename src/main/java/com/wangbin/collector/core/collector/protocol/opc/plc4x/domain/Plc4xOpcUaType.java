@@ -6,6 +6,9 @@ import com.wangbin.collector.core.collector.protocol.plc4x.domain.PlcTypeAliasLo
 
 import java.util.Locale;
 
+/**
+ * 定义当前模块的枚举值。
+ */
 public enum Plc4xOpcUaType implements CodecBackedPlcType<Plc4xValueCodec> {
     BOOL(Plc4xValueCodec.BOOL),
     BYTE(Plc4xValueCodec.BYTE_SIGNED),
@@ -51,6 +54,9 @@ public enum Plc4xOpcUaType implements CodecBackedPlcType<Plc4xValueCodec> {
 
     private final Plc4xValueCodec codec;
 
+    /**
+     * 创建当前组件实例。
+     */
     Plc4xOpcUaType(Plc4xValueCodec codec) {
         this.codec = codec;
     }
@@ -59,10 +65,16 @@ public enum Plc4xOpcUaType implements CodecBackedPlcType<Plc4xValueCodec> {
         return codec;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public String toTypeExpression() {
         return name();
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static Plc4xOpcUaType fromDriverTextOrNull(String text) {
         if (text == null || text.isBlank()) {
             return null;
@@ -71,6 +83,9 @@ public enum Plc4xOpcUaType implements CodecBackedPlcType<Plc4xValueCodec> {
         return LOOKUP.resolveOrNull(normalized);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static String normalize(String text) {
         return text.trim().toUpperCase(Locale.ROOT);
     }

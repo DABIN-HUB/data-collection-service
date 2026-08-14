@@ -17,6 +17,9 @@ public enum CloudAckCommitMode {
      */
     ACK_SUCCESS;
 
+    /**
+     * 创建并返回业务对象。
+     */
     public static CloudAckCommitMode from(String value) {
         if (value == null || value.isBlank()) {
             return PUBLISH_SUCCESS;

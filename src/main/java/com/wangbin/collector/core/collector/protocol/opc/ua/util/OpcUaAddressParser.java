@@ -19,13 +19,19 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Helpers for parsing OPC UA addressing metadata out of a {@link DataPoint}.
+ * Helpers for parsing OPC UA addressing 元数据 out of a {@link DataPoint}.
  */
 public final class OpcUaAddressParser {
 
+    /**
+     * 创建当前组件实例。
+     */
     private OpcUaAddressParser() {
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static OpcUaAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
@@ -46,6 +52,9 @@ public final class OpcUaAddressParser {
         return new OpcUaAddress(nodeId, dataType, samplingInterval, queueSize, deadband, subscribe);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     public static Variant toVariant(Object value, OpcUaDataType dataType) {
         if (value == null) {
             return new Variant(null);
@@ -71,6 +80,9 @@ public final class OpcUaAddressParser {
         };
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static NodeId resolveNodeId(DataPoint point, Map<String, Object> config) {
         String explicit = firstNonBlank(
                 asString(config.get("nodeId")),
@@ -93,6 +105,9 @@ public final class OpcUaAddressParser {
         return buildNodeId(namespace, identifierType.trim(), identifier);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static OpcUaDataType resolveDataType(DataPoint point, Map<String, Object> config) {
         Object type = firstPresent(config, "opcUaType", "opcType", "nodeType", "dataType");
         if (type == null) {
@@ -101,6 +116,9 @@ public final class OpcUaAddressParser {
         return OpcUaDataType.fromText(type != null ? type.toString() : null);
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean resolveSubscription(DataPoint point, Map<String, Object> config) {
         Object flag = firstPresent(config, "subscribe", "monitor");
         if (flag != null) {
@@ -110,6 +128,9 @@ public final class OpcUaAddressParser {
         return mode != null && mode.equalsIgnoreCase("SUBSCRIPTION");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static NodeId parseNodeId(String text) {
         try {
             return NodeId.parse(text);
@@ -121,14 +142,23 @@ public final class OpcUaAddressParser {
         }
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private static NodeId buildNodeId(int namespace, String identifierType, Object identifier) {
         String type = identifierType.toLowerCase();
         return switch (type) {
             case "i", "n", "numeric" -> {
                 long value = toLong(identifier);
                 if (value <= Integer.MAX_VALUE) {
+                    /**
+                     * 执行当前业务逻辑。
+                     */
                     yield new NodeId(namespace, (int) value);
                 }
+                /**
+                 * 执行当前业务逻辑。
+                 */
                 yield new NodeId(namespace, Unsigned.uint(value));
             }
             case "g", "guid" -> new NodeId(namespace, UUID.fromString(identifier.toString()));
@@ -138,6 +168,9 @@ public final class OpcUaAddressParser {
         };
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static Object firstPresent(Map<String, Object> map, String... keys) {
         for (String key : keys) {
             if (map.containsKey(key)) {
@@ -147,6 +180,9 @@ public final class OpcUaAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -156,10 +192,16 @@ public final class OpcUaAddressParser {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean parseBoolean(Object flag) {
         if (flag instanceof Boolean bool) {
             return bool;
@@ -170,6 +212,9 @@ public final class OpcUaAddressParser {
         return Boolean.parseBoolean(flag.toString());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static int parseInt(Object value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -184,6 +229,9 @@ public final class OpcUaAddressParser {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static double parseDouble(Object value, double defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -198,6 +246,9 @@ public final class OpcUaAddressParser {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -205,6 +256,9 @@ public final class OpcUaAddressParser {
         return Long.parseLong(value.toString());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static double toDouble(Object value) {
         if (value instanceof Number number) {
             return number.doubleValue();
@@ -212,6 +266,9 @@ public final class OpcUaAddressParser {
         return Double.parseDouble(value.toString());
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static boolean toBoolean(Object value) {
         if (value instanceof Boolean bool) {
             return bool;
@@ -223,6 +280,9 @@ public final class OpcUaAddressParser {
         return text.equals("true") || text.equals("1") || text.equals("on");
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static DateTime toDateTime(Object value) {
         if (value instanceof DateTime dateTime) {
             return dateTime;
@@ -245,6 +305,9 @@ public final class OpcUaAddressParser {
         return new DateTime(Long.parseLong(text));
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private static ByteString toByteString(Object value) {
         if (value instanceof ByteString byteString) {
             return byteString;

@@ -15,7 +15,10 @@ public class ConfigDiffResponse {
 
     private boolean deviceChanged;
     private boolean connectionChanged;
+    @Builder.Default
     private List<String> missingPointCodes = Collections.emptyList();
+    @Builder.Default
     private List<String> extraPointCodes = Collections.emptyList();
+    @Builder.Default
     private List<String> changedPointCodes = Collections.emptyList();
 }

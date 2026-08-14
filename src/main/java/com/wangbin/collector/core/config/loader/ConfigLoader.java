@@ -10,14 +10,29 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 定义当前模块的业务契约。
+ */
 public interface ConfigLoader {
 
+    /**
+     * 查询并返回业务数据。
+     */
     List<DeviceInfo> loadAllDevices();
 
+    /**
+     * 查询并返回业务数据。
+     */
     DeviceInfo loadDevice(String deviceId);
 
+    /**
+     * 查询并返回业务数据。
+     */
     List<DataPoint> loadDataPoints(String deviceId);
 
+    /**
+     * 查询并返回业务数据。
+     */
     DeviceConnection loadConnectionConfig(String deviceId);
 
     /**
@@ -33,6 +48,9 @@ public interface ConfigLoader {
         }
     }
 
+    /**
+     * 查询并返回业务数据。
+     */
     default ConfigSnapshot loadSnapshot() {
         List<DeviceInfo> devices = loadAllDevices();
         Map<String, DeviceInfo> deviceConfigs = new LinkedHashMap<>();

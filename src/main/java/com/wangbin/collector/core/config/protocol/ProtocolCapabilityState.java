@@ -13,6 +13,9 @@ public enum ProtocolCapabilityState {
     private final String description;
     private final boolean available;
 
+    /**
+     * 创建当前组件实例。
+     */
     ProtocolCapabilityState(String description, boolean available) {
         this.description = description;
         this.available = available;

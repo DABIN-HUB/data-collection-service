@@ -45,10 +45,16 @@ public class CacheData<T> implements Serializable {
     // 元数据
     private String metadata;
 
+    /**
+     * 创建当前组件实例。
+     */
     public CacheData() {
         this.cacheTime = System.currentTimeMillis();
     }
 
+    /**
+     * 创建当前组件实例。
+     */
     public CacheData(CacheKey key, T value) {
         this();
         this.key = key;

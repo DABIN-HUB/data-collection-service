@@ -16,6 +16,9 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
+/**
+ * 管理当前模块的生命周期和状态。
+ */
 @Slf4j
 public class BacnetMstpTokenManager implements AutoCloseable {
 
@@ -49,6 +52,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
     private volatile Integer discoveredNextStation;
     private volatile Consumer<BacnetMstpFrame> incomingFrameHandler;
 
+    /**
+     * 创建当前组件实例。
+     */
     public BacnetMstpTokenManager(BacnetSerialChannel channel,
                                   DeviceConnection config,
                                   Integer preferredNextStation) {
@@ -66,6 +72,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         this.pollForMasterTimeoutMs = resolvePositive(config.getIntConfig("pollForMasterTimeoutMs", null), 250);
     }
 
+    /**
+     * 处理组件生命周期。
+     */
     public void start() {
         if (running.compareAndSet(false, true)) {
             receiveThread = new Thread(this::receiveLoop, "bacnet-mstp-recv-" + localMacAddress);
@@ -78,6 +87,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         this.incomingFrameHandler = handler;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void beginConfirmedRequest(int destinationMac, byte[] npdu, long timeoutMs) throws Exception {
         conversationLock.lockInterruptibly();
         boolean success = false;
@@ -97,6 +109,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public BacnetMstpFrame awaitConversationFrame(long timeoutMs) throws Exception {
         BacnetMstpFrame frame = conversationFrames.poll(Math.max(1L, timeoutMs), TimeUnit.MILLISECONDS);
         if (frame == null) {
@@ -105,6 +120,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return frame;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void sendConversationFrame(int destinationMac, byte[] npdu, boolean expectingReply) throws Exception {
         ensureConversationOpen();
         sendFrame(expectingReply
@@ -114,6 +132,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
                 npdu);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void sendUnconfirmed(int destinationMac, byte[] npdu, long timeoutMs) throws Exception {
         conversationLock.lockInterruptibly();
         try {
@@ -125,6 +146,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     public void finishConversation() throws Exception {
         try {
             releaseToken();
@@ -145,6 +169,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
     public long getFrameErrorCount() { return frameErrorCount.get(); }
     public long getCrcErrorCount() { return crcErrorCount.get(); }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     public void close() {
         running.set(false);
@@ -154,6 +181,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void receiveLoop() {
         while (running.get()) {
             try {
@@ -165,16 +195,19 @@ public class BacnetMstpTokenManager implements AutoCloseable {
                 handleFrame(frame);
             } catch (BacnetMstpFrameCodec.CrcException ex) {
                 crcErrorCount.incrementAndGet();
-                log.debug("BACnet MS/TP CRC validation failed, mac={}", localMacAddress, ex);
+                log.debug("BACnet MS/TP CRC 校验 失败, MAC={}", localMacAddress, ex);
             } catch (Exception ex) {
                 frameErrorCount.incrementAndGet();
                 if (running.get()) {
-                    log.warn("BACnet MS/TP receive loop failed, mac={}", localMacAddress, ex);
+                    log.warn("BACnet MS/TP 接收循环 失败, MAC={}", localMacAddress, ex);
                 }
             }
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleFrame(BacnetMstpFrame frame) throws Exception {
         switch (frame.frameType()) {
             case TOKEN -> handleToken(frame);
@@ -189,6 +222,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleToken(BacnetMstpFrame frame) {
         if (frame.destinationAddress() != localMacAddress) {
             return;
@@ -203,6 +239,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handlePollForMaster(BacnetMstpFrame frame) throws Exception {
         if (frame.destinationAddress() != localMacAddress) {
             return;
@@ -211,11 +250,17 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         sendFrame(BacnetMstpFrameType.REPLY_TO_POLL_FOR_MASTER, frame.sourceAddress(), new byte[0]);
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleReplyToPollForMaster(BacnetMstpFrame frame) {
         masterReplies.offer(frame.sourceAddress());
         discoveredNextStation = sanitizeMasterAddress(frame.sourceAddress());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleTestRequest(BacnetMstpFrame frame) throws Exception {
         if (frame.destinationAddress() != localMacAddress) {
             return;
@@ -223,6 +268,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         sendFrame(BacnetMstpFrameType.TEST_RESPONSE, frame.sourceAddress(), frame.data());
     }
 
+    /**
+     * 处理当前业务流程。
+     */
     private void handleDataFrame(BacnetMstpFrame frame) {
         if (frame.destinationAddress() != localMacAddress
                 && frame.destinationAddress() != BacnetMstpFrame.BROADCAST_ADDRESS) {
@@ -239,6 +287,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void acquireToken(long timeoutMs) throws Exception {
         long deadline = System.currentTimeMillis() + Math.max(1L, timeoutMs);
         tokenLock.lock();
@@ -246,7 +297,7 @@ public class BacnetMstpTokenManager implements AutoCloseable {
             while (!hasToken.get()) {
                 if (System.currentTimeMillis() - lastFrameReceivedAt >= tokenClaimTimeoutMs) {
                     hasToken.set(true);
-                    log.debug("BACnet MS/TP claimed token after idle, mac={}", localMacAddress);
+                    log.debug("BACnet MS/TP 空闲后获取令牌，MAC={}", localMacAddress);
                     return;
                 }
                 long remaining = deadline - System.currentTimeMillis();
@@ -260,6 +311,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void releaseToken() throws Exception {
         if (!hasToken.get()) {
             return;
@@ -273,6 +327,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         tokenPassCount.incrementAndGet();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private Integer resolveNextStation() throws Exception {
         if (configuredNextStation != null && configuredNextStation != localMacAddress) {
             return configuredNextStation;
@@ -288,6 +345,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return localMacAddress;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer discoverNextMaster() throws Exception {
         masterReplies.clear();
         Integer discovered = pollRange(localMacAddress + 1, maxMaster);
@@ -300,6 +360,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer pollRange(int start, int end) throws Exception {
         for (int candidate = start; candidate <= end; candidate++) {
             int sanitized = sanitizeMasterAddress(candidate);
@@ -316,6 +379,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void sendFrame(BacnetMstpFrameType frameType, int destinationAddress, byte[] payload) throws Exception {
         byte[] encoded = BacnetMstpFrameCodec.encode(new BacnetMstpFrame(frameType, destinationAddress, localMacAddress, payload));
         synchronized (sendLock) {
@@ -323,14 +389,20 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private void safeReleaseTokenAfterFailure() {
         try {
             releaseToken();
         } catch (Exception ex) {
-            log.debug("Release BACnet MS/TP token after failure skipped, mac={}", localMacAddress, ex);
+            log.debug("释放 BACnet MS/TP 令牌失败后跳过，MAC={}", localMacAddress, ex);
         }
     }
 
+    /**
+     * 校验业务条件和参数边界。
+     */
     private void ensureConversationOpen() {
         if (!conversationLock.isHeldByCurrentThread()) {
             throw new IllegalStateException("BACnet MS/TP conversation is not owned by the current thread");
@@ -340,6 +412,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         }
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveMacAddress(Integer value, String fieldName) {
         if (value == null || value < 0 || value > 0xFE) {
             throw new IllegalStateException("BACnet MS/TP " + fieldName + " must be between 0 and 254");
@@ -347,6 +422,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return value;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolveMaxMaster(DeviceConnection config) {
         Integer max = config.getIntConfig("maxMaster", null);
         if (max == null) {
@@ -358,10 +436,16 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return max;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private int resolvePositive(Integer value, int defaultValue) {
         return value != null && value > 0 ? value : defaultValue;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer sanitizeMasterAddress(Integer value) {
         if (value == null) {
             return null;
@@ -372,6 +456,9 @@ public class BacnetMstpTokenManager implements AutoCloseable {
         return value;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private Integer firstNonNull(Integer... values) {
         if (values == null) {
             return null;

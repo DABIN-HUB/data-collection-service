@@ -10,16 +10,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 定义当前模块的业务组件。
+ */
 @Slf4j
 public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
     private PlcConnection connection;
     private String connectionString;
 
+    /**
+     * 创建当前组件实例。
+     */
     public EtherNetIpConnectionAdapter(DeviceInfo deviceInfo, DeviceConnection config) {
         super(deviceInfo, config);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
@@ -28,9 +37,12 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
             connection.connect();
         }
         setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X EtherNet/IP connection created: {}", connectionString);
+        log.info("PLC4X EtherNet/IP 连接 已创建:{}", connectionString);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doDisconnect() throws Exception {
         try {
@@ -42,6 +54,9 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doHeartbeat() {
         if (connection == null || !connection.isConnected()) {
@@ -49,9 +64,12 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         }
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     @Override
     protected void doAuthenticate() {
-        // No additional authentication phase for PLC4X EtherNet/IP connections.
+        // No additional 认证 phase for PLC4X EtherNet/IP connections.
     }
 
     @Override
@@ -68,6 +86,9 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return connectionString;
     }
 
+    /**
+     * 创建并返回业务对象。
+     */
     private String buildConnectionString() {
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
@@ -127,6 +148,9 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return builder.toString();
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private long resolveRequestTimeout() {
         Integer readTimeout = config.getReadTimeout();
         if (readTimeout != null && readTimeout > 0) {
@@ -139,6 +163,9 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return 5000L;
     }
 
+    /**
+     * 解析或转换业务数据。
+     */
     private String normalizeControllerType(String controllerType) {
         if (!hasText(controllerType)) {
             return null;
@@ -146,6 +173,9 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return controllerType.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private String firstNonBlank(String... values) {
         if (values == null) {
             return null;
@@ -158,11 +188,17 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
         return null;
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasConfig(String key) {
         return (config.getExtJson() != null && config.getExtJson().containsKey(key))
                 || (config.getAuthParams() != null && config.getAuthParams().containsKey(key));
     }
 
+    /**
+     * 执行当前业务逻辑。
+     */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }

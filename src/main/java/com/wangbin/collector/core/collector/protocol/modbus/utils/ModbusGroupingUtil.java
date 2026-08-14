@@ -64,7 +64,7 @@ public class ModbusGroupingUtil {
 
         return groups;
     }
-    /*public static List<List<GroupedPoint>> groupByContinuousAddress(List<GroupedPoint> points) {
+    /* public static List<List<GroupedPoint>> groupByContinuousAddress(List<GroupedPoint> 点位) {
         if (points == null || points.isEmpty()) {
             return Collections.emptyList();
         }
@@ -113,7 +113,7 @@ public class ModbusGroupingUtil {
                 .mapToInt(gp -> gp.getAddress().getAddress())
                 .min()
                 .orElse(0);
-        /*int maxAddress = pointGroup.stream()
+        /* int maxAddress = pointGroup.流()
                 .mapToInt(gp -> gp.getAddress().getAddress())
                 .max()
                 .orElse(0);*/
