@@ -1,22 +1,18 @@
 <template>
   <div class="page-stack">
-    <section class="page-title-row">
-      <div></div>
-      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
+    <section class="modao-surface">
+      <div class="command-strip network-command-strip">
+        <label class="command-field-sm">检测方式<el-select v-model="form.type"><el-option label="TCP 端口" value="TCP" /><el-option label="网络可达性" value="PING" /><el-option label="路由跟踪" value="TRACE" /></el-select></label>
+        <label class="command-field-lg">目标设备<el-select v-model="form.deviceId" filterable clearable @change="syncDeviceTarget"><el-option label="手动输入" value="" /><el-option v-for="device in devices" :key="device.id" :label="`${device.name}${device.host ? ' · ' + device.host : ''}`" :value="device.id" /></el-select></label>
+        <label class="command-field-lg">目标主机<el-input v-model="form.target" placeholder="例如 127.0.0.1" /></label>
+        <label class="command-field-sm">目标端口<el-input-number v-model="form.port" :min="1" :max="65535" @change="markTcpMode" /></label>
+        <label class="command-field-sm">超时 ms<el-input-number v-model="form.timeoutMs" :min="100" :max="10000" /></label>
+        <label class="command-field-xs">重试<el-input-number v-model="form.retries" :min="0" :max="5" /></label>
+        <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
+        <el-button type="primary" :loading="testing" @click="runTest">开始检测</el-button>
+      </div>
     </section>
-    <div class="modao-two-column network-layout">
-      <section class="modao-surface">
-        <div class="modao-surface-head"><div><h3>检测参数</h3><p>目标范围受后端白名单约束，设备目标会自动带入 host/port。</p></div></div>
-        <div class="modao-form-grid">
-          <label>检测方式<el-select v-model="form.type"><el-option label="TCP 端口" value="TCP" /><el-option label="网络可达性" value="PING" /><el-option label="路由跟踪" value="TRACE" /></el-select></label>
-          <label>目标设备<el-select v-model="form.deviceId" filterable clearable @change="syncDeviceTarget"><el-option label="手动输入" value="" /><el-option v-for="device in devices" :key="device.id" :label="`${device.name}${device.host ? ' · ' + device.host : ''}`" :value="device.id" /></el-select></label>
-          <label>目标主机<el-input v-model="form.target" placeholder="例如 127.0.0.1" /></label>
-          <label>目标端口<el-input-number v-model="form.port" :min="1" :max="65535" @change="markTcpMode" /></label>
-          <label>超时时间 ms<el-input-number v-model="form.timeoutMs" :min="100" :max="10000" /></label>
-          <label>重试次数<el-input-number v-model="form.retries" :min="0" :max="5" /></label>
-        </div>
-        <el-button type="primary" class="wide" :loading="testing" @click="runTest">开始检测</el-button>
-      </section>
+    <div class="network-layout">
       <section class="modao-surface">
         <div class="modao-surface-head"><div><h3>检测结果</h3><p>显示成功/失败、耗时、目标和后端原始结果。</p></div></div>
         <el-alert v-if="error" :title="error" type="warning" :closable="false" />

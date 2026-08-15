@@ -1,12 +1,9 @@
 <template>
   <div class="page-stack">
-    <section class="page-title-row">
-      <div></div>
-      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
-    </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
-    <div class="table-actions">
+    <div class="command-strip">
       <el-select v-model="deviceId" filterable placeholder="选择设备" class="wide-select"><el-option v-for="device in devices" :key="device.id" :label="device.name" :value="device.id" /></el-select>
+      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
       <el-button :loading="loading" @click="loadCurrentTab">刷新当前页</el-button>
       <el-button @click="loadAll">读取全部</el-button>
     </div>

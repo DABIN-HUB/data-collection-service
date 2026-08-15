@@ -1,12 +1,8 @@
 <template>
   <section class="monitor-panel">
     <div class="panel-toolbar">
-      <div>
-        <h3>实时数据</h3>
-        <p>{{ deviceId ? `当前设备：${deviceId}` : '请选择设备后查看实时数据' }}</p>
-        <p class="ws-status">WebSocket：{{ wsStatusText }}；HTTP 刷新作为兜底链路。</p>
-      </div>
       <div class="table-actions">
+        <el-tag effect="plain">实时通道：{{ wsStatusText }}</el-tag>
         <el-button :loading="webSocketStore.connecting" @click="connectWebSocket">连接实时通道</el-button>
         <el-button :loading="loading" @click="load">HTTP 刷新</el-button>
       </div>

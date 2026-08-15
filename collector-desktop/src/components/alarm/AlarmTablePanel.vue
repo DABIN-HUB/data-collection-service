@@ -1,10 +1,6 @@
 <template>
   <section class="monitor-panel alarm-workbench">
     <div class="panel-toolbar">
-      <div>
-        <h3>{{ deviceId ? '设备告警' : '告警管理' }}</h3>
-        <p>展示告警历史、级别筛选、时间过滤和确认处理结果。</p>
-      </div>
       <div class="table-actions">
         <el-select v-model="level" placeholder="级别" clearable style="width: 120px">
           <el-option label="严重" value="CRITICAL" />

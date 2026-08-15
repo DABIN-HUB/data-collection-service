@@ -1,13 +1,9 @@
 <template>
   <div class="page-stack">
-    <section class="page-title-row">
-      <div></div>
-      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
-    </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
 
     <section class="exact-surface history-query-bar">
-      <div class="table-actions">
+      <div class="command-strip">
         <el-select v-model="deviceId" filterable placeholder="选择设备" class="compact-select" @change="loadPoints">
           <el-option v-for="device in devices" :key="device.id" :label="device.name" :value="device.id" />
         </el-select>
@@ -17,6 +13,7 @@
         <el-date-picker v-model="timeRange" type="datetimerange" range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" />
         <el-input-number v-model="limit" :min="1" :max="5000" controls-position="right" />
         <el-button type="primary" :loading="historyLoading" @click="loadHistory">查询历史</el-button>
+        <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
       </div>
     </section>
 

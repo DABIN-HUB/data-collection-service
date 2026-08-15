@@ -1,35 +1,31 @@
 <template>
   <div class="page-stack">
-    <section class="page-title-row">
-      <div></div>
-      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
-    </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
-    <div class="table-actions">
+    <div class="command-strip">
       <el-select v-model="deviceId" filterable placeholder="选择设备" class="wide-select">
         <el-option v-for="device in devices" :key="device.id" :label="`${device.name}${device.protocol ? ' · ' + device.protocol : ''}`" :value="device.id" />
       </el-select>
       <el-tag v-if="currentDevice?.protocol" effect="plain">协议：{{ currentDevice.protocol }}</el-tag>
+      <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
     </div>
 
     <div class="surface-grid two">
       <section class="surface-card">
         <div class="surface-card-head"><h3>单点写入</h3><span class="surface-note">适合快速写一个点位</span></div>
-        <div class="modao-form-grid">
-          <label>点位引用<el-input v-model="singlePointRef" placeholder="pointCode / pointId" /></label>
-          <label>数据类型<el-select v-model="singleDataType" filterable><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></label>
-          <label class="wide-field">写入值<el-input v-model="singleValue" placeholder="例如 12.5 / true / 文本" /></label>
+        <div class="command-strip single-write-strip">
+          <label class="command-field-md">点位引用<el-input v-model="singlePointRef" placeholder="pointCode / pointId" /></label>
+          <label class="command-field-sm">数据类型<el-select v-model="singleDataType" filterable><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></label>
+          <label class="command-field-lg">写入值<el-input v-model="singleValue" placeholder="例如 12.5 / true / 文本" /></label>
+          <el-button type="primary" :loading="singleWriting" @click="writeSinglePoint">写入单点</el-button>
         </div>
-        <el-button type="primary" class="wide" :loading="singleWriting" @click="writeSinglePoint">写入单点</el-button>
       </section>
 
       <section class="surface-card">
         <div class="surface-card-head">
           <h3>批量写点位</h3>
-          <div class="table-actions"><el-button @click="pointWriteText = JSON.stringify(buildBatchWriteTemplate(), null, 2)">模板</el-button><span class="surface-note">JSON 载荷</span></div>
+          <div class="table-actions"><span class="surface-note">JSON 载荷</span><el-button @click="pointWriteText = JSON.stringify(buildBatchWriteTemplate(), null, 2)">模板</el-button><el-button type="primary" :loading="writing" @click="writePoints">批量写入点位</el-button></div>
         </div>
         <textarea v-model="pointWriteText" spellcheck="false"></textarea>
-        <el-button type="primary" class="wide" :loading="writing" @click="writePoints">批量写入点位</el-button>
       </section>
     </div>
 
@@ -43,10 +39,10 @@
             <el-option label="重连" value="reconnect" />
           </el-select>
           <el-button @click="commandText = JSON.stringify(buildCommandTemplate(commandTemplateName), null, 2)">套用模板</el-button>
+          <el-button type="primary" :loading="commanding" @click="executeCommand">执行命令</el-button>
         </div>
       </div>
       <textarea v-model="commandText" spellcheck="false"></textarea>
-      <el-button type="primary" class="wide" :loading="commanding" @click="executeCommand">执行命令</el-button>
     </section>
 
     <section class="exact-surface"><div class="exact-surface-head"><h3>执行结果</h3><span>错误时保留后端响应</span></div><pre class="json-view">{{ resultText }}</pre></section>

@@ -1,12 +1,8 @@
 <template>
   <section class="table-card">
     <div class="table-card-header">
-      <div>
-        <h2>设备列表</h2>
-        <p>展示设备配置、运行状态和本地临时设备操作</p>
-      </div>
       <div class="table-actions">
-        <el-input v-model="keyword" placeholder="搜索设备名称/编号" clearable :prefix-icon="Search" />
+        <el-input v-model="keyword" placeholder="搜索设备名称/编号" clearable :prefix-icon="Search" class="compact-select" />
         <el-select v-model="protocolFilter" placeholder="协议" clearable class="mini-filter">
           <el-option v-for="protocol in protocolOptions" :key="protocol" :label="protocol" :value="protocol" />
         </el-select>
