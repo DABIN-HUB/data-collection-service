@@ -91,6 +91,76 @@ docs/backend-smoke-latest.md
 
 报告会脱敏 token，不保存真实凭据。
 
+设备级 smoke 联调会创建并删除一个本地临时测试设备：
+
+```bash
+COLLECTOR_TOKEN=[REDACTED] npm run smoke:device
+```
+
+默认测试设备：
+
+```text
+desktop_smoke_p11
+```
+
+默认测试连接：
+
+```text
+MODBUS_TCP 127.0.0.1:65020
+```
+
+如果本机没有 Modbus 模拟器，`start-local` 可能返回启动失败，脚本会标记为 `EXPECTED_FAIL`，但仍会验证配置保存、读取、状态查询、停止和删除清理。
+
+设备级报告：
+
+```text
+docs/device-smoke-latest.json
+docs/device-smoke-latest.md
+```
+
+带本地 Modbus TCP 模拟器的闭环 smoke：
+
+```bash
+COLLECTOR_TOKEN=[REDACTED] npm run smoke:modbus
+```
+
+该脚本会在本机启动一个临时 Modbus TCP 模拟器：
+
+```text
+127.0.0.1:65020
+```
+
+然后创建 `desktop_smoke_p12_modbus` 本地临时设备，验证 `start-local`、运行状态、实时数据、停止和删除。脚本结束后会关闭模拟器并删除测试设备。
+
+报告：
+
+```text
+docs/modbus-smoke-latest.json
+docs/modbus-smoke-latest.md
+```
+
+扩展闭环 smoke 会在 Modbus 成功采集基础上继续验证历史、告警确认、设备影子和网络检测：
+
+```bash
+COLLECTOR_TOKEN=[REDACTED] npm run smoke:extended
+```
+
+该脚本会创建并删除 `desktop_smoke_p13_extended` 本地临时设备，验证：
+
+- `start-local`；
+- 实时数据；
+- 历史接口 disabled 语义；
+- 告警确认和确认状态查询；
+- 设备影子 desired/delta/history/clear；
+- TCP 网络检测 `127.0.0.1:65020` reachable。
+
+报告：
+
+```text
+docs/extended-smoke-latest.json
+docs/extended-smoke-latest.md
+```
+
 本地 Electron 预览：
 
 ```bash
