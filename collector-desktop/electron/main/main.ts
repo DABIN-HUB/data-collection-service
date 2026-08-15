@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { executeCollectorProxyRequest, type CollectorProxyRequest } from "./http-proxy-utils.js";
 import {
   buildAboutInfo,
   DEFAULT_SERVER_URL,
@@ -107,7 +108,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      preload: resolve(__dirname, "../preload/index.js")
+      preload: resolve(__dirname, "../preload/index.cjs")
     }
   });
 
@@ -232,6 +233,11 @@ ipcMain.handle("collector:get-server-config", () => readServerConfig());
 ipcMain.handle("collector:set-server-config", (_event, config: ServerConfig) => writeServerConfig(config));
 
 ipcMain.handle("collector:open-external", (_event, url: string) => openExternalUrl(url));
+
+ipcMain.handle("collector:http-request", (_event, request: CollectorProxyRequest) => executeCollectorProxyRequest({
+  ...request,
+  serverUrl: request.serverUrl || readServerConfig().serverUrl
+}));
 
 app.setAppUserModelId("com.wangbin.collector.desktop");
 

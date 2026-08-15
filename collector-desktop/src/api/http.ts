@@ -74,6 +74,10 @@ client.interceptors.request.use((config) => {
 });
 
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
+  const desktopProxy = resolveDesktopProxy();
+  if (desktopProxy) {
+    return requestThroughDesktopProxy<T>(desktopProxy, config);
+  }
   try {
     const response = await client.request<ApiResult<T> | T>(config);
     return unwrapApiResponse<T>(response.data);
@@ -91,6 +95,65 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
     }
     throw error;
   }
+}
+
+async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig): Promise<T> {
+  try {
+    const response = await desktopProxy({
+      serverUrl: currentServerUrl,
+      token: currentToken,
+      url: String(config.url || ""),
+      method: String(config.method || "GET").toUpperCase(),
+      params: normalizeProxyParams(config.params),
+      data: config.data,
+      headers: normalizeProxyRequestHeaders(config.headers),
+      timeoutMs: typeof config.timeout === "number" ? config.timeout : Number(client.defaults.timeout) || undefined
+    });
+    return unwrapProxyResponse<T>(response.body, response.status);
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw error;
+    }
+    throw new ApiRequestError(resolveNetworkMessage(error instanceof Error ? error.message : String(error || "")));
+  }
+}
+
+function unwrapProxyResponse<T>(body: unknown, httpStatus: number): T {
+  try {
+    const data = unwrapApiResponse<T>(body as ApiResult<T> | T, httpStatus);
+    if (httpStatus < 200 || httpStatus >= 300) {
+      throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
+    }
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+function resolveHttpErrorMessage(body: unknown, httpStatus: number): string {
+  if (body && typeof body === "object" && "message" in body) {
+    return localizeApiMessage(String((body as { message?: unknown }).message || ""), httpStatus);
+  }
+  return `HTTP ${httpStatus}`;
+}
+
+function resolveDesktopProxy(): NonNullable<Window["collectorDesktop"]>["request"] | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return typeof window.collectorDesktop?.request === "function" ? window.collectorDesktop.request : null;
+}
+
+function normalizeProxyParams(params: unknown): Record<string, unknown> | undefined {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return undefined;
+  }
+  return params as Record<string, unknown>;
+}
+
+function normalizeProxyRequestHeaders(headers: AxiosRequestConfig["headers"]): Record<string, string> {
+  const normalized = AxiosHeaders.from(headers as Record<string, string> | undefined).toJSON();
+  return Object.fromEntries(Object.entries(normalized).map(([key, value]) => [key, String(value)]));
 }
 
 export function unwrapApiResponse<T>(body: ApiResult<T> | T, httpStatus?: number): T {

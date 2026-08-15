@@ -11,5 +11,5 @@
     "rootDir": "electron",
     "outDir": "dist/electron"
   },
-  "include": ["electron/**/*.ts"]
+  "include": ["electron/**/*.ts", "electron/**/*.cts"]
 }

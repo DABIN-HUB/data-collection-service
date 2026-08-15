@@ -58,9 +58,11 @@ import { getLocalDevice } from "@/api/config.api";
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import DeviceListTable from "@/components/device/DeviceListTable.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
+import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
 
+const appStore = useAppStore();
 const deviceStore = useDeviceStore();
 const protocolStore = useProtocolStore();
 const statusVisible = ref(false);
@@ -76,7 +78,11 @@ interface LocalDeviceBundle {
   points?: never[];
 }
 
-function openLocalEditor(bundle: LocalDeviceBundle | null = null) {
+async function openLocalEditor(bundle: LocalDeviceBundle | null = null) {
+  await appStore.initialize();
+  if (protocolStore.protocols.length === 0) {
+    await protocolStore.refresh();
+  }
   localEditingBundle.value = bundle;
   localEditorVisible.value = true;
 }
@@ -84,7 +90,7 @@ function openLocalEditor(bundle: LocalDeviceBundle | null = null) {
 async function editLocalDevice(deviceId: string) {
   try {
     const response = await getLocalDevice(deviceId);
-    openLocalEditor(normalizeLocalBundle(response));
+    await openLocalEditor(normalizeLocalBundle(response));
   } catch (error) {
     deviceStore.error = error instanceof Error ? error.message : "本地设备加载失败";
   }
@@ -142,6 +148,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 onMounted(async () => {
+  await appStore.initialize();
   await Promise.allSettled([
     deviceStore.refresh(),
     protocolStore.refresh()

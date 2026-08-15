@@ -147,8 +147,9 @@ import { ElMessage } from "element-plus";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
 import { startLocalDevice } from "@/api/device.api";
+import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
-import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, setPathValue, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
+import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, setPathValue, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import { buildLocalDevicePayload, DEFAULT_ADAPTIVE_CONFIG, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig } from "./local-device-utils";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig, ProtocolSchema } from "@/types/protocol";
@@ -181,6 +182,7 @@ const overwrite = ref(false);
 const startAfterSave = ref(false);
 const connectionModel = ref<ProtocolFormModel>({});
 const connectionErrors = ref<string[]>([]);
+const protocolDetails = ref<Record<string, ProtocolSchema>>({});
 const points = ref<DataPoint[]>([]);
 const selectedPointIndex = ref(0);
 const pointKeyword = ref("");
@@ -191,7 +193,7 @@ const adaptive = reactive<AdaptiveConfig>({ ...DEFAULT_ADAPTIVE_CONFIG });
 const cloudTarget = reactive<CloudTargetConfig>({ enabled: false, deviceType: "SUB_DEVICE", topologyEnabled: true });
 
 const visibleProtocols = computed(() => props.protocols.filter((item) => item.protocol));
-const protocolSchema = computed(() => props.protocols.find((item) => item.protocol === protocol.value) || null);
+const protocolSchema = computed(() => protocolDetails.value[protocol.value] || props.protocols.find((item) => item.protocol === protocol.value) || null);
 const connectionFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.connectionFields || []);
 const pointFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.pointFields || []);
 const pointDataTypes = computed(() => protocolSchema.value?.dataTypes?.length ? protocolSchema.value.dataTypes : ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"]);
@@ -232,13 +234,50 @@ function reset(bundle: LocalDeviceBundle | null = null) {
   connectionModel.value = connectionFields.value.length ? extractProtocolModel(connectionFields.value, connection as ConnectionPayload) : buildProtocolInitialModel(connectionFields.value);
   syncSelectedPointAdditional();
   syncJsonFromPoints();
+  void ensureProtocolSchema(protocol.value);
 }
 
 function onProtocolChanged() {
-  connectionModel.value = buildProtocolInitialModel(connectionFields.value);
+  connectionModel.value = {};
   points.value = normalizeInitialPoints(points.value, deviceId.value, protocol.value);
   syncSelectedPointAdditional();
   syncJsonFromPoints();
+  void ensureProtocolSchema(protocol.value);
+}
+
+async function ensureProtocolSchema(protocolCode: string) {
+  const normalizedProtocol = protocolCode.trim();
+  if (!normalizedProtocol) {
+    return;
+  }
+  const existing = protocolDetails.value[normalizedProtocol] || props.protocols.find((item) => item.protocol === normalizedProtocol);
+  if (hasRenderableProtocolFields(existing)) {
+    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: existing };
+    connectionModel.value = {
+      ...buildProtocolInitialModel(existing.connectionFields || []),
+      ...connectionModel.value
+    };
+    return;
+  }
+  try {
+    const detail = await getProtocol(normalizedProtocol);
+    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: detail };
+    if (protocol.value === normalizedProtocol) {
+      connectionModel.value = {
+        ...buildProtocolInitialModel(detail.connectionFields || []),
+        ...connectionModel.value
+      };
+      points.value = normalizeInitialPoints(points.value, deviceId.value, normalizedProtocol);
+      syncSelectedPointAdditional();
+      syncJsonFromPoints();
+    }
+  } catch (caught) {
+    error.value = caught instanceof Error ? `协议字段加载失败：${caught.message}` : "协议字段加载失败";
+  }
+}
+
+function hasRenderableProtocolFields(schema: ProtocolSchema | null | undefined): schema is ProtocolSchema {
+  return Boolean(schema && ((schema.connectionFields?.length || 0) > 0 || (schema.pointFields?.length || 0) > 0));
 }
 
 function addPoint() {
@@ -337,14 +376,18 @@ function applyPointsJson() {
 
 async function save() {
   error.value = "";
-  const errors = [...validationSummary.value, ...connectionErrors.value];
+  const mergedConnectionModel = {
+    ...buildProtocolInitialModel(connectionFields.value),
+    ...connectionModel.value
+  };
+  const errors = [...validationSummary.value, ...validateProtocolModel(connectionFields.value, mergedConnectionModel)];
   if (errors.length > 0) {
     error.value = errors.join("；");
     return;
   }
   saving.value = true;
   try {
-    const connection = buildConnectionPayload(connectionFields.value, connectionModel.value, { deviceId: deviceId.value, connectionType: protocol.value });
+    const connection = buildConnectionPayload(connectionFields.value, mergedConnectionModel, { deviceId: deviceId.value, connectionType: protocol.value });
     const payload = buildLocalDevicePayload({
       deviceId: deviceId.value,
       deviceName: deviceName.value,
