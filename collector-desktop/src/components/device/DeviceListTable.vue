@@ -3,7 +3,7 @@
     <div class="table-card-header">
       <div>
         <h2>设备列表</h2>
-        <p>来自 `/api/config/devices` 与 `/api/device/runtime` 的配置和运行态</p>
+        <p>展示设备配置、运行状态和本地临时设备操作</p>
       </div>
       <div class="table-actions">
         <el-input v-model="keyword" placeholder="搜索设备名称/编号" clearable :prefix-icon="Search" />

@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">实时数据查询</span>
-        <h2>全局实时数据</h2>
-        <p>接口：GET /api/config/devices、GET /api/data/device/{deviceId}、POST /api/data/device/{deviceId}/reset-adaptive</p>
-      </div>
+      <div></div>
       <div class="table-actions">
         <el-select v-model="selectedDeviceId" placeholder="选择设备" filterable class="compact-select">
           <el-option v-for="device in devices" :key="device.id" :label="device.name" :value="device.id" />

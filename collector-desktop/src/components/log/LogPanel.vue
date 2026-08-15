@@ -3,7 +3,7 @@
     <div class="panel-toolbar">
       <div>
         <h3>{{ deviceId ? '设备运行日志' : '运行日志' }}</h3>
-        <p>日志来自 `/api/ops/logs`，只导出当前已加载的脱敏日志。</p>
+        <p>展示运行日志，支持筛选、自动刷新和导出当前脱敏内容。</p>
       </div>
       <div class="table-actions">
         <el-select v-model="level" placeholder="日志级别" clearable style="width: 120px">

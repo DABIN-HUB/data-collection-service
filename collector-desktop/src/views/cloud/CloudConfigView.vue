@@ -1,7 +1,7 @@
 <template>
   <div class="page-stack cloud-workbench">
     <section class="page-title-row">
-      <div><span class="page-kicker">云平台配置</span><h2>可靠上报链路</h2><p>接口：GET /monitor/report</p></div>
+      <div></div>
       <el-button :loading="loading" @click="load">刷新链路</el-button>
     </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />

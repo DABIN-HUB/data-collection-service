@@ -1,7 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div><span class="page-kicker">设备影子</span><h2>Shadow desired / delta / history</h2><p>接口：GET /api/shadow/{deviceId}、POST/DELETE desired、GET delta/history</p></div>
+      <div></div>
       <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
     </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />

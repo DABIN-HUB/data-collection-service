@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">工作台首页</span>
-        <h2>全局运行总览</h2>
-        <p>{{ runtimeStore.runtimeMessage }}</p>
-      </div>
+      <div></div>
       <el-button type="primary" :loading="loading" @click="refresh">刷新总览</el-button>
     </section>
 
@@ -21,7 +17,7 @@
       <article class="dashboard-card chart-card">
         <div class="card-head">
           <h3>采集速率（点/s）</h3>
-          <span>实时曲线接口下一阶段接入</span>
+          <span>实时曲线下一阶段接入</span>
         </div>
         <div ref="rateChartRef" class="chart-box"></div>
       </article>

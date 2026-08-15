@@ -1,7 +1,7 @@
 <template>
   <div class="page-stack diagnostic-workbench">
     <section class="page-title-row">
-      <div><span class="page-kicker">系统诊断</span><h2>系统实时状态诊断</h2><p>接口：/health、/monitor/system、/monitor/devices、/monitor/cache、/monitor/perf/detail、/monitor/report、/api/config/summary</p></div>
+      <div></div>
       <el-button type="primary" :loading="loading" @click="load">运行完整诊断</el-button>
     </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />

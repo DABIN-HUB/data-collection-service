@@ -1,54 +1,87 @@
 <template>
-  <el-dialog :model-value="modelValue" :title="editingDeviceId ? '编辑本地临时设备' : '新增本地临时设备'" width="1180px" class="local-device-editor-dialog" destroy-on-close @update:model-value="close">
-    <div class="local-editor-layout">
-      <aside class="local-editor-sidebar">
-        <el-steps direction="vertical" :active="activeStep" finish-status="success">
-          <el-step title="基础连接" description="设备身份、协议和连接参数" />
-          <el-step title="点位建模" description="点位列表和协议扩展字段" />
-          <el-step title="云平台上报" description="设备云目标和点位上报字段" />
-          <el-step title="JSON 高级" description="直接编辑点位 JSON" />
-        </el-steps>
-        <ul class="local-editor-checks">
-          <li v-for="item in validationSummary" :key="item">{{ item }}</li>
-          <li v-if="validationSummary.length === 0" class="is-ok">必填配置已完成</li>
-        </ul>
-      </aside>
+  <el-dialog
+    :model-value="modelValue"
+    width="min(1280px, calc(100vw - 32px))"
+    class="local-device-editor-dialog local-device-editor-exact"
+    destroy-on-close
+    @update:model-value="close"
+  >
+    <div class="local-editor-shell">
+      <header class="local-editor-title">
+        <div>
+          <span class="label-chip">配置编辑器</span>
+          <h3>{{ editingDeviceId ? '编辑本地临时设备' : '新增本地临时设备' }}</h3>
+          <p>创建并配置新的工业协议采集终端，本地临时设备只写入当前采集服务。</p>
+        </div>
+        <div class="local-editor-title-actions">
+          <div class="local-editor-stat">
+            <strong>{{ currentProtocolTitle }}</strong>
+            <span>当前协议</span>
+          </div>
+          <div class="local-editor-stat">
+            <strong>{{ points.length }}</strong>
+            <span>点位数</span>
+          </div>
+          <div class="local-editor-stat">
+            <strong>{{ validationTitle }}</strong>
+            <span>配置状态</span>
+          </div>
+        </div>
+      </header>
 
-      <main class="local-editor-main">
+      <nav class="local-editor-tabs" aria-label="新增设备配置分区">
+        <button
+          v-for="(step, index) in localEditorSteps"
+          :key="step.key"
+          type="button"
+          class="local-editor-tab"
+          :class="{ 'is-active': activeStep === index, 'is-complete': activeStep > index }"
+          @click="activeStep = index"
+        >
+          <span>{{ step.no }}</span>
+          <strong>{{ step.label }}</strong>
+          <small>{{ step.desc }}</small>
+        </button>
+      </nav>
+
+      <main class="local-editor-body">
         <el-alert v-if="error" :title="error" type="warning" :closable="false" />
 
-        <section v-show="activeStep === 0" class="local-editor-pane">
-          <div class="local-editor-section-head">
-            <h3>基础连接</h3>
-            <p>本地临时设备仅写入当前采集服务，不回写远端配置源。</p>
-          </div>
-          <div class="modao-form-grid">
-            <label>设备 ID<el-input v-model="deviceId" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" /></label>
-            <label>设备名称<el-input v-model="deviceName" placeholder="本地调试设备" /></label>
-            <label>协议<el-select v-model="protocol" filterable @change="onProtocolChanged"><el-option v-for="item in visibleProtocols" :key="item.protocol" :label="`${item.title || item.protocol} (${item.protocol})`" :value="item.protocol" /></el-select></label>
-            <label>基础采集周期 ms<el-input-number v-model="adaptive.baseCollectionInterval" :min="100" :step="100" /></label>
-            <label>最小采集周期 ms<el-input-number v-model="adaptive.minCollectionInterval" :min="100" :step="100" /></label>
-            <label>最大采集周期 ms<el-input-number v-model="adaptive.maxCollectionInterval" :min="100" :step="100" /></label>
-            <label>点位变化阈值<el-input-number v-model="adaptive.pointChangeThreshold" :min="0" :step="0.01" /></label>
-            <label>保存选项
-              <div class="inline-switches">
-                <el-checkbox v-model="overwrite">覆盖已有本地设备</el-checkbox>
-                <el-checkbox v-model="startAfterSave">保存后本地启动</el-checkbox>
-              </div>
-            </label>
-          </div>
-          <div class="local-connection-card">
-            <div class="local-editor-section-head compact">
-              <h4>协议连接字段</h4>
-              <span>来源：/api/protocols/{{ protocol }}</span>
+        <section v-show="activeStep === 0" class="local-editor-pane local-section-card">
+          <div class="local-section-head">
+            <div>
+              <span class="label-chip">基础连接</span>
+              <h3>设备基础与连接参数配置</h3>
+              <p>填写设备身份、协议类型、采集周期和协议连接字段。</p>
             </div>
-            <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
+          </div>
+          <div class="local-setup-cluster">
+            <div class="modao-form-grid local-summary-grid">
+              <label>设备 ID<el-input v-model="deviceId" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" /></label>
+              <label>设备名称<el-input v-model="deviceName" placeholder="本地调试设备" /></label>
+              <label>协议<el-select v-model="protocol" filterable @change="onProtocolChanged"><el-option v-for="item in visibleProtocols" :key="item.protocol" :label="`${item.title || item.protocol} (${item.protocol})`" :value="item.protocol" /></el-select></label>
+              <label>基础采集周期 ms<el-input-number v-model="adaptive.baseCollectionInterval" :min="100" :step="100" /></label>
+              <label>最小采集周期 ms<el-input-number v-model="adaptive.minCollectionInterval" :min="100" :step="100" /></label>
+              <label>最大采集周期 ms<el-input-number v-model="adaptive.maxCollectionInterval" :min="100" :step="100" /></label>
+              <label>点位变化阈值<el-input-number v-model="adaptive.pointChangeThreshold" :min="0" :step="0.01" /></label>
+            </div>
+            <div class="local-connection-card">
+              <div class="local-editor-section-head compact">
+                <h4>协议连接字段</h4>
+                <span>根据所选协议动态渲染连接参数，字段保存位置由协议 Schema 决定。</span>
+              </div>
+              <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
+            </div>
           </div>
         </section>
 
-        <section v-show="activeStep === 1" class="local-editor-pane">
-          <div class="local-editor-section-head">
-            <h3>点位建模</h3>
+        <section v-show="activeStep === 1" class="local-editor-pane local-section-card">
+          <div class="local-section-head point-editor-head">
+            <div>
+              <span class="label-chip">点位建模</span>
+              <h3>本地点位列表</h3>
+              <p>定义采集点位、数据类型、地址和协议扩展字段。</p>
+            </div>
             <div class="table-actions">
               <el-input v-model="pointKeyword" placeholder="搜索点位" clearable />
               <el-button @click="addPoint">新增点位</el-button>
@@ -56,49 +89,64 @@
               <el-button type="danger" plain :disabled="selectedPointIndex < 0" @click="removePoint">删除点位</el-button>
             </div>
           </div>
-          <el-table :data="filteredPoints" height="280" border highlight-current-row @row-click="selectPoint">
-            <el-table-column prop="pointCode" label="点位编码" width="150" />
-            <el-table-column prop="pointName" label="点位名称" min-width="170" />
-            <el-table-column prop="address" label="地址" min-width="160" />
-            <el-table-column prop="dataType" label="数据类型" width="120" />
-            <el-table-column prop="readWrite" label="读写" width="90" />
-            <el-table-column prop="collectionMode" label="采集模式" width="130" />
-          </el-table>
-          <div v-if="selectedPoint" class="point-detail-grid">
-            <label>点位编码<el-input v-model="selectedPoint.pointCode" @change="syncJsonFromPoints" /></label>
-            <label>点位名称<el-input v-model="selectedPoint.pointName" @change="syncJsonFromPoints" /></label>
-            <label>地址<el-input v-model="selectedPoint.address" @change="syncJsonFromPoints" /></label>
-            <label>数据类型<el-select v-model="selectedPoint.dataType" filterable @change="syncJsonFromPoints"><el-option v-for="type in pointDataTypes" :key="type" :label="type" :value="type" /></el-select></label>
-            <label>读写类型<el-select v-model="selectedPoint.readWrite" @change="syncJsonFromPoints"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></label>
-            <label>采集模式<el-select v-model="selectedPoint.collectionMode" @change="syncJsonFromPoints"><el-option label="轮询" value="POLLING" /><el-option label="订阅" value="SUBSCRIPTION" /><el-option label="事件" value="EVENT" /></el-select></label>
-            <label>单位<el-input v-model="selectedPoint.unit" @change="syncJsonFromPoints" /></label>
-            <label>备注<el-input v-model="selectedPoint.remark" @change="syncJsonFromPoints" /></label>
-          </div>
-          <div v-if="selectedPoint && pointFields.length" class="local-connection-card">
-            <div class="local-editor-section-head compact">
-              <h4>协议点位扩展字段</h4>
-              <span>写入 selectedPoint.additionalConfig</span>
-            </div>
-            <div class="protocol-form-grid">
-              <el-form-item v-for="field in pointFields" :key="field.name" :label="field.label || field.name" :required="field.required">
-                <el-switch v-if="field.type === 'boolean'" v-model="selectedPointAdditional[field.name]" @change="applyPointExtra" />
-                <el-select v-else-if="field.options?.length" v-model="selectedPointAdditional[field.name]" clearable filterable @change="applyPointExtra">
-                  <el-option v-for="option in field.options" :key="option" :label="option" :value="option" />
-                </el-select>
-                <el-input-number v-else-if="field.type === 'number' || field.type === 'integer'" v-model="selectedPointAdditional[field.name]" controls-position="right" @change="applyPointExtra" />
-                <el-input v-else v-model="selectedPointAdditional[field.name]" @change="applyPointExtra" />
-                <small v-if="field.description" class="field-description">{{ field.description }}</small>
-              </el-form-item>
-            </div>
+          <div class="local-point-workspace">
+            <section class="point-list-panel">
+              <el-table :data="filteredPoints" height="330" border highlight-current-row @row-click="selectPoint">
+                <el-table-column prop="pointCode" label="点位编码" width="150" />
+                <el-table-column prop="pointName" label="点位名称" min-width="170" />
+                <el-table-column prop="address" label="地址" min-width="160" />
+                <el-table-column prop="dataType" label="数据类型" width="120" />
+                <el-table-column prop="readWrite" label="读写" width="90" />
+                <el-table-column prop="collectionMode" label="采集模式" width="130" />
+              </el-table>
+            </section>
+            <section v-if="selectedPoint" class="point-detail-panel">
+              <div class="point-detail-head">
+                <div>
+                  <h3>当前点位详情</h3>
+                  <p>{{ selectedPoint.pointCode || '-' }} · {{ selectedPoint.pointName || '-' }}</p>
+                </div>
+              </div>
+              <div class="point-detail-grid">
+                <label>点位编码<el-input v-model="selectedPoint.pointCode" @change="syncJsonFromPoints" /></label>
+                <label>点位名称<el-input v-model="selectedPoint.pointName" @change="syncJsonFromPoints" /></label>
+                <label>地址<el-input v-model="selectedPoint.address" @change="syncJsonFromPoints" /></label>
+                <label>数据类型<el-select v-model="selectedPoint.dataType" filterable @change="syncJsonFromPoints"><el-option v-for="type in pointDataTypes" :key="type" :label="type" :value="type" /></el-select></label>
+                <label>读写类型<el-select v-model="selectedPoint.readWrite" @change="syncJsonFromPoints"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></label>
+                <label>采集模式<el-select v-model="selectedPoint.collectionMode" @change="syncJsonFromPoints"><el-option label="轮询" value="POLLING" /><el-option label="订阅" value="SUBSCRIPTION" /><el-option label="事件" value="EVENT" /></el-select></label>
+                <label>单位<el-input v-model="selectedPoint.unit" @change="syncJsonFromPoints" /></label>
+                <label>备注<el-input v-model="selectedPoint.remark" @change="syncJsonFromPoints" /></label>
+              </div>
+              <div v-if="pointFields.length" class="local-connection-card">
+                <div class="local-editor-section-head compact">
+                  <h4>协议点位扩展字段</h4>
+                  <span>写入当前点位 additionalConfig。</span>
+                </div>
+                <div class="protocol-form-grid">
+                  <el-form-item v-for="field in pointFields" :key="field.name" :label="field.label || field.name" :required="field.required">
+                    <el-switch v-if="field.type === 'boolean'" v-model="selectedPointAdditional[field.name]" @change="applyPointExtra" />
+                    <el-select v-else-if="field.options?.length" v-model="selectedPointAdditional[field.name]" clearable filterable @change="applyPointExtra">
+                      <el-option v-for="option in field.options" :key="option" :label="option" :value="option" />
+                    </el-select>
+                    <el-input-number v-else-if="field.type === 'number' || field.type === 'integer'" v-model="selectedPointAdditional[field.name]" controls-position="right" @change="applyPointExtra" />
+                    <el-input v-else v-model="selectedPointAdditional[field.name]" @change="applyPointExtra" />
+                    <small v-if="field.description" class="field-description">{{ field.description }}</small>
+                  </el-form-item>
+                </div>
+              </div>
+            </section>
           </div>
         </section>
 
-        <section v-show="activeStep === 2" class="local-editor-pane">
-          <div class="local-editor-section-head">
-            <h3>云平台上报</h3>
-            <p>本地 deviceId 不变，云身份只作为 cloudTarget/point reportField 存储。</p>
+        <section v-show="activeStep === 2" class="local-editor-pane local-section-card">
+          <div class="local-section-head">
+            <div>
+              <span class="label-chip">云平台上报</span>
+              <h3>云端映射与数据上报</h3>
+              <p>本地 deviceId 不变，云身份只作为上报目标配置保存。</p>
+            </div>
           </div>
-          <div class="modao-form-grid">
+          <div class="modao-form-grid local-summary-grid">
             <label>启用云上报<el-switch v-model="cloudTarget.enabled" /></label>
             <label>设备类型<el-select v-model="cloudTarget.deviceType"><el-option label="子设备" value="SUB_DEVICE" /><el-option label="网关" value="GATEWAY" /><el-option label="直连设备" value="DIRECT_DEVICE" /></el-select></label>
             <label>productKey<el-input v-model="cloudTarget.productKey" placeholder="云端产品标识" /></label>
@@ -106,7 +154,7 @@
             <label>拓扑关系<el-switch v-model="cloudTarget.topologyEnabled" /></label>
             <label>Topic 预览<el-input :model-value="cloudTopicPreview" readonly /></label>
           </div>
-          <el-table :data="points" height="300" border>
+          <el-table :data="points" height="330" border>
             <el-table-column prop="pointCode" label="点位编码" width="150" />
             <el-table-column label="启用上报" width="120"><template #default="{ row }"><el-switch v-model="row.additionalConfig.reportEnabled" /></template></el-table-column>
             <el-table-column label="reportField" min-width="180"><template #default="{ row }"><el-input v-model="row.additionalConfig.reportField" /></template></el-table-column>
@@ -116,9 +164,13 @@
           </el-table>
         </section>
 
-        <section v-show="activeStep === 3" class="local-editor-pane">
-          <div class="local-editor-section-head">
-            <h3>JSON 高级</h3>
+        <section v-show="activeStep === 3" class="local-editor-pane local-section-card">
+          <div class="local-section-head">
+            <div>
+              <span class="label-chip">JSON 高级</span>
+              <h3>高级配置与自定义扩展</h3>
+              <p>直接编辑 points 数组，设备基础信息和连接字段仍由表单生成。</p>
+            </div>
             <div class="table-actions">
               <el-button @click="formatPointsJson">格式化 JSON</el-button>
               <el-button type="primary" plain @click="applyPointsJson">应用到点位列表</el-button>
@@ -128,16 +180,20 @@
           <textarea v-model="pointsJson" class="json-editor-textarea" spellcheck="false"></textarea>
         </section>
       </main>
-    </div>
 
-    <template #footer>
-      <div class="local-editor-footer">
-        <el-button @click="close(false)">取消</el-button>
-        <el-button :disabled="activeStep === 0" @click="activeStep -= 1">上一步</el-button>
-        <el-button :disabled="activeStep === 3" @click="activeStep += 1">下一步</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存本地设备</el-button>
-      </div>
-    </template>
+      <footer class="local-editor-footer">
+        <div class="local-options">
+          <el-checkbox v-model="overwrite">覆盖已有本地临时设备</el-checkbox>
+          <el-checkbox v-model="startAfterSave">保存后立即本地启动</el-checkbox>
+        </div>
+        <div class="local-step-actions">
+          <el-button @click="close(false)">取消</el-button>
+          <el-button :disabled="activeStep === 0" @click="activeStep -= 1">上一步</el-button>
+          <el-button :disabled="activeStep === 3" @click="activeStep += 1">下一步</el-button>
+          <el-button type="primary" :loading="saving" @click="save">保存本地设备</el-button>
+        </div>
+      </footer>
+    </div>
   </el-dialog>
 </template>
 
@@ -171,6 +227,13 @@ const emit = defineEmits<{
   saved: [deviceId: string];
 }>();
 
+const localEditorSteps = [
+  { key: "setup", no: "01", label: "基础连接", desc: "设备基础与连接参数配置" },
+  { key: "points", no: "02", label: "点位建模", desc: "采集点位定义与建模" },
+  { key: "cloud", no: "03", label: "云平台上报", desc: "云端映射与数据上报" },
+  { key: "json", no: "04", label: "JSON 高级", desc: "高级配置与自定义扩展" }
+] as const;
+
 const activeStep = ref(0);
 const saving = ref(false);
 const error = ref("");
@@ -197,6 +260,7 @@ const protocolSchema = computed(() => protocolDetails.value[protocol.value] || p
 const connectionFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.connectionFields || []);
 const pointFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.pointFields || []);
 const pointDataTypes = computed(() => protocolSchema.value?.dataTypes?.length ? protocolSchema.value.dataTypes : ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"]);
+const currentProtocolTitle = computed(() => protocolSchema.value?.title ? `${protocolSchema.value.title} (${protocol.value})` : protocol.value);
 const filteredPoints = computed(() => {
   const keyword = pointKeyword.value.trim().toLowerCase();
   if (!keyword) {
@@ -209,6 +273,9 @@ const cloudTopicPreview = computed(() => cloudTarget.enabled && cloudTarget.prod
   ? `/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`
   : "未启用云上报或云身份不完整");
 const validationSummary = computed(() => validateLocalDeviceDraft({ deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value, points: points.value, cloudTarget: { ...cloudTarget } }));
+const validationTitle = computed(() => validationSummary.value.length === 0 && connectionErrors.value.length === 0
+  ? "必填配置已完成"
+  : `待完善 ${validationSummary.value.length + connectionErrors.value.length} 项`);
 
 function reset(bundle: LocalDeviceBundle | null = null) {
   activeStep.value = 0;

@@ -14,8 +14,8 @@
           <el-form-item label="服务地址">
             <el-input v-model="serverUrl" placeholder="http://127.0.0.1:9090/collector" />
           </el-form-item>
-          <el-form-item label="接口访问令牌">
-            <el-input v-model="token" type="password" show-password placeholder="请输入 X-Collector-Token" />
+          <el-form-item label="访问令牌">
+            <el-input v-model="token" type="password" show-password placeholder="请输入访问令牌" />
           </el-form-item>
           <div class="login-options">
             <el-checkbox v-model="rememberToken">记住令牌</el-checkbox>

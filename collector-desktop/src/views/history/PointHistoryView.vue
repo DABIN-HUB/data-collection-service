@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">历史数据</span>
-        <h2>点位历史趋势</h2>
-        <p>接口：GET /api/config/devices、GET /api/config/device/{deviceId}/points、GET /api/data/history/device/{deviceId}/point/{pointId}</p>
-      </div>
+      <div></div>
       <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
     </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
@@ -30,7 +26,7 @@
     </section>
 
     <section class="exact-table-card">
-      <div class="exact-table-title"><h3>原始历史数据</h3><span>来自后端历史查询接口</span></div>
+      <div class="exact-table-title"><h3>原始历史数据</h3><span>来自后端历史查询结果</span></div>
       <el-table :data="historyRows" border height="340">
         <el-table-column label="时间" min-width="180"><template #default="{ row }">{{ formatTime(row.timestamp || row.time || row.collectTime) }}</template></el-table-column>
         <el-table-column label="值" min-width="140"><template #default="{ row }">{{ row.value ?? row.currentValue ?? '-' }}</template></el-table-column>

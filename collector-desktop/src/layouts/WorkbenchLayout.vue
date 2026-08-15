@@ -1,5 +1,5 @@
 <template>
-  <div class="workbench-shell industrial-shell">
+  <div class="workbench-shell industrial-shell" :class="{ 'without-resource-panel': !showResourcePanel }">
     <aside class="primary-sidebar">
       <div class="brand-block">
         <div class="brand-mark">
@@ -7,7 +7,6 @@
         </div>
         <div class="brand-copy">
           <strong>数据采集工作台</strong>
-          <span>Industrial Collector Suite</span>
         </div>
       </div>
 
@@ -28,7 +27,7 @@
           <section v-for="group in navigationGroups" :key="group.title" class="nav-group">
             <div class="nav-group-title">
               <span>{{ group.title }}</span>
-              <em>{{ group.caption }}</em>
+              <em v-if="group.caption">{{ group.caption }}</em>
             </div>
             <router-link
               v-for="item in group.items"
@@ -80,10 +79,9 @@
       </div>
     </header>
 
-    <aside class="resource-panel">
+    <aside v-if="showResourcePanel" class="resource-panel">
       <div class="resource-title">
         <div>
-          <span>RESOURCE EXPLORER</span>
           <strong>设备资源</strong>
         </div>
         <el-button :icon="Refresh" text circle :loading="deviceStore.loading" @click="refreshAll" />
@@ -149,7 +147,7 @@ const runtimeStore = useRuntimeStore();
 const navigationGroups: NavGroup[] = [
   {
     title: "运行监控",
-    caption: "RUN",
+    caption: "",
     items: [
       { to: "/dashboard", label: "控制台总览", desc: "全局健康、风险和吞吐", icon: Monitor },
       { to: "/realtime", label: "实时数据", desc: "设备点位当前值", icon: DataAnalysis },
@@ -159,7 +157,7 @@ const navigationGroups: NavGroup[] = [
   },
   {
     title: "配置建模",
-    caption: "CONFIG",
+    caption: "",
     items: [
       { to: "/device", label: "设备工作台", desc: "设备、连接、点位一体化", icon: Grid, badge: "核心" },
       { to: "/collect", label: "采集配置", desc: "配置摘要和原始结构", icon: Files },
@@ -168,7 +166,7 @@ const navigationGroups: NavGroup[] = [
   },
   {
     title: "诊断运维",
-    caption: "OPS",
+    caption: "",
     items: [
       { to: "/diagnostic", label: "系统诊断", desc: "模块健康和处置建议", icon: Operation },
       { to: "/log", label: "运行日志", desc: "日志过滤和导出", icon: Document },
@@ -177,7 +175,7 @@ const navigationGroups: NavGroup[] = [
   },
   {
     title: "控制工具",
-    caption: "TOOLS",
+    caption: "",
     items: [
       { to: "/control", label: "手动控制", desc: "写点、批量写入、命令", icon: SetUp },
       { to: "/shadow", label: "设备影子", desc: "reported、desired、delta", icon: Guide }
@@ -194,6 +192,8 @@ const currentPage = computed(() => {
     group: "工作台"
   };
 });
+
+const showResourcePanel = computed(() => route.name === "device");
 
 async function refreshAll() {
   await Promise.allSettled([

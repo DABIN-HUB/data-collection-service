@@ -24,7 +24,7 @@
           <div class="connection-test-card">
             <div>
               <h3>连接测试</h3>
-              <p>第一阶段复用设备启动/停止与运行态接口，后续可替换为独立连接校验接口。</p>
+              <p>当前通过启动、停止和运行态结果辅助判断连接状态，后续可替换为独立连接校验能力。</p>
             </div>
             <div class="header-actions">
               <el-button type="primary" @click="$emit('start', device.normalizedId)">启动采集</el-button>
@@ -38,7 +38,7 @@
             <div class="schema-head">
               <div>
                 <h3>协议 Schema 动态表单</h3>
-                <p>字段来源：`/api/protocols/{{ protocolKey }}`，保存时按字段 storage 写入 topLevel 或 extJson。</p>
+                <p>字段由后端协议 Schema 动态生成，保存时按字段定义写入连接配置。</p>
               </div>
               <div class="schema-toolbar">
                 <el-button :loading="protocolLoading" @click="loadProtocolConfig">读取连接配置</el-button>

@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">手动控制</span>
-        <h2>写点与协议命令</h2>
-        <p>接口：POST /api/control/device/{deviceId}/point/{pointRef}、/points、/command</p>
-      </div>
+      <div></div>
       <el-button :loading="deviceLoading" @click="loadDevices">刷新设备</el-button>
     </section>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />

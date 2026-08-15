@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">采集配置</span>
-        <h2>协议与配置治理</h2>
-        <p>接口：GET /api/protocols、GET /api/config/summary、GET /api/config/export、POST /api/config/import</p>
-      </div>
+      <div></div>
       <div class="table-actions">
         <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button @click="exportConfig">导出配置</el-button>

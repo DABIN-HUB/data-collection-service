@@ -1,11 +1,7 @@
 <template>
   <div class="page-stack device-workbench">
     <section class="page-title-row">
-      <div>
-        <span class="page-kicker">设备管理</span>
-        <h2>设备配置工作区</h2>
-        <p>左侧设备树选择设备，右侧进行基本配置、协议配置和点位配置。</p>
-      </div>
+      <div></div>
       <div class="header-actions">
         <el-button :loading="deviceStore.loading" @click="deviceStore.refresh()">刷新</el-button>
         <el-button :loading="deviceStore.operating" @click="deviceStore.syncConfig()">同步远端配置</el-button>
