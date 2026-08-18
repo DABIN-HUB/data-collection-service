@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from "vue-router";
 
-import WorkbenchLayout from "@/layouts/WorkbenchLayout.vue";
+import LegacyConsoleView from "@/views/legacy/LegacyConsoleView.vue";
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
   {
@@ -10,21 +10,22 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
   },
   {
     path: "/",
-    component: WorkbenchLayout,
+    component: LegacyConsoleView,
     children: [
       { path: "", redirect: "/dashboard" },
-      { path: "dashboard", name: "dashboard", component: () => import("@/views/dashboard/DashboardView.vue") },
-      { path: "realtime", name: "realtime", component: () => import("@/views/realtime/RealtimeQueryView.vue") },
-      { path: "history", name: "history", component: () => import("@/views/history/PointHistoryView.vue") },
-      { path: "alarm", name: "alarm", component: () => import("@/views/alarm/AlarmManagementView.vue") },
-      { path: "device", name: "device", component: () => import("@/views/device/DeviceWorkbenchView.vue") },
-      { path: "collect", name: "collect", component: () => import("@/views/collect/CollectConfigView.vue") },
-      { path: "cloud", name: "cloud", component: () => import("@/views/cloud/CloudConfigView.vue") },
-      { path: "diagnostic", name: "diagnostic", component: () => import("@/views/diagnostic/SystemDiagnosticView.vue") },
-      { path: "log", name: "log", component: () => import("@/views/log/RuntimeLogView.vue") },
-      { path: "network", name: "network", component: () => import("@/views/network/NetworkDiagnosticView.vue") },
-      { path: "control", name: "control", component: () => import("@/views/control/ManualControlView.vue") },
-      { path: "shadow", name: "shadow", component: () => import("@/views/shadow/DeviceShadowView.vue") }
+      { path: "dashboard", name: "dashboard", component: LegacyConsoleView },
+      { path: "realtime", name: "realtime", component: LegacyConsoleView },
+      { path: "history", name: "history", component: LegacyConsoleView },
+      { path: "alarm", name: "alarm", component: LegacyConsoleView },
+      { path: "device", name: "device", component: LegacyConsoleView },
+      { path: "collect", name: "collect", component: LegacyConsoleView },
+      { path: "cloud", name: "cloud", component: LegacyConsoleView },
+      { path: "diagnostic", name: "diagnostic", component: LegacyConsoleView },
+      { path: "log", name: "log", component: LegacyConsoleView },
+      { path: "network", name: "network", component: LegacyConsoleView },
+      { path: "control", name: "control", component: LegacyConsoleView },
+      { path: "shadow", name: "shadow", component: LegacyConsoleView }
     ]
-  }
+  },
+  { path: "/:pathMatch(.*)*", redirect: "/" }
 ];

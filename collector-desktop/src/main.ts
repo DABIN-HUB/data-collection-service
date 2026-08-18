@@ -1,6 +1,7 @@
 import "element-plus/dist/index.css";
 import "@/styles/global.css";
 import "@/styles/workbench.css";
+import "@/styles/legacy-console.css";
 
 import * as ElementPlusIconsVue from "@element-plus/icons-vue";
 import ElementPlus from "element-plus";
