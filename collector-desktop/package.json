@@ -1,0 +1,71 @@
+{
+  "name": "collector-desktop",
+  "version": "0.1.0",
+  "description": "数据采集工作台桌面客户端",
+  "author": "data-collection-service",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "dist/electron/main/main.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "test": "vitest run",
+    "smoke:backend": "node scripts/backend-smoke.mjs",
+    "smoke:device": "node scripts/device-smoke.mjs",
+    "smoke:modbus": "node scripts/modbus-smoke.mjs",
+    "smoke:extended": "node scripts/extended-smoke.mjs",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.node.json",
+    "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "build": "vue-tsc --noEmit && npm run build:renderer && npm run build:electron",
+    "electron:serve": "wait-on tcp:5173 && npm run build:electron && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "electron:dev": "concurrently -k \"npm:dev\" \"npm:electron:serve\"",
+    "electron:preview": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.7.9",
+    "echarts": "^5.6.0",
+    "element-plus": "^2.9.3",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "vite": "^6.0.7",
+    "vue-tsc": "^2.2.0",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.wangbin.collector.desktop",
+    "productName": "数据采集工作台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis",
+      "artifactName": "collector-desktop-${version}-${arch}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  }
+}

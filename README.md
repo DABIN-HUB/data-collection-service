@@ -1514,7 +1514,10 @@ Slave 显示的保持寄存器 `4001` 到 `4010`，在控制台点位地址中�
 
 ## License
 
-This project is licensed under the Apache License 2.0.
+本项目自有代码基于 MIT License 授权。
 
-- Full text: [LICENSE](LICENSE)
-- Official site: https://www.apache.org/licenses/LICENSE-2.0
+项目引用的第三方 jar 包、前端依赖、构建工具、运行时组件和其他第三方材料不属于本项目 MIT 授权范围，分别遵循其原作者或权利人的许可证。
+
+- 完整许可证文本：[LICENSE](LICENSE)
+- 第三方依赖许可证说明：[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+- MIT 官方说明：https://opensource.org/license/mit
