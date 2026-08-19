@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "数据采集工作台桌面客户端",
   "author": "data-collection-service",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "dist/electron/main/main.js",
