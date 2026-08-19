@@ -176,7 +176,7 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - `IEC104`
 - `DLT645_2007`（实验性）
 - `IEC101`（实验性非平衡控制站）
-- `IEC61850`
+- `IEC61850`（MMS 客户端基础能力，需 IED / MMS Server 联调）
 - `MQTT`
 - `SNMP`
 - `COAP`
@@ -210,8 +210,8 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - `BACnet`：已覆盖 `IP`、`MS/TP`、`SC` 三类接入形态，支持读写与订阅；其中 `BACNET_SC` 当前按实验性能力提供
 - `IEC104`：支持常用遥信/遥测/电度读取、读命令、总召唤、单点召唤、常用遥控/设点和突发上送；文件传输、参数命令、保护事件等完整标准高级能力未承诺
 - `DLT645_2007`：支持串口多表、数据读取、后续帧、BCD 等值解析和受控写入
-- `IEC101`：支持非平衡链路、一级/二级数据、总召唤、时钟同步和遥控
-- `IEC61850`：支持模型加载、读写、报告处理
+- `IEC101`：支持非平衡控制站侧 `FT1.2`、`ASDU`、一级/二级数据轮询、总召唤、电度召唤、读命令、时钟同步和常用遥控/设点；不支持平衡模式、被控站和文件传输，需目标 RTU 实测
+- `IEC61850`：支持基于 `iec61850bean` 的 MMS 客户端连接、`ServerModel` 加载、常见 `BasicDataAttribute` 读写转换、`Select/Operate` 命令入口和 `Report` 回调处理；`RCB/Dataset` 自动配置、复杂结构和完整 IED 互操作需实测
 - `MQTT`：支持主题订阅、发布、消息映射，兼容 `MQTT_SSL`
 - `SNMP`：支持 GET/SET/WALK，兼容 `SNMP_V1` / `SNMP_V2C` / `SNMP_V3`
 - `COAP`：支持 GET/POST/PUT/DELETE/Observe，兼容 `COAP_SSL`
@@ -466,8 +466,8 @@ src/main/java/com/wangbin/collector
 | BACNET_SC | 实验性 | 安全 WebSocket 形态，已接入统一链路 |
 | IEC104 | 已支持（常用能力） | 常用遥信/遥测/电度读取、读命令、总召唤、常用遥控/设点、突发上送；不等同于完整 IEC 60870-5-104 标准能力 |
 | DLT645_2007 | 实验性 | DL/T 645-2007 串口多表、读取、后续帧和受控写入 |
-| IEC101 | 实验性 | 非平衡控制站、FT1.2、一级/二级数据、召唤和遥控 |
-| IEC61850 | 已支持 | 模型加载、读写、报告 |
+| IEC101 | 实验性 | 非平衡控制站 `FT1.2`、`ASDU`、一级/二级数据轮询、总召唤、电度召唤、读命令、时钟同步、常用遥控/设点；需目标 RTU 实测 |
+| IEC61850 | 已支持（MMS 客户端基础能力） | `ServerModel` 加载、常见 BDA 读写转换、`Select/Operate` 入口、`Report` 回调；不等同于完整 IEC 61850 / IED 互操作 |
 | MQTT / MQTT_SSL | 已支持 | 主题映射、订阅、发布 |
 | SNMP / SNMP_V1 / SNMP_V2C / SNMP_V3 | 已支持 | GET/SET/WALK，含 SNMPv3 |
 | COAP / COAP_SSL | 已支持 | GET/POST/PUT/DELETE/Observe |
