@@ -13,6 +13,15 @@
   <name>data-collection-service</name>
   <description>工业数据采集服务</description>
 
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+      <distribution>repo</distribution>
+      <comments>仅适用于本项目自有代码，第三方依赖遵循其原作者许可证。</comments>
+    </license>
+  </licenses>
+
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
