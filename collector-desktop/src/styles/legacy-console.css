@@ -160,6 +160,13 @@ body.modao-exact .legacy-console .brand-mark {
   font-weight: 800;
 }
 
+body.modao-exact .legacy-console .brand-mark img {
+  width: 22px;
+  height: 22px;
+  display: block;
+  filter: brightness(0) invert(1);
+}
+
 body.modao-exact .legacy-console .brand-copy strong {
   display: block;
   overflow: visible;
@@ -236,6 +243,13 @@ body.modao-exact .legacy-console .nav-glyph {
   background: none;
   font-size: 10px;
   font-weight: 700;
+}
+
+body.modao-exact .legacy-console .nav-glyph img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 body.modao-exact .legacy-console .sidebar-bottom {

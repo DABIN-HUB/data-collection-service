@@ -3,7 +3,7 @@
     <aside class="sidebar">
       <div class="sidebar-top">
         <div class="brand">
-          <span class="brand-mark">厂</span>
+          <span class="brand-mark"><img :src="factoryIcon" alt=""></span>
           <div class="brand-copy"><strong>工业数据控制台</strong></div>
         </div>
         <nav class="section-nav" aria-label="控制台主导航">
@@ -16,7 +16,7 @@
               :class="{ 'is-active': activeModule === item.key }"
               @click.prevent="switchModule(item.key)"
             >
-              <span class="nav-glyph" aria-hidden="true">{{ item.icon }}</span><span>{{ item.label }}</span>
+              <span class="nav-glyph" aria-hidden="true"><img :src="item.icon" alt=""></span><span>{{ item.label }}</span>
             </a>
           </div>
         </nav>
@@ -264,13 +264,23 @@ import { useAppStore } from "@/stores/app.store";
 import type { DeviceInfo } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
+import alertCircleIcon from "@/assets/legacy-icons/alert-circle.svg";
+import chartTimelineIcon from "@/assets/legacy-icons/chart-timeline-variant.svg";
+import cloudUploadIcon from "@/assets/legacy-icons/cloud-upload.svg";
+import databaseCogIcon from "@/assets/legacy-icons/database-cog.svg";
+import factoryIcon from "@/assets/legacy-icons/factory.svg";
+import fileDocumentIcon from "@/assets/legacy-icons/file-document-outline.svg";
+import monitorDashboardIcon from "@/assets/legacy-icons/monitor-dashboard.svg";
+import networkOutlineIcon from "@/assets/legacy-icons/network-outline.svg";
+import routerWirelessIcon from "@/assets/legacy-icons/router-wireless.svg";
+import viewDashboardIcon from "@/assets/legacy-icons/view-dashboard.svg";
 
 type ModuleKey = "overview" | "realtime" | "alarm" | "device" | "collect" | "cloud" | "diag" | "log" | "network" | "workbench";
 
 const navGroups: Array<{ title: string; items: Array<{ key: ModuleKey; label: string; icon: string }> }> = [
-  { title: "运行", items: [{ key: "overview", label: "概览", icon: "览" }, { key: "realtime", label: "实时数据", icon: "时" }, { key: "alarm", label: "告警总览", icon: "警" }] },
-  { title: "配置", items: [{ key: "device", label: "设备管理", icon: "设" }, { key: "collect", label: "采集配置", icon: "采" }, { key: "cloud", label: "云平台配置", icon: "云" }] },
-  { title: "诊断", items: [{ key: "diag", label: "系统诊断", icon: "诊" }, { key: "log", label: "日志", icon: "志" }, { key: "network", label: "网络检测", icon: "网" }] }
+  { title: "运行", items: [{ key: "overview", label: "概览", icon: viewDashboardIcon }, { key: "realtime", label: "实时数据", icon: chartTimelineIcon }, { key: "alarm", label: "告警总览", icon: alertCircleIcon }] },
+  { title: "配置", items: [{ key: "device", label: "设备管理", icon: routerWirelessIcon }, { key: "collect", label: "采集配置", icon: databaseCogIcon }, { key: "cloud", label: "云平台配置", icon: cloudUploadIcon }] },
+  { title: "诊断", items: [{ key: "diag", label: "系统诊断", icon: monitorDashboardIcon }, { key: "log", label: "日志", icon: fileDocumentIcon }, { key: "network", label: "网络检测", icon: networkOutlineIcon }] }
 ];
 
 const appStore = useAppStore();
