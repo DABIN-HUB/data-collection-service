@@ -77,25 +77,46 @@
 
           <section v-show="activeStep === 0" class="local-editor-pane" data-local-editor-pane="setup" :class="{ 'is-active': activeStep === 0 }">
             <div class="local-setup-cluster">
-              <section class="local-section-card local-setup-card">
-                <div class="local-section-head">
-                  <div>
-                    <span class="label-chip">设备基础</span>
-                    <h3>设备与调度参数</h3>
+              <div class="local-setup-stable-column">
+                <section class="local-section-card local-setup-card">
+                  <div class="local-section-head">
+                    <div>
+                      <span class="label-chip">设备基础</span>
+                      <h3>设备与调度参数</h3>
+                    </div>
+                    <p>设备标识、协议和采集节奏集中放在这里；切换协议时本卡片保持自然高度。</p>
                   </div>
-                  <p>设备标识、协议和采集节奏集中放在这里，减少来回滚动。</p>
-                </div>
 
-                <div class="modao-form-grid compact-form-grid local-summary-grid">
-                  <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" @change="syncDeviceIdToPoints"></label>
-                  <label>设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
-                  <label><span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span><select id="localProtocolSelect" v-model="protocol" @change="onProtocolChanged"><option v-for="item in visibleProtocols" :key="item.protocol" :value="item.protocol">{{ item.title || item.protocol }} ({{ item.protocol }})</option></select></label>
-                  <label>基础采集周期 (ms)<input id="localCollectionInterval" v-model.number="adaptive.baseCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
-                  <label>最小采集周期 (ms)<input id="localMinCollectionInterval" v-model.number="adaptive.minCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
-                  <label>最大采集周期 (ms)<input id="localMaxCollectionInterval" v-model.number="adaptive.maxCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
-                  <label>点位变化阈值<input id="localPointChangeThreshold" v-model.number="adaptive.pointChangeThreshold" type="number" min="0" step="0.01" @change="syncAdaptiveToPoints"></label>
-                </div>
-              </section>
+                  <div class="modao-form-grid compact-form-grid local-summary-grid">
+                    <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" @change="syncDeviceIdToPoints"></label>
+                    <label>设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
+                    <label><span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span><select id="localProtocolSelect" v-model="protocol" @change="onProtocolChanged"><option v-for="item in visibleProtocols" :key="item.protocol" :value="item.protocol">{{ item.title || item.protocol }} ({{ item.protocol }})</option></select></label>
+                    <label>基础采集周期 (ms)<input id="localCollectionInterval" v-model.number="adaptive.baseCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
+                    <label>最小采集周期 (ms)<input id="localMinCollectionInterval" v-model.number="adaptive.minCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
+                    <label>最大采集周期 (ms)<input id="localMaxCollectionInterval" v-model.number="adaptive.maxCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
+                    <label>点位变化阈值<input id="localPointChangeThreshold" v-model.number="adaptive.pointChangeThreshold" type="number" min="0" step="0.01" @change="syncAdaptiveToPoints"></label>
+                  </div>
+                </section>
+
+                <section class="local-section-card local-cloud-target-card">
+                  <div class="local-section-head">
+                    <div>
+                      <span class="label-chip">云平台身份</span>
+                      <h3>设备级云目标（cloudTarget）</h3>
+                    </div>
+                    <p>这里决定该采集设备上报到哪个云设备；点位只维护云端属性（reportField）。</p>
+                  </div>
+
+                  <div class="modao-form-grid compact-form-grid local-summary-grid">
+                    <label>启用云上报<select id="localCloudEnabled" v-model="cloudTarget.enabled" @change="syncJsonFromPoints"><option :value="false">否</option><option :value="true">是</option></select></label>
+                    <label>云设备类型<select id="localCloudDeviceType" v-model="cloudTarget.deviceType"><option value="SUB_DEVICE">子设备</option><option value="GATEWAY">网关设备</option><option value="DIRECT">直连设备</option><option value="LOGICAL_SUB_DEVICE">逻辑子设备</option></select></label>
+                    <label>云端产品标识（productKey）<input id="localCloudProductKey" v-model="cloudTarget.productKey" type="text" placeholder="pk_xxx"></label>
+                    <label>云端设备名称（deviceName）<input id="localCloudDeviceName" v-model="cloudTarget.deviceName" type="text" placeholder="sub_device_001"></label>
+                    <label>启用拓扑注册<select id="localCloudTopologyEnabled" v-model="cloudTarget.topologyEnabled"><option :value="true">是</option><option :value="false">否</option></select></label>
+                    <label class="wide-field">上报主题示例（Topic）<input id="localCloudTopicPreview" type="text" :value="cloudTopicPreview" readonly></label>
+                  </div>
+                </section>
+              </div>
 
               <section class="local-section-card local-connection-card">
                 <div class="local-section-head">
@@ -103,31 +124,17 @@
                     <span class="label-chip">连接参数</span>
                     <h3>协议对应字段</h3>
                   </div>
-                  <p>切换协议后，这里会自动刷新到对应的连接参数表单。</p>
+                  <div class="local-connection-meta" aria-label="连接参数摘要">
+                    <span>{{ currentProtocolTitle }}</span>
+                    <span>{{ connectionFields.length }} 字段</span>
+                    <span>{{ connectionRequiredCount }} 必填</span>
+                  </div>
+                  <p>切换协议只影响本区域高度；字段较多时在连接参数内部滚动，不再拉伸左侧卡片。</p>
                 </div>
 
                 <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
                   <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
                 </form>
-              </section>
-
-              <section class="local-section-card local-cloud-target-card">
-                <div class="local-section-head">
-                  <div>
-                    <span class="label-chip">云平台身份</span>
-                    <h3>设备级云目标（cloudTarget）</h3>
-                  </div>
-                  <p>这里决定该采集设备上报到哪个云设备；点位只维护云端属性（reportField）。</p>
-                </div>
-
-                <div class="modao-form-grid compact-form-grid local-summary-grid">
-                  <label>启用云上报<select id="localCloudEnabled" v-model="cloudTarget.enabled" @change="syncJsonFromPoints"><option :value="false">否</option><option :value="true">是</option></select></label>
-                  <label>云设备类型<select id="localCloudDeviceType" v-model="cloudTarget.deviceType"><option value="SUB_DEVICE">子设备</option><option value="GATEWAY">网关设备</option><option value="DIRECT">直连设备</option><option value="LOGICAL_SUB_DEVICE">逻辑子设备</option></select></label>
-                  <label>云端产品标识（productKey）<input id="localCloudProductKey" v-model="cloudTarget.productKey" type="text" placeholder="pk_xxx"></label>
-                  <label>云端设备名称（deviceName）<input id="localCloudDeviceName" v-model="cloudTarget.deviceName" type="text" placeholder="sub_device_001"></label>
-                  <label>启用拓扑注册<select id="localCloudTopologyEnabled" v-model="cloudTarget.topologyEnabled"><option :value="true">是</option><option :value="false">否</option></select></label>
-                  <label class="wide-field">上报主题示例（Topic）<input id="localCloudTopicPreview" type="text" :value="cloudTopicPreview" readonly></label>
-                </div>
               </section>
             </div>
           </section>
@@ -547,6 +554,7 @@ const alarmLevels = [
 const visibleProtocols = computed(() => props.protocols.filter((item) => item.protocol));
 const protocolSchema = computed(() => protocolDetails.value[protocol.value] || props.protocols.find((item) => item.protocol === protocol.value) || null);
 const connectionFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.connectionFields || []);
+const connectionRequiredCount = computed(() => connectionFields.value.filter((field) => field.required).length);
 const pointFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.pointFields || []);
 const pointDataTypes = computed(() => protocolSchema.value?.dataTypes?.length ? protocolSchema.value.dataTypes : ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"]);
 const currentProtocolTitle = computed(() => protocolSchema.value?.title ? `${protocolSchema.value.title} (${protocol.value})` : protocol.value);
