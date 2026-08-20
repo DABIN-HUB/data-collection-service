@@ -1227,7 +1227,8 @@ body.modao-exact .legacy-console .exact-device-actions {
 
 body.modao-exact .legacy-console .exact-device-actions button,
 body.modao-exact .legacy-console .exact-toolbar button,
-body.modao-exact .legacy-console .exact-table-card button {
+body.modao-exact .legacy-console .exact-table-card button,
+body.modao-exact .legacy-console .workbench-device-actions button {
   min-height: 32px;
   padding: 0 11px;
   border: 1px solid var(--exact-border);
@@ -1238,8 +1239,17 @@ body.modao-exact .legacy-console .exact-table-card button {
 
 body.modao-exact .legacy-console .exact-device-actions button:hover,
 body.modao-exact .legacy-console .exact-toolbar button:hover,
-body.modao-exact .legacy-console .exact-table-card button:hover {
+body.modao-exact .legacy-console .exact-table-card button:hover,
+body.modao-exact .legacy-console .workbench-device-actions button:hover {
   border-color: var(--exact-blue);
+}
+
+body.modao-exact .legacy-console .exact-device-actions button:disabled,
+body.modao-exact .legacy-console .exact-toolbar button:disabled,
+body.modao-exact .legacy-console .exact-table-card button:disabled,
+body.modao-exact .legacy-console .workbench-device-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 body.modao-exact .legacy-console .status-badge,
@@ -1292,6 +1302,157 @@ body.modao-exact .legacy-console .network-result-grid {
 
 body.modao-exact .legacy-console .network-result-grid {
   padding-bottom: 12px;
+}
+
+body.modao-exact .legacy-console .network-toolbar .exact-toolbar-filters {
+  grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr) minmax(190px, 1.2fr) minmax(120px, 0.6fr) minmax(110px, 0.6fr) auto;
+}
+
+body.modao-exact .legacy-console .network-summary-cards .exact-diagnostic-card:nth-child(3) {
+  grid-column: span 2;
+}
+
+body.modao-exact .legacy-console .network-summary-cards .exact-diagnostic-card:nth-child(3) strong {
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+body.modao-exact .legacy-console .network-result-panel .json-view {
+  margin: 0 20px 20px;
+}
+
+body.modao-exact .legacy-console .network-trace-lines {
+  display: grid;
+  gap: 8px;
+  margin: 0 20px 20px;
+  padding: 14px;
+  border: 1px solid rgba(45, 74, 122, 0.45);
+  border-radius: 14px;
+  background: rgba(4, 10, 23, 0.42);
+}
+
+body.modao-exact .legacy-console .network-trace-lines strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .network-trace-lines code {
+  display: block;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: #86efac;
+  background: rgba(2, 6, 23, 0.72);
+  white-space: pre-wrap;
+}
+
+body.modao-exact .legacy-console .network-history-table td:nth-child(7) {
+  min-width: 220px;
+  color: var(--exact-muted);
+}
+
+body.modao-exact .legacy-console .alarm-ack-table td:nth-child(8) {
+  min-width: 220px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-detail {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--exact-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .alarm-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.modao-exact .legacy-console .alarm-action-row button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog {
+  width: min(560px, 100%);
+  padding: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(8, 14, 28, 0.98));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog-head h2 {
+  margin: 2px 0 0;
+  color: #f8fafc;
+  font-size: 20px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-target {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(45, 74, 122, 0.45);
+  border-radius: 12px;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog label {
+  display: block;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency span {
+  color: var(--exact-muted);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency code {
+  display: block;
+  overflow: hidden;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: #93c5fd;
+  background: rgba(2, 6, 23, 0.72);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.modao-exact .legacy-console .exact-config-item {
@@ -1450,9 +1611,10 @@ body.modao-exact .legacy-console .modao-log-panel {
 
 body.modao-exact .legacy-console .modao-log-row {
   display: grid;
-  grid-template-columns: 150px 58px minmax(150px, 260px) minmax(0, 1fr);
-  gap: 12px;
-  padding: 8px 12px;
+  grid-template-columns: 150px 58px minmax(150px, 240px) minmax(120px, 180px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
   border-bottom: 1px solid rgba(45, 74, 122, 0.32);
 }
 
@@ -1461,8 +1623,23 @@ body.modao-exact .legacy-console .modao-log-row:hover {
 }
 
 body.modao-exact .legacy-console .modao-log-time,
-body.modao-exact .legacy-console .modao-log-name {
+body.modao-exact .legacy-console .modao-log-name,
+body.modao-exact .legacy-console .modao-log-thread {
   color: #71839a;
+}
+
+body.modao-exact .legacy-console .modao-log-thread {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .log-toolbar {
+  align-items: flex-start;
+}
+
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-filters {
+  flex: 1 1 720px;
 }
 
 body.modao-exact .legacy-console .modao-log-message {
@@ -1558,6 +1735,13 @@ body.modao-exact .legacy-console .workbench-topbar {
   border-bottom: 1px solid var(--exact-border);
 }
 
+body.modao-exact .legacy-console .workbench-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 body.modao-exact .legacy-console .device-summary {
   display: grid;
   gap: 7px;
@@ -1587,6 +1771,35 @@ body.modao-exact .legacy-console .runtime-stage-shell {
   padding: 16px;
 }
 
+body.modao-exact .legacy-console .diagnostic-detail-panel,
+body.modao-exact .legacy-console .device-runtime-panel {
+  margin-top: 16px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-cards {
+  padding: 16px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-cards small {
+  display: block;
+  margin-top: 6px;
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .diagnostic-sub-card,
+body.modao-exact .legacy-console .diagnostic-connection-table,
+body.modao-exact .legacy-console .diagnostic-exception-table {
+  margin-top: 14px;
+}
+
 body.modao-exact .legacy-console .workbench-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -1612,6 +1825,45 @@ body.modao-exact .legacy-console .form-grid {
   padding: 16px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+body.modao-exact .legacy-console .edge-mode-row,
+body.modao-exact .legacy-console .edge-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+body.modao-exact .legacy-console .edge-mode-row button,
+body.modao-exact .legacy-console .edge-action-row button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--exact-border);
+  border-radius: 6px;
+  background: var(--exact-panel-soft);
+}
+
+body.modao-exact .legacy-console .edge-mode-row button.is-active,
+body.modao-exact .legacy-console .edge-action-row button.primary {
+  color: #fff;
+  border-color: var(--exact-blue);
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console .edge-action-row span {
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .edge-form-grid textarea {
+  min-height: 190px;
+  resize: vertical;
+}
+
+body.modao-exact .legacy-console .edge-json-grid {
+  padding-top: 12px;
 }
 
 body.modao-exact .legacy-console label {

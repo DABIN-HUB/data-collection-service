@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildLocalDevicePayload, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
+import { buildLocalDevicePayload, extractLocalDeviceBundle, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
 
 describe("local-device-utils", () => {
   it("构造本地临时设备保存 payload", () => {
@@ -77,5 +77,17 @@ describe("local-device-utils", () => {
       points: [{ pointCode: "p1", pointName: "点位1", address: "a" }],
       cloudTarget: { enabled: true, deviceType: "SUB_DEVICE", topologyEnabled: true }
     })).toContain("启用云上报时必须填写 productKey 和 deviceName");
+  });
+
+  it("从本地设备详情响应提取可回填 bundle", () => {
+    const bundle = {
+      device: { id: "local-1", deviceName: "旧设备" },
+      connection: { host: "127.0.0.1", port: 1502 },
+      points: [{ pointCode: "p1", address: "40001" }]
+    };
+
+    expect(extractLocalDeviceBundle({ bundle })).toEqual(bundle);
+    expect(extractLocalDeviceBundle({ data: { bundle } })).toEqual(bundle);
+    expect(extractLocalDeviceBundle(null)).toBeNull();
   });
 });

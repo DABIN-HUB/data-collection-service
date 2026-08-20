@@ -120,7 +120,7 @@ async function confirmAck() {
   acking.value = true;
   error.value = "";
   try {
-    await Promise.all(targets.map((alarmId) => acknowledgeAlarm(alarmId, buildAlarmAckPayload(ackNote.value))));
+    await Promise.all(targets.map((alarmId) => acknowledgeAlarm(alarmId, buildAlarmAckPayload(ackNote.value, alarmId))));
     ElMessage.success(`已确认 ${targets.length} 条告警`);
     ackDialogVisible.value = false;
     await load();

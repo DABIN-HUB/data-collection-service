@@ -163,7 +163,13 @@
             <div class="exact-toolbar-group"><button type="button" class="toggle-button" :class="{ 'is-active': realtimeAuto }" @click="realtimeAuto = !realtimeAuto"><span></span>自动刷新</button><small>默认间隔 5 秒</small></div>
             <div class="exact-toolbar-group exact-toolbar-filters"><select v-model="realtimeDeviceId" @change="loadRealtime"><option value="">全部设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="realtimeKeyword" type="search" placeholder="搜索点位名称、编码或地址" /></div>
           </div>
-          <section class="exact-table-card"><table><thead><tr><th>点位名称</th><th>设备名称</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>当前值</th><th>单位</th><th>采集时间</th><th>质量</th><th>处理耗时</th></tr></thead><tbody><tr v-if="filteredRealtimeRows.length === 0"><td colspan="11" class="exact-empty">请选择设备后查看实时数据</td></tr><tr v-for="row in filteredRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode}`"><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.deviceName || deviceNameOf(String(row.deviceId || realtimeDeviceId)) }}</td><td>{{ row.dataType || '-' }}</td><td><code>{{ realtimeAddress(row) }}</code></td><td>{{ row.readWrite || '-' }}</td><td>{{ realtimeScale(row) }}</td><td><strong>{{ realtimeValueText(row) }}</strong></td><td>{{ row.unit || '-' }}</td><td>{{ formatTime(row.timestamp || row.collectTime) }}</td><td><span class="quality-badge" :class="realtimeQualityClass(row)">{{ realtimeQualityText(row) }}</span></td><td>{{ realtimeProcessingText(row) }}</td></tr></tbody></table></section>
+          <div class="exact-diagnostic-cards realtime-summary-cards"><div class="exact-diagnostic-card"><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div><div class="exact-diagnostic-card"><span>质量正常</span><strong>{{ realtimeSummary.good }}</strong></div><div class="exact-diagnostic-card"><span>异常/未知</span><strong>{{ realtimeSummary.bad }}</strong></div></div>
+          <section class="exact-surface realtime-single-panel">
+            <div class="exact-surface-head"><h2>单点实时查询</h2><span>按稳定 pointId / 点位编码查询</span></div>
+            <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="realtimeSingleDeviceId"><option value="">选择设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="realtimeSinglePointId" type="text" placeholder="pointId 或点位编码" /><button type="button" class="primary" :disabled="!realtimeSingleDeviceId || !realtimeSinglePointId" @click="loadSingleRealtime">查询单点</button></div></div>
+            <pre class="json-view compact-result-view">{{ prettyJson(realtimeSingleResult) }}</pre>
+          </section>
+          <section class="exact-table-card"><table><thead><tr><th>点位名称</th><th>设备名称</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>当前值</th><th>单位</th><th>采集时间</th><th>质量</th><th>处理耗时</th><th>操作</th></tr></thead><tbody><tr v-if="filteredRealtimeRows.length === 0"><td colspan="12" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td></tr><tr v-for="row in filteredRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode}`"><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.deviceName || deviceNameOf(String(row.deviceId || realtimeDeviceId)) }}</td><td>{{ row.dataType || '-' }}</td><td><code>{{ realtimeAddress(row) }}</code></td><td>{{ row.readWrite || '-' }}</td><td>{{ realtimeScale(row) }}</td><td><strong>{{ realtimeValueText(row) }}</strong></td><td>{{ row.unit || '-' }}</td><td>{{ formatTime(row.timestamp || row.collectTime || row.lastUpdateTime) }}</td><td><span class="quality-badge" :class="realtimeQualityClass(row)">{{ realtimeQualityText(row) }}</span></td><td>{{ realtimeProcessingText(row) }}</td><td><button type="button" @click="pickRealtimePoint(row)">查单点</button></td></tr></tbody></table></section>
         </div>
       </section>
 
@@ -191,7 +197,8 @@
               </div>
               <div class="exact-device-actions">
                 <button type="button" @click.stop="startSelectedDevice(deviceIdOf(device))">启动</button><button type="button" @click.stop="stopSelectedDevice(deviceIdOf(device))">停止</button>
-                <button type="button" @click.stop="editDevice(device)">编辑</button><button type="button" @click.stop="openDeviceDiff(device)">差异</button>
+                <button type="button" :disabled="deviceConfigOperatingId === `refresh:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'refresh')">刷新配置</button><button type="button" class="danger" :disabled="deviceConfigOperatingId === `clear:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'clear')">清理缓存</button>
+                <button type="button" @click.stop="editDevice(device)">编辑</button><button type="button" @click.stop="openDeviceDiff(device)">差异</button><button type="button" @click.stop="openDeviceRuntimeStatus(device)">运行状态</button><button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
                 <button type="button" @click.stop="openDeviceOperation(device, 'control')">控制</button><button type="button" @click.stop="openDeviceOperation(device, 'shadow')">影子</button>
                 <button v-if="isLocalDevice(device)" type="button" class="danger" @click.stop="deleteLocal(deviceIdOf(device))">删除本地</button>
               </div>
@@ -201,7 +208,7 @@
       </section>
 
       <section v-show="activeModule === 'collect'" class="exact-page">
-        <div class="section-heading"><div class="heading-title-line"><h1>数据采集配置</h1><span class="heading-online"><i></i>{{ protocols.length }} 种协议</span></div><div class="heading-actions"><button type="button" @click="exportConfig">导出配置</button></div></div>
+        <div class="section-heading"><div class="heading-title-line"><h1>数据采集配置</h1><span class="heading-online"><i></i>{{ protocols.length }} 种协议</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新概览</button></div></div>
         <div class="exact-page-body">
           <section class="exact-surface exact-global-config">
             <div class="exact-surface-head"><h2>全局采集配置</h2><span>当前运行配置</span></div>
@@ -209,6 +216,7 @@
               <div v-for="item in collectionSummaryItems" :key="item.label" class="exact-config-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
             </div>
           </section>
+          <LegacyConfigOpsPanel :devices="devices" :selected-device-id="selectedDeviceId" @imported="refreshAll" @synced="refreshAll" />
           <section class="exact-table-card">
             <div class="exact-table-title"><h2>协议配置列表</h2><span>{{ protocols.length }} 种协议</span></div>
             <table><thead><tr><th>协议名称</th><th>规范编码</th><th>默认端口</th><th>采集方式</th><th>能力状态</th><th>操作</th></tr></thead><tbody><tr v-if="protocols.length === 0"><td colspan="6" class="exact-empty">当前没有可用的协议定义</td></tr><tr v-for="item in protocols" :key="item.protocol"><td><strong>{{ item.title || item.protocol || '-' }}</strong></td><td><code>{{ item.protocol || '-' }}</code></td><td>{{ protocolDefaultPort(item) }}</td><td>{{ protocolMode(item) }}</td><td><span class="capability-badge">{{ protocolCapability(item) }}</span></td><td><button type="button" @click="openProtocolConfig(item)">配置设备</button></td></tr></tbody></table>
@@ -225,21 +233,55 @@
         <div class="exact-page-body">
           <div class="exact-diagnostic-cards"><div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div>
           <section class="exact-table-card"><table><thead><tr><th>诊断项</th><th>状态</th><th>当前值</th><th>处理建议</th></tr></thead><tbody><tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr></tbody></table></section>
+          <LegacyDiagnosticDetailPanel :cache-metrics="cacheMetrics" :device-metrics="deviceConnectionMetrics" :performance-metrics="performanceDetail" :exception-stats="exceptionStats" :storage-metrics="storageMetrics" />
+          <LegacyDeviceRuntimePanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" />
           <details class="exact-json-panel" open><summary>查看原始诊断 JSON</summary><pre class="json-view">{{ prettyJson(diagnosticRaw) }}</pre></details>
         </div>
       </section>
 
-      <section v-show="activeModule === 'alarm'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>告警总览</h1><span class="heading-online"><i></i>{{ alarms.length }} 条</span></div><div class="heading-actions"><button type="button" @click="loadAlarms">刷新告警</button></div></div><div class="exact-page-body"><section class="exact-table-card"><table><thead><tr><th>级别</th><th>设备</th><th>点位</th><th>内容</th><th>时间</th><th>状态</th></tr></thead><tbody><tr v-if="alarms.length === 0"><td colspan="6" class="exact-empty">暂无告警</td></tr><tr v-for="alarm in alarms" :key="String(alarm.alarmId || alarm.id || alarm.timestamp)"><td>{{ alarm.level || alarm.alarmType || '-' }}</td><td>{{ alarm.deviceName || alarm.deviceId || '-' }}</td><td>{{ alarm.pointName || alarm.pointCode || '-' }}</td><td>{{ alarm.content || alarm.message || alarm.alarmContent || '-' }}</td><td>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</td><td>{{ alarm.status || (alarm.acknowledged ? '已确认' : '未确认') }}</td></tr></tbody></table></section></div></section>
+      <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" />
 
-      <section v-show="activeModule === 'log'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>日志</h1><span class="heading-online"><i></i>{{ filteredLogs.length }} 条</span></div><div class="heading-actions"><button type="button" @click="loadLogs">刷新</button></div></div><div class="exact-page-body"><div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="logLevel"><option value="">全部级别</option><option>INFO</option><option>WARN</option><option>ERROR</option><option>DEBUG</option></select><input v-model="logKeyword" type="search" placeholder="搜索日志内容、来源或线程" /><input v-model.number="logLimit" type="number" min="20" step="20" /></div></div><section class="exact-surface modao-log-panel"><div v-if="filteredLogs.length === 0" class="empty-state compact">当前条件下没有可显示日志</div><div v-for="(log, index) in filteredLogs" :key="index" class="modao-log-row"><span class="modao-log-time">{{ formatTime(log.timestamp || log.time) }}</span><strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong><span class="modao-log-name" :title="String(log.logger || '-')">{{ shortLoggerName(log.logger) }}</span><span class="modao-log-message">{{ log.message || log.content || '-' }}</span></div></section></div></section>
+      <section v-show="activeModule === 'alarm'" class="exact-page">
+        <div class="section-heading"><div class="heading-title-line"><h1>告警历史中心</h1><span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmHistorySummary.acknowledged }}</span></div><div class="heading-actions"><button type="button" :disabled="alarms.length === 0" @click="refreshAlarmAcknowledgements">确认状态批量查询</button><button type="button" @click="loadAlarms">刷新告警历史</button></div></div>
+        <div class="exact-page-body">
+          <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="alarmDeviceId" @change="loadAlarms"><option value="">全部设备最近告警</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><select v-model="alarmLevelFilter" @change="loadAlarms"><option value="">全部级别</option><option value="CRITICAL">严重</option><option value="WARNING">警告</option><option value="INFO">提示</option></select><select v-model.number="alarmHours" @change="loadAlarms"><option :value="24">最近 24 小时</option><option :value="72">最近 3 天</option><option :value="168">最近 7 天</option></select><input v-model="alarmKeyword" type="search" placeholder="点位编码或规则 ID" @keydown.enter="loadAlarms" /><input v-model.number="alarmLimit" type="number" min="10" max="500" step="10" /><button type="button" class="primary" @click="loadAlarms">查询</button></div></div>
+          <div class="exact-diagnostic-cards alarm-summary-cards"><div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmHistorySummary.total }}</strong></div><div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmHistorySummary.active }}</strong></div><div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmHistorySummary.acknowledged }}</strong></div><div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmHistorySummary.critical }}</strong></div><div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmHistorySummary.warning }}</strong></div></div>
+          <section class="exact-table-card alarm-ack-table"><table><thead><tr><th>级别</th><th>发生时间</th><th>设备</th><th>点位</th><th>规则/内容</th><th>当前值</th><th>确认状态</th><th>确认信息</th><th>操作</th></tr></thead><tbody><tr v-if="alarms.length === 0"><td colspan="9" class="exact-empty">暂无符合条件的告警历史</td></tr><tr v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)"><td>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</td><td>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</td><td>{{ alarm.deviceName || alarm.deviceId || '-' }}</td><td>{{ alarm.pointName || alarm.pointCode || alarm.pointId || '-' }}</td><td>{{ alarm.content || alarm.message || alarm.alarmContent || alarm.ruleName || alarm.ruleId || '-' }}</td><td>{{ alarmCurrentValue(alarm) }}</td><td><span class="status-badge" :class="alarm.acknowledged ? 'is-online' : 'is-error'">{{ alarm.acknowledged ? '已确认' : '待确认' }}</span></td><td><span class="alarm-ack-detail" :title="describeAlarmAcknowledgement(alarm.acknowledgement)">{{ describeAlarmAcknowledgement(alarm.acknowledgement) }}</span></td><td><div class="alarm-action-row"><button v-if="!alarm.acknowledged" type="button" :disabled="acknowledgingAlarmId === buildAlarmIdentity(alarm)" @click="openAlarmAcknowledgementDialog(alarm)">{{ acknowledgingAlarmId === buildAlarmIdentity(alarm) ? '确认中' : '确认告警' }}</button><button type="button" @click="locateAlarmLogs(alarm)">定位日志</button><button type="button" @click="diagnoseAlarmNetwork(alarm)">网络检测</button></div></td></tr></tbody></table></section>
+          <div v-if="alarmAckDialogVisible" class="alarm-ack-backdrop" role="dialog" aria-modal="true" aria-labelledby="alarmAckTitle" @click.self="closeAlarmAcknowledgementDialog"><section class="alarm-ack-dialog"><div class="alarm-ack-dialog-head"><div><span class="panel-kicker">告警处理</span><h2 id="alarmAckTitle">确认告警</h2></div><button type="button" @click="closeAlarmAcknowledgementDialog">关闭</button></div><p class="alarm-ack-target">{{ selectedAlarmAckTarget }}</p><label for="alarmAckNoteInput">处理说明</label><textarea id="alarmAckNoteInput" v-model="alarmAckNote" maxlength="500" placeholder="填写确认原因或后续处理计划"></textarea><div class="alarm-ack-idempotency"><span>幂等 key</span><code>{{ selectedAlarmAckIdempotencyKey }}</code></div><div class="heading-actions"><button type="button" :disabled="!selectedAlarmForAck || acknowledgingAlarmId === selectedAlarmAckId" class="primary" @click="submitAlarmAcknowledgement">{{ acknowledgingAlarmId === selectedAlarmAckId ? '提交中' : '提交确认' }}</button></div></section></div>
+        </div>
+      </section>
 
-      <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>连通性检测</span></div><div class="heading-actions"><button type="button" class="primary" @click="runNetwork">开始检测</button></div></div><div class="exact-page-body"><div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">手动输入目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="目标主机 IP" /><input v-model.number="networkPort" type="number" placeholder="目标端口" /><input v-model.number="networkTimeout" type="number" placeholder="超时 ms" /><input v-model.number="networkRetries" type="number" placeholder="重试" /></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}:{{ networkPort }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ prettyJson(networkResult) }}</pre></section></div></section>
+      <section v-show="activeModule === 'log'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>日志</h1><span class="heading-online"><i></i>{{ filteredLogs.length }} 条 · 错误 {{ logSummary.error }}</span></div><div class="heading-actions"><button type="button" :class="{ 'is-active': logAutoRefresh }" @click="logAutoRefresh = !logAutoRefresh">{{ logAutoRefresh ? '停止自动刷新' : '自动刷新' }}</button><button type="button" @click="loadLogs">刷新日志</button></div></div><div class="exact-page-body"><div class="exact-toolbar log-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="logLevel" @change="loadLogs"><option value="">全部级别</option><option value="ERROR">错误</option><option value="WARN">警告</option><option value="INFO">信息</option><option value="DEBUG">调试</option></select><select v-model="logDeviceId" @change="loadLogs"><option value="">全部设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="logLogger" type="text" placeholder="记录器名称 logger" @keydown.enter="loadLogs" /><input v-model="logThread" type="text" placeholder="线程名 thread" @keydown.enter="loadLogs" /><input v-model="logKeyword" type="search" placeholder="搜索日志内容、设备、点位或来源" @keydown.enter="loadLogs" /><input v-model.number="logLimit" type="number" min="20" max="2000" step="20" /><button type="button" class="primary" @click="loadLogs">查询</button></div><div class="exact-toolbar-group"><button type="button" @click="showErrorLogs">错误日志快速定位</button><button type="button" @click="searchLatestExceptionLogs">最近异常定位</button><button type="button" @click="downloadLogs('txt')">导出文本</button><button type="button" @click="downloadLogs('json')">导出 JSON</button></div></div><div class="exact-diagnostic-cards log-summary-cards"><div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div><div class="exact-diagnostic-card"><span>错误日志</span><strong>{{ logSummary.error }}</strong></div><div class="exact-diagnostic-card"><span>警告日志</span><strong>{{ logSummary.warn }}</strong></div><div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ logSummary.loggerCount }} / {{ logSummary.threadCount }}</strong></div></div><section class="exact-surface modao-log-panel"><div v-if="filteredLogs.length === 0" class="empty-state compact">当前条件下没有可显示日志</div><div v-for="(log, index) in filteredLogs" :key="`${log.timestamp || log.time || index}-${log.logger || '-'}-${log.thread || '-'}`" class="modao-log-row"><span class="modao-log-time">{{ formatTime(log.timestamp || log.time) }}</span><strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong><span class="modao-log-name" :title="String(log.logger || '-')">{{ shortLoggerName(log.logger) }}</span><span class="modao-log-thread" :title="String(log.thread || '-')">{{ log.thread || '-' }}</span><span class="modao-log-message">{{ log.message || log.content || '-' }}</span></div></section></div></section>
+
+      <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span></div><div class="heading-actions"><button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button><button type="button" :disabled="networkHistory.length === 0" @click="downloadNetworkReport">导出检测结果</button></div></div><div class="exact-page-body"><div class="exact-toolbar network-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkType" @change="syncNetworkMode"><option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option></select><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">本机 / 白名单目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" /><input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" /><input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" /><button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button></div></div><div class="exact-diagnostic-cards network-summary-cards"><div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div><div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div><div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div><div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre><div v-if="networkResult?.details?.length" class="network-trace-lines"><strong>路由明细</strong><code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code></div></section><section class="exact-table-card network-history-table"><div class="exact-table-title"><h2>检测历史记录</h2><span>最多保留 10 条</span></div><table><thead><tr><th>时间</th><th>方式</th><th>目标</th><th>端口</th><th>结论</th><th>耗时</th><th>原因</th></tr></thead><tbody><tr v-if="networkHistory.length === 0"><td colspan="7" class="exact-empty">暂无网络检测历史</td></tr><tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`"><td>{{ formatTime(item.completedAt) }}</td><td>{{ item.type }}</td><td>{{ item.target }}</td><td>{{ item.port ?? '-' }}</td><td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td><td>{{ item.durationMs ?? '-' }} ms</td><td>{{ item.reasonText }}</td></tr></tbody></table></section><LegacyEdgeTelemetryPanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" /></div></section>
 
       <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
 
       <section v-show="activeModule === 'workbench'" class="workspace-grid">
         <div class="workspace-column workspace-left"><section class="panel device-panel"><div class="panel-head"><div class="panel-head-main"><span class="panel-kicker">主工作流</span><h2>设备列表</h2></div><div class="inline-actions local-device-actions"><button type="button" class="primary" @click="openLocalEditor()">新建设备</button></div></div><div class="device-resource-list"><button v-for="device in devices" :key="deviceIdOf(device)" type="button" :class="{ 'is-active': selectedDeviceId === deviceIdOf(device) }" @click="selectDevice(deviceIdOf(device))"><strong>{{ device.deviceName || deviceIdOf(device) }}</strong><span>{{ device.protocolType || device.connectionType || '-' }}</span></button></div></section></div>
-        <div class="workspace-column workspace-center"><section class="panel workbench-panel"><div class="workbench-topbar workbench-topbar-compact"><div class="device-summary"><div class="summary-primary"><span class="status-dot online"></span><strong>{{ selectedDevice?.deviceName || '请选择设备' }}</strong><span class="summary-status">{{ selectedDevice?.status || '待连接' }}</span></div><div class="summary-meta"><span>协议：<strong>{{ selectedDevice?.protocolType || '-' }}</strong></span><span>地址：<strong>{{ selectedDevice?.ipAddress || '-' }}:{{ selectedDevice?.port || '-' }}</strong></span><span>采集周期：<strong>{{ selectedDevice?.collectionInterval || '-' }}</strong></span></div></div><div class="workbench-tabs"><button type="button" :class="{ 'is-active': workbenchTab === 'points' }" @click="workbenchTab = 'points'">点位工作台</button><button type="button" :class="{ 'is-active': workbenchTab === 'protocol' }" @click="workbenchTab = 'protocol'">协议连接</button><button type="button" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">手动控制</button><button type="button" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">设备影子</button></div></div><div v-if="workbenchTab === 'points'" class="runtime-stage-shell"><div class="workbench-toolbar workbench-toolbar-compact"><div class="inline-actions workbench-primary-actions"><button type="button" class="primary" @click="loadSelectedRealtime">自动刷新</button><button type="button" @click="resetSelectedAdaptive">重置自适应</button></div></div><section class="console-module realtime-stage"><div class="table-wrap point-runtime-wrap"><table class="runtime-table realtime-table"><thead><tr><th>点位名称</th><th>编码</th><th>地址</th><th>类型</th><th>值</th><th>质量</th><th>时间</th></tr></thead><tbody><tr v-if="selectedRealtimeRows.length === 0"><td colspan="7">选择设备后查看当前点位快照</td></tr><tr v-for="row in selectedRealtimeRows" :key="String(row.pointId || row.pointCode)"><td>{{ row.pointName || '-' }}</td><td>{{ row.pointCode || '-' }}</td><td>{{ row.address || '-' }}</td><td>{{ row.dataType || '-' }}</td><td>{{ row.value ?? row.currentValue ?? '-' }}</td><td>{{ row.quality || '-' }}</td><td>{{ formatTime(row.timestamp || row.collectTime) }}</td></tr></tbody></table></div></section></div><div v-else-if="workbenchTab === 'protocol'" class="surface-card"><h3>协议连接</h3><pre class="json-view">{{ prettyJson(selectedDevice) }}</pre></div><ManualShadowPanels v-else :tab="workbenchTab" :device-id="selectedDeviceId" /></section></div>
+        <div class="workspace-column workspace-center">
+          <section class="panel workbench-panel">
+            <div class="workbench-topbar workbench-topbar-compact">
+              <div class="device-summary">
+                <div class="summary-primary"><span class="status-dot online"></span><strong>{{ selectedDevice?.deviceName || '请选择设备' }}</strong><span class="summary-status">{{ selectedDevice?.status || '待连接' }}</span></div>
+                <div class="summary-meta"><span>协议：<strong>{{ selectedDevice?.protocolType || '-' }}</strong></span><span>地址：<strong>{{ selectedDevice?.ipAddress || '-' }}:{{ selectedDevice?.port || '-' }}</strong></span><span>采集周期：<strong>{{ selectedDevice?.collectionInterval || '-' }}</strong></span></div>
+              </div>
+              <div class="workbench-tabs">
+                <button type="button" :class="{ 'is-active': workbenchTab === 'config' }" @click="workbenchTab = 'config'">配置工作台</button>
+                <button type="button" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">手动控制</button>
+                <button type="button" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">设备影子</button>
+              </div>
+              <div class="workbench-device-actions">
+                <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新单设备配置</button>
+                <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理配置缓存</button>
+                <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">设备运行状态</button>
+                <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">设备告警历史</button>
+              </div>
+            </div>
+            <DeviceConfigPanel v-if="workbenchTab === 'config'" :device="selectedDeviceView" @start="startSelectedDevice" @stop="stopSelectedDevice" />
+            <ManualShadowPanels v-else :tab="workbenchTab" :device-id="selectedDeviceId" />
+          </section>
+        </div>
       </section>
     </main>
 
@@ -252,16 +294,30 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
+import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
+import LegacyConfigOpsPanel from "./LegacyConfigOpsPanel.vue";
+import LegacyDeviceRuntimePanel from "./LegacyDeviceRuntimePanel.vue";
+import LegacyDiagnosticDetailPanel from "./LegacyDiagnosticDetailPanel.vue";
+import LegacyEdgeTelemetryPanel from "./LegacyEdgeTelemetryPanel.vue";
+import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
-import { deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, triggerFullConfigSync } from "@/api/config.api";
+import { clearDeviceConfig, deleteLocalDevice, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
 import { getAllDeviceStatistics, getDeviceRuntime, reloadDevices, startDevice, stopDevice } from "@/api/device.api";
-import { getCloudReportMetrics, getRuntimeStatus, getSystemResources } from "@/api/monitor.api";
-import { getDeviceRealtimeData, getRecentAlarms, normalizeAlarmRows, resetAdaptiveConfig } from "@/api/data.api";
+import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
+import { getAllDeviceDataSummaries, getDeviceAlarmHistory, getDeviceRealtimeData, getPointRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
-import { diagnoseNetwork, getOpsLogs, normalizeLogRows } from "@/api/ops.api";
+import { acknowledgeAlarm, diagnoseNetwork, getOpsLogs, normalizeLogRows, queryAlarmAcknowledgements } from "@/api/ops.api";
 import { useAppStore } from "@/stores/app.store";
-import type { DeviceInfo } from "@/types/device";
+import { normalizeDeviceViewModel } from "@/stores/device.store";
+import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
+import { applyAlarmAcknowledgement, buildAlarmAckPayload, buildAlarmIdentity, buildAlarmTroubleshootTarget, describeAlarmAcknowledgement, mergeAlarmAcknowledgementStates, normalizeAlarmAcknowledgementMap } from "@/views/ops/ops-utils";
+import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "./alarm-history-utils";
+import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
+import { buildLogExportFilename, buildLogQueryParams, buildLogSearchFromException, exportLogRowsAsJson, exportLogRowsAsText, filterLogRows, summarizeLogRows } from "./log-utils";
+import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
+import { buildRealtimeSummary, normalizeRealtimeRows, normalizeSinglePointRealtimeRow } from "./realtime-utils";
+import type { DeviceInfo, DeviceRuntimeSnapshot } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
 import alertCircleIcon from "@/assets/legacy-icons/alert-circle.svg";
@@ -275,10 +331,10 @@ import networkOutlineIcon from "@/assets/legacy-icons/network-outline.svg";
 import routerWirelessIcon from "@/assets/legacy-icons/router-wireless.svg";
 import viewDashboardIcon from "@/assets/legacy-icons/view-dashboard.svg";
 
-type ModuleKey = "overview" | "realtime" | "alarm" | "device" | "collect" | "cloud" | "diag" | "log" | "network" | "workbench";
+type ModuleKey = "overview" | "realtime" | "history" | "alarm" | "device" | "collect" | "cloud" | "diag" | "log" | "network" | "workbench";
 
 const navGroups: Array<{ title: string; items: Array<{ key: ModuleKey; label: string; icon: string }> }> = [
-  { title: "运行", items: [{ key: "overview", label: "概览", icon: viewDashboardIcon }, { key: "realtime", label: "实时数据", icon: chartTimelineIcon }, { key: "alarm", label: "告警总览", icon: alertCircleIcon }] },
+  { title: "运行", items: [{ key: "overview", label: "概览", icon: viewDashboardIcon }, { key: "realtime", label: "实时数据", icon: chartTimelineIcon }, { key: "history", label: "历史趋势", icon: chartTimelineIcon }, { key: "alarm", label: "告警总览", icon: alertCircleIcon }] },
   { title: "配置", items: [{ key: "device", label: "设备管理", icon: routerWirelessIcon }, { key: "collect", label: "采集配置", icon: databaseCogIcon }, { key: "cloud", label: "云平台配置", icon: cloudUploadIcon }] },
   { title: "诊断", items: [{ key: "diag", label: "系统诊断", icon: monitorDashboardIcon }, { key: "log", label: "日志", icon: fileDocumentIcon }, { key: "network", label: "网络检测", icon: networkOutlineIcon }] }
 ];
@@ -291,39 +347,67 @@ const tokenInput = ref("");
 const liveClock = ref("--:--:--");
 const lastRefresh = ref<Date | null>(null);
 const devices = ref<DeviceInfo[]>([]);
+const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const protocols = ref<ProtocolSchema[]>([]);
 const runtimeStatus = ref<unknown>({});
 const systemResource = ref<unknown>({});
 const reportMetrics = ref<unknown>({});
+const cacheMetrics = ref<unknown>({});
+const deviceConnectionMetrics = ref<unknown>({});
+const collectorPerformance = ref<unknown>({});
+const exceptionStats = ref<unknown>({});
+const storageMetrics = ref<unknown>({});
+const performanceDetail = ref<unknown>({});
 const deviceStats = ref<unknown>({});
 const configSummary = ref<unknown>({});
 const alarms = ref<AlarmRow[]>([]);
+const alarmAcknowledgements = ref<Record<string, unknown>>({});
+const acknowledgingAlarmId = ref("");
+const alarmAckDialogVisible = ref(false);
+const alarmAckNote = ref("");
+const selectedAlarmForAck = ref<AlarmRow | null>(null);
+const alarmDeviceId = ref("");
+const alarmLevelFilter = ref("");
+const alarmKeyword = ref("");
+const alarmHours = ref(24);
+const alarmLimit = ref(50);
 const logs = ref<LogRow[]>([]);
 const realtimeRows = ref<RealtimePointRow[]>([]);
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
+const deviceConfigOperatingId = ref("");
 const realtimeDeviceId = ref("");
 const realtimeKeyword = ref("");
+const realtimeSingleDeviceId = ref("");
+const realtimeSinglePointId = ref("");
+const realtimeSingleResult = ref<unknown>({ message: "选择设备和点位后查询单点实时数据" });
 const realtimeAuto = ref(true);
 const deviceKeyword = ref("");
 const protocolFilter = ref("");
 const statusFilter = ref("");
 const selectedProtocol = ref<ProtocolSchema | null>(null);
 const logLevel = ref("");
+const logDeviceId = ref("");
+const logLogger = ref("");
+const logThread = ref("");
 const logKeyword = ref("");
 const logLimit = ref(100);
+const logAutoRefresh = ref(false);
 const networkDeviceId = ref("");
+const networkType = ref<NetworkDiagnosticType>("PING");
 const networkTarget = ref("127.0.0.1");
 const networkPort = ref(9090);
 const networkTimeout = ref(3000);
-const networkRetries = ref(1);
-const networkResult = ref<unknown>({});
+const networkOperating = ref(false);
+const networkResult = ref<NormalizedNetworkDiagnosticResult | null>(null);
+const networkHistory = ref<NormalizedNetworkDiagnosticResult[]>([]);
 const diagnosticRaw = ref<unknown>({});
 const localEditorVisible = ref(false);
-const editingBundle = ref(null);
-const workbenchTab = ref("points");
+const editingBundle = ref<LocalDeviceBundle | null>(null);
+const workbenchTab = ref<"config" | "control" | "shadow">("config");
 let clockTimer = 0;
 let realtimeTimer = 0;
+let logTimer = 0;
 
 const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
@@ -334,6 +418,7 @@ const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).le
 const runtimeState = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "资源已加载" : "资源未知");
 const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
+const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModel(selectedDevice.value, deviceRuntimeMap.value) : null);
 const filteredDevices = computed(() => {
   const keyword = deviceKeyword.value.trim().toLowerCase();
   return devices.value.filter((device) => {
@@ -347,11 +432,14 @@ const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
   return realtimeRows.value.filter((row) => !keyword || [row.pointName, row.pointCode, row.address, row.deviceName].join(" ").toLowerCase().includes(keyword));
 });
-const filteredLogs = computed(() => logs.value.filter((log) => {
-  const matchesLevel = !logLevel.value || String(log.level || "").toUpperCase() === logLevel.value;
-  const text = [log.message, log.content, log.logger, log.deviceId, log.deviceName].join(" ").toLowerCase();
-  return matchesLevel && (!logKeyword.value || text.includes(logKeyword.value.toLowerCase()));
-}));
+const realtimeSummary = computed(() => buildRealtimeSummary(filteredRealtimeRows.value));
+const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
+const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
+const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
+const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
+const selectedAlarmAckIdempotencyKey = computed(() => selectedAlarmAckId.value ? buildAlarmAckPayload(alarmAckNote.value, selectedAlarmAckId.value).idempotencyKey : "-");
+const filteredLogs = computed(() => filterLogRows(logs.value, { level: logLevel.value, logger: logLogger.value, keyword: logKeyword.value, deviceId: logDeviceId.value, thread: logThread.value }));
+const logSummary = computed(() => summarizeLogRows(filteredLogs.value));
 const overviewCards = computed(() => {
   const totalDevices = valueOf(deviceStats.value, ["collectorCount", "totalCollectors", "total", "deviceCount"], devices.value.length);
   const disconnected = Math.max(0, devices.value.length - onlineCount.value);
@@ -369,8 +457,8 @@ const overviewCards = computed(() => {
 const collectorToneClass = computed(() => riskDevices.value.some((device) => String(device.status || "").toUpperCase() === "ERROR") ? "is-error" : (riskDevices.value.length ? "is-warn" : (devices.value.length ? "is-ok" : "is-muted")));
 const runningToneClass = computed(() => onlineCount.value > 0 ? "is-ok" : "is-muted");
 const gatewayToneClass = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "is-ok" : "is-muted");
-const cacheToneClass = computed(() => ratioFrom(valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null)) === null ? "is-muted" : "is-ok");
-const storageToneClass = computed(() => Object.keys(asRecord(configSummary.value)).length ? "is-ok" : "is-muted");
+const cacheToneClass = computed(() => ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null))) === null ? "is-muted" : "is-ok");
+const storageToneClass = computed(() => Object.keys(asRecord(storageMetrics.value)).length ? "is-ok" : (Object.keys(asRecord(configSummary.value)).length ? "is-ok" : "is-muted"));
 const cloudToneClass = computed(() => {
   const status = String(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")).toUpperCase();
   if (["ERROR", "FAILED", "DOWN"].includes(status)) return "is-error";
@@ -415,6 +503,13 @@ const resourceSummary = computed(() => {
     queuedTasks = numberValue(executor.queueSize, 0);
     rejectedTasks = numberValue(executor.rejectedCount, 0);
   }
+  const perf = asRecord(performanceDetail.value);
+  if (maxThreads === 0 && Object.keys(perf).length) {
+    activeThreads = numberValue(valueOf(perf, ["activeThreads", "activeCount", "collectActiveCount", "processActiveCount"], 0));
+    maxThreads = numberValue(valueOf(perf, ["maxThreads", "maxPoolSize", "collectMaxPoolSize", "processMaxPoolSize"], 0));
+    queuedTasks = numberValue(valueOf(perf, ["queuedTasks", "queueSize", "collectQueueSize", "processQueueSize"], 0));
+    rejectedTasks = numberValue(valueOf(perf, ["rejectedTasks", "rejectedCount", "batchDispatchRejectedCount", "collectRejectedCount", "processRejectedCount"], 0));
+  }
   const usage = maxThreads > 0 ? Math.max(0, Math.min(100, Math.round((activeThreads / maxThreads) * 100))) : 0;
   return {
     activeThreads: maxThreads > 0 ? String(activeThreads) : "-",
@@ -438,23 +533,38 @@ const diagnosticCards = computed(() => {
   const resource = asRecord(systemResource.value);
   const summary = asRecord(configSummary.value);
   const stats = asRecord(summary.cacheStats);
+  const deviceMetrics = asRecord(deviceConnectionMetrics.value);
+  const activeConnections = valueOf(deviceMetrics, ["activeConnections", "connectedCount", "onlineCount"], onlineCount.value);
+  const cacheRate = ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null)));
   return [
     { label: "系统运行时间", value: formatDurationMs(valueOf(resource, ["uptimeMillis", "uptime"], null)) },
     { label: "设备配置总数", value: `${valueOf(stats, ["deviceCount"], devices.value.length)} 台` },
     { label: "点位总数", value: `${valueOf(stats, ["pointCount"], sumPoints(devices.value))} 个` },
-    { label: "活跃连接", value: `${onlineCount.value} 个` }
+    { label: "活跃连接", value: `${activeConnections} 个` },
+    { label: "缓存命中率", value: percentText(cacheRate) },
+    { label: "异常统计", value: `${valueOf(exceptionStats.value, ["totalCount", "exceptionCount", "errorCount"], 0)} 次` }
   ];
 });
 const diagnosticRows = computed(() => {
-  const cacheRate = ratioFrom(valueOf(runtimeStatus.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], null));
-  const queued = numberValue(resourceSummary.value.queuedTasks === "-" ? 0 : resourceSummary.value.queuedTasks, 0);
+  const cacheRate = ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], null)));
+  const perf = asRecord(performanceDetail.value);
+  const queued = numberValue(resourceSummary.value.queuedTasks === "-" ? valueOf(perf, ["queuedTasks", "queueSize", "collectQueueSize", "processQueueSize"], 0) : resourceSummary.value.queuedTasks, 0);
+  const rejected = numberValue(valueOf(perf, ["rejectedTasks", "rejectedCount", "batchDispatchRejectedCount", "collectRejectedCount", "processRejectedCount"], 0), 0);
   const reportStatus = String(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")).toUpperCase();
-  const missing = Math.max(0, devices.value.length - onlineCount.value);
+  const deviceMetrics = asRecord(deviceConnectionMetrics.value);
+  const expectedConnections = numberValue(valueOf(deviceMetrics, ["expectedConnections", "totalConnections", "deviceCount"], devices.value.length), devices.value.length);
+  const activeConnections = numberValue(valueOf(deviceMetrics, ["activeConnections", "connectedCount", "onlineCount"], onlineCount.value), onlineCount.value);
+  const missing = Math.max(0, expectedConnections - activeConnections);
+  const storageStatus = String(valueOf(storageMetrics.value, ["status", "state"], Object.keys(asRecord(storageMetrics.value)).length ? "UP" : "UNKNOWN")).toUpperCase();
+  const storageKnown = Object.keys(asRecord(storageMetrics.value)).length > 0;
+  const exceptionCount = numberValue(valueOf(exceptionStats.value, ["totalCount", "exceptionCount", "errorCount"], 0), 0);
   const rows = [
     { name: "应用服务", status: appStore.initialized ? "正常" : "异常", current: systemStatusText.value, suggestion: appStore.initialized ? "无需处理" : "检查应用健康检查明细" },
-    { name: "设备连接", status: missing === 0 ? "正常" : "警告", current: `${onlineCount.value}/${devices.value.length}`, suggestion: "检查缺失连接和设备网络" },
+    { name: "设备连接", status: missing === 0 ? "正常" : "警告", current: `${activeConnections}/${expectedConnections}`, suggestion: "检查缺失连接和设备网络" },
     { name: "缓存服务", status: cacheRate === null || cacheRate >= 0.8 ? "正常" : "警告", current: cacheRate === null ? "指标不可用" : percentText(cacheRate), suggestion: "低命中率时检查缓存配置" },
-    { name: "线程池拒绝", status: queued === 0 ? "正常" : "异常", current: resourceSummary.value.title, suggestion: "检查队列容量、任务耗时和拒绝策略" },
+    { name: "线程池拒绝", status: queued === 0 && rejected === 0 ? "正常" : "异常", current: `${resourceSummary.value.title}，队列 ${queued}，拒绝 ${rejected}`, suggestion: "检查队列容量、任务耗时和拒绝策略" },
+    { name: "异常统计", status: exceptionCount === 0 ? "正常" : "警告", current: `${exceptionCount} 次`, suggestion: "查看异常统计明细和应用日志" },
+    { name: "历史存储", status: storageKnown && ["UP", "OK", "ONLINE", "SUCCESS"].includes(storageStatus) ? "正常" : "警告", current: storageKnown ? cloudStatusText(storageStatus) : "指标不可用", suggestion: "检查 TDengine 或历史存储配置" },
     { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: cloudStatusTextValue.value, suggestion: "检查处理器、Outbox 和 ACK 状态" }
   ];
   return rows.map((row) => ({ ...row, tone: row.status === "正常" ? "is-online" : (row.status === "异常" ? "is-error" : "") }));
@@ -493,17 +603,12 @@ const cloudRisks = computed(() => {
   const risks = asRecord(reportMetrics.value).risks;
   return Array.isArray(risks) && risks.length ? risks.map((risk) => String(risk)) : ["未发现已知上报风险"];
 });
-const networkResultRows = computed(() => {
-  const result = asRecord(networkResult.value);
-  return [
-    { label: "检测方式", value: String(valueOf(result, ["type"], "TCP")) },
-    { label: "检测目标", value: String(valueOf(result, ["target"], networkTarget.value)) },
-    { label: "解析地址", value: String(valueOf(result, ["resolvedAddress"], "-")) },
-    { label: "目标端口", value: String(valueOf(result, ["port"], networkPort.value || "-")) },
-    { label: "检测结论", value: Object.keys(result).length ? (Boolean(result.reachable) ? "可达" : "不可达") : "等待检测" },
-    { label: "处理耗时", value: valueOf(result, ["durationMs"], null) === null ? "-" : `${valueOf(result, ["durationMs"], "-")} ms` }
-  ];
-});
+const networkResultRows = computed(() => networkResult.value ? buildNetworkResultRows(networkResult.value) : [
+  { label: "检测方式", value: networkType.value },
+  { label: "检测目标", value: networkTarget.value || "-" },
+  { label: "检测结论", value: "等待检测" },
+  { label: "失败原因", value: "尚未执行" }
+]);
 
 onMounted(async () => {
   document.body.classList.add("theme-anchor", "modao-exact");
@@ -517,6 +622,11 @@ onMounted(async () => {
       void loadRealtime();
     }
   }, 5000);
+  logTimer = window.setInterval(() => {
+    if (logAutoRefresh.value && activeModule.value === "log") {
+      void loadLogs();
+    }
+  }, 5000);
   await refreshAll();
 });
 
@@ -524,6 +634,7 @@ onBeforeUnmount(() => {
   document.body.classList.remove("theme-anchor", "modao-exact");
   window.clearInterval(clockTimer);
   window.clearInterval(realtimeTimer);
+  window.clearInterval(logTimer);
 });
 
 function tickClock() {
@@ -559,7 +670,7 @@ function moduleByRoutePath(path: string): ModuleKey | "control" | "shadow" {
   const mapping: Record<string, ModuleKey | "control" | "shadow"> = {
     dashboard: "overview",
     realtime: "realtime",
-    history: "workbench",
+    history: "history",
     alarm: "alarm",
     device: "device",
     collect: "collect",
@@ -577,6 +688,7 @@ function routePathByModule(module: ModuleKey): string {
   const mapping: Record<ModuleKey, string> = {
     overview: "/dashboard",
     realtime: "/realtime",
+    history: "/history",
     alarm: "/alarm",
     device: "/device",
     collect: "/collect",
@@ -604,38 +716,157 @@ async function loadProtocols() {
 }
 
 async function loadDevices() {
-  const response = await getConfigDeviceList();
-  devices.value = extractArray<DeviceInfo>(response, ["devices", "data", "items", "records"]);
+  const [deviceResponse, runtimeResponse] = await Promise.allSettled([getConfigDeviceList(), getDeviceRuntime()]);
+  if (runtimeResponse.status === "fulfilled") {
+    const snapshots = extractArray<DeviceRuntimeSnapshot>(runtimeResponse.value, ["data", "items", "records"]);
+    deviceRuntimeMap.value = Object.fromEntries(snapshots.map((item) => [item.deviceId, item]).filter(([deviceId]) => Boolean(deviceId)));
+  }
+  if (deviceResponse.status !== "fulfilled") {
+    throw deviceResponse.reason;
+  }
+  devices.value = extractArray<DeviceInfo>(deviceResponse.value, ["devices", "data", "items", "records"]);
   if (!selectedDeviceId.value && devices.value.length) selectedDeviceId.value = deviceIdOf(devices.value[0]);
 }
 
 async function loadOverview() {
-  const [stats, runtime, resource, report, summary] = await Promise.allSettled([getAllDeviceStatistics(), getRuntimeStatus(), getSystemResources(), getCloudReportMetrics(), getConfigSummary()]);
+  const [stats, runtime, resource, report, summary, cache, devicesMetric, collectorPerf, exceptions, storage, perfDetail] = await Promise.allSettled([
+    getAllDeviceStatistics(),
+    getRuntimeStatus(),
+    getSystemResources(),
+    getCloudReportMetrics(),
+    getConfigSummary(),
+    getCacheMetrics(),
+    getDeviceConnectionMetrics(),
+    getCollectorPerformance(),
+    getExceptionStats(),
+    getStorageMetrics(),
+    getPerformanceDetail()
+  ]);
   if (stats.status === "fulfilled") deviceStats.value = stats.value;
   if (runtime.status === "fulfilled") runtimeStatus.value = runtime.value;
   if (resource.status === "fulfilled") systemResource.value = resource.value;
   if (report.status === "fulfilled") reportMetrics.value = report.value;
   if (summary.status === "fulfilled") configSummary.value = summary.value;
+  if (cache.status === "fulfilled") cacheMetrics.value = cache.value;
+  if (devicesMetric.status === "fulfilled") deviceConnectionMetrics.value = devicesMetric.value;
+  if (collectorPerf.status === "fulfilled") collectorPerformance.value = collectorPerf.value;
+  if (exceptions.status === "fulfilled") exceptionStats.value = exceptions.value;
+  if (storage.status === "fulfilled") storageMetrics.value = storage.value;
+  if (perfDetail.status === "fulfilled") performanceDetail.value = perfDetail.value;
 }
 
 async function loadAlarms() {
-  try { alarms.value = normalizeAlarmRows(await getRecentAlarms({ limit: 50 })); } catch { alarms.value = []; }
+  try {
+    const params = buildAlarmHistoryQuery({ level: alarmLevelFilter.value, keyword: alarmKeyword.value, hours: alarmHours.value, limit: alarmLimit.value });
+    const response = alarmDeviceId.value ? await getDeviceAlarmHistory(alarmDeviceId.value, params) : await getRecentAlarms(params);
+    const rows = normalizeAlarmHistoryRows(response);
+    alarms.value = mergeAlarmAcknowledgementStates(rows, await fetchAlarmAcknowledgements(rows));
+  } catch {
+    alarmAcknowledgements.value = {};
+    alarms.value = [];
+  }
+}
+
+async function fetchAlarmAcknowledgements(rows: AlarmRow[]): Promise<Record<string, unknown>> {
+  const alarmIds = Array.from(new Set(rows.map((alarm) => buildAlarmIdentity(alarm)).filter(Boolean))).slice(0, 500);
+  alarmAcknowledgements.value = alarmIds.length ? normalizeAlarmAcknowledgementMap(await queryAlarmAcknowledgements(alarmIds)) : {};
+  return alarmAcknowledgements.value;
+}
+
+async function refreshAlarmAcknowledgements() {
+  if (!alarms.value.length) {
+    ElMessage.warning("当前没有可查询确认状态的告警");
+    return;
+  }
+  const acknowledgements = await fetchAlarmAcknowledgements(alarms.value);
+  alarms.value = mergeAlarmAcknowledgementStates(alarms.value, acknowledgements);
+  ElMessage.success("确认状态批量查询完成");
 }
 
 async function loadLogs() {
-  try { logs.value = normalizeLogRows(await getOpsLogs({ level: logLevel.value || undefined, keyword: logKeyword.value || undefined, limit: logLimit.value })); } catch { logs.value = []; }
+  try {
+    logs.value = normalizeLogRows(await getOpsLogs(buildLogQueryParams({ level: logLevel.value, logger: logLogger.value, keyword: logKeyword.value, deviceId: logDeviceId.value, thread: logThread.value, limit: logLimit.value })));
+  } catch {
+    logs.value = [];
+  }
+}
+
+function showErrorLogs() {
+  logLevel.value = "ERROR";
+  void loadLogs();
+}
+
+function searchLatestExceptionLogs() {
+  const root = asRecord(exceptionStats.value);
+  const data = asRecord(root.data);
+  const source = Object.keys(data).length ? data : root;
+  const recent = extractArray<Record<string, unknown>>(source, ["recent", "items", "records"]);
+  if (!recent.length) {
+    ElMessage.warning("当前没有最近异常可用于日志定位");
+    return;
+  }
+  logKeyword.value = buildLogSearchFromException(recent[0]);
+  logLevel.value = "";
+  void loadLogs();
+  ElMessage.info("已按最近异常填充日志搜索条件");
+}
+
+function downloadLogs(type: "json" | "txt") {
+  if (!filteredLogs.value.length) {
+    ElMessage.warning("当前没有可导出的日志");
+    return;
+  }
+  const content = type === "json" ? exportLogRowsAsJson(filteredLogs.value) : exportLogRowsAsText(filteredLogs.value);
+  const mime = type === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = buildLogExportFilename(type);
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 async function loadRealtime() {
-  if (!realtimeDeviceId.value) { realtimeRows.value = []; return; }
-  const response = await getDeviceRealtimeData(realtimeDeviceId.value);
-  realtimeRows.value = extractArray<RealtimePointRow>(response, ["points", "data", "values", "rows", "items"]);
+  if (realtimeDeviceId.value) {
+    const response = await getDeviceRealtimeData(realtimeDeviceId.value);
+    realtimeRows.value = normalizeRealtimeRows(response, realtimeDeviceId.value);
+    return;
+  }
+  const summaries = normalizeRealtimeRows(await getAllDeviceDataSummaries());
+  const deviceIds = Array.from(new Set([
+    ...summaries.map((row) => String(row.deviceId || "")).filter(Boolean),
+    ...devices.value.map((device) => deviceIdOf(device)).filter(Boolean)
+  ]));
+  if (deviceIds.length === 0) {
+    realtimeRows.value = [];
+    return;
+  }
+  const results = await Promise.allSettled(deviceIds.map(async (deviceId) => normalizeRealtimeRows(await getDeviceRealtimeData(deviceId), deviceId)));
+  realtimeRows.value = results.flatMap((result, index) => result.status === "fulfilled" && result.value.length ? result.value : summaries.filter((row) => row.deviceId === deviceIds[index]));
 }
 
 async function loadSelectedRealtime() {
   if (!selectedDeviceId.value) return;
   const response = await getDeviceRealtimeData(selectedDeviceId.value);
-  selectedRealtimeRows.value = extractArray<RealtimePointRow>(response, ["points", "data", "values", "rows", "items"]);
+  selectedRealtimeRows.value = normalizeRealtimeRows(response, selectedDeviceId.value);
+}
+
+async function loadSingleRealtime() {
+  if (!realtimeSingleDeviceId.value || !realtimeSinglePointId.value.trim()) {
+    ElMessage.warning("请先选择设备并填写点位引用");
+    return;
+  }
+  const response = await getPointRealtimeData(realtimeSingleDeviceId.value, realtimeSinglePointId.value.trim());
+  realtimeSingleResult.value = normalizeSinglePointRealtimeRow(response) || response;
+}
+
+function pickRealtimePoint(row: RealtimePointRow) {
+  realtimeSingleDeviceId.value = String(row.deviceId || realtimeDeviceId.value || selectedDeviceId.value || "");
+  realtimeSinglePointId.value = String(row.pointId || row.pointCode || "");
+  if (realtimeSingleDeviceId.value && realtimeSinglePointId.value) {
+    void loadSingleRealtime();
+  }
 }
 
 async function resetSelectedAdaptive() {
@@ -656,14 +887,175 @@ async function startSelectedDevice(deviceId: string) { await startDevice(deviceI
 async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); }
 async function deleteLocal(deviceId: string) { if (!window.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`)) return; await deleteLocalDevice(deviceId); await loadDevices(); }
 
+async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionType) {
+  if (!deviceId) {
+    ElMessage.warning("请先选择设备");
+    return;
+  }
+  const option = DEVICE_CONFIG_ACTIONS.find((item) => item.type === type);
+  const label = option?.label || "配置操作";
+  const confirmText = option?.confirmText || "该操作只影响本地配置缓存。";
+  if (!window.confirm(`确认对设备 ${deviceId} 执行${label}？${confirmText}`)) {
+    return;
+  }
+  deviceConfigOperatingId.value = `${type}:${deviceId}`;
+  try {
+    const response = type === "clear" ? await clearDeviceConfig(deviceId) : await refreshDeviceConfig(deviceId);
+    const result = normalizeDeviceConfigActionResult(response, deviceId);
+    ElMessage.success(buildDeviceConfigActionMessage(type, result));
+    await loadDevices();
+    if (selectedDeviceId.value === deviceId) {
+      await loadSelectedRealtime();
+    }
+  } finally {
+    deviceConfigOperatingId.value = "";
+  }
+}
+
 function selectDevice(deviceId: string) { selectedDeviceId.value = deviceId; void loadSelectedRealtime(); }
 function openLocalEditor() { editingBundle.value = null; localEditorVisible.value = true; }
 async function handleLocalSaved() { localEditorVisible.value = false; await loadDevices(); }
-async function exportConfig() { await exportConfigs(); ElMessage.success("已请求导出配置"); }
-async function runDiagnostic() { diagnosticRaw.value = { runtime: runtimeStatus.value, system: systemResource.value, report: reportMetrics.value }; await loadOverview(); diagnosticRaw.value = { runtime: runtimeStatus.value, system: systemResource.value, report: reportMetrics.value }; }
+async function runDiagnostic() {
+  diagnosticRaw.value = buildDiagnosticRaw();
+  await loadOverview();
+  diagnosticRaw.value = buildDiagnosticRaw();
+}
 
-function applyNetworkDevice() { const device = devices.value.find((item) => deviceIdOf(item) === networkDeviceId.value); if (!device) return; networkTarget.value = String(device.ipAddress || networkTarget.value); networkPort.value = Number(device.port || networkPort.value); }
-async function runNetwork() { networkResult.value = await diagnoseNetwork({ type: "TCP", target: networkTarget.value, port: networkPort.value, timeoutMs: networkTimeout.value, retries: networkRetries.value }); }
+function applyNetworkDevice() {
+  fillNetworkFromSelectedDevice();
+}
+
+function fillNetworkFromSelectedDevice() {
+  if (!networkDeviceId.value && selectedDeviceId.value) {
+    networkDeviceId.value = selectedDeviceId.value;
+  }
+  const device = devices.value.find((item) => deviceIdOf(item) === networkDeviceId.value);
+  const target = resolveNetworkTargetFromDevice(device || null);
+  networkTarget.value = target.target;
+  if (target.port !== undefined) {
+    networkPort.value = target.port;
+  }
+}
+
+function syncNetworkMode() {
+  if (networkType.value !== "TCP") {
+    networkPort.value = 0;
+  } else if (!networkPort.value) {
+    const device = devices.value.find((item) => deviceIdOf(item) === networkDeviceId.value);
+    networkPort.value = Number(device?.port || 9090);
+  }
+}
+
+async function runNetwork() {
+  let payload;
+  try {
+    payload = buildNetworkDiagnosticPayload({ type: networkType.value, deviceId: networkDeviceId.value, target: networkTarget.value, port: networkPort.value, timeoutMs: networkTimeout.value });
+  } catch (error) {
+    ElMessage.warning(error instanceof Error ? error.message : "网络检测参数无效");
+    return;
+  }
+  networkOperating.value = true;
+  try {
+    const result = normalizeNetworkDiagnosticResult(await diagnoseNetwork(payload));
+    networkResult.value = result;
+    networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
+  } finally {
+    networkOperating.value = false;
+  }
+}
+
+function downloadNetworkReport() {
+  if (!networkHistory.value.length) {
+    ElMessage.warning("当前没有可导出的网络检测结果");
+    return;
+  }
+  const blob = new Blob([buildNetworkExportText(networkHistory.value)], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `collector-network-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function openAlarmAcknowledgementDialog(alarm: AlarmRow) {
+  const alarmId = buildAlarmIdentity(alarm);
+  if (!alarmId || alarm.acknowledged) {
+    return;
+  }
+  selectedAlarmForAck.value = alarm;
+  alarmAckNote.value = "";
+  alarmAckDialogVisible.value = true;
+}
+
+function closeAlarmAcknowledgementDialog() {
+  alarmAckDialogVisible.value = false;
+  selectedAlarmForAck.value = null;
+  alarmAckNote.value = "";
+}
+
+async function submitAlarmAcknowledgement() {
+  const alarm = selectedAlarmForAck.value;
+  if (!alarm) {
+    return;
+  }
+  const alarmId = buildAlarmIdentity(alarm);
+  acknowledgingAlarmId.value = alarmId;
+  try {
+    const acknowledgement = await acknowledgeAlarm(alarmId, buildAlarmAckPayload(alarmAckNote.value, alarmId));
+    alarmAcknowledgements.value = { ...alarmAcknowledgements.value, [alarmId]: acknowledgement };
+    alarms.value = applyAlarmAcknowledgement(alarms.value, alarmId, acknowledgement);
+    closeAlarmAcknowledgementDialog();
+    ElMessage.success("告警已确认");
+  } finally {
+    acknowledgingAlarmId.value = "";
+  }
+}
+
+function locateAlarmLogs(alarm: AlarmRow) {
+  const target = buildAlarmTroubleshootTarget(alarm);
+  logDeviceId.value = target.deviceId;
+  logKeyword.value = target.logKeyword;
+  logLevel.value = "";
+  switchModule("log");
+  void loadLogs();
+  ElMessage.info("已按告警信息填充日志搜索条件");
+}
+
+function diagnoseAlarmNetwork(alarm: AlarmRow) {
+  const deviceId = String(alarm.deviceId || "");
+  const device = devices.value.find((item) => deviceIdOf(item) === deviceId);
+  const target = buildAlarmTroubleshootTarget(alarm, device || {});
+  if (!target.networkTarget) {
+    ElMessage.warning("当前告警缺少可用于网络检测的设备地址");
+    return;
+  }
+  networkDeviceId.value = target.deviceId;
+  networkTarget.value = target.networkTarget;
+  if (target.networkPort !== undefined) {
+    networkPort.value = target.networkPort;
+    networkType.value = "TCP";
+  } else {
+    networkType.value = "PING";
+  }
+  switchModule("network");
+  ElMessage.info("已从告警带入网络检测目标");
+}
+
+function buildDiagnosticRaw(): Record<string, unknown> {
+  return {
+    runtime: runtimeStatus.value,
+    system: systemResource.value,
+    devices: deviceConnectionMetrics.value,
+    cache: cacheMetrics.value,
+    performance: collectorPerformance.value,
+    performanceDetail: performanceDetail.value,
+    exceptions: exceptionStats.value,
+    storage: storageMetrics.value,
+    report: reportMetrics.value,
+    summary: configSummary.value
+  };
+}
 
 function isLocalDevice(device: DeviceInfo): boolean {
   return Boolean(device.temporaryConfig || device.configSource === "local" || device.configSource === "LOCAL" || asRecord(device).localDevice);
@@ -696,21 +1088,64 @@ function statusBadgeClass(device: DeviceInfo): string {
   return "";
 }
 
-function editDevice(device: DeviceInfo) {
+async function editDevice(device: DeviceInfo) {
   if (isLocalDevice(device)) {
-    selectDevice(deviceIdOf(device));
-    editingBundle.value = null;
-    localEditorVisible.value = true;
+    const deviceId = deviceIdOf(device);
+    selectDevice(deviceId);
+    try {
+      const detail = await getLocalDevice(deviceId);
+      const bundle = extractLocalDeviceBundle(detail);
+      if (!bundle) {
+        throw new Error("本地设备详情缺少可编辑配置");
+      }
+      editingBundle.value = bundle;
+      localEditorVisible.value = true;
+    } catch (caught) {
+      ElMessage.error(caught instanceof Error ? caught.message : "本地设备详情加载失败");
+    }
     return;
   }
-  selectedProtocol.value = protocols.value.find((item) => item.protocol === (device.protocolType || device.connectionType)) || null;
-  switchModule("collect");
+  selectDevice(deviceIdOf(device));
+  workbenchTab.value = "config";
+  activeModule.value = "workbench";
+  router.push("/device").catch(() => undefined);
 }
 
 function openDeviceDiff(device: DeviceInfo) {
   selectDevice(deviceIdOf(device));
   switchModule("collect");
   ElMessage.info("已切换到采集配置，可查看当前设备相关配置");
+}
+
+function openDeviceAlarmHistory(device: DeviceInfo) {
+  const deviceId = deviceIdOf(device);
+  selectDevice(deviceId);
+  alarmDeviceId.value = deviceId;
+  switchModule("alarm");
+  void loadAlarms();
+}
+
+function openDeviceRuntimeStatus(device: DeviceInfo) {
+  const deviceId = deviceIdOf(device);
+  selectDevice(deviceId);
+  switchModule("diag");
+  ElMessage.info("已切换到运行设备状态面板");
+}
+
+function openSelectedDeviceRuntimeStatus() {
+  if (!selectedDevice.value) {
+    ElMessage.warning("请先选择设备");
+    return;
+  }
+  openDeviceRuntimeStatus(selectedDevice.value);
+}
+
+function openSelectedDeviceAlarmHistory() {
+  if (!selectedDevice.value) {
+    ElMessage.warning("请先选择设备");
+    return;
+  }
+  openDeviceAlarmHistory(selectedDevice.value);
 }
 
 function openDeviceOperation(device: DeviceInfo, tab: "control" | "shadow") {
@@ -768,10 +1203,17 @@ function realtimeValueText(row: RealtimePointRow): string {
 }
 
 function realtimeQualityText(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["quality", "qualityCode", "status"], "UNKNOWN"));
+  const quality = String(valueOf(row, ["qualityLevel", "qualityDescription", "quality", "qualityCode", "status"], "UNKNOWN"));
+  if (row.qualityAvailable === false) {
+    return "未评估";
+  }
+  if (row.qualityAcceptable === false || row.processSuccess === false) {
+    return quality === "UNKNOWN" ? "异常" : quality;
+  }
   switch (quality.toUpperCase()) {
     case "GOOD":
     case "OK":
+    case "SUCCESS":
       return "良好";
     case "BAD":
     case "ERROR":
@@ -782,9 +1224,10 @@ function realtimeQualityText(row: RealtimePointRow): string {
 }
 
 function realtimeQualityClass(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["quality", "qualityCode", "status"], "UNKNOWN")).toUpperCase();
-  if (["GOOD", "OK"].includes(quality)) return "is-good";
-  if (["BAD", "ERROR"].includes(quality)) return "is-bad";
+  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode", "status"], "UNKNOWN")).toUpperCase();
+  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) return "is-bad";
+  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) return "is-good";
+  if (["BAD", "ERROR", "FAILED"].includes(quality)) return "is-bad";
   return "";
 }
 
@@ -795,6 +1238,11 @@ function realtimeProcessingText(row: RealtimePointRow): string {
 
 function alarmMessage(alarm: AlarmRow): string {
   return String(alarm.content || alarm.message || alarm.alarmContent || alarm.ruleName || "告警触发");
+}
+
+function alarmCurrentValue(alarm: AlarmRow): string {
+  const value = valueOf(alarm, ["currentValue", "current_value", "value", "alarmValue", "alarm_value", "rawValue", "raw_value"], "-");
+  return value === undefined || value === null || value === "" ? "-" : String(value);
 }
 
 function alarmLevelText(level: unknown): string {

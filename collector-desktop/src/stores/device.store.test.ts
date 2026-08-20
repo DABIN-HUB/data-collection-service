@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocalDevice, resolveDeviceStartMode } from "./device.store";
+import { isLocalDevice, normalizeDeviceViewModel, resolveDeviceStartMode } from "./device.store";
 import type { DeviceViewModel } from "@/types/device";
 
 function device(overrides: Partial<DeviceViewModel>): DeviceViewModel {
@@ -23,5 +23,17 @@ describe("device.store helpers", () => {
   it("根据设备来源选择启动接口模式", () => {
     expect(resolveDeviceStartMode(device({ temporaryConfig: true }))).toBe("local");
     expect(resolveDeviceStartMode(device({ configSource: "REMOTE" }))).toBe("remote");
+  });
+
+  it("把后端设备信息归一成配置工作台视图模型", () => {
+    expect(normalizeDeviceViewModel({ deviceId: "dev-1", deviceName: "温度站", groupName: "车间A", protocolType: "MODBUS_TCP" }, {
+      "dev-1": { deviceId: "dev-1", running: true, connected: true }
+    })).toMatchObject({
+      normalizedId: "dev-1",
+      displayName: "温度站",
+      displayGroup: "车间A",
+      displayProtocol: "MODBUS_TCP",
+      runtime: { connected: true }
+    });
   });
 });

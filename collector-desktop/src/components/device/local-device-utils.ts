@@ -35,12 +35,33 @@ export interface LocalDevicePayload {
   startAfterSave: boolean;
 }
 
+export interface LocalDeviceBundle {
+  device?: Record<string, unknown>;
+  connection?: Record<string, unknown>;
+  points?: DataPoint[];
+  cloudTarget?: CloudTargetConfig | Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export const DEFAULT_ADAPTIVE_CONFIG: AdaptiveConfig = {
   baseCollectionInterval: 1000,
   minCollectionInterval: 500,
   maxCollectionInterval: 10000,
   pointChangeThreshold: 0.01
 };
+
+export function extractLocalDeviceBundle(response: unknown): LocalDeviceBundle | null {
+  const root = cloneRecord(response);
+  const data = cloneRecord(root.data);
+  const candidates = [root.bundle, data.bundle, root, data];
+  for (const candidate of candidates) {
+    const record = cloneRecord(candidate);
+    if (record.device || record.connection || Array.isArray(record.points)) {
+      return record as LocalDeviceBundle;
+    }
+  }
+  return null;
+}
 
 export function buildLocalDevicePayload(draft: LocalDeviceDraft): LocalDevicePayload {
   const adaptive = normalizeAdaptive(draft.adaptive);
