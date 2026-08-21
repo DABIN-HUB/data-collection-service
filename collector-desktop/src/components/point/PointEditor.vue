@@ -8,10 +8,10 @@
         <el-button type="danger" plain :disabled="selectedIds.length === 0" @click="pointStore.removeSelected(deviceId)">删除</el-button>
       </div>
       <div class="point-toolbar-right">
-        <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".xlsx,.xls" @change="handleImportFile" />
+        <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".csv,text/csv" @change="handleImportFile" />
         <el-input v-model="keyword" placeholder="搜索点位名称/编码/地址" clearable :prefix-icon="Search" />
-        <el-button @click="fileInputRef?.click()">导入 Excel</el-button>
-        <el-button @click="exportExcel">导出 Excel</el-button>
+        <el-button @click="fileInputRef?.click()">导入 CSV</el-button>
+        <el-button @click="exportCsv">导出 CSV</el-button>
         <el-button :loading="realtimeLoading" @click="loadRealtime">刷新实时值</el-button>
         <el-button :loading="pointStore.loading" @click="pointStore.load(deviceId)">刷新配置</el-button>
         <el-button type="primary" :loading="pointStore.saving" @click="savePoints">保存</el-button>
@@ -73,7 +73,7 @@
           </el-table-column>
           <el-table-column label="质量" width="100">
             <template #default="{ row }">
-              <el-tag :type="runtimeOf(row)?.quality === 'GOOD' ? 'success' : 'warning'" effect="light">{{ runtimeOf(row)?.quality || 'UNKNOWN' }}</el-tag>
+              <el-tag :type="qualityType(runtimeOf(row)?.quality)" effect="light">{{ qualityText(runtimeOf(row)?.quality) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="耗时ms" width="90">
@@ -90,7 +90,7 @@
               <p>{{ selectedPoint.pointCode || '-' }} · {{ selectedPoint.address || '-' }}</p>
             </div>
             <div class="point-detail-head-actions">
-              <el-tag :type="runtimeOf(selectedPoint)?.quality === 'GOOD' ? 'success' : 'warning'" effect="light">{{ runtimeOf(selectedPoint)?.quality || 'UNKNOWN' }}</el-tag>
+              <el-tag :type="qualityType(runtimeOf(selectedPoint)?.quality)" effect="light">{{ qualityText(runtimeOf(selectedPoint)?.quality) }}</el-tag>
               <el-button size="small" @click="emitOpenRealtime">查看实时</el-button>
               <el-button size="small" @click="emitOpenHistory">查看历史</el-button>
             </div>
@@ -231,11 +231,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { Search } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 
 import { getDeviceRealtimeData } from "@/api/data.api";
 import PointBatchEditDialog from "./PointBatchEditDialog.vue";
 import PointGenerateDialog from "./PointGenerateDialog.vue";
-import { downloadPointWorkbook, parsePointWorkbook } from "./point-excel-utils";
+import { downloadPointCsv, parsePointCsv, validatePointImportFile } from "./point-excel-utils";
 import {
   applyPointExtraModel,
   buildPointExtraModel,
@@ -312,8 +313,8 @@ function selectPoint(row: DataPoint) {
   syncDetailModels();
 }
 
-function exportExcel() {
-  downloadPointWorkbook(points.value, `${props.deviceId || 'device'}-points.xlsx`);
+function exportCsv() {
+  downloadPointCsv(points.value, `${props.deviceId || 'device'}-points.csv`);
 }
 
 async function handleImportFile(event: Event) {
@@ -322,12 +323,18 @@ async function handleImportFile(event: Event) {
   if (!file) {
     return;
   }
-  const content = await file.arrayBuffer();
-  const preview = buildPointImportPreview(parsePointWorkbook(content));
-  importPreview.value = preview;
-  importPreviewLabel.value = file.name;
-  importPreviewVisible.value = true;
-  input.value = "";
+  try {
+    validatePointImportFile(file);
+    const content = await file.text();
+    const preview = buildPointImportPreview(parsePointCsv(content));
+    importPreview.value = preview;
+    importPreviewLabel.value = file.name;
+    importPreviewVisible.value = true;
+  } catch (error) {
+    ElMessage.warning(error instanceof Error ? error.message : "点位文件导入失败");
+  } finally {
+    input.value = "";
+  }
 }
 
 async function loadRealtime() {
@@ -387,6 +394,36 @@ function emitOpenRealtime() {
 
 function runtimeOf(point: DataPoint): RealtimePointRow | undefined {
   return runtimeMergedRows.value.find((row) => row.pointId === point.pointId || row.pointCode === point.pointCode || row.address === point.address);
+}
+
+function qualityType(value: unknown): "success" | "warning" | "danger" | "info" {
+  const quality = String(value || "").toUpperCase();
+  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) {
+    return "success";
+  }
+  if (["BAD", "ERROR", "FAILED"].includes(quality)) {
+    return "danger";
+  }
+  if (["UNCERTAIN", "WARN", "WARNING"].includes(quality)) {
+    return "warning";
+  }
+  return "info";
+}
+
+function qualityText(value: unknown): string {
+  const quality = String(value || "UNKNOWN").toUpperCase();
+  return {
+    GOOD: "良好",
+    OK: "良好",
+    SUCCESS: "良好",
+    BAD: "异常",
+    ERROR: "异常",
+    FAILED: "失败",
+    UNCERTAIN: "不确定",
+    WARN: "警告",
+    WARNING: "警告",
+    UNKNOWN: "未知"
+  }[quality] || quality;
 }
 
 function displayExtraValue(point: DataPoint, fieldName: string): string {

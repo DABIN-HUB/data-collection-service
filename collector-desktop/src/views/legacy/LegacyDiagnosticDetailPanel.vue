@@ -2,7 +2,7 @@
   <section class="exact-surface diagnostic-detail-panel">
     <div class="exact-surface-head">
       <h2>诊断详情增强</h2>
-      <span>/monitor/cache · /monitor/devices · /monitor/perf/detail · /monitor/errors · /monitor/storage</span>
+      <span>缓存 · 连接 · 性能 · 异常 · 存储</span>
     </div>
     <div class="exact-diagnostic-cards diagnostic-detail-cards">
       <div class="exact-diagnostic-card">
@@ -51,7 +51,7 @@
       </section>
     </div>
     <section class="exact-table-card diagnostic-connection-table">
-      <div class="exact-table-title"><h2>设备连接指标</h2><span>/monitor/devices</span></div>
+      <div class="exact-table-title"><h2>设备连接指标</h2><span>连接采集指标</span></div>
       <table>
         <thead><tr><th>设备</th><th>状态</th><th>连接</th><th>成功率</th><th>收/发字节</th><th>空闲</th><th>错误</th><th>说明</th></tr></thead>
         <tbody>
@@ -71,14 +71,14 @@
     </section>
     <div class="diagnostic-detail-grid">
       <section class="exact-table-card diagnostic-sub-card">
-        <div class="exact-table-title"><h2>异常统计 Top</h2><span>/monitor/errors</span></div>
+        <div class="exact-table-title"><h2>异常统计 Top</h2><span>最近异常分类</span></div>
         <div class="modao-risk-list">
           <div v-if="exceptionDetail.topCategories.length === 0" class="empty-state compact">暂无异常分类统计</div>
           <div v-for="item in exceptionDetail.topCategories.slice(0, 5)" :key="item.name" class="modao-risk-item"><strong>{{ item.name }}</strong><small>{{ item.count }} 次</small></div>
         </div>
       </section>
       <section class="exact-table-card diagnostic-sub-card">
-        <div class="exact-table-title"><h2>最慢设备 Top</h2><span>/monitor/perf/detail</span></div>
+        <div class="exact-table-title"><h2>最慢设备 Top</h2><span>采集耗时排行</span></div>
         <div class="modao-risk-list">
           <div v-if="performanceDetail.slowestDevices.length === 0" class="empty-state compact">暂无慢设备统计</div>
           <div v-for="item in performanceDetail.slowestDevices.slice(0, 5)" :key="item.deviceId" class="modao-risk-item"><strong>{{ item.deviceId }}</strong><small>{{ item.costMs }} ms</small></div>

@@ -291,7 +291,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
@@ -902,7 +902,19 @@ async function syncDevices() {
 
 async function startSelectedDevice(deviceId: string) { await startDevice(deviceId); await loadDevices(); }
 async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); }
-async function deleteLocal(deviceId: string) { if (!window.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`)) return; await deleteLocalDevice(deviceId); await loadDevices(); }
+async function deleteLocal(deviceId: string) {
+  try {
+    await ElMessageBox.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`, "删除本地设备", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
+    return;
+  }
+  await deleteLocalDevice(deviceId);
+  await loadDevices();
+}
 
 async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionType) {
   if (!deviceId) {
@@ -912,7 +924,13 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
   const option = DEVICE_CONFIG_ACTIONS.find((item) => item.type === type);
   const label = option?.label || "配置操作";
   const confirmText = option?.confirmText || "该操作只影响本地配置缓存。";
-  if (!window.confirm(`确认对设备 ${deviceId} 执行${label}？${confirmText}`)) {
+  try {
+    await ElMessageBox.confirm(`确认对设备 ${deviceId} 执行${label}？${confirmText}`, "确认配置操作", {
+      confirmButtonText: "确认执行",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
     return;
   }
   deviceConfigOperatingId.value = `${type}:${deviceId}`;

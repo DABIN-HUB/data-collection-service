@@ -1,10 +1,10 @@
 <template>
-  <section class="monitor-panel">
+  <section class="monitor-panel realtime-workbench">
     <div class="panel-toolbar">
       <div class="table-actions">
         <el-tag effect="plain">实时通道：{{ wsStatusText }}</el-tag>
         <el-button :loading="webSocketStore.connecting" @click="connectWebSocket">连接实时通道</el-button>
-        <el-button :loading="loading" @click="load">HTTP 刷新</el-button>
+        <el-button :loading="loading" @click="load">刷新实时值</el-button>
       </div>
     </div>
     <el-alert v-if="webSocketStore.error" :title="webSocketStore.error" type="info" :closable="false" />
@@ -14,7 +14,7 @@
       <el-table-column prop="pointCode" label="点位编码" min-width="150" />
       <el-table-column prop="address" label="地址" width="120" />
       <el-table-column label="当前值" min-width="130"><template #default="{ row }">{{ row.currentValue ?? row.value ?? '-' }}</template></el-table-column>
-      <el-table-column label="质量" width="110"><template #default="{ row }"><el-tag :type="row.quality === 'GOOD' ? 'success' : 'warning'" effect="light">{{ row.quality || 'UNKNOWN' }}</el-tag></template></el-table-column>
+      <el-table-column label="质量" width="110"><template #default="{ row }"><el-tag :type="qualityType(row.quality)" effect="light">{{ qualityText(row.quality) }}</el-tag></template></el-table-column>
       <el-table-column prop="unit" label="单位" width="90" />
       <el-table-column label="更新时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.collectTime) }}</template></el-table-column>
       <el-table-column prop="processCostMs" label="耗时 ms" width="100" />
@@ -92,6 +92,36 @@ function formatTime(value: unknown): string {
     return new Date(value).toLocaleString();
   }
   return value ? String(value) : "-";
+}
+
+function qualityType(value: unknown): "success" | "warning" | "danger" | "info" {
+  const quality = String(value || "").toUpperCase();
+  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) {
+    return "success";
+  }
+  if (["BAD", "ERROR", "FAILED"].includes(quality)) {
+    return "danger";
+  }
+  if (["UNCERTAIN", "WARN", "WARNING"].includes(quality)) {
+    return "warning";
+  }
+  return "info";
+}
+
+function qualityText(value: unknown): string {
+  const quality = String(value || "UNKNOWN").toUpperCase();
+  return {
+    GOOD: "良好",
+    OK: "良好",
+    SUCCESS: "良好",
+    BAD: "异常",
+    ERROR: "异常",
+    FAILED: "失败",
+    UNCERTAIN: "不确定",
+    WARN: "警告",
+    WARNING: "警告",
+    UNKNOWN: "未知"
+  }[quality] || quality;
 }
 
 function syncTimer() {

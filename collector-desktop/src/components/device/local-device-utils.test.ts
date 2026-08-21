@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildLocalDevicePayload, extractLocalDeviceBundle, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
+import { buildLocalDevicePayload, buildProtocolPointNotes, extractLocalDeviceBundle, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
 
 describe("local-device-utils", () => {
   it("构造本地临时设备保存 payload", () => {
@@ -89,5 +89,13 @@ describe("local-device-utils", () => {
     expect(extractLocalDeviceBundle({ bundle })).toEqual(bundle);
     expect(extractLocalDeviceBundle({ data: { bundle } })).toEqual(bundle);
     expect(extractLocalDeviceBundle(null)).toBeNull();
+  });
+
+  it("协议点位提示使用结构化文本，避免拼接 HTML", () => {
+    const note = buildProtocolPointNotes("SIEMENS_S7", ["DB1.DBW0", "<script>alert(1)</script>"], 2);
+
+    expect(note.addressHints).toEqual(["DB1.DBW0", "<script>alert(1)</script>"]);
+    expect(note.messages.join(" ")).toContain("S7 地址栏支持简写");
+    expect(note.messages.join(" ")).not.toContain("<code>");
   });
 });

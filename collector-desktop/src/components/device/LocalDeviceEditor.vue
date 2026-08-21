@@ -261,7 +261,10 @@
 
                       <section v-show="pointDetailTab === 'protocol'" class="field-group field-group-wide">
                         <h3>{{ protocolPointTitle }}</h3>
-                        <p class="protocol-point-note" v-html="protocolPointNote"></p>
+                        <div class="protocol-point-note">
+                          <p v-if="protocolPointNotes.addressHints.length">当前协议地址示例：<code v-for="hint in protocolPointNotes.addressHints" :key="hint">{{ hint }}</code></p>
+                          <p v-for="message in protocolPointNotes.messages" :key="message">{{ message }}</p>
+                        </div>
                         <div v-if="protocolPointFields.length" class="form-grid">
                           <label v-for="field in protocolPointFields" :key="field.path" :class="{ 'wide-field': field.fullWidth }">
                             <span class="field-label-text">{{ field.label }}<span v-if="field.required" class="field-required"> *</span></span>
@@ -440,14 +443,14 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
-import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElMessage } from "element-plus";
+import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElMessage, ElMessageBox } from "element-plus";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
 import { startLocalDevice } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, getPathValue, setPathValue, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
-import { buildLocalDevicePayload, DEFAULT_ADAPTIVE_CONFIG, normalizeLocalPoints, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig } from "./local-device-utils";
+import { buildLocalDevicePayload, buildProtocolPointNotes, DEFAULT_ADAPTIVE_CONFIG, normalizeLocalPoints, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig } from "./local-device-utils";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig, ProtocolSchema } from "@/types/protocol";
 
@@ -667,24 +670,7 @@ const protocolPointFields = computed<PointEditorField[]>(() => pointFields.value
 const protocolPointTitle = computed(() => protocol.value === "MODBUS_TCP" || protocol.value === "MODBUS_RTU"
   ? "协议扩展（Modbus 的 dataType 会直接影响取值长度和解码）"
   : "协议扩展");
-const protocolPointNote = computed(() => {
-  const hints = protocolSchema.value?.pointAddressHints || [];
-  const notes: string[] = [];
-  if (hints.length) {
-    notes.push(`当前协议地址示例：${hints.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}`);
-  }
-  if (protocol.value === "SIEMENS_S7") {
-    notes.push("S7 地址栏支持简写，例如 DB1.DBX0.0、DB1.DBW0、DB1.DBD4，也支持完整 PLC4X 地址，例如 %DB1:0.0:BOOL、%DB1:4:REAL。MODE/SYS/USR/ALM 只用于订阅模式，不应填在普通点位地址里。");
-  }
-  if (protocol.value === "MODBUS_TCP" || protocol.value === "MODBUS_RTU") {
-    notes.push("Modbus 的 dataType 会直接决定读取长度和寄存器解码方式；下方协议扩展字段主要用于补充兼容配置。");
-  } else if (pointFields.value.length) {
-    notes.push("下方字段都是协议扩展配置，字段下方的中文备注会说明用途、条件和保存位置。主类型字段如果已经提升到基础信息区，这里不会重复展示。");
-  } else {
-    notes.push("当前协议没有额外的点位扩展字段。");
-  }
-  return notes.join("<br>");
-});
+const protocolPointNotes = computed(() => buildProtocolPointNotes(protocol.value, protocolSchema.value?.pointAddressHints || [], pointFields.value.length));
 const cloudTargetDetail = computed(() => {
   if (!cloudTarget.enabled) {
     return "当前设备未启用云上报。请在基础连接页的“云平台身份”中启用云目标（cloudTarget）。";
@@ -811,12 +797,18 @@ function duplicatePoint() {
   syncJsonFromPoints();
 }
 
-function removePoint() {
+async function removePoint() {
   const point = selectedPoint.value;
   if (!point || selectedPointIndex.value < 0) {
     return;
   }
-  if (!window.confirm(`确认删除点位 ${point.pointCode || point.pointName || "当前点位"} 吗？`)) {
+  try {
+    await ElMessageBox.confirm(`确认删除点位 ${point.pointCode || point.pointName || "当前点位"} 吗？`, "删除点位", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    });
+  } catch {
     return;
   }
   points.value.splice(selectedPointIndex.value, 1);
@@ -1287,9 +1279,6 @@ function pruneEmpty(rule: AlarmRule): AlarmRule {
   return next;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] || char);
-}
 
 function handleLocalEditorKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && props.modelValue) {

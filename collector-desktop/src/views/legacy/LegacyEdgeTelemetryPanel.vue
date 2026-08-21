@@ -2,7 +2,7 @@
   <section class="exact-surface edge-telemetry-panel">
     <div class="exact-surface-head">
       <h2>边缘遥测调试</h2>
-      <span>POST /api/edge/telemetry</span>
+      <span>边缘网关数据接入</span>
     </div>
     <div class="edge-mode-row">
       <button type="button" :class="{ 'is-active': !useRawJson }" @click="useRawJson = false">快捷表单</button>
@@ -54,7 +54,7 @@
       </label>
     </div>
     <div v-else class="form-grid edge-form-grid raw-mode">
-      <label class="wide-field">原始 EdgeTelemetryBatchRequest JSON
+      <label class="wide-field">批量遥测 JSON
         <textarea v-model="rawJson" spellcheck="false"></textarea>
       </label>
     </div>
@@ -65,7 +65,7 @@
     </div>
     <div class="surface-grid two edge-json-grid">
       <section class="exact-json-panel" open>
-        <summary>请求 Payload 预览</summary>
+        <summary>请求内容预览</summary>
         <pre class="json-view compact-result-view">{{ payloadPreview }}</pre>
       </section>
       <section class="exact-json-panel" open>

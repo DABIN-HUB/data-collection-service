@@ -1149,6 +1149,10 @@
   width: 132px;
 }
 
+.table-actions > .log-source-filter {
+  width: 180px;
+}
+
 .command-strip > .el-date-editor,
 .table-actions > .el-date-editor {
   flex: 0 0 360px;
