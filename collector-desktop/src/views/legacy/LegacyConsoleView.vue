@@ -229,7 +229,7 @@
       </section>
 
       <section v-show="activeModule === 'diag'" class="exact-page">
-        <div class="section-heading"><div class="heading-title-line"><h1>系统实时状态诊断</h1><span class="heading-online"><i></i>运行数据</span></div><div class="heading-actions"><button type="button" class="primary" @click="runDiagnostic">运行完整诊断</button></div></div>
+        <div class="section-heading"><div class="heading-title-line"><h1>系统实时状态诊断</h1><span class="heading-online"><i></i>运行数据</span></div><div class="heading-actions"><button type="button" class="primary" @click="runDiagnostic">运行完整诊断</button><button type="button" @click="downloadDiagnosticPackage">导出诊断包</button></div></div>
         <div class="exact-page-body">
           <div class="exact-diagnostic-cards"><div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div>
           <section class="exact-table-card"><table><thead><tr><th>诊断项</th><th>状态</th><th>当前值</th><th>处理建议</th></tr></thead><tbody><tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr></tbody></table></section>
@@ -239,7 +239,7 @@
         </div>
       </section>
 
-      <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" />
+      <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" :selected-point-ref="historySelectedPointRef" @select-device="selectDevice" />
 
       <section v-show="activeModule === 'alarm'" class="exact-page">
         <div class="section-heading"><div class="heading-title-line"><h1>告警历史中心</h1><span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmHistorySummary.acknowledged }}</span></div><div class="heading-actions"><button type="button" :disabled="alarms.length === 0" @click="refreshAlarmAcknowledgements">确认状态批量查询</button><button type="button" @click="loadAlarms">刷新告警历史</button></div></div>
@@ -253,9 +253,9 @@
 
       <section v-show="activeModule === 'log'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>日志</h1><span class="heading-online"><i></i>{{ filteredLogs.length }} 条 · 错误 {{ logSummary.error }}</span></div><div class="heading-actions"><button type="button" :class="{ 'is-active': logAutoRefresh }" @click="logAutoRefresh = !logAutoRefresh">{{ logAutoRefresh ? '停止自动刷新' : '自动刷新' }}</button><button type="button" @click="loadLogs">刷新日志</button></div></div><div class="exact-page-body"><div class="exact-toolbar log-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="logLevel" @change="loadLogs"><option value="">全部级别</option><option value="ERROR">错误</option><option value="WARN">警告</option><option value="INFO">信息</option><option value="DEBUG">调试</option></select><select v-model="logDeviceId" @change="loadLogs"><option value="">全部设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="logLogger" type="text" placeholder="记录器名称 logger" @keydown.enter="loadLogs" /><input v-model="logThread" type="text" placeholder="线程名 thread" @keydown.enter="loadLogs" /><input v-model="logKeyword" type="search" placeholder="搜索日志内容、设备、点位或来源" @keydown.enter="loadLogs" /><input v-model.number="logLimit" type="number" min="20" max="2000" step="20" /><button type="button" class="primary" @click="loadLogs">查询</button></div><div class="exact-toolbar-group"><button type="button" @click="showErrorLogs">错误日志快速定位</button><button type="button" @click="searchLatestExceptionLogs">最近异常定位</button><button type="button" @click="downloadLogs('txt')">导出文本</button><button type="button" @click="downloadLogs('json')">导出 JSON</button></div></div><div class="exact-diagnostic-cards log-summary-cards"><div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div><div class="exact-diagnostic-card"><span>错误日志</span><strong>{{ logSummary.error }}</strong></div><div class="exact-diagnostic-card"><span>警告日志</span><strong>{{ logSummary.warn }}</strong></div><div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ logSummary.loggerCount }} / {{ logSummary.threadCount }}</strong></div></div><section class="exact-surface modao-log-panel"><div v-if="filteredLogs.length === 0" class="empty-state compact">当前条件下没有可显示日志</div><div v-for="(log, index) in filteredLogs" :key="`${log.timestamp || log.time || index}-${log.logger || '-'}-${log.thread || '-'}`" class="modao-log-row"><span class="modao-log-time">{{ formatTime(log.timestamp || log.time) }}</span><strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong><span class="modao-log-name" :title="String(log.logger || '-')">{{ shortLoggerName(log.logger) }}</span><span class="modao-log-thread" :title="String(log.thread || '-')">{{ log.thread || '-' }}</span><span class="modao-log-message">{{ log.message || log.content || '-' }}</span></div></section></div></section>
 
-      <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span></div><div class="heading-actions"><button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button><button type="button" :disabled="networkHistory.length === 0" @click="downloadNetworkReport">导出检测结果</button></div></div><div class="exact-page-body"><div class="exact-toolbar network-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkType" @change="syncNetworkMode"><option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option></select><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">本机 / 白名单目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" /><input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" /><input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" /><button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button></div></div><div class="exact-diagnostic-cards network-summary-cards"><div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div><div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div><div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div><div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre><div v-if="networkResult?.details?.length" class="network-trace-lines"><strong>路由明细</strong><code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code></div></section><section class="exact-table-card network-history-table"><div class="exact-table-title"><h2>检测历史记录</h2><span>最多保留 10 条</span></div><table><thead><tr><th>时间</th><th>方式</th><th>目标</th><th>端口</th><th>结论</th><th>耗时</th><th>原因</th></tr></thead><tbody><tr v-if="networkHistory.length === 0"><td colspan="7" class="exact-empty">暂无网络检测历史</td></tr><tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`"><td>{{ formatTime(item.completedAt) }}</td><td>{{ item.type }}</td><td>{{ item.target }}</td><td>{{ item.port ?? '-' }}</td><td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td><td>{{ item.durationMs ?? '-' }} ms</td><td>{{ item.reasonText }}</td></tr></tbody></table></section><LegacyEdgeTelemetryPanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" /></div></section>
+      <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span></div></div><div class="exact-page-body"><div class="exact-toolbar network-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkType" @change="syncNetworkMode"><option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option></select><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">本机 / 白名单目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" /><input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" /><input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" /><button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button></div><div class="exact-toolbar-group network-toolbar-actions"><button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button><button type="button" :disabled="networkHistory.length === 0" class="primary" @click="downloadNetworkReport">导出检测结果</button></div></div><div class="exact-diagnostic-cards network-summary-cards"><div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div><div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div><div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div><div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre><div v-if="networkResult?.details?.length" class="network-trace-lines"><strong>路由明细</strong><code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code></div></section><section class="exact-table-card network-history-table"><div class="exact-table-title"><h2>检测历史记录</h2><span>最多保留 10 条</span></div><table><thead><tr><th>时间</th><th>方式</th><th>目标</th><th>端口</th><th>结论</th><th>耗时</th><th>原因</th></tr></thead><tbody><tr v-if="networkHistory.length === 0"><td colspan="7" class="exact-empty">暂无网络检测历史</td></tr><tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`"><td>{{ formatTime(item.completedAt) }}</td><td>{{ item.type }}</td><td>{{ item.target }}</td><td>{{ item.port ?? '-' }}</td><td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td><td>{{ item.durationMs ?? '-' }} ms</td><td>{{ item.reasonText }}</td></tr></tbody></table></section><LegacyEdgeTelemetryPanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" /></div></section>
 
-      <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
+      <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>Outbox / ACK 明细</h2><span>{{ cloudOperationalRows.length }} 项</span></div><div class="modao-property-grid"><div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
 
       <section v-show="activeModule === 'workbench'" class="workspace-grid">
         <div class="workspace-column workspace-left"><section class="panel device-panel"><div class="panel-head"><div class="panel-head-main"><span class="panel-kicker">主工作流</span><h2>设备列表</h2></div><div class="inline-actions local-device-actions"><button type="button" class="primary" @click="openLocalEditor()">新建设备</button></div></div><div class="device-resource-list"><button v-for="device in devices" :key="deviceIdOf(device)" type="button" :class="{ 'is-active': selectedDeviceId === deviceIdOf(device) }" @click="selectDevice(deviceIdOf(device))"><strong>{{ device.deviceName || deviceIdOf(device) }}</strong><span>{{ device.protocolType || device.connectionType || '-' }}</span></button></div></section></div>
@@ -278,7 +278,7 @@
                 <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">设备告警历史</button>
               </div>
             </div>
-            <DeviceConfigPanel v-if="workbenchTab === 'config'" :device="selectedDeviceView" @start="startSelectedDevice" @stop="stopSelectedDevice" />
+            <DeviceConfigPanel v-if="workbenchTab === 'config'" :device="selectedDeviceView" @start="startSelectedDevice" @stop="stopSelectedDevice" @open-history="openWorkbenchHistory" @open-realtime="openWorkbenchRealtime" />
             <ManualShadowPanels v-else :tab="workbenchTab" :device-id="selectedDeviceId" />
           </section>
         </div>
@@ -375,6 +375,7 @@ const logs = ref<LogRow[]>([]);
 const realtimeRows = ref<RealtimePointRow[]>([]);
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
+const historySelectedPointRef = ref("");
 const deviceConfigOperatingId = ref("");
 const realtimeDeviceId = ref("");
 const realtimeKeyword = ref("");
@@ -597,6 +598,22 @@ const cloudStrategyRows = computed(() => {
     { label: "ACK 提交点", value: String(valueOf(ack, ["commitOn"], "-")) },
     { label: "ACK 超时", value: valueOf(ack, ["timeoutMs"], null) === null ? "-" : `${valueOf(ack, ["timeoutMs"], "-")} ms` },
     { label: "可靠发件箱", value: Boolean(outbox.enabled) ? "已启用" : "未启用" }
+  ];
+});
+const cloudOperationalRows = computed(() => {
+  const report = asRecord(reportMetrics.value);
+  const outbox = asRecord(report.outbox);
+  const ack = asRecord(report.ack);
+  const ackRuntime = asRecord(report.ackRuntime);
+  const executor = asRecord(report.executor);
+  return [
+    { label: "待发送", value: String(valueOf(outbox, ["pendingCount"], valueOf(executor, ["queueSize"], "-"))) },
+    { label: "待 ACK", value: String(valueOf(outbox, ["pendingAckCount"], valueOf(ackRuntime, ["pendingCount"], "-"))) },
+    { label: "隔离消息", value: String(valueOf(outbox, ["isolatedCount"], "-")) },
+    { label: "ACK 成功", value: String(valueOf(ackRuntime, ["successCount"], "-")) },
+    { label: "ACK 失败", value: String(valueOf(ackRuntime, ["failureCount"], "-")) },
+    { label: "ACK 提交点", value: String(valueOf(ack, ["commitOn"], "-")) },
+    { label: "ACK 超时", value: valueOf(ack, ["timeoutMs"], null) === null ? "-" : `${valueOf(ack, ["timeoutMs"], "-")} ms` }
   ];
 });
 const cloudRisks = computed(() => {
@@ -1146,6 +1163,53 @@ function openSelectedDeviceAlarmHistory() {
     return;
   }
   openDeviceAlarmHistory(selectedDevice.value);
+}
+
+function openWorkbenchHistory(target: { deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }) {
+  if (!target.deviceId || !target.pointRef) {
+    return;
+  }
+  selectDevice(target.deviceId);
+  historySelectedPointRef.value = target.pointRef;
+  switchModule("history");
+  ElMessage.info(`已切换到历史趋势：${target.pointLabel || target.pointName || target.pointRef}`);
+}
+
+function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }) {
+  if (!target.deviceId || !target.pointRef) {
+    return;
+  }
+  selectDevice(target.deviceId);
+  realtimeSingleDeviceId.value = target.deviceId;
+  realtimeSinglePointId.value = target.pointRef;
+  switchModule("realtime");
+  void loadSingleRealtime();
+  ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
+}
+
+function downloadDiagnosticPackage() {
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    selectedDeviceId: selectedDeviceId.value,
+    selectedDevice: selectedDeviceView.value || null,
+    overview: buildDiagnosticRaw(),
+    alarms: alarms.value.slice(0, 20),
+    logs: logs.value.slice(0, 50),
+    networkHistory: networkHistory.value.slice(0, 10),
+    runtimeSummary: {
+      totalDevices: devices.value.length,
+      onlineCount: onlineCount.value,
+      riskDevices: riskDevices.value.length,
+      reportState: reportState.value
+    }
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `collector-diagnostic-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function openDeviceOperation(device: DeviceInfo, tab: "control" | "shadow") {

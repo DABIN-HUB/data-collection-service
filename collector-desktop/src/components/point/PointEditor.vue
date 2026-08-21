@@ -89,7 +89,11 @@
               <h3>{{ selectedPoint.pointName || selectedPoint.pointCode || '未命名点位' }}</h3>
               <p>{{ selectedPoint.pointCode || '-' }} · {{ selectedPoint.address || '-' }}</p>
             </div>
-            <el-tag :type="runtimeOf(selectedPoint)?.quality === 'GOOD' ? 'success' : 'warning'" effect="light">{{ runtimeOf(selectedPoint)?.quality || 'UNKNOWN' }}</el-tag>
+            <div class="point-detail-head-actions">
+              <el-tag :type="runtimeOf(selectedPoint)?.quality === 'GOOD' ? 'success' : 'warning'" effect="light">{{ runtimeOf(selectedPoint)?.quality || 'UNKNOWN' }}</el-tag>
+              <el-button size="small" @click="emitOpenRealtime">查看实时</el-button>
+              <el-button size="small" @click="emitOpenHistory">查看历史</el-button>
+            </div>
           </div>
 
           <div class="point-runtime-strip">
@@ -183,8 +187,46 @@
 
     <PointBatchEditDialog v-model="batchDialogVisible" :selected-count="selectedIds.length" @apply="pointStore.applyBatch(deviceId, $event)" />
     <PointGenerateDialog v-model="generateDialogVisible" @generate="pointStore.appendGeneratedPoints(deviceId, $event)" />
-  </section>
-</template>
+
+    <el-dialog v-model="importPreviewVisible" title="点位导入预览" width="920px" class="point-import-preview-dialog">
+      <div class="point-import-preview-head">
+        <div>
+          <strong>{{ importPreviewLabel || '导入文件' }}</strong>
+          <p v-if="importPreview">{{ importPreview.summary }}</p>
+        </div>
+        <div class="point-import-preview-stats" v-if="importPreview">
+          <el-tag effect="light">共 {{ importPreview.rows.length }} 条</el-tag>
+          <el-tag v-if="importPreview.duplicatePointCodes.length" type="warning" effect="light">编码重复 {{ importPreview.duplicatePointCodes.length }}</el-tag>
+          <el-tag v-if="importPreview.duplicateAddresses.length" type="warning" effect="light">地址重复 {{ importPreview.duplicateAddresses.length }}</el-tag>
+        </div>
+      </div>
+      <el-alert v-if="importPreview && importPreview.warnings.length" :title="importPreview.warnings.join('；')" type="warning" :closable="false" />
+      <div class="point-import-preview-table">
+        <table>
+          <thead>
+            <tr><th>点位名称</th><th>点位编码</th><th>地址</th><th>数据类型</th><th>读写</th><th>单位</th><th>报警</th></tr>
+          </thead>
+          <tbody>
+            <tr v-if="!importPreview || importPreview.rows.length === 0"><td colspan="7" class="exact-empty">未解析到可导入点位</td></tr>
+            <tr v-for="row in importPreview?.rows || []" :key="`${row.pointId || row.pointCode || row.address}`">
+              <td>{{ row.pointName || '-' }}</td>
+              <td>{{ row.pointCode || '-' }}</td>
+              <td>{{ row.address || '-' }}</td>
+              <td>{{ row.dataType || '-' }}</td>
+              <td>{{ row.readWrite || '-' }}</td>
+              <td>{{ row.unit || '-' }}</td>
+              <td>{{ row.alarmEnabled ? '启用' : '关闭' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <template #footer>
+        <el-button @click="cancelImportPreview">取消</el-button>
+        <el-button type="primary" :disabled="!importPreview || importPreview.rows.length === 0" @click="confirmImportPreview">确认导入</el-button>
+      </template>
+    </el-dialog>
+   </section>
+ </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
@@ -197,10 +239,14 @@ import { downloadPointWorkbook, parsePointWorkbook } from "./point-excel-utils";
 import {
   applyPointExtraModel,
   buildPointExtraModel,
+  buildPointImportPreview,
+  buildPointLocationTarget,
   formatJsonForTextarea,
   mergePointRuntime,
   parseJsonTextarea,
-  type PointExtraModel
+  type PointExtraModel,
+  type PointImportPreview,
+  type PointLocationTarget
 } from "./point-editor-utils";
 import { usePointStore } from "@/stores/point.store";
 import type { RealtimePointRow } from "@/types/monitor";
@@ -211,6 +257,11 @@ const props = defineProps<{
   deviceId: string;
   protocol?: ProtocolSchema | null;
   protocolCode?: string;
+}>();
+
+const emit = defineEmits<{
+  "open-history": [target: PointLocationTarget];
+  "open-realtime": [target: PointLocationTarget];
 }>();
 
 const pointStore = usePointStore();
@@ -227,6 +278,9 @@ const pointExtraModel = ref<PointExtraModel>({});
 const additionalConfigModel = ref<Record<string, unknown>>({});
 const additionalConfigText = ref("{}");
 const alarmRuleText = ref("{}");
+const importPreviewVisible = ref(false);
+const importPreview = ref<PointImportPreview | null>(null);
+const importPreviewLabel = ref("");
 
 const points = computed(() => pointStore.getPoints(props.deviceId));
 const selectedIds = computed(() => pointStore.getSelectedIds(props.deviceId));
@@ -269,9 +323,10 @@ async function handleImportFile(event: Event) {
     return;
   }
   const content = await file.arrayBuffer();
-  pointStore.replacePoints(props.deviceId, parsePointWorkbook(content));
-  selectedPointId.value = pointStore.getPoints(props.deviceId)[0]?.pointId || "";
-  syncDetailModels();
+  const preview = buildPointImportPreview(parsePointWorkbook(content));
+  importPreview.value = preview;
+  importPreviewLabel.value = file.name;
+  importPreviewVisible.value = true;
   input.value = "";
 }
 
@@ -296,6 +351,38 @@ async function savePoints() {
   applyAdditionalConfigJson(false);
   applyAlarmRuleJson(false);
   await pointStore.save(props.deviceId);
+}
+
+function confirmImportPreview() {
+  if (!importPreview.value) {
+    return;
+  }
+  pointStore.replacePoints(props.deviceId, importPreview.value.rows);
+  selectedPointId.value = pointStore.getPoints(props.deviceId)[0]?.pointId || "";
+  syncDetailModels();
+  importPreviewVisible.value = false;
+  importPreview.value = null;
+  importPreviewLabel.value = "";
+}
+
+function cancelImportPreview() {
+  importPreviewVisible.value = false;
+  importPreview.value = null;
+  importPreviewLabel.value = "";
+}
+
+function emitOpenHistory() {
+  if (!selectedPoint.value) {
+    return;
+  }
+  emit("open-history", buildPointLocationTarget(selectedPoint.value, props.deviceId));
+}
+
+function emitOpenRealtime() {
+  if (!selectedPoint.value) {
+    return;
+  }
+  emit("open-realtime", buildPointLocationTarget(selectedPoint.value, props.deviceId));
 }
 
 function runtimeOf(point: DataPoint): RealtimePointRow | undefined {

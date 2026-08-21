@@ -24,12 +24,24 @@
           <div class="connection-test-card">
             <div>
               <h3>连接测试</h3>
-              <p>当前通过启动、停止和运行态结果辅助判断连接状态，后续可替换为独立连接校验能力。</p>
+              <p>读取当前设备运行态、连接状态和最近错误，作为保存前的快速检查。</p>
             </div>
             <div class="header-actions">
+              <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
               <el-button type="primary" @click="$emit('start', device.normalizedId)">启动采集</el-button>
               <el-button type="danger" plain @click="$emit('stop', device.normalizedId)">停止采集</el-button>
             </div>
+          </div>
+          <div class="protocol-state-strip">
+            <div class="state-pill"><span>运行态</span><strong>{{ connectionStatusText }}</strong></div>
+            <div class="state-pill"><span>连接</span><strong>{{ connectionHealthText }}</strong></div>
+            <div class="state-pill"><span>最近消息</span><strong>{{ connectionMessage || statusDetail?.message || '-' }}</strong></div>
+          </div>
+          <div class="workbench-jump-row">
+            <button type="button" @click="activeTab = 'points'">跳到点位</button>
+            <button type="button" @click="activeTab = 'realtime'">跳到实时</button>
+            <button type="button" @click="activeTab = 'alarm'">跳到告警</button>
+            <button type="button" @click="activeTab = 'log'">跳到日志</button>
           </div>
         </el-tab-pane>
 
@@ -59,11 +71,15 @@
               <el-tag v-else type="warning" effect="light">{{ protocolErrors.length }} 个字段待完善</el-tag>
               <span v-if="connectionMessage" class="schema-message">{{ connectionMessage }}</span>
             </div>
+            <div class="payload-preview-card">
+              <div class="surface-card-head"><h4>保存前 payload 预览</h4><button type="button" @click="loadProtocolConfig">刷新预览</button></div>
+              <pre class="json-view compact-result-view">{{ connectionPayloadPreviewText }}</pre>
+            </div>
           </div>
         </el-tab-pane>
 
         <el-tab-pane label="点位配置" name="points">
-          <PointEditor :device-id="device.normalizedId" :protocol="protocolSchema" :protocol-code="protocolKey" />
+          <PointEditor :device-id="device.normalizedId" :protocol="protocolSchema" :protocol-code="protocolKey" @open-history="$emit('open-history', $event)" @open-realtime="$emit('open-realtime', $event)" />
         </el-tab-pane>
 
         <el-tab-pane label="实时数据" name="realtime">
@@ -94,6 +110,7 @@ import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getDeviceConnection, getDeviceDiff, updateDeviceConnection } from "@/api/config.api";
+import { getDeviceStatus } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
 import LogPanel from "@/components/log/LogPanel.vue";
@@ -101,6 +118,7 @@ import PointEditor from "@/components/point/PointEditor.vue";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { resolveDeviceStatus } from "@/stores/device.store";
+import { normalizeDeviceStatusDetail, type DeviceStatusDetail } from "@/views/legacy/device-runtime-utils";
 import { buildConnectionPayload, extractProtocolModel, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import type { DeviceViewModel } from "@/types/device";
 import type { ProtocolSchema } from "@/types/protocol";
@@ -112,6 +130,8 @@ const props = defineProps<{
 defineEmits<{
   start: [deviceId: string];
   stop: [deviceId: string];
+  "open-history": [{ deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }];
+  "open-realtime": [{ deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }];
 }>();
 
 const activeTab = ref("basic");
@@ -125,11 +145,45 @@ const protocolError = ref("");
 const connectionMessage = ref("");
 const diffVisible = ref(false);
 const diffText = ref("{}");
+const statusDetail = ref<DeviceStatusDetail | null>(null);
+const statusLoading = ref(false);
 
 const protocolKey = computed(() => String(props.device?.protocolType || props.device?.connectionType || ""));
 const protocolFields = computed(() => protocolSchema.value?.connectionFields || []);
 
 type DeviceStatusTag = "success" | "warning" | "danger" | "info";
+
+const connectionPayloadPreview = computed(() => {
+  if (!props.device) {
+    return {};
+  }
+  return buildConnectionPayload(protocolFields.value, protocolModel.value, {
+    ...connectionConfig.value,
+    deviceId: props.device.normalizedId,
+    connectionType: protocolKey.value,
+    protocolType: protocolKey.value
+  });
+});
+const connectionPayloadPreviewText = computed(() => JSON.stringify(connectionPayloadPreview.value, null, 2));
+const connectionStatusText = computed(() => {
+  if (!statusDetail.value) {
+    return resolveDeviceStatus(props.device || ({ status: "OFFLINE" } as DeviceViewModel));
+  }
+  return statusDetail.value.isRunning || statusDetail.value.running ? "RUNNING" : (statusDetail.value.connected ? "ONLINE" : (statusDetail.value.degradedReason ? "ERROR" : "OFFLINE"));
+});
+const connectionHealthText = computed(() => {
+  if (!statusDetail.value) {
+    return props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
+  }
+  if (statusDetail.value.connected && !statusDetail.value.degradedReason) {
+    return "正常";
+  }
+  if (statusDetail.value.degradedReason) {
+    return statusDetail.value.degradedReason;
+  }
+  return statusDetail.value.isRunning || statusDetail.value.running ? "运行中" : "未连接";
+});
+
 
 const deviceStatusText = computed(() => {
   const status = props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
@@ -173,6 +227,25 @@ async function loadProtocolConfig() {
     protocolError.value = error instanceof Error ? error.message : "协议连接配置加载失败";
   } finally {
     protocolLoading.value = false;
+  }
+}
+
+async function loadConnectionStatus() {
+  if (!props.device) {
+    return;
+  }
+  statusLoading.value = true;
+  try {
+    statusDetail.value = normalizeDeviceStatusDetail(await getDeviceStatus(props.device.normalizedId), props.device.normalizedId);
+    connectionMessage.value = statusDetail.value.message || (statusDetail.value.connected ? "连接正常" : "连接异常");
+    if (!connectionMessage.value) {
+      connectionMessage.value = statusDetail.value.connected ? "连接正常" : "连接异常";
+    }
+  } catch (error) {
+    statusDetail.value = null;
+    connectionMessage.value = error instanceof Error ? error.message : "连接状态检查失败";
+  } finally {
+    statusLoading.value = false;
   }
 }
 
@@ -242,6 +315,14 @@ watch(activeTab, (tab) => {
     loadProtocolConfig().catch(() => undefined);
   }
 });
+
+watch(() => props.device?.normalizedId, () => {
+  statusDetail.value = null;
+  connectionMessage.value = "";
+  if (props.device) {
+    loadConnectionStatus().catch(() => undefined);
+  }
+}, { immediate: true });
 
 watch(protocolKey, () => {
   protocolModel.value = {};

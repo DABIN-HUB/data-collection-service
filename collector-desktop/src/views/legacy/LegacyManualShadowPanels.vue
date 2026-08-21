@@ -29,9 +29,15 @@
 
   <div v-else class="console-module console-module-active">
     <div class="console-panel-head"><h2>设备影子</h2><span>{{ deviceId || '未选择设备' }}</span></div>
+    <div class="shadow-summary-grid">
+      <div class="shadow-summary-card"><span>当前影子</span><strong>{{ shadowSummary.currentText }}</strong></div>
+      <div class="shadow-summary-card"><span>期望状态</span><strong>{{ shadowSummary.desiredText }}</strong></div>
+      <div class="shadow-summary-card"><span>delta</span><strong>{{ shadowSummary.deltaText }}</strong></div>
+      <div class="shadow-summary-card"><span>历史记录</span><strong>{{ shadowSummary.historyCount }}</strong></div>
+    </div>
     <div class="surface-grid two">
       <section class="surface-card">
-        <div class="surface-card-head"><h3>当前影子</h3><div class="inline-actions"><button type="button" :disabled="!deviceId" @click="loadShadowBundle">读取全部</button><button type="button" :disabled="!deviceId" @click="loadShadow">读取影子</button></div></div>
+        <div class="surface-card-head"><h3>当前影子</h3><div class="inline-actions"><button type="button" :disabled="!deviceId" @click="loadShadowBundle">读取全部</button><button type="button" :disabled="!deviceId" @click="loadShadow">读取影子</button><button type="button" :disabled="!deviceId" @click="downloadShadowPackage">导出快照</button></div></div>
         <pre class="json-view">{{ shadowText }}</pre>
       </section>
       <section class="surface-card">
@@ -67,7 +73,7 @@ import { ElMessage } from "element-plus";
 
 import { executeDeviceCommand, writeDevicePoint, writeDevicePoints } from "@/api/control.api";
 import { clearShadowDesired, getShadow, getShadowDelta, getShadowHistory, updateShadowDesired } from "@/api/shadow.api";
-import { normalizeShadowHistoryRows, type ShadowHistoryRow } from "./shadow-utils";
+import { normalizeShadowHistoryRows, summarizeShadowState, type ShadowHistoryRow } from "./shadow-utils";
 
 const props = defineProps<{ tab: string; deviceId: string }>();
 
@@ -86,6 +92,7 @@ const desiredPayload = ref(JSON.stringify({ desired: {} }, null, 2));
 const resultText = computed(() => JSON.stringify(result.value, null, 2));
 const shadowText = computed(() => JSON.stringify(shadow.value, null, 2));
 const shadowDeltaText = computed(() => JSON.stringify(shadowDelta.value, null, 2));
+const shadowSummary = computed(() => summarizeShadowState(shadow.value, parseShadowJson(desiredPayload.value), shadowDelta.value, shadowHistoryRows.value));
 
 watch(() => props.deviceId, () => {
   result.value = { message: "等待执行结果" };
@@ -146,6 +153,27 @@ async function loadShadowBundle() {
   await Promise.allSettled([loadShadow(), loadShadowDelta(), loadShadowHistory()]);
 }
 
+function downloadShadowPackage() {
+  if (!props.deviceId) {
+    return;
+  }
+  const payload = {
+    deviceId: props.deviceId,
+    generatedAt: new Date().toISOString(),
+    current: shadow.value,
+    desired: parseShadowJson(desiredPayload.value),
+    delta: shadowDelta.value,
+    history: shadowHistoryRows.value
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `collector-shadow-${props.deviceId}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 async function saveDesired() {
   if (!props.deviceId) {
     return;
@@ -187,7 +215,7 @@ function formatShadowTime(row: ShadowHistoryRow): string {
   if (!raw) {
     return "-";
   }
-  if (typeof raw !== "string" && typeof raw !== "number" && !(raw instanceof Date)) {
+  if (typeof raw !== "string" && typeof raw !== "number") {
     return String(raw);
   }
   const date = new Date(raw);
@@ -196,5 +224,13 @@ function formatShadowTime(row: ShadowHistoryRow): string {
 
 function compactJson(value: unknown): string {
   return JSON.stringify(value);
+}
+
+function parseShadowJson(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { raw: text };
+  }
 }
 </script>
