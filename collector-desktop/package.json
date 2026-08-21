@@ -15,6 +15,8 @@
     "smoke:modbus": "node scripts/modbus-smoke.mjs",
     "smoke:extended": "node scripts/extended-smoke.mjs",
     "build:renderer": "vite build",
+    "sync:web": "node scripts/sync-web-console.mjs",
+    "build:web": "npm run build:renderer && npm run sync:web",
     "build:electron": "tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "build": "vue-tsc --noEmit && npm run build:renderer && npm run build:electron",
@@ -27,12 +29,10 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.7.9",
-    "echarts": "^5.6.0",
     "element-plus": "^2.9.3",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "xlsx": "^0.18.5"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

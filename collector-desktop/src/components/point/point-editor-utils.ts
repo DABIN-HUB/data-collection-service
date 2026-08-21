@@ -17,6 +17,21 @@ export interface PointBatchEditPayload {
   values: Partial<DataPoint>;
 }
 
+export interface PointImportPreview {
+  rows: DataPoint[];
+  duplicatePointCodes: string[];
+  duplicateAddresses: string[];
+  warnings: string[];
+  summary: string;
+}
+
+export interface PointLocationTarget {
+  deviceId: string;
+  pointRef: string;
+  pointName: string;
+  pointLabel: string;
+}
+
 export function buildIncrementalPoints(options: BuildIncrementalPointsOptions): DataPoint[] {
   const count = Math.max(0, options.count);
   return Array.from({ length: count }, (_unused, index) => {
@@ -48,6 +63,35 @@ export function applyPointBatchEdit(rows: DataPoint[], selectedIds: string[], pa
       ...patch
     };
   });
+}
+
+export function buildPointImportPreview(points: DataPoint[]): PointImportPreview {
+  const rows = normalizePointRows(points);
+  const duplicatePointCodes = collectDuplicateValues(rows.map((row) => String(row.pointCode || "").trim()).filter(Boolean));
+  const duplicateAddresses = collectDuplicateValues(rows.map((row) => String(row.address || "").trim()).filter(Boolean));
+  const warnings = [
+    duplicatePointCodes.length ? `点位编码重复：${duplicatePointCodes.join("、")}` : "",
+    duplicateAddresses.length ? `地址重复：${duplicateAddresses.join("、")}` : ""
+  ].filter(Boolean);
+  return {
+    rows,
+    duplicatePointCodes,
+    duplicateAddresses,
+    warnings,
+    summary: `共 ${rows.length} 条点位，${warnings.length ? `${warnings.length} 组重复` : "未发现重复项"}`
+  };
+}
+
+export function buildPointLocationTarget(point: Pick<DataPoint, "pointId" | "pointCode" | "pointName" | "address">, deviceId: string): PointLocationTarget {
+  const pointRef = String(point.pointId || point.pointCode || point.address || "");
+  const pointName = String(point.pointName || point.pointCode || pointRef || "未命名点位");
+  const pointLabel = [point.pointName || pointName, point.pointCode || pointRef].filter(Boolean).join(" / ");
+  return {
+    deviceId,
+    pointRef,
+    pointName,
+    pointLabel: pointLabel || pointName
+  };
 }
 
 export function normalizePointRows(rows: DataPoint[]): DataPoint[] {
@@ -157,6 +201,14 @@ function cloneRecord(value: unknown): Record<string, unknown> {
     return {};
   }
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function collectDuplicateValues(values: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries()).filter(([, count]) => count > 1).map(([value]) => value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -18,11 +18,18 @@ export interface NormalizedWindowState {
   maximized: boolean;
 }
 
+export interface WindowChromeOptions {
+  autoHideMenuBar: boolean;
+  menuBarVisible: boolean;
+  backgroundColor: string;
+}
+
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:9090/collector";
 export const MIN_WINDOW_WIDTH = 1180;
 export const MIN_WINDOW_HEIGHT = 760;
 export const DEFAULT_WINDOW_WIDTH = 1440;
 export const DEFAULT_WINDOW_HEIGHT = 920;
+export const APP_CHROME_BACKGROUND = "#0d1b2a";
 
 export function normalizeServerConfig(config: Partial<ServerConfig> = {}): ServerConfig {
   return {
@@ -37,6 +44,14 @@ export function normalizeWindowState(state: WindowState = {}): NormalizedWindowS
     x: typeof state.x === "number" ? state.x : undefined,
     y: typeof state.y === "number" ? state.y : undefined,
     maximized: Boolean(state.maximized)
+  };
+}
+
+export function buildWindowChromeOptions(): WindowChromeOptions {
+  return {
+    autoHideMenuBar: true,
+    menuBarVisible: false,
+    backgroundColor: APP_CHROME_BACKGROUND
   };
 }
 

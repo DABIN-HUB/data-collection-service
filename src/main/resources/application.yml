@@ -177,18 +177,15 @@ collector:
     permit-all-paths:
       - /health
       - /actuator/**
-      - /admin/**
+      - /desktop/**
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
     ops-tokens: {ops-token: dev}
     default-required-scope: VIEW
-    default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE, EDGE_INGEST]
+    default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE]
     ops-scopes: {}
     access-rules:
-      - methods: [POST]
-        paths: [/api/edge/telemetry]
-        required-scope: EDGE_INGEST
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/device/**, /api/data/device/*/reset-adaptive]
         required-scope: DEVICE_CONTROL
@@ -256,7 +253,7 @@ collector:
     replay-batch-size: 100
     local-queue-capacity: 10000
 
-## 从云端获取配置数据地址，配套服务
+  ## 从云端获取配置数据地址，配套服务
   config:
     yun-url: http://127.0.0.1:48080/admin-api
     sync-interval: 300000

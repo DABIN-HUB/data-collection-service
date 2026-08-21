@@ -4,6 +4,8 @@ import {
   applyPointBatchEdit,
   applyPointExtraModel,
   buildIncrementalPoints,
+  buildPointImportPreview,
+  buildPointLocationTarget,
   buildPointExtraModel,
   formatJsonForTextarea,
   mergePointRuntime,
@@ -82,5 +84,28 @@ describe("point-editor-utils", () => {
     expect(formatJsonForTextarea({ high: 10 })).toContain('"high": 10');
     expect(parseJsonTextarea('{"high":10}', {})).toEqual({ high: 10 });
     expect(parseJsonTextarea('', { enabled: true })).toEqual({ enabled: true });
+  });
+
+  it("构造点位导入预览和重复项提示", () => {
+    const preview = buildPointImportPreview([
+      { pointCode: "temp_001", pointName: "温度1", address: "40001" },
+      { pointCode: "temp_001", pointName: "温度2", address: "40003" },
+      { pointCode: "press_001", pointName: "压力1", address: "40003" }
+    ]);
+
+    expect(preview.rows).toHaveLength(3);
+    expect(preview.duplicatePointCodes).toEqual(["temp_001"]);
+    expect(preview.duplicateAddresses).toEqual(["40003"]);
+    expect(preview.warnings.join("；")).toContain("点位编码重复");
+    expect(preview.summary).toContain("3 条");
+  });
+
+  it("构造点位联动跳转目标", () => {
+    expect(buildPointLocationTarget({ pointId: "p1", pointCode: "temp_001", pointName: "温度" }, "dev-1")).toEqual({
+      deviceId: "dev-1",
+      pointRef: "p1",
+      pointName: "温度",
+      pointLabel: "温度 / temp_001"
+    });
   });
 });

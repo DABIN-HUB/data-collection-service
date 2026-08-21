@@ -22,12 +22,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/echarts")) {
-            return "vendor-echarts";
-          }
-          if (id.includes("node_modules/xlsx")) {
-            return "vendor-xlsx";
-          }
           if (id.includes("node_modules/element-plus") || id.includes("node_modules/@element-plus")) {
             return "vendor-element-plus";
           }

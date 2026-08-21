@@ -1,200 +1,2071 @@
-.legacy-console {
-  --legacy-bg: #edf3fb;
-  --legacy-panel: #ffffff;
-  --legacy-line: #d8e2f0;
-  --legacy-text: #142033;
-  --legacy-muted: #64748b;
-  --legacy-primary: #2563eb;
-  --legacy-green: #16a34a;
-  --legacy-red: #dc2626;
-  width: 100vw;
-  height: 100vh;
-  display: grid;
-  grid-template-columns: 268px minmax(0, 1fr);
+body.modao-exact {
+  --exact-bg: #0d1b2a;
+  --exact-sidebar: #151d2b;
+  --exact-panel: #1a2332;
+  --exact-panel-soft: #252e3f;
+  --exact-border: #2d4a7a;
+  --exact-blue: #3b82f6;
+  --exact-cyan: #22d3ee;
+  --exact-green: #10b981;
+  --exact-red: #ef4444;
+  --exact-orange: #f97316;
+  --exact-text: #ffffff;
+  --exact-muted: #94a3b8;
+  --exact-dim: #64748b;
+  margin: 0;
   overflow: hidden;
-  background: radial-gradient(circle at 20% 0%, rgba(37, 99, 235, 0.12), transparent 26%), linear-gradient(135deg, #eef4fb 0%, #e7eef8 46%, #f6f8fb 100%);
-  color: var(--legacy-text);
-  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  background: var(--exact-bg);
+  color: var(--exact-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
-.legacy-console * { box-sizing: border-box; }
+body.modao-exact #app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
 
-.legacy-console button,
-.legacy-console input,
-.legacy-console select,
-.legacy-console textarea {
+body.modao-exact .legacy-console.shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--exact-bg);
+  color: var(--exact-text);
+}
+
+body.modao-exact .legacy-console * {
+  box-sizing: border-box;
+}
+
+body.modao-exact .legacy-console button,
+body.modao-exact .legacy-console input,
+body.modao-exact .legacy-console select,
+body.modao-exact .legacy-console textarea {
   font: inherit;
 }
 
-.legacy-console button {
-  min-height: 36px;
+body.modao-exact .legacy-console button {
+  min-height: 34px;
   padding: 0 14px;
-  border: 1px solid #cbd8ea;
-  border-radius: 12px;
-  color: #1f2f46;
-  background: #fff;
+  color: #fff;
+  border: 1px solid var(--exact-border);
+  border-radius: 4px;
+  background: var(--exact-panel);
+  box-shadow: none;
   cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+body.modao-exact .legacy-console button:hover {
+  border-color: var(--exact-blue);
+  transform: none;
+}
+
+body.modao-exact .legacy-console button.primary {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console button.danger {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.46);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+body.modao-exact .legacy-console button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+body.modao-exact .legacy-console input,
+body.modao-exact .legacy-console select,
+body.modao-exact .legacy-console textarea {
+  height: 34px;
+  min-width: 0;
+  padding: 0 12px;
+  outline: none;
+  color: #e2e8f0;
+  border: 1px solid var(--exact-border);
+  border-radius: 5px;
+  background: var(--exact-bg);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console textarea {
+  height: auto;
+  min-height: 160px;
+  padding: 12px;
+  font-family: Consolas, "JetBrains Mono", monospace;
+}
+
+body.modao-exact .legacy-console input:focus,
+body.modao-exact .legacy-console select:focus,
+body.modao-exact .legacy-console textarea:focus {
+  border-color: var(--exact-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+body.modao-exact .legacy-console .sidebar {
+  position: relative;
+  inset: auto;
+  z-index: 30;
+  display: flex;
+  flex: 0 0 220px;
+  width: 220px;
+  height: 100vh;
+  padding: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: rgba(237, 244, 255, 0.82);
+  background: var(--exact-sidebar);
+  border: 0;
+  border-right: 1px solid var(--exact-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console .sidebar-top {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+body.modao-exact .legacy-console .brand {
+  display: flex;
+  height: 78px;
+  padding: 0 23px;
+  margin: 0;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--exact-border);
+}
+
+body.modao-exact .legacy-console .brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  color: #fff;
+  border-radius: 4px;
+  background: #2563eb;
+  box-shadow: none;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+body.modao-exact .legacy-console .brand-mark img {
+  width: 22px;
+  height: 22px;
+  display: block;
+  filter: brightness(0) invert(1);
+}
+
+body.modao-exact .legacy-console .brand-copy strong {
+  display: block;
+  overflow: visible;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: -0.8px;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .section-nav {
+  display: block;
+  min-height: 0;
+  padding: 15px 11px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+body.modao-exact .legacy-console .nav-group,
+body.modao-exact .legacy-console .nav-group + .nav-group {
+  display: flex;
+  margin: 0 0 23px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+body.modao-exact .legacy-console .nav-group-title {
+  display: block;
+  padding: 0 12px;
+  margin-bottom: 6px;
+  color: #526780;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+body.modao-exact .legacy-console .section-nav a {
+  display: flex;
+  height: 36px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 11px;
+  color: #cbd5e1;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 36px;
+  text-decoration: none;
+}
+
+body.modao-exact .legacy-console .section-nav a:hover {
+  color: #fff;
+  background: rgba(45, 74, 122, 0.42);
+}
+
+body.modao-exact .legacy-console .section-nav a.is-active {
+  color: #fff;
+  background: #36598d;
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console .nav-glyph {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: #cbd5e1;
+  border-radius: 0;
+  background: none;
+  font-size: 10px;
   font-weight: 700;
 }
 
-.legacy-console button:hover { border-color: #8fb0dd; color: #0f3d91; }
-.legacy-console button.primary { color: #fff; border-color: #2563eb; background: linear-gradient(135deg, #2563eb, #0ea5e9); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.18); }
-.legacy-console button.danger { color: #b91c1c; border-color: #fecaca; background: #fff5f5; }
-.legacy-console button:disabled { opacity: 0.55; cursor: not-allowed; }
-
-.legacy-console input,
-.legacy-console select,
-.legacy-console textarea {
-  min-height: 36px;
-  border: 1px solid #cfdced;
-  border-radius: 12px;
-  padding: 0 12px;
-  background: #fff;
-  color: var(--legacy-text);
-  outline: none;
+body.modao-exact .legacy-console .nav-glyph img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
-.legacy-console textarea { padding: 12px; min-height: 160px; }
-.legacy-console input:focus,
-.legacy-console select:focus,
-.legacy-console textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+body.modao-exact .legacy-console .sidebar-bottom {
+  position: relative;
+  display: block;
+  padding: 0;
+  border-top: 1px solid var(--exact-border);
+  background: transparent;
+}
 
-.sidebar {
+body.modao-exact .legacy-console .system-status {
+  display: flex;
+  height: 47px;
+  padding: 0 15px;
+  align-items: center;
+  gap: 9px;
+  color: var(--exact-muted);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .system-status i,
+body.modao-exact .legacy-console .heading-online i,
+body.modao-exact .legacy-console .node-health i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+}
+
+body.modao-exact .legacy-console .system-status.is-unknown i,
+body.modao-exact .legacy-console .node-health.is-unknown i,
+body.modao-exact .legacy-console .heading-online.is-unknown i {
+  background: #64748b;
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console .sidebar-token-drawer {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  z-index: 90;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+body.modao-exact .legacy-console .sidebar-token-drawer summary {
+  min-height: 30px;
+  padding: 0 9px;
+  cursor: pointer;
+  list-style: none;
+  color: #60a5fa;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 28px;
+}
+
+body.modao-exact .legacy-console .sidebar-token-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+body.modao-exact .legacy-console .sidebar-token-drawer summary:hover,
+body.modao-exact .legacy-console .sidebar-token-drawer[open] summary {
+  border-color: var(--exact-border);
+  background: var(--exact-panel);
+}
+
+body.modao-exact .legacy-console .top-token-panel {
+  position: absolute;
+  right: 0;
+  bottom: 36px;
+  z-index: 80;
+  display: grid;
+  width: 270px;
+  padding: 14px;
+  gap: 9px;
+  border: 1px solid var(--exact-border);
+  border-radius: 8px;
+  background: var(--exact-panel);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+}
+
+body.modao-exact .legacy-console .top-token-panel label {
+  color: var(--exact-muted);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .content {
+  position: relative;
+  display: flex;
   min-width: 0;
+  height: 100vh;
+  padding: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--exact-bg);
+}
+
+body.modao-exact .legacy-console .topbar {
+  display: none;
+}
+
+body.modao-exact .legacy-console .overview-section,
+body.modao-exact .legacy-console .exact-page,
+body.modao-exact .legacy-console .workspace-grid {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+body.modao-exact .legacy-console .section-heading {
+  display: flex;
+  min-height: 64px;
+  margin: 0;
+  padding: 0 22px 0 32px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--exact-border);
+  background: var(--exact-bg);
+}
+
+body.modao-exact .legacy-console .section-heading h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body.modao-exact .legacy-console .heading-title-line,
+body.modao-exact .legacy-console .heading-online,
+body.modao-exact .legacy-console .heading-actions {
+  display: flex;
+  align-items: center;
+}
+
+body.modao-exact .legacy-console .heading-title-line {
+  gap: 23px;
+}
+
+body.modao-exact .legacy-console .heading-online {
+  gap: 7px;
+  min-height: auto;
+  padding: 0;
+  color: var(--exact-muted);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+body.modao-exact .legacy-console .heading-online b {
+  color: inherit;
+  font-weight: 400;
+}
+
+body.modao-exact .legacy-console .heading-actions {
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+body.modao-exact .legacy-console .heading-note {
+  color: var(--exact-muted);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .overview-cards {
+  display: grid;
+  margin: 0;
+  padding: 24px 24px 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 15px;
+}
+
+body.modao-exact .legacy-console .overview-cards .card,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 146px;
+  padding: 16px;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--exact-border);
+  border-radius: 12px;
+  background: var(--exact-panel);
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console .overview-cards .card::before,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: auto;
+  height: 4px;
+  border-radius: 0;
+  background: var(--exact-blue);
+  content: "";
+}
+
+body.modao-exact .legacy-console .overview-cards .card::after,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card::after {
+  display: none !important;
+  content: none !important;
+}
+
+body.modao-exact .legacy-console .overview-cards .card:nth-child(1)::before { background: var(--exact-cyan); }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(2)::before { background: #f8fafc; }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(3)::before { background: var(--exact-red); }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(4)::before { background: #22c55e; }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(5)::before { background: var(--exact-blue); }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(6)::before { background: #34d399; }
+
+body.modao-exact .legacy-console .overview-cards .card span,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card span {
+  color: var(--exact-muted);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .overview-cards .card strong,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card strong {
+  display: block;
+  margin: 12px 0 8px;
+  color: #fff;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body.modao-exact .legacy-console .overview-cards .card small,
+body.modao-exact .legacy-console .exact-diagnostic-cards .card small {
+  margin-top: auto;
+  color: var(--exact-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+body.modao-exact .legacy-console .overview-cards .card:nth-child(1) strong { color: var(--exact-cyan); }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(3) strong { color: var(--exact-red); }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(4) strong { color: #22c55e; }
+body.modao-exact .legacy-console .overview-cards .card:nth-child(6) strong { color: #34d399; }
+
+body.modao-exact .legacy-console .overview-cards .card > small {
+  margin: 1px 0 12px;
+  color: var(--exact-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+body.modao-exact .legacy-console .overview-cards .card .card-subtext,
+body.modao-exact .legacy-console .overview-cards .card .card-meta {
+  margin-top: auto;
+  color: var(--exact-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+body.modao-exact .legacy-console .overview-cards .card .card-meta {
+  display: grid;
+  gap: 3px;
+}
+
+body.modao-exact .legacy-console .overview-cards .card .card-meta span {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .overview-cards .cache-ring {
+  width: 64px;
+  height: 64px;
+  margin: -2px auto 2px;
+  border: 6px solid #263955;
+  border-top-color: var(--exact-blue);
+  border-right-color: var(--exact-blue);
+  border-bottom-color: var(--exact-blue);
+  border-radius: 50%;
+  transform: rotate(34deg);
+}
+
+body.modao-exact .legacy-console .overview-cards .card:nth-child(5) > small {
+  margin-bottom: 3px;
+}
+
+body.modao-exact .legacy-console .overview-cards .card:nth-child(5) > strong {
+  margin: 0 auto;
+  color: #60a5fa;
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .overview-cards .card:nth-child(5) .card-subtext {
+  display: none;
+}
+
+body.modao-exact .legacy-console .home-dashboard {
+  display: flex;
+  margin-top: 0;
+  padding: 24px;
+  flex-direction: column;
+  gap: 24px;
+}
+
+body.modao-exact .legacy-console .home-dashboard-row {
+  display: grid;
+  gap: 24px;
+}
+
+body.modao-exact .legacy-console .home-dashboard-primary,
+body.modao-exact .legacy-console .home-dashboard-observability {
+  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
+}
+
+body.modao-exact .legacy-console .home-panel,
+body.modao-exact .legacy-console .exact-surface,
+body.modao-exact .legacy-console .exact-table-card,
+body.modao-exact .legacy-console .exact-json-panel,
+body.modao-exact .legacy-console .panel,
+body.modao-exact .legacy-console .surface-card {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  border: 1px solid var(--exact-border);
+  border-radius: 12px;
+  background: var(--exact-panel);
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console .home-dashboard-primary .home-panel {
+  min-height: 337px;
+}
+
+body.modao-exact .legacy-console .home-dashboard-observability .home-panel {
+  height: 220px;
+}
+
+body.modao-exact .legacy-console .home-panel-head,
+body.modao-exact .legacy-console .exact-surface-head,
+body.modao-exact .legacy-console .exact-table-title,
+body.modao-exact .legacy-console .panel-head,
+body.modao-exact .legacy-console .surface-card-head,
+body.modao-exact .legacy-console .console-panel-head {
+  display: flex;
+  min-height: 56px;
+  padding: 0 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--exact-border);
+  background: transparent;
+}
+
+body.modao-exact .legacy-console .home-panel-head h2,
+body.modao-exact .legacy-console .exact-surface-head h2,
+body.modao-exact .legacy-console .exact-table-title h2,
+body.modao-exact .legacy-console .panel-head h2,
+body.modao-exact .legacy-console .surface-card h3,
+body.modao-exact .legacy-console .console-panel-head h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .home-panel-badge,
+body.modao-exact .legacy-console .exact-surface-head span,
+body.modao-exact .legacy-console .exact-table-title span,
+body.modao-exact .legacy-console .surface-card-head span,
+body.modao-exact .legacy-console .console-panel-head span {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+body.modao-exact .legacy-console .home-event-list,
+body.modao-exact .legacy-console .home-risk-list {
+  max-height: 277px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+body.modao-exact .legacy-console .home-event-list,
+body.modao-exact .legacy-console .home-risk-list {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 22px 18px;
-  color: #dbeafe;
-  background: linear-gradient(180deg, #0d1b2f 0%, #132a45 100%);
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  gap: 12px;
 }
 
-.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
-.brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; color: #fff; background: linear-gradient(135deg, #2563eb, #06b6d4); font-weight: 900; }
-.brand-copy strong { display: block; color: #fff; font-size: 18px; }
+body.modao-exact .legacy-console .home-event-row {
+  position: relative;
+  min-height: 66px;
+  margin-left: 48px;
+  padding: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: 8px;
+  background: var(--exact-panel-soft);
+}
 
-.section-nav { display: grid; gap: 24px; }
-.nav-group { display: grid; gap: 8px; }
-.nav-group-title { padding: 0 10px; color: #7dd3fc; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; }
-.section-nav a { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 13px; color: #b7c6dc; text-decoration: none; font-weight: 800; }
-.section-nav a:hover,
-.section-nav a.is-active { color: #fff; background: rgba(37, 99, 235, 0.24); }
-.nav-glyph { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: #bfdbfe; background: rgba(255, 255, 255, 0.08); font-size: 12px; }
+body.modao-exact .legacy-console .home-event-row::before {
+  position: absolute;
+  top: 25px;
+  left: -33px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 0 9px var(--exact-panel);
+  content: "";
+}
 
-.sidebar-bottom { display: grid; gap: 12px; }
-.system-status { min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 12px; color: #bfdbfe; background: rgba(255, 255, 255, 0.07); }
-.system-status i { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; }
-.system-status.is-online i { background: #22c55e; box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.16); }
-.sidebar-token-drawer { border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; padding: 10px; }
-.sidebar-token-drawer summary { cursor: pointer; color: #e2e8f0; font-weight: 800; }
-.top-token-panel { display: grid; gap: 8px; margin-top: 10px; }
-.top-token-panel label { color: #bfdbfe; font-size: 12px; }
+body.modao-exact .legacy-console .home-event-row::after {
+  position: absolute;
+  top: 29px;
+  bottom: -32px;
+  left: -29px;
+  width: 1px;
+  background: var(--exact-border);
+  content: "";
+}
 
-.content { min-width: 0; height: 100vh; display: grid; grid-template-rows: 62px minmax(0, 1fr); overflow: hidden; }
-.topbar { display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--legacy-line); background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(12px); }
-.node-status-bar { display: flex; align-items: center; gap: 12px; color: #475569; font-size: 13px; }
-.node-divider { width: 1px; height: 18px; background: #cbd5e1; }
-.node-health i,
-.heading-online i { width: 8px; height: 8px; display: inline-block; margin-right: 6px; border-radius: 50%; background: #22c55e; }
+body.modao-exact .legacy-console .home-event-row:last-child::after {
+  display: none;
+}
 
-.overview-section,
-.exact-page,
-.workspace-grid { min-height: 0; overflow: auto; padding: 20px 24px 26px; }
-.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
-.heading-title-line { display: flex; align-items: center; gap: 12px; }
-.section-heading h1 { margin: 0; font-size: 24px; line-height: 1.2; }
-.heading-online { min-height: 30px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid #bbd7ff; border-radius: 999px; color: #1d4ed8; background: #eff6ff; font-size: 13px; font-weight: 800; }
-.heading-actions { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; overflow-x: auto; }
-.heading-note { color: var(--legacy-muted); font-size: 12px; }
+body.modao-exact .legacy-console .home-event-row.is-error {
+  border-color: rgba(239, 68, 68, 0.28);
+}
 
-.overview-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
-.metric-card { min-width: 0; padding: 16px; border: 1px solid var(--legacy-line); border-radius: 18px; background: linear-gradient(180deg, #fff 0%, #f8fbff 100%); box-shadow: 0 14px 28px rgba(15, 42, 74, 0.07); }
-.metric-card span,
-.metric-card small { display: block; color: var(--legacy-muted); }
-.metric-card strong { display: block; margin: 8px 0 4px; font-size: 26px; }
+body.modao-exact .legacy-console .home-event-row.is-error::before {
+  background: var(--exact-red);
+}
 
-.home-dashboard { display: grid; gap: 16px; }
-.home-dashboard-row { display: grid; gap: 16px; }
-.home-dashboard-primary { grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr); }
-.home-dashboard-observability { grid-template-columns: 1fr 1fr; }
-.home-panel,
-.exact-surface,
-.exact-table-card,
-.panel,
-.surface-card { min-width: 0; padding: 16px; border: 1px solid var(--legacy-line); border-radius: 20px; background: rgba(255, 255, 255, 0.92); box-shadow: 0 14px 30px rgba(15, 42, 74, 0.07); }
-.home-panel-head,
-.exact-surface-head,
-.exact-table-title,
-.panel-head,
-.workbench-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.home-panel h2,
-.exact-surface h2,
-.exact-table-title h2,
-.panel h2,
-.surface-card h3 { margin: 0; font-size: 17px; }
-.home-panel-badge { min-height: 26px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; color: #075985; background: #e0f2fe; font-size: 12px; font-weight: 800; }
-.event-row,
-.risk-row { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid #edf2f7; }
-.event-row:last-child,
-.risk-row:last-child { border-bottom: 0; }
-.event-row small,
-.risk-row span { color: var(--legacy-muted); }
-.pipeline-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-.pipeline-step { min-height: 58px; display: grid; place-items: center; border: 1px dashed #bfd3f1; border-radius: 14px; color: #1e3a8a; background: #eff6ff; font-weight: 800; text-align: center; }
+body.modao-exact .legacy-console .home-event-row.is-warn {
+  border-color: rgba(249, 115, 22, 0.3);
+}
 
-.exact-page-body { display: grid; gap: 16px; }
-.exact-toolbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--legacy-line); border-radius: 16px; background: #f8fbff; overflow-x: auto; }
-.exact-toolbar-group { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
-.exact-toolbar-filters input,
-.exact-toolbar-filters select { min-width: 180px; }
-.toggle-button { display: inline-flex; align-items: center; gap: 8px; }
-.toggle-button span { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
-.toggle-button.is-active span { background: #22c55e; }
+body.modao-exact .legacy-console .home-event-row.is-warn::before {
+  background: var(--exact-orange);
+}
 
-.exact-table-card { overflow: auto; }
-.exact-table-card table,
-.runtime-table,
-.point-subtable table { width: 100%; border-collapse: collapse; min-width: 980px; }
-th, td { padding: 11px 12px; border-bottom: 1px solid #e5edf7; text-align: left; font-size: 13px; vertical-align: middle; }
-th { color: #334155; background: #f3f7fc; font-weight: 900; }
-td { color: #24384d; }
-.exact-empty,
-.empty-state { padding: 18px; color: var(--legacy-muted); text-align: center; }
-.empty-state.compact { padding: 10px; }
+body.modao-exact .legacy-console .home-event-main,
+body.modao-exact .legacy-console .home-event-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
 
-.exact-device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
-.exact-device-card { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--legacy-line); border-radius: 18px; background: #fff; cursor: pointer; }
-.exact-device-card.is-selected { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
-.exact-device-card strong,
-.exact-device-card span { display: block; }
-.exact-device-card > div > span { color: var(--legacy-muted); font-size: 12px; }
-.device-card-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; color: #475569; }
-.inline-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; overflow-x: auto; }
+body.modao-exact .legacy-console .home-event-main {
+  flex-direction: column;
+}
 
-.workspace-grid { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 16px; }
-.workspace-column { min-width: 0; }
-.device-resource-list { display: grid; gap: 8px; }
-.device-resource-list button { height: auto; min-height: 56px; display: grid; justify-items: start; gap: 4px; text-align: left; }
-.device-resource-list button.is-active { color: #fff; border-color: #2563eb; background: #2563eb; }
-.panel-kicker { display: block; color: #2563eb; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; }
-.device-summary { display: grid; gap: 6px; }
-.summary-primary { display: flex; align-items: center; gap: 8px; }
-.status-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; }
-.summary-meta { display: flex; gap: 12px; color: var(--legacy-muted); font-size: 12px; flex-wrap: wrap; }
-.workbench-tabs { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; }
-.workbench-tabs button.is-active { color: #fff; border-color: #2563eb; background: #2563eb; }
-.runtime-stage-shell { display: grid; gap: 12px; }
-.table-wrap { overflow: auto; }
+body.modao-exact .legacy-console .home-event-main strong {
+  color: #93c5fd;
+  font-size: 13px;
+}
 
-.json-view { max-height: 360px; overflow: auto; margin: 0; padding: 12px; border: 1px solid #d4e0ee; border-radius: 14px; color: #dbeafe; background: #0f172a; font-family: Consolas, "JetBrains Mono", monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
-.compact-json { max-height: 260px; }
-.field-description { color: var(--legacy-muted); }
+body.modao-exact .legacy-console .home-event-main span,
+body.modao-exact .legacy-console .home-event-meta span {
+  color: var(--exact-muted);
+  font-size: 11px;
+}
 
-@media (max-width: 1280px) {
-  .legacy-console { grid-template-columns: 230px minmax(0, 1fr); }
-  .overview-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .home-dashboard-primary,
-  .home-dashboard-observability,
-  .workspace-grid { grid-template-columns: 1fr; }
+body.modao-exact .legacy-console .home-event-meta {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+body.modao-exact .legacy-console .home-event-meta b {
+  display: none;
+}
+
+body.modao-exact .legacy-console .home-risk-row {
+  position: relative;
+  display: block;
+  min-height: 67px;
+  padding: 14px 82px 12px 13px;
+  border: 0;
+  border-left: 4px solid var(--exact-orange);
+  border-radius: 5px;
+  background: var(--exact-panel-soft);
+}
+
+body.modao-exact .legacy-console .home-risk-row.is-error {
+  border-left-color: var(--exact-red);
+}
+
+body.modao-exact .legacy-console .home-risk-row.is-warn {
+  border-left-color: var(--exact-orange);
+}
+
+body.modao-exact .legacy-console .home-risk-row .risk-dot {
+  display: none;
+}
+
+body.modao-exact .legacy-console .home-risk-row strong {
+  display: block;
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .home-risk-row p {
+  margin: 5px 0 0;
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .pipeline-steps {
+  display: block;
+  height: calc(100% - 56px);
+  padding: 18px 24px;
+  overflow: hidden;
+}
+
+body.modao-exact .legacy-console .topology-flow {
+  display: flex;
+  min-width: 560px;
+  height: 128px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body.modao-exact .legacy-console .topology-node {
+  display: flex;
+  width: 88px;
+  min-width: 88px;
+  min-height: 66px;
+  padding: 7px 8px 6px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  border: 2px solid #2d4a7a;
+  border-radius: 8px;
+  background: var(--exact-panel);
+  box-shadow: none;
+  text-align: center;
+}
+
+body.modao-exact .legacy-console .topology-node.is-ok { border-color: rgba(34, 197, 94, 0.65); }
+body.modao-exact .legacy-console .topology-node.is-warn { border-color: var(--exact-orange); }
+body.modao-exact .legacy-console .topology-node.is-error { border-color: var(--exact-red); }
+body.modao-exact .legacy-console .topology-node.is-gateway { border-color: var(--exact-blue); }
+
+body.modao-exact .legacy-console .topology-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  margin-bottom: 3px;
+  place-items: center;
+  color: var(--exact-cyan);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .topology-node strong {
+  display: block;
+  color: #fff;
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .topology-node small {
+  display: block;
+  max-width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--exact-dim);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .topology-storage-stack {
+  display: grid;
+  min-width: 130px;
+  gap: 14px;
+}
+
+body.modao-exact .legacy-console .topology-storage-pill {
+  display: flex;
+  min-height: 28px;
+  padding: 0 10px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--exact-border);
+  border-radius: 5px;
+  background: var(--exact-panel-soft);
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .topology-storage-pill .status-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--exact-dim);
+}
+
+body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-ok,
+body.modao-exact .legacy-console .topology-status-dots i.is-ok { background: var(--exact-green); }
+body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-warn,
+body.modao-exact .legacy-console .topology-status-dots i.is-warn { background: var(--exact-orange); }
+body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-error,
+body.modao-exact .legacy-console .topology-status-dots i.is-error { background: var(--exact-red); }
+
+body.modao-exact .legacy-console .topology-status-dots {
+  display: flex;
+  margin-top: 5px;
+  gap: 4px;
+}
+
+body.modao-exact .legacy-console .topology-status-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--exact-dim);
+}
+
+body.modao-exact .legacy-console .topology-connector {
+  display: block;
+  min-width: 28px;
+  height: 1px;
+  flex: 1 1 54px;
+  background: var(--exact-border);
+}
+
+body.modao-exact .legacy-console .home-resource-list {
+  display: block;
+  max-height: none;
+  padding: 13px 16px 12px;
+  overflow: hidden;
+}
+
+body.modao-exact .legacy-console .resource-dashboard {
+  display: grid;
+  height: 134px;
+  grid-template-columns: minmax(270px, 1fr) minmax(150px, 0.55fr);
+  align-items: center;
+  gap: 16px;
+}
+
+body.modao-exact .legacy-console .resource-gauges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(74px, 1fr));
+  gap: 8px;
+}
+
+body.modao-exact .legacy-console .resource-gauge {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+}
+
+body.modao-exact .legacy-console .resource-ring {
+  --resource-color: #22d3ee;
+  position: relative;
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--resource-color) var(--resource-progress), #233a5c var(--resource-progress));
+}
+
+body.modao-exact .legacy-console .resource-ring::after {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--exact-panel);
+  content: "";
+}
+
+body.modao-exact .legacy-console .resource-ring.is-blue { --resource-color: #3b82f6; }
+body.modao-exact .legacy-console .resource-ring.is-orange { --resource-color: #f59e0b; }
+body.modao-exact .legacy-console .resource-ring.is-green { --resource-color: #22c55e; }
+
+body.modao-exact .legacy-console .resource-gauge > span {
+  color: var(--exact-muted);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .resource-gauge > strong {
+  color: var(--resource-color, #60a5fa);
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .resource-gauge:nth-child(1) > strong { color: #60a5fa; }
+body.modao-exact .legacy-console .resource-gauge:nth-child(2) > strong { color: #fb923c; }
+body.modao-exact .legacy-console .resource-gauge:nth-child(3) > strong { color: #4ade80; }
+
+body.modao-exact .legacy-console .resource-runtime-summary {
+  display: grid;
+  min-height: 104px;
+  padding-left: 28px;
+  align-content: center;
+  gap: 12px;
+  border-left: 1px solid var(--exact-border);
+}
+
+body.modao-exact .legacy-console .resource-runtime-summary > div:not(.resource-load-track) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .resource-runtime-summary span {
+  color: var(--exact-dim);
+}
+
+body.modao-exact .legacy-console .resource-runtime-summary strong {
+  color: #fff;
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .resource-runtime-summary strong.is-warn {
+  color: #f87171;
+}
+
+body.modao-exact .legacy-console .resource-load-track {
+  width: 80px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #334155;
+}
+
+body.modao-exact .legacy-console .resource-load-track i {
+  display: block;
+  height: 100%;
+  background: var(--exact-blue);
+}
+
+body.modao-exact .legacy-console .exact-page-body {
+  display: flex;
+  padding: 24px;
+  flex-direction: column;
+  gap: 24px;
+}
+
+body.modao-exact .legacy-console .exact-toolbar {
+  display: flex;
+  min-height: 58px;
+  padding: 12px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--exact-border);
+  border-radius: 12px;
+  background: var(--exact-panel);
+  overflow-x: auto;
+}
+
+body.modao-exact .legacy-console .exact-toolbar-group,
+body.modao-exact .legacy-console .inline-actions,
+body.modao-exact .legacy-console .workbench-tabs,
+body.modao-exact .legacy-console .summary-primary,
+body.modao-exact .legacy-console .summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+body.modao-exact .legacy-console .exact-toolbar-group small {
+  color: var(--exact-dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .exact-toolbar-filters input,
+body.modao-exact .legacy-console .exact-toolbar-filters select {
+  min-width: 180px;
+}
+
+body.modao-exact .legacy-console .exact-toolbar-filters input {
+  width: 260px;
+}
+
+body.modao-exact .legacy-console .toggle-button {
+  display: inline-flex;
+  height: 34px;
+  padding: 0 11px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--exact-border);
+  border-radius: 5px;
+  background: var(--exact-bg);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .toggle-button span {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: #334155;
+}
+
+body.modao-exact .legacy-console .toggle-button span::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+}
+
+body.modao-exact .legacy-console .toggle-button.is-active span {
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console .toggle-button.is-active span::after {
+  left: 16px;
+}
+
+body.modao-exact .legacy-console .exact-table-card,
+body.modao-exact .legacy-console .exact-surface,
+body.modao-exact .legacy-console .exact-json-panel {
+  overflow: hidden;
+}
+
+body.modao-exact .legacy-console .exact-table-card {
+  overflow-x: auto;
+}
+
+body.modao-exact .legacy-console table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  color: #e2e8f0;
+  font-size: 12px;
+  text-align: left;
+}
+
+body.modao-exact .legacy-console th {
+  height: 48px;
+  padding: 0 14px;
+  color: var(--exact-muted);
+  border-bottom: 1px solid var(--exact-border);
+  background: var(--exact-sidebar);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console td {
+  height: 52px;
+  padding: 8px 14px;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(45, 74, 122, 0.45);
+}
+
+body.modao-exact .legacy-console .exact-table-card td strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .exact-table-card code {
+  display: inline-flex;
+  min-width: 38px;
+  padding: 2px 7px;
+  justify-content: center;
+  border: 1px solid rgba(59, 130, 246, 0.28);
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #93c5fd;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console tbody tr:hover {
+  background: rgba(45, 74, 122, 0.18);
+}
+
+body.modao-exact .legacy-console .exact-empty,
+body.modao-exact .legacy-console .empty-state {
+  padding: 24px !important;
+  color: var(--exact-dim);
+  text-align: center;
+}
+
+body.modao-exact .legacy-console .exact-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+body.modao-exact .legacy-console .exact-device-card {
+  display: grid;
+  min-height: 110px;
+  padding: 17px 18px;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(230px, 1fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  color: #e2e8f0;
+  border: 1px solid var(--exact-border);
+  border-radius: 12px;
+  background: var(--exact-panel);
+  cursor: pointer;
+}
+
+body.modao-exact .legacy-console .exact-device-card:hover,
+body.modao-exact .legacy-console .exact-device-card.is-selected {
+  border-color: var(--exact-blue);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+}
+
+body.modao-exact .legacy-console .exact-device-main h3,
+body.modao-exact .legacy-console .exact-device-main p {
+  margin: 0;
+}
+
+body.modao-exact .legacy-console .exact-device-main h3 {
+  color: #fff;
+  font-size: 15px;
+}
+
+body.modao-exact .legacy-console .exact-device-main p,
+body.modao-exact .legacy-console .exact-device-meta span {
+  margin-top: 7px;
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .exact-device-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+body.modao-exact .legacy-console .exact-device-meta strong {
+  display: block;
+  margin: 0;
+  color: #fff;
+  font-size: 15px;
+}
+
+body.modao-exact .legacy-console .exact-device-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+body.modao-exact .legacy-console .exact-device-actions button,
+body.modao-exact .legacy-console .exact-toolbar button,
+body.modao-exact .legacy-console .exact-table-card button,
+body.modao-exact .legacy-console .workbench-device-actions button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--exact-border);
+  border-radius: 5px;
+  background: var(--exact-panel-soft);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .exact-device-actions button:hover,
+body.modao-exact .legacy-console .exact-toolbar button:hover,
+body.modao-exact .legacy-console .exact-table-card button:hover,
+body.modao-exact .legacy-console .workbench-device-actions button:hover {
+  border-color: var(--exact-blue);
+}
+
+body.modao-exact .legacy-console .exact-toolbar button.primary,
+body.modao-exact .legacy-console .exact-table-card button.primary,
+body.modao-exact .legacy-console .workbench-device-actions button.primary {
+  color: #fff;
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console .exact-toolbar button.primary:hover,
+body.modao-exact .legacy-console .exact-table-card button.primary:hover,
+body.modao-exact .legacy-console .workbench-device-actions button.primary:hover {
+  border-color: #3b82f6;
+  background: #1d4ed8;
+}
+
+body.modao-exact .legacy-console .exact-toolbar button.primary:active,
+body.modao-exact .legacy-console .exact-table-card button.primary:active,
+body.modao-exact .legacy-console .workbench-device-actions button.primary:active {
+  background: #1e40af;
+}
+
+body.modao-exact .legacy-console .exact-device-actions button:disabled,
+body.modao-exact .legacy-console .exact-toolbar button:disabled,
+body.modao-exact .legacy-console .exact-table-card button:disabled,
+body.modao-exact .legacy-console .workbench-device-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+body.modao-exact .legacy-console .status-badge,
+body.modao-exact .legacy-console .quality-badge,
+body.modao-exact .legacy-console .capability-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 8px;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .status-badge.is-online {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+body.modao-exact .legacy-console .status-badge.is-error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+body.modao-exact .legacy-console .quality-badge.is-good {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+body.modao-exact .legacy-console .quality-badge.is-bad {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+body.modao-exact .legacy-console .exact-diagnostic-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+}
+
+body.modao-exact .legacy-console .history-summary-cards {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-bottom: 14px;
+}
+
+body.modao-exact .legacy-console .history-summary-cards .exact-diagnostic-card strong {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+body.modao-exact .legacy-console .history-summary-cards .exact-diagnostic-card small {
+  line-height: 1.4;
+}
+
+body.modao-exact .legacy-console .history-query-bar {
+  min-height: auto;
+  padding: 14px 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: visible;
+}
+
+body.modao-exact .legacy-console .history-filter-main {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.2fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(90px, 0.48fr);
+  gap: 10px;
+  align-items: end;
+}
+
+body.modao-exact .legacy-console .history-filter-bottom {
+  display: grid;
+  padding-top: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  border-top: 1px solid rgba(45, 74, 122, 0.42);
+}
+
+body.modao-exact .legacy-console .history-filter-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+body.modao-exact .legacy-console .history-filter-field > span {
+  color: var(--exact-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .history-filter-field input,
+body.modao-exact .legacy-console .history-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+body.modao-exact .legacy-console .history-compare-select {
+  min-width: 0;
+  min-height: 74px;
+  height: 74px;
+}
+
+body.modao-exact .legacy-console .history-compare-field small {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .history-query-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .history-query-actions button {
+  min-width: 86px;
+}
+
+body.modao-exact .legacy-console .exact-config-grid,
+body.modao-exact .legacy-console .network-result-grid {
+  display: grid;
+  padding: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+body.modao-exact .legacy-console .network-result-grid {
+  padding-bottom: 12px;
+}
+
+body.modao-exact .legacy-console .network-toolbar {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px 10px;
+}
+
+body.modao-exact .legacy-console .network-toolbar .exact-toolbar-filters {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(104px, 0.7fr) minmax(136px, 0.88fr) minmax(142px, 0.96fr) minmax(92px, 0.5fr) minmax(92px, 0.5fr) auto;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+body.modao-exact .legacy-console .network-toolbar .exact-toolbar-filters input,
+body.modao-exact .legacy-console .network-toolbar .exact-toolbar-filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+body.modao-exact .legacy-console .network-toolbar .exact-toolbar-filters button {
+  justify-self: start;
+  width: auto;
+  min-width: 0;
+}
+
+body.modao-exact .legacy-console .network-toolbar-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+body.modao-exact .legacy-console .network-toolbar-actions button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+
+body.modao-exact .legacy-console .network-summary-cards .exact-diagnostic-card:nth-child(3) {
+  grid-column: span 2;
+}
+
+body.modao-exact .legacy-console .network-summary-cards .exact-diagnostic-card:nth-child(3) strong {
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+body.modao-exact .legacy-console .network-result-panel .json-view {
+  margin: 0 20px 20px;
+}
+
+body.modao-exact .legacy-console .network-trace-lines {
+  display: grid;
+  gap: 8px;
+  margin: 0 20px 20px;
+  padding: 14px;
+  border: 1px solid rgba(45, 74, 122, 0.45);
+  border-radius: 14px;
+  background: rgba(4, 10, 23, 0.42);
+}
+
+body.modao-exact .legacy-console .network-trace-lines strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .network-trace-lines code {
+  display: block;
+  padding: 5px 8px;
+  border-radius: 8px;
+  color: #86efac;
+  background: rgba(2, 6, 23, 0.72);
+  white-space: pre-wrap;
+}
+
+body.modao-exact .legacy-console .network-history-table td:nth-child(7) {
+  min-width: 220px;
+  color: var(--exact-muted);
+}
+
+body.modao-exact .legacy-console .alarm-ack-table td:nth-child(8) {
+  min-width: 220px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-detail {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--exact-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .alarm-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.modao-exact .legacy-console .alarm-action-row button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(3px);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog {
+  width: min(560px, 100%);
+  padding: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(8, 14, 28, 0.98));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog-head h2 {
+  margin: 2px 0 0;
+  color: #f8fafc;
+  font-size: 20px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-target {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(45, 74, 122, 0.45);
+  border-radius: 12px;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog label {
+  display: block;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .alarm-ack-dialog textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency span {
+  color: var(--exact-muted);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .alarm-ack-idempotency code {
+  display: block;
+  overflow: hidden;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: #93c5fd;
+  background: rgba(2, 6, 23, 0.72);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .exact-config-item {
+  display: flex;
+  min-height: 68px;
+  padding: 12px 14px;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid var(--exact-border);
+  border-radius: 7px;
+  background: var(--exact-bg);
+}
+
+body.modao-exact .legacy-console .exact-config-item span {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .exact-config-item strong {
+  margin-top: 7px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .exact-diagnostic-card {
+  min-height: 88px;
+  padding: 16px;
+  border: 1px solid var(--exact-border);
+  border-radius: 12px;
+  background: var(--exact-panel);
+}
+
+body.modao-exact .legacy-console .exact-diagnostic-card span {
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .exact-diagnostic-card strong {
+  display: block;
+  margin-top: 10px;
+  color: #fff;
+  font-size: 20px;
+}
+
+body.modao-exact .legacy-console .exact-cloud-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+  gap: 14px;
+}
+
+body.modao-exact .legacy-console .exact-cloud-status {
+  display: flex;
+  min-height: 210px;
+  padding: 20px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+body.modao-exact .legacy-console .exact-cloud-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 13px;
+  place-items: center;
+  border: 1px solid var(--exact-border);
+  border-radius: 50%;
+  background: #101d31;
+  color: var(--exact-cyan);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+body.modao-exact .legacy-console .exact-cloud-status strong {
+  color: #fff;
+  font-size: 17px;
+}
+
+body.modao-exact .legacy-console .exact-cloud-status small {
+  margin-top: 8px;
+  color: var(--exact-dim);
+}
+
+body.modao-exact .legacy-console .cloud-stat-row {
+  display: grid;
+  width: 100%;
+  margin-top: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+body.modao-exact .legacy-console .cloud-stat-row span {
+  display: grid;
+  padding: 10px 6px;
+  gap: 5px;
+  border: 1px solid var(--exact-border);
+  border-radius: 7px;
+  background: var(--exact-bg);
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .cloud-stat-row b {
+  color: #e2e8f0;
+  font-size: 15px;
+}
+
+body.modao-exact .legacy-console .modao-property-grid {
+  display: grid;
+  padding: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+body.modao-exact .legacy-console .modao-property-item,
+body.modao-exact .legacy-console .modao-risk-item {
+  display: flex;
+  min-height: 54px;
+  padding: 10px 12px;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid rgba(45, 74, 122, 0.72);
+  border-radius: 7px;
+  background: var(--exact-bg);
+}
+
+body.modao-exact .legacy-console .modao-property-item span,
+body.modao-exact .legacy-console .modao-risk-item small {
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .modao-property-item strong,
+body.modao-exact .legacy-console .modao-risk-item strong {
+  margin-top: 6px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+body.modao-exact .legacy-console .modao-risk-list {
+  display: grid;
+  padding: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.modao-exact .legacy-console .modao-log-panel {
+  min-height: 420px;
+  overflow: auto;
+  color: #cbd5e1;
+  background: #08131f;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .modao-log-row {
+  display: grid;
+  grid-template-columns: 150px 58px minmax(150px, 240px) minmax(120px, 180px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(45, 74, 122, 0.32);
+}
+
+body.modao-exact .legacy-console .modao-log-row:hover {
+  background: rgba(45, 74, 122, 0.25);
+}
+
+body.modao-exact .legacy-console .modao-log-time,
+body.modao-exact .legacy-console .modao-log-name,
+body.modao-exact .legacy-console .modao-log-thread {
+  color: #71839a;
+}
+
+body.modao-exact .legacy-console .modao-log-thread {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .log-toolbar {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px 10px;
+}
+
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-filters {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(96px, 0.68fr) minmax(116px, 0.82fr) minmax(128px, 0.92fr) minmax(128px, 0.92fr) minmax(168px, 1.05fr) minmax(72px, 0.5fr) auto;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-filters input,
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-filters select {
+  min-width: 0;
+  width: 100%;
+}
+
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-filters button {
+  justify-self: start;
+  width: auto;
+  min-width: 0;
+}
+
+body.modao-exact .legacy-console .log-toolbar .exact-toolbar-group:not(.exact-toolbar-filters) {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+body.modao-exact .legacy-console .modao-log-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .modao-log-level.ERROR { color: #f87171; }
+body.modao-exact .legacy-console .modao-log-level.WARN { color: #fbbf24; }
+body.modao-exact .legacy-console .modao-log-level.INFO { color: #60a5fa; }
+body.modao-exact .legacy-console .modao-log-level.DEBUG { color: #94a3b8; }
+
+body.modao-exact .legacy-console .exact-json-panel summary {
+  padding: 14px 18px;
+  cursor: pointer;
+  color: var(--exact-muted);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .json-view,
+body.modao-exact .legacy-console .exact-json-panel pre {
+  max-height: 360px;
+  margin: 0;
+  padding: 18px;
+  overflow: auto;
+  color: #4ade80;
+  border: 0;
+  border-top: 1px solid var(--exact-border);
+  border-radius: 0;
+  background: #081321;
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+body.modao-exact .legacy-console .exact-surface > .json-view,
+body.modao-exact .legacy-console .home-resource-list .json-view,
+body.modao-exact .legacy-console .surface-card .json-view {
+  border-top: 0;
+}
+
+body.modao-exact .legacy-console .workspace-grid {
+  display: grid;
+  padding: 24px;
+  grid-template-columns: 312px minmax(0, 1fr);
+  gap: 16px;
+  overflow: auto;
+}
+
+body.modao-exact .legacy-console .workspace-column {
+  min-width: 0;
+}
+
+body.modao-exact .legacy-console .device-resource-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+body.modao-exact .legacy-console .device-resource-list button {
+  height: auto;
+  min-height: 56px;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  text-align: left;
+  border-radius: 7px;
+  background: var(--exact-bg);
+}
+
+body.modao-exact .legacy-console .device-resource-list button.is-active,
+body.modao-exact .legacy-console .workbench-tabs button.is-active {
+  color: #fff;
+  border-color: var(--exact-blue);
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console .panel-kicker {
+  display: block;
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+body.modao-exact .legacy-console .workbench-topbar {
+  min-height: 72px;
+  padding: 14px 16px;
+  margin: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--exact-border);
+}
+
+body.modao-exact .legacy-console .workbench-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+body.modao-exact .legacy-console .device-summary {
+  display: grid;
+  gap: 7px;
+}
+
+body.modao-exact .legacy-console .summary-primary strong {
+  color: #fff;
+}
+
+body.modao-exact .legacy-console .summary-status,
+body.modao-exact .legacy-console .summary-meta {
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+}
+
+body.modao-exact .legacy-console .runtime-stage-shell {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-panel,
+body.modao-exact .legacy-console .device-runtime-panel {
+  margin-top: 16px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-cards {
+  padding: 16px;
+}
+
+body.modao-exact .legacy-console .diagnostic-detail-cards small {
+  display: block;
+  margin-top: 6px;
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .diagnostic-sub-card,
+body.modao-exact .legacy-console .diagnostic-connection-table,
+body.modao-exact .legacy-console .diagnostic-exception-table {
+  margin-top: 14px;
+}
+
+body.modao-exact .legacy-console .workbench-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+body.modao-exact .legacy-console .table-wrap {
+  overflow-x: auto;
+}
+
+body.modao-exact .legacy-console .surface-grid {
+  display: grid;
+  padding: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+body.modao-exact .legacy-console .surface-grid .wide-field {
+  grid-column: 1 / -1;
+}
+
+body.modao-exact .legacy-console .form-grid {
+  display: grid;
+  padding: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.modao-exact .legacy-console .edge-mode-row,
+body.modao-exact .legacy-console .edge-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+body.modao-exact .legacy-console .edge-mode-row button,
+body.modao-exact .legacy-console .edge-action-row button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--exact-border);
+  border-radius: 6px;
+  background: var(--exact-panel-soft);
+}
+
+body.modao-exact .legacy-console .edge-mode-row button.is-active,
+body.modao-exact .legacy-console .edge-action-row button.primary {
+  color: #fff;
+  border-color: var(--exact-blue);
+  background: #2563eb;
+}
+
+body.modao-exact .legacy-console .edge-action-row span {
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+body.modao-exact .legacy-console .edge-form-grid textarea {
+  min-height: 190px;
+  resize: vertical;
+}
+
+body.modao-exact .legacy-console .edge-json-grid {
+  padding-top: 12px;
+}
+
+body.modao-exact .legacy-console label {
+  color: var(--exact-dim);
+  font-size: 11px;
+}
+
+body.modao-exact .legacy-console label input,
+body.modao-exact .legacy-console label select,
+body.modao-exact .legacy-console label textarea {
+  width: 100%;
+  margin-top: 7px;
+}
+
+body.modao-exact .legacy-console .surface-card > button.wide {
+  width: calc(100% - 32px);
+  margin: 0 16px 16px;
+}
+
+@media (max-width: 1440px) {
+  body.modao-exact .legacy-console .overview-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  body.modao-exact .legacy-console .exact-device-card {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  body.modao-exact .legacy-console .overview-cards,
+  body.modao-exact .legacy-console .exact-diagnostic-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.modao-exact .legacy-console .home-dashboard-primary,
+  body.modao-exact .legacy-console .home-dashboard-observability,
+  body.modao-exact .legacy-console .workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }

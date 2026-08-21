@@ -44,6 +44,34 @@ export function normalizeServerUrl(serverUrl: string): string {
   return trimmed;
 }
 
+export function resolveBrowserServerUrl(locationValue?: string | Pick<Location, "origin" | "pathname" | "protocol">): string {
+  const locationLike = locationValue || (typeof window !== "undefined" ? window.location : undefined);
+  if (!locationLike) {
+    return DEFAULT_SERVER_URL;
+  }
+  try {
+    const parsed = typeof locationLike === "string"
+      ? new URL(locationLike)
+      : new URL(`${locationLike.origin}${locationLike.pathname}`);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return DEFAULT_SERVER_URL;
+    }
+    const marker = "/desktop";
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex < 0) {
+      return DEFAULT_SERVER_URL;
+    }
+    const nextChar = parsed.pathname[markerIndex + marker.length] || "/";
+    if (nextChar !== "/") {
+      return DEFAULT_SERVER_URL;
+    }
+    const contextPath = parsed.pathname.slice(0, markerIndex).replace(/\/+$/, "");
+    return `${parsed.origin}${contextPath}`;
+  } catch {
+    return DEFAULT_SERVER_URL;
+  }
+}
+
 export function configureHttp(config: { serverUrl?: string; token?: string }): void {
   if (config.serverUrl !== undefined) {
     currentServerUrl = normalizeServerUrl(config.serverUrl);

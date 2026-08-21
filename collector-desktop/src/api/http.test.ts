@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, unwrapApiResponse } from "./http";
+import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, resolveBrowserServerUrl, unwrapApiResponse } from "./http";
 
 const globalWindow = globalThis as unknown as { window?: unknown };
 const originalWindow = globalWindow.window;
@@ -38,6 +38,15 @@ describe("http", () => {
 
   it("把旧保存的 9090 根地址迁移到 collector 上下文路径", () => {
     expect(normalizeServerUrl("http://127.0.0.1:9090")).toBe("http://127.0.0.1:9090/collector");
+  });
+
+  it("浏览器内置网页模式从 /collector/desktop/ 自动推导后端服务地址", () => {
+    expect(resolveBrowserServerUrl("http://192.168.1.10:9090/collector/desktop/index.html#/dashboard")).toBe("http://192.168.1.10:9090/collector");
+    expect(resolveBrowserServerUrl("http://192.168.1.10:9090/desktop/index.html#/dashboard")).toBe("http://192.168.1.10:9090");
+  });
+
+  it("普通开发页面不误用当前 Vite 地址作为后端地址", () => {
+    expect(resolveBrowserServerUrl("http://127.0.0.1:5173/#/dashboard")).toBe(DEFAULT_SERVER_URL);
   });
 
   it("解析 ApiResult 成功响应", () => {
