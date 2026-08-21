@@ -19,21 +19,233 @@
 - 支持缓存、实时流、历史存储、云端上报的全链路闭环
 - 提供在线配置治理、运行态监控和问题可追踪能力
 
-## 控制台访问
+## 控制台访问、启动、打包和复制命令
 
-旧版 Spring Boot 内置 `/admin/**` 静态 Web 控制台已经移除。当前推荐使用 `collector-desktop/` 下的 Vue 3 + Electron 数据采集工作台访问后端服务。准备好 Java 17 和 Maven 后，可以通过以下命令完成后端本地构建和启动：
+当前控制台由 `collector-desktop/` 下的 Vue 3 工作台提供，并支持两种交付形态：
+
+1. **后端内置网页控制台**：客户不安装客户端，直接访问 `http://服务器IP:9090/collector/desktop/index.html`。
+2. **Electron 桌面客户端**：客户运行 `数据采集工作台.exe`，再连接后端服务地址。
+
+### 0. 环境准备
+
+| 工具 | 用途 | 要求 |
+| --- | --- | --- |
+| Java | 运行和打包后端服务 | Java 17 |
+| Maven | 打后端 Spring Boot jar | 使用本机 Maven 或 CI Maven |
+| Node.js / npm | 构建 Vue 控制台和 Electron 客户端 | 需能执行 `npm --prefix collector-desktop ...` |
+
+> Windows Git Bash 中如果直接执行 `mvn` 出现 Maven 启动器异常，可以改用 `cmd.exe /c mvn ...`。Windows CMD / PowerShell、Linux、CI 环境通常直接使用 `mvn ...` 即可。
+
+首次拉取代码后安装桌面端依赖：
 
 ```bash
-mvn -B -ntp clean package -DskipTests
+npm --prefix collector-desktop install
+```
+
+### 1. 本地最快启动：网页控制台模式
+
+适合开发、演示和客户不想安装客户端的场景。
+
+```bash
+# 1）构建 Vue 网页控制台，并复制到后端静态目录 src/main/resources/static/desktop/
+npm --prefix collector-desktop run build:web
+
+# 2）打后端 jar，jar 内会包含 /desktop 网页控制台
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+
+# 3）启动后端服务
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
-后端启动完成后，打开桌面客户端并连接默认服务地址：
+如果不在 Windows Git Bash 中，可以把第 2 步改成：
 
-- 本地默认服务地址：`http://127.0.0.1:9090/collector`
-- 客户端源码位置：`collector-desktop/`
-- 本地打包产物：`collector-desktop/release/win-unpacked/数据采集工作台.exe`
-- 如果你修改了 `server.port` 或 `server.servlet.context-path`，请在客户端连接设置中按实际配置调整服务地址
+```bash
+mvn -B -ntp clean package -DskipTests
+```
+
+启动成功后访问：
+
+```text
+http://127.0.0.1:9090/collector/desktop/index.html
+```
+
+服务器部署时把 `127.0.0.1` 替换为服务器 IP，例如：
+
+```text
+http://192.168.1.100:9090/collector/desktop/index.html
+```
+
+网页控制台会根据当前访问路径自动推导后端服务地址：
+
+```text
+http://192.168.1.100:9090/collector/desktop/index.html
+  -> http://192.168.1.100:9090/collector
+```
+
+### 2. 单独复制网页控制台资源
+
+如果只改了前端页面，想把 Vue 构建产物复制进后端静态目录，可以使用下面两种方式。
+
+一条命令完成“构建 + 复制”：
+
+```bash
+npm --prefix collector-desktop run build:web
+```
+
+等价于分两步执行：
+
+```bash
+# 只构建 Vue 页面到 collector-desktop/dist/renderer/
+npm --prefix collector-desktop run build:renderer
+
+# 把 collector-desktop/dist/renderer/ 复制到 src/main/resources/static/desktop/
+npm --prefix collector-desktop run sync:web
+```
+
+复制关系如下：
+
+```text
+collector-desktop/dist/renderer/
+  -> src/main/resources/static/desktop/
+```
+
+注意：复制脚本会先清空旧的 `src/main/resources/static/desktop/`，再复制最新构建产物，避免旧 hash 文件残留。
+
+### 3. 后端服务打包和启动
+
+后端 jar 打包：
+
+```bash
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+```
+
+非 Windows Git Bash 环境可直接执行：
+
+```bash
+mvn -B -ntp clean package -DskipTests
+```
+
+打包产物：
+
+```text
+target/data-collection-service-0.0.1-SNAPSHOT.jar
+```
+
+开发模式启动：
+
+```bash
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+```
+
+只验证后端启动、不连接 TDengine 和云端上报时，可使用最小启动参数：
+
+```bash
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=dev \
+  --telemetry.tdengine.enabled=false \
+  --collector.report.enabled=false \
+  --collector.report.mqtt.enabled=false \
+  --collector.report.shadow.persistence-enabled=false \
+  --collector.alarm.state.enabled=false \
+  --collector.cache.type=local
+```
+
+常用访问地址：
+
+```text
+服务根地址：http://127.0.0.1:9090/collector
+网页控制台：http://127.0.0.1:9090/collector/desktop/index.html
+健康检查：http://127.0.0.1:9090/collector/health
+```
+
+### 4. 桌面客户端打包
+
+开发预览：
+
+```bash
+npm --prefix collector-desktop run electron:dev
+```
+
+构建桌面端代码：
+
+```bash
+npm --prefix collector-desktop run build
+```
+
+打免安装目录包：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run pack
+```
+
+免安装版产物：
+
+```text
+collector-desktop/release/win-unpacked/数据采集工作台.exe
+```
+
+打 Windows 安装包：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run dist
+```
+
+安装包产物目录：
+
+```text
+collector-desktop/release/
+```
+
+如果在 Windows CMD 中执行，需要改成：
+
+```bat
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ && npm --prefix collector-desktop run pack
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ && npm --prefix collector-desktop run dist
+```
+
+### 5. 推荐发布顺序
+
+#### 5.1 只发布网页控制台和后端 jar
+
+```bash
+npm --prefix collector-desktop install
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+```
+
+客户访问：
+
+```text
+http://服务器IP:9090/collector/desktop/index.html
+```
+
+#### 5.2 同时发布网页控制台、后端 jar 和桌面客户端
+
+```bash
+npm --prefix collector-desktop install
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run pack
+```
+
+交付产物：
+
+```text
+target/data-collection-service-0.0.1-SNAPSHOT.jar
+collector-desktop/release/win-unpacked/数据采集工作台.exe
+```
+
+### 6. 鉴权和访问说明
+
+- `/collector/desktop/**`：网页静态资源，默认放行，不需要令牌。
+- `/collector/health`：健康检查，默认放行，不需要令牌。
+- `/collector/api/**`、`/collector/monitor/**`：业务接口和监控接口，需要 `X-Collector-Token`。
+- 开发环境默认令牌是 `ops-token`，只允许本机开发使用，生产环境必须替换为安全令牌。
 
 首次打开控制台时，按以下步骤完成本地访问和设备配置：
 
@@ -53,7 +265,13 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - `collector-desktop/electron/`
 - `collector-desktop/package.json`
 
-如需浏览器访问模式，应复用 `collector-desktop` 的 Vue 构建产物进行独立静态部署或后续挂载到后端静态目录，不再恢复旧 `/admin/**` 页面。
+后端内置网页控制台资源位置：
+
+- 构建来源：`collector-desktop/dist/renderer/`
+- 后端静态目录：`src/main/resources/static/desktop/`
+- 同步命令：`npm --prefix collector-desktop run build:web`
+
+如需独立浏览器部署，也可以直接发布 `collector-desktop/dist/renderer/`，但推荐通过后端内置 `/desktop/index.html` 入口部署，避免跨域配置。
 
 ## 界面预览
 
@@ -482,13 +700,20 @@ src/main/java/com/wangbin/collector
 
 - JDK 17+
 - Maven 3.9+
+- Node.js / npm（构建 `collector-desktop` 控制台时需要）
 - Redis 7+（启用缓存/实时流时需要）
 - TDengine（启用历史存储时需要）
 
 ### 本地启动
 
 ```bash
-mvn clean package -DskipTests
+# 构建并复制网页控制台到后端 static/desktop
+npm --prefix collector-desktop run build:web
+
+# Windows Git Bash 推荐使用 cmd.exe /c；其他环境可直接执行 mvn
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+
+# 启动后端，浏览器访问 /collector/desktop/index.html
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
@@ -520,7 +745,8 @@ Spring Boot 配置优先级遵循“启动参数 > 环境变量 > 外部配置 >
 只验证应用启动、不连接 TDengine 和云平台时：
 
 ```bash
-mvn clean package -DskipTests
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --telemetry.tdengine.enabled=false \
@@ -545,7 +771,7 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
 
 #### 2. 控制台令牌和接口鉴权
 
-旧 `/admin/**` 静态页面已经移除；后端只默认放行 `/health`、Actuator 和文档相关白名单。桌面客户端或后续网页模式发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
+旧 `/admin/**` 静态页面已经移除；后端默认放行 `/health`、`/desktop/**`、Actuator 和文档相关白名单。桌面客户端或网页控制台发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
 
 打开客户端后，在“访问令牌”区域填写令牌并保存。客户端会：
 
@@ -1421,6 +1647,7 @@ mvn -B -ntp -Pp0-regression test
 npm --prefix collector-desktop run typecheck
 npm --prefix collector-desktop test
 npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
 node scripts/scan-config-secrets.mjs
 ```
 

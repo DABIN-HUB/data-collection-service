@@ -65,6 +65,19 @@ class AuthFilterTest {
     }
 
     @Test
+    void shouldAllowDesktopStaticResourcesWithContextPath() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/collector/desktop/index.html");
+        request.setContextPath("/collector");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
     void shouldNotPermitLegacyAdminPathByDefault() throws Exception {
         AuthProperties properties = new AuthProperties();
         AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());

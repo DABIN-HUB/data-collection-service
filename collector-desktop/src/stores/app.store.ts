@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 
-import { configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl } from "@/api/http";
+import { configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
 
 interface AppState {
   appName: string;
@@ -50,7 +50,7 @@ export const useAppStore = defineStore("app", {
         this.backendManaged = Boolean(appInfo.backendManaged);
         this.serverUrl = normalizeServerUrl(savedServerUrl || serverConfig.serverUrl || this.serverUrl);
       } else {
-        this.serverUrl = normalizeServerUrl(savedServerUrl || this.serverUrl);
+        this.serverUrl = normalizeServerUrl(savedServerUrl || resolveBrowserServerUrl() || this.serverUrl);
       }
       if (savedToken) {
         this.token = savedToken;

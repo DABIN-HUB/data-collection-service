@@ -15,6 +15,8 @@
     "smoke:modbus": "node scripts/modbus-smoke.mjs",
     "smoke:extended": "node scripts/extended-smoke.mjs",
     "build:renderer": "vite build",
+    "sync:web": "node scripts/sync-web-console.mjs",
+    "build:web": "npm run build:renderer && npm run sync:web",
     "build:electron": "tsc -p tsconfig.node.json",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "build": "vue-tsc --noEmit && npm run build:renderer && npm run build:electron",
