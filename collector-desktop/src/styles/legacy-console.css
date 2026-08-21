@@ -1327,6 +1327,72 @@ body.modao-exact .legacy-console .history-summary-cards .exact-diagnostic-card s
   line-height: 1.4;
 }
 
+body.modao-exact .legacy-console .history-query-bar {
+  min-height: auto;
+  padding: 14px 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: visible;
+}
+
+body.modao-exact .legacy-console .history-filter-main {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.2fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(90px, 0.48fr);
+  gap: 10px;
+  align-items: end;
+}
+
+body.modao-exact .legacy-console .history-filter-bottom {
+  display: grid;
+  padding-top: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  border-top: 1px solid rgba(45, 74, 122, 0.42);
+}
+
+body.modao-exact .legacy-console .history-filter-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+body.modao-exact .legacy-console .history-filter-field > span {
+  color: var(--exact-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .history-filter-field input,
+body.modao-exact .legacy-console .history-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+body.modao-exact .legacy-console .history-compare-select {
+  min-width: 0;
+  min-height: 74px;
+  height: 74px;
+}
+
+body.modao-exact .legacy-console .history-compare-field small {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+body.modao-exact .legacy-console .history-query-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console .history-query-actions button {
+  min-width: 86px;
+}
+
 body.modao-exact .legacy-console .exact-config-grid,
 body.modao-exact .legacy-console .network-result-grid {
   display: grid;

@@ -5,35 +5,56 @@
         <h1>历史趋势</h1>
         <span class="heading-online"><i></i>{{ historyRows.length }} 条 · 对比 {{ comparePointRefs.length }} 个点位</span>
       </div>
-      <div class="heading-actions">
-        <button type="button" :disabled="loading || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
-        <button type="button" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
-      </div>
     </div>
 
     <div class="exact-page-body">
       <section class="exact-toolbar history-query-bar">
-        <div class="exact-toolbar-group exact-toolbar-filters">
-          <select v-model="deviceId" @change="handleDeviceChange">
-            <option value="">选择设备</option>
-            <option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">
-              {{ device.deviceName || deviceIdOf(device) }}
-            </option>
-          </select>
-          <select v-model="pointRef">
-            <option value="">选择点位</option>
-            <option v-for="point in points" :key="pointKey(point)" :value="pointKey(point)">
-              {{ point.pointName || point.pointCode || point.pointId || point.address }}
-            </option>
-          </select>
-          <select v-model="comparePointRefs" multiple size="4" class="history-compare-select" title="按住 Ctrl/Command 多选对比点位">
-            <option v-for="point in comparePointOptions" :key="`compare-${point.key}`" :value="point.key">
-              {{ point.label }}
-            </option>
-          </select>
-          <input v-model="startTime" type="datetime-local" title="开始时间" />
-          <input v-model="endTime" type="datetime-local" title="结束时间" />
-          <input v-model.number="limit" type="number" min="10" max="2000" step="10" title="最大条数" />
+        <div class="history-filter-main">
+          <label class="history-filter-field">
+            <span>设备</span>
+            <select v-model="deviceId" @change="handleDeviceChange">
+              <option value="">选择设备</option>
+              <option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">
+                {{ device.deviceName || deviceIdOf(device) }}
+              </option>
+            </select>
+          </label>
+          <label class="history-filter-field">
+            <span>点位</span>
+            <select v-model="pointRef">
+              <option value="">选择点位</option>
+              <option v-for="point in points" :key="pointKey(point)" :value="pointKey(point)">
+                {{ point.pointName || point.pointCode || point.pointId || point.address }}
+              </option>
+            </select>
+          </label>
+          <label class="history-filter-field">
+            <span>开始</span>
+            <input v-model="startTime" type="datetime-local" title="开始时间" />
+          </label>
+          <label class="history-filter-field">
+            <span>结束</span>
+            <input v-model="endTime" type="datetime-local" title="结束时间" />
+          </label>
+          <label class="history-filter-field is-short">
+            <span>条数</span>
+            <input v-model.number="limit" type="number" min="10" max="2000" step="10" title="最大条数" />
+          </label>
+        </div>
+        <div class="history-filter-bottom">
+          <label class="history-filter-field history-compare-field">
+            <span>对比点位</span>
+            <select v-model="comparePointRefs" multiple size="3" class="history-compare-select" title="按住 Ctrl/Command 多选对比点位">
+              <option v-for="point in comparePointOptions" :key="`compare-${point.key}`" :value="point.key">
+                {{ point.label }}
+              </option>
+            </select>
+            <small>可选多个点位做趋势对比</small>
+          </label>
+          <div class="history-query-actions">
+            <button type="button" class="primary" :disabled="loading || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
+            <button type="button" class="primary" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
+          </div>
         </div>
       </section>
 

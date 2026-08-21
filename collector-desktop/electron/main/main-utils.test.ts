@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAboutInfo, isSafeExternalUrl, normalizeServerConfig, normalizeWindowState } from "./main-utils.js";
+import { buildAboutInfo, buildWindowChromeOptions, isSafeExternalUrl, normalizeServerConfig, normalizeWindowState } from "./main-utils.js";
 
 describe("main-utils", () => {
   it("归一化服务地址并补齐 collector context-path", () => {
@@ -11,6 +11,14 @@ describe("main-utils", () => {
   it("窗口尺寸不小于工业工作台最小尺寸", () => {
     expect(normalizeWindowState({ width: 800, height: 500 })).toMatchObject({ width: 1180, height: 760 });
     expect(normalizeWindowState({ width: 1600, height: 1000 })).toMatchObject({ width: 1600, height: 1000 });
+  });
+
+  it("窗口外壳默认隐藏原生白色菜单栏并使用深色背景", () => {
+    expect(buildWindowChromeOptions()).toEqual({
+      autoHideMenuBar: true,
+      menuBarVisible: false,
+      backgroundColor: "#0d1b2a"
+    });
   });
 
   it("只允许安全外链协议", () => {
