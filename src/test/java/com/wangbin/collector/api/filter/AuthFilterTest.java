@@ -40,10 +40,10 @@ class AuthFilterTest {
     }
 
     @Test
-    void shouldAllowAdminStaticResourcesWithoutCredential() throws Exception {
+    void shouldAllowHealthWithoutCredential() throws Exception {
         AuthProperties properties = new AuthProperties();
         AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/index.html");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/health");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, new MockFilterChain());
@@ -52,16 +52,28 @@ class AuthFilterTest {
     }
 
     @Test
-    void shouldAllowAdminStaticResourcesWithContextPath() throws Exception {
+    void shouldAllowHealthWithContextPath() throws Exception {
         AuthProperties properties = new AuthProperties();
         AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/collector/admin/index.html");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/collector/health");
         request.setContextPath("/collector");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, new MockFilterChain());
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void shouldNotPermitLegacyAdminPathByDefault() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/admin/index.html");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
     }
 
     @Test

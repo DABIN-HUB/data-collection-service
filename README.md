@@ -21,17 +21,19 @@
 
 ## 控制台访问
 
-项目内置了静态管理控制台页面。准备好 Java 17 和 Maven 后，可以通过以下命令完成本地构建和启动：
+旧版 Spring Boot 内置 `/admin/**` 静态 Web 控制台已经移除。当前推荐使用 `collector-desktop/` 下的 Vue 3 + Electron 数据采集工作台访问后端服务。准备好 Java 17 和 Maven 后，可以通过以下命令完成后端本地构建和启动：
 
 ```bash
 mvn -B -ntp clean package -DskipTests
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
-应用启动完成后访问：
+后端启动完成后，打开桌面客户端并连接默认服务地址：
 
-- 本地默认地址：`http://127.0.0.1:9090/collector/admin/index.html`
-- 如果你修改了 `server.port` 或 `server.servlet.context-path`，请按实际配置调整访问地址
+- 本地默认服务地址：`http://127.0.0.1:9090/collector`
+- 客户端源码位置：`collector-desktop/`
+- 本地打包产物：`collector-desktop/release/win-unpacked/数据采集工作台.exe`
+- 如果你修改了 `server.port` 或 `server.servlet.context-path`，请在客户端连接设置中按实际配置调整服务地址
 
 首次打开控制台时，按以下步骤完成本地访问和设备配置：
 
@@ -45,14 +47,13 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 
 控制台按“工作台、资产与配置、操作中心、系统运维”分组，提供运行总览、实时数据、告警中心、设备管理、采集配置、云端上报、手动控制、设备影子、系统诊断、系统日志和网络检测 11 个入口。页面使用真实接口，不包含墨刀原型中的随机设备、随机告警或随机网络结果。
 
-控制台前端资源位置：
+客户端前端资源位置：
 
-- `src/main/resources/static/admin/index.html`
-- `src/main/resources/static/admin/app.js`
-- `src/main/resources/static/admin/styles.css`
-- `src/main/resources/static/admin/modao-console.js`
-- `src/main/resources/static/admin/modao-console.css`
-- `src/main/resources/static/admin/icons/`
+- `collector-desktop/src/`
+- `collector-desktop/electron/`
+- `collector-desktop/package.json`
+
+如需浏览器访问模式，应复用 `collector-desktop` 的 Vue 构建产物进行独立静态部署或后续挂载到后端静态目录，不再恢复旧 `/admin/**` 页面。
 
 ## 界面预览
 
@@ -544,11 +545,11 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
 
 #### 2. 控制台令牌和接口鉴权
 
-控制台静态资源 `/admin/**` 可以直接打开，但页面发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
+旧 `/admin/**` 静态页面已经移除；后端只默认放行 `/health`、Actuator 和文档相关白名单。桌面客户端或后续网页模式发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
 
-打开控制台后，在左下角“访问令牌”区域填写令牌并保存。页面会：
+打开客户端后，在“访问令牌”区域填写令牌并保存。客户端会：
 
-1. 把令牌保存在当前浏览器的 `localStorage.collectorToken`。
+1. 按用户选择把令牌保存在客户端本地存储中。
 2. 每次接口请求携带 `X-Collector-Token`。
 3. 收到未授权响应时清除失效令牌。
 
@@ -1417,8 +1418,9 @@ curl -H "X-Collector-Token: your-token" \
 ```bash
 mvn -B -ntp verify
 mvn -B -ntp -Pp0-regression test
-node --check src/main/resources/static/admin/app.js
-node scripts/verify-admin-console.mjs
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
 node scripts/scan-config-secrets.mjs
 ```
 

@@ -177,7 +177,6 @@ collector:
     permit-all-paths:
       - /health
       - /actuator/**
-      - /admin/**
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
