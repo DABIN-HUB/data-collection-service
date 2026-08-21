@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { executeCollectorProxyRequest, type CollectorProxyRequest } from "./http-proxy-utils.js";
 import {
   buildAboutInfo,
+  buildWindowChromeOptions,
   DEFAULT_SERVER_URL,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
@@ -94,6 +95,7 @@ function persistWindowState(window: BrowserWindow): void {
 function createWindow(): void {
   const config = readDesktopConfig();
   const windowState: NormalizedWindowState = normalizeWindowState(config.windowState);
+  const chromeOptions = buildWindowChromeOptions();
   mainWindow = new BrowserWindow({
     width: windowState.width,
     height: windowState.height,
@@ -102,7 +104,8 @@ function createWindow(): void {
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: "数据采集工作台",
-    backgroundColor: "#eef3f8",
+    backgroundColor: chromeOptions.backgroundColor,
+    autoHideMenuBar: chromeOptions.autoHideMenuBar,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -111,6 +114,8 @@ function createWindow(): void {
       preload: resolve(__dirname, "../preload/index.cjs")
     }
   });
+  mainWindow.setMenuBarVisibility(chromeOptions.menuBarVisible);
+  mainWindow.setAutoHideMenuBar(chromeOptions.autoHideMenuBar);
 
   if (windowState.maximized) {
     mainWindow.maximize();

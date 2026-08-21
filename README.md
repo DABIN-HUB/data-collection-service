@@ -19,19 +19,233 @@
 - 支持缓存、实时流、历史存储、云端上报的全链路闭环
 - 提供在线配置治理、运行态监控和问题可追踪能力
 
-## 控制台访问
+## 控制台访问、启动、打包和复制命令
 
-项目内置了静态管理控制台页面。准备好 Java 17 和 Maven 后，可以通过以下命令完成本地构建和启动：
+当前控制台由 `collector-desktop/` 下的 Vue 3 工作台提供，并支持两种交付形态：
+
+1. **后端内置网页控制台**：客户不安装客户端，直接访问 `http://服务器IP:9090/collector/desktop/index.html`。
+2. **Electron 桌面客户端**：客户运行 `数据采集工作台.exe`，再连接后端服务地址。
+
+### 0. 环境准备
+
+| 工具 | 用途 | 要求 |
+| --- | --- | --- |
+| Java | 运行和打包后端服务 | Java 17 |
+| Maven | 打后端 Spring Boot jar | 使用本机 Maven 或 CI Maven |
+| Node.js / npm | 构建 Vue 控制台和 Electron 客户端 | 需能执行 `npm --prefix collector-desktop ...` |
+
+> Windows Git Bash 中如果直接执行 `mvn` 出现 Maven 启动器异常，可以改用 `cmd.exe /c mvn ...`。Windows CMD / PowerShell、Linux、CI 环境通常直接使用 `mvn ...` 即可。
+
+首次拉取代码后安装桌面端依赖：
 
 ```bash
-mvn -B -ntp clean package -DskipTests
+npm --prefix collector-desktop install
+```
+
+### 1. 本地最快启动：网页控制台模式
+
+适合开发、演示和客户不想安装客户端的场景。
+
+```bash
+# 1）构建 Vue 网页控制台，并复制到后端静态目录 src/main/resources/static/desktop/
+npm --prefix collector-desktop run build:web
+
+# 2）打后端 jar，jar 内会包含 /desktop 网页控制台
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+
+# 3）启动后端服务
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
-应用启动完成后访问：
+如果不在 Windows Git Bash 中，可以把第 2 步改成：
 
-- 本地默认地址：`http://127.0.0.1:9090/collector/admin/index.html`
-- 如果你修改了 `server.port` 或 `server.servlet.context-path`，请按实际配置调整访问地址
+```bash
+mvn -B -ntp clean package -DskipTests
+```
+
+启动成功后访问：
+
+```text
+http://127.0.0.1:9090/collector/desktop/index.html
+```
+
+服务器部署时把 `127.0.0.1` 替换为服务器 IP，例如：
+
+```text
+http://192.168.1.100:9090/collector/desktop/index.html
+```
+
+网页控制台会根据当前访问路径自动推导后端服务地址：
+
+```text
+http://192.168.1.100:9090/collector/desktop/index.html
+  -> http://192.168.1.100:9090/collector
+```
+
+### 2. 单独复制网页控制台资源
+
+如果只改了前端页面，想把 Vue 构建产物复制进后端静态目录，可以使用下面两种方式。
+
+一条命令完成“构建 + 复制”：
+
+```bash
+npm --prefix collector-desktop run build:web
+```
+
+等价于分两步执行：
+
+```bash
+# 只构建 Vue 页面到 collector-desktop/dist/renderer/
+npm --prefix collector-desktop run build:renderer
+
+# 把 collector-desktop/dist/renderer/ 复制到 src/main/resources/static/desktop/
+npm --prefix collector-desktop run sync:web
+```
+
+复制关系如下：
+
+```text
+collector-desktop/dist/renderer/
+  -> src/main/resources/static/desktop/
+```
+
+注意：复制脚本会先清空旧的 `src/main/resources/static/desktop/`，再复制最新构建产物，避免旧 hash 文件残留。
+
+### 3. 后端服务打包和启动
+
+后端 jar 打包：
+
+```bash
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+```
+
+非 Windows Git Bash 环境可直接执行：
+
+```bash
+mvn -B -ntp clean package -DskipTests
+```
+
+打包产物：
+
+```text
+target/data-collection-service-0.0.1-SNAPSHOT.jar
+```
+
+开发模式启动：
+
+```bash
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+```
+
+只验证后端启动、不连接 TDengine 和云端上报时，可使用最小启动参数：
+
+```bash
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=dev \
+  --telemetry.tdengine.enabled=false \
+  --collector.report.enabled=false \
+  --collector.report.mqtt.enabled=false \
+  --collector.report.shadow.persistence-enabled=false \
+  --collector.alarm.state.enabled=false \
+  --collector.cache.type=local
+```
+
+常用访问地址：
+
+```text
+服务根地址：http://127.0.0.1:9090/collector
+网页控制台：http://127.0.0.1:9090/collector/desktop/index.html
+健康检查：http://127.0.0.1:9090/collector/health
+```
+
+### 4. 桌面客户端打包
+
+开发预览：
+
+```bash
+npm --prefix collector-desktop run electron:dev
+```
+
+构建桌面端代码：
+
+```bash
+npm --prefix collector-desktop run build
+```
+
+打免安装目录包：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run pack
+```
+
+免安装版产物：
+
+```text
+collector-desktop/release/win-unpacked/数据采集工作台.exe
+```
+
+打 Windows 安装包：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run dist
+```
+
+安装包产物目录：
+
+```text
+collector-desktop/release/
+```
+
+如果在 Windows CMD 中执行，需要改成：
+
+```bat
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ && npm --prefix collector-desktop run pack
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ && npm --prefix collector-desktop run dist
+```
+
+### 5. 推荐发布顺序
+
+#### 5.1 只发布网页控制台和后端 jar
+
+```bash
+npm --prefix collector-desktop install
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+```
+
+客户访问：
+
+```text
+http://服务器IP:9090/collector/desktop/index.html
+```
+
+#### 5.2 同时发布网页控制台、后端 jar 和桌面客户端
+
+```bash
+npm --prefix collector-desktop install
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run pack
+```
+
+交付产物：
+
+```text
+target/data-collection-service-0.0.1-SNAPSHOT.jar
+collector-desktop/release/win-unpacked/数据采集工作台.exe
+```
+
+### 6. 鉴权和访问说明
+
+- `/collector/desktop/**`：网页静态资源，默认放行，不需要令牌。
+- `/collector/health`：健康检查，默认放行，不需要令牌。
+- `/collector/api/**`、`/collector/monitor/**`：业务接口和监控接口，需要 `X-Collector-Token`。
+- 开发环境默认令牌是 `ops-token`，只允许本机开发使用，生产环境必须替换为安全令牌。
 
 首次打开控制台时，按以下步骤完成本地访问和设备配置：
 
@@ -45,14 +259,19 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 
 控制台按“工作台、资产与配置、操作中心、系统运维”分组，提供运行总览、实时数据、告警中心、设备管理、采集配置、云端上报、手动控制、设备影子、系统诊断、系统日志和网络检测 11 个入口。页面使用真实接口，不包含墨刀原型中的随机设备、随机告警或随机网络结果。
 
-控制台前端资源位置：
+客户端前端资源位置：
 
-- `src/main/resources/static/admin/index.html`
-- `src/main/resources/static/admin/app.js`
-- `src/main/resources/static/admin/styles.css`
-- `src/main/resources/static/admin/modao-console.js`
-- `src/main/resources/static/admin/modao-console.css`
-- `src/main/resources/static/admin/icons/`
+- `collector-desktop/src/`
+- `collector-desktop/electron/`
+- `collector-desktop/package.json`
+
+后端内置网页控制台资源位置：
+
+- 构建来源：`collector-desktop/dist/renderer/`
+- 后端静态目录：`src/main/resources/static/desktop/`
+- 同步命令：`npm --prefix collector-desktop run build:web`
+
+如需独立浏览器部署，也可以直接发布 `collector-desktop/dist/renderer/`，但推荐通过后端内置 `/desktop/index.html` 入口部署，避免跨域配置。
 
 ## 界面预览
 
@@ -176,7 +395,7 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - `IEC104`
 - `DLT645_2007`（实验性）
 - `IEC101`（实验性非平衡控制站）
-- `IEC61850`
+- `IEC61850`（MMS 客户端基础能力，需 IED / MMS Server 联调）
 - `MQTT`
 - `SNMP`
 - `COAP`
@@ -208,10 +427,10 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.ac
 - `OPC_UA_MILO`：显式选择 Eclipse Milo 独立客户端，当前保持实验状态，不会与 PLC4X 混用连接
 - `OPC_DA`：支持 `HTTP` 桥接模式与 `INMEMORY` 模式
 - `BACnet`：已覆盖 `IP`、`MS/TP`、`SC` 三类接入形态，支持读写与订阅；其中 `BACNET_SC` 当前按实验性能力提供
-- `IEC104`：支持读、总召唤、命令下发、单点召唤
+- `IEC104`：支持常用遥信/遥测/电度读取、读命令、总召唤、单点召唤、常用遥控/设点和突发上送；文件传输、参数命令、保护事件等完整标准高级能力未承诺
 - `DLT645_2007`：支持串口多表、数据读取、后续帧、BCD 等值解析和受控写入
-- `IEC101`：支持非平衡链路、一级/二级数据、总召唤、时钟同步和遥控
-- `IEC61850`：支持模型加载、读写、报告处理
+- `IEC101`：支持非平衡控制站侧 `FT1.2`、`ASDU`、一级/二级数据轮询、总召唤、电度召唤、读命令、时钟同步和常用遥控/设点；不支持平衡模式、被控站和文件传输，需目标 RTU 实测
+- `IEC61850`：支持基于 `iec61850bean` 的 MMS 客户端连接、`ServerModel` 加载、常见 `BasicDataAttribute` 读写转换、`Select/Operate` 命令入口和 `Report` 回调处理；`RCB/Dataset` 自动配置、复杂结构和完整 IED 互操作需实测
 - `MQTT`：支持主题订阅、发布、消息映射，兼容 `MQTT_SSL`
 - `SNMP`：支持 GET/SET/WALK，兼容 `SNMP_V1` / `SNMP_V2C` / `SNMP_V3`
 - `COAP`：支持 GET/POST/PUT/DELETE/Observe，兼容 `COAP_SSL`
@@ -464,10 +683,10 @@ src/main/java/com/wangbin/collector
 | BACNET_IP | 已支持 | `Who-Is/I-Am`、`COV` 订阅、属性读写 |
 | BACNET_MSTP | 已支持 | `RS485` 令牌总线接入 |
 | BACNET_SC | 实验性 | 安全 WebSocket 形态，已接入统一链路 |
-| IEC104 | 已支持 | 读、召唤、命令 |
+| IEC104 | 已支持（常用能力） | 常用遥信/遥测/电度读取、读命令、总召唤、常用遥控/设点、突发上送；不等同于完整 IEC 60870-5-104 标准能力 |
 | DLT645_2007 | 实验性 | DL/T 645-2007 串口多表、读取、后续帧和受控写入 |
-| IEC101 | 实验性 | 非平衡控制站、FT1.2、一级/二级数据、召唤和遥控 |
-| IEC61850 | 已支持 | 模型加载、读写、报告 |
+| IEC101 | 实验性 | 非平衡控制站 `FT1.2`、`ASDU`、一级/二级数据轮询、总召唤、电度召唤、读命令、时钟同步、常用遥控/设点；需目标 RTU 实测 |
+| IEC61850 | 已支持（MMS 客户端基础能力） | `ServerModel` 加载、常见 BDA 读写转换、`Select/Operate` 入口、`Report` 回调；不等同于完整 IEC 61850 / IED 互操作 |
 | MQTT / MQTT_SSL | 已支持 | 主题映射、订阅、发布 |
 | SNMP / SNMP_V1 / SNMP_V2C / SNMP_V3 | 已支持 | GET/SET/WALK，含 SNMPv3 |
 | COAP / COAP_SSL | 已支持 | GET/POST/PUT/DELETE/Observe |
@@ -481,13 +700,20 @@ src/main/java/com/wangbin/collector
 
 - JDK 17+
 - Maven 3.9+
+- Node.js / npm（构建 `collector-desktop` 控制台时需要）
 - Redis 7+（启用缓存/实时流时需要）
 - TDengine（启用历史存储时需要）
 
 ### 本地启动
 
 ```bash
-mvn clean package -DskipTests
+# 构建并复制网页控制台到后端 static/desktop
+npm --prefix collector-desktop run build:web
+
+# Windows Git Bash 推荐使用 cmd.exe /c；其他环境可直接执行 mvn
+cmd.exe /c mvn -B -ntp clean package -DskipTests
+
+# 启动后端，浏览器访问 /collector/desktop/index.html
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
@@ -519,7 +745,8 @@ Spring Boot 配置优先级遵循“启动参数 > 环境变量 > 外部配置 >
 只验证应用启动、不连接 TDengine 和云平台时：
 
 ```bash
-mvn clean package -DskipTests
+npm --prefix collector-desktop run build:web
+cmd.exe /c mvn -B -ntp clean package -DskipTests
 java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --telemetry.tdengine.enabled=false \
@@ -544,11 +771,11 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
 
 #### 2. 控制台令牌和接口鉴权
 
-控制台静态资源 `/admin/**` 可以直接打开，但页面发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
+旧 `/admin/**` 静态页面已经移除；后端默认放行 `/health`、`/desktop/**`、Actuator 和文档相关白名单。桌面客户端或网页控制台发出的 `/api/**` 和 `/monitor/**` 请求仍需要鉴权。
 
-打开控制台后，在左下角“访问令牌”区域填写令牌并保存。页面会：
+打开客户端后，在“访问令牌”区域填写令牌并保存。客户端会：
 
-1. 把令牌保存在当前浏览器的 `localStorage.collectorToken`。
+1. 按用户选择把令牌保存在客户端本地存储中。
 2. 每次接口请求携带 `X-Collector-Token`。
 3. 收到未授权响应时清除失效令牌。
 
@@ -1417,8 +1644,10 @@ curl -H "X-Collector-Token: your-token" \
 ```bash
 mvn -B -ntp verify
 mvn -B -ntp -Pp0-regression test
-node --check src/main/resources/static/admin/app.js
-node scripts/verify-admin-console.mjs
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
 node scripts/scan-config-secrets.mjs
 ```
 

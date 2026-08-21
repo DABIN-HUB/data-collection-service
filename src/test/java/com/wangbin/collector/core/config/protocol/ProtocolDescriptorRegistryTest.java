@@ -194,7 +194,7 @@ class ProtocolDescriptorRegistryTest {
                 metadata("MQTT", "MqttCollector", "MQTT", 1883,
                         ProtocolAddressingMode.SYMBOLIC, supported(), supported(), supported(), unsupported(), List.of("MQTT_SSL")),
                 metadata("IEC104", "Iec104Collector", "IEC104", 2404,
-                        ProtocolAddressingMode.NUMERIC, supported(), supported(), runtime(), unsupported(), List.of("IEC_104")),
+                        ProtocolAddressingMode.MIXED, supported(), supported(), runtime(), unsupported(), List.of("IEC_104")),
                 metadata("DLT645_2007", "Dlt645Collector", "DLT645_2007", null,
                         ProtocolAddressingMode.SYMBOLIC, experimental(), experimental(), unsupported(), unsupported(),
                         List.of("DLT645", "DL_T_645", "DLT_645_2007")),

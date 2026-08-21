@@ -35,12 +35,38 @@ export interface LocalDevicePayload {
   startAfterSave: boolean;
 }
 
+export interface LocalDeviceBundle {
+  device?: Record<string, unknown>;
+  connection?: Record<string, unknown>;
+  points?: DataPoint[];
+  cloudTarget?: CloudTargetConfig | Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface ProtocolPointNotes {
+  addressHints: string[];
+  messages: string[];
+}
+
 export const DEFAULT_ADAPTIVE_CONFIG: AdaptiveConfig = {
   baseCollectionInterval: 1000,
   minCollectionInterval: 500,
   maxCollectionInterval: 10000,
   pointChangeThreshold: 0.01
 };
+
+export function extractLocalDeviceBundle(response: unknown): LocalDeviceBundle | null {
+  const root = cloneRecord(response);
+  const data = cloneRecord(root.data);
+  const candidates = [root.bundle, data.bundle, root, data];
+  for (const candidate of candidates) {
+    const record = cloneRecord(candidate);
+    if (record.device || record.connection || Array.isArray(record.points)) {
+      return record as LocalDeviceBundle;
+    }
+  }
+  return null;
+}
 
 export function buildLocalDevicePayload(draft: LocalDeviceDraft): LocalDevicePayload {
   const adaptive = normalizeAdaptive(draft.adaptive);
@@ -116,6 +142,23 @@ export function validateLocalDeviceDraft(draft: Pick<LocalDeviceDraft, "deviceId
     errors.push("启用云上报时必须填写 productKey 和 deviceName");
   }
   return errors;
+}
+
+export function buildProtocolPointNotes(protocol: string, pointAddressHints: string[] = [], pointFieldCount = 0): ProtocolPointNotes {
+  const normalizedProtocol = String(protocol || "").trim().toUpperCase();
+  const addressHints = pointAddressHints.map((item) => String(item || "").trim()).filter(Boolean);
+  const messages: string[] = [];
+  if (normalizedProtocol === "SIEMENS_S7") {
+    messages.push("S7 地址栏支持简写，例如 DB1.DBX0.0、DB1.DBW0、DB1.DBD4，也支持完整 PLC4X 地址，例如 %DB1:0.0:BOOL、%DB1:4:REAL。MODE/SYS/USR/ALM 只用于订阅模式，不应填在普通点位地址里。");
+  }
+  if (normalizedProtocol === "MODBUS_TCP" || normalizedProtocol === "MODBUS_RTU") {
+    messages.push("Modbus 的 dataType 会直接决定读取长度和寄存器解码方式；下方协议扩展字段主要用于补充兼容配置。");
+  } else if (pointFieldCount > 0) {
+    messages.push("下方字段都是协议扩展配置，字段下方的中文备注会说明用途、条件和保存位置。主类型字段如果已经提升到基础信息区，这里不会重复展示。");
+  } else {
+    messages.push("当前协议没有额外的点位扩展字段。");
+  }
+  return { addressHints, messages };
 }
 
 export function normalizeLocalPoints(points: DataPoint[], deviceId: string, protocol: string, adaptive: AdaptiveConfig = DEFAULT_ADAPTIVE_CONFIG): DataPoint[] {

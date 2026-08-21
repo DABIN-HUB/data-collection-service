@@ -21,5 +21,11 @@ scripts/*
 AGENTS.md
 .m2-local
 scripts
+!/collector-desktop/scripts/
+/collector-desktop/scripts/*
+!/collector-desktop/scripts/sync-web-console.mjs
+!/collector-desktop/scripts/web-console-utils.mjs
+!/collector-desktop/scripts/web-console-utils.test.mjs
 AGENTS1.md
 IDEA.md
+.hermes

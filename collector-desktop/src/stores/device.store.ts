@@ -45,7 +45,7 @@ export const useDeviceStore = defineStore("device", {
         }
         if (deviceResponse.status === "fulfilled") {
           const rawDevices = Array.isArray(deviceResponse.value.devices) ? deviceResponse.value.devices : [];
-          this.devices = rawDevices.map((device) => normalizeDevice(device, this.runtimeMap));
+          this.devices = rawDevices.map((device) => normalizeDeviceViewModel(device, this.runtimeMap));
           if (!this.selectedDeviceId && this.devices.length > 0) {
             this.selectedDeviceId = this.devices[0].normalizedId;
           }
@@ -105,7 +105,7 @@ export const useDeviceStore = defineStore("device", {
   }
 });
 
-function normalizeDevice(device: DeviceInfo, runtimeMap: Record<string, DeviceRuntimeSnapshot>): DeviceViewModel {
+export function normalizeDeviceViewModel(device: DeviceInfo, runtimeMap: Record<string, DeviceRuntimeSnapshot> = {}): DeviceViewModel {
   const normalizedId = String(device.deviceId || device.id || device.connectionKey || "");
   const runtime = normalizedId ? runtimeMap[normalizedId] : undefined;
   return {

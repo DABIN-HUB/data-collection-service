@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildLocalDevicePayload, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
+import { buildLocalDevicePayload, buildProtocolPointNotes, extractLocalDeviceBundle, normalizeLocalPoints, validateLocalDeviceDraft } from "./local-device-utils";
 
 describe("local-device-utils", () => {
   it("构造本地临时设备保存 payload", () => {
@@ -77,5 +77,25 @@ describe("local-device-utils", () => {
       points: [{ pointCode: "p1", pointName: "点位1", address: "a" }],
       cloudTarget: { enabled: true, deviceType: "SUB_DEVICE", topologyEnabled: true }
     })).toContain("启用云上报时必须填写 productKey 和 deviceName");
+  });
+
+  it("从本地设备详情响应提取可回填 bundle", () => {
+    const bundle = {
+      device: { id: "local-1", deviceName: "旧设备" },
+      connection: { host: "127.0.0.1", port: 1502 },
+      points: [{ pointCode: "p1", address: "40001" }]
+    };
+
+    expect(extractLocalDeviceBundle({ bundle })).toEqual(bundle);
+    expect(extractLocalDeviceBundle({ data: { bundle } })).toEqual(bundle);
+    expect(extractLocalDeviceBundle(null)).toBeNull();
+  });
+
+  it("协议点位提示使用结构化文本，避免拼接 HTML", () => {
+    const note = buildProtocolPointNotes("SIEMENS_S7", ["DB1.DBW0", "<script>alert(1)</script>"], 2);
+
+    expect(note.addressHints).toEqual(["DB1.DBW0", "<script>alert(1)</script>"]);
+    expect(note.messages.join(" ")).toContain("S7 地址栏支持简写");
+    expect(note.messages.join(" ")).not.toContain("<code>");
   });
 });

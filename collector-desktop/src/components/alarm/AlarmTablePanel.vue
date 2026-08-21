@@ -2,13 +2,13 @@
   <section class="monitor-panel alarm-workbench">
     <div class="panel-toolbar">
       <div class="table-actions">
-        <el-select v-model="level" placeholder="级别" clearable style="width: 120px">
+        <el-select v-model="level" placeholder="级别" clearable class="mini-filter">
           <el-option label="严重" value="CRITICAL" />
           <el-option label="重要" value="MAJOR" />
           <el-option label="一般" value="MINOR" />
           <el-option label="提醒" value="WARNING" />
         </el-select>
-        <el-input v-model="keyword" placeholder="搜索设备/点位/内容" clearable style="width: 220px" />
+        <el-input v-model="keyword" placeholder="搜索设备/点位/内容" clearable class="compact-select" />
         <el-date-picker v-model="timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" />
         <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" plain :disabled="selectedRows.length === 0" @click="openBatchAck">批量确认</el-button>
@@ -30,7 +30,7 @@
       <el-table-column prop="pointName" label="点位名称" min-width="150" />
       <el-table-column label="告警内容" min-width="220"><template #default="{ row }">{{ alarmContent(row) }}</template></el-table-column>
       <el-table-column label="发生时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.occurTime) }}</template></el-table-column>
-      <el-table-column label="状态" width="110"><template #default="{ row }">{{ row.acknowledged ? '已确认' : row.status || '未确认' }}</template></el-table-column>
+      <el-table-column label="状态" width="110"><template #default="{ row }">{{ alarmStatusText(row) }}</template></el-table-column>
       <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><el-button type="primary" link :disabled="row.acknowledged" @click="openAck(row)">确认</el-button></template></el-table-column>
     </el-table>
 
@@ -120,7 +120,7 @@ async function confirmAck() {
   acking.value = true;
   error.value = "";
   try {
-    await Promise.all(targets.map((alarmId) => acknowledgeAlarm(alarmId, buildAlarmAckPayload(ackNote.value))));
+    await Promise.all(targets.map((alarmId) => acknowledgeAlarm(alarmId, buildAlarmAckPayload(ackNote.value, alarmId))));
     ElMessage.success(`已确认 ${targets.length} 条告警`);
     ackDialogVisible.value = false;
     await load();
@@ -146,7 +146,27 @@ function levelType(levelValue?: string): "danger" | "warning" | "info" {
 }
 
 function levelText(levelValue?: string): string {
-  return levelValue || "未知";
+  const value = String(levelValue || "").toUpperCase();
+  return {
+    CRITICAL: "严重",
+    MAJOR: "重要",
+    MINOR: "一般",
+    WARNING: "提醒"
+  }[value] || levelValue || "未知";
+}
+
+function alarmStatusText(row: AlarmRow): string {
+  if (row.acknowledged) {
+    return "已确认";
+  }
+  const status = String(row.status || "").toUpperCase();
+  return {
+    ACTIVE: "告警中",
+    PENDING: "待确认",
+    ACKED: "已确认",
+    RESOLVED: "已恢复",
+    CLOSED: "已关闭"
+  }[status] || "未确认";
 }
 
 function formatTime(value: unknown): string {

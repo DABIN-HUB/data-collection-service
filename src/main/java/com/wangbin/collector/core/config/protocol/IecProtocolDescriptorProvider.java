@@ -17,9 +17,9 @@ public class IecProtocolDescriptorProvider implements ProtocolDescriptorProvider
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("IEC104", "IEC 60870-5-104",
-                "IEC104 telemetry collection.",
+                "IEC104 常用遥信、遥测、电度采集与遥控/设点；完整标准高级能力有边界。",
                 List.of("IEC_104"), Iec104Collector.class, "IEC104", 2404,
-                ProtocolAddressingMode.NUMERIC,
+                ProtocolAddressingMode.MIXED,
                 ProtocolCapabilityState.SUPPORTED,
                 ProtocolCapabilityState.SUPPORTED,
                 ProtocolCapabilityState.RUNTIME_DEPENDENT,

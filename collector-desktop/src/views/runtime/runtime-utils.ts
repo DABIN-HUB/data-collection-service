@@ -57,14 +57,23 @@ export function buildCommandTemplate(command = "status"): Record<string, unknown
 }
 
 export function normalizeHistoryRows(response: unknown): HistoryRow[] {
-  if (Array.isArray(response)) {
-    return response as HistoryRow[];
+  const rows = extractRows(response, ["records", "rows", "items", "data", "values", "points"]);
+  return rows as HistoryRow[];
+}
+
+function extractRows(value: unknown, keys: string[]): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
   }
-  if (response && typeof response === "object") {
-    const body = response as Record<string, unknown>;
-    for (const key of ["records", "rows", "items", "data", "values", "points"]) {
+  if (value && typeof value === "object") {
+    const body = value as Record<string, unknown>;
+    for (const key of keys) {
       if (Array.isArray(body[key])) {
-        return body[key] as HistoryRow[];
+        return body[key] as unknown[];
+      }
+      const nestedRows = extractRows(body[key], keys);
+      if (nestedRows.length > 0) {
+        return nestedRows;
       }
     }
   }

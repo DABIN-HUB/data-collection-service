@@ -774,6 +774,68 @@
   align-items: center;
 }
 
+.protocol-state-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.state-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.state-pill span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.state-pill strong {
+  color: #0f172a;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.workbench-jump-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.workbench-jump-row button {
+  border-radius: 999px;
+}
+
+.payload-preview-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.payload-preview-card h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.payload-preview-card .surface-card-head {
+  margin-bottom: 10px;
+}
+
+.compact-result-view {
+  max-height: 260px;
+  margin: 0;
+}
+
 .protocol-field-group {
   margin-top: 14px;
 }
@@ -798,6 +860,10 @@
 }
 
 .schema-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   margin-top: 12px;
 }
 
@@ -1083,6 +1149,10 @@
   width: 132px;
 }
 
+.table-actions > .log-source-filter {
+  width: 180px;
+}
+
 .command-strip > .el-date-editor,
 .table-actions > .el-date-editor {
   flex: 0 0 360px;
@@ -1280,7 +1350,7 @@
 }
 
 .schema-message {
-  margin-left: 10px;
+  margin-left: 0;
   color: #64748b;
   font-size: 12px;
 }
@@ -1754,6 +1824,43 @@
   color: #0f172a;
 }
 
+.point-detail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.point-detail-head-actions .el-tag {
+  align-self: flex-start;
+}
+
+.shadow-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shadow-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.shadow-summary-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.shadow-summary-card strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
 .point-detail-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1799,6 +1906,69 @@
   line-height: 1.6;
 }
 
+.point-import-preview-dialog .el-dialog__body {
+  background: #f8fafc;
+}
+
+.point-import-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.point-import-preview-head strong {
+  display: block;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.point-import-preview-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.point-import-preview-stats {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.point-import-preview-table {
+  max-height: 44vh;
+  overflow: auto;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.point-import-preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.point-import-preview-table th,
+.point-import-preview-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  font-size: 12px;
+}
+
+.point-import-preview-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+}
+
+.point-import-preview-table .exact-empty {
+  text-align: center;
+}
+
 .history-query-bar {
   padding: 14px;
 }
@@ -1806,6 +1976,86 @@
 .history-chart {
   width: 100%;
   height: 320px;
+}
+
+.history-chart-dark {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #0f172a;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0f172a, #111827);
+}
+
+.history-chart-dark svg {
+  width: 100%;
+  height: 240px;
+}
+
+.history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.history-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.history-stat-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+.history-stat-row b {
+  color: #0f172a;
+}
+
+.history-compare-select {
+  min-width: 220px;
+  min-height: 112px;
+}
+
+.history-alarm-card {
+  margin-top: 0;
+}
+
+.history-alarm-table {
+  margin-top: 0;
+}
+
+.history-alarm-table th,
+.history-alarm-table td {
+  white-space: nowrap;
+}
+
+.history-alarm-table td:nth-child(5) {
+  white-space: normal;
 }
 
 .history-toolbar {
@@ -2638,6 +2888,594 @@ body.modal-active {
   min-width: 10rem;
 }
 
+/* 旧 Web 新增本地临时设备弹窗精确回归：覆盖前一版桌面化大圆角/Element Plus 风格。 */
+#localEditorBackdrop.local-editor-backdrop {
+  z-index: 118;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog {
+  --surface: #ffffff;
+  --surface-soft: #f6f8fb;
+  --panel-line: #d9e2ee;
+  --panel-text: #18263a;
+  --panel-muted: #66758b;
+  position: fixed;
+  inset: 34px 38px auto;
+  left: 50%;
+  z-index: 119;
+  display: grid;
+  width: min(1320px, calc(100vw - 76px));
+  height: calc(100vh - 68px);
+  max-height: calc(100vh - 68px);
+  padding: 0;
+  gap: 0;
+  grid-template-rows: 76px 84px minmax(0, 1fr) 72px;
+  overflow: hidden;
+  color: var(--panel-text);
+  border: 1px solid #c8d5e6;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.34);
+  transform: translateX(-50%);
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title {
+  position: static;
+  z-index: auto;
+  min-height: 76px;
+  padding: 0 22px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--panel-text);
+  border-bottom: 1px solid var(--panel-line);
+  background: #fff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title h3 {
+  margin: 4px 0 0;
+  color: #142033;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title p {
+  margin: 4px 0 0;
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .label-chip {
+  display: inline-flex;
+  min-height: 22px;
+  padding: 0 8px;
+  align-items: center;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title-actions,
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stat {
+  min-width: 76px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: right;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stat strong {
+  display: block;
+  max-width: 140px;
+  overflow: hidden;
+  color: #142033;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stat span {
+  display: block;
+  margin-top: 3px;
+  color: var(--panel-muted);
+  font-size: 11px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog button,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cbd7e8;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog button:hover,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-button:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog button.primary,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-button--primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: none;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog button.danger {
+  border-color: #fecaca;
+  color: #dc2626;
+  background: #fff5f5;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog button:disabled,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tabs {
+  grid-row: 2;
+  display: flex;
+  min-width: 0;
+  padding: 12px 18px;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: 0;
+  border-bottom: 1px solid var(--panel-line);
+  background: #f8fbff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab {
+  position: relative;
+  flex: 1 0 188px;
+  min-height: 58px;
+  padding: 9px 12px 8px 52px;
+  text-align: left;
+  color: #64748b;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab::after {
+  display: none;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab > span {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  transform: none;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab strong {
+  display: block;
+  color: #334155;
+  font-size: 13px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab small {
+  display: block;
+  margin-top: 3px;
+  color: #7b8aa0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-active > span {
+  color: #fff;
+  border-color: #2563eb;
+  background: #2563eb;
+  box-shadow: none;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-complete > span {
+  color: #fff;
+  border-color: #16a34a;
+  background: #16a34a;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-layout {
+  grid-row: 3;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-rail {
+  position: static;
+  display: flex;
+  min-width: 0;
+  padding: 18px;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  border: 0;
+  border-right: 1px solid var(--panel-line);
+  border-radius: 0;
+  background: #f8fbff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-rail strong {
+  display: block;
+  margin-top: 7px;
+  color: #142033;
+  font-size: 14px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-rail p {
+  margin: 6px 0 0;
+  color: var(--panel-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li {
+  padding: 8px 10px;
+  color: #9a3412;
+  border-radius: 6px;
+  background: #fff7ed;
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li.is-ok {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li.is-error {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-body {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  overflow: auto;
+  background: #eef3f9;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-pane {
+  display: block;
+  min-height: 0;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-cluster {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-areas:
+    "device-basic connection"
+    "cloud-target connection";
+  gap: 14px;
+  align-items: stretch;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-section-card,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-list-panel,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-panel,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-json-panel {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 14px;
+  color: #142033;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e6edf7;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head h3,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head strong {
+  margin: 3px 0 0;
+  color: #142033;
+  font-size: 15px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head p {
+  max-width: none;
+  margin: 0;
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .compact-form-grid,
+#localDevicePanel.local-device-panel.local-device-web-dialog .protocol-form-grid,
+#localDevicePanel.local-device-panel.local-device-web-dialog .form-grid {
+  gap: 10px 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog label,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-form-item__label {
+  color: #3d4b5f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="text"],
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="number"],
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="search"],
+#localDevicePanel.local-device-panel.local-device-web-dialog select {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  outline: none;
+  color: #1f2d40;
+  border: 1px solid #cbd7e8;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="text"]:focus,
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="number"]:focus,
+#localDevicePanel.local-device-panel.local-device-web-dialog input[type="search"]:focus,
+#localDevicePanel.local-device-panel.local-device-web-dialog select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog input:disabled,
+#localDevicePanel.local-device-panel.local-device-web-dialog select:disabled {
+  color: #94a3b8;
+  background: #eef2f7;
+  cursor: not-allowed;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input__wrapper,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-select__wrapper,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-textarea__inner,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number .el-input__wrapper {
+  min-height: 34px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #cbd7e8 inset;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-select,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input {
+  width: 100%;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-workspace,
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-point-workspace,
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-cloud-workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .table-actions .compact-select {
+  width: 260px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table-wrap {
+  max-height: 342px;
+  overflow: auto;
+  border: 1px solid #d9e2ee;
+  border-radius: 6px;
+  background: #fff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  color: #26354a;
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .cloud-point-table {
+  min-width: 520px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table th,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e6edf7;
+  text-align: left;
+  vertical-align: middle;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #64748b;
+  background: #f8fbff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table tr.is-selected td,
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-table tbody tr:hover td {
+  background: #eff6ff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  border: 0;
+  background: transparent;
+  color: #1f2d40;
+  text-align: left;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button:hover {
+  color: #1d4ed8;
+  border: 0;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button strong {
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button span {
+  color: #7b8aa0;
+  font-size: 11px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tabbar {
+  display: flex;
+  padding: 5px;
+  gap: 5px;
+  overflow-x: auto;
+  border: 1px solid #dbe4f1;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tab {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 9px;
+  color: #536277;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tab.is-active {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-json-panel textarea,
+#localDevicePanel.local-device-panel.local-device-web-dialog #localPointsJson {
+  width: 100%;
+  min-height: 280px;
+  padding: 12px;
+  resize: vertical;
+  color: #dbeafe;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  background: #0f172a;
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-footer {
+  position: static;
+  grid-row: 4;
+  display: flex;
+  min-height: 72px;
+  padding: 0 20px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  border-top: 1px solid var(--panel-line);
+  background: #fff;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-options .check-line {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 10px;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  border: 1px solid #d8e2f0;
+  border-radius: 5px;
+  background: #f8fbff;
+  font-size: 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-step-actions {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog #saveLocalDeviceBtn {
+  min-width: 106px;
+}
+
 @media (max-width: 1240px) {
   .local-device-web-dialog .local-editor-layout,
   .local-device-web-dialog .local-setup-cluster,
@@ -2828,5 +3666,541 @@ body.modal-active {
 
   .command-actions .service-summary {
     display: none;
+  }
+}
+
+/* 旧 Web modao-exact 色彩回归：新增本地临时设备弹窗必须跟控制台深色主题一致。 */
+body.modao-exact #localEditorBackdrop.local-editor-backdrop {
+  background: rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog {
+  --panel-line: var(--exact-border);
+  --panel-text: #e2e8f0;
+  --panel-muted: var(--exact-dim);
+  --el-text-color-primary: #e2e8f0;
+  --el-text-color-regular: #cbd5e1;
+  --el-text-color-secondary: var(--exact-muted);
+  --el-input-text-color: #e2e8f0;
+  --el-input-bg-color: var(--exact-bg);
+  --el-input-border-color: var(--exact-border);
+  --el-input-hover-border-color: var(--exact-blue);
+  --el-fill-color-blank: var(--exact-bg);
+  color: #dbe7f4;
+  border-color: var(--exact-border);
+  background: var(--exact-panel);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.62);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title .label-chip {
+  display: none;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-footer {
+  color: #dbe7f4;
+  border-color: var(--exact-border);
+  background: var(--exact-panel);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title h3,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head h3,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head strong,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .field-group h3,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-hero strong,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .readonly-card strong,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stat strong {
+  color: #fff;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-title p,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head p,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-section-note,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .protocol-point-note,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .subtable-note,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .field-description,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .readonly-card small,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-stat span,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-hero p,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button span {
+  color: var(--exact-dim);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .label-chip {
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tabs,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-rail {
+  color: #cbd5e1;
+  border-color: var(--exact-border);
+  background: var(--exact-sidebar);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-body {
+  background: var(--exact-bg);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab {
+  color: var(--exact-muted);
+  border-color: transparent;
+  background: transparent;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab strong {
+  color: #dbe7f4;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab small {
+  color: var(--exact-dim);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab > span {
+  color: var(--exact-muted);
+  border-color: var(--exact-border);
+  background: var(--exact-panel);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-active {
+  color: #fff;
+  border-color: transparent;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-active > span {
+  color: #fff;
+  border-color: var(--exact-blue);
+  background: #2563eb;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-editor-tab.is-complete:not(.is-active) > span {
+  color: #fff;
+  border-color: var(--exact-green);
+  background: var(--exact-green);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-section-card,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-list-panel,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-panel,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-json-panel,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-hero,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-grid .field-group,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .readonly-card,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-subtable {
+  color: #dbe7f4;
+  border-color: var(--exact-border);
+  background: var(--exact-panel);
+  box-shadow: none;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-section-head,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head {
+  border-color: rgba(45, 74, 122, 0.65);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog label,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-form-item__label,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .field-label-text {
+  color: #cbd5e1;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="text"],
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="number"],
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="search"],
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog select,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input__wrapper,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-select__wrapper,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-textarea__inner,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number .el-input__wrapper {
+  color: #e2e8f0;
+  border-color: var(--exact-border);
+  background: var(--exact-bg);
+  box-shadow: 0 0 0 1px var(--exact-border) inset;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="text"]:focus,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="number"]:focus,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input[type="search"]:focus,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog select:focus,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input__wrapper.is-focus,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-select__wrapper.is-focused {
+  border-color: var(--exact-blue);
+  box-shadow: 0 0 0 1px var(--exact-blue) inset, 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog input:disabled,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog select:disabled {
+  color: #64748b;
+  background: #111827;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog button,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-button {
+  color: #fff;
+  border-color: var(--exact-border);
+  background: var(--exact-panel-soft);
+  box-shadow: none;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog button:hover,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-button:hover {
+  color: #fff;
+  border-color: var(--exact-blue);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog button.primary,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-button--primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog button.danger {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.46);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-options .check-line {
+  color: var(--exact-muted);
+  border-color: var(--exact-border);
+  background: var(--exact-bg);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table-wrap,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .table-wrap {
+  border-color: var(--exact-border);
+  background: var(--exact-bg);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table {
+  color: #cbd5e1;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table th,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table td,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-subtable th,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-subtable td {
+  color: #cbd5e1;
+  border-color: rgba(45, 74, 122, 0.65);
+  background: transparent;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table th,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-subtable th {
+  color: var(--exact-muted);
+  background: var(--exact-sidebar);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table tr.is-selected td,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-table tbody tr:hover td {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-select-button {
+  color: #dbe7f4;
+  background: transparent;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tabbar {
+  border-color: var(--exact-border);
+  background: var(--exact-bg);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tab {
+  color: var(--exact-muted);
+  border-color: transparent;
+  background: transparent;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-tab.is-active {
+  color: #60a5fa;
+  border-color: var(--exact-blue);
+  background: var(--exact-panel-soft);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .pill.subtle {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li {
+  color: #fed7aa;
+  background: rgba(249, 115, 22, 0.14);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li.is-ok {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-checklist li.is-error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .point-json-panel textarea,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog #localPointsJson {
+  color: #4ade80;
+  border-color: var(--exact-border);
+  background: #0d1b2a;
+}
+
+/* 连接参数动态表单：Element Plus 内部 input 不能再套一层原生边框，只保留外层 wrapper。 */
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input__inner,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-select__input,
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number .el-input__inner {
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0;
+  outline: none;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number.is-controls-right .el-input__wrapper {
+  padding-right: 36px;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input__inner,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-select__input,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number .el-input__inner {
+  color: #e2e8f0;
+  caret-color: #93c5fd;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input__inner::placeholder,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-select__input::placeholder {
+  color: #64748b;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__increase,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__decrease {
+  width: 28px;
+  color: var(--exact-muted);
+  border-color: var(--exact-border) !important;
+  background: var(--exact-panel-soft) !important;
+  box-shadow: none;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__increase:hover,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__decrease:hover {
+  color: #fff;
+  background: #36598d !important;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__increase.is-disabled,
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .el-input-number__decrease.is-disabled {
+  color: #475569;
+  background: #111827 !important;
+}
+
+/* 基础连接步骤布局：左侧稳定信息栈 + 右侧动态协议字段，避免协议切换时三张卡片被强制等高。 */
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-cluster {
+  display: grid;
+  grid-template-columns: minmax(340px, 360px) minmax(0, 1fr);
+  grid-template-areas: "stable connection";
+  gap: 14px;
+  align-items: start;
+  min-height: 0;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-stable-column {
+  grid-area: stable;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  align-self: start;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-stable-column .local-section-card {
+  align-self: stretch;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-card,
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-cloud-target-card {
+  grid-area: auto;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card {
+  grid-area: connection;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
+  max-height: min(640px, calc(100vh - 260px));
+  min-height: 0;
+  overflow: hidden;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog #localConnectionForm {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card > .dynamic-form,
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form {
+  min-height: 0;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card .protocol-form-grid {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-meta span {
+  display: inline-flex;
+  min-height: 22px;
+  padding: 0 8px;
+  align-items: center;
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-meta span {
+  border-color: rgba(59, 130, 246, 0.32);
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+
+@media (max-width: 1240px) {
+  #localDevicePanel.local-device-panel.local-device-web-dialog .local-setup-cluster {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "stable"
+      "connection";
+  }
+
+  #localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card {
+    max-height: none;
+    overflow: visible;
+  }
+
+  #localDevicePanel.local-device-panel.local-device-web-dialog #localConnectionForm {
+    overflow: visible;
+  }
+}
+
+/* 协议动态字段：短标签 + 控件同一行；完整说明放 placeholder/title，避免连接参数区域被文字撑高。 */
+.protocol-field-group {
+  margin-top: 0;
+}
+
+.dynamic-form > .protocol-field-group + .protocol-field-group {
+  margin-top: 12px;
+}
+
+.protocol-field-group h4 {
+  display: flex;
+  margin: 0 0 8px;
+  align-items: center;
+  gap: 7px;
+  color: #142033;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.protocol-field-group h4::before {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: #2563eb;
+  content: "";
+}
+
+.protocol-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 8px 12px;
+}
+
+.protocol-field-row {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  grid-template-columns: minmax(72px, 88px) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.protocol-field-label {
+  min-width: 0;
+  overflow: hidden;
+  color: #3d4b5f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protocol-field-required {
+  margin-left: 2px;
+  color: #ef4444;
+}
+
+.protocol-field-control {
+  min-width: 0;
+}
+
+.protocol-field-control .el-input,
+.protocol-field-control .el-input-number,
+.protocol-field-control .el-select {
+  width: 100%;
+}
+
+.protocol-field-control .el-switch {
+  min-height: 32px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card .protocol-form-grid {
+  grid-template-columns: repeat(2, minmax(250px, 1fr));
+  gap: 8px 12px;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card .protocol-field-row {
+  grid-template-columns: minmax(76px, 88px) minmax(0, 1fr);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .protocol-field-group h4 {
+  color: #fff;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .protocol-field-group h4::before {
+  background: var(--exact-blue);
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .protocol-field-label {
+  color: #cbd5e1;
+}
+
+body.modao-exact #localDevicePanel.local-device-panel.local-device-web-dialog .protocol-field-required {
+  color: #fca5a5;
+}
+
+@media (max-width: 980px) {
+  .protocol-form-grid,
+  #localDevicePanel.local-device-panel.local-device-web-dialog .local-connection-card .protocol-form-grid {
+    grid-template-columns: 1fr;
   }
 }
