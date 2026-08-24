@@ -23,24 +23,54 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Maven verify
-        run: mvn -B -ntp verify
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: collector-desktop/package-lock.json
 
-      - name: 检查前端脚本语法
-        run: |
-          node --check src/main/resources/static/admin/app.js
-          node --check src/main/resources/static/admin/design-lab.js
-          node scripts/verify-admin-console.mjs
+      - name: Maven clean verify
+        run: mvn -B -ntp clean verify
+
+      - name: 安装桌面控制台依赖
+        run: npm ci --prefix collector-desktop
+
+      - name: 桌面控制台类型检查
+        run: npm --prefix collector-desktop run typecheck
+
+      - name: 桌面控制台测试
+        run: npm --prefix collector-desktop test
+
+      - name: 构建并同步网页控制台
+        run: npm --prefix collector-desktop run build:web
 
       - name: 扫描生产配置秘密
         run: node scripts/scan-config-secrets.mjs
 
       - name: 执行P0固定回归
-        run: mvn -B -ntp -Pp0-regression test
+        run: mvn -B -ntp -pl collector-boot -am -Pp0-regression test
 
       - name: 检查UTF-8编码
         shell: bash
         run: |
-          while IFS= read -r -d '' file; do
-            iconv -f UTF-8 -t UTF-8 "$file" >/dev/null || exit 1
-          done < <(find src docs -type f \( -name '*.java' -o -name '*.js' -o -name '*.html' -o -name '*.css' -o -name '*.yml' -o -name '*.md' \) -print0)
+          paths=()
+          for path in collector-* docs scripts .github README.md Dockerfile pom.xml; do
+            if [ -e "$path" ]; then
+              paths+=("$path")
+            fi
+          done
+          if [ ${#paths[@]} -eq 0 ]; then
+            echo "没有找到需要扫描的路径"
+            exit 0
+          fi
+          find "${paths[@]}" \
+            \( -path '*/node_modules/*' -o -path '*/target/*' -o -path '*/dist/*' -o -path '*/release/*' \) -prune -o \
+            -type f \( \
+              -name '*.java' -o -name '*.js' -o -name '*.mjs' -o -name '*.cjs' -o \
+              -name '*.ts' -o -name '*.vue' -o -name '*.html' -o -name '*.css' -o \
+              -name '*.yml' -o -name '*.yaml' -o -name '*.json' -o -name '*.xml' -o \
+              -name '*.md' -o -name '*.properties' -o -name 'Dockerfile' -o -name 'pom.xml' \
+            \) -print0 | while IFS= read -r -d '' file; do
+              iconv -f UTF-8 -t UTF-8 "$file" >/dev/null || exit 1
+            done

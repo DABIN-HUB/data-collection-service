@@ -11,7 +11,7 @@ export function resolveWebConsolePaths(repositoryRoot = resolveRepositoryRoot())
   return {
     repositoryRoot: root,
     rendererDir: join(root, "collector-desktop", "dist", "renderer"),
-    staticDesktopDir: join(root, "src", "main", "resources", "static", "desktop"),
+    staticDesktopDir: join(root, "collector-boot", "src", "main", "resources", "static", "desktop"),
     publicPath: "/desktop/index.html"
   };
 }
