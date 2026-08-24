@@ -48,41 +48,5 @@
       <artifactId>collector-monitor</artifactId>
       <version>${project.version}</version>
     </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-bacnet</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-plc</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-modbus</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-opc</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-iec</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.wangbin</groupId>
-      <artifactId>collector-protocol-iot</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
-    </dependency>
   </dependencies>
 </project>
