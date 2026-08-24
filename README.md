@@ -13,6 +13,8 @@
 
 系统目标：
 
+工程形态：后端是 Maven 多模块的模块化单体，按能力域拆分为 `collector-boot`、`collector-common`、`collector-runtime`、`collector-telemetry`、`collector-cloud`、`collector-storage`、`collector-monitor`、`collector-application`、`collector-web`、`collector-protocol-spi` 和各 `collector-protocol-*` 协议家族模块；最终仍只部署 `collector-boot` 产出的单一 Spring Boot jar，不拆微服务。
+
 - 统一多协议采集模型
 - 提供可扩展、可观测并经过真实下游链路验证的采集调度能力
 - 将设备点位数据统一收敛为标准处理结果
@@ -47,20 +49,20 @@ npm --prefix collector-desktop install
 适合开发、演示和客户不想安装客户端的场景。
 
 ```bash
-# 1）构建 Vue 网页控制台，并复制到后端静态目录 src/main/resources/static/desktop/
+# 1）构建 Vue 网页控制台，并复制到后端静态目录 collector-boot/src/main/resources/static/desktop/
 npm --prefix collector-desktop run build:web
 
 # 2）打后端 jar，jar 内会包含 /desktop 网页控制台
-cmd.exe /c mvn -B -ntp clean package -DskipTests
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 
 # 3）启动后端服务
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
 如果不在 Windows Git Bash 中，可以把第 2 步改成：
 
 ```bash
-mvn -B -ntp clean package -DskipTests
+mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 ```
 
 启动成功后访问：
@@ -98,7 +100,7 @@ npm --prefix collector-desktop run build:web
 # 只构建 Vue 页面到 collector-desktop/dist/renderer/
 npm --prefix collector-desktop run build:renderer
 
-# 把 collector-desktop/dist/renderer/ 复制到 src/main/resources/static/desktop/
+# 把 collector-desktop/dist/renderer/ 复制到 collector-boot/src/main/resources/static/desktop/
 npm --prefix collector-desktop run sync:web
 ```
 
@@ -106,41 +108,41 @@ npm --prefix collector-desktop run sync:web
 
 ```text
 collector-desktop/dist/renderer/
-  -> src/main/resources/static/desktop/
+  -> collector-boot/src/main/resources/static/desktop/
 ```
 
-注意：复制脚本会先清空旧的 `src/main/resources/static/desktop/`，再复制最新构建产物，避免旧 hash 文件残留。
+注意：复制脚本会先清空旧的 `collector-boot/src/main/resources/static/desktop/`，再复制最新构建产物，避免旧 hash 文件残留。
 
 ### 3. 后端服务打包和启动
 
 后端 jar 打包：
 
 ```bash
-cmd.exe /c mvn -B -ntp clean package -DskipTests
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 ```
 
 非 Windows Git Bash 环境可直接执行：
 
 ```bash
-mvn -B -ntp clean package -DskipTests
+mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 ```
 
 打包产物：
 
 ```text
-target/data-collection-service-0.0.1-SNAPSHOT.jar
+collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar
 ```
 
 开发模式启动：
 
 ```bash
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
 只验证后端启动、不连接 TDengine 和云端上报时，可使用最小启动参数：
 
 ```bash
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --telemetry.tdengine.enabled=false \
   --collector.report.enabled=false \
@@ -212,8 +214,8 @@ npm --prefix collector-desktop install
 npm --prefix collector-desktop run typecheck
 npm --prefix collector-desktop test
 npm --prefix collector-desktop run build:web
-cmd.exe /c mvn -B -ntp clean package -DskipTests
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
 客户访问：
@@ -229,14 +231,14 @@ npm --prefix collector-desktop install
 npm --prefix collector-desktop run typecheck
 npm --prefix collector-desktop test
 npm --prefix collector-desktop run build:web
-cmd.exe /c mvn -B -ntp clean package -DskipTests
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix collector-desktop run pack
 ```
 
 交付产物：
 
 ```text
-target/data-collection-service-0.0.1-SNAPSHOT.jar
+collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar
 collector-desktop/release/win-unpacked/数据采集工作台.exe
 ```
 
@@ -268,7 +270,7 @@ collector-desktop/release/win-unpacked/数据采集工作台.exe
 后端内置网页控制台资源位置：
 
 - 构建来源：`collector-desktop/dist/renderer/`
-- 后端静态目录：`src/main/resources/static/desktop/`
+- 后端静态目录：`collector-boot/src/main/resources/static/desktop/`
 - 同步命令：`npm --prefix collector-desktop run build:web`
 
 如需独立浏览器部署，也可以直接发布 `collector-desktop/dist/renderer/`，但推荐通过后端内置 `/desktop/index.html` 入口部署，避免跨域配置。
@@ -711,10 +713,10 @@ src/main/java/com/wangbin/collector
 npm --prefix collector-desktop run build:web
 
 # Windows Git Bash 推荐使用 cmd.exe /c；其他环境可直接执行 mvn
-cmd.exe /c mvn -B -ntp clean package -DskipTests
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
 
 # 启动后端，浏览器访问 /collector/desktop/index.html
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 ```
 
 ### 配置说明
@@ -746,8 +748,8 @@ Spring Boot 配置优先级遵循“启动参数 > 环境变量 > 外部配置 >
 
 ```bash
 npm --prefix collector-desktop run build:web
-cmd.exe /c mvn -B -ntp clean package -DskipTests
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+cmd.exe /c mvn -B -ntp -pl collector-boot -am clean package -DskipTests
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --telemetry.tdengine.enabled=false \
   --collector.report.mqtt.enabled=false
@@ -756,7 +758,7 @@ java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
 如果本地连 Redis 也不需要，可额外关闭依赖 Redis 的运行分支：
 
 ```bash
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=dev \
   --spring.data.redis.stream.enabled=false \
   --collector.cache.type=local \
@@ -1473,7 +1475,7 @@ collector:
 生产环境使用 `prod` Profile：
 
 ```bash
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
 ```
 
 最少需要检查以下环境变量：
@@ -1522,7 +1524,7 @@ collector:
 启动时加载外部文件：
 
 ```bash
-java -jar target/data-collection-service-0.0.1-SNAPSHOT.jar \
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=prod \
   --spring.config.additional-location=file:./config/application-secrets.yml
 ```
