@@ -11,7 +11,9 @@ describe("web-console-utils", () => {
     const paths = resolveWebConsolePaths("F:/repo");
 
     expect(paths.rendererDir.replace(/\\/g, "/")).toBe("F:/repo/collector-desktop/dist/renderer");
-    expect(paths.staticDesktopDir.replace(/\\/g, "/")).toBe("F:/repo/src/main/resources/static/desktop");
+    expect(paths.staticDesktopDir.replace(/\\/g, "/")).toBe(
+      "F:/repo/collector-boot/src/main/resources/static/desktop"
+    );
     expect(paths.publicPath).toBe("/desktop/index.html");
   });
 
