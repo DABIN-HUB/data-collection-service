@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = "src/main/resources";
+const resourceRoots = ["src/main/resources"]
+  .concat(fs.readdirSync(".", { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("collector-"))
+    .map((entry) => path.join(entry.name, "src/main/resources")))
+  .filter((directory) => fs.existsSync(directory));
 const sensitiveKey = /^\s*(api-token|password|secret|device-secret):\s*(.*?)\s*$/i;
 const allowedValue = /^(|""|''|\$\{[^}]+})$/;
 const findings = [];
@@ -25,7 +29,9 @@ function scan(directory) {
   }
 }
 
-scan(root);
+for (const root of resourceRoots) {
+  scan(root);
+}
 if (findings.length > 0) {
   throw new Error(`发现疑似明文秘密:\n${findings.join("\n")}`);
 }

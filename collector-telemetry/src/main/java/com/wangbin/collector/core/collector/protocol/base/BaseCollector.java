@@ -1,0 +1,917 @@
+package com.wangbin.collector.core.collector.protocol.base;
+
+
+import com.wangbin.collector.common.constant.CommonMapKeys;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.enums.DataQuality;
+import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.converter.CollectorValueConverter;
+import com.wangbin.collector.core.collector.telemetry.CollectorTelemetryMetadataEnricher;
+import com.wangbin.collector.core.config.CollectorProperties;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
+import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
+import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
+import com.wangbin.collector.core.cache.aspect.InvocationProcessResultSource;
+import com.wangbin.collector.core.connection.manager.ConnectionManager;
+import com.wangbin.collector.core.port.ExceptionReporter;
+import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.core.processor.ProcessContext;
+import com.wangbin.collector.core.processor.ProcessResult;
+
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+/**
+ * 基础采集器抽象类
+ */
+@Slf4j
+public abstract class BaseCollector implements ProtocolCollector,
+        ReadableCollector,
+        WritableCollector,
+        SubscribableCollector,
+        CommandableCollector,
+        ReadPlanCapable,
+        InvocationProcessResultSource {
+
+    @Getter
+    protected DeviceInfo deviceInfo;
+    protected CollectorProperties collectorProperties;
+    protected ConnectionManager connectionManager;
+    protected ConfigManager configManager;
+    protected DataQualityProcessor dataQualityProcessor;
+    protected ExceptionReporter exceptionReporter;
+    protected TelemetryIngressService telemetryIngressService;
+
+    /**
+     * 注入采集器通用依赖。
+     */
+    @Autowired
+    public void setBaseCollectorDependencies(CollectorProperties collectorProperties,
+                                             ConnectionManager connectionManager,
+                                             ConfigManager configManager,
+                                             DataQualityProcessor dataQualityProcessor,
+                                             ObjectProvider<ExceptionReporter> exceptionReporterProvider,
+                                             ObjectProvider<TelemetryIngressService> telemetryIngressServiceProvider) {
+        this.collectorProperties = collectorProperties;
+        this.connectionManager = connectionManager;
+        this.configManager = configManager;
+        this.dataQualityProcessor = dataQualityProcessor;
+        this.exceptionReporter = exceptionReporterProvider.getIfAvailable();
+        this.telemetryIngressService = telemetryIngressServiceProvider.getIfAvailable();
+    }
+protected volatile boolean connected = false;
+    protected volatile String connectionStatus = "DISCONNECTED";
+    protected volatile String lastError;
+    protected volatile long lastConnectTime;
+    protected volatile long lastDisconnectTime;
+    protected volatile long lastActivityTime;
+
+    // 统计信息
+    protected AtomicLong totalReadCount = new AtomicLong(0);
+    protected AtomicLong totalWriteCount = new AtomicLong(0);
+    protected AtomicLong totalErrorCount = new AtomicLong(0);
+    protected AtomicLong totalBytesRead = new AtomicLong(0);
+    protected AtomicLong totalBytesWrite = new AtomicLong(0);
+    protected AtomicLong totalReadTime = new AtomicLong(0);
+    protected AtomicLong totalWriteTime = new AtomicLong(0);
+
+    // 处理结果
+    protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
+    private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
+    private final CollectorValueConverter valueConverter = new CollectorValueConverter();
+    private final CollectorTelemetryMetadataEnricher telemetryMetadataEnricher = new CollectorTelemetryMetadataEnricher();
+
+    // 订阅的点位
+    protected final Set<String> subscribedPointsSet = ConcurrentHashMap.newKeySet();
+
+    // 使用Map存储订阅的点位对象，而不是Set只存ID
+    protected final Map<String, DataPoint> subscribedPointMap = new ConcurrentHashMap<>();
+    private volatile SubscriptionRuntimeMode requestedSubscriptionMode = SubscriptionRuntimeMode.DISABLED;
+    private volatile SubscriptionRuntimeMode actualSubscriptionMode = SubscriptionRuntimeMode.DISABLED;
+    private volatile String subscriptionDegradedReason;
+    private volatile int subscriptionFallbackPointCount;
+
+    /**
+     * 处理组件生命周期。
+     */
+    @Override
+    public void init(DeviceInfo deviceInfo) throws CollectorException {
+        this.deviceInfo = deviceInfo;
+
+        log.info("采集器初始化完成: {} [{}]", deviceInfo.getDeviceName(), getCollectorType());
+    }
+
+    /**
+     * 处理连接生命周期。
+     */
+    @Override
+    public void connect() throws CollectorException {
+        if (isConnected()) {
+            log.warn("采集器已连接: {}", deviceInfo.getDeviceId());
+            return;
+        }
+
+        try {
+            log.info("开始连接设备:  {}", deviceInfo.getDeviceId());
+            connectionStatus = "CONNECTING";
+
+            // 执行实际连接逻辑
+            doConnect();
+
+            connected = true;
+            connectionStatus = "CONNECTED";
+            lastConnectTime = System.currentTimeMillis();
+            lastActivityTime = System.currentTimeMillis();
+
+            log.info("设备连接成功: {}", deviceInfo.getDeviceId());
+        } catch (Exception e) {
+            connected = false;
+            connectionStatus = "ERROR";
+            lastError = e.getMessage();
+            totalErrorCount.incrementAndGet();
+            log.error("设备连接失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("设备连接失败", deviceInfo.getDeviceId(), null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    /**
+     * 处理连接生命周期。
+     */
+    @Override
+    public void disconnect() throws CollectorException {
+        if (!isConnected()) {
+            log.warn("采集器已断开: {}", deviceInfo.getDeviceId());
+            return;
+        }
+
+        try {
+            log.info("开始断开设备: {}", deviceInfo.getDeviceId());
+
+            Exception unsubscribeFailure = null;
+            try {
+                // 取消所有订阅
+                unsubscribe(new ArrayList<>());
+            } catch (Exception e) {
+                unsubscribeFailure = e;
+                log.warn("断开前取消订阅失败, 设备={}", deviceInfo.getDeviceId(), e);
+            }
+
+            // 执行实际断开逻辑
+            doDisconnect();
+
+            connected = false;
+            connectionStatus = "DISCONNECTED";
+            lastDisconnectTime = System.currentTimeMillis();
+            subscribedPointMap.clear();
+            subscribedPointsSet.clear();
+
+            if (unsubscribeFailure != null) {
+                lastError = unsubscribeFailure.getMessage();
+            }
+
+            log.info("设备断开成功: {}", deviceInfo.getDeviceId());
+        } catch (Exception e) {
+            connectionStatus = "ERROR";
+            lastError = e.getMessage();
+            totalErrorCount.incrementAndGet();
+            log.error("设备断开失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("设备断开失败", deviceInfo.getDeviceId(), null, DataQuality.DEVICE_ERROR);
+        }
+    }
+    /**
+     * 查询并返回业务数据。
+     */
+    @Override
+    public Object readPoint(DataPoint point) throws CollectorException {
+        checkConnection();
+        invocationProcessResults.remove();
+
+        long startTime = System.currentTimeMillis();
+        try {
+            log.debug("读取 点位 {}.{}", deviceInfo.getDeviceId(), point.getPointName());
+
+            Object rawValue = doReadPoint(point);
+            Object processedValue = convertData(point, rawValue);
+
+            ProcessContext context = new ProcessContext();
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+            ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+            enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
+            lastProcessResults.put(point.getPointId(), processResult);
+            invocationProcessResults.set(Map.of(point.getPointId(), processResult.snapshot()));
+
+            if (!processResult.isSuccess()) {
+                log.warn("数据质量检查失败 {}.{}, 原因:{}",
+                        deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+            }
+
+            totalReadCount.incrementAndGet();
+            totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+
+            Object finalValue = processResult.getFinalValue();
+            log.debug("点位 读取 成功 {}.{} = {}",
+                    deviceInfo.getDeviceId(), point.getPointName(), finalValue);
+
+            return finalValue;
+        } catch (Exception e) {
+            invocationProcessResults.remove();
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("点位 读取 失败 {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            recordException(e, point);
+            throw new CollectorException("点位读取失败", deviceInfo.getDeviceId(),
+                    point.getPointId(), DataQuality.DEVICE_ERROR);
+        }
+    }
+
+
+/**
+ * 查询并返回业务数据。
+ */
+@Override
+    public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
+        checkConnection();
+        invocationProcessResults.remove();
+
+        long startTime = System.currentTimeMillis();
+        Map<String, Object> results = new HashMap<>();
+        Map<String, ProcessResult> batchProcessResults = new LinkedHashMap<>();
+
+        try {
+            log.debug("批量 读取 点位:{}, 数量:{}", deviceInfo.getDeviceId(), points.size());
+
+            // 1. 提前过滤：移除无效的数据点
+            List<DataPoint> validPoints = points.stream()
+                    .filter(point -> point != null && point.isEnabled())
+                    .collect(Collectors.toList());
+
+            if (validPoints.isEmpty()) {
+                log.debug("没有有效点位需要读取: {}", deviceInfo.getDeviceId());
+                invocationProcessResults.set(Map.of());
+                return results;
+            }
+
+            // 2. 批量读取原始数据
+            Map<String, Object> rawValues = doReadPoints(validPoints);
+
+            // 3. 逐点处理数据转换和质量检查。不要用 Stream 收集 null 值，避免单点失败拖垮整批。
+            for (DataPoint point : validPoints) {
+                String pointId = point.getPointId();
+                try {
+                    if (!rawValues.containsKey(pointId)) {
+                        continue;
+                    }
+                    Object rawValue = rawValues.get(pointId);
+
+                    if (rawValue == null) {
+                        results.put(pointId, null);
+                        continue;
+                    }
+
+                    Object processedValue = convertData(point, rawValue);
+
+                    ProcessContext context = new ProcessContext();
+                    context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+                    ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+                    enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
+                    lastProcessResults.put(pointId, processResult);
+                    batchProcessResults.put(pointId, processResult.snapshot());
+
+                    if (!processResult.isSuccess()) {
+                        log.warn("数据质量检查失败 {}.{}, 原因:{}",
+                                deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+                    }
+
+                    results.put(pointId, processResult.getFinalValue());
+                } catch (Exception e) {
+                    log.error("处理点位数据失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+                    recordException(e, point);
+                    results.put(pointId, null);
+                }
+            }
+
+            totalReadCount.addAndGet(validPoints.size());
+            totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+
+            log.debug("批量点位读取成功: {}, 数量: {}, 值：{}", deviceInfo.getDeviceId(), validPoints.size());
+
+            invocationProcessResults.set(Collections.unmodifiableMap(new LinkedHashMap<>(batchProcessResults)));
+            return results;
+        } catch (Exception e) {
+            invocationProcessResults.remove();
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("批量点位读取失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+
+/**
+ * 写入或持久化业务数据。
+ */
+@Override
+    public boolean writePoint(DataPoint point, Object value) throws CollectorException {
+        checkConnection();
+
+        long startTime = System.currentTimeMillis();
+        try {
+            log.debug("写入点位: {}.{} = {}", deviceInfo.getDeviceId(), point.getPointName(), value);
+
+            // 验证写入权限
+            if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
+                throw new CollectorException("点位没有写入权限", deviceInfo.getDeviceId(),
+                        point.getPointId(), DataQuality.CONFIG_ERROR);
+            }
+
+            // 数据质量检查
+            ProcessContext context = new ProcessContext();
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+            ProcessResult processResult = dataQualityProcessor.process(context, point, value);
+
+            // 如果数据无效，不允许写入
+            if (!processResult.isSuccess()) {
+                throw new CollectorException("数据质量检查失败: " + processResult.getMessage(), 
+                        deviceInfo.getDeviceId(), point.getPointId(), DataQuality.VALUE_INVALID);
+            }
+
+            // 数据转换（反向）
+            Object rawValue = convertDataForWrite(point, value);
+
+            // 执行实际写入逻辑
+            boolean result = doWritePoint(point, rawValue);
+
+            // 更新统计
+            totalWriteCount.incrementAndGet();
+            totalWriteTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+
+            log.debug("点位写入成功: {}.{}", deviceInfo.getDeviceId(), point.getPointName());
+
+            return result;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("点位写入失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
+            recordException(e, point);
+            throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
+                    point.getPointId(), DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    /**
+     * 写入或持久化业务数据。
+     */
+    @Override
+    public Map<String, Boolean> writePoints(Map<DataPoint, Object> points) throws CollectorException {
+        checkConnection();
+
+        long startTime = System.currentTimeMillis();
+        Map<String, Boolean> results = new HashMap<>();
+
+        try {
+            log.debug("批量写入点位: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+
+            Map<DataPoint, Object> rawValues = new HashMap<>();
+
+            // 数据验证和转换
+            for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
+                DataPoint point = entry.getKey();
+                Object value = entry.getValue();
+
+                // 验证写入权限
+                if (!"W".equals(point.getReadWrite()) && !"RW".equals(point.getReadWrite())) {
+                    results.put(point.getPointId(), false);
+                    continue;
+                }
+
+                // 数据质量检查
+                ProcessContext context = new ProcessContext();
+                context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+                ProcessResult processResult = dataQualityProcessor.process(context, point, value);
+
+                // 如果数据无效，不允许写入
+                if (!processResult.isSuccess()) {
+                    log.warn("数据质量检查失败，不允许写入: {}.{}, 原因: {}",
+                            deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
+                    results.put(point.getPointId(), false);
+                    continue;
+                }
+
+                // 数据转换（反向）
+                Object rawValue = convertDataForWrite(point, value);
+                rawValues.put(point, rawValue);
+                results.put(point.getPointId(), true);
+            }
+
+            // 执行实际批量写入逻辑
+            Map<String, Boolean> writeResults = doWritePoints(rawValues);
+            results.putAll(writeResults);
+
+            // 更新统计
+            totalWriteCount.addAndGet(points.size());
+            totalWriteTime.addAndGet(System.currentTimeMillis() - startTime);
+            lastActivityTime = System.currentTimeMillis();
+
+            log.debug("批量点位写入成功: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+
+            return results;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("批量点位写入失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("批量点位写入失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+
+    /**
+     * 维护注册或订阅关系。
+     */
+    @Override
+    public void subscribe(List<DataPoint> points) throws CollectorException {
+        checkConnection();
+
+        try {
+            log.debug("订阅点位: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+            requestedSubscriptionMode = SubscriptionRuntimeMode.SUBSCRIPTION;
+
+            try {
+                doSubscribe(points);
+                actualSubscriptionMode = SubscriptionRuntimeMode.SUBSCRIPTION;
+                subscriptionDegradedReason = null;
+                subscriptionFallbackPointCount = 0;
+            } catch (UnsupportedOperationException exception) {
+                if (resolveSubscriptionFallbackStrategy() != SubscriptionFallbackStrategy.FALLBACK_TO_POLLING) {
+                    throw exception;
+                }
+                actualSubscriptionMode = SubscriptionRuntimeMode.POLLING;
+                subscriptionDegradedReason = exception.getMessage();
+                subscriptionFallbackPointCount = points.size();
+                log.warn("设备订阅已降级为轮询: 设备={}, 点位数量={}, 原因={}",
+                        deviceInfo.getDeviceId(), points.size(), exception.getMessage());
+                return;
+            }
+
+            // 记录订阅的点位
+            for (DataPoint point : points) {
+                if (point == null) {
+                    continue;
+                }
+                subscribedPointMap.put(point.getPointId(), point);
+                subscribedPointsSet.add(point.getPointId());
+            }
+
+            log.info("点位订阅成功: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("点位订阅失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("点位订阅失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    /**
+     * 维护注册或订阅关系。
+     */
+    @Override
+    public void unsubscribe(List<DataPoint> points) throws CollectorException {
+        if (!isConnected()) {
+            return;
+        }
+
+        try {
+            if (points.isEmpty()) {
+                // 取消所有订阅
+                log.debug("取消所有订阅: {}", deviceInfo.getDeviceId());
+
+                // 获取所有订阅的点位对象
+                List<DataPoint> allSubscribedPoints = new ArrayList<>(subscribedPointMap.values());
+                if (!allSubscribedPoints.isEmpty()) {
+                    doUnsubscribe(allSubscribedPoints);
+                }
+                subscribedPointMap.clear();
+                subscribedPointsSet.clear();
+
+                log.info("所有点位取消订阅成功: {}", deviceInfo.getDeviceId());
+            } else {
+                log.debug("取消订阅点位: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+
+                // 执行实际取消订阅逻辑
+                doUnsubscribe(points);
+
+                // 移除订阅的点位
+                for (DataPoint point : points) {
+                    if (point == null) {
+                        continue;
+                    }
+                    subscribedPointMap.remove(point.getPointId());
+                    subscribedPointsSet.remove(point.getPointId());
+                }
+
+                log.info("点位取消订阅成功: {}, 数量: {}", deviceInfo.getDeviceId(), points.size());
+            }
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("点位取消订阅失败: {}", deviceInfo.getDeviceId(), e);
+            recordException(e, null);
+            throw new CollectorException("点位取消订阅失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    @Override
+    public Map<String, Object> getDeviceStatus() throws CollectorException {
+        try {
+            Map<String, Object> status = new HashMap<>();
+            status.put(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+            status.put("deviceName", deviceInfo.getDeviceName());
+            status.put(CommonMapKeys.CONNECTED, connected);
+            status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
+            status.put("lastConnectTime", lastConnectTime);
+            status.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+            status.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
+            status.put("requestedSubscriptionMode", requestedSubscriptionMode.name());
+            status.put("actualSubscriptionMode", actualSubscriptionMode.name());
+            status.put("subscriptionDegradedReason", subscriptionDegradedReason);
+            status.put("subscriptionFallbackPointCount", subscriptionFallbackPointCount);
+            status.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+            status.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+            status.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
+
+            // 获取设备特定状态
+            Map<String, Object> deviceSpecificStatus = doGetDeviceStatus();
+            if (deviceSpecificStatus != null) {
+                status.putAll(deviceSpecificStatus);
+            }
+
+            return status;
+        } catch (Exception e) {
+            log.error("获取设备状态失败 {}", deviceInfo.getDeviceId(), e);
+            throw new CollectorException("获取设备状态失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    /**
+     * 处理当前业务流程。
+     */
+    @Override
+    public Object executeCommand(String command, Map<String, Object> params) throws CollectorException {
+        checkConnection();
+
+        try {
+            log.debug("执行设备命令: {}, 命令: {}", deviceInfo.getDeviceId(), command);
+
+            // 执行实际命令
+            Map<String, Object> commandParams = params != null ? params : Collections.emptyMap();
+            int slaveId = resolveIntParameter(commandParams.get("slaveId"), 1, "slaveId");
+            Object result = doExecuteCommand(slaveId, command, commandParams);
+
+            lastActivityTime = System.currentTimeMillis();
+
+            log.debug("设备命令执行成功: {}, 命令: {}", deviceInfo.getDeviceId(), command);
+
+            return result;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            log.error("设备命令执行失败: {}, 命令: {}", deviceInfo.getDeviceId(), command, e);
+            recordException(e, null);
+            throw new CollectorException("设备命令执行失败", deviceInfo.getDeviceId(),
+                    null, DataQuality.DEVICE_ERROR);
+        }
+    }
+
+    @Override
+    public boolean isConnected() {
+        return connected;
+    }
+
+    @Override
+    public String getConnectionStatus() {
+        return connectionStatus;
+    }
+
+    @Override
+    public String getLastError() {
+        return lastError;
+    }
+
+    @Override
+    public Map<String, Object> getStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+        stats.put(CommonMapKeys.TOTAL_READ_COUNT, totalReadCount.get());
+        stats.put(CommonMapKeys.TOTAL_WRITE_COUNT, totalWriteCount.get());
+        stats.put(CommonMapKeys.TOTAL_ERROR_COUNT, totalErrorCount.get());
+        stats.put("totalBytesRead", totalBytesRead.get());
+        stats.put("totalBytesWrite", totalBytesWrite.get());
+
+        long avgReadTime = totalReadCount.get() > 0 ?
+                totalReadTime.get() / totalReadCount.get() : 0;
+        long avgWriteTime = totalWriteCount.get() > 0 ?
+                totalWriteTime.get() / totalWriteCount.get() : 0;
+
+        stats.put("averageReadTime", avgReadTime);
+        stats.put("averageWriteTime", avgWriteTime);
+        stats.put(CommonMapKeys.LAST_ACTIVITY_TIME, lastActivityTime);
+        stats.put("connectionDuration", connected ? System.currentTimeMillis() - lastConnectTime : 0);
+        stats.put(CommonMapKeys.SUBSCRIBED_POINTS, subscribedPointMap.size());
+
+        return stats;
+    }
+
+    /**
+     * 记录或统计业务状态。
+     */
+    @Override
+    public void resetStatistics() {
+        totalReadCount.set(0);
+        totalWriteCount.set(0);
+        totalErrorCount.set(0);
+        totalBytesRead.set(0);
+        totalBytesWrite.set(0);
+        totalReadTime.set(0);
+        totalWriteTime.set(0);
+    }
+
+    /**
+     * 处理组件生命周期。
+     */
+    @Override
+    public void destroy() {
+        try {
+            disconnect();
+            log.info("采集器销毁完成: {}", deviceInfo.getDeviceId());
+        } catch (Exception e) {
+            log.error("采集器销毁失败: {}", deviceInfo.getDeviceId(), e);
+        }
+    }
+    /**
+     * 执行当前业务逻辑。
+     */
+    @Override
+    public void rebuildReadPlans(String deviceId, List<DataPoint> points){
+        try {
+            buildReadPlans(deviceId,points);
+            log.info("执行计划准备完成: {}", deviceId);
+        } catch (Exception e) {
+            log.error("执行计划准备失败: {}", deviceId, e);
+        }
+    }
+
+    // =============== 抽象方法 ===============
+
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract void doConnect() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract void doDisconnect() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract Object doReadPoint(DataPoint point) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract boolean doWritePoint(DataPoint point, Object value) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract Map<String, Boolean> doWritePoints(Map<DataPoint, Object> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract void doSubscribe(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract void doUnsubscribe(List<DataPoint> points) throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract Map<String, Object> doGetDeviceStatus() throws Exception;
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected abstract Object doExecuteCommand(int unitId,String command, Map<String, Object> params) throws Exception;
+    /**
+     * 创建并返回业务对象。
+     */
+    protected abstract void buildReadPlans(String deviceId, List<DataPoint> points) throws Exception;
+
+    // =============== 辅助方法 ===============
+
+    /**
+     * 检查连接状态
+     */
+    protected void checkConnection() {
+        if (!isConnected()) {
+            throw new IllegalStateException("设备未连接 " + deviceInfo.getDeviceId());
+        }
+    }
+
+    /**
+     * 数据转换
+     */
+    protected Object convertData(DataPoint point, Object rawValue) {
+        return valueConverter.convertData(point, rawValue);
+    }
+
+    /**
+     * 写入数据转换
+     */
+    protected Object convertDataForWrite(DataPoint point, Object value) {
+        return valueConverter.convertDataForWrite(point, value);
+    }
+
+    /**
+     * 数据验证
+     */
+    protected void validateData(DataPoint point, Object value) {
+        valueConverter.validateData(point, value);
+    }
+    
+    public ProcessResult getLatestProcessResult(String pointId) {
+        return pointId == null ? null : lastProcessResults.get(pointId);
+    }
+
+    /**
+     * 获取并清理当前采集调用生成的处理结果快照。
+     *
+     * @return 当前调用的处理结果
+     */
+    public Map<String, ProcessResult> takeInvocationProcessResults() {
+        Map<String, ProcessResult> snapshot = invocationProcessResults.get();
+        invocationProcessResults.remove();
+        return snapshot == null ? Map.of() : snapshot;
+    }
+
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
+        if (point == null) {
+            return null;
+        }
+
+        String resolvedDeviceId = point.getDeviceId();
+        if ((resolvedDeviceId == null || resolvedDeviceId.isBlank()) && deviceInfo != null) {
+            resolvedDeviceId = deviceInfo.getDeviceId();
+        }
+        long collectTime = System.currentTimeMillis();
+
+        try {
+            Object processedValue = convertData(point, rawValue);
+
+            ProcessContext context = new ProcessContext();
+            context.addAttribute(CommonMapKeys.DEVICE_ID, resolvedDeviceId);
+            ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
+            enrichTelemetryMetadata(processResult, rawValue, processedValue, collectTime, "PUSH");
+            lastProcessResults.put(point.getPointId(), processResult);
+
+            if (!processResult.isSuccess()) {
+                log.warn("推送数据质量检查失败 {}.{}, 原因:{}",
+                        resolvedDeviceId, point.getPointName(), processResult.getMessage());
+            }
+
+            lastActivityTime = System.currentTimeMillis();
+            if (telemetryIngressService != null) {
+                telemetryIngressService.append(resolvedDeviceId, point, processResult);
+            }
+            return processResult;
+        } catch (Exception e) {
+            totalErrorCount.incrementAndGet();
+            lastError = e.getMessage();
+            recordException(e, point);
+
+            ProcessResult error = ProcessResult.error(rawValue,
+                    "pushed telemetry process failed: " + e.getMessage(),
+                    DataQuality.PROCESS_ERROR);
+            enrichTelemetryMetadata(error, rawValue, null, collectTime, "PUSH");
+            lastProcessResults.put(point.getPointId(), error);
+            if (telemetryIngressService != null) {
+                telemetryIngressService.append(resolvedDeviceId, point, error);
+            }
+            return error;
+        }
+    }
+
+    /**
+     * 执行当前业务逻辑。
+     */
+    protected void enrichTelemetryMetadata(ProcessResult result,
+                                           Object rawValue,
+                                           Object processedValue,
+                                           long collectTime,
+                                           String source) {
+        telemetryMetadataEnricher.enrich(result, rawValue, processedValue, collectTime, source);
+    }
+
+    /**
+     * 异常监控扩展钩子。
+     */
+    protected void recordException(Throwable throwable, DataPoint point) {
+        if (exceptionReporter == null) {
+            return;
+        }
+        String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
+        String pointId = point != null ? point.getPointId() : null;
+        exceptionReporter.record(throwable, deviceId, pointId);
+    }
+
+    protected DeviceContext getDeviceContextSnapshot() {
+        if (configManager == null || deviceInfo == null) {
+            return null;
+        }
+        return configManager.getDeviceContext(deviceInfo.getDeviceId());
+    }
+
+    protected DeviceConnection getConnectionConfigSnapshot() {
+        DeviceContext context = getDeviceContextSnapshot();
+        return context != null ? context.copyConnectionConfig() : null;
+    }
+
+    protected DeviceConnection getCurrentConnectionConfig() {
+        DeviceContext context = getDeviceContextSnapshot();
+        return context != null ? context.getConnectionConfig() : null;
+    }
+
+    /**
+     * 解析或转换业务数据。
+     */
+    protected SubscriptionFallbackStrategy resolveSubscriptionFallbackStrategy() {
+        DeviceConnection connection = getCurrentConnectionConfig();
+        String configuredStrategy = connection != null
+                ? connection.getString("subscriptionFallbackStrategy", null)
+                : null;
+        return SubscriptionFallbackStrategy.fromValue(configuredStrategy);
+    }
+
+    /**
+     * 校验业务条件和参数边界。
+     */
+    protected DeviceConnection requireConnectionConfig() {
+        DeviceConnection connection = getConnectionConfigSnapshot();
+        if (connection == null) {
+            throw new IllegalStateException("连接配置不存在: " +
+                    (deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN"));
+        }
+        return connection;
+    }
+
+    /**
+     * 解析或转换业务数据。
+     */
+    private int resolveIntParameter(Object value, int defaultValue, String name) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                return defaultValue;
+            }
+            try {
+                return Integer.parseInt(trimmed);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid integer parameter " + name + ": " + value, e);
+            }
+        }
+        throw new IllegalArgumentException("Invalid integer parameter " + name + " type: " + value.getClass().getName());
+    }
+}
