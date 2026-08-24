@@ -8,7 +8,7 @@
   <groupId>com.wangbin</groupId>
   <artifactId>data-collection-service</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <packaging>jar</packaging>
+  <packaging>pom</packaging>
 
   <name>data-collection-service</name>
   <description>工业数据采集服务</description>
@@ -48,6 +48,25 @@
     <plc4x.version>0.13.0</plc4x.version>
     <springdoc.version>2.3.0</springdoc.version>
   </properties>
+
+<modules>
+  <module>collector-common</module>
+  <module>collector-protocol-spi</module>
+  <module>collector-runtime</module>
+  <module>collector-telemetry</module>
+  <module>collector-protocol-iot</module>
+  <module>collector-protocol-bacnet</module>
+  <module>collector-protocol-plc</module>
+  <module>collector-protocol-modbus</module>
+  <module>collector-protocol-opc</module>
+  <module>collector-protocol-iec</module>
+  <module>collector-cloud</module>
+  <module>collector-storage</module>
+  <module>collector-monitor</module>
+  <module>collector-application</module>
+  <module>collector-web</module>
+  <module>collector-boot</module>
+</modules>
 
   <dependencies>
     <!-- Spring Boot 启动器 -->
@@ -301,18 +320,6 @@
   <build>
     <plugins>
       <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>
-              <groupId>org.projectlombok</groupId>
-              <artifactId>lombok</artifactId>
-            </exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${maven.compiler.plugin.version}</version>
@@ -340,13 +347,6 @@
         </configuration>
       </plugin>
     </plugins>
-
-    <resources>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>true</filtering>
-      </resource>
-    </resources>
   </build>
 
   <profiles>
