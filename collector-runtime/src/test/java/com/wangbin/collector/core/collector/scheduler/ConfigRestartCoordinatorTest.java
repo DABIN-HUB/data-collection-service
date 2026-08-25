@@ -34,6 +34,7 @@ class ConfigRestartCoordinatorTest {
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-config")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-config")).thenReturn(true);
         when(lifecycleCoordinator.startDevice("dev-config")).thenReturn(true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
@@ -59,6 +60,7 @@ class ConfigRestartCoordinatorTest {
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         BlockingFirstScheduleExecutor scheduledExecutor = new BlockingFirstScheduleExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-concurrent")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-concurrent")).thenReturn(true);
         when(lifecycleCoordinator.startDevice("dev-concurrent")).thenReturn(true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
@@ -120,7 +122,7 @@ class ConfigRestartCoordinatorTest {
     }
 
     @Test
-    void localDeleteShouldCancelPendingRestartAndStopRunningDevice() {
+    void localDeleteShouldCancelPendingRestartAndScheduleStopForRunningDevice() {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
@@ -133,21 +135,29 @@ class ConfigRestartCoordinatorTest {
         coordinator.handleConfigUpdate(event("device", "dev-delete"));
         coordinator.handleConfigUpdate(event("local-delete", "dev-delete"));
 
-        verify(lifecycleCoordinator).stopDevice("dev-delete");
-        verify(lifecycleCoordinator, never()).startDevice("dev-delete");
-        assertEquals(1, scheduledExecutor.tasks.size());
+        verify(lifecycleCoordinator).invalidateDeviceForConfigChange("dev-delete");
+        verify(lifecycleCoordinator, never()).stopDevice("dev-delete");
+        assertEquals(2, scheduledExecutor.tasks.size());
         assertTrue(scheduledExecutor.tasks.get(0).isCancelled());
+        assertTrue(!scheduledExecutor.tasks.get(1).isCancelled());
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+
+        scheduledExecutor.tasks.get(1).runIfNotCancelled();
+
+        verify(lifecycleCoordinator).stopDeviceAfterConfigInvalidation("dev-delete", true, false);
+        verify(lifecycleCoordinator, never()).startDevice("dev-delete");
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
 
     @Test
-    void configUpdateWhileStartingShouldStopStartingDeviceAndScheduleStartOnly() {
+    void configUpdateWhileStartingShouldInvalidateAndDebounceRestartWithoutSynchronousStop() {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-starting-update")).thenReturn(false);
         when(lifecycleCoordinator.isDeviceStarting("dev-starting-update")).thenReturn(true);
-        when(lifecycleCoordinator.stopDevice("dev-starting-update")).thenReturn(true);
+        when(lifecycleCoordinator.stopDeviceAfterConfigInvalidation("dev-starting-update", false, true))
+                .thenReturn(true);
         when(lifecycleCoordinator.startDevice("dev-starting-update")).thenReturn(true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
@@ -156,20 +166,21 @@ class ConfigRestartCoordinatorTest {
 
         coordinator.handleConfigUpdate(event("device", "dev-starting-update"));
 
-        verify(lifecycleCoordinator).stopDevice("dev-starting-update");
+        verify(lifecycleCoordinator).invalidateDeviceForConfigChange("dev-starting-update");
         verify(lifecycleCoordinator, never()).startDevice("dev-starting-update");
+        verify(lifecycleCoordinator, never()).stopDevice("dev-starting-update");
         assertEquals(1, scheduledExecutor.tasks.size());
 
         scheduledExecutor.tasks.get(0).runIfNotCancelled();
 
-        verify(lifecycleCoordinator).stopDevice("dev-starting-update");
+        verify(lifecycleCoordinator).stopDeviceAfterConfigInvalidation("dev-starting-update", false, true);
         verify(lifecycleCoordinator).startDevice("dev-starting-update");
         verify(timeSliceConfigCoordinator).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
 
     @Test
-    void localDeleteShouldStopStartingDeviceWithoutSchedulingRestart() {
+    void localDeleteShouldInvalidateStartingDeviceAndScheduleStopWithoutRestart() {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
@@ -182,10 +193,16 @@ class ConfigRestartCoordinatorTest {
 
         coordinator.handleConfigUpdate(event("local-delete", "dev-starting-delete"));
 
-        verify(lifecycleCoordinator).stopDevice("dev-starting-delete");
+        verify(lifecycleCoordinator).invalidateDeviceForConfigChange("dev-starting-delete");
+        verify(lifecycleCoordinator, never()).stopDevice("dev-starting-delete");
         verify(lifecycleCoordinator, never()).startDevice("dev-starting-delete");
-        assertEquals(0, scheduledExecutor.tasks.size());
+        assertEquals(1, scheduledExecutor.tasks.size());
         assertEquals(0, coordinator.pendingTaskCountForTest());
+
+        scheduledExecutor.tasks.get(0).runIfNotCancelled();
+
+        verify(lifecycleCoordinator).stopDeviceAfterConfigInvalidation("dev-starting-delete", false, true);
+        verify(lifecycleCoordinator, never()).startDevice("dev-starting-delete");
     }
 
     @Test
@@ -204,6 +221,104 @@ class ConfigRestartCoordinatorTest {
 
         assertEquals(1, scheduledExecutor.tasks.size());
         assertTrue(scheduledExecutor.tasks.get(0).isCancelled());
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+    }
+
+    @Test
+    void cancelAllShouldPreventNewRestartScheduling() {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
+        when(lifecycleCoordinator.isDeviceRunning("dev-closed")).thenReturn(true);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor);
+
+        coordinator.cancelAll();
+        coordinator.handleConfigUpdate(event("device", "dev-closed"));
+
+        assertEquals(0, scheduledExecutor.tasks.size());
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+    }
+
+    @Test
+    void concurrentCancelAllAndScheduleShouldNotLeaveActiveFuture() throws Exception {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        BlockingFirstScheduleExecutor scheduledExecutor = new BlockingFirstScheduleExecutor();
+        when(lifecycleCoordinator.isDeviceRunning("dev-close-race")).thenReturn(true);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread scheduler = new Thread(() -> runCapturingFailure(
+                () -> coordinator.handleConfigUpdate(event("device", "dev-close-race")), failure));
+        Thread closer = new Thread(() -> runCapturingFailure(coordinator::cancelAll, failure));
+
+        scheduler.start();
+        assertTrue(scheduledExecutor.awaitFirstScheduleEntered());
+        closer.start();
+        scheduledExecutor.releaseFirstSchedule();
+        scheduler.join(1000L);
+        closer.join(1000L);
+
+        if (failure.get() != null) {
+            throw new AssertionError(failure.get());
+        }
+        assertEquals(1, scheduledExecutor.tasks.size());
+        assertTrue(scheduledExecutor.tasks.get(0).isCancelled());
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+    }
+
+    @Test
+    void runningRestartTaskShouldNotStartAfterCancelAll() throws Exception {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
+        CountDownLatch stopEntered = new CountDownLatch(1);
+        CountDownLatch releaseStop = new CountDownLatch(1);
+        when(lifecycleCoordinator.isDeviceRunning("dev-running-close")).thenReturn(true);
+        doAnswer(invocation -> {
+            stopEntered.countDown();
+            releaseStop.await(1, TimeUnit.SECONDS);
+            return true;
+        }).when(lifecycleCoordinator).stopDevice("dev-running-close");
+        when(lifecycleCoordinator.startDevice("dev-running-close")).thenReturn(true);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor);
+
+        coordinator.handleConfigUpdate(event("device", "dev-running-close"));
+        Thread runner = new Thread(() -> scheduledExecutor.tasks.get(0).runIfNotCancelled());
+        runner.start();
+        assertTrue(stopEntered.await(1, TimeUnit.SECONDS));
+
+        coordinator.cancelAll();
+        releaseStop.countDown();
+        runner.join(1000L);
+
+        verify(lifecycleCoordinator).stopDevice("dev-running-close");
+        verify(lifecycleCoordinator, never()).startDevice("dev-running-close");
+        verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+    }
+
+    @Test
+    void cancelAllShouldBeIdempotent() {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor);
+
+        coordinator.cancelAll();
+        coordinator.cancelAll();
+
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
 
@@ -227,11 +342,32 @@ class ConfigRestartCoordinatorTest {
     }
 
     @Test
+    void restartTaskShouldNotStartWhenStopReturnsFalse() {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
+        when(lifecycleCoordinator.isDeviceRunning("dev-stop-false")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-stop-false")).thenReturn(false);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor);
+
+        coordinator.handleConfigUpdate(event("device", "dev-stop-false"));
+        scheduledExecutor.tasks.get(0).runIfNotCancelled();
+
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+        verify(lifecycleCoordinator, never()).startDevice("dev-stop-false");
+        verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
+    }
+
+    @Test
     void restartTaskShouldNotAdjustTimeSlicesWhenStartReturnsFalse() {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-start-false")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-start-false")).thenReturn(true);
         when(lifecycleCoordinator.startDevice("dev-start-false")).thenReturn(false);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,

@@ -42,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -127,6 +128,61 @@ class DeviceLifecycleCoordinatorTest {
         verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
         verify(healthTracker, never()).markDeviceStarted(deviceId);
         verify(collectionManager, never()).rebuildReadPlans(eq(deviceId), anyList());
+    }
+
+    @Test
+    void invalidationDuringPrepareMustAbortBeforeGenerationActivation() throws Exception {
+        String deviceId = "dev-invalidate-prepare";
+        setupSingleDevice(deviceId);
+        DataPoint point = point(deviceId, "p1");
+        CountDownLatch pointsReadEntered = new CountDownLatch(1);
+        CountDownLatch releasePointsRead = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            pointsReadEntered.countDown();
+            releasePointsRead.await(1, TimeUnit.SECONDS);
+            return List.of(point);
+        }).when(configManager).getDataPoints(deviceId);
+
+        CompletableFuture<Boolean> startFuture = startAsync(deviceId);
+        assertTrue(pointsReadEntered.await(1, TimeUnit.SECONDS));
+        assertTrue(runtimeState.isStarting(deviceId));
+
+        lifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
+        releasePointsRead.countDown();
+
+        assertFalse(startFuture.get(1, TimeUnit.SECONDS));
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0L, runtimeState.getStartingGeneration(deviceId));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void stopAfterStartingInvalidationShouldCleanupRegisteredCollector() throws Exception {
+        String deviceId = "dev-starting-invalidation-cleanup";
+        setupSingleDevice(deviceId);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        blockConnectUntil(deviceId, connectEntered, releaseConnect);
+
+        CompletableFuture<Boolean> startFuture = startAsync(deviceId);
+        assertTrue(connectEntered.await(1, TimeUnit.SECONDS));
+        verify(collectionManager).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        assertTrue(runtimeState.isStarting(deviceId));
+
+        lifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
+        assertFalse(runtimeState.isStarting(deviceId));
+
+        assertTrue(lifecycleCoordinator.stopDeviceAfterConfigInvalidation(deviceId, false, true));
+        releaseConnect.countDown();
+
+        assertFalse(startFuture.get(1, TimeUnit.SECONDS));
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionManager, never()).disconnectDevice(deviceId);
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
     }
 
     @Test
@@ -447,6 +503,84 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(collectionTaskGuard.isCurrent(deviceId, generation));
         assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
         assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+    }
+
+    @Test
+    void nonCriticalCleanupFailureShouldStillAllowStopSuccess() throws Exception {
+        String deviceId = "dev-non-critical-cleanup";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("statistics cleanup failed"))
+                .when(collectionStatistics).stopCollection(deviceId);
+
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+    }
+
+    @Test
+    void criticalCleanupFailureShouldMakeStopReturnFalse() throws Exception {
+        String deviceId = "dev-critical-cleanup";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("cancel in-flight failed"))
+                .when(deviceBatchExecutor).cancelDeviceInFlightTasks(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionStatistics).stopCollection(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+    }
+
+    @Test
+    void cleanupFailureMustNotSkipRemainingCleanupSteps() throws Exception {
+        String deviceId = "dev-cleanup-continues";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("remove runtime tasks failed"))
+                .when(deviceBatchExecutor).cancelDeviceInFlightTasks(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        verify(reconnectCoordinator, times(2)).clear(deviceId);
+        verify(collectionStatistics).stopCollection(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+        verify(collectionManager).disconnectDevice(deviceId);
+    }
+
+    @Test
+    void disconnectFailureShouldFallbackCleanupAndReturnFalse() throws Exception {
+        String deviceId = "dev-disconnect-fallback";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("disconnect failed"))
+                .when(collectionManager).disconnectDevice(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDevice(deviceId);
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+    }
+
+    @Test
+    void stopDeviceShouldRemainIdempotent() throws Exception {
+        String deviceId = "dev-stop-idempotent";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
     }
 
     private DeviceLifecycleCoordinator newLifecycleCoordinator(ThreadPoolExecutor startExecutor) {

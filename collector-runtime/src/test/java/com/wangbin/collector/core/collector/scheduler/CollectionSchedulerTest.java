@@ -9,6 +9,7 @@ import com.wangbin.collector.core.port.SystemResourceProbe;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -74,6 +76,34 @@ public class CollectionSchedulerTest {
         when(systemResourceProbe.getProcessCpuLoad()).thenReturn(75D);
 
         assertEquals(75D, scheduler.resolveProcessCpuLoad());
+    }
+
+    @Test
+    void destroyShouldCloseConfigRestartBeforeStoppingDevices() {
+        TimeSliceSchedulingCoordinator schedulingCoordinator = mock(TimeSliceSchedulingCoordinator.class);
+        TimeSliceExecutionCoordinator executionCoordinator = mock(TimeSliceExecutionCoordinator.class);
+        TimeSliceConfigCoordinator configCoordinator = mock(TimeSliceConfigCoordinator.class);
+        SchedulerMaintenanceCoordinator maintenanceCoordinator = mock(SchedulerMaintenanceCoordinator.class);
+        ConfigRestartCoordinator restartCoordinator = mock(ConfigRestartCoordinator.class);
+        CollectionScheduler localScheduler = new CollectionScheduler(
+                collectionManager,
+                mock(CollectionStatistics.class),
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                batchExecutor,
+                reconnectCoordinator,
+                schedulingCoordinator,
+                executionCoordinator,
+                configCoordinator,
+                maintenanceCoordinator,
+                restartCoordinator);
+
+        localScheduler.destroy();
+
+        InOrder inOrder = inOrder(restartCoordinator, lifecycleCoordinator);
+        inOrder.verify(restartCoordinator).cancelAll();
+        inOrder.verify(lifecycleCoordinator).stopAllDevices();
     }
 
     @AfterEach

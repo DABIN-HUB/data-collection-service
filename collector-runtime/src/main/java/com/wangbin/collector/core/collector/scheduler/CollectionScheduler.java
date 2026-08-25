@@ -76,10 +76,10 @@ public class CollectionScheduler {
 
     @PreDestroy
     public void destroy() {
+        configRestartCoordinator.cancelAll();
         stopAllDevices();
         timeSliceSchedulingCoordinator.cancelTimeSliceScheduling();
         schedulerMaintenanceCoordinator.cancel();
-        configRestartCoordinator.cancelAll();
         reconnectCoordinator.clearAll();
         runtimeState.clear();
     }

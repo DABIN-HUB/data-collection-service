@@ -41,15 +41,24 @@ public class DeviceLifecycleCleanup {
         this.collectionTaskGuard = collectionTaskGuard;
     }
 
-    void cleanupStoppedDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
-        cleanupStep(deviceId, "移除设备调度任务", () -> runtimeState.removeDeviceTasks(deviceId));
-        cleanupStep(deviceId, "取消在途采集任务", () -> deviceBatchExecutor.cancelDeviceInFlightTasks(deviceId));
-        cleanupStep(deviceId, "移除设备运行状态", () -> runtimeState.removeDevice(deviceId));
-        cleanupStep(deviceId, "清理点位运行态", () -> pointRuntimeStateService.removeDevice(deviceId));
-        cleanupStep(deviceId, "清理重连状态", () -> reconnectCoordinator.clear(deviceId));
-        cleanupStep(deviceId, "停止采集统计", () -> collectionStatistics.stopCollection(deviceId));
-        cleanupStep(deviceId, "标记设备停止", () -> collectionHealthReporter.markDeviceStopped(deviceId));
-        cleanupStep(deviceId, "断开或清理采集器", () -> disconnectOrCleanupDevice(deviceId, wasRunning, wasStarting));
+    DeviceCleanupResult cleanupStoppedDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
+        DeviceCleanupResult result = DeviceCleanupResult.success();
+        result = result.merge(cleanupStep(deviceId, "移除设备调度任务", true,
+                () -> runtimeState.removeDeviceTasks(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "取消在途采集任务", true,
+                () -> deviceBatchExecutor.cancelDeviceInFlightTasks(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "移除设备运行状态", true,
+                () -> runtimeState.removeDevice(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "清理点位运行态", false,
+                () -> pointRuntimeStateService.removeDevice(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "清理重连状态", false,
+                () -> reconnectCoordinator.clear(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "停止采集统计", false,
+                () -> collectionStatistics.stopCollection(deviceId)));
+        result = result.merge(cleanupStep(deviceId, "标记设备停止", false,
+                () -> collectionHealthReporter.markDeviceStopped(deviceId)));
+        result = result.merge(disconnectOrCleanupDevice(deviceId, wasRunning, wasStarting));
+        return result;
     }
 
     boolean cleanupFailedStart(String deviceId, long generation) {
@@ -70,19 +79,51 @@ public class DeviceLifecycleCleanup {
         cleanupStep(deviceId, "移除旧代次启动调度任务", () -> runtimeState.removeDeviceTasksIfGeneration(deviceId, generation));
     }
 
-    private void disconnectOrCleanupDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
-        if (wasStarting && !wasRunning) {
-            collectionManager.cleanupDevice(deviceId);
-            return;
+    private DeviceCleanupResult disconnectOrCleanupDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
+        if (!wasRunning && !wasStarting) {
+            return DeviceCleanupResult.success();
         }
-        collectionManager.disconnectDevice(deviceId);
+        if (wasStarting && !wasRunning) {
+            return cleanupStep(deviceId, "清理启动中采集器", true, () -> collectionManager.cleanupDevice(deviceId));
+        }
+        try {
+            collectionManager.disconnectDevice(deviceId);
+            return DeviceCleanupResult.success();
+        } catch (Exception e) {
+            log.warn("断开采集器失败，尝试清理采集器防止旧实例污染后续启动, 设备={}", deviceId, e);
+            cleanupStep(deviceId, "断开失败后的采集器兜底清理", true, () -> collectionManager.cleanupDevice(deviceId));
+            return new DeviceCleanupResult(false, true);
+        }
     }
 
     private void cleanupStep(String deviceId, String action, CleanupStep cleanupStep) {
+        cleanupStep(deviceId, action, false, cleanupStep);
+    }
+
+    private DeviceCleanupResult cleanupStep(String deviceId, String action, boolean critical, CleanupStep cleanupStep) {
         try {
             cleanupStep.run();
+            return DeviceCleanupResult.success();
         } catch (Exception e) {
-            log.warn("设备生命周期清理步骤失败, 设备={}, 步骤={}", deviceId, action, e);
+            if (critical) {
+                log.error("设备生命周期关键清理步骤失败, 设备={}, 步骤={}", deviceId, action, e);
+            } else {
+                log.warn("设备生命周期非关键清理步骤失败, 设备={}, 步骤={}", deviceId, action, e);
+            }
+            return new DeviceCleanupResult(!critical, true);
+        }
+    }
+
+    record DeviceCleanupResult(boolean criticalCleanupSucceeded, boolean hasWarnings) {
+
+        private static DeviceCleanupResult success() {
+            return new DeviceCleanupResult(true, false);
+        }
+
+        private DeviceCleanupResult merge(DeviceCleanupResult other) {
+            return new DeviceCleanupResult(
+                    criticalCleanupSucceeded && other.criticalCleanupSucceeded,
+                    hasWarnings || other.hasWarnings);
         }
     }
 

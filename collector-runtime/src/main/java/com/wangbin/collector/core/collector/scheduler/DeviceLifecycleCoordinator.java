@@ -224,15 +224,41 @@ public class DeviceLifecycleCoordinator {
     }
 
     public boolean stopDevice(String deviceId) {
+        return stopDevice(deviceId, false, false);
+    }
+
+    boolean stopDeviceAfterConfigInvalidation(String deviceId,
+                                              boolean wasRunningBeforeInvalidation,
+                                              boolean wasStartingBeforeInvalidation) {
+        return stopDevice(deviceId, wasRunningBeforeInvalidation, wasStartingBeforeInvalidation);
+    }
+
+    private boolean stopDevice(String deviceId,
+                               boolean wasRunningBeforeInvalidation,
+                               boolean wasStartingBeforeInvalidation) {
         DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
         try {
-            boolean wasStarting = runtimeState.isStarting(deviceId);
-            boolean wasRunning = runtimeState.isRunning(deviceId);
+            boolean wasStarting = wasStartingBeforeInvalidation || runtimeState.isStarting(deviceId);
+            boolean wasRunning = wasRunningBeforeInvalidation || runtimeState.isRunning(deviceId);
             // 先使 generation 失效，确保阻塞中的 start/collect/reconnect 结果不能再提交运行态。
-            collectionTaskGuard.clearDevice(deviceId);
-            cancelStartingFuture(deviceId);
-            deviceLifecycleCleanup.cleanupStoppedDevice(deviceId, wasRunning, wasStarting);
-            return true;
+            boolean criticalCleanupSucceeded = true;
+            try {
+                collectionTaskGuard.clearDevice(deviceId);
+            } catch (Exception e) {
+                criticalCleanupSucceeded = false;
+                log.error("停止设备时清除运行代次失败, 设备={}", deviceId, e);
+            }
+            try {
+                cancelStartingFuture(deviceId);
+            } catch (Exception e) {
+                criticalCleanupSucceeded = false;
+                log.error("停止设备时取消启动任务失败, 设备={}", deviceId, e);
+            }
+            DeviceLifecycleCleanup.DeviceCleanupResult cleanupResult = deviceLifecycleCleanup.cleanupStoppedDevice(
+                    deviceId,
+                    wasRunning,
+                    wasStarting);
+            return criticalCleanupSucceeded && cleanupResult.criticalCleanupSucceeded();
         } catch (Exception e) {
             log.error("停止设备失败, 设备={}", deviceId, e);
             return false;
@@ -289,6 +315,12 @@ public class DeviceLifecycleCoordinator {
 
     public boolean isDeviceStarting(String deviceId) {
         return runtimeState.isStarting(deviceId);
+    }
+
+    void invalidateDeviceForConfigChange(String deviceId) {
+        collectionTaskGuard.clearDevice(deviceId);
+        cancelStartingFuture(deviceId);
+        runtimeState.clearStarting(deviceId);
     }
 
     private boolean completeStartAfterConnect(String deviceId, StartPreparation preparation) {
@@ -350,6 +382,7 @@ public class DeviceLifecycleCoordinator {
 
     private void discardStaleStart(String deviceId, long generation) {
         cancelStartingFutureIfGeneration(deviceId, generation);
+        collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
         deviceLifecycleCleanup.discardStaleStart(deviceId, generation);
         log.debug("丢弃旧代次启动结果, 设备={}, 运行代次={}", deviceId, generation);
     }

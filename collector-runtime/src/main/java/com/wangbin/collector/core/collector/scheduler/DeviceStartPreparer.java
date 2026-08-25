@@ -60,8 +60,15 @@ public class DeviceStartPreparer {
                 return null;
             }
 
+            if (!runtimeState.isStarting(deviceId)) {
+                return null;
+            }
             if (collectorProperties.getAdaptiveCollection().isEnabled()) {
                 pointRuntimeStateService.initializeDevice(deviceId, dataPoints);
+            }
+            if (!runtimeState.isStarting(deviceId)) {
+                pointRuntimeStateService.removeDevice(deviceId);
+                return null;
             }
 
             generation = collectionTaskGuard.activateNextGeneration(deviceId);
