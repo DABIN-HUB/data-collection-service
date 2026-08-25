@@ -40,7 +40,6 @@ import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
@@ -49,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -1185,7 +1185,7 @@ class CombinedDownstreamFailureTest {
         }
 
         private Deque<String> list(String key) {
-            return lists.computeIfAbsent(key, ignored -> new ArrayDeque<>());
+            return lists.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<>());
         }
 
         private boolean shouldFail(Map<String, AtomicInteger> failures, String key) {
