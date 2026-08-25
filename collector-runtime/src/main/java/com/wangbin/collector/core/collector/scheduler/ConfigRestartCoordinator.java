@@ -26,8 +26,10 @@ public class ConfigRestartCoordinator {
     private final TimeSliceConfigCoordinator timeSliceConfigCoordinator;
     private final ScheduledExecutorService timeSliceScheduler;
     private final Map<String, ScheduledFuture<?>> pendingConfigRestartTasks = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> pendingConfigStopTasks = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private int activeStartPhases;
 
     public ConfigRestartCoordinator(DeviceLifecycleCoordinator deviceLifecycleCoordinator,
                                     TimeSliceConfigCoordinator timeSliceConfigCoordinator,
@@ -67,21 +69,46 @@ public class ConfigRestartCoordinator {
     }
 
     private void scheduleStopDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
-        try {
-            timeSliceScheduler.schedule(
-                    () -> stopDeviceAfterConfigDelete(deviceId, wasRunning, wasStarting),
-                    0L,
-                    TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            log.error("配置删除后调度停止设备失败, 设备={}", deviceId, e);
+        if (closed.get()) {
+            log.debug("配置重启协调器已关闭，拒绝调度删除停止任务, 设备={}", deviceId);
+            return;
+        }
+        synchronized (lifecycleLock) {
+            pendingConfigStopTasks.compute(deviceId, (key, oldTask) -> {
+                if (closed.get()) {
+                    cancelIfPending(oldTask);
+                    return null;
+                }
+                cancelIfPending(oldTask);
+                AtomicReference<ScheduledFuture<?>> selfReference = new AtomicReference<>();
+                try {
+                    ScheduledFuture<?> stopTask = timeSliceScheduler.schedule(
+                            () -> stopDeviceAfterConfigDelete(deviceId, wasRunning, wasStarting, selfReference),
+                            0L,
+                            TimeUnit.MILLISECONDS);
+                    selfReference.set(stopTask);
+                    return stopTask.isDone() ? null : stopTask;
+                } catch (Exception e) {
+                    log.error("配置删除后调度停止设备失败, 设备={}", deviceId, e);
+                    return null;
+                }
+            });
         }
     }
 
-    private void stopDeviceAfterConfigDelete(String deviceId, boolean wasRunning, boolean wasStarting) {
+    private void stopDeviceAfterConfigDelete(String deviceId,
+                                             boolean wasRunning,
+                                             boolean wasStarting,
+                                             AtomicReference<ScheduledFuture<?>> selfReference) {
         try {
             deviceLifecycleCoordinator.stopDeviceAfterConfigInvalidation(deviceId, wasRunning, wasStarting);
         } catch (Exception e) {
             log.error("配置删除后停止设备失败, 设备={}", deviceId, e);
+        } finally {
+            ScheduledFuture<?> self = selfReference.get();
+            if (self != null) {
+                pendingConfigStopTasks.remove(deviceId, self);
+            }
         }
     }
 
@@ -169,14 +196,32 @@ public class ConfigRestartCoordinator {
     }
 
     private void startDeviceIfOpen(String deviceId) {
+        if (!tryEnterStartPhase(deviceId)) {
+            return;
+        }
+        try {
+            if (deviceLifecycleCoordinator.startDevice(deviceId) && !closed.get()) {
+                timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
+            }
+        } finally {
+            exitStartPhase();
+        }
+    }
+
+    private boolean tryEnterStartPhase(String deviceId) {
         synchronized (lifecycleLock) {
             if (closed.get()) {
                 log.debug("配置重启协调器已关闭，跳过已运行重启任务的启动阶段, 设备={}", deviceId);
-                return;
+                return false;
             }
-            if (deviceLifecycleCoordinator.startDevice(deviceId)) {
-                timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
-            }
+            activeStartPhases++;
+            return true;
+        }
+    }
+
+    private void exitStartPhase() {
+        synchronized (lifecycleLock) {
+            activeStartPhases--;
         }
     }
 
@@ -191,10 +236,22 @@ public class ConfigRestartCoordinator {
             closed.set(true);
             pendingConfigRestartTasks.values().forEach(this::cancelIfPending);
             pendingConfigRestartTasks.clear();
+            pendingConfigStopTasks.values().forEach(this::cancelIfPending);
+            pendingConfigStopTasks.clear();
         }
     }
 
     int pendingTaskCountForTest() {
         return pendingConfigRestartTasks.size();
+    }
+
+    int pendingStopTaskCountForTest() {
+        return pendingConfigStopTasks.size();
+    }
+
+    int activeStartPhaseCountForTest() {
+        synchronized (lifecycleLock) {
+            return activeStartPhases;
+        }
     }
 }
