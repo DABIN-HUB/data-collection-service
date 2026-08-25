@@ -66,18 +66,7 @@ public class CollectionSchedulerTest {
         reconnectCoordinator = mock(ReconnectCoordinator.class);
         systemResourceProbe = mock(SystemResourceProbe.class);
         timeSliceScheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler = new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
-                collectorProperties,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                lifecycleCoordinator,
-                batchExecutor,
-                reconnectCoordinator,
-                timeSliceScheduler);
+        scheduler = schedulerWithExecutor(timeSliceScheduler, new AtomicLong(System.nanoTime()));
     }
 
     @Test
@@ -283,18 +272,7 @@ public class CollectionSchedulerTest {
         collectorProperties.getScheduler().setMaxTimeSliceCount(12);
         collectorProperties.getScheduler().setTargetTasksPerTimeSlice(8);
         ScheduledExecutorService manualScheduler = mock(ScheduledExecutorService.class);
-        scheduler = new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
-                collectorProperties,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                lifecycleCoordinator,
-                batchExecutor,
-                reconnectCoordinator,
-                manualScheduler);
+        scheduler = schedulerWithExecutor(manualScheduler, new AtomicLong(System.nanoTime()));
         String deviceId = "dev-manual-replan";
         runtimeState.markRunning(deviceId, 1L);
         List<DeviceBatchTask> tasks = IntStream.range(0, 16)
@@ -899,19 +877,51 @@ public class CollectionSchedulerTest {
     }
 
     private CollectionScheduler schedulerWithExecutor(ScheduledExecutorService scheduledExecutor, AtomicLong nowNanos) {
-        return new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
+        TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
+                runtimeState,
+                performanceMonitor,
+                batchExecutor,
+                nowNanos::get);
+        TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
                 collectorProperties,
+                runtimeState,
+                performanceMonitor,
+                executionCoordinator,
+                scheduledExecutor,
+                nowNanos::get);
+        TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
+                collectorProperties,
+                configManager,
                 systemResourceProbe,
                 runtimeState,
                 performanceMonitor,
                 lifecycleCoordinator,
                 batchExecutor,
+                schedulingCoordinator);
+        SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
+                collectorProperties,
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                configCoordinator,
+                scheduledExecutor);
+        ConfigRestartCoordinator restartCoordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                configCoordinator,
+                scheduledExecutor);
+        return new CollectionScheduler(
+                collectionManager,
+                mock(CollectionStatistics.class),
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                batchExecutor,
                 reconnectCoordinator,
-                scheduledExecutor,
-                nowNanos::get);
+                schedulingCoordinator,
+                executionCoordinator,
+                configCoordinator,
+                maintenanceCoordinator,
+                restartCoordinator);
     }
 
     private List<Long> captureClaims(AtomicLong nowNanos) {

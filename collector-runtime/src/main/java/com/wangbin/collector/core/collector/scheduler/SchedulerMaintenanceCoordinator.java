@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 统一管理调度器维护类定时任务。
@@ -24,7 +25,8 @@ public class SchedulerMaintenanceCoordinator {
     private final DeviceLifecycleCoordinator deviceLifecycleCoordinator;
     private final TimeSliceConfigCoordinator timeSliceConfigCoordinator;
     private final ScheduledExecutorService timeSliceScheduler;
-    private final List<ScheduledFuture<?>> maintenanceScheduleFutures = new CopyOnWriteArrayList<>();
+    private final List<ScheduledFuture<?>> periodicMaintenanceFutures = new CopyOnWriteArrayList<>();
+    private ScheduledFuture<?> pendingStartAllFuture;
 
     public SchedulerMaintenanceCoordinator(CollectorProperties collectorProperties,
                                            SchedulerRuntimeState runtimeState,
@@ -47,18 +49,38 @@ public class SchedulerMaintenanceCoordinator {
         scheduleStartAllDevices(5, TimeUnit.SECONDS);
     }
 
-    void cancel() {
-        maintenanceScheduleFutures.forEach(future -> future.cancel(false));
-        maintenanceScheduleFutures.clear();
+    synchronized void cancel() {
+        periodicMaintenanceFutures.forEach(future -> future.cancel(false));
+        periodicMaintenanceFutures.clear();
+        cancelPendingStartAllFutureLocked();
     }
 
     void scheduleStartAllDevices(long delay, TimeUnit unit) {
-        ScheduledFuture<?> future = timeSliceScheduler.schedule(this::autoStartAllDevices, delay, unit);
-        maintenanceScheduleFutures.add(future);
+        AtomicReference<ScheduledFuture<?>> selfReference = new AtomicReference<>();
+        Runnable startTask = () -> {
+            try {
+                autoStartAllDevices();
+            } finally {
+                clearPendingStartAllFuture(selfReference.get());
+            }
+        };
+        synchronized (this) {
+            cancelPendingStartAllFutureLocked();
+            ScheduledFuture<?> future = timeSliceScheduler.schedule(startTask, delay, unit);
+            selfReference.set(future);
+            pendingStartAllFuture = future;
+            if (future.isDone()) {
+                clearPendingStartAllFuture(future);
+            }
+        }
     }
 
     void adjustTimeSlicesAfterWorkloadChange() {
         timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
+    }
+
+    synchronized int pendingStartAllFutureCountForTest() {
+        return pendingStartAllFuture == null || pendingStartAllFuture.isCancelled() || pendingStartAllFuture.isDone() ? 0 : 1;
     }
 
     private void autoStartAllDevices() {
@@ -75,7 +97,7 @@ public class SchedulerMaintenanceCoordinator {
                 () -> performanceMonitor.logStatistics(runtimeState.getTimeSliceInterval()),
                 60, 60, TimeUnit.SECONDS
         );
-        maintenanceScheduleFutures.add(future);
+        periodicMaintenanceFutures.add(future);
     }
 
     private void startDynamicTimeSliceAdjustment() {
@@ -86,6 +108,19 @@ public class SchedulerMaintenanceCoordinator {
                 interval,
                 TimeUnit.MILLISECONDS
         );
-        maintenanceScheduleFutures.add(future);
+        periodicMaintenanceFutures.add(future);
+    }
+
+    private synchronized void cancelPendingStartAllFutureLocked() {
+        if (pendingStartAllFuture != null && !pendingStartAllFuture.isDone()) {
+            pendingStartAllFuture.cancel(false);
+        }
+        pendingStartAllFuture = null;
+    }
+
+    private synchronized void clearPendingStartAllFuture(ScheduledFuture<?> expectedFuture) {
+        if (expectedFuture != null && pendingStartAllFuture == expectedFuture) {
+            pendingStartAllFuture = null;
+        }
     }
 }

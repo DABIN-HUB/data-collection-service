@@ -5,16 +5,11 @@ import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
-import com.wangbin.collector.core.config.CollectorProperties;
-import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
-import com.wangbin.collector.core.port.SystemResourceProbe;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -22,9 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.LongSupplier;
 
 /**
  * 采集任务调度顶层编排器。
@@ -72,133 +65,6 @@ public class CollectionScheduler {
         this.timeSliceConfigCoordinator = timeSliceConfigCoordinator;
         this.schedulerMaintenanceCoordinator = schedulerMaintenanceCoordinator;
         this.configRestartCoordinator = configRestartCoordinator;
-    }
-
-    CollectionScheduler(CollectionManager collectionManager,
-                        ConfigManager configManager,
-                        CollectionStatistics collectionStatistics,
-                        CollectorProperties collectorProperties,
-                        @Nullable SystemResourceProbe systemResourceProbe,
-                        SchedulerRuntimeState runtimeState,
-                        PerformanceMonitor performanceMonitor,
-                        DeviceLifecycleCoordinator deviceLifecycleCoordinator,
-                        DeviceBatchExecutor deviceBatchExecutor,
-                        ReconnectCoordinator reconnectCoordinator,
-                        @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler) {
-        this(collectionManager,
-                configManager,
-                collectionStatistics,
-                collectorProperties,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                deviceLifecycleCoordinator,
-                deviceBatchExecutor,
-                reconnectCoordinator,
-                timeSliceScheduler,
-                System::nanoTime);
-    }
-
-    CollectionScheduler(CollectionManager collectionManager,
-                        ConfigManager configManager,
-                        CollectionStatistics collectionStatistics,
-                        CollectorProperties collectorProperties,
-                        @Nullable SystemResourceProbe systemResourceProbe,
-                        SchedulerRuntimeState runtimeState,
-                        PerformanceMonitor performanceMonitor,
-                        DeviceLifecycleCoordinator deviceLifecycleCoordinator,
-                        DeviceBatchExecutor deviceBatchExecutor,
-                        ReconnectCoordinator reconnectCoordinator,
-                        ScheduledExecutorService timeSliceScheduler,
-                        LongSupplier nanoTimeSupplier) {
-        this(collectionManager,
-                collectionStatistics,
-                runtimeState,
-                performanceMonitor,
-                deviceLifecycleCoordinator,
-                deviceBatchExecutor,
-                reconnectCoordinator,
-                createLegacyComponents(
-                        collectorProperties,
-                        configManager,
-                        systemResourceProbe,
-                        runtimeState,
-                        performanceMonitor,
-                        deviceLifecycleCoordinator,
-                        deviceBatchExecutor,
-                        timeSliceScheduler,
-                        nanoTimeSupplier));
-    }
-
-    private CollectionScheduler(CollectionManager collectionManager,
-                                CollectionStatistics collectionStatistics,
-                                SchedulerRuntimeState runtimeState,
-                                PerformanceMonitor performanceMonitor,
-                                DeviceLifecycleCoordinator deviceLifecycleCoordinator,
-                                DeviceBatchExecutor deviceBatchExecutor,
-                                ReconnectCoordinator reconnectCoordinator,
-                                LegacySchedulerComponents components) {
-        this(collectionManager,
-                collectionStatistics,
-                runtimeState,
-                performanceMonitor,
-                deviceLifecycleCoordinator,
-                deviceBatchExecutor,
-                reconnectCoordinator,
-                components.timeSliceSchedulingCoordinator(),
-                components.timeSliceExecutionCoordinator(),
-                components.timeSliceConfigCoordinator(),
-                components.schedulerMaintenanceCoordinator(),
-                components.configRestartCoordinator());
-    }
-
-    private static LegacySchedulerComponents createLegacyComponents(CollectorProperties collectorProperties,
-                                                                    ConfigManager configManager,
-                                                                    @Nullable SystemResourceProbe systemResourceProbe,
-                                                                    SchedulerRuntimeState runtimeState,
-                                                                    PerformanceMonitor performanceMonitor,
-                                                                    DeviceLifecycleCoordinator deviceLifecycleCoordinator,
-                                                                    DeviceBatchExecutor deviceBatchExecutor,
-                                                                    ScheduledExecutorService timeSliceScheduler,
-                                                                    LongSupplier nanoTimeSupplier) {
-        TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
-                runtimeState,
-                performanceMonitor,
-                deviceBatchExecutor,
-                nanoTimeSupplier);
-        TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
-                collectorProperties,
-                runtimeState,
-                performanceMonitor,
-                executionCoordinator,
-                timeSliceScheduler,
-                nanoTimeSupplier);
-        TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
-                collectorProperties,
-                configManager,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                deviceLifecycleCoordinator,
-                deviceBatchExecutor,
-                schedulingCoordinator);
-        SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
-                collectorProperties,
-                runtimeState,
-                performanceMonitor,
-                deviceLifecycleCoordinator,
-                configCoordinator,
-                timeSliceScheduler);
-        ConfigRestartCoordinator restartCoordinator = new ConfigRestartCoordinator(
-                deviceLifecycleCoordinator,
-                configCoordinator,
-                timeSliceScheduler);
-        return new LegacySchedulerComponents(
-                schedulingCoordinator,
-                executionCoordinator,
-                configCoordinator,
-                maintenanceCoordinator,
-                restartCoordinator);
     }
 
     @PostConstruct
@@ -411,13 +277,5 @@ public class CollectionScheduler {
     @EventListener
     public void handleConfigUpdate(ConfigUpdateEvent event) {
         configRestartCoordinator.handleConfigUpdate(event);
-    }
-
-    private record LegacySchedulerComponents(
-            TimeSliceSchedulingCoordinator timeSliceSchedulingCoordinator,
-            TimeSliceExecutionCoordinator timeSliceExecutionCoordinator,
-            TimeSliceConfigCoordinator timeSliceConfigCoordinator,
-            SchedulerMaintenanceCoordinator schedulerMaintenanceCoordinator,
-            ConfigRestartCoordinator configRestartCoordinator) {
     }
 }

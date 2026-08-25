@@ -36,46 +36,79 @@ public class ConfigRestartCoordinator {
 
     void handleConfigUpdate(ConfigUpdateEvent event) {
         String deviceId = event.getDeviceId();
+        if (deviceId == null) {
+            return;
+        }
+        boolean running = deviceLifecycleCoordinator.isDeviceRunning(deviceId);
+        boolean starting = deviceLifecycleCoordinator.isDeviceStarting(deviceId);
         if ("local-delete".equals(event.getConfigType())) {
-            if (deviceId != null && deviceLifecycleCoordinator.isDeviceRunning(deviceId)) {
+            cancelPendingRestart(deviceId);
+            if (running || starting) {
                 deviceLifecycleCoordinator.stopDevice(deviceId);
             }
             return;
         }
-        if (deviceId != null && deviceLifecycleCoordinator.isDeviceRunning(deviceId)) {
-            scheduleRestart(deviceId);
+        if (running) {
+            scheduleRestart(deviceId, true);
+            return;
+        }
+        if (starting) {
+            if (deviceLifecycleCoordinator.stopDevice(deviceId)) {
+                scheduleRestart(deviceId, false);
+            } else {
+                log.warn("配置变更时停止启动中设备失败，跳过延迟重启, 设备={}", deviceId);
+            }
         }
     }
 
-    private void scheduleRestart(String deviceId) {
-        ScheduledFuture<?> oldTask = pendingConfigRestartTasks.get(deviceId);
-        if (oldTask != null && !oldTask.isDone()) {
-            oldTask.cancel(false);
-        }
-        AtomicReference<ScheduledFuture<?>> selfReference = new AtomicReference<>();
-        ScheduledFuture<?> restartTask = timeSliceScheduler.schedule(() -> {
-            try {
+    private void scheduleRestart(String deviceId, boolean stopBeforeStart) {
+        pendingConfigRestartTasks.compute(deviceId, (key, oldTask) -> {
+            cancelIfPending(oldTask);
+            AtomicReference<ScheduledFuture<?>> selfReference = new AtomicReference<>();
+            ScheduledFuture<?> restartTask = timeSliceScheduler.schedule(
+                    () -> restartDevice(deviceId, selfReference, stopBeforeStart),
+                    CONFIG_RESTART_DEBOUNCE_MS,
+                    TimeUnit.MILLISECONDS);
+            selfReference.set(restartTask);
+            return restartTask;
+        });
+    }
+
+    private void restartDevice(String deviceId,
+                               AtomicReference<ScheduledFuture<?>> selfReference,
+                               boolean stopBeforeStart) {
+        try {
+            if (stopBeforeStart) {
                 deviceLifecycleCoordinator.stopDevice(deviceId);
-                if (deviceLifecycleCoordinator.startDevice(deviceId)) {
-                    timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
-                }
-            } catch (Exception e) {
-                log.error("配置变更后重启设备失败, 设备={}", deviceId, e);
-            } finally {
-                ScheduledFuture<?> self = selfReference.get();
-                if (self != null) {
-                    pendingConfigRestartTasks.remove(deviceId, self);
-                } else {
-                    pendingConfigRestartTasks.remove(deviceId);
-                }
             }
-        }, CONFIG_RESTART_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
-        selfReference.set(restartTask);
-        pendingConfigRestartTasks.put(deviceId, restartTask);
+            if (deviceLifecycleCoordinator.startDevice(deviceId)) {
+                timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
+            }
+        } catch (Exception e) {
+            log.error("配置变更后重启设备失败, 设备={}", deviceId, e);
+        } finally {
+            ScheduledFuture<?> self = selfReference.get();
+            if (self != null) {
+                pendingConfigRestartTasks.remove(deviceId, self);
+            }
+        }
+    }
+
+    private void cancelPendingRestart(String deviceId) {
+        pendingConfigRestartTasks.computeIfPresent(deviceId, (key, future) -> {
+            cancelIfPending(future);
+            return null;
+        });
+    }
+
+    private void cancelIfPending(ScheduledFuture<?> future) {
+        if (future != null && !future.isDone()) {
+            future.cancel(false);
+        }
     }
 
     void cancelAll() {
-        pendingConfigRestartTasks.values().forEach(future -> future.cancel(false));
+        pendingConfigRestartTasks.values().forEach(this::cancelIfPending);
         pendingConfigRestartTasks.clear();
     }
 

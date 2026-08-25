@@ -381,21 +381,103 @@ class DeviceLifecycleCoordinatorTest {
         }
     }
 
+    @Test
+    void rejectedStartExecutorShouldCleanupStartingState() throws Exception {
+        String deviceId = "dev-start-rejected";
+        ThreadPoolExecutor rejectingExecutor = fixedPool("reject-start", 1);
+        rejectingExecutor.shutdownNow();
+        replaceDeviceStartExecutor(rejectingExecutor);
+        setupSingleDevice(deviceId);
+
+        boolean started = lifecycleCoordinator.startDevice(deviceId);
+
+        assertFalse(started);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void startTimeoutShouldCleanupStartingStateAndRuntimeResources() throws Exception {
+        String deviceId = "dev-start-timeout";
+        setupSingleDevice(deviceId);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            connectEntered.countDown();
+            try {
+                releaseConnect.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }).when(collectionManager).connectDevice(deviceId);
+
+        boolean started = lifecycleCoordinator.startDevice(deviceId);
+        releaseConnect.countDown();
+
+        assertTrue(connectEntered.getCount() == 0);
+        assertFalse(started);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void failedStartCleanupShouldBeIdempotent() throws Exception {
+        String deviceId = "dev-cleanup-idempotent";
+        setupSingleDevice(deviceId);
+        assertTrue(runtimeState.markStarting(deviceId));
+        long generation = collectionTaskGuard.activateNextGeneration(deviceId);
+        runtimeState.markStartingGeneration(deviceId, generation);
+
+        lifecycleCoordinator.cleanupFailedStart(deviceId, generation);
+        lifecycleCoordinator.cleanupFailedStart(deviceId, generation);
+
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, generation));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+    }
+
     private DeviceLifecycleCoordinator newLifecycleCoordinator(ThreadPoolExecutor startExecutor) {
+        PointRuntimeStateService pointRuntimeStateService = new PointRuntimeStateService();
+        DeviceStartPreparer startPreparer = new DeviceStartPreparer(
+                configManager,
+                collectorProperties,
+                collectionTaskGuard,
+                pointRuntimeStateService,
+                runtimeState,
+                reconnectCoordinator);
+        DeviceLifecycleCleanup lifecycleCleanup = new DeviceLifecycleCleanup(
+                collectionManager,
+                collectionStatistics,
+                healthTracker,
+                pointRuntimeStateService,
+                runtimeState,
+                deviceBatchExecutor,
+                reconnectCoordinator,
+                collectionTaskGuard);
         return new DeviceLifecycleCoordinator(
                 collectionManager,
-                configManager,
                 collectionStatistics,
-                collectorProperties,
                 healthTracker,
                 deviceBatchPlanner,
                 protocolBatchStrategy,
                 collectionTaskGuard,
-                new PointRuntimeStateService(),
                 runtimeState,
                 new PerformanceMonitor(),
-                deviceBatchExecutor,
-                reconnectCoordinator,
+                startPreparer,
+                lifecycleCleanup,
                 startExecutor);
     }
 

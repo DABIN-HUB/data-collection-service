@@ -6,8 +6,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -28,7 +26,7 @@ public class TimeSliceSchedulingCoordinator {
     private final TimeSliceExecutionCoordinator timeSliceExecutionCoordinator;
     private final ScheduledExecutorService timeSliceScheduler;
     private final LongSupplier nanoTimeSupplier;
-    private final Map<Integer, ScheduledFuture<?>> timeSliceScheduleFutures = new ConcurrentHashMap<>();
+    private ScheduledFuture<?> phaseWheelFuture;
 
     @Autowired
     public TimeSliceSchedulingCoordinator(CollectorProperties collectorProperties,
@@ -58,26 +56,24 @@ public class TimeSliceSchedulingCoordinator {
         this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
     }
 
-    void startTimeSliceScheduling() {
-        cancelTimeSliceScheduling();
+    synchronized void startTimeSliceScheduling() {
+        cancelPhaseWheelFutureLocked();
         int sliceCount = Math.max(1, runtimeState.getTimeSliceCount());
         int phaseWheelTickMs = resolvePhaseWheelTickIntervalMs(sliceCount);
         long revision = runtimeState.getTimeSliceRevision();
-        ScheduledFuture<?> future = timeSliceScheduler.scheduleWithFixedDelay(
+        phaseWheelFuture = timeSliceScheduler.scheduleWithFixedDelay(
                 new PhaseWheelScanTask(sliceCount, revision, phaseWheelTickMs),
                 0L,
                 phaseWheelTickMs,
                 TimeUnit.MILLISECONDS);
-        timeSliceScheduleFutures.put(0, future);
     }
 
-    void cancelTimeSliceScheduling() {
-        timeSliceScheduleFutures.values().forEach(future -> future.cancel(false));
-        timeSliceScheduleFutures.clear();
+    synchronized void cancelTimeSliceScheduling() {
+        cancelPhaseWheelFutureLocked();
     }
 
-    boolean isSchedulingActive() {
-        return !timeSliceScheduleFutures.isEmpty();
+    synchronized boolean isSchedulingActive() {
+        return phaseWheelFuture != null && !phaseWheelFuture.isCancelled() && !phaseWheelFuture.isDone();
     }
 
     int resolveDueScanIntervalMs() {
@@ -90,6 +86,13 @@ public class TimeSliceSchedulingCoordinator {
         int dueScanInterval = resolveDueScanIntervalMs();
         int distributedTick = (dueScanInterval + normalizedSliceCount - 1) / normalizedSliceCount;
         return Math.max(MIN_PHASE_WHEEL_TICK_MS, distributedTick);
+    }
+
+    private void cancelPhaseWheelFutureLocked() {
+        if (phaseWheelFuture != null && !phaseWheelFuture.isDone()) {
+            phaseWheelFuture.cancel(false);
+        }
+        phaseWheelFuture = null;
     }
 
     private final class PhaseWheelScanTask implements Runnable {
