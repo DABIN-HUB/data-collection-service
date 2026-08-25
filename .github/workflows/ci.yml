@@ -30,9 +30,6 @@ jobs:
           cache: npm
           cache-dependency-path: collector-desktop/package-lock.json
 
-      - name: Maven clean verify
-        run: mvn -B -ntp clean verify
-
       - name: 安装桌面控制台依赖
         run: npm ci --prefix collector-desktop
 
@@ -44,6 +41,33 @@ jobs:
 
       - name: 构建并同步网页控制台
         run: npm --prefix collector-desktop run build:web
+
+      - name: 检查网页控制台生成物是否最新
+        run: |
+          git diff --exit-code -- collector-boot/src/main/resources/static/desktop
+
+      - name: Maven clean verify
+        run: mvn -B -ntp clean verify
+
+      - name: 检查最终可执行Jar
+        shell: bash
+        run: |
+          jar_file="$(find collector-boot/target -maxdepth 1 -type f \
+            -name 'data-collection-service-*.jar' \
+            ! -name 'original-*.jar' \
+            ! -name '*.original' \
+            -print -quit)"
+
+          if [ -z "$jar_file" ]; then
+            echo "未找到 collector-boot 最终可执行 jar"
+            exit 1
+          fi
+
+          echo "检查 Jar：$jar_file"
+          jar tf "$jar_file" | grep -q '^BOOT-INF/classes/com/wangbin/collector/Application.class$'
+          jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/index.html$'
+          jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.js$'
+          jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.css$'
 
       - name: 扫描生产配置秘密
         run: node scripts/scan-config-secrets.mjs

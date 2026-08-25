@@ -303,7 +303,16 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <includes>
-                <include>**/P0RegressionSuite.java</include>
+                <include>**/CollectionSchedulerTest.java</include>
+                <include>**/AdaptiveCollectionUtilTest.java</include>
+                <include>**/AlarmStateTrackerTest.java</include>
+                <include>**/RedisAlarmStateRepositoryTest.java</include>
+                <include>**/TelemetryStreamServiceImplTest.java</include>
+                <include>**/CollectorDataPostProcessorTest.java</include>
+                <include>**/CacheReportServiceTest.java</include>
+                <include>**/CloudOutboxServiceTest.java</include>
+                <include>**/ShadowManagerTest.java</include>
+                <include>**/HistoryWriteBufferTest.java</include>
               </includes>
             </configuration>
           </plugin>

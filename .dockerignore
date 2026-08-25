@@ -1,0 +1,12 @@
+.git
+.idea
+.hermes
+.superpowers
+.m2-local
+**/target
+**/node_modules
+collector-desktop/dist
+collector-desktop/release
+collector-desktop/out
+*.log
+tmp
