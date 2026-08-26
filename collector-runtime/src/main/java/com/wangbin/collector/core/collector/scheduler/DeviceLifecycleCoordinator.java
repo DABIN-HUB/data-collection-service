@@ -68,17 +68,63 @@ public class DeviceLifecycleCoordinator {
     }
 
     public boolean startDevice(String deviceId) {
+        try {
+            StartReservation reservation = reserveStart(deviceId);
+            if (reservation == null) {
+                return false;
+            }
+            return continueReservedStart(reservation);
+        } catch (Exception e) {
+            log.error("启动设备失败, 设备={}", deviceId, e);
+            return false;
+        }
+    }
+
+    StartReservation reserveStartForConfigRestart(String deviceId) throws Exception {
+        return reserveStart(deviceId);
+    }
+
+    private StartReservation reserveStart(String deviceId) throws Exception {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            return deviceStartPreparer.reserve(deviceId);
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+    }
+
+    boolean continueReservedStart(StartReservation reservation) {
+        if (reservation == null) {
+            return false;
+        }
+        String deviceId = reservation.deviceId();
         StartPreparation preparation;
         try {
-            preparation = prepareStart(deviceId);
+            preparation = prepareReservedStart(reservation);
             if (preparation == null) {
                 return false;
             }
         } catch (Exception e) {
             log.error("启动设备失败, 设备={}", deviceId, e);
+            cleanupFailedStart(deviceId, reservation.generation());
             return false;
         }
+        return continuePreparedStart(deviceId, preparation);
+    }
 
+    private StartPreparation prepareReservedStart(StartReservation reservation) throws Exception {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(reservation.deviceId());
+        try {
+            return deviceStartPreparer.prepareReserved(reservation);
+        } finally {
+            releaseLifecycleLock(reservation.deviceId(), lifecycleLock);
+        }
+    }
+
+    private boolean continuePreparedStart(String deviceId, StartPreparation preparation) {
+        if (preparation == null) {
+            return false;
+        }
         try {
             if (!registerPreparedDevice(deviceId, preparation)) {
                 discardStaleStart(deviceId, preparation.generation());
@@ -103,15 +149,6 @@ public class DeviceLifecycleCoordinator {
             log.error("启动设备失败, 设备={}", deviceId, e);
             cleanupFailedStart(deviceId, preparation.generation());
             return false;
-        }
-    }
-
-    private StartPreparation prepareStart(String deviceId) throws Exception {
-        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
-        try {
-            return deviceStartPreparer.prepare(deviceId);
-        } finally {
-            releaseLifecycleLock(deviceId, lifecycleLock);
         }
     }
 
@@ -459,6 +496,12 @@ public class DeviceLifecycleCoordinator {
     }
 
     private record StartFuture(Future<?> future, long generation) {
+    }
+
+    /**
+     * 启动预留只表示设备已经进入 stopAllDevices 可见的 starting 状态，尚未执行网络连接。
+     */
+    record StartReservation(String deviceId, long generation) {
     }
 
     private static final class DeviceLifecycleLock {

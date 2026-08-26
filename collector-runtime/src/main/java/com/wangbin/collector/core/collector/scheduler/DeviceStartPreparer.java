@@ -42,6 +42,14 @@ public class DeviceStartPreparer {
     }
 
     StartPreparation prepare(String deviceId) throws Exception {
+        DeviceLifecycleCoordinator.StartReservation reservation = reserve(deviceId);
+        if (reservation == null) {
+            return null;
+        }
+        return prepareReserved(reservation);
+    }
+
+    DeviceLifecycleCoordinator.StartReservation reserve(String deviceId) throws Exception {
         long generation = 0L;
         boolean generationActivated = false;
         try {
@@ -49,34 +57,15 @@ public class DeviceStartPreparer {
                 return null;
             }
 
-            DeviceInfo deviceInfo = configManager.getDevice(deviceId);
-            if (deviceInfo == null) {
-                runtimeState.clearStarting(deviceId);
-                return null;
-            }
-            List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
-            if (dataPoints == null || dataPoints.isEmpty()) {
-                runtimeState.clearStarting(deviceId);
-                return null;
-            }
-
-            if (!runtimeState.isStarting(deviceId)) {
-                return null;
-            }
-            if (collectorProperties.getAdaptiveCollection().isEnabled()) {
-                pointRuntimeStateService.initializeDevice(deviceId, dataPoints);
-            }
-            if (!runtimeState.isStarting(deviceId)) {
-                pointRuntimeStateService.removeDevice(deviceId);
-                return null;
-            }
-
             generation = collectionTaskGuard.activateNextGeneration(deviceId);
             generationActivated = true;
             runtimeState.markStartingGeneration(deviceId, generation);
             reconnectCoordinator.clear(deviceId);
-            long connectTimeoutMs = resolveDeviceStartTimeoutMs(deviceId);
-            return new StartPreparation(deviceInfo, List.copyOf(dataPoints), generation, connectTimeoutMs);
+            if (!isReservationCurrent(deviceId, generation)) {
+                cleanupReservedStart(deviceId, generation, false);
+                return null;
+            }
+            return new DeviceLifecycleCoordinator.StartReservation(deviceId, generation);
         } catch (Exception e) {
             if (generationActivated) {
                 collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
@@ -85,6 +74,61 @@ public class DeviceStartPreparer {
             reconnectCoordinator.clear(deviceId);
             throw e;
         }
+    }
+
+    StartPreparation prepareReserved(DeviceLifecycleCoordinator.StartReservation reservation) throws Exception {
+        String deviceId = reservation.deviceId();
+        long generation = reservation.generation();
+        boolean adaptiveInitialized = false;
+        try {
+            if (!isReservationCurrent(deviceId, generation)) {
+                cleanupReservedStart(deviceId, generation, false);
+                return null;
+            }
+            DeviceInfo deviceInfo = configManager.getDevice(deviceId);
+            if (deviceInfo == null) {
+                cleanupReservedStart(deviceId, generation, false);
+                return null;
+            }
+            List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
+            if (dataPoints == null || dataPoints.isEmpty()) {
+                cleanupReservedStart(deviceId, generation, false);
+                return null;
+            }
+
+            if (!isReservationCurrent(deviceId, generation)) {
+                cleanupReservedStart(deviceId, generation, false);
+                return null;
+            }
+            if (collectorProperties.getAdaptiveCollection().isEnabled()) {
+                pointRuntimeStateService.initializeDevice(deviceId, dataPoints);
+                adaptiveInitialized = true;
+            }
+            if (!isReservationCurrent(deviceId, generation)) {
+                cleanupReservedStart(deviceId, generation, adaptiveInitialized);
+                return null;
+            }
+
+            long connectTimeoutMs = resolveDeviceStartTimeoutMs(deviceId);
+            return new StartPreparation(deviceInfo, List.copyOf(dataPoints), generation, connectTimeoutMs);
+        } catch (Exception e) {
+            cleanupReservedStart(deviceId, generation, adaptiveInitialized);
+            throw e;
+        }
+    }
+
+    private boolean isReservationCurrent(String deviceId, long generation) {
+        return runtimeState.isStartingGeneration(deviceId, generation)
+                && collectionTaskGuard.isCurrent(deviceId, generation);
+    }
+
+    private void cleanupReservedStart(String deviceId, long generation, boolean removePointRuntime) {
+        collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
+        runtimeState.clearStartingIfGeneration(deviceId, generation);
+        if (removePointRuntime) {
+            pointRuntimeStateService.removeDevice(deviceId);
+        }
+        reconnectCoordinator.clear(deviceId);
     }
 
     List<String> getStartableDeviceIds() {

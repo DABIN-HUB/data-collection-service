@@ -10,6 +10,7 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.port.CollectionHealthReporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,21 +25,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -48,6 +55,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.spy;
 
 class DeviceLifecycleCoordinatorTest {
 
@@ -260,6 +268,112 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(collectionTaskGuard.isCurrent(startingDevice2, generation2));
         verify(healthTracker, never()).markDeviceStarted(startingDevice1);
         verify(healthTracker, never()).markDeviceStarted(startingDevice2);
+    }
+
+    @Test
+    void reservedStartShouldBeVisibleToStopAllDevices() throws Exception {
+        String deviceId = "dev-reserved-start";
+        setupSingleDevice(deviceId);
+
+        DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
+
+        assertNotNull(reservation);
+        assertTrue(runtimeState.isStarting(deviceId));
+        assertTrue(runtimeState.getActiveDeviceIds().contains(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+
+        lifecycleCoordinator.stopAllDevices();
+
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+        verify(collectionManager).cleanupDevice(deviceId);
+
+        assertFalse(lifecycleCoordinator.continueReservedStart(reservation));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void reserveStartShouldReturnNullWhenStartingGenerationIsNotVisibleBeforeReturn() throws Exception {
+        String deviceId = "dev-reserve-stale-before-return";
+        runtimeState = spy(new SchedulerRuntimeState());
+        runtimeState.initializeTimeSlices(1, 1000);
+        lifecycleCoordinator = newLifecycleCoordinator(deviceStartExecutor);
+        setupSingleDevice(deviceId);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            runtimeState.clearStarting(deviceId);
+            return null;
+        }).when(runtimeState).markStartingGeneration(eq(deviceId), anyLong());
+
+        DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
+
+        assertNull(reservation);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, 1L));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+    }
+
+    @Test
+    void cancelAllAfterStartReservedButBeforeContinueShouldPreventRunning() throws Exception {
+        String deviceId = "dev-config-reserved-shutdown";
+        setupSingleDevice(deviceId);
+        ScheduledExecutorService timeSliceScheduler = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> restartFuture = mock(ScheduledFuture.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        AtomicReference<Runnable> restartCommand = new AtomicReference<>();
+        CountDownLatch reservationCompleted = new CountDownLatch(1);
+        CountDownLatch releaseContinuation = new CountDownLatch(1);
+        AtomicReference<DeviceLifecycleCoordinator.StartReservation> reservedReservation = new AtomicReference<>();
+        when(timeSliceScheduler.schedule(any(Runnable.class), eq(1000L), eq(TimeUnit.MILLISECONDS)))
+                .thenAnswer(invocation -> {
+                    restartCommand.set(invocation.getArgument(0));
+                    return restartFuture;
+                });
+        ConfigRestartCoordinator restartCoordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                timeSliceScheduler) {
+            @Override
+            void beforeReservedStartContinuationForTest(String reservedDeviceId,
+                                                        DeviceLifecycleCoordinator.StartReservation reservation) {
+                reservedReservation.set(reservation);
+                reservationCompleted.countDown();
+                try {
+                    releaseContinuation.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+
+        restartCoordinator.handleConfigUpdate(configEvent("device", deviceId));
+        Thread restartThread = new Thread(() -> restartCommand.get().run());
+        restartThread.start();
+        assertTrue(reservationCompleted.await(1, TimeUnit.SECONDS));
+        DeviceLifecycleCoordinator.StartReservation reservation = reservedReservation.get();
+
+        assertNotNull(reservation);
+        assertTrue(runtimeState.isStarting(deviceId));
+        assertTrue(runtimeState.getActiveDeviceIds().contains(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+
+        restartCoordinator.cancelAll();
+        lifecycleCoordinator.stopAllDevices();
+        releaseContinuation.countDown();
+        restartThread.join(1000L);
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+        verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
+        verify(collectionManager, times(1)).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, times(1)).connectDevice(deviceId);
     }
 
     @Test
@@ -704,6 +818,13 @@ class DeviceLifecycleCoordinatorTest {
         point.setPointCode(pointId);
         point.setStatus(1);
         return point;
+    }
+
+    private ConfigUpdateEvent configEvent(String configType, String deviceId) {
+        ConfigUpdateEvent event = new ConfigUpdateEvent();
+        event.setConfigType(configType);
+        event.setDeviceId(deviceId);
+        return event;
     }
 
     private CompletableFuture<Boolean> startAsync(String deviceId) {

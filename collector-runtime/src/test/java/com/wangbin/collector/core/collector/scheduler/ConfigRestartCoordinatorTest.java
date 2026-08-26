@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -35,7 +37,7 @@ class ConfigRestartCoordinatorTest {
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-config")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-config")).thenReturn(true);
-        when(lifecycleCoordinator.startDevice("dev-config")).thenReturn(true);
+        stubReservedStart(lifecycleCoordinator, "dev-config", true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -49,7 +51,8 @@ class ConfigRestartCoordinatorTest {
         scheduledExecutor.tasks.get(1).runIfNotCancelled();
 
         verify(lifecycleCoordinator).stopDevice("dev-config");
-        verify(lifecycleCoordinator).startDevice("dev-config");
+        verify(lifecycleCoordinator).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
+        verify(lifecycleCoordinator, never()).startDevice("dev-config");
         verify(timeSliceConfigCoordinator).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
@@ -61,7 +64,7 @@ class ConfigRestartCoordinatorTest {
         BlockingFirstScheduleExecutor scheduledExecutor = new BlockingFirstScheduleExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-concurrent")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-concurrent")).thenReturn(true);
-        when(lifecycleCoordinator.startDevice("dev-concurrent")).thenReturn(true);
+        stubReservedStart(lifecycleCoordinator, "dev-concurrent", true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -84,7 +87,8 @@ class ConfigRestartCoordinatorTest {
         }
         scheduledExecutor.tasks.forEach(CapturedFuture::runIfNotCancelled);
         verify(lifecycleCoordinator).stopDevice("dev-concurrent");
-        verify(lifecycleCoordinator).startDevice("dev-concurrent");
+        verify(lifecycleCoordinator).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
+        verify(lifecycleCoordinator, never()).startDevice("dev-concurrent");
         verify(timeSliceConfigCoordinator).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
@@ -102,7 +106,7 @@ class ConfigRestartCoordinatorTest {
             releaseOldTask.await(1, TimeUnit.SECONDS);
             return true;
         }).when(lifecycleCoordinator).stopDevice("dev-overlap");
-        when(lifecycleCoordinator.startDevice("dev-overlap")).thenReturn(true);
+        stubReservedStart(lifecycleCoordinator, "dev-overlap", true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -160,7 +164,7 @@ class ConfigRestartCoordinatorTest {
         when(lifecycleCoordinator.isDeviceStarting("dev-starting-update")).thenReturn(true);
         when(lifecycleCoordinator.stopDeviceAfterConfigInvalidation("dev-starting-update", false, true))
                 .thenReturn(true);
-        when(lifecycleCoordinator.startDevice("dev-starting-update")).thenReturn(true);
+        stubReservedStart(lifecycleCoordinator, "dev-starting-update", true);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -176,7 +180,8 @@ class ConfigRestartCoordinatorTest {
         scheduledExecutor.tasks.get(0).runIfNotCancelled();
 
         verify(lifecycleCoordinator).stopDeviceAfterConfigInvalidation("dev-starting-update", false, true);
-        verify(lifecycleCoordinator).startDevice("dev-starting-update");
+        verify(lifecycleCoordinator).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
+        verify(lifecycleCoordinator, never()).startDevice("dev-starting-update");
         verify(timeSliceConfigCoordinator).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
@@ -359,7 +364,7 @@ class ConfigRestartCoordinatorTest {
             releaseStop.await(1, TimeUnit.SECONDS);
             return true;
         }).when(lifecycleCoordinator).stopDevice("dev-running-close");
-        when(lifecycleCoordinator.startDevice("dev-running-close")).thenReturn(true);
+
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -376,54 +381,59 @@ class ConfigRestartCoordinatorTest {
 
         verify(lifecycleCoordinator).stopDevice("dev-running-close");
         verify(lifecycleCoordinator, never()).startDevice("dev-running-close");
+        verify(lifecycleCoordinator, never()).reserveStartForConfigRestart("dev-running-close");
+        verify(lifecycleCoordinator, never()).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
         verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
     }
 
     @Test
-    void cancelAllAfterStartAdmissionButBeforeStartInvocationShouldPreventStart() throws Exception {
+    void cancelAllAfterStartReservedButBeforeContinueShouldPreventRunning() throws Exception {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
-        CountDownLatch admissionEntered = new CountDownLatch(1);
-        CountDownLatch releaseAdmission = new CountDownLatch(1);
-        when(lifecycleCoordinator.isDeviceRunning("dev-admission-close")).thenReturn(true);
-        when(lifecycleCoordinator.stopDevice("dev-admission-close")).thenReturn(true);
-        when(lifecycleCoordinator.startDevice("dev-admission-close")).thenReturn(true);
+        CountDownLatch reservationCompleted = new CountDownLatch(1);
+        CountDownLatch releaseContinuation = new CountDownLatch(1);
+        when(lifecycleCoordinator.isDeviceRunning("dev-reserved-close")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-reserved-close")).thenReturn(true);
+        DeviceLifecycleCoordinator.StartReservation reservation = stubReservedStart(
+                lifecycleCoordinator,
+                "dev-reserved-close",
+                false);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
                 scheduledExecutor) {
             @Override
-            void beforeStartDeviceInvocationForTest(String deviceId) {
-                admissionEntered.countDown();
+            void beforeReservedStartContinuationForTest(String deviceId,
+                                                        DeviceLifecycleCoordinator.StartReservation reservedReservation) {
+                reservationCompleted.countDown();
                 try {
-                    releaseAdmission.await(1, TimeUnit.SECONDS);
+                    releaseContinuation.await(1, TimeUnit.SECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
             }
         };
 
-        coordinator.handleConfigUpdate(event("device", "dev-admission-close"));
+        coordinator.handleConfigUpdate(event("device", "dev-reserved-close"));
         Thread runner = new Thread(() -> scheduledExecutor.tasks.get(0).runIfNotCancelled());
         runner.start();
-        assertTrue(admissionEntered.await(1, TimeUnit.SECONDS));
+        assertTrue(reservationCompleted.await(1, TimeUnit.SECONDS));
 
         coordinator.cancelAll();
         lifecycleCoordinator.stopAllDevices();
-        releaseAdmission.countDown();
+        releaseContinuation.countDown();
         runner.join(1000L);
 
-        verify(lifecycleCoordinator).stopDevice("dev-admission-close");
+        verify(lifecycleCoordinator).stopDevice("dev-reserved-close");
+        verify(lifecycleCoordinator).reserveStartForConfigRestart("dev-reserved-close");
         verify(lifecycleCoordinator).stopAllDevices();
-        verify(lifecycleCoordinator, never()).startDevice("dev-admission-close");
+        verify(lifecycleCoordinator).continueReservedStart(reservation);
+        verify(lifecycleCoordinator, never()).startDevice("dev-reserved-close");
         verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
         assertEquals(0, coordinator.pendingTaskCountForTest());
         assertEquals(0, coordinator.pendingStopTaskCountForTest());
-        assertEquals(0, coordinator.pendingStartAdmissionCountForTest());
-        assertEquals(0, coordinator.startInvocationHandoffCountForTest());
-        assertEquals(0, coordinator.activeStartPhaseCountForTest());
     }
 
     @Test
@@ -438,15 +448,19 @@ class ConfigRestartCoordinatorTest {
         when(lifecycleCoordinator.isDeviceRunning("dev-restart-b")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-restart-a")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-restart-b")).thenReturn(true);
+        DeviceLifecycleCoordinator.StartReservation reservationA = startReservation("dev-restart-a", 1L);
+        DeviceLifecycleCoordinator.StartReservation reservationB = startReservation("dev-restart-b", 2L);
+        whenReserveStart(lifecycleCoordinator, "dev-restart-a", reservationA);
+        whenReserveStart(lifecycleCoordinator, "dev-restart-b", reservationB);
         doAnswer(invocation -> {
             startAEntered.countDown();
             releaseStartA.await(1, TimeUnit.SECONDS);
             return true;
-        }).when(lifecycleCoordinator).startDevice("dev-restart-a");
+        }).when(lifecycleCoordinator).continueReservedStart(reservationA);
         doAnswer(invocation -> {
             startBEntered.countDown();
             return true;
-        }).when(lifecycleCoordinator).startDevice("dev-restart-b");
+        }).when(lifecycleCoordinator).continueReservedStart(reservationB);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -465,10 +479,11 @@ class ConfigRestartCoordinatorTest {
         runnerA.join(1000L);
         runnerB.join(1000L);
 
-        verify(lifecycleCoordinator).startDevice("dev-restart-a");
-        verify(lifecycleCoordinator).startDevice("dev-restart-b");
+        verify(lifecycleCoordinator).continueReservedStart(reservationA);
+        verify(lifecycleCoordinator).continueReservedStart(reservationB);
+        verify(lifecycleCoordinator, never()).startDevice("dev-restart-a");
+        verify(lifecycleCoordinator, never()).startDevice("dev-restart-b");
         assertEquals(0, coordinator.pendingTaskCountForTest());
-        assertEquals(0, coordinator.activeStartPhaseCountForTest());
     }
 
     @Test
@@ -481,11 +496,13 @@ class ConfigRestartCoordinatorTest {
         CountDownLatch cancelAllReturned = new CountDownLatch(1);
         when(lifecycleCoordinator.isDeviceRunning("dev-start-entered-close")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-start-entered-close")).thenReturn(true);
+        DeviceLifecycleCoordinator.StartReservation reservation = startReservation("dev-start-entered-close", 1L);
+        whenReserveStart(lifecycleCoordinator, "dev-start-entered-close", reservation);
         doAnswer(invocation -> {
             startEntered.countDown();
             releaseStart.await(1, TimeUnit.SECONDS);
             return true;
-        }).when(lifecycleCoordinator).startDevice("dev-start-entered-close");
+        }).when(lifecycleCoordinator).continueReservedStart(reservation);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -506,9 +523,9 @@ class ConfigRestartCoordinatorTest {
         runner.join(1000L);
         closer.join(1000L);
 
-        verify(lifecycleCoordinator).startDevice("dev-start-entered-close");
+        verify(lifecycleCoordinator).continueReservedStart(reservation);
+        verify(lifecycleCoordinator, never()).startDevice("dev-start-entered-close");
         assertEquals(0, coordinator.pendingTaskCountForTest());
-        assertEquals(0, coordinator.activeStartPhaseCountForTest());
     }
 
     @Test
@@ -547,7 +564,7 @@ class ConfigRestartCoordinatorTest {
     }
 
     @Test
-    void restartTaskShouldNotStartWhenStopReturnsFalse() {
+    void restartTaskShouldNotStartWhenStopReturnsFalse() throws Exception {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
@@ -563,6 +580,8 @@ class ConfigRestartCoordinatorTest {
 
         assertEquals(0, coordinator.pendingTaskCountForTest());
         verify(lifecycleCoordinator, never()).startDevice("dev-stop-false");
+        verify(lifecycleCoordinator, never()).reserveStartForConfigRestart("dev-stop-false");
+        verify(lifecycleCoordinator, never()).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
         verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
     }
 
@@ -573,7 +592,7 @@ class ConfigRestartCoordinatorTest {
         CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
         when(lifecycleCoordinator.isDeviceRunning("dev-start-false")).thenReturn(true);
         when(lifecycleCoordinator.stopDevice("dev-start-false")).thenReturn(true);
-        when(lifecycleCoordinator.startDevice("dev-start-false")).thenReturn(false);
+        stubReservedStart(lifecycleCoordinator, "dev-start-false", false);
         ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
                 lifecycleCoordinator,
                 timeSliceConfigCoordinator,
@@ -584,7 +603,8 @@ class ConfigRestartCoordinatorTest {
 
         assertEquals(0, coordinator.pendingTaskCountForTest());
         verify(lifecycleCoordinator).stopDevice("dev-start-false");
-        verify(lifecycleCoordinator).startDevice("dev-start-false");
+        verify(lifecycleCoordinator).continueReservedStart(any(DeviceLifecycleCoordinator.StartReservation.class));
+        verify(lifecycleCoordinator, never()).startDevice("dev-start-false");
         verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
     }
 
@@ -593,6 +613,29 @@ class ConfigRestartCoordinatorTest {
         event.setConfigType(configType);
         event.setDeviceId(deviceId);
         return event;
+    }
+
+    private DeviceLifecycleCoordinator.StartReservation stubReservedStart(DeviceLifecycleCoordinator lifecycleCoordinator,
+                                                                          String deviceId,
+                                                                          boolean continueResult) {
+        DeviceLifecycleCoordinator.StartReservation reservation = startReservation(deviceId, 1L);
+        whenReserveStart(lifecycleCoordinator, deviceId, reservation);
+        when(lifecycleCoordinator.continueReservedStart(reservation)).thenReturn(continueResult);
+        return reservation;
+    }
+
+    private void whenReserveStart(DeviceLifecycleCoordinator lifecycleCoordinator,
+                                  String deviceId,
+                                  DeviceLifecycleCoordinator.StartReservation reservation) {
+        try {
+            when(lifecycleCoordinator.reserveStartForConfigRestart(deviceId)).thenReturn(reservation);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private DeviceLifecycleCoordinator.StartReservation startReservation(String deviceId, long generation) {
+        return new DeviceLifecycleCoordinator.StartReservation(deviceId, generation);
     }
 
     private void runCapturingFailure(Runnable runnable, AtomicReference<Throwable> failure) {
