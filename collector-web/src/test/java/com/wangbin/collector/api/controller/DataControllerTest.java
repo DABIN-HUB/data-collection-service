@@ -29,11 +29,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(DataController.class)
 class DataControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    private final MockMvc mockMvc;
 
     @MockBean
     private RealtimeDataApplicationService realtimeDataApplicationService;
+
+    @Autowired
+    DataControllerTest(MockMvc mockMvc) {
+        this.mockMvc = mockMvc;
+    }
 
     @Test
     void shouldBindSinglePointRouteAndSerializeResponse() throws Exception {

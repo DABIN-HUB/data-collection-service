@@ -17,10 +17,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 控制命令应用服务。
@@ -35,6 +39,7 @@ public class ControlCommandApplicationService {
     private static final String ERROR_POINT_NOT_WRITABLE = "点位不可写";
     private static final String ERROR_PENDING = "等待写入";
     private static final String ERROR_PROTOCOL_WRITE_FALSE = "协议写入返回失败";
+    private static final String ERROR_DUPLICATE_POINT_VALUE_CONFLICT = "同一批次重复映射到同一点位且写入值不一致";
 
     private final ConfigManager configManager;
     private final CollectionManager collectionManager;
@@ -90,15 +95,17 @@ public class ControlCommandApplicationService {
 
         List<DataPoint> points = configManager.getDataPoints(deviceId);
         Map<DataPoint, Object> writePlan = new LinkedHashMap<>();
+        Map<DataPoint, List<String>> submittedFieldsByPoint = new LinkedHashMap<>();
+        Set<DataPoint> conflictPoints = new LinkedHashSet<>();
         Map<String, BatchPointWriteFieldResponse> fieldResults = new LinkedHashMap<>();
 
         for (Map.Entry<String, Object> entry : request.getValues().entrySet()) {
-            collectWritePlan(points, writePlan, fieldResults, entry);
+            collectWritePlan(points, writePlan, submittedFieldsByPoint, conflictPoints, fieldResults, entry);
         }
 
         if (!writePlan.isEmpty()) {
             Map<String, Boolean> writeResults = collectionManager.writePoints(deviceId, writePlan);
-            applyWriteResults(fieldResults, writePlan, writeResults);
+            applyWriteResults(fieldResults, writePlan, submittedFieldsByPoint, writeResults);
         }
 
         BatchPointWriteResponse data = BatchPointWriteResponse.builder()
@@ -147,11 +154,15 @@ public class ControlCommandApplicationService {
      *
      * @param points 设备点位列表
      * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
+     * @param conflictPoints 本批次存在值冲突的点位
      * @param fieldResults 提交字段结果
      * @param entry 用户提交字段
      */
     private void collectWritePlan(List<DataPoint> points,
                                   Map<DataPoint, Object> writePlan,
+                                  Map<DataPoint, List<String>> submittedFieldsByPoint,
+                                  Set<DataPoint> conflictPoints,
                                   Map<String, BatchPointWriteFieldResponse> fieldResults,
                                   Map.Entry<String, Object> entry) {
         String field = entry.getKey();
@@ -177,8 +188,49 @@ public class ControlCommandApplicationService {
             return;
         }
 
+        submittedFieldsByPoint.computeIfAbsent(point, ignored -> new ArrayList<>()).add(field);
+        if (conflictPoints.contains(point)) {
+            markConflict(point, writePlan, submittedFieldsByPoint, fieldResults, conflictPoints);
+            return;
+        }
+
+        if (writePlan.containsKey(point)) {
+            Object plannedValue = writePlan.get(point);
+            if (!Objects.equals(plannedValue, entry.getValue())) {
+                markConflict(point, writePlan, submittedFieldsByPoint, fieldResults, conflictPoints);
+            } else {
+                fieldResult.setError(ERROR_PENDING);
+            }
+            return;
+        }
+
         writePlan.put(point, entry.getValue());
         fieldResult.setError(ERROR_PENDING);
+    }
+
+    /**
+     * 标记同一点位多字段提交值冲突。
+     *
+     * @param point 点位配置
+     * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
+     * @param fieldResults 提交字段结果
+     * @param conflictPoints 本批次存在值冲突的点位
+     */
+    private void markConflict(DataPoint point,
+                              Map<DataPoint, Object> writePlan,
+                              Map<DataPoint, List<String>> submittedFieldsByPoint,
+                              Map<String, BatchPointWriteFieldResponse> fieldResults,
+                              Set<DataPoint> conflictPoints) {
+        conflictPoints.add(point);
+        writePlan.remove(point);
+        for (String submittedField : submittedFieldsByPoint.getOrDefault(point, List.of())) {
+            BatchPointWriteFieldResponse fieldResult = fieldResults.get(submittedField);
+            if (fieldResult != null) {
+                fieldResult.setSuccess(false);
+                fieldResult.setError(ERROR_DUPLICATE_POINT_VALUE_CONFLICT);
+            }
+        }
     }
 
     /**
@@ -186,36 +238,23 @@ public class ControlCommandApplicationService {
      *
      * @param fieldResults 提交字段结果
      * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
      * @param writeResults 协议写入结果
      */
     private void applyWriteResults(Map<String, BatchPointWriteFieldResponse> fieldResults,
                                    Map<DataPoint, Object> writePlan,
+                                   Map<DataPoint, List<String>> submittedFieldsByPoint,
                                    Map<String, Boolean> writeResults) {
         for (DataPoint point : writePlan.keySet()) {
-            String field = resolveSubmittedField(fieldResults, point);
-            if (!StringUtils.hasText(field)) {
-                continue;
-            }
-            BatchPointWriteFieldResponse fieldResult = fieldResults.get(field);
             boolean success = resolveWriteSuccess(writeResults, point);
-            fieldResult.setSuccess(success);
-            fieldResult.setError(success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+            for (String submittedField : submittedFieldsByPoint.getOrDefault(point, List.of())) {
+                BatchPointWriteFieldResponse fieldResult = fieldResults.get(submittedField);
+                if (fieldResult != null) {
+                    fieldResult.setSuccess(success);
+                    fieldResult.setError(success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+                }
+            }
         }
-    }
-
-    /**
-     * 根据点位反查用户提交字段。
-     *
-     * @param fieldResults 提交字段结果
-     * @param point 点位配置
-     * @return 用户提交字段
-     */
-    private String resolveSubmittedField(Map<String, BatchPointWriteFieldResponse> fieldResults, DataPoint point) {
-        return fieldResults.entrySet().stream()
-                .filter(entry -> point.getPointId() != null && point.getPointId().equals(entry.getValue().getPointId()))
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .orElse(null);
     }
 
     /**
@@ -229,9 +268,20 @@ public class ControlCommandApplicationService {
         if (writeResults == null || writeResults.isEmpty() || point == null) {
             return false;
         }
-        return Boolean.TRUE.equals(writeResults.get(point.getPointId()))
-                || Boolean.TRUE.equals(writeResults.get(point.getPointCode()))
-                || Boolean.TRUE.equals(writeResults.get(point.getReportField()));
+        return matchesWriteSuccess(writeResults, point.getPointId())
+                || matchesWriteSuccess(writeResults, point.getPointCode())
+                || matchesWriteSuccess(writeResults, point.getReportField());
+    }
+
+    /**
+     * 按协议返回字段判断单个点位是否写入成功。
+     *
+     * @param writeResults 协议写入结果
+     * @param resultKey 协议结果键
+     * @return 是否写入成功
+     */
+    private boolean matchesWriteSuccess(Map<String, Boolean> writeResults, String resultKey) {
+        return StringUtils.hasText(resultKey) && Boolean.TRUE.equals(writeResults.get(resultKey));
     }
 
     /**
