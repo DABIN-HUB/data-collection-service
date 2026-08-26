@@ -381,6 +381,52 @@ class ConfigRestartCoordinatorTest {
     }
 
     @Test
+    void cancelAllAfterStartAdmissionButBeforeStartInvocationShouldPreventStart() throws Exception {
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        CapturingScheduledExecutor scheduledExecutor = new CapturingScheduledExecutor();
+        CountDownLatch admissionEntered = new CountDownLatch(1);
+        CountDownLatch releaseAdmission = new CountDownLatch(1);
+        when(lifecycleCoordinator.isDeviceRunning("dev-admission-close")).thenReturn(true);
+        when(lifecycleCoordinator.stopDevice("dev-admission-close")).thenReturn(true);
+        when(lifecycleCoordinator.startDevice("dev-admission-close")).thenReturn(true);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                scheduledExecutor) {
+            @Override
+            void beforeStartDeviceInvocationForTest(String deviceId) {
+                admissionEntered.countDown();
+                try {
+                    releaseAdmission.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+
+        coordinator.handleConfigUpdate(event("device", "dev-admission-close"));
+        Thread runner = new Thread(() -> scheduledExecutor.tasks.get(0).runIfNotCancelled());
+        runner.start();
+        assertTrue(admissionEntered.await(1, TimeUnit.SECONDS));
+
+        coordinator.cancelAll();
+        lifecycleCoordinator.stopAllDevices();
+        releaseAdmission.countDown();
+        runner.join(1000L);
+
+        verify(lifecycleCoordinator).stopDevice("dev-admission-close");
+        verify(lifecycleCoordinator).stopAllDevices();
+        verify(lifecycleCoordinator, never()).startDevice("dev-admission-close");
+        verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+        assertEquals(0, coordinator.pendingStopTaskCountForTest());
+        assertEquals(0, coordinator.pendingStartAdmissionCountForTest());
+        assertEquals(0, coordinator.startInvocationHandoffCountForTest());
+        assertEquals(0, coordinator.activeStartPhaseCountForTest());
+    }
+
+    @Test
     void differentDeviceRestartsShouldNotBlockEachOtherOnCoordinatorLock() throws Exception {
         DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
         TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);

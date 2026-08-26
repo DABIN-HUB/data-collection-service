@@ -29,6 +29,8 @@ public class ConfigRestartCoordinator {
     private final Map<String, ScheduledFuture<?>> pendingConfigStopTasks = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private int pendingStartAdmissions;
+    private int startInvocationHandoffs;
     private int activeStartPhases;
 
     public ConfigRestartCoordinator(DeviceLifecycleCoordinator deviceLifecycleCoordinator,
@@ -196,33 +198,97 @@ public class ConfigRestartCoordinator {
     }
 
     private void startDeviceIfOpen(String deviceId) {
-        if (!tryEnterStartPhase(deviceId)) {
+        StartAdmission admission = tryCreateStartAdmission(deviceId);
+        if (admission == null) {
             return;
         }
         try {
+            beforeStartAdmissionActivationForTest(deviceId);
+            if (!tryActivateStartAdmission(deviceId, admission)) {
+                return;
+            }
+            beforeStartDeviceInvocationForTest(deviceId);
+            if (!tryConfirmStartDeviceInvocation(deviceId, admission)) {
+                return;
+            }
             if (deviceLifecycleCoordinator.startDevice(deviceId) && !closed.get()) {
                 timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
             }
         } finally {
-            exitStartPhase();
+            finishStartAdmission(admission);
         }
     }
 
-    private boolean tryEnterStartPhase(String deviceId) {
+    private StartAdmission tryCreateStartAdmission(String deviceId) {
         synchronized (lifecycleLock) {
             if (closed.get()) {
                 log.debug("配置重启协调器已关闭，跳过已运行重启任务的启动阶段, 设备={}", deviceId);
+                return null;
+            }
+            pendingStartAdmissions++;
+            return new StartAdmission();
+        }
+    }
+
+    private boolean tryActivateStartAdmission(String deviceId, StartAdmission admission) {
+        synchronized (lifecycleLock) {
+            if (admission.pending) {
+                admission.pending = false;
+                pendingStartAdmissions--;
+            }
+            if (closed.get()) {
+                log.debug("配置重启协调器已关闭，作废尚未进入启动调用的重启任务, 设备={}", deviceId);
                 return false;
             }
+            admission.handoff = true;
+            startInvocationHandoffs++;
+            return true;
+        }
+    }
+
+    private boolean tryConfirmStartDeviceInvocation(String deviceId, StartAdmission admission) {
+        synchronized (lifecycleLock) {
+            if (admission.handoff) {
+                admission.handoff = false;
+                startInvocationHandoffs--;
+            }
+            if (closed.get()) {
+                log.debug("配置重启协调器已关闭，作废尚未真正进入启动调用的重启任务, 设备={}", deviceId);
+                return false;
+            }
+            admission.active = true;
             activeStartPhases++;
             return true;
         }
     }
 
-    private void exitStartPhase() {
+    private void finishStartAdmission(StartAdmission admission) {
         synchronized (lifecycleLock) {
-            activeStartPhases--;
+            if (admission.pending) {
+                admission.pending = false;
+                pendingStartAdmissions--;
+            }
+            if (admission.handoff) {
+                admission.handoff = false;
+                startInvocationHandoffs--;
+            }
+            if (admission.active) {
+                admission.active = false;
+                activeStartPhases--;
+            }
         }
+    }
+
+    /**
+     * 测试专用钩子，用于稳定复现 admission 成功到真正进入 startDevice 前的并发窗口。
+     */
+    void beforeStartAdmissionActivationForTest(String deviceId) {
+    }
+
+    /**
+     * 测试专用钩子，用于稳定复现 start admission 激活后到真正调用 startDevice 前的并发窗口。
+     */
+    void beforeStartDeviceInvocationForTest(String deviceId) {
     }
 
     private void cancelIfPending(ScheduledFuture<?> future) {
@@ -249,9 +315,27 @@ public class ConfigRestartCoordinator {
         return pendingConfigStopTasks.size();
     }
 
+    int pendingStartAdmissionCountForTest() {
+        synchronized (lifecycleLock) {
+            return pendingStartAdmissions;
+        }
+    }
+
     int activeStartPhaseCountForTest() {
         synchronized (lifecycleLock) {
             return activeStartPhases;
         }
+    }
+
+    int startInvocationHandoffCountForTest() {
+        synchronized (lifecycleLock) {
+            return startInvocationHandoffs;
+        }
+    }
+
+    private static final class StartAdmission {
+        private boolean pending = true;
+        private boolean handoff;
+        private boolean active;
     }
 }
