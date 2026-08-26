@@ -1,7 +1,10 @@
 package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.api.application.ConfigDiffCalculator;
 import com.wangbin.collector.api.application.ConfigConsoleApplicationService;
+import com.wangbin.collector.api.application.ConfigImportExportApplicationService;
+import com.wangbin.collector.api.application.LocalDeviceConfigApplicationService;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.common.domain.entity.DataPoint;
@@ -38,7 +41,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ConfigController.class)
-@Import({ConfigConsoleApplicationService.class, SensitiveConfigSanitizer.class})
+@Import({ConfigConsoleApplicationService.class,
+        LocalDeviceConfigApplicationService.class,
+        ConfigImportExportApplicationService.class,
+        ConfigDiffCalculator.class,
+        SensitiveConfigSanitizer.class})
 class ConfigControllerTest {
 
     @Autowired
