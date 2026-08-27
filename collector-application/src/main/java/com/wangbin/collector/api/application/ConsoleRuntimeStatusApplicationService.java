@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
+import com.wangbin.collector.core.cache.constant.CacheMetricKeys;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.collector.scheduler.PerformanceStatsSnapshot;
 import com.wangbin.collector.monitor.metrics.CacheMetricsSnapshot;
@@ -21,6 +22,7 @@ import com.wangbin.collector.monitor.metrics.TdengineMonitorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -60,24 +62,19 @@ public class ConsoleRuntimeStatusApplicationService {
         List<RuntimeComponentStatus> components = new ArrayList<>();
         List<String> risks = new ArrayList<>();
 
-        CacheMetricsSnapshot cache = readSnapshot("cache", "缓存系统", components, risks,
-                cacheMonitorService::getCacheMetrics);
-        DeviceStatusSnapshot devices = readSnapshot("devices", "设备连接", components, risks,
-                deviceMonitorService::getDeviceStatus);
-        SystemResourceSnapshot system = readSnapshot("system", "系统资源", components, risks,
-                systemResourceMonitorService::getResources);
-        ExceptionStatsSnapshot exceptions = readSnapshot("exceptions", "异常统计", components, risks,
-                exceptionMonitorService::getStats);
-        PerformanceStatsSnapshot performance = readSnapshot("performance", "采集调度", components, risks,
-                collectionScheduler::getPerformanceSnapshot);
-        Map<String, Object> report = readSnapshot("report", "云端上报", components, risks,
-                cloudReportMonitorService::getCloudReportMetrics);
-        StorageMetricsSnapshot storage = readSnapshot("storage", "历史存储", components, risks,
-                tdengineMonitorService::getStorageMetrics);
+        SnapshotRead<CacheMetricsSnapshot> cache = readSnapshot("缓存系统", cacheMonitorService::getCacheMetrics);
+        SnapshotRead<DeviceStatusSnapshot> devices = readSnapshot("设备连接", deviceMonitorService::getDeviceStatus);
+        SnapshotRead<SystemResourceSnapshot> system = readSnapshot("系统资源", systemResourceMonitorService::getResources);
+        SnapshotRead<ExceptionStatsSnapshot> exceptions = readSnapshot("异常统计", exceptionMonitorService::getStats);
+        SnapshotRead<PerformanceStatsSnapshot> performance = readSnapshot("采集调度", collectionScheduler::getPerformanceSnapshot);
+        SnapshotRead<Map<String, Object>> report = readSnapshot("云端上报", cloudReportMonitorService::getCloudReportMetrics);
+        SnapshotRead<StorageMetricsSnapshot> storage = readSnapshot("历史存储", tdengineMonitorService::getStorageMetrics);
 
+        components.add(evaluateCache(cache, risks));
         components.add(evaluateDevices(devices, risks));
         components.add(evaluateSystem(system, risks));
         components.add(evaluateExceptions(exceptions, risks));
+        components.add(evaluatePerformance(performance, risks));
         components.add(evaluateReport(report, risks));
         components.add(evaluateStorage(storage, risks));
 
@@ -87,59 +84,89 @@ public class ConsoleRuntimeStatusApplicationService {
                 .message(overallMessage(level))
                 .components(components)
                 .risks(risks)
-                .cache(cache)
-                .devices(devices)
-                .system(system)
-                .exceptions(exceptions)
-                .performance(performance)
-                .report(report == null ? Map.of() : report)
-                .storage(storage)
+                .cache(cache.value())
+                .devices(devices.value())
+                .system(system.value())
+                .exceptions(exceptions.value())
+                .performance(performance.value())
+                .report(report.value() == null ? Map.of() : report.value())
+                .storage(storage.value())
                 .build();
     }
 
     /**
      * 安全读取单个监控快照。
      */
-    private <T> T readSnapshot(String code,
-                               String name,
-                               List<RuntimeComponentStatus> components,
-                               List<String> risks,
-                               Supplier<T> supplier) {
+    private <T> SnapshotRead<T> readSnapshot(String name, Supplier<T> supplier) {
         try {
-            return supplier.get();
+            return new SnapshotRead<>(supplier.get(), false, null);
         } catch (RuntimeException exception) {
             log.error("读取运行状态失败，组件={}", name, exception);
-            String message = name + "指标读取失败: " + exception.getMessage();
-            risks.add(message);
-            components.add(component(code, name, RuntimeHealthLevel.ERROR, message, Map.of()));
-            return null;
+            return new SnapshotRead<>(null, true, readFailureMessage(name, exception));
         }
+    }
+
+    /**
+     * 评估缓存系统状态。
+     */
+    private RuntimeComponentStatus evaluateCache(SnapshotRead<CacheMetricsSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("cache-health", "缓存系统健康", read, risks);
+        }
+        CacheMetricsSnapshot snapshot = read.value();
+        if (snapshot == null) {
+            return component("cache-health", "缓存系统健康", RuntimeHealthLevel.UNKNOWN,
+                    "缓存指标不可用", Map.of());
+        }
+
+        Map<String, Object> health = snapshot.getHealth() == null ? Map.of() : snapshot.getHealth();
+        Object rawStatus = health.get(CacheMetricKeys.OVERALL_STATUS);
+        RuntimeHealthLevel level = cacheLevel(rawStatus);
+        String message = switch (level) {
+            case OK -> "缓存系统状态正常";
+            case WARN -> "缓存系统存在风险";
+            case ERROR -> "缓存系统存在明确异常";
+            case DISABLED -> "缓存系统未启用";
+            case UNKNOWN -> "缓存健康状态未知";
+        };
+        if (level == RuntimeHealthLevel.WARN || level == RuntimeHealthLevel.ERROR) {
+            addRisk(risks, message);
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put(CacheMetricKeys.OVERALL_STATUS, rawStatus);
+        details.put("health", health);
+        return component("cache-health", "缓存系统健康", level, message, details);
     }
 
     /**
      * 评估设备连接状态。
      */
-    private RuntimeComponentStatus evaluateDevices(DeviceStatusSnapshot snapshot, List<String> risks) {
+    private RuntimeComponentStatus evaluateDevices(SnapshotRead<DeviceStatusSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("devices-health", "设备连接健康", read, risks);
+        }
+        DeviceStatusSnapshot snapshot = read.value();
         if (snapshot == null) {
             return component("devices-health", "设备连接健康", RuntimeHealthLevel.UNKNOWN,
                     "设备连接状态不可用", Map.of());
         }
+        List<String> missingConnections = snapshot.getMissingConnections() == null ? List.of() : snapshot.getMissingConnections();
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("totalConnections", snapshot.getTotalConnections());
         details.put("activeConnections", snapshot.getActiveConnections());
         details.put("expectedConnections", snapshot.getExpectedConnections());
         details.put("dangerDevices", snapshot.getDangerDevices());
         details.put("warningDevices", snapshot.getWarningDevices());
-        details.put("missingConnections", snapshot.getMissingConnections());
+        details.put("missingConnections", missingConnections);
 
-        if (snapshot.getDangerDevices() > 0 || !snapshot.getMissingConnections().isEmpty()) {
+        if (snapshot.getDangerDevices() > 0 || !missingConnections.isEmpty()) {
             String message = "存在设备连接异常";
-            risks.add(message);
+            addRisk(risks, message);
             return component("devices-health", "设备连接健康", RuntimeHealthLevel.ERROR, message, details);
         }
         if (snapshot.getWarningDevices() > 0) {
             String message = "存在设备连接风险";
-            risks.add(message);
+            addRisk(risks, message);
             return component("devices-health", "设备连接健康", RuntimeHealthLevel.WARN, message, details);
         }
         return component("devices-health", "设备连接健康", RuntimeHealthLevel.OK, "设备连接状态正常", details);
@@ -148,7 +175,11 @@ public class ConsoleRuntimeStatusApplicationService {
     /**
      * 评估系统资源状态。
      */
-    private RuntimeComponentStatus evaluateSystem(SystemResourceSnapshot snapshot, List<String> risks) {
+    private RuntimeComponentStatus evaluateSystem(SnapshotRead<SystemResourceSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("system-health", "系统资源健康", read, risks);
+        }
+        SystemResourceSnapshot snapshot = read.value();
         if (snapshot == null) {
             return component("system-health", "系统资源健康", RuntimeHealthLevel.UNKNOWN,
                     "系统资源状态不可用", Map.of());
@@ -162,17 +193,24 @@ public class ConsoleRuntimeStatusApplicationService {
         details.put("outboxPendingCount", snapshot.getOutboxPendingCount());
         details.put("outboxIsolatedCount", snapshot.getOutboxIsolatedCount());
 
+        boolean cpuUnavailable = metricUnavailable(cpuLoad);
+        boolean memoryUnavailable = metricUnavailable(memoryUsage);
+
         if (cpuLoad >= CPU_ERROR_THRESHOLD || memoryUsage >= MEMORY_ERROR_THRESHOLD
                 || snapshot.getOutboxIsolatedCount() > 0) {
             String message = "系统资源存在明确异常";
-            risks.add(message);
+            addRisk(risks, message);
             return component("system-health", "系统资源健康", RuntimeHealthLevel.ERROR, message, details);
         }
         if (cpuLoad >= CPU_WARN_THRESHOLD || memoryUsage >= MEMORY_WARN_THRESHOLD
                 || snapshot.getOutboxPendingCount() > 0) {
             String message = "系统资源存在风险";
-            risks.add(message);
+            addRisk(risks, message);
             return component("system-health", "系统资源健康", RuntimeHealthLevel.WARN, message, details);
+        }
+        if (cpuUnavailable || memoryUnavailable) {
+            return component("system-health", "系统资源健康", RuntimeHealthLevel.UNKNOWN,
+                    "系统资源指标不完整", details);
         }
         return component("system-health", "系统资源健康", RuntimeHealthLevel.OK, "系统资源状态正常", details);
     }
@@ -180,27 +218,58 @@ public class ConsoleRuntimeStatusApplicationService {
     /**
      * 评估异常统计状态。
      */
-    private RuntimeComponentStatus evaluateExceptions(ExceptionStatsSnapshot snapshot, List<String> risks) {
+    private RuntimeComponentStatus evaluateExceptions(SnapshotRead<ExceptionStatsSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("exceptions-health", "异常统计健康", read, risks);
+        }
+        ExceptionStatsSnapshot snapshot = read.value();
         if (snapshot == null) {
             return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.UNKNOWN,
                     "异常统计不可用", Map.of());
         }
+        int recentCount = snapshot.getRecent() == null ? 0 : snapshot.getRecent().size();
         Map<String, Object> details = Map.of(
                 "totalExceptions", snapshot.getTotalExceptions(),
-                "recentCount", snapshot.getRecent().size()
+                "recentCount", recentCount
         );
-        if (snapshot.getTotalExceptions() > 0) {
-            String message = "存在采集或系统异常记录";
-            risks.add(message);
+        if (recentCount > 0) {
+            String message = "存在近期采集或系统异常记录";
+            addRisk(risks, message);
             return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.WARN, message, details);
         }
-        return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.OK, "暂无异常记录", details);
+        return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.OK, "暂无近期异常记录", details);
+    }
+
+    /**
+     * 评估采集调度性能快照读取状态。
+     */
+    private RuntimeComponentStatus evaluatePerformance(SnapshotRead<PerformanceStatsSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("performance-health", "采集调度健康", read, risks);
+        }
+        PerformanceStatsSnapshot snapshot = read.value();
+        if (snapshot == null) {
+            return component("performance-health", "采集调度健康", RuntimeHealthLevel.UNKNOWN,
+                    "采集调度状态不可用", Map.of());
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("timeSliceCount", snapshot.getTimeSliceCount());
+        details.put("timeSliceIntervalMs", snapshot.getTimeSliceIntervalMs());
+        details.put("batchDispatchRejectedCount", snapshot.getBatchDispatchRejectedCount());
+        details.put("collectRejectedCount", snapshot.getCollectRejectedCount());
+        details.put("processRejectedCount", snapshot.getProcessRejectedCount());
+        return component("performance-health", "采集调度健康", RuntimeHealthLevel.OK,
+                "采集调度指标可用", details);
     }
 
     /**
      * 评估云端上报状态。
      */
-    private RuntimeComponentStatus evaluateReport(Map<String, Object> report, List<String> risks) {
+    private RuntimeComponentStatus evaluateReport(SnapshotRead<Map<String, Object>> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("report-health", "云端上报健康", read, risks);
+        }
+        Map<String, Object> report = read.value();
         if (report == null || report.isEmpty()) {
             return component("report-health", "云端上报健康", RuntimeHealthLevel.UNKNOWN,
                     "云端上报状态不可用", Map.of());
@@ -217,7 +286,7 @@ public class ConsoleRuntimeStatusApplicationService {
         Object statusText = report.get(CloudReportMetricKeys.STATUS_TEXT);
         String message = statusText == null ? "云端上报状态未知" : String.valueOf(statusText);
         if (level == RuntimeHealthLevel.WARN || level == RuntimeHealthLevel.ERROR) {
-            risks.add(message);
+            addRisk(risks, message);
         }
         return component("report-health", "云端上报健康", level, message, Map.of(CommonMapKeys.STATUS, status));
     }
@@ -225,26 +294,25 @@ public class ConsoleRuntimeStatusApplicationService {
     /**
      * 评估历史存储状态。
      */
-    private RuntimeComponentStatus evaluateStorage(StorageMetricsSnapshot snapshot, List<String> risks) {
+    private RuntimeComponentStatus evaluateStorage(SnapshotRead<StorageMetricsSnapshot> read, List<String> risks) {
+        if (read.failed()) {
+            return failedComponent("storage-health", "历史存储健康", read, risks);
+        }
+        StorageMetricsSnapshot snapshot = read.value();
         if (snapshot == null) {
             return component("storage-health", "历史存储健康", RuntimeHealthLevel.UNKNOWN,
                     "历史存储状态不可用", Map.of());
         }
-        RuntimeHealthLevel level = switch (snapshot.getStatus()) {
-            case OK -> RuntimeHealthLevel.OK;
-            case ERROR -> RuntimeHealthLevel.ERROR;
-            case DISABLED -> RuntimeHealthLevel.DISABLED;
-            case UNKNOWN -> RuntimeHealthLevel.UNKNOWN;
-        };
-        Map<String, Object> details = Map.of(
-                "enabled", snapshot.isEnabled(),
-                "status", snapshot.getStatus(),
-                "responseTimeMs", snapshot.getResponseTimeMs()
-        );
+        RuntimeHealthLevel level = storageLevel(snapshot.getStatus());
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("enabled", snapshot.isEnabled());
+        details.put("status", snapshot.getStatus());
+        details.put("responseTimeMs", snapshot.getResponseTimeMs());
+        String message = storageMessage(snapshot.getMessage(), level);
         if (level == RuntimeHealthLevel.ERROR) {
-            risks.add(snapshot.getMessage());
+            addRisk(risks, message);
         }
-        return component("storage-health", "历史存储健康", level, snapshot.getMessage(), details);
+        return component("storage-health", "历史存储健康", level, message, details);
     }
 
     /**
@@ -271,6 +339,95 @@ public class ConsoleRuntimeStatusApplicationService {
             return RuntimeHealthLevel.UNKNOWN;
         }
         return RuntimeHealthLevel.OK;
+    }
+
+    /**
+     * 读取失败时构建对应健康组件。
+     */
+    private RuntimeComponentStatus failedComponent(String code,
+                                                   String name,
+                                                   SnapshotRead<?> read,
+                                                   List<String> risks) {
+        addRisk(risks, read.errorMessage());
+        return component(code, name, RuntimeHealthLevel.ERROR, read.errorMessage(), Map.of());
+    }
+
+    /**
+     * 构建读取失败说明。
+     */
+    private String readFailureMessage(String name, RuntimeException exception) {
+        String reason = StringUtils.hasText(exception.getMessage())
+                ? exception.getMessage()
+                : exception.getClass().getSimpleName();
+        return name + "指标读取失败: " + reason;
+    }
+
+    /**
+     * 追加风险说明，过滤空文本并保持顺序去重。
+     */
+    private void addRisk(List<String> risks, String message) {
+        if (!StringUtils.hasText(message)) {
+            return;
+        }
+        String normalized = message.trim();
+        if (!risks.contains(normalized)) {
+            risks.add(normalized);
+        }
+    }
+
+    /**
+     * 判断指标是否不可用。
+     */
+    private boolean metricUnavailable(double value) {
+        return Double.isNaN(value) || value < 0.0D;
+    }
+
+    /**
+     * 映射缓存健康状态。
+     */
+    private RuntimeHealthLevel cacheLevel(Object rawStatus) {
+        if (rawStatus == null) {
+            return RuntimeHealthLevel.UNKNOWN;
+        }
+        String status = String.valueOf(rawStatus).trim().toUpperCase();
+        return switch (status) {
+            case "OK", "UP", "READY", "HEALTHY", "RUNNING" -> RuntimeHealthLevel.OK;
+            case "WARN", "WARNING", "DEGRADED" -> RuntimeHealthLevel.WARN;
+            case "ERROR", "DOWN", "FAILED", "UNHEALTHY", "CRITICAL" -> RuntimeHealthLevel.ERROR;
+            case "DISABLED" -> RuntimeHealthLevel.DISABLED;
+            default -> RuntimeHealthLevel.UNKNOWN;
+        };
+    }
+
+    /**
+     * 映射历史存储健康状态。
+     */
+    private RuntimeHealthLevel storageLevel(StorageMetricsSnapshot.Status status) {
+        if (status == null) {
+            return RuntimeHealthLevel.UNKNOWN;
+        }
+        return switch (status) {
+            case OK -> RuntimeHealthLevel.OK;
+            case ERROR -> RuntimeHealthLevel.ERROR;
+            case DISABLED -> RuntimeHealthLevel.DISABLED;
+            case UNKNOWN -> RuntimeHealthLevel.UNKNOWN;
+        };
+    }
+
+    /**
+     * 构建历史存储健康说明。
+     */
+    private String storageMessage(String message, RuntimeHealthLevel level) {
+        if (StringUtils.hasText(message)) {
+            return message;
+        }
+        return switch (level) {
+            case OK -> "历史存储状态正常";
+            case WARN -> "历史存储存在风险";
+            case ERROR -> "历史存储状态异常";
+            case DISABLED -> "历史存储未启用";
+            case UNKNOWN -> "历史存储状态未知";
+        };
     }
 
     /**
@@ -301,5 +458,15 @@ public class ConsoleRuntimeStatusApplicationService {
                 .message(message)
                 .details(details)
                 .build();
+    }
+
+    /**
+     * 监控快照读取结果。
+     *
+     * @param value 读取到的原始快照
+     * @param failed 是否读取失败
+     * @param errorMessage 读取失败说明
+     */
+    private record SnapshotRead<T>(T value, boolean failed, String errorMessage) {
     }
 }
