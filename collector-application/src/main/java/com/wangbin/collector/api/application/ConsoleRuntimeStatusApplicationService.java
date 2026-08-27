@@ -232,12 +232,12 @@ public class ConsoleRuntimeStatusApplicationService {
                 "totalExceptions", snapshot.getTotalExceptions(),
                 "recentCount", recentCount
         );
-        if (recentCount > 0) {
-            String message = "存在近期采集或系统异常记录";
+        if (snapshot.getTotalExceptions() > 0) {
+            String message = "存在采集或系统异常记录";
             addRisk(risks, message);
             return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.WARN, message, details);
         }
-        return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.OK, "暂无近期异常记录", details);
+        return component("exceptions-health", "异常统计健康", RuntimeHealthLevel.OK, "暂无异常记录", details);
     }
 
     /**

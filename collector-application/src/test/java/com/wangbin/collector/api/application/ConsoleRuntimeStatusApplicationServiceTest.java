@@ -245,25 +245,81 @@ class ConsoleRuntimeStatusApplicationServiceTest {
     }
 
     @Test
-    void exceptionHealthShouldUseRecentRecordsInsteadOfHistoricalTotalOnly() {
+    void exceptionHealthShouldWarnWhenTotalExceptionsExistsEvenWithoutRecentRecords() {
         when(exceptionMonitorService.getStats()).thenReturn(exceptions(100L, List.of()));
 
         ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
 
-        assertEquals(RuntimeHealthLevel.OK, component(status, "exceptions-health").getLevel());
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.WARN, exceptions.getLevel());
+        assertEquals("存在采集或系统异常记录", exceptions.getMessage());
+        assertEquals(RuntimeHealthLevel.WARN, status.getLevel());
+        assertEquals(List.of("存在采集或系统异常记录"), status.getRisks());
+    }
+
+    @Test
+    void exceptionHealthShouldWarnWhenTotalExceptionsExistsWithRecentRecords() {
+        when(exceptionMonitorService.getStats()).thenReturn(exceptions(1L, List.of(exceptionSummary())));
+
+        ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
+
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.WARN, exceptions.getLevel());
+        assertEquals("存在采集或系统异常记录", exceptions.getMessage());
+        assertEquals(RuntimeHealthLevel.WARN, status.getLevel());
+        assertEquals(List.of("存在采集或系统异常记录"), status.getRisks());
+    }
+
+    @Test
+    void exceptionHealthShouldStayOkWhenTotalIsZeroEvenIfRecentRecordsExist() {
+        when(exceptionMonitorService.getStats()).thenReturn(exceptions(0L, List.of(exceptionSummary())));
+
+        ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
+
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.OK, exceptions.getLevel());
+        assertEquals("暂无异常记录", exceptions.getMessage());
         assertEquals(RuntimeHealthLevel.OK, status.getLevel());
         assertTrue(status.getRisks().isEmpty());
     }
 
     @Test
-    void exceptionHealthShouldWarnWhenRecentRecordsExist() {
-        when(exceptionMonitorService.getStats()).thenReturn(exceptions(100L, List.of(exceptionSummary())));
+    void exceptionHealthShouldKeepRecentCountOnlyAsDetails() {
+        when(exceptionMonitorService.getStats()).thenReturn(exceptions(100L,
+                List.of(exceptionSummary(), exceptionSummary(), exceptionSummary())));
 
         ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
 
-        assertEquals(RuntimeHealthLevel.WARN, component(status, "exceptions-health").getLevel());
-        assertEquals(RuntimeHealthLevel.WARN, status.getLevel());
-        assertEquals(List.of("存在近期采集或系统异常记录"), status.getRisks());
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.WARN, exceptions.getLevel());
+        assertEquals(100L, exceptions.getDetails().get("totalExceptions"));
+        assertEquals(3, exceptions.getDetails().get("recentCount"));
+    }
+
+    @Test
+    void exceptionHealthShouldBeUnknownWhenSnapshotIsNull() {
+        when(exceptionMonitorService.getStats()).thenReturn(null);
+
+        ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
+
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.UNKNOWN, exceptions.getLevel());
+        assertEquals("异常统计不可用", exceptions.getMessage());
+        assertEquals(RuntimeHealthLevel.UNKNOWN, status.getLevel());
+        assertTrue(status.getRisks().isEmpty());
+    }
+
+    @Test
+    void exceptionHealthShouldBeErrorWhenStatsReadFails() {
+        when(exceptionMonitorService.getStats()).thenThrow(new RuntimeException("stats down"));
+
+        ConsoleRuntimeStatusSnapshot status = applicationService.getRuntimeStatus();
+
+        RuntimeComponentStatus exceptions = component(status, "exceptions-health");
+        assertEquals(RuntimeHealthLevel.ERROR, exceptions.getLevel());
+        assertEquals("异常统计指标读取失败: stats down", exceptions.getMessage());
+        assertEquals(RuntimeHealthLevel.ERROR, status.getLevel());
+        assertEquals(List.of("异常统计指标读取失败: stats down"), status.getRisks());
     }
 
     @ParameterizedTest
