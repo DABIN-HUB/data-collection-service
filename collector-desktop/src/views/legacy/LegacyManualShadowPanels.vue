@@ -1,8 +1,8 @@
 <template>
-  <div v-if="tab === 'control'" class="console-module console-module-active">
-    <div class="console-panel-head"><h2>手动控制</h2><span>{{ deviceId || '未选择设备' }}</span></div>
+  <div v-if="tab === 'control'" class="local-editor-pane manual-shadow-pane">
+    <div class="console-panel-head local-section-card manual-shadow-head-card"><h2>手动控制</h2><span>{{ deviceId || '未选择设备' }}</span></div>
     <div class="surface-grid two">
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>单点写入</h3><span>按点位编码或 pointId 写入</span></div>
         <div class="form-grid">
           <label>点位引用<input v-model="singlePointRef" type="text" placeholder="point_001" /></label>
@@ -12,13 +12,13 @@
         <button type="button" class="primary wide" :disabled="!deviceId" @click="writeSingle">写入单点</button>
       </section>
 
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>批量写点位</h3><button type="button" @click="fillBatchTemplate">模板</button></div>
         <textarea v-model="batchPayload" spellcheck="false"></textarea>
         <button type="button" class="primary wide" :disabled="!deviceId" @click="writeBatch">批量写入点位</button>
       </section>
 
-      <section class="surface-card wide-field">
+      <section class="surface-card local-section-card wide-field">
         <div class="surface-card-head"><h3>执行协议命令</h3><button type="button" @click="fillCommandTemplate">套用模板</button></div>
         <textarea v-model="commandPayload" spellcheck="false"></textarea>
         <button type="button" class="primary wide" :disabled="!deviceId" @click="executeCommand">执行命令</button>
@@ -27,8 +27,8 @@
     </div>
   </div>
 
-  <div v-else class="console-module console-module-active">
-    <div class="console-panel-head"><h2>设备影子</h2><span>{{ deviceId || '未选择设备' }}</span></div>
+  <div v-else class="local-editor-pane manual-shadow-pane">
+    <div class="console-panel-head local-section-card manual-shadow-head-card"><h2>设备影子</h2><span>{{ deviceId || '未选择设备' }}</span></div>
     <div class="shadow-summary-grid">
       <div class="shadow-summary-card"><span>当前影子</span><strong>{{ shadowSummary.currentText }}</strong></div>
       <div class="shadow-summary-card"><span>期望状态</span><strong>{{ shadowSummary.desiredText }}</strong></div>
@@ -36,20 +36,20 @@
       <div class="shadow-summary-card"><span>历史记录</span><strong>{{ shadowSummary.historyCount }}</strong></div>
     </div>
     <div class="surface-grid two">
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>当前影子</h3><div class="inline-actions"><button type="button" :disabled="!deviceId" @click="loadShadowBundle">读取全部</button><button type="button" :disabled="!deviceId" @click="loadShadow">读取影子</button><button type="button" :disabled="!deviceId" @click="downloadShadowPackage">导出快照</button></div></div>
         <pre class="json-view">{{ shadowText }}</pre>
       </section>
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>期望状态更新（desired）</h3><button type="button" class="danger" :disabled="!deviceId" @click="clearDesired">清理期望状态</button></div>
         <textarea v-model="desiredPayload" spellcheck="false"></textarea>
         <button type="button" class="primary wide" :disabled="!deviceId" @click="saveDesired">提交期望状态</button>
       </section>
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>影子差异（delta）</h3><button type="button" :disabled="!deviceId" @click="loadShadowDelta">读取 delta</button></div>
         <pre class="json-view">{{ shadowDeltaText }}</pre>
       </section>
-      <section class="surface-card">
+      <section class="surface-card local-section-card">
         <div class="surface-card-head"><h3>影子历史</h3><div class="inline-actions"><input v-model.number="shadowHistoryLimit" type="number" min="1" max="200" title="历史条数" /><button type="button" :disabled="!deviceId" @click="loadShadowHistory">读取历史</button></div></div>
         <div class="table-wrap shadow-history-wrap">
           <table class="runtime-table">

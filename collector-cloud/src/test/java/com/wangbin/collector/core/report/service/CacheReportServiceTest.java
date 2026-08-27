@@ -154,6 +154,31 @@ public class CacheReportServiceTest {
     }
 
     @Test
+    void reportPointShouldUpdateLocalShadowWhenMqttDisabled() {
+        ReportProperties props = baseProps();
+        props.getMqtt().setEnabled(false);
+        ReportManager reportManager = mock(ReportManager.class);
+        ShadowManager shadowManager = mock(ShadowManager.class);
+        when(shadowManager.apply(any(), any(), any())).thenReturn(ShadowManager.ShadowUpdateResult.EMPTY);
+        CacheReportService service = createService(reportManager, props, shadowManager, mock(TaskScheduler.class));
+        DataPoint point = new DataPoint();
+        point.setDeviceId("dev-shadow-local");
+        point.setPointId("p1");
+        point.setPointCode("temperature");
+        point.setStatus(1);
+        point.setAdditionalConfig(new HashMap<>(Map.of("reportEnabled", true, "reportField", "temperature")));
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(26.5);
+        result.setQuality(QualityEnum.GOOD.getCode());
+
+        service.reportPoint("dev-shadow-local", "thing.property.post", point, result);
+
+        verify(shadowManager).apply(eq("dev-shadow-local"), eq(point), eq(result));
+        verifyNoInteractions(reportManager);
+    }
+
+    @Test
     void cacheReportServiceShouldCapDeferredRetries() {
         ReportProperties props = baseProps();
         ReportManager reportManager = mock(ReportManager.class);

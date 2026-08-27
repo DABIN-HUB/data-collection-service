@@ -261,7 +261,7 @@ collector:
     tenant-id: 1
     api-token: ""
   cache:
-    type: local
+    type: multi-level
     local:
       max-size: 10000
       expire-after-write: 300

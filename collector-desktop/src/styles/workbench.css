@@ -3328,6 +3328,138 @@ body.modal-active {
   grid-template-columns: minmax(0, 1fr);
 }
 
+#deviceOperationPanel.local-device-panel.local-device-web-dialog {
+  --panel-line: #d8e2f0;
+  --panel-muted: #64748b;
+  --panel-text: #142033;
+  min-height: calc(100vh - 96px);
+  max-height: calc(100vh - 96px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--panel-line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 18px 46px rgba(15, 42, 74, 0.12);
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-title {
+  grid-row: 1;
+  min-height: 76px;
+  padding: 0 22px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--panel-text);
+  border-bottom: 1px solid var(--panel-line);
+  background: #fff;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-tabs {
+  grid-row: 2;
+  display: flex;
+  min-width: 0;
+  padding: 12px 18px;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: 0;
+  border-bottom: 1px solid var(--panel-line);
+  background: #f8fbff;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-layout {
+  grid-row: 3;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-rail {
+  position: static;
+  display: flex;
+  min-width: 0;
+  padding: 18px;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  border: 0;
+  border-right: 1px solid var(--panel-line);
+  border-radius: 0;
+  background: #f8fbff;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-body {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  overflow: auto;
+  background: #eef3f9;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .device-operation-rail-actions,
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .device-config-workbench-pane,
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .manual-shadow-pane {
+  display: grid;
+  gap: 12px;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .local-section-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .device-config-head-card,
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .manual-shadow-head-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .device-tabs {
+  min-width: 0;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .device-tabs > .el-tabs__header {
+  margin: 0 0 12px;
+  padding: 5px;
+  border: 1px solid #dbe4f1;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .surface-grid.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .shadow-summary-grid {
+  margin-bottom: 12px;
+}
+
+#deviceOperationPanel.local-device-panel.local-device-web-dialog .json-view {
+  max-height: 360px;
+  overflow: auto;
+}
+
+@media (max-width: 1240px) {
+  #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-layout,
+  #deviceOperationPanel.local-device-panel.local-device-web-dialog .surface-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+
 #localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head {
   display: flex;
   align-items: center;

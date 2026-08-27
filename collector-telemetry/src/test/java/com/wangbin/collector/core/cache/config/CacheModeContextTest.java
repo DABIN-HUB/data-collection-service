@@ -22,6 +22,15 @@ class CacheModeContextTest {
             .withBean("cacheRedisTemplate", RedisTemplate.class, this::redisTemplate);
 
     @Test
+    void defaultModeShouldCreateLocalAndRedisCacheManagers() {
+        contextRunner.run(context -> {
+            assertEquals(CacheMode.MULTI_LEVEL, context.getBean(CacheProperties.class).getType());
+            assertEquals(1, context.getBeansOfType(LocalCacheManager.class).size());
+            assertEquals(1, context.getBeansOfType(RedisCacheManager.class).size());
+        });
+    }
+
+    @Test
     void localModeShouldNotCreateRedisCacheManager() {
         contextRunner.withPropertyValues("collector.cache.type=local")
                 .run(context -> {

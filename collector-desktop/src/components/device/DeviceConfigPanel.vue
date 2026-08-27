@@ -1,7 +1,7 @@
 <template>
-  <section class="config-panel">
+  <section class="local-editor-pane device-config-workbench-pane">
     <template v-if="device">
-      <div class="config-panel-head">
+      <div class="config-panel-head local-section-card device-config-head-card">
         <div>
           <h2>{{ device.displayName }}</h2>
           <p>{{ device.normalizedId }} · {{ device.displayProtocol }}</p>
@@ -21,7 +21,7 @@
             <div class="field-card"><span>采集周期</span><strong>{{ device.collectionInterval || '-' }} ms</strong></div>
             <div class="field-card"><span>配置来源</span><strong>{{ device.configSource || '-' }}</strong></div>
           </div>
-          <div class="connection-test-card">
+          <div class="connection-test-card local-section-card">
             <div>
               <h3>连接测试</h3>
               <p>读取当前设备运行态、连接状态和最近错误，作为保存前的快速检查。</p>
@@ -32,7 +32,7 @@
               <el-button type="danger" plain @click="$emit('stop', device.normalizedId)">停止采集</el-button>
             </div>
           </div>
-          <div class="protocol-state-strip">
+          <div class="protocol-state-strip local-section-card">
             <div class="state-pill"><span>运行态</span><strong>{{ connectionStatusText }}</strong></div>
             <div class="state-pill"><span>连接</span><strong>{{ connectionHealthText }}</strong></div>
             <div class="state-pill"><span>最近消息</span><strong>{{ connectionMessage || statusDetail?.message || '-' }}</strong></div>
@@ -46,7 +46,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="协议配置" name="protocol">
-          <div class="protocol-schema-card">
+          <div class="protocol-schema-card local-section-card">
             <div class="schema-head">
               <div>
                 <h3>协议 Schema 动态表单</h3>
@@ -71,7 +71,7 @@
               <el-tag v-else type="warning" effect="light">{{ protocolErrors.length }} 个字段待完善</el-tag>
               <span v-if="connectionMessage" class="schema-message">{{ connectionMessage }}</span>
             </div>
-            <div class="payload-preview-card">
+            <div class="payload-preview-card local-section-card">
               <div class="surface-card-head"><h4>保存前 payload 预览</h4><button type="button" @click="loadProtocolConfig">刷新预览</button></div>
               <pre class="json-view compact-result-view">{{ connectionPayloadPreviewText }}</pre>
             </div>

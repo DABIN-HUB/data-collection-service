@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("redisCacheManager")
-@ConditionalOnExpression("'${collector.cache.type:local}' != 'local'")
+@ConditionalOnExpression("'${collector.cache.type:multi-level}' != 'local'")
 public class RedisCacheManager extends AbstractCacheManager {
 
     private final RedisTemplate<String, Object> redisTemplate;

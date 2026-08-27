@@ -198,7 +198,7 @@
               <div class="exact-device-actions">
                 <button type="button" @click.stop="startSelectedDevice(deviceIdOf(device))">启动</button><button type="button" @click.stop="stopSelectedDevice(deviceIdOf(device))">停止</button>
                 <button type="button" :disabled="deviceConfigOperatingId === `refresh:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'refresh')">刷新配置</button><button type="button" class="danger" :disabled="deviceConfigOperatingId === `clear:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'clear')">清理缓存</button>
-                <button type="button" @click.stop="editDevice(device)">编辑</button><button type="button" @click.stop="openDeviceDiff(device)">差异</button><button type="button" @click.stop="openDeviceRuntimeStatus(device)">运行状态</button><button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
+                <button type="button" @click.stop="openDeviceOperation(device, 'config')">配置</button><button type="button" @click.stop="editDevice(device)">编辑</button><button type="button" @click.stop="openDeviceDiff(device)">差异</button><button type="button" @click.stop="openDeviceRuntimeStatus(device)">运行状态</button><button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
                 <button type="button" @click.stop="openDeviceOperation(device, 'control')">控制</button><button type="button" @click.stop="openDeviceOperation(device, 'shadow')">影子</button>
                 <button v-if="isLocalDevice(device)" type="button" class="danger" @click.stop="deleteLocal(deviceIdOf(device))">删除本地</button>
               </div>
@@ -257,30 +257,59 @@
 
       <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>Outbox / ACK 明细</h2><span>{{ cloudOperationalRows.length }} 项</span></div><div class="modao-property-grid"><div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
 
-      <section v-show="activeModule === 'workbench'" class="workspace-grid">
-        <div class="workspace-column workspace-left"><section class="panel device-panel"><div class="panel-head"><div class="panel-head-main"><span class="panel-kicker">主工作流</span><h2>设备列表</h2></div><div class="inline-actions local-device-actions"><button type="button" class="primary" @click="openLocalEditor()">新建设备</button></div></div><div class="device-resource-list"><button v-for="device in devices" :key="deviceIdOf(device)" type="button" :class="{ 'is-active': selectedDeviceId === deviceIdOf(device) }" @click="selectDevice(deviceIdOf(device))"><strong>{{ device.deviceName || deviceIdOf(device) }}</strong><span>{{ device.protocolType || device.connectionType || '-' }}</span></button></div></section></div>
-        <div class="workspace-column workspace-center">
-          <section class="panel workbench-panel">
-            <div class="workbench-topbar workbench-topbar-compact">
-              <div class="device-summary">
-                <div class="summary-primary"><span class="status-dot online"></span><strong>{{ selectedDevice?.deviceName || '请选择设备' }}</strong><span class="summary-status">{{ selectedDevice?.status || '待连接' }}</span></div>
-                <div class="summary-meta"><span>协议：<strong>{{ selectedDevice?.protocolType || '-' }}</strong></span><span>地址：<strong>{{ selectedDevice?.ipAddress || '-' }}:{{ selectedDevice?.port || '-' }}</strong></span><span>采集周期：<strong>{{ selectedDevice?.collectionInterval || '-' }}</strong></span></div>
-              </div>
-              <div class="workbench-tabs">
-                <button type="button" :class="{ 'is-active': workbenchTab === 'config' }" @click="workbenchTab = 'config'">配置工作台</button>
-                <button type="button" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">手动控制</button>
-                <button type="button" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">设备影子</button>
-              </div>
-              <div class="workbench-device-actions">
-                <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新单设备配置</button>
-                <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理配置缓存</button>
-                <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">设备运行状态</button>
-                <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">设备告警历史</button>
-              </div>
+      <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
+        <div class="local-editor-title">
+          <div>
+            <span class="label-chip">设备配置</span>
+            <h3>{{ selectedDevice?.deviceName || '请选择设备' }}</h3>
+            <p>{{ selectedDeviceId || '从设备管理列表选择设备' }} · {{ selectedDevice?.protocolType || selectedDevice?.connectionType || '-' }} · {{ deviceAddress(selectedDevice || {}) }}</p>
+          </div>
+          <div class="local-editor-title-actions">
+            <div class="local-editor-stats">
+              <div class="local-editor-stat"><strong>{{ selectedDeviceView?.status || selectedDevice?.status || '-' }}</strong><span>运行状态</span></div>
+              <div class="local-editor-stat"><strong>{{ selectedDevice?.collectionInterval || '-' }}</strong><span>采集周期 ms</span></div>
+              <div class="local-editor-stat"><strong>{{ selectedRealtimeRows.length }}</strong><span>实时点位</span></div>
             </div>
+            <button type="button" @click="switchModule('device')">返回列表</button>
+          </div>
+        </div>
+
+        <div class="local-editor-tabs" role="tablist" aria-label="设备操作工作台分区">
+          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'config' }" @click="workbenchTab = 'config'">
+            <span>01</span><strong>配置工作台</strong><small>连接、点位、实时和日志</small>
+          </button>
+          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">
+            <span>02</span><strong>手动控制</strong><small>单点、批量和协议命令</small>
+          </button>
+          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">
+            <span>03</span><strong>设备影子</strong><small>reported、desired、delta</small>
+          </button>
+        </div>
+
+        <div class="local-editor-layout">
+          <aside class="local-editor-rail device-operation-rail">
+            <div>
+              <span class="label-chip">当前设备</span>
+              <strong>{{ selectedDevice?.deviceName || selectedDeviceId || '未选择设备' }}</strong>
+              <p>配置、控制和影子共用同一个设备上下文；切换分区不会丢失当前选择。</p>
+            </div>
+            <ol class="local-checklist">
+              <li :class="selectedDeviceId ? 'is-ok' : 'is-error'">{{ selectedDeviceId ? `设备已选择：${selectedDeviceId}` : '请先选择设备' }}</li>
+              <li :class="selectedDeviceView?.status === 'ONLINE' ? 'is-ok' : 'is-warn'">运行状态：{{ selectedDeviceView?.status || selectedDevice?.status || '未知' }}</li>
+              <li :class="selectedRealtimeRows.length > 0 ? 'is-ok' : 'is-warn'">实时点位：{{ selectedRealtimeRows.length }} 个</li>
+            </ol>
+            <div class="device-operation-rail-actions">
+              <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新配置</button>
+              <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理缓存</button>
+              <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">运行状态</button>
+              <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">告警历史</button>
+            </div>
+          </aside>
+
+          <div class="local-editor-body device-operation-body">
             <DeviceConfigPanel v-if="workbenchTab === 'config'" :device="selectedDeviceView" @start="startSelectedDevice" @stop="stopSelectedDevice" @open-history="openWorkbenchHistory" @open-realtime="openWorkbenchRealtime" />
             <ManualShadowPanels v-else :tab="workbenchTab" :device-id="selectedDeviceId" />
-          </section>
+          </div>
         </div>
       </section>
     </main>
@@ -1321,11 +1350,11 @@ function downloadDiagnosticPackage() {
   URL.revokeObjectURL(url);
 }
 
-function openDeviceOperation(device: DeviceInfo, tab: "control" | "shadow") {
+function openDeviceOperation(device: DeviceInfo, tab: "config" | "control" | "shadow") {
   selectDevice(deviceIdOf(device));
   workbenchTab.value = tab;
   activeModule.value = "workbench";
-  router.push(tab === "control" ? "/control" : "/shadow").catch(() => undefined);
+  router.push(tab === "control" ? "/control" : (tab === "shadow" ? "/shadow" : "/device")).catch(() => undefined);
 }
 
 function protocolDefaultPort(protocol: ProtocolSchema): string {
