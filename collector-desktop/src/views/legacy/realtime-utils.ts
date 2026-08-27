@@ -32,6 +32,10 @@ export function normalizeRealtimeRows(response: unknown, fallbackDeviceId = ""):
       return attachDeviceId({ pointId, value }, deviceId);
     });
   }
+  const pointMapRows = normalizeTopLevelPointMap(record, deviceId);
+  if (pointMapRows.length) {
+    return pointMapRows;
+  }
   if (record.pointId || record.pointCode || record.value !== undefined || record.currentValue !== undefined) {
     return [attachDeviceId(record as RealtimePointRow, deviceId)];
   }
@@ -71,12 +75,38 @@ function attachDeviceId(row: RealtimePointRow, fallbackDeviceId: string): Realti
   return { ...row, deviceId: fallbackDeviceId };
 }
 
+function normalizeTopLevelPointMap(record: Record<string, unknown>, fallbackDeviceId: string): RealtimePointRow[] {
+  const entries = Object.entries(record).filter(([key]) => !["status", "message", "timestamp", "deviceId", "dataCount", "success", "code"].includes(key));
+  if (!entries.length) {
+    return [];
+  }
+  const rows: RealtimePointRow[] = [];
+  for (const [pointId, value] of entries) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const row = value as RealtimePointRow;
+      if (!looksLikeRealtimePoint(row)) {
+        return [];
+      }
+      rows.push(attachDeviceId({ pointId, ...row }, fallbackDeviceId));
+    } else if (fallbackDeviceId) {
+      rows.push(attachDeviceId({ pointId, value }, fallbackDeviceId));
+    } else {
+      return [];
+    }
+  }
+  return rows;
+}
+
+function looksLikeRealtimePoint(row: RealtimePointRow): boolean {
+  return Boolean(row.pointId || row.pointCode || row.pointName || row.value !== undefined || row.currentValue !== undefined || row.rawValue !== undefined || row.processedValue !== undefined);
+}
+
 function isGoodQuality(row: RealtimePointRow): boolean {
   if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) {
     return false;
   }
   const value = String(row.qualityLevel || row.quality || row.status || "").toUpperCase();
-  return ["GOOD", "OK", "SUCCESS", "ONLINE", "1", "100"].includes(value);
+  return ["A", "GOOD", "OK", "SUCCESS", "ONLINE", "1", "100"].includes(value);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
