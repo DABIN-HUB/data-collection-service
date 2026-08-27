@@ -1,5 +1,6 @@
 package com.wangbin.collector.common.domain.entity;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -56,5 +57,20 @@ class DataPointTest {
 
         assertNull(point.getReportField());
         assertFalse(point.isReportEnabled());
+    }
+
+    @Test
+    void shouldDeserializeAlarmRuleArrayReturnedByApi() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        DataPoint point = objectMapper.readValue("""
+                {
+                  "pointCode": "temperature",
+                  "alarmRule": [{"ruleId":"r1","operator":">=","threshold":10,"level":"WARNING","enabled":true}]
+                }
+                """, DataPoint.class);
+
+        assertEquals(1, point.getAlarmRule().size());
+        assertEquals("r1", point.getAlarmRule().get(0).getRuleId());
     }
 }

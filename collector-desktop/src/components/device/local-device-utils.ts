@@ -192,6 +192,7 @@ export function normalizeLocalPoints(points: DataPoint[], deviceId: string, prot
       deviceId,
       address,
       dataType: point.dataType || defaultPointDataType(normalizedProtocol),
+      alarmRule: normalizeAlarmRule(point.alarmRule),
       baseCollectionInterval: adaptive.baseCollectionInterval,
       currentCollectionInterval: adaptive.baseCollectionInterval,
       minCollectionInterval: adaptive.minCollectionInterval,
@@ -204,6 +205,20 @@ export function normalizeLocalPoints(points: DataPoint[], deviceId: string, prot
       }
     };
   });
+}
+
+function normalizeAlarmRule(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text || undefined;
+  }
+  if (Array.isArray(value) || typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 export function normalizeAdaptive(value?: AdaptiveConfig): AdaptiveConfig {

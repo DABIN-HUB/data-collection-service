@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFIG_SYNC_TYPES, buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, normalizeSyncStatusItems, parseConfigImportText } from "./config-utils";
+import { CONFIG_SYNC_TYPES, buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, normalizeSyncStatusItems, parseConfigImportText } from "./config-utils";
 
 describe("config-utils", () => {
   it("把导出响应归一化为可展示 JSON 文本", () => {
@@ -41,5 +41,11 @@ describe("config-utils", () => {
 
   it("提供后端支持的局部同步类型", () => {
     expect(CONFIG_SYNC_TYPES.map((item) => item.type)).toEqual(["device", "points", "connection", "collection", "all"]);
+  });
+
+  it("设备列表空态能区分加载中、筛选为空和鉴权失败", () => {
+    expect(buildDeviceListEmptyText({ loading: true, errorMessage: "", hasFilters: false })).toBe("正在加载设备配置...");
+    expect(buildDeviceListEmptyText({ loading: false, errorMessage: "接口访问令牌缺失或无效", hasFilters: false })).toContain("请先在顶部运维令牌处保存令牌");
+    expect(buildDeviceListEmptyText({ loading: false, errorMessage: "", hasFilters: true })).toBe("没有符合筛选条件的设备");
   });
 });

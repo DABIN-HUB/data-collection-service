@@ -181,7 +181,7 @@
         <div class="exact-page-body">
           <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><input v-model="deviceKeyword" type="search" placeholder="搜索设备名称、标识或地址" /><select v-model="protocolFilter"><option value="">全部协议</option><option v-for="protocolItem in protocols" :key="protocolItem.protocol" :value="protocolItem.protocol">{{ protocolItem.title || protocolItem.protocol }}</option></select><select v-model="statusFilter"><option value="">全部状态</option><option value="ONLINE">在线</option><option value="OFFLINE">离线</option><option value="ERROR">异常</option></select></div><div class="exact-toolbar-group"><button type="button" @click="syncDevices">同步远端配置</button></div></div>
           <div class="exact-device-list">
-            <div v-if="filteredDevices.length === 0" class="exact-empty">正在加载设备配置...</div>
+            <div v-if="filteredDevices.length === 0" class="exact-empty">{{ deviceListEmptyText }}</div>
             <article v-for="device in filteredDevices" :key="deviceIdOf(device)" class="exact-device-card" :class="{ 'is-selected': selectedDeviceId === deviceIdOf(device) }" @click="selectDevice(deviceIdOf(device))">
               <div class="exact-device-main">
                 <h3>{{ device.deviceName || deviceIdOf(device) }}</h3>
@@ -314,7 +314,7 @@ import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } fro
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
 import { applyAlarmAcknowledgement, buildAlarmAckPayload, buildAlarmIdentity, buildAlarmTroubleshootTarget, describeAlarmAcknowledgement, mergeAlarmAcknowledgementStates, normalizeAlarmAcknowledgementMap } from "@/views/ops/ops-utils";
 import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "./alarm-history-utils";
-import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
+import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { buildLogExportFilename, buildLogQueryParams, buildLogSearchFromException, exportLogRowsAsJson, exportLogRowsAsText, filterLogRows, summarizeLogRows } from "./log-utils";
 import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
@@ -388,6 +388,8 @@ const realtimeAuto = ref(true);
 const deviceKeyword = ref("");
 const protocolFilter = ref("");
 const statusFilter = ref("");
+const deviceLoading = ref(false);
+const deviceLoadError = ref("");
 const selectedProtocol = ref<ProtocolSchema | null>(null);
 const logLevel = ref("");
 const logDeviceId = ref("");
@@ -434,6 +436,11 @@ const filteredDevices = computed(() => {
     return (!keyword || text.includes(keyword)) && (!protocolFilter.value || protocol === protocolFilter.value) && (!statusFilter.value || status === statusFilter.value);
   });
 });
+const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
+  loading: deviceLoading.value,
+  errorMessage: deviceLoadError.value,
+  hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
+}));
 const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
   return realtimeRows.value.filter((row) => !keyword || [row.pointName, row.pointCode, row.address, row.deviceName].join(" ").toLowerCase().includes(keyword));
@@ -738,17 +745,26 @@ async function loadProtocols() {
 }
 
 async function loadDevices() {
-  const [deviceResponse, runtimeResponse] = await Promise.allSettled([getConfigDeviceList(), getDeviceRuntime()]);
-  if (runtimeResponse.status === "fulfilled") {
-    const snapshots = extractArray<DeviceRuntimeSnapshot>(runtimeResponse.value, ["data", "items", "records"]);
-    deviceRuntimeMap.value = Object.fromEntries(snapshots.map((item) => [item.deviceId, item]).filter(([deviceId]) => Boolean(deviceId)));
+  deviceLoading.value = true;
+  deviceLoadError.value = "";
+  try {
+    const [deviceResponse, runtimeResponse] = await Promise.allSettled([getConfigDeviceList(), getDeviceRuntime()]);
+    if (runtimeResponse.status === "fulfilled") {
+      const snapshots = extractArray<DeviceRuntimeSnapshot>(runtimeResponse.value, ["data", "items", "records"]);
+      deviceRuntimeMap.value = Object.fromEntries(snapshots.map((item) => [item.deviceId, item]).filter(([deviceId]) => Boolean(deviceId)));
+    }
+    if (deviceResponse.status !== "fulfilled") {
+      throw deviceResponse.reason;
+    }
+    devices.value = extractArray<DeviceInfo>(deviceResponse.value, ["devices", "data", "items", "records"])
+      .map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, deviceRuntimeMap.value));
+    if (!selectedDeviceId.value && devices.value.length) selectedDeviceId.value = deviceIdOf(devices.value[0]);
+  } catch (error) {
+    deviceLoadError.value = error instanceof Error ? error.message : "设备配置加载失败";
+    throw error;
+  } finally {
+    deviceLoading.value = false;
   }
-  if (deviceResponse.status !== "fulfilled") {
-    throw deviceResponse.reason;
-  }
-  devices.value = extractArray<DeviceInfo>(deviceResponse.value, ["devices", "data", "items", "records"])
-    .map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, deviceRuntimeMap.value));
-  if (!selectedDeviceId.value && devices.value.length) selectedDeviceId.value = deviceIdOf(devices.value[0]);
 }
 
 async function loadOverview() {

@@ -69,6 +69,25 @@ describe("local-device-utils", () => {
     });
   });
 
+  it("保存本地设备前把接口回填的告警规则数组转为 JSON 字符串", () => {
+    const payload = buildLocalDevicePayload({
+      deviceId: "local-alarm",
+      deviceName: "告警测试设备",
+      protocol: "MODBUS_TCP",
+      connection: { host: "127.0.0.1", port: 502 },
+      points: [{
+        pointCode: "temperature",
+        pointName: "温度",
+        address: "40001",
+        dataType: "INT",
+        alarmRule: [{ ruleId: "r1", operator: ">=", threshold: 10, enabled: true }] as unknown as string
+      }]
+    });
+
+    expect(typeof payload.points[0].alarmRule).toBe("string");
+    expect(JSON.parse(payload.points[0].alarmRule || "[]")).toEqual([{ ruleId: "r1", operator: ">=", threshold: 10, enabled: true }]);
+  });
+
   it("启用云上报时要求云端产品和设备名称", () => {
     expect(validateLocalDeviceDraft({
       deviceId: "dev",
