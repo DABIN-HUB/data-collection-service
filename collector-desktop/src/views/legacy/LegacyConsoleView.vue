@@ -176,7 +176,7 @@
       <section v-show="activeModule === 'device'" class="exact-page">
         <div class="section-heading">
           <div class="heading-title-line"><h1>设备管理</h1><span class="heading-online"><i></i>{{ filteredDevices.length }} 台设备</span></div>
-          <div class="heading-actions"><button type="button" @click="loadDevices">刷新列表</button><button type="button" class="primary" @click="openLocalEditor()">新增本地设备</button></div>
+          <div class="heading-actions"><button type="button" @click="loadDevices">刷新列表</button><button type="button" :disabled="configFileExporting" @click="exportDeviceConfigData">导出配置数据</button><button type="button" :disabled="configFileImporting" @click="openConfigImportFile">导入配置数据</button><button type="button" class="primary" @click="openLocalEditor()">新增本地设备</button></div>
         </div>
         <div class="exact-page-body">
           <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><input v-model="deviceKeyword" type="search" placeholder="搜索设备名称、标识或地址" /><select v-model="protocolFilter"><option value="">全部协议</option><option v-for="protocolItem in protocols" :key="protocolItem.protocol" :value="protocolItem.protocol">{{ protocolItem.title || protocolItem.protocol }}</option></select><select v-model="statusFilter"><option value="">全部状态</option><option value="ONLINE">在线</option><option value="OFFLINE">离线</option><option value="ERROR">异常</option></select></div><div class="exact-toolbar-group"><button type="button" @click="syncDevices">同步远端配置</button></div></div>
@@ -285,6 +285,7 @@
       </section>
     </main>
 
+    <input ref="configImportInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="handleConfigImportFile" />
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocols" @saved="handleLocalSaved" />
   </div>
 </template>
@@ -302,22 +303,23 @@ import LegacyEdgeTelemetryPanel from "./LegacyEdgeTelemetryPanel.vue";
 import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
-import { clearDeviceConfig, deleteLocalDevice, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
-import { getAllDeviceStatistics, getDeviceRuntime, reloadDevices, startDevice, stopDevice } from "@/api/device.api";
+import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
+import { getAllDeviceStatistics, getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
 import { getAllDeviceDataSummaries, getDeviceAlarmHistory, getDeviceRealtimeData, getPointRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
 import { acknowledgeAlarm, diagnoseNetwork, getOpsLogs, normalizeLogRows, queryAlarmAcknowledgements } from "@/api/ops.api";
 import { useAppStore } from "@/stores/app.store";
-import { normalizeDeviceViewModel } from "@/stores/device.store";
+import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
 import { applyAlarmAcknowledgement, buildAlarmAckPayload, buildAlarmIdentity, buildAlarmTroubleshootTarget, describeAlarmAcknowledgement, mergeAlarmAcknowledgementStates, normalizeAlarmAcknowledgementMap } from "@/views/ops/ops-utils";
 import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "./alarm-history-utils";
+import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { buildLogExportFilename, buildLogQueryParams, buildLogSearchFromException, exportLogRowsAsJson, exportLogRowsAsText, filterLogRows, summarizeLogRows } from "./log-utils";
 import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
 import { buildRealtimeSummary, normalizeRealtimeRows, normalizeSinglePointRealtimeRow } from "./realtime-utils";
-import type { DeviceInfo, DeviceRuntimeSnapshot } from "@/types/device";
+import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
 import alertCircleIcon from "@/assets/legacy-icons/alert-circle.svg";
@@ -346,7 +348,7 @@ const activeModule = ref<ModuleKey>("overview");
 const tokenInput = ref("");
 const liveClock = ref("--:--:--");
 const lastRefresh = ref<Date | null>(null);
-const devices = ref<DeviceInfo[]>([]);
+const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const protocols = ref<ProtocolSchema[]>([]);
 const runtimeStatus = ref<unknown>({});
@@ -404,6 +406,9 @@ const networkResult = ref<NormalizedNetworkDiagnosticResult | null>(null);
 const networkHistory = ref<NormalizedNetworkDiagnosticResult[]>([]);
 const diagnosticRaw = ref<unknown>({});
 const localEditorVisible = ref(false);
+const configImportInput = ref<HTMLInputElement | null>(null);
+const configFileExporting = ref(false);
+const configFileImporting = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
 let clockTimer = 0;
@@ -419,7 +424,7 @@ const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).le
 const runtimeState = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "资源已加载" : "资源未知");
 const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
-const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModel(selectedDevice.value, deviceRuntimeMap.value) : null);
+const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
 const filteredDevices = computed(() => {
   const keyword = deviceKeyword.value.trim().toLowerCase();
   return devices.value.filter((device) => {
@@ -741,7 +746,8 @@ async function loadDevices() {
   if (deviceResponse.status !== "fulfilled") {
     throw deviceResponse.reason;
   }
-  devices.value = extractArray<DeviceInfo>(deviceResponse.value, ["devices", "data", "items", "records"]);
+  devices.value = extractArray<DeviceInfo>(deviceResponse.value, ["devices", "data", "items", "records"])
+    .map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, deviceRuntimeMap.value));
   if (!selectedDeviceId.value && devices.value.length) selectedDeviceId.value = deviceIdOf(devices.value[0]);
 }
 
@@ -900,7 +906,12 @@ async function syncDevices() {
   ElMessage.success("已触发远端配置同步");
 }
 
-async function startSelectedDevice(deviceId: string) { await startDevice(deviceId); await loadDevices(); }
+async function startSelectedDevice(deviceId: string) {
+  const device = devices.value.find((item) => deviceIdOf(item) === deviceId);
+  const startAction = resolveDeviceStartMode(device) === "local" ? startLocalDevice : startDevice;
+  await startAction(deviceId);
+  await loadDevices();
+}
 async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); }
 async function deleteLocal(deviceId: string) {
   try {
@@ -950,6 +961,70 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
 function selectDevice(deviceId: string) { selectedDeviceId.value = deviceId; void loadSelectedRealtime(); }
 function openLocalEditor() { editingBundle.value = null; localEditorVisible.value = true; }
 async function handleLocalSaved() { localEditorVisible.value = false; await loadDevices(); }
+
+async function exportDeviceConfigData() {
+  configFileExporting.value = true;
+  try {
+    const exportText = normalizeConfigExportText(await exportConfigs());
+    const blob = new Blob([exportText], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = buildConfigExportFilename();
+    anchor.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success("设备配置数据已导出，可用于点位测试环境导入");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "设备配置数据导出失败");
+  } finally {
+    configFileExporting.value = false;
+  }
+}
+
+function openConfigImportFile() {
+  configImportInput.value?.click();
+}
+
+async function handleConfigImportFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) {
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    ElMessage.warning("请选择 JSON 配置文件");
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning("配置文件不能超过 5MB");
+    return;
+  }
+  configFileImporting.value = true;
+  try {
+    const parsed = parseConfigImportText(await file.text());
+    const bundleCount = countConfigImportBundles(parsed);
+    if (bundleCount === 0) {
+      throw new Error("导入配置包 bundles 不能为空");
+    }
+    try {
+      await ElMessageBox.confirm(`将导入 ${bundleCount} 个设备配置包并刷新设备，请确认当前本地测试配置可被覆盖。`, "导入设备配置数据", {
+        confirmButtonText: "确认导入",
+        cancelButtonText: "取消",
+        type: "warning"
+      });
+    } catch {
+      return;
+    }
+    await importConfigs(buildConfigImportRequest(parsed, true));
+    await refreshAll();
+    ElMessage.success(`已导入 ${bundleCount} 个设备配置包`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "设备配置数据导入失败");
+  } finally {
+    configFileImporting.value = false;
+  }
+}
 async function runDiagnostic() {
   diagnosticRaw.value = buildDiagnosticRaw();
   await loadOverview();

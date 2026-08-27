@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFIG_SYNC_TYPES, buildConfigImportRequest, normalizeConfigExportText, normalizeSyncStatusItems, parseConfigImportText } from "./config-utils";
+import { CONFIG_SYNC_TYPES, buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, normalizeSyncStatusItems, parseConfigImportText } from "./config-utils";
 
 describe("config-utils", () => {
   it("把导出响应归一化为可展示 JSON 文本", () => {
@@ -18,6 +18,13 @@ describe("config-utils", () => {
     expect(buildConfigImportRequest({ bundles: [{ device: { deviceId: "d1" } }] }, true)).toEqual({ bundles: [{ device: { deviceId: "d1" } }], reloadAfterImport: true });
     expect(buildConfigImportRequest([{ device: { deviceId: "d2" } }], false)).toEqual({ bundles: [{ device: { deviceId: "d2" } }], reloadAfterImport: false });
     expect(buildConfigImportRequest({ device: { deviceId: "d3" } }, false)).toEqual({ bundles: [{ device: { deviceId: "d3" } }], reloadAfterImport: false });
+  });
+
+  it("为设备测试配置生成导出文件名和导入包数量", () => {
+    const date = new Date("2026-08-27T10:20:30.456+08:00");
+    expect(buildConfigExportFilename(date)).toBe("collector-device-config-2026-08-27T02-20-30-456Z.json");
+    expect(countConfigImportBundles({ bundles: [{ device: { deviceId: "d1" } }, { device: { deviceId: "d2" } }] })).toBe(2);
+    expect(countConfigImportBundles({ device: { deviceId: "d3" } })).toBe(1);
   });
 
   it("归一化配置同步状态响应", () => {

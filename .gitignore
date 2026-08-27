@@ -26,6 +26,7 @@ scripts
 !/collector-desktop/scripts/sync-web-console.mjs
 !/collector-desktop/scripts/web-console-utils.mjs
 !/collector-desktop/scripts/web-console-utils.test.mjs
+!/collector-desktop/scripts/workbench-layout-contract.test.mjs
 AGENTS1.md
 IDEA.md
 .hermes

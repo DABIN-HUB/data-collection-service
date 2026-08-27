@@ -315,6 +315,24 @@ class ConfigConsoleApplicationServiceTest {
     }
 
     @Test
+    void exportConfigsShouldPreservePointAlarmRules() {
+        DeviceInfo device = device("export-alarm", "导出告警设备");
+        DeviceConnection connection = connection("export-alarm", "127.0.0.1");
+        DataPoint point = point("export-alarm", "temperature", "40001");
+        point.setAlarmEnabled(1);
+        point.setAlarmRule("[{\"ruleId\":\"r1\",\"operator\":\">\",\"threshold\":10,\"level\":\"WARNING\",\"enabled\":true}]");
+        when(configManager.getAllDeviceContexts())
+                .thenReturn(List.of(DeviceContext.of(device, connection, List.of(point))));
+
+        ConfigExportResponse response = service.exportConfigs().getData();
+
+        DataPoint exportedPoint = response.getBundles().get(0).getPoints().get(0);
+        assertEquals(1, exportedPoint.getAlarmEnabled());
+        assertEquals(1, exportedPoint.getAlarmRule().size());
+        assertEquals("r1", exportedPoint.getAlarmRule().get(0).getRuleId());
+    }
+
+    @Test
     void importConfigsShouldImportValidBundlesAndReloadWhenRequested() {
         ConfigImportRequest request = importRequest(List.of(bundle("import-1")));
         request.setReloadAfterImport(true);
@@ -423,6 +441,23 @@ class ConfigConsoleApplicationServiceTest {
         assertEquals(0D, original.getChangeRate());
         assertEquals(0L, original.getLastAdjustTime());
         assertFalse(projected == original);
+    }
+
+    @Test
+    void getDevicePointsWithAdaptiveShouldPreserveAlarmRule() {
+        DataPoint original = point("adaptive-alarm", "temperature", "40001");
+        original.setAlarmEnabled(1);
+        original.setAlarmRule("[{\"ruleId\":\"r1\",\"operator\":\">\",\"threshold\":10,\"level\":\"WARNING\",\"enabled\":true}]");
+        when(configManager.containsDevice("adaptive-alarm")).thenReturn(true);
+        when(configManager.getDataPoints("adaptive-alarm")).thenReturn(List.of(original));
+        when(pointRuntimeStateService.snapshot("adaptive-alarm", original))
+                .thenReturn(new PointRuntimeStateSnapshot(5000L, 3, "42", 0.25D, 12345L));
+
+        DevicePointConfigResponse response = service.getDevicePoints("adaptive-alarm", true).getData();
+
+        DataPoint projected = response.getPoints().get(0);
+        assertEquals(1, projected.getAlarmRule().size());
+        assertEquals("r1", projected.getAlarmRule().get(0).getRuleId());
     }
 
     private void stubDiffInputs(String deviceId,

@@ -44,6 +44,14 @@ export function buildConfigImportRequest(parsed: unknown, reloadAfterImport: boo
   };
 }
 
+export function countConfigImportBundles(parsed: unknown): number {
+  return resolveBundles(parsed).length;
+}
+
+export function buildConfigExportFilename(date = new Date()): string {
+  return `collector-device-config-${date.toISOString().replace(/[:.]/g, "-")}.json`;
+}
+
 export function normalizeSyncStatusItems(response: unknown): ConfigSyncStatusItem[] {
   const record = unwrapDataRecord(response);
   return [

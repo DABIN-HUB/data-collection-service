@@ -16,11 +16,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -105,6 +107,68 @@ class ConfigManagerLocalDeviceTest {
 
         assertTrue(configManager.containsDevice("local-keep"));
         assertTrue(configManager.isLocalTemporaryDevice("local-keep"));
+    }
+
+    @Test
+    void shouldRefreshLocalTemporaryDeviceFromCacheWithoutRemoteAccess() {
+        when(configSyncService.loadDevice("local-1")).thenReturn(null);
+        configManager.saveLocalDeviceConfig(
+                device("local-1"),
+                connection("local-1"),
+                List.of(point("local-1")),
+                false);
+
+        assertTrue(configManager.refreshDeviceConfig("local-1"));
+
+        verify(configSyncService, never()).loadDevice("local-1");
+        verify(configSyncService, never()).loadDataPoints("local-1");
+        verify(configSyncService, never()).loadConnectionConfig("local-1");
+        assertTrue(configManager.containsDevice("local-1"));
+        assertTrue(configManager.isLocalTemporaryDevice("local-1"));
+        assertNotNull(configManager.getConnectionConfig("local-1"));
+        assertFalse(configManager.getDataPoints("local-1").isEmpty());
+        assertNotNull(configManager.getDeviceContext("local-1"));
+    }
+
+    @Test
+    void shouldPreserveExactLocalConfigDuringRefresh() {
+        configManager.saveLocalDeviceConfig(
+                device("local-exact"),
+                connection("local-exact"),
+                List.of(point("local-exact")),
+                false);
+
+        assertTrue(configManager.refreshDeviceConfig("local-exact"));
+
+        DeviceConnection savedConnection = configManager.getConnectionConfig("local-exact");
+        DataPoint savedPoint = configManager.getDataPoints("local-exact").get(0);
+        DeviceContext savedContext = configManager.getDeviceContext("local-exact");
+        assertEquals("127.0.0.1", savedConnection.getHost());
+        assertEquals(502, savedConnection.getPort());
+        assertEquals("temperature", savedPoint.getPointCode());
+        assertEquals("40001", savedPoint.getAddress());
+        assertNotNull(savedContext);
+        assertNotNull(savedContext.getConnectionConfig());
+        assertEquals("temperature", savedContext.getDataPoints().get(0).getPointCode());
+    }
+
+    @Test
+    void shouldRefreshRemoteDeviceFromRemoteSource() {
+        DeviceInfo remoteDevice = device("remote-refresh");
+        DeviceConnection remoteConnection = connection("remote-refresh");
+        DataPoint remotePoint = point("remote-refresh");
+        when(configSyncService.loadDevice("remote-refresh")).thenReturn(remoteDevice);
+        when(configSyncService.loadDataPoints("remote-refresh")).thenReturn(List.of(remotePoint));
+        when(configSyncService.loadConnectionConfig("remote-refresh")).thenReturn(remoteConnection);
+
+        assertTrue(configManager.refreshDeviceConfig("remote-refresh"));
+
+        verify(configSyncService).loadDevice("remote-refresh");
+        verify(configSyncService).loadDataPoints("remote-refresh");
+        verify(configSyncService).loadConnectionConfig("remote-refresh");
+        assertTrue(configManager.containsDevice("remote-refresh"));
+        assertFalse(configManager.isLocalTemporaryDevice("remote-refresh"));
+        assertEquals("127.0.0.1", configManager.getConnectionConfig("remote-refresh").getHost());
     }
 
     @Test

@@ -27,6 +27,9 @@ public class CollectionService {
      * 处理组件生命周期。
      */
     public boolean startDevice(String deviceId) {
+        if (configManager.isLocalTemporaryDevice(deviceId)) {
+            return collectionScheduler.startDevice(deviceId);
+        }
         boolean prepared = configManager.refreshDeviceConfig(deviceId);
         if (!prepared) {
             log.warn("设备 {} 配置重载失败，跳过启动", deviceId);

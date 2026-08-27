@@ -712,10 +712,20 @@ public class ConfigManager {
      */
     public boolean refreshDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (isLocalTemporaryDevice(deviceId)) {
+            return isCachedDeviceConfigAvailable(deviceId);
+        }
         reloadDeviceConfig(deviceId);
         reloadDataPoints(deviceId);
         reloadConnectionConfig(deviceId);
 
+        return isCachedDeviceConfigAvailable(deviceId);
+    }
+
+    /**
+     * 检查缓存中是否具备启动前刷新要求的设备和点位配置。
+     */
+    private boolean isCachedDeviceConfigAvailable(String deviceId) {
         lock.readLock().lock();
         try {
             DeviceInfo device = deviceCache.get(deviceId);

@@ -32,6 +32,51 @@ class CollectionServiceLocalStartTest {
     }
 
     @Test
+    void shouldStartLocalDeviceThroughGenericStartWithoutRemoteRefresh() {
+        when(configManager.isLocalTemporaryDevice("local-1")).thenReturn(true);
+        when(collectionScheduler.startDevice("local-1")).thenReturn(true);
+
+        assertTrue(collectionService.startDevice("local-1"));
+
+        verify(configManager, never()).refreshDeviceConfig(anyString());
+        verify(collectionScheduler).startDevice("local-1");
+    }
+
+    @Test
+    void shouldReturnFalseWhenGenericLocalStartSchedulerFails() {
+        when(configManager.isLocalTemporaryDevice("local-1")).thenReturn(true);
+        when(collectionScheduler.startDevice("local-1")).thenReturn(false);
+
+        assertFalse(collectionService.startDevice("local-1"));
+
+        verify(configManager, never()).refreshDeviceConfig(anyString());
+        verify(collectionScheduler).startDevice("local-1");
+    }
+
+    @Test
+    void shouldRefreshRemoteDeviceBeforeGenericStart() {
+        when(configManager.isLocalTemporaryDevice("remote-1")).thenReturn(false);
+        when(configManager.refreshDeviceConfig("remote-1")).thenReturn(true);
+        when(collectionScheduler.startDevice("remote-1")).thenReturn(true);
+
+        assertTrue(collectionService.startDevice("remote-1"));
+
+        verify(configManager).refreshDeviceConfig("remote-1");
+        verify(collectionScheduler).startDevice("remote-1");
+    }
+
+    @Test
+    void shouldRejectGenericRemoteStartWhenRefreshFails() {
+        when(configManager.isLocalTemporaryDevice("remote-1")).thenReturn(false);
+        when(configManager.refreshDeviceConfig("remote-1")).thenReturn(false);
+
+        assertFalse(collectionService.startDevice("remote-1"));
+
+        verify(configManager).refreshDeviceConfig("remote-1");
+        verify(collectionScheduler, never()).startDevice(anyString());
+    }
+
+    @Test
     void shouldStartLocalDeviceWithoutRemoteRefresh() {
         when(configManager.isLocalTemporaryDevice("local-1")).thenReturn(true);
         when(collectionScheduler.startDevice("local-1")).thenReturn(true);

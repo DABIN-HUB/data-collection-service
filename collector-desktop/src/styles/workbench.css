@@ -3307,6 +3307,27 @@ body.modal-active {
   align-items: stretch;
 }
 
+/* 点位建模页左侧列表不参与右侧详情高度的网格拉伸，避免表格上方出现大块空白。 */
+#localDevicePanel.local-device-panel.local-device-web-dialog .local-point-workspace .point-list-panel {
+  align-self: start;
+  align-content: start;
+}
+
+/* 选中点位后空态必须完全移出布局，不能继续挤占右侧详情空间。 */
+#localDevicePanel.local-device-panel.local-device-web-dialog .empty-state.hidden {
+  display: none;
+}
+
+/* 点位详情每个当前分区横向占满右侧面板，再由内部表单网格分配字段。 */
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-grid .field-group-wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+#localDevicePanel.local-device-panel.local-device-web-dialog .point-detail-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 #localDevicePanel.local-device-panel.local-device-web-dialog .point-editor-head {
   display: flex;
   align-items: center;

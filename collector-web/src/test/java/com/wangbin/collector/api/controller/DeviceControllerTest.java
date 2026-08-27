@@ -1,6 +1,8 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.CollectionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +68,33 @@ class DeviceControllerTest {
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data[0]", is("dev-1")))
                 .andExpect(jsonPath("$.data[1]", is("dev-2")))
+                .andExpect(jsonPath("$.count", is(2)));
+    }
+
+    @Test
+    void shouldTriggerDeviceReloadWithAsyncMessage() throws Exception {
+        mockMvc.perform(post("/api/device/reload"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.message", is("已触发设备重新加载")));
+    }
+
+    @Test
+    void shouldReturnRuntimeSnapshotsWithCount() throws Exception {
+        when(collectionService.getDeviceRuntimeSnapshots()).thenReturn(List.of(
+                new DeviceRuntimeSnapshot("dev-1", DeviceRuntimePhase.ONLINE,
+                        true, false, true, false, 0L, 100L, 1L, 90L, 0, 0L, null, 200L),
+                new DeviceRuntimeSnapshot("dev-2", DeviceRuntimePhase.STOPPED,
+                        false, false, false, false, 0L, 0L, 0L, 0L, 0, 0L, null, 201L)));
+
+        mockMvc.perform(get("/api/device/runtime"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.data[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.data[0].phase", is("ONLINE")))
+                .andExpect(jsonPath("$.data[1].deviceId", is("dev-2")))
                 .andExpect(jsonPath("$.count", is(2)));
     }
 

@@ -45,7 +45,7 @@ export const useDeviceStore = defineStore("device", {
         }
         if (deviceResponse.status === "fulfilled") {
           const rawDevices = Array.isArray(deviceResponse.value.devices) ? deviceResponse.value.devices : [];
-          this.devices = rawDevices.map((device) => normalizeDeviceViewModel(device, this.runtimeMap));
+          this.devices = rawDevices.map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, this.runtimeMap));
           if (!this.selectedDeviceId && this.devices.length > 0) {
             this.selectedDeviceId = this.devices[0].normalizedId;
           }
@@ -115,6 +115,17 @@ export function normalizeDeviceViewModel(device: DeviceInfo, runtimeMap: Record<
     displayGroup: String(device.groupName || device.groupId || "未分组"),
     displayProtocol: String(device.protocolType || device.connectionType || "未知协议"),
     runtime
+  };
+}
+
+export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, runtimeMap: Record<string, DeviceRuntimeSnapshot> = {}): DeviceViewModel {
+  const view = normalizeDeviceViewModel(device, runtimeMap);
+  const effectiveStatus = resolveDeviceStatus(view);
+  return {
+    ...view,
+    configStatus: view.status,
+    runtimeStatus: effectiveStatus,
+    status: effectiveStatus
   };
 }
 

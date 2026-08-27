@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocalDevice, normalizeDeviceViewModel, resolveDeviceStartMode } from "./device.store";
+import { isLocalDevice, normalizeDeviceViewModel, normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "./device.store";
 import type { DeviceViewModel } from "@/types/device";
 
 function device(overrides: Partial<DeviceViewModel>): DeviceViewModel {
@@ -35,5 +35,18 @@ describe("device.store helpers", () => {
       displayProtocol: "MODBUS_TCP",
       runtime: { connected: true }
     });
+  });
+
+  it("运行态在线时覆盖配置态离线状态", () => {
+    const view = normalizeDeviceViewModelWithRuntimeStatus({
+      id: "dev-1",
+      deviceName: "本地测试设备",
+      status: "OFFLINE"
+    }, {
+      "dev-1": { deviceId: "dev-1", running: true, connected: true, phase: "ONLINE" }
+    });
+
+    expect(view.status).toBe("ONLINE");
+    expect(view["configStatus"]).toBe("OFFLINE");
   });
 });

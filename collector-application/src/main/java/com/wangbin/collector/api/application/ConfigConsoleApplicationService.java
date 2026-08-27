@@ -1,5 +1,6 @@
 package com.wangbin.collector.api.application;
 
+import com.alibaba.fastjson2.JSON;
 import com.wangbin.collector.api.controller.dto.ConfigCacheStatsResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDeviceListResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDiffResponse;
@@ -373,6 +374,7 @@ public class ConfigConsoleApplicationService {
     private DataPoint withRuntimeState(String deviceId, DataPoint point) {
         DataPoint response = new DataPoint();
         BeanUtils.copyProperties(point, response);
+        response.setAlarmRule(JSON.toJSONString(point.getAlarmRule()));
         PointRuntimeStateSnapshot state = pointRuntimeStateService.snapshot(deviceId, point);
         response.setCurrentCollectionInterval(state.currentCollectionInterval());
         response.setStableCount(state.stableCount());

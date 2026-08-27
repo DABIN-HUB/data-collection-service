@@ -90,7 +90,7 @@ public class DeviceConsoleApplicationService {
     public ApiResult<Object> reloadAllDevices() {
         try {
             collectionService.reloadAllDevices();
-            return ApiResult.statusSuccess("已重新加载所有设备", null);
+            return ApiResult.statusSuccess("已触发设备重新加载", null);
         } catch (Exception exception) {
             log.error("重新加载所有设备失败", exception);
             return ApiResult.statusError("重新加载异常: " + exception.getMessage(), null);
@@ -150,8 +150,13 @@ public class DeviceConsoleApplicationService {
      * @return 设备运行快照响应
      */
     public ApiResult<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
-        List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
-        return ApiResult.statusSuccess(null, snapshots).withCount(snapshots.size());
+        try {
+            List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
+            return ApiResult.statusSuccess(null, snapshots).withCount(snapshots.size());
+        } catch (Exception exception) {
+            log.error("获取设备运行快照失败", exception);
+            return ApiResult.statusError("获取设备运行快照异常: " + exception.getMessage(), null);
+        }
     }
 
     /**
