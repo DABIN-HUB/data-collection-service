@@ -266,7 +266,7 @@
           </div>
           <div class="local-editor-title-actions">
             <div class="local-editor-stats">
-              <div class="local-editor-stat"><strong>{{ selectedDeviceView?.status || selectedDevice?.status || '-' }}</strong><span>运行状态</span></div>
+              <div class="local-editor-stat"><strong>{{ selectedOperationStatus }}</strong><span>运行状态</span></div>
               <div class="local-editor-stat"><strong>{{ selectedDevice?.collectionInterval || '-' }}</strong><span>采集周期 ms</span></div>
               <div class="local-editor-stat"><strong>{{ selectedRealtimeRows.length }}</strong><span>实时点位</span></div>
             </div>
@@ -276,13 +276,13 @@
 
         <div class="local-editor-tabs" role="tablist" aria-label="设备操作工作台分区">
           <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'config' }" @click="workbenchTab = 'config'">
-            <span>01</span><strong>配置工作台</strong><small>连接、点位、实时和日志</small>
+            <span>01</span><strong>工作台</strong><small>点位、实时和日志</small>
           </button>
           <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">
-            <span>02</span><strong>手动控制</strong><small>单点、批量和协议命令</small>
+            <span>02</span><strong>批量和协议命令</strong><small>单点、批量和协议命令</small>
           </button>
           <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">
-            <span>03</span><strong>设备影子</strong><small>reported、desired、delta</small>
+            <span>03</span><strong>desired、desired_delta</strong><small>reported、desired、delta</small>
           </button>
         </div>
 
@@ -293,10 +293,11 @@
               <strong>{{ selectedDevice?.deviceName || selectedDeviceId || '未选择设备' }}</strong>
               <p>配置、控制和影子共用同一个设备上下文；切换分区不会丢失当前选择。</p>
             </div>
-            <ol class="local-checklist">
-              <li :class="selectedDeviceId ? 'is-ok' : 'is-error'">{{ selectedDeviceId ? `设备已选择：${selectedDeviceId}` : '请先选择设备' }}</li>
-              <li :class="selectedDeviceView?.status === 'ONLINE' ? 'is-ok' : 'is-warn'">运行状态：{{ selectedDeviceView?.status || selectedDevice?.status || '未知' }}</li>
-              <li :class="selectedRealtimeRows.length > 0 ? 'is-ok' : 'is-warn'">实时点位：{{ selectedRealtimeRows.length }} 个</li>
+            <ol class="local-checklist device-info-list">
+              <li :class="selectedDeviceId ? 'is-ok' : 'is-error'"><span>设备已选择</span><strong>{{ selectedDeviceId || '请先选择设备' }}</strong></li>
+              <li :class="selectedOperationStatus === 'ONLINE' ? 'is-ok' : 'is-warn'"><span>运行状态</span><strong>{{ selectedOperationStatus }}</strong></li>
+              <li :class="selectedRealtimeRows.length > 0 ? 'is-ok' : 'is-warn'"><span>实时点位</span><strong>{{ selectedRealtimeRows.length }} 个</strong></li>
+              <li :class="selectedConnectionOk ? 'is-ok' : 'is-warn'"><span>连接状态</span><strong>{{ selectedConnectionText }}</strong></li>
             </ol>
             <div class="device-operation-rail-actions">
               <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新配置</button>
@@ -456,6 +457,16 @@ const runtimeState = computed(() => Object.keys(asRecord(runtimeStatus.value)).l
 const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
 const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
+const selectedRuntimeSnapshot = computed(() => selectedDeviceId.value ? (selectedDeviceView.value?.runtime || deviceRuntimeMap.value[selectedDeviceId.value]) : undefined);
+const selectedConnectionOk = computed(() => Boolean(selectedRuntimeSnapshot.value?.connected || selectedRuntimeSnapshot.value?.running || selectedRealtimeRows.value.length > 0));
+const selectedConnectionText = computed(() => selectedConnectionOk.value ? "正常" : "未知");
+const selectedOperationStatus = computed(() => {
+  const runtime = selectedRuntimeSnapshot.value;
+  if (runtime?.running || runtime?.connected || selectedRealtimeRows.value.length > 0) {
+    return "ONLINE";
+  }
+  return String(selectedDeviceView.value?.status || selectedDevice.value?.status || "未知");
+});
 const filteredDevices = computed(() => {
   const keyword = deviceKeyword.value.trim().toLowerCase();
   return devices.value.filter((device) => {
@@ -956,8 +967,9 @@ async function startSelectedDevice(deviceId: string) {
   const startAction = resolveDeviceStartMode(device) === "local" ? startLocalDevice : startDevice;
   await startAction(deviceId);
   await loadDevices();
+  await loadSelectedRealtime();
 }
-async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); }
+async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); await loadSelectedRealtime(); }
 async function deleteLocal(deviceId: string) {
   try {
     await ElMessageBox.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`, "删除本地设备", {

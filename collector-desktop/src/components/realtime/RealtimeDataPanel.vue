@@ -75,12 +75,30 @@ async function load() {
   error.value = "";
   try {
     const response = await getDeviceRealtimeData(props.deviceId);
-    rows.value = response.points || response.data || response.values || [];
+    rows.value = normalizeRealtimeRows(response);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "实时数据加载失败";
   } finally {
     loading.value = false;
   }
+}
+
+function normalizeRealtimeRows(value: unknown): RealtimePointRow[] {
+  if (Array.isArray(value)) {
+    return value as RealtimePointRow[];
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const body = value as Record<string, unknown>;
+  for (const key of ["points", "data", "values", "rows", "items"]) {
+    if (Array.isArray(body[key])) {
+      return body[key] as RealtimePointRow[];
+    }
+  }
+  return Object.entries(body)
+    .filter(([, row]) => row && typeof row === "object" && !Array.isArray(row))
+    .map(([pointId, row]) => ({ pointId, ...(row as RealtimePointRow) }));
 }
 
 function connectWebSocket() {
