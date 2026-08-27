@@ -51,6 +51,10 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
          */
         @Override
         public byte[] read(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
+            if (registerType == RegisterType.COIL || registerType == RegisterType.DISCRETE_INPUT) {
+                return readBitArea(unitId, registerType, startAddress, quantity);
+            }
+
             PlcReadResponse response = await(requireConnection().getClient()
                     .readRequestBuilder()
                     .addTagAddress(FIELD_NAME, Plc4xModbusTagBuilder.build(
@@ -60,8 +64,7 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             ensureResponseOk(response, FIELD_NAME, "read");
 
             return switch (registerType) {
-                case COIL, DISCRETE_INPUT -> Plc4xModbusValueExtractor.coilBytes(
-                        response, FIELD_NAME, quantity, parity);
+                case COIL, DISCRETE_INPUT -> throw new IllegalStateException("bit 区域已在前置分支处理");
                 case HOLDING_REGISTER, INPUT_REGISTER -> Plc4xModbusValueExtractor.registerBytes(
                         response, FIELD_NAME, quantity);
             };
@@ -113,6 +116,25 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
     @Override
     public String getProtocolType() {
         return "MODBUS_TCP";
+    }
+
+    /**
+     * PLC4X 对部分 Modbus bit 区域批量 BOOL 标签只返回单个值，逐点读取后重新打包。
+     */
+    private byte[] readBitArea(int unitId, RegisterType registerType, int startAddress, int quantity) throws Exception {
+        List<Boolean> values = new ArrayList<>(quantity);
+        for (int offset = 0; offset < quantity; offset++) {
+            PlcReadResponse response = await(requireConnection().getClient()
+                    .readRequestBuilder()
+                    .addTagAddress(FIELD_NAME, Plc4xModbusTagBuilder.build(
+                            registerType, startAddress + offset, 1, unitId))
+                    .build()
+                    .execute());
+            ensureResponseOk(response, FIELD_NAME, "read");
+            byte[] coilBytes = Plc4xModbusValueExtractor.coilBytes(response, FIELD_NAME, 1, parity);
+            values.add(Boolean.TRUE.equals(ModbusUtils.getCoilValue(coilBytes, 1, parity)));
+        }
+        return ModbusUtils.buildCoilBytes(values, parity);
     }
 
     /**

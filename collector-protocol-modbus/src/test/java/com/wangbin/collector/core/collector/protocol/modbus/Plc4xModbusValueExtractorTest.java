@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.modbus;
 
 import com.wangbin.collector.common.enums.Parity;
+import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusUtils;
 import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.value.PlcValue;
 import org.junit.jupiter.api.Test;
@@ -8,100 +9,71 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * PLC4X Modbus 值提取器测试。
+ */
 class Plc4xModbusValueExtractorTest {
 
     @Test
-    void shouldExtractRegisterBytesFromPlcList() {
+    void shouldFlattenNestedBoolListReturnedByPlc4xForBitArrays() {
         PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue root = plcList(plcNumber(0x337E), plcNumber(0x3379));
+        PlcValue root = listValue(listValue(boolValue(false), boolValue(true), boolValue(false)));
         when(response.getPlcValue("value")).thenReturn(root);
 
-        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 2);
+        byte[] bytes = Plc4xModbusValueExtractor.coilBytes(response, "value", 3, Parity.none);
 
-        assertArrayEquals(new byte[]{0x33, 0x7E, 0x33, 0x79}, raw);
+        assertArrayEquals(ModbusUtils.buildCoilBytes(List.of(false, true, false), Parity.none), bytes);
     }
 
     @Test
-    void shouldPreserveUnsignedRegisterBits() {
+    void shouldReadPackedByteArrayReturnedByPlc4xForBitArrays() {
         PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue root = plcList(plcNumber(0x0000), plcNumber(0x8000), plcNumber(0xFFFF));
+        PlcValue root = objectValue(new byte[]{0b0000_0101});
         when(response.getPlcValue("value")).thenReturn(root);
 
-        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 3);
+        byte[] bytes = Plc4xModbusValueExtractor.coilBytes(response, "value", 3, Parity.none);
 
-        assertArrayEquals(new byte[]{0x00, 0x00, (byte) 0x80, 0x00, (byte) 0xFF, (byte) 0xFF}, raw);
+        assertArrayEquals(ModbusUtils.buildCoilBytes(List.of(true, false, true), Parity.none), bytes);
     }
 
     @Test
-    void shouldExtractSingleRegisterFromScalarValue() {
+    void shouldReadPackedNumberReturnedByPlc4xForBitArrays() {
         PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue value = plcNumber(0x1234);
-        when(response.getPlcValue("value")).thenReturn(value);
-
-        byte[] raw = Plc4xModbusValueExtractor.registerBytes(response, "value", 1);
-
-        assertArrayEquals(new byte[]{0x12, 0x34}, raw);
-    }
-
-    @Test
-    void shouldRejectRegisterResponseWithMissingValue() {
-        PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue root = plcList(plcNumber(0x1234));
+        PlcValue root = objectValue(0b10_0000_0001);
         when(response.getPlcValue("value")).thenReturn(root);
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> Plc4xModbusValueExtractor.registerBytes(response, "value", 2));
+        byte[] bytes = Plc4xModbusValueExtractor.coilBytes(response, "value", 10, Parity.none);
+
+        assertArrayEquals(ModbusUtils.buildCoilBytes(
+                List.of(true, false, false, false, false, false, false, false, false, true), Parity.none), bytes);
     }
 
-    @Test
-    void shouldRejectRegisterResponseWithUnexpectedValue() {
-        PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue root = plcList(plcNumber(0x1234), plcNumber(0x5678), plcNumber(0x789A));
-        when(response.getPlcValue("value")).thenReturn(root);
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> Plc4xModbusValueExtractor.registerBytes(response, "value", 2));
+    private static PlcValue listValue(PlcValue... values) {
+        PlcValue value = mock(PlcValue.class);
+        when(value.isNull()).thenReturn(false);
+        when(value.isList()).thenReturn(true);
+        doReturn(List.of(values)).when(value).getList();
+        when(value.getObject()).thenReturn(List.of(values));
+        return value;
     }
 
-    @Test
-    void shouldExtractCoilBytesFromPlcList() {
-        PlcReadResponse response = mock(PlcReadResponse.class);
-        PlcValue root = plcList(plcBool(true), plcBool(false), plcBool(true));
-        when(response.getPlcValue("value")).thenReturn(root);
-
-        byte[] raw = Plc4xModbusValueExtractor.coilBytes(response, "value", 3, Parity.none);
-
-        assertArrayEquals(new byte[]{0x05}, raw);
+    private static PlcValue boolValue(boolean bool) {
+        PlcValue value = mock(PlcValue.class);
+        when(value.isNull()).thenReturn(false);
+        when(value.isList()).thenReturn(false);
+        when(value.getObject()).thenReturn(bool);
+        return value;
     }
 
-    private PlcValue plcList(PlcValue... values) {
-        PlcValue plcValue = mock(PlcValue.class);
-        when(plcValue.isNull()).thenReturn(false);
-        when(plcValue.isList()).thenReturn(true);
-        doReturn(List.of(values)).when(plcValue).getList();
-        return plcValue;
-    }
-
-    private PlcValue plcNumber(int value) {
-        PlcValue plcValue = mock(PlcValue.class);
-        when(plcValue.isNull()).thenReturn(false);
-        when(plcValue.isList()).thenReturn(false);
-        when(plcValue.getObject()).thenReturn(value);
-        return plcValue;
-    }
-
-    private PlcValue plcBool(boolean value) {
-        PlcValue plcValue = mock(PlcValue.class);
-        when(plcValue.isNull()).thenReturn(false);
-        when(plcValue.isList()).thenReturn(false);
-        when(plcValue.getObject()).thenReturn(value);
-        return plcValue;
+    private static PlcValue objectValue(Object object) {
+        PlcValue value = mock(PlcValue.class);
+        when(value.isNull()).thenReturn(false);
+        when(value.isList()).thenReturn(false);
+        when(value.getObject()).thenReturn(object);
+        return value;
     }
 }
