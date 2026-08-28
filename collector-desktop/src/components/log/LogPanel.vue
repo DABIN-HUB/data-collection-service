@@ -34,8 +34,8 @@ import { Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
+import { buildLogExportFilename, buildLogQueryParams, exportLogRowsAsText, filterLogRows } from "@/features/log/utils/log-utils";
 import type { LogRow } from "@/types/monitor";
-import { exportLogRows } from "@/views/ops/ops-utils";
 
 const props = defineProps<{
   deviceId?: string;
@@ -51,20 +51,18 @@ const limit = ref(200);
 const autoRefresh = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const filteredRows = computed(() => rows.value.filter((row) => {
-  const value = keyword.value.trim().toLowerCase();
+const filteredRows = computed(() => filterLogRows(rows.value, { level: level.value, keyword: keyword.value }).filter((row) => {
   const matchesDevice = !props.deviceId || row.deviceId === props.deviceId || row.deviceName === props.deviceId;
-  const matchesKeyword = !value || [row.message, row.content, row.deviceId, row.deviceName, row.logger, row.thread].some((item) => String(item || "").toLowerCase().includes(value));
   const timestamp = logTimeMs(row);
   const matchesTime = !timeRange.value || !timestamp || (timestamp >= timeRange.value[0].getTime() && timestamp <= timeRange.value[1].getTime());
-  return matchesDevice && matchesKeyword && matchesTime;
+  return matchesDevice && matchesTime;
 }));
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const response = await getOpsLogs({ level: level.value || undefined, keyword: keyword.value || undefined, limit: limit.value });
+    const response = await getOpsLogs(buildLogQueryParams({ level: level.value, keyword: keyword.value, limit: limit.value }));
     rows.value = normalizeLogRows(response);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "运行日志加载失败";
@@ -74,12 +72,12 @@ async function load() {
 }
 
 function downloadLogs() {
-  const content = exportLogRows(filteredRows.value);
+  const content = exportLogRowsAsText(filteredRows.value);
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `collector-logs-${Date.now()}.txt`;
+  link.download = buildLogExportFilename("txt");
   link.click();
   URL.revokeObjectURL(url);
   ElMessage.success("已导出当前日志");

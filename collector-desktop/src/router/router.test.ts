@@ -37,8 +37,12 @@ describe("router", () => {
     expect(String(childRoute("realtime")?.component)).toContain("RealtimeView.vue");
   });
 
+  it("log 直接路由到独立 LogView", () => {
+    expect(String(childRoute("log")?.component)).toContain("LogView.vue");
+  });
+
   it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["history", "alarm", "device", "device/workbench", "collect", "cloud", "diagnostic", "log", "network", "control", "shadow"]) {
+    for (const path of ["history", "alarm", "device", "device/workbench", "collect", "cloud", "diagnostic", "network", "control", "shadow"]) {
       expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
     }
   });

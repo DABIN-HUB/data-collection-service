@@ -7,7 +7,6 @@ import {
   buildAlarmTroubleshootTarget,
   buildDiagnosticAdvice,
   describeAlarmAcknowledgement,
-  exportLogRows,
   formatNetworkResult,
   mergeAlarmAcknowledgementStates,
   normalizeAlarmAcknowledgementMap,
@@ -76,11 +75,6 @@ describe("ops-utils", () => {
       networkTarget: "10.0.0.8",
       networkPort: 502
     });
-  });
-
-  it("导出日志文本", () => {
-    expect(exportLogRows([{ timestamp: 1, level: "INFO", logger: "collector", message: "启动" }])).toContain("INFO");
-    expect(exportLogRows([{ time: "2026-08-14", content: "完成" }])).toContain("完成");
   });
 
   it("归纳云上报指标摘要", () => {

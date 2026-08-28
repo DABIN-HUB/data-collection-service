@@ -1,4 +1,4 @@
-import type { AlarmRow, LogRow } from "@/types/monitor";
+import type { AlarmRow } from "@/types/monitor";
 
 export interface AlarmSummary {
   total: number;
@@ -133,15 +133,6 @@ export function buildAlarmTroubleshootTarget(alarm: Record<string, unknown>, dev
     networkTarget: textOf(device.ipAddress ?? device.host ?? alarm.ipAddress ?? alarm.host) || undefined,
     networkPort: optionalNumber(device.port ?? alarm.port)
   };
-}
-
-export function exportLogRows(rows: LogRow[]): string {
-  return rows.map((row) => [
-    formatTime(row.timestamp || row.time),
-    row.level || "INFO",
-    row.logger || row.deviceName || row.deviceId || "-",
-    row.message || row.content || ""
-  ].join("\t")).join("\n");
 }
 
 export function summarizeReportMetrics(report: Record<string, unknown>): ReportSummary {

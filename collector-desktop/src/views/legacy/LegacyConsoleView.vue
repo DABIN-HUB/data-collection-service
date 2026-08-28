@@ -79,8 +79,6 @@
         </div>
       </section>
 
-      <section v-show="activeModule === 'log'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>日志</h1><span class="heading-online"><i></i>{{ filteredLogs.length }} 条 · 错误 {{ logSummary.error }}</span></div><div class="heading-actions"><button type="button" :class="{ 'is-active': logAutoRefresh }" @click="logAutoRefresh = !logAutoRefresh">{{ logAutoRefresh ? '停止自动刷新' : '自动刷新' }}</button><button type="button" @click="loadLogs">刷新日志</button></div></div><div class="exact-page-body"><div class="exact-toolbar log-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="logLevel" @change="loadLogs"><option value="">全部级别</option><option value="ERROR">错误</option><option value="WARN">警告</option><option value="INFO">信息</option><option value="DEBUG">调试</option></select><select v-model="logDeviceId" @change="loadLogs"><option value="">全部设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="logLogger" type="text" placeholder="记录器名称 logger" @keydown.enter="loadLogs" /><input v-model="logThread" type="text" placeholder="线程名 thread" @keydown.enter="loadLogs" /><input v-model="logKeyword" type="search" placeholder="搜索日志内容、设备、点位或来源" @keydown.enter="loadLogs" /><input v-model.number="logLimit" type="number" min="20" max="2000" step="20" /><button type="button" class="primary" @click="loadLogs">查询</button></div><div class="exact-toolbar-group"><button type="button" @click="showErrorLogs">错误日志快速定位</button><button type="button" @click="searchLatestExceptionLogs">最近异常定位</button><button type="button" @click="downloadLogs('txt')">导出文本</button><button type="button" @click="downloadLogs('json')">导出 JSON</button></div></div><div class="exact-diagnostic-cards log-summary-cards"><div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div><div class="exact-diagnostic-card"><span>错误日志</span><strong>{{ logSummary.error }}</strong></div><div class="exact-diagnostic-card"><span>警告日志</span><strong>{{ logSummary.warn }}</strong></div><div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ logSummary.loggerCount }} / {{ logSummary.threadCount }}</strong></div></div><section class="exact-surface modao-log-panel"><div v-if="filteredLogs.length === 0" class="empty-state compact">当前条件下没有可显示日志</div><div v-for="(log, index) in filteredLogs" :key="`${log.timestamp || log.time || index}-${log.logger || '-'}-${log.thread || '-'}`" class="modao-log-row"><span class="modao-log-time">{{ formatTime(log.timestamp || log.time) }}</span><strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong><span class="modao-log-name" :title="String(log.logger || '-')">{{ shortLoggerName(log.logger) }}</span><span class="modao-log-thread" :title="String(log.thread || '-')">{{ log.thread || '-' }}</span><span class="modao-log-message">{{ log.message || log.content || '-' }}</span></div></section></div></section>
-
       <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span></div></div><div class="exact-page-body"><div class="exact-toolbar network-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkType" @change="syncNetworkMode"><option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option></select><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">本机 / 白名单目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" /><input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" /><input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" /><button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button></div><div class="exact-toolbar-group network-toolbar-actions"><button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button><button type="button" :disabled="networkHistory.length === 0" class="primary" @click="downloadNetworkReport">导出检测结果</button></div></div><div class="exact-diagnostic-cards network-summary-cards"><div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div><div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div><div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div><div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre><div v-if="networkResult?.details?.length" class="network-trace-lines"><strong>路由明细</strong><code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code></div></section><section class="exact-table-card network-history-table"><div class="exact-table-title"><h2>检测历史记录</h2><span>最多保留 10 条</span></div><table><thead><tr><th>时间</th><th>方式</th><th>目标</th><th>端口</th><th>结论</th><th>耗时</th><th>原因</th></tr></thead><tbody><tr v-if="networkHistory.length === 0"><td colspan="7" class="exact-empty">暂无网络检测历史</td></tr><tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`"><td>{{ formatTime(item.completedAt) }}</td><td>{{ item.type }}</td><td>{{ item.target }}</td><td>{{ item.port ?? '-' }}</td><td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td><td>{{ item.durationMs ?? '-' }} ms</td><td>{{ item.reasonText }}</td></tr></tbody></table></section><LegacyEdgeTelemetryPanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" /></div></section>
 
       <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>Outbox / ACK 明细</h2><span>{{ cloudOperationalRows.length }} 项</span></div><div class="modao-property-grid"><div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
@@ -147,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
@@ -173,7 +171,6 @@ import { applyAlarmAcknowledgement, buildAlarmAckPayload, buildAlarmIdentity, bu
 import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "./alarm-history-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
-import { buildLogExportFilename, buildLogQueryParams, buildLogSearchFromException, exportLogRowsAsJson, exportLogRowsAsText, filterLogRows, summarizeLogRows } from "./log-utils";
 import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
@@ -213,7 +210,6 @@ const alarmLevelFilter = ref("");
 const alarmKeyword = ref("");
 const alarmHours = ref(24);
 const alarmLimit = ref(50);
-const logs = ref<LogRow[]>([]);
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
 const historySelectedPointRef = ref("");
@@ -224,13 +220,6 @@ const statusFilter = ref("");
 const deviceLoading = ref(false);
 const deviceLoadError = ref("");
 const selectedProtocol = ref<ProtocolSchema | null>(null);
-const logLevel = ref("");
-const logDeviceId = ref("");
-const logLogger = ref("");
-const logThread = ref("");
-const logKeyword = ref("");
-const logLimit = ref(100);
-const logAutoRefresh = ref(false);
 const networkDeviceId = ref("");
 const networkType = ref<NetworkDiagnosticType>("PING");
 const networkTarget = ref("127.0.0.1");
@@ -246,7 +235,6 @@ const configFileExporting = ref(false);
 const configFileImporting = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
-let logTimer = 0;
 
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
 const onlineCount = computed(() => devices.value.filter((device) => String(device.status || "").toUpperCase() === "ONLINE").length);
@@ -283,8 +271,6 @@ const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceName
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
 const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
 const selectedAlarmAckIdempotencyKey = computed(() => selectedAlarmAckId.value ? buildAlarmAckPayload(alarmAckNote.value, selectedAlarmAckId.value).idempotencyKey : "-");
-const filteredLogs = computed(() => filterLogRows(logs.value, { level: logLevel.value, logger: logLogger.value, keyword: logKeyword.value, deviceId: logDeviceId.value, thread: logThread.value }));
-const logSummary = computed(() => summarizeLogRows(filteredLogs.value));
 const resourceSummary = computed(() => {
   const resource = asRecord(systemResource.value);
   const pools = asRecord(resource.threadPools);
@@ -432,17 +418,8 @@ const networkResultRows = computed(() => networkResult.value ? buildNetworkResul
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
-  logTimer = window.setInterval(() => {
-    if (logAutoRefresh.value && activeModule.value === "log") {
-      void loadLogs();
-    }
-  }, 5000);
   await Promise.allSettled([loadProtocols(), loadDevices()]);
   await loadActiveLegacyModule(activeModule.value);
-});
-
-onBeforeUnmount(() => {
-  window.clearInterval(logTimer);
 });
 
 function switchModule(module: ModuleKey) {
@@ -462,7 +439,6 @@ watch(activeModule, (module) => {
 
 async function loadActiveLegacyModule(module: ModuleKey) {
   if (module === "alarm") await loadAlarms();
-  if (module === "log") await loadLogs();
   if (module === "diag") await runDiagnostic();
   if (module === "collect" || module === "cloud") await loadOverview();
   if (module === "workbench") await loadSelectedRealtime();
@@ -480,7 +456,7 @@ function syncWorkbenchTabFromRoute(path: string) {
 }
 
 async function refreshAll() {
-  await Promise.allSettled([loadProtocols(), loadDevices(), loadOverview(), loadAlarms(), loadLogs(), runDiagnostic()]);
+  await Promise.allSettled([loadProtocols(), loadDevices(), loadOverview(), loadAlarms(), runDiagnostic()]);
 }
 
 async function loadProtocols() {
@@ -535,6 +511,14 @@ async function loadOverview() {
   if (perfDetail.status === "fulfilled") performanceDetail.value = perfDetail.value;
 }
 
+async function loadDiagnosticLogSample(): Promise<LogRow[]> {
+  try {
+    return normalizeLogRows(await getOpsLogs({ limit: 50 }));
+  } catch {
+    return [];
+  }
+}
+
 async function loadAlarms() {
   try {
     const params = buildAlarmHistoryQuery({ level: alarmLevelFilter.value, keyword: alarmKeyword.value, hours: alarmHours.value, limit: alarmLimit.value });
@@ -561,50 +545,6 @@ async function refreshAlarmAcknowledgements() {
   const acknowledgements = await fetchAlarmAcknowledgements(alarms.value);
   alarms.value = mergeAlarmAcknowledgementStates(alarms.value, acknowledgements);
   ElMessage.success("确认状态批量查询完成");
-}
-
-async function loadLogs() {
-  try {
-    logs.value = normalizeLogRows(await getOpsLogs(buildLogQueryParams({ level: logLevel.value, logger: logLogger.value, keyword: logKeyword.value, deviceId: logDeviceId.value, thread: logThread.value, limit: logLimit.value })));
-  } catch {
-    logs.value = [];
-  }
-}
-
-function showErrorLogs() {
-  logLevel.value = "ERROR";
-  void loadLogs();
-}
-
-function searchLatestExceptionLogs() {
-  const root = asRecord(exceptionStats.value);
-  const data = asRecord(root.data);
-  const source = Object.keys(data).length ? data : root;
-  const recent = extractArray<Record<string, unknown>>(source, ["recent", "items", "records"]);
-  if (!recent.length) {
-    ElMessage.warning("当前没有最近异常可用于日志定位");
-    return;
-  }
-  logKeyword.value = buildLogSearchFromException(recent[0]);
-  logLevel.value = "";
-  void loadLogs();
-  ElMessage.info("已按最近异常填充日志搜索条件");
-}
-
-function downloadLogs(type: "json" | "txt") {
-  if (!filteredLogs.value.length) {
-    ElMessage.warning("当前没有可导出的日志");
-    return;
-  }
-  const content = type === "json" ? exportLogRowsAsJson(filteredLogs.value) : exportLogRowsAsText(filteredLogs.value);
-  const mime = type === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = buildLogExportFilename(type);
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 async function loadSelectedRealtime() {
@@ -846,11 +786,7 @@ async function submitAlarmAcknowledgement() {
 
 function locateAlarmLogs(alarm: AlarmRow) {
   const target = buildAlarmTroubleshootTarget(alarm);
-  logDeviceId.value = target.deviceId;
-  logKeyword.value = target.logKeyword;
-  logLevel.value = "";
-  switchModule("log");
-  void loadLogs();
+  router.push({ path: "/log", query: { deviceId: target.deviceId || undefined, keyword: target.logKeyword || undefined } }).catch(() => undefined);
   ElMessage.info("已按告警信息填充日志搜索条件");
 }
 
@@ -997,14 +933,14 @@ function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; poi
   ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
 }
 
-function downloadDiagnosticPackage() {
+async function downloadDiagnosticPackage() {
   const payload = {
     generatedAt: new Date().toISOString(),
     selectedDeviceId: selectedDeviceId.value,
     selectedDevice: selectedDeviceView.value || null,
     overview: buildDiagnosticRaw(),
     alarms: alarms.value.slice(0, 20),
-    logs: logs.value.slice(0, 50),
+    logs: await loadDiagnosticLogSample(),
     networkHistory: networkHistory.value.slice(0, 10),
     runtimeSummary: {
       totalDevices: devices.value.length,
@@ -1053,12 +989,6 @@ function openProtocolConfig(protocol: ProtocolSchema) {
 function cloudStatusText(status: unknown): string {
   const key = String(status || "").toUpperCase();
   return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", WARN: "存在风险", WARNING: "存在风险", ERROR: "异常", FAILED: "异常", DOWN: "异常", DISABLED: "未启用" } as Record<string, string>)[key] || "未知";
-}
-
-function shortLoggerName(logger: unknown): string {
-  const value = String(logger || "-");
-  const parts = value.split(".").filter(Boolean);
-  return parts.length > 2 ? parts.slice(-2).join(".") : value;
 }
 
 function alarmMessage(alarm: AlarmRow): string {

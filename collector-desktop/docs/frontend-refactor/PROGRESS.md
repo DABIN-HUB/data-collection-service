@@ -1,20 +1,21 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-28 13:50:53 +0800
+更新时间：2026-08-28 14:22:08 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `5c6bb9d` 修改
   - `da42b6d` 前端修改
   - `a16d805` 修改
   - `cd572d3` 前端修改
   - `c0b4cd2` 样式修改
-  - `288c0d7` 样式修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
-- 下一阶段：Phase 4 迁移 Log。
+- Phase 4：Log 迁移已完成并通过验证。
+- 下一阶段：Phase 5 迁移 Alarm。
 
 ## Baseline 验证结果
 
@@ -91,7 +92,7 @@ Phase 2 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 - 新增 `src/views/realtime/RealtimeView.vue`，承载原 `activeModule === "realtime"` 的主菜单“实时数据查询”页面。
 - `/realtime` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `RealtimeView.vue`；当前 `/dashboard` 仍直接指向 `DashboardView.vue`。
-- `/history`、`/alarm`、`/device`、`/device/workbench`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- `/history`、`/alarm`、`/device`、`/device/workbench`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/control`、`/shadow` 当时继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
 - Realtime 新增独立 `loadRealtime()`，进入 `/realtime` 后自行加载实时数据，不再依赖 `LegacyConsoleView.onMounted()`、`LegacyConsoleView.refreshAll()` 或 Legacy 内部 `loadRealtime()`。
 - Realtime 设备列表来源切到 `useDeviceStore()` 的 `devices`；必要时调用 `deviceStore.refresh()`，不再从 Legacy 传入设备列表，也不在 RealtimeView 维护长期设备领域副本。
 - Realtime 页面本地状态保留在 View 内：`realtimeAuto`、`realtimeDeviceId`、`realtimeKeyword`、`realtimeRows`、`realtimeSingleDeviceId`、`realtimeSinglePointId`、`realtimeSingleResult`、`loading`、`singleLoading`。
@@ -120,55 +121,96 @@ Phase 2 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 Phase 3 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
 
-## Phase 3 路由与页面检查结果
+## Phase 4：Log 迁移完成内容
 
-- `/dashboard`：dev server `http://127.0.0.1:5173/#/dashboard` 能打开，页面文本显示“控制台总览”，路由直接指向 `DashboardView.vue`。
-- `/realtime`：dev server `http://127.0.0.1:5173/#/realtime` 能打开，页面文本显示“实时数据查询”“立即刷新”“自动刷新”“全部设备”“单点实时查询”和完整实时数据表头。
-- `/device`：dev server `http://127.0.0.1:5173/#/device` 能打开，仍显示 Legacy 设备管理页面。
-- `/alarm`：dev server `http://127.0.0.1:5173/#/alarm` 能打开，仍显示 Legacy 告警历史中心。
-- `/log`：dev server `http://127.0.0.1:5173/#/log` 能打开，仍显示 Legacy 日志页面。
-- 搜索确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'realtime'`、主 Realtime 页面 state、主 Realtime `loadRealtime()` / `loadSingleRealtime()` / `pickRealtimePoint()`、`realtimeTimer`。
-- 搜索确认 `src/views/legacy/` 下已无 `realtime-utils.ts` / `realtime-utils.test.ts`。
-- 搜索确认源码中只保留 `features/realtime/utils/realtime-utils.ts` 这一套 `normalizeRealtimeRows()` 函数定义。
+- 新增 `src/views/log/LogView.vue`，承载原 `activeModule === "log"` 的主菜单“日志”页面。
+- `/log` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `LogView.vue`；当前 `/dashboard`、`/realtime` 继续分别直接指向 `DashboardView.vue`、`RealtimeView.vue`。
+- `/history`、`/alarm`、`/device`、`/device/workbench`、`/collect`、`/cloud`、`/diagnostic`、`/network`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- Log 新增独立 `loadLogs()`，进入 `/log` 后自行调用 `getOpsLogs(buildLogQueryParams(...))` 并通过 `normalizeLogRows()` 归一化，不再依赖 `LegacyConsoleView.onMounted()`、`LegacyConsoleView.refreshAll()` 或 Legacy 内部 `loadLogs()`。
+- Log 设备过滤下拉来源切到 `useDeviceStore()` 的 `devices`，进入页面时调用 `deviceStore.refresh()`，不从 Legacy 传入设备列表。
+- Log 页面本地状态保留在 View 内：`logs`、`logLevel`、`logDeviceId`、`logLogger`、`logThread`、`logKeyword`、`logLimit`、`logAutoRefresh`、`loading`、`error`、`exceptionLoading`。
+- 查询参数继续通过 `buildLogQueryParams()` 构造，只向后端发送既有 `level`、`logger`、聚合后的 `keyword`、`limit`，不新增后端不存在的 `deviceId` / `thread` 参数。
+- 前端精筛继续使用 `filterLogRows()`，摘要继续使用 `summarizeLogRows()`。
+- TXT / JSON 导出继续使用 `exportLogRowsAsText()`、`exportLogRowsAsJson()` 和 `buildLogExportFilename()`。
+- 错误日志快速定位保留：设置 `logLevel = "ERROR"` 后重新加载日志。
+- 最近异常定位保留：LogView 点击时单独请求 `getExceptionStats()`，使用 `buildLogSearchFromException()` 填充关键词后加载日志；不调用 `loadOverview()`、`runDiagnostic()` 或 `refreshAll()`。
+- Alarm 页“定位日志”交互已调整为跳转 `/log?deviceId=...&keyword=...`，由新 `LogView.vue` 读取 route query 并独立加载日志。
+- 5 秒自动刷新 Timer 迁入 `LogView.vue` 生命周期：`watch(logAutoRefresh)` 启停，`onBeforeUnmount()` 清理；Legacy 中主 Log 页的 `logTimer` 已删除。
+- `src/views/legacy/log-utils.ts` 与 `src/views/legacy/log-utils.test.ts` 已迁移到 `src/features/log/utils/`。
+- `LogPanel.vue` 已改为复用 `features/log/utils/log-utils.ts` 中的 `buildLogQueryParams()`、`filterLogRows()`、`exportLogRowsAsText()`、`buildLogExportFilename()`，继续服务 DeviceWorkbench 单设备日志场景。
+- 搜索确认 `exportLogRows()` 只剩 ops-utils 与 LogPanel 引用后，将它从 `src/views/ops/ops-utils.ts` 删除，并删除 `ops-utils.test.ts` 中对应测试；Log TXT 导出统一由 feature log utils 承担。
+- 从 `LegacyConsoleView.vue` 删除主 Log template、页面级 Log state、`filteredLogs`、`logSummary`、`loadLogs()`、`showErrorLogs()`、`searchLatestExceptionLogs()`、`downloadLogs()`、`shortLoggerName()` 与主 Log 自动刷新 Timer。
+- 为保留 Diagnostic 诊断包里的日志样本能力，Legacy 未保留主 Log 页面状态，而是在导出诊断包时通过 `loadDiagnosticLogSample()` 最小化请求 `getOpsLogs({ limit: 50 })`；这不影响 `/log` 独立页面。
+- Log 专属样式从 `legacy-console.css` 迁入 `LogView.vue` scoped style，包括 `modao-log-*` 与 `log-toolbar` 布局；公共 `section-heading`、`exact-page`、`exact-toolbar`、`exact-table-card`、`exact-diagnostic-card` 等仍保留公共 legacy 样式。
 
-## Phase 3 新增文件
+## Phase 4 验证结果
 
-- `collector-desktop/src/views/realtime/RealtimeView.vue`
-- `collector-desktop/src/features/realtime/utils/realtime-utils.ts`
-- `collector-desktop/src/features/realtime/utils/realtime-utils.test.ts`
-- `collector-boot/src/main/resources/static/desktop/assets/RealtimeView-DsgF0jX1.js`（`build:web` 生成）
-- `collector-boot/src/main/resources/static/desktop/assets/realtime-utils-CDIoGcAS.js`（`build:web` 生成）
-- `collector-boot/src/main/resources/static/desktop/assets/device.store-B3Dndph5.js`（`build:web` 生成）
+执行时间：2026-08-28 14:16-14:22，执行目录：`collector-desktop/`。
 
-## Phase 3 修改文件
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 29 个测试文件、149 个测试通过；`src/features/log/utils/log-utils.test.ts` 保留并通过，`router.test.ts` 覆盖 `/dashboard -> DashboardView`、`/realtime -> RealtimeView`、`/log -> LogView` 和其它过渡页面仍走 `LegacyConsoleView` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `LogView` 与 `log-utils` chunks |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 24 |
+| `git diff --check` | 通过 | exit code 0；仅有 Git 对部分 Web 构建产物 LF/CRLF 的提示，无空白错误 |
 
-- `collector-desktop/src/components/device/DeviceConfigPanel.vue`
-- `collector-desktop/src/components/realtime/RealtimeDataPanel.vue`
+Phase 4 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 4 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5174/#/dashboard` 能打开，页面文本显示“控制台总览”，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5174/#/realtime` 能打开，页面文本显示“实时数据查询”，仍由 `RealtimeView.vue` 承载。
+- `/log`：dev server `http://127.0.0.1:5174/#/log` 能打开，页面文本显示“日志”“自动刷新”“刷新日志”“全部级别”“全部设备”“记录器名称 logger”“线程名 thread”“错误日志快速定位”“最近异常定位”“导出文本”“导出 JSON”和日志摘要卡片。
+- `/device`：dev server `http://127.0.0.1:5174/#/device` 能打开，仍显示 Legacy 设备管理页面。
+- `/alarm`：dev server `http://127.0.0.1:5174/#/alarm` 能打开，仍显示 Legacy 告警历史中心。
+- 搜索确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'log'`、主 Log 页面 state、主 Log `loadLogs()` / `downloadLogs()` / 快速定位函数、`logTimer`。
+- 搜索确认 `src/views/legacy/` 下已无 `log-utils.ts` / `log-utils.test.ts`。
+- 搜索确认 `src/styles/legacy-console.css` 与 `src/styles/workbench.css` 已无主 Log 页面 `modao-log-*` / `log-toolbar` 专属选择器。
+
+## Phase 4 新增文件
+
+- `collector-desktop/src/views/log/LogView.vue`
+- `collector-desktop/src/features/log/utils/log-utils.ts`
+- `collector-desktop/src/features/log/utils/log-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/LogView-Bhpwtpjx.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/LogView-DSQ3DSbd.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/log-utils-BEPZH2al.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/monitor.api-DGr9dOcd.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/data.api-BuLcx8kQ.js`（`build:web` 生成）
+
+## Phase 4 修改文件
+
+- `collector-desktop/src/components/log/LogPanel.vue`
 - `collector-desktop/src/router/route-definitions.ts`
 - `collector-desktop/src/router/route-names.ts`
 - `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
 - `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/ops/ops-utils.ts`
+- `collector-desktop/src/views/ops/ops-utils.test.ts`
 - `collector-desktop/docs/frontend-refactor/PROGRESS.md`
 - `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
 - `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
 
-## Phase 3 删除文件
+## Phase 4 删除文件
 
-- `collector-desktop/src/views/legacy/realtime-utils.ts`
-- `collector-desktop/src/views/legacy/realtime-utils.test.ts`
+- `collector-desktop/src/views/legacy/log-utils.ts`
+- `collector-desktop/src/views/legacy/log-utils.test.ts`
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 History / Alarm / Device / Collection / Cloud / Diagnostic / Log / Network / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
-- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、告警列表、日志列表、监控指标、配置摘要、上报链路等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
-- 主 `/realtime` 页面继续保持 HTTP 轮询语义，没有切换为 WebSocket；`RealtimeDataPanel.vue` 仍保留设备工作台单设备 WebSocket + HTTP fallback 场景。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空数据/服务不可达显示不崩溃；真实设备数据、单点查询接口返回值和自动刷新请求成功路径仍依赖后端服务与设备数据环境。
+- `LegacyConsoleView.vue` 仍然承载 History / Alarm / Device / Collection / Cloud / Diagnostic / Network / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、告警列表、监控指标、配置摘要、上报链路、网络诊断等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
+- 主 `/log` 页面继续保持 HTTP 查询语义，没有修改后端 `/api/ops/logs` 契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空数据/服务不可达显示不崩溃；真实日志数据查询、导出内容和最近异常定位成功路径仍依赖后端服务与运行数据环境。
+- Vite dev server 首次尝试使用 5173 时发现端口已占用，改用 5174 完成 smoke check；用于 smoke check 的 5174 dev server 已停止。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 4：迁移 Log。
+等待确认后进入 Phase 5：迁移 Alarm。
 
-Phase 4 只迁移 Log，不自动进入 History、Alarm、Device 或其它业务页面。
+Phase 5 只迁移 Alarm，不自动进入 History、Device、Network 或其它业务页面。
