@@ -384,7 +384,6 @@ body.modao-exact .legacy-console .topbar {
   display: none;
 }
 
-body.modao-exact .legacy-console .overview-section,
 body.modao-exact .legacy-console .exact-page,
 body.modao-exact .legacy-console .workspace-grid {
   width: 100%;
@@ -451,20 +450,6 @@ body.modao-exact .legacy-console .heading-actions {
   flex-wrap: nowrap;
 }
 
-body.modao-exact .legacy-console .heading-note {
-  color: var(--exact-muted);
-  font-size: 11px;
-}
-
-body.modao-exact .legacy-console .overview-cards {
-  display: grid;
-  margin: 0;
-  padding: 24px 24px 0;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 15px;
-}
-
-body.modao-exact .legacy-console .overview-cards .card,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card {
   position: relative;
   display: flex;
@@ -480,7 +465,6 @@ body.modao-exact .legacy-console .exact-diagnostic-cards .card {
   box-shadow: none;
 }
 
-body.modao-exact .legacy-console .overview-cards .card::before,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card::before {
   position: absolute;
   top: 0;
@@ -493,26 +477,16 @@ body.modao-exact .legacy-console .exact-diagnostic-cards .card::before {
   content: "";
 }
 
-body.modao-exact .legacy-console .overview-cards .card::after,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card::after {
   display: none !important;
   content: none !important;
 }
 
-body.modao-exact .legacy-console .overview-cards .card:nth-child(1)::before { background: var(--exact-cyan); }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(2)::before { background: #f8fafc; }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(3)::before { background: var(--exact-red); }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(4)::before { background: #22c55e; }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(5)::before { background: var(--exact-blue); }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(6)::before { background: #34d399; }
-
-body.modao-exact .legacy-console .overview-cards .card span,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card span {
   color: var(--exact-muted);
   font-size: 12px;
 }
 
-body.modao-exact .legacy-console .overview-cards .card strong,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card strong {
   display: block;
   margin: 12px 0 8px;
@@ -522,7 +496,6 @@ body.modao-exact .legacy-console .exact-diagnostic-cards .card strong {
   line-height: 1;
 }
 
-body.modao-exact .legacy-console .overview-cards .card small,
 body.modao-exact .legacy-console .exact-diagnostic-cards .card small {
   margin-top: auto;
   color: var(--exact-dim);
@@ -530,81 +503,6 @@ body.modao-exact .legacy-console .exact-diagnostic-cards .card small {
   line-height: 1.4;
 }
 
-body.modao-exact .legacy-console .overview-cards .card:nth-child(1) strong { color: var(--exact-cyan); }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(3) strong { color: var(--exact-red); }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(4) strong { color: #22c55e; }
-body.modao-exact .legacy-console .overview-cards .card:nth-child(6) strong { color: #34d399; }
-
-body.modao-exact .legacy-console .overview-cards .card > small {
-  margin: 1px 0 12px;
-  color: var(--exact-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-body.modao-exact .legacy-console .overview-cards .card .card-subtext,
-body.modao-exact .legacy-console .overview-cards .card .card-meta {
-  margin-top: auto;
-  color: var(--exact-dim);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-body.modao-exact .legacy-console .overview-cards .card .card-meta {
-  display: grid;
-  gap: 3px;
-}
-
-body.modao-exact .legacy-console .overview-cards .card .card-meta span {
-  color: var(--exact-dim);
-  font-size: 10px;
-}
-
-body.modao-exact .legacy-console .overview-cards .cache-ring {
-  width: 64px;
-  height: 64px;
-  margin: -2px auto 2px;
-  border: 6px solid #263955;
-  border-top-color: var(--exact-blue);
-  border-right-color: var(--exact-blue);
-  border-bottom-color: var(--exact-blue);
-  border-radius: 50%;
-  transform: rotate(34deg);
-}
-
-body.modao-exact .legacy-console .overview-cards .card:nth-child(5) > small {
-  margin-bottom: 3px;
-}
-
-body.modao-exact .legacy-console .overview-cards .card:nth-child(5) > strong {
-  margin: 0 auto;
-  color: #60a5fa;
-  font-size: 13px;
-}
-
-body.modao-exact .legacy-console .overview-cards .card:nth-child(5) .card-subtext {
-  display: none;
-}
-
-body.modao-exact .legacy-console .home-dashboard {
-  display: flex;
-  margin-top: 0;
-  padding: 24px;
-  flex-direction: column;
-  gap: 24px;
-}
-
-body.modao-exact .legacy-console .home-dashboard-row {
-  display: grid;
-  gap: 24px;
-}
-
-body.modao-exact .legacy-console .home-dashboard-primary,
-body.modao-exact .legacy-console .home-dashboard-observability {
-  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
-}
-
-body.modao-exact .legacy-console .home-panel,
 body.modao-exact .legacy-console .exact-surface,
 body.modao-exact .legacy-console .exact-table-card,
 body.modao-exact .legacy-console .exact-json-panel,
@@ -622,15 +520,6 @@ body.modao-exact .legacy-console .surface-card {
   box-shadow: none;
 }
 
-body.modao-exact .legacy-console .home-dashboard-primary .home-panel {
-  min-height: 337px;
-}
-
-body.modao-exact .legacy-console .home-dashboard-observability .home-panel {
-  height: 220px;
-}
-
-body.modao-exact .legacy-console .home-panel-head,
 body.modao-exact .legacy-console .exact-surface-head,
 body.modao-exact .legacy-console .exact-table-title,
 body.modao-exact .legacy-console .panel-head,
@@ -646,7 +535,6 @@ body.modao-exact .legacy-console .console-panel-head {
   background: transparent;
 }
 
-body.modao-exact .legacy-console .home-panel-head h2,
 body.modao-exact .legacy-console .exact-surface-head h2,
 body.modao-exact .legacy-console .exact-table-title h2,
 body.modao-exact .legacy-console .panel-head h2,
@@ -658,7 +546,6 @@ body.modao-exact .legacy-console .console-panel-head h2 {
   font-weight: 700;
 }
 
-body.modao-exact .legacy-console .home-panel-badge,
 body.modao-exact .legacy-console .exact-surface-head span,
 body.modao-exact .legacy-console .exact-table-title span,
 body.modao-exact .legacy-console .surface-card-head span,
@@ -669,372 +556,6 @@ body.modao-exact .legacy-console .console-panel-head span {
   color: #60a5fa;
   font-size: 11px;
   font-weight: 400;
-}
-
-body.modao-exact .legacy-console .home-event-list,
-body.modao-exact .legacy-console .home-risk-list {
-  max-height: 277px;
-  padding: 16px;
-  overflow-y: auto;
-}
-
-body.modao-exact .legacy-console .home-event-list,
-body.modao-exact .legacy-console .home-risk-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-body.modao-exact .legacy-console .home-event-row {
-  position: relative;
-  min-height: 66px;
-  margin-left: 48px;
-  padding: 12px;
-  border: 1px solid rgba(59, 130, 246, 0.28);
-  border-radius: 8px;
-  background: var(--exact-panel-soft);
-}
-
-body.modao-exact .legacy-console .home-event-row::before {
-  position: absolute;
-  top: 25px;
-  left: -33px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 0 9px var(--exact-panel);
-  content: "";
-}
-
-body.modao-exact .legacy-console .home-event-row::after {
-  position: absolute;
-  top: 29px;
-  bottom: -32px;
-  left: -29px;
-  width: 1px;
-  background: var(--exact-border);
-  content: "";
-}
-
-body.modao-exact .legacy-console .home-event-row:last-child::after {
-  display: none;
-}
-
-body.modao-exact .legacy-console .home-event-row.is-error {
-  border-color: rgba(239, 68, 68, 0.28);
-}
-
-body.modao-exact .legacy-console .home-event-row.is-error::before {
-  background: var(--exact-red);
-}
-
-body.modao-exact .legacy-console .home-event-row.is-warn {
-  border-color: rgba(249, 115, 22, 0.3);
-}
-
-body.modao-exact .legacy-console .home-event-row.is-warn::before {
-  background: var(--exact-orange);
-}
-
-body.modao-exact .legacy-console .home-event-main,
-body.modao-exact .legacy-console .home-event-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-body.modao-exact .legacy-console .home-event-main {
-  flex-direction: column;
-}
-
-body.modao-exact .legacy-console .home-event-main strong {
-  color: #93c5fd;
-  font-size: 13px;
-}
-
-body.modao-exact .legacy-console .home-event-main span,
-body.modao-exact .legacy-console .home-event-meta span {
-  color: var(--exact-muted);
-  font-size: 11px;
-}
-
-body.modao-exact .legacy-console .home-event-meta {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-}
-
-body.modao-exact .legacy-console .home-event-meta b {
-  display: none;
-}
-
-body.modao-exact .legacy-console .home-risk-row {
-  position: relative;
-  display: block;
-  min-height: 67px;
-  padding: 14px 82px 12px 13px;
-  border: 0;
-  border-left: 4px solid var(--exact-orange);
-  border-radius: 5px;
-  background: var(--exact-panel-soft);
-}
-
-body.modao-exact .legacy-console .home-risk-row.is-error {
-  border-left-color: var(--exact-red);
-}
-
-body.modao-exact .legacy-console .home-risk-row.is-warn {
-  border-left-color: var(--exact-orange);
-}
-
-body.modao-exact .legacy-console .home-risk-row .risk-dot {
-  display: none;
-}
-
-body.modao-exact .legacy-console .home-risk-row strong {
-  display: block;
-  overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body.modao-exact .legacy-console .home-risk-row p {
-  margin: 5px 0 0;
-  color: var(--exact-dim);
-  font-size: 11px;
-}
-
-body.modao-exact .legacy-console .pipeline-steps {
-  display: block;
-  height: calc(100% - 56px);
-  padding: 18px 24px;
-  overflow: hidden;
-}
-
-body.modao-exact .legacy-console .topology-flow {
-  display: flex;
-  min-width: 560px;
-  height: 128px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-body.modao-exact .legacy-console .topology-node {
-  display: flex;
-  width: 88px;
-  min-width: 88px;
-  min-height: 66px;
-  padding: 7px 8px 6px;
-  align-items: center;
-  flex-direction: column;
-  justify-content: center;
-  border: 2px solid #2d4a7a;
-  border-radius: 8px;
-  background: var(--exact-panel);
-  box-shadow: none;
-  text-align: center;
-}
-
-body.modao-exact .legacy-console .topology-node.is-ok { border-color: rgba(34, 197, 94, 0.65); }
-body.modao-exact .legacy-console .topology-node.is-warn { border-color: var(--exact-orange); }
-body.modao-exact .legacy-console .topology-node.is-error { border-color: var(--exact-red); }
-body.modao-exact .legacy-console .topology-node.is-gateway { border-color: var(--exact-blue); }
-
-body.modao-exact .legacy-console .topology-icon {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  margin-bottom: 3px;
-  place-items: center;
-  color: var(--exact-cyan);
-  border-radius: 4px;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-body.modao-exact .legacy-console .topology-node strong {
-  display: block;
-  color: #fff;
-  font-size: 11px;
-}
-
-body.modao-exact .legacy-console .topology-node small {
-  display: block;
-  max-width: 100%;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--exact-dim);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body.modao-exact .legacy-console .topology-storage-stack {
-  display: grid;
-  min-width: 130px;
-  gap: 14px;
-}
-
-body.modao-exact .legacy-console .topology-storage-pill {
-  display: flex;
-  min-height: 28px;
-  padding: 0 10px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--exact-border);
-  border-radius: 5px;
-  background: var(--exact-panel-soft);
-  color: #fff;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-body.modao-exact .legacy-console .topology-storage-pill .status-dot {
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--exact-dim);
-}
-
-body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-ok,
-body.modao-exact .legacy-console .topology-status-dots i.is-ok { background: var(--exact-green); }
-body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-warn,
-body.modao-exact .legacy-console .topology-status-dots i.is-warn { background: var(--exact-orange); }
-body.modao-exact .legacy-console .topology-storage-pill .status-dot.is-error,
-body.modao-exact .legacy-console .topology-status-dots i.is-error { background: var(--exact-red); }
-
-body.modao-exact .legacy-console .topology-status-dots {
-  display: flex;
-  margin-top: 5px;
-  gap: 4px;
-}
-
-body.modao-exact .legacy-console .topology-status-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--exact-dim);
-}
-
-body.modao-exact .legacy-console .topology-connector {
-  display: block;
-  min-width: 28px;
-  height: 1px;
-  flex: 1 1 54px;
-  background: var(--exact-border);
-}
-
-body.modao-exact .legacy-console .home-resource-list {
-  display: block;
-  max-height: none;
-  padding: 13px 16px 12px;
-  overflow: hidden;
-}
-
-body.modao-exact .legacy-console .resource-dashboard {
-  display: grid;
-  height: 134px;
-  grid-template-columns: minmax(270px, 1fr) minmax(150px, 0.55fr);
-  align-items: center;
-  gap: 16px;
-}
-
-body.modao-exact .legacy-console .resource-gauges {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(74px, 1fr));
-  gap: 8px;
-}
-
-body.modao-exact .legacy-console .resource-gauge {
-  display: grid;
-  place-items: center;
-  gap: 5px;
-}
-
-body.modao-exact .legacy-console .resource-ring {
-  --resource-color: #22d3ee;
-  position: relative;
-  display: grid;
-  width: 68px;
-  height: 68px;
-  place-items: center;
-  border-radius: 50%;
-  background: conic-gradient(var(--resource-color) var(--resource-progress), #233a5c var(--resource-progress));
-}
-
-body.modao-exact .legacy-console .resource-ring::after {
-  position: absolute;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--exact-panel);
-  content: "";
-}
-
-body.modao-exact .legacy-console .resource-ring.is-blue { --resource-color: #3b82f6; }
-body.modao-exact .legacy-console .resource-ring.is-orange { --resource-color: #f59e0b; }
-body.modao-exact .legacy-console .resource-ring.is-green { --resource-color: #22c55e; }
-
-body.modao-exact .legacy-console .resource-gauge > span {
-  color: var(--exact-muted);
-  font-size: 10px;
-}
-
-body.modao-exact .legacy-console .resource-gauge > strong {
-  color: var(--resource-color, #60a5fa);
-  font-size: 13px;
-}
-
-body.modao-exact .legacy-console .resource-gauge:nth-child(1) > strong { color: #60a5fa; }
-body.modao-exact .legacy-console .resource-gauge:nth-child(2) > strong { color: #fb923c; }
-body.modao-exact .legacy-console .resource-gauge:nth-child(3) > strong { color: #4ade80; }
-
-body.modao-exact .legacy-console .resource-runtime-summary {
-  display: grid;
-  min-height: 104px;
-  padding-left: 28px;
-  align-content: center;
-  gap: 12px;
-  border-left: 1px solid var(--exact-border);
-}
-
-body.modao-exact .legacy-console .resource-runtime-summary > div:not(.resource-load-track) {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 10px;
-}
-
-body.modao-exact .legacy-console .resource-runtime-summary span {
-  color: var(--exact-dim);
-}
-
-body.modao-exact .legacy-console .resource-runtime-summary strong {
-  color: #fff;
-  font-size: 10px;
-}
-
-body.modao-exact .legacy-console .resource-runtime-summary strong.is-warn {
-  color: #f87171;
-}
-
-body.modao-exact .legacy-console .resource-load-track {
-  width: 80px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: #334155;
-}
-
-body.modao-exact .legacy-console .resource-load-track i {
-  display: block;
-  height: 100%;
-  background: var(--exact-blue);
 }
 
 body.modao-exact .legacy-console .exact-page-body {
@@ -1867,7 +1388,6 @@ body.modao-exact .legacy-console .exact-json-panel pre {
 }
 
 body.modao-exact .legacy-console .exact-surface > .json-view,
-body.modao-exact .legacy-console .home-resource-list .json-view,
 body.modao-exact .legacy-console .surface-card .json-view {
   border-top: 0;
 }
@@ -2072,24 +1592,15 @@ body.modao-exact .legacy-console .surface-card > button.wide {
   margin: 0 16px 16px;
 }
 
-@media (max-width: 1440px) {
-  body.modao-exact .legacy-console .overview-cards {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 1100px) {
   body.modao-exact .legacy-console .exact-device-card {
     grid-template-columns: 1fr 1fr;
   }
 
-  body.modao-exact .legacy-console .overview-cards,
   body.modao-exact .legacy-console .exact-diagnostic-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  body.modao-exact .legacy-console .home-dashboard-primary,
-  body.modao-exact .legacy-console .home-dashboard-observability,
   body.modao-exact .legacy-console .workspace-grid {
     grid-template-columns: 1fr;
   }

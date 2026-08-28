@@ -1,112 +1,5 @@
 <template>
   <div class="legacy-page-host">
-      <section v-show="activeModule === 'overview'" id="overview" class="overview-section">
-        <div class="section-heading">
-          <div class="heading-title-line">
-            <h1>控制台总览</h1>
-            <span class="heading-online"><i></i>设备连接 <b>{{ onlineCount }}/{{ devices.length }}</b></span>
-          </div>
-          <div class="heading-actions">
-            <button type="button" class="primary" @click="refreshAll">刷新全部</button>
-            <button type="button" @click="switchModule('device')">设备管理</button>
-            <button type="button" class="primary" @click="openLocalEditor()">新增本地设备</button>
-            <span class="heading-note">{{ lastRefreshText }}</span>
-          </div>
-        </div>
-        <div class="overview-cards">
-          <article v-for="card in overviewCards" :key="card.label" class="card metric-card">
-            <small>{{ card.label }}</small>
-            <div v-if="card.ring" class="cache-ring" aria-hidden="true"></div>
-            <strong>{{ card.value }}</strong>
-            <div v-if="card.meta" class="card-meta">
-              <span v-for="item in card.meta" :key="String(item[0])">{{ item[0] }} {{ item[1] }}</span>
-            </div>
-            <div v-else class="card-subtext">{{ card.subtext }}</div>
-          </article>
-        </div>
-        <div class="home-dashboard">
-          <div class="home-dashboard-row home-dashboard-primary">
-            <section class="home-panel home-panel-large">
-              <div class="home-panel-head"><div><h2>全局告警最近记录</h2></div><span class="home-panel-badge">{{ alarms.length ? `${alarms.length} 条` : '数据不可用' }}</span></div>
-              <div class="home-event-list">
-                <div v-if="alarms.length === 0" class="empty-state compact">暂无告警记录</div>
-                <div v-for="alarm in alarms.slice(0, 8)" :key="String(alarm.alarmId || alarm.id || alarm.timestamp)" class="home-event-row" :class="alarmToneClass(alarm)">
-                  <div class="home-event-main">
-                    <strong>{{ alarmMessage(alarm) }}</strong>
-                    <span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span>
-                  </div>
-                  <div class="home-event-meta">
-                    <b>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
-                    <span>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section class="home-panel">
-              <div class="home-panel-head"><div><h2>设备异常风险</h2></div><span class="home-panel-badge">{{ riskDevices.length ? `${riskDevices.length} 台风险` : '正常' }}</span></div>
-              <div class="home-risk-list">
-                <div v-if="riskDevices.length === 0" class="empty-state compact">当前没有明显设备风险</div>
-                <div v-for="device in riskDevices" :key="deviceIdOf(device)" class="home-risk-row" :class="riskToneClass(device)"><span class="risk-dot"></span><div><strong>{{ deviceIdOf(device) || device.deviceName }}</strong><p>{{ riskDescription(device) }}</p></div></div>
-              </div>
-            </section>
-          </div>
-          <div class="home-dashboard-row home-dashboard-observability">
-            <section class="home-panel home-panel-report">
-              <div class="home-panel-head"><div><h2>数据上报链路拓扑</h2></div><span class="home-panel-badge">{{ reportState }}</span></div>
-              <div class="pipeline-steps">
-                <div class="topology-flow" aria-label="数据采集与上报拓扑">
-                  <div class="topology-node" :class="collectorToneClass" :title="collectorDetail">
-                    <span class="topology-icon">采</span>
-                    <strong>采集器</strong>
-                    <span class="topology-status-dots"><i :class="runningToneClass"></i><i :class="collectorToneClass"></i></span>
-                  </div>
-                  <span class="topology-connector" aria-hidden="true"></span>
-                  <div class="topology-node is-gateway" :class="gatewayToneClass" :title="gatewayDetail">
-                    <span class="topology-icon">网</span>
-                    <strong>边缘网关</strong>
-                    <small>{{ nodeIdentity }}</small>
-                  </div>
-                  <span class="topology-connector" aria-hidden="true"></span>
-                  <div class="topology-storage-stack">
-                    <div class="topology-storage-pill" title="Redis 缓存状态">
-                      <span>Redis 缓存</span><i class="status-dot" :class="cacheToneClass"></i>
-                    </div>
-                    <div class="topology-storage-pill" title="TDengine 历史存储状态">
-                      <span>TDengine</span><i class="status-dot" :class="storageToneClass"></i>
-                    </div>
-                  </div>
-                  <span class="topology-connector" aria-hidden="true"></span>
-                  <div class="topology-node" :class="cloudToneClass" :title="String(reportState)">
-                    <span class="topology-icon">云</span>
-                    <strong>云平台</strong>
-                    <small>{{ reportState }}</small>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section class="home-panel home-panel-runtime">
-              <div class="home-panel-head"><div><h2>系统资源与线程池</h2></div><span class="home-panel-badge">{{ runtimeState }}</span></div>
-              <div class="home-resource-list">
-                <div class="resource-dashboard">
-                  <div class="resource-gauges">
-                    <div v-for="gauge in resourceGauges" :key="gauge.label" class="resource-gauge">
-                      <div class="resource-ring" :class="`is-${gauge.tone}`" :style="{ '--resource-progress': `${gauge.degrees}deg` }"></div>
-                      <span>{{ gauge.label }}</span>
-                      <strong>{{ gauge.value }}</strong>
-                    </div>
-                  </div>
-                  <div class="resource-runtime-summary" :title="resourceSummary.title">
-                    <div><span>活跃线程:</span><strong>{{ resourceSummary.activeThreads }} / {{ resourceSummary.maxThreads }}</strong></div>
-                    <div><span>队列积压:</span><strong :class="{ 'is-warn': resourceSummary.queuedTasks !== '-' && Number(resourceSummary.queuedTasks) > 0 }">{{ resourceSummary.queuedTasks }}</strong></div>
-                    <div class="resource-load-track"><i :style="{ width: resourceSummary.threadUsage }"></i></div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </section>
-
       <section v-show="activeModule === 'realtime'" class="exact-page">
         <div class="section-heading">
           <div class="heading-title-line"><h1>实时数据查询</h1><span class="heading-online"><i></i>实时采集链路</span></div>
@@ -286,7 +179,7 @@ import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
 import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
-import { getAllDeviceStatistics, getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
+import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
 import { getAllDeviceDataSummaries, getDeviceAlarmHistory, getDeviceRealtimeData, getPointRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
@@ -315,7 +208,6 @@ const activeModule = computed<ModuleKey>(() => {
   const module = resolveLegacyModuleByRoutePath(route.path);
   return module === "control" || module === "shadow" ? "workbench" : module;
 });
-const lastRefresh = ref<Date | null>(null);
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const protocols = ref<ProtocolSchema[]>([]);
@@ -328,7 +220,6 @@ const collectorPerformance = ref<unknown>({});
 const exceptionStats = ref<unknown>({});
 const storageMetrics = ref<unknown>({});
 const performanceDetail = ref<unknown>({});
-const deviceStats = ref<unknown>({});
 const configSummary = ref<unknown>({});
 const alarms = ref<AlarmRow[]>([]);
 const alarmAcknowledgements = ref<Record<string, unknown>>({});
@@ -384,13 +275,10 @@ const workbenchTab = ref<"config" | "control" | "shadow">("config");
 let realtimeTimer = 0;
 let logTimer = 0;
 
-const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
 const onlineCount = computed(() => devices.value.filter((device) => String(device.status || "").toUpperCase() === "ONLINE").length);
 const riskDevices = computed(() => devices.value.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
 const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知");
-const runtimeState = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "资源已加载" : "资源未知");
-const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
 const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
 const selectedRuntimeSnapshot = computed(() => selectedDeviceId.value ? (selectedDeviceView.value?.runtime || deviceRuntimeMap.value[selectedDeviceId.value]) : undefined);
@@ -429,48 +317,6 @@ const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${sel
 const selectedAlarmAckIdempotencyKey = computed(() => selectedAlarmAckId.value ? buildAlarmAckPayload(alarmAckNote.value, selectedAlarmAckId.value).idempotencyKey : "-");
 const filteredLogs = computed(() => filterLogRows(logs.value, { level: logLevel.value, logger: logLogger.value, keyword: logKeyword.value, deviceId: logDeviceId.value, thread: logThread.value }));
 const logSummary = computed(() => summarizeLogRows(filteredLogs.value));
-const overviewCards = computed(() => {
-  const totalDevices = valueOf(deviceStats.value, ["collectorCount", "totalCollectors", "total", "deviceCount"], devices.value.length);
-  const disconnected = Math.max(0, devices.value.length - onlineCount.value);
-  const pointCount = valueOf(deviceStats.value, ["pointCount", "totalPoints"], sumPoints(devices.value));
-  const cacheRatio = ratioFrom(valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null));
-  return [
-    { label: "采集器总数", value: totalDevices, meta: [["已连接", onlineCount.value], ["未连接", disconnected]] },
-    { label: "点位总数", value: pointCount, meta: [["连接配置", devices.value.length], ["上报属性", valueOf(reportMetrics.value, ["reportFieldCount", "reportedProperties"], "-")]] },
-    { label: "全局告警", value: alarms.value.length, subtext: alarms.value.length ? "最近告警记录" : "最近 24 小时没有告警历史记录" },
-    { label: "运行设备", value: onlineCount.value, meta: [["缺失连接", disconnected], ["健康连接", onlineCount.value]] },
-    { label: "缓存命中率", value: cacheRatio === null ? "-" : percentText(cacheRatio), ring: true, subtext: cacheRatio === null ? "缓存指标不可用" : "缓存访问指标" },
-    { label: "云上报链路", value: reportState.value, subtext: Object.keys(asRecord(reportMetrics.value)).length ? "上报状态已加载" : "上报监控数据不可用" }
-  ];
-});
-const collectorToneClass = computed(() => riskDevices.value.some((device) => String(device.status || "").toUpperCase() === "ERROR") ? "is-error" : (riskDevices.value.length ? "is-warn" : (devices.value.length ? "is-ok" : "is-muted")));
-const runningToneClass = computed(() => onlineCount.value > 0 ? "is-ok" : "is-muted");
-const gatewayToneClass = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "is-ok" : "is-muted");
-const cacheToneClass = computed(() => ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null))) === null ? "is-muted" : "is-ok");
-const storageToneClass = computed(() => Object.keys(asRecord(storageMetrics.value)).length ? "is-ok" : (Object.keys(asRecord(configSummary.value)).length ? "is-ok" : "is-muted"));
-const cloudToneClass = computed(() => {
-  const status = String(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")).toUpperCase();
-  if (["ERROR", "FAILED", "DOWN"].includes(status)) return "is-error";
-  if (["WARN", "WARNING", "DEGRADED"].includes(status)) return "is-warn";
-  return Object.keys(asRecord(reportMetrics.value)).length ? "is-ok" : "is-muted";
-});
-const collectorDetail = computed(() => `${onlineCount.value}/${devices.value.length} 已连接`);
-const gatewayDetail = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "处理指标已加载" : "处理性能数据不可用");
-const resourceGauges = computed(() => {
-  const resource = asRecord(systemResource.value);
-  const cpu = ratioFrom(valueOf(resource, ["systemCpuLoad", "cpuLoad", "processCpuLoad"], null));
-  const totalMemory = optionalNumber(valueOf(resource, ["totalPhysicalMemorySize", "totalMemory", "memoryTotal"], null));
-  const freeMemory = optionalNumber(valueOf(resource, ["freePhysicalMemorySize", "freeMemory", "memoryFree"], null));
-  const memory = totalMemory !== null && freeMemory !== null && totalMemory > 0 ? 1 - freeMemory / totalMemory : null;
-  const heapUsed = optionalNumber(valueOf(resource, ["heapUsed", "usedHeap", "jvmHeapUsed"], null));
-  const heapMax = optionalNumber(valueOf(resource, ["heapMax", "maxHeap", "jvmHeapMax"], null));
-  const heap = heapUsed !== null && heapMax !== null && heapMax > 0 ? heapUsed / heapMax : null;
-  return [
-    { label: "CPU 使用率", tone: "blue", value: percentText(cpu), degrees: ratioDegrees(cpu) },
-    { label: "内存使用率", tone: "orange", value: percentText(memory), degrees: ratioDegrees(memory) },
-    { label: "JVM 堆内存", tone: "green", value: percentText(heap), degrees: ratioDegrees(heap) }
-  ];
-});
 const resourceSummary = computed(() => {
   const resource = asRecord(systemResource.value);
   const pools = asRecord(resource.threadPools);
@@ -628,7 +474,8 @@ onMounted(async () => {
       void loadLogs();
     }
   }, 5000);
-  await refreshAll();
+  await Promise.allSettled([loadProtocols(), loadDevices()]);
+  await loadActiveLegacyModule(activeModule.value);
 });
 
 onBeforeUnmount(() => {
@@ -648,11 +495,17 @@ watch(() => route.path, (path) => {
 });
 
 watch(activeModule, (module) => {
-  if (module === "realtime") void loadRealtime();
-  if (module === "alarm") void loadAlarms();
-  if (module === "log") void loadLogs();
-  if (module === "diag") void runDiagnostic();
+  void loadActiveLegacyModule(module);
 });
+
+async function loadActiveLegacyModule(module: ModuleKey) {
+  if (module === "realtime") await loadRealtime();
+  if (module === "alarm") await loadAlarms();
+  if (module === "log") await loadLogs();
+  if (module === "diag") await runDiagnostic();
+  if (module === "collect" || module === "cloud") await loadOverview();
+  if (module === "workbench") await loadSelectedRealtime();
+}
 
 function syncWorkbenchTabFromRoute(path: string) {
   const module = resolveLegacyModuleByRoutePath(path);
@@ -667,7 +520,6 @@ function syncWorkbenchTabFromRoute(path: string) {
 
 async function refreshAll() {
   await Promise.allSettled([loadProtocols(), loadDevices(), loadOverview(), loadAlarms(), loadLogs(), runDiagnostic()]);
-  lastRefresh.value = new Date();
 }
 
 async function loadProtocols() {
@@ -698,8 +550,7 @@ async function loadDevices() {
 }
 
 async function loadOverview() {
-  const [stats, runtime, resource, report, summary, cache, devicesMetric, collectorPerf, exceptions, storage, perfDetail] = await Promise.allSettled([
-    getAllDeviceStatistics(),
+  const [runtime, resource, report, summary, cache, devicesMetric, collectorPerf, exceptions, storage, perfDetail] = await Promise.allSettled([
     getRuntimeStatus(),
     getSystemResources(),
     getCloudReportMetrics(),
@@ -711,7 +562,6 @@ async function loadOverview() {
     getStorageMetrics(),
     getPerformanceDetail()
   ]);
-  if (stats.status === "fulfilled") deviceStats.value = stats.value;
   if (runtime.status === "fulfilled") runtimeStatus.value = runtime.value;
   if (resource.status === "fulfilled") systemResource.value = resource.value;
   if (report.status === "fulfilled") reportMetrics.value = report.value;
@@ -1373,21 +1223,6 @@ function alarmToneClass(alarm: AlarmRow): string {
   return "is-info";
 }
 
-function riskToneClass(device: DeviceInfo): string {
-  const status = String(device.status || "").toUpperCase();
-  if (status === "ERROR" || Boolean(device.lastError)) return "is-error";
-  if (status === "OFFLINE") return "is-warn";
-  return "is-warn";
-}
-
-function riskDescription(device: DeviceInfo): string {
-  const status = String(device.status || "UNKNOWN");
-  if (device.lastError) return `连接异常：${device.lastError}`;
-  if (status.toUpperCase() === "OFFLINE") return "当前设备离线，配置存在但运行连接未建立";
-  if (status.toUpperCase() === "ERROR") return "当前设备处于异常状态，请检查连接和协议配置";
-  return `当前状态 ${status}`;
-}
-
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
 function deviceNameOf(deviceId: string): string { return devices.value.find((device) => deviceIdOf(device) === deviceId)?.deviceName || deviceId; }
 function sumPoints(source: DeviceInfo[]): number { return source.reduce((sum, device) => sum + Number(device.pointCount || (Array.isArray(device.points) ? device.points.length : 0) || 0), 0); }
@@ -1397,7 +1232,6 @@ function valueOf(value: unknown, keys: string[], fallback: unknown): unknown { c
 function numberValue(value: unknown, fallback = 0): number { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
 function optionalNumber(value: unknown): number | null { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 function ratioFrom(value: unknown): number | null { const parsed = optionalNumber(value); if (parsed === null) return null; const normalized = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed; return Math.max(0, Math.min(1, normalized)); }
-function ratioDegrees(value: number | null): number { return value === null ? 0 : Math.round(Math.max(0, Math.min(1, value)) * 360); }
 function percentText(value: number | null): string { return value === null ? "-" : `${Math.round(value * 100)}%`; }
 function formatDurationMs(value: unknown): string {
   const ms = optionalNumber(value);
