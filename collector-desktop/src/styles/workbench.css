@@ -3329,9 +3329,9 @@ body.modal-active {
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog {
-  --panel-line: #d8e2f0;
-  --panel-muted: #64748b;
-  --panel-text: #142033;
+  --panel-line: var(--console-border-soft, #1e3a5f);
+  --panel-muted: var(--console-text-muted, #8aa0b8);
+  --panel-text: var(--console-text-primary, #e5edf8);
   min-height: calc(100vh - 96px);
   max-height: calc(100vh - 96px);
   display: grid;
@@ -3339,7 +3339,7 @@ body.modal-active {
   overflow: hidden;
   border: 1px solid var(--panel-line);
   border-radius: 18px;
-  background: #fff;
+  background: var(--console-bg, #08131f);
   box-shadow: 0 18px 46px rgba(15, 42, 74, 0.12);
 }
 
@@ -3353,7 +3353,7 @@ body.modal-active {
   gap: 18px;
   color: var(--panel-text);
   border-bottom: 1px solid var(--panel-line);
-  background: #fff;
+  background: var(--console-panel, #101b2a);
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-tabs {
@@ -3366,7 +3366,7 @@ body.modal-active {
   overflow-y: hidden;
   border-right: 0;
   border-bottom: 1px solid var(--panel-line);
-  background: #f8fbff;
+  background: var(--console-bg-soft, #0d1a2a);
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-layout {
@@ -3390,7 +3390,7 @@ body.modal-active {
   border: 0;
   border-right: 1px solid var(--panel-line);
   border-radius: 0;
-  background: #f8fbff;
+  background: var(--console-panel, #101b2a);
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-editor-body {
@@ -3399,7 +3399,7 @@ body.modal-active {
   min-height: 0;
   padding: 18px;
   overflow: auto;
-  background: #eef3f9;
+  background: var(--console-bg, #08131f);
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog .device-operation-rail-actions,
@@ -3414,7 +3414,7 @@ body.modal-active {
   padding: 14px;
   border: 1px solid var(--panel-line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--console-panel, #101b2a);
   box-shadow: none;
 }
 
@@ -3435,7 +3435,7 @@ body.modal-active {
   padding: 5px;
   border: 1px solid #dbe4f1;
   border-radius: 8px;
-  background: #f8fbff;
+  background: var(--console-bg-soft, #0d1a2a);
 }
 
 #deviceOperationPanel.local-device-panel.local-device-web-dialog .surface-grid.two {
@@ -5344,6 +5344,12 @@ body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-
   gap: 10px;
 }
 
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .device-config-workbench-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-section-card,
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .field-card,
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .connection-test-card,
@@ -5540,13 +5546,34 @@ body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-
 
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-data-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+  flex: 1 1 auto;
+  align-items: stretch;
   min-height: 0;
 }
 
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-data-table-column {
   min-width: 0;
+  min-height: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .table-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .table-scroll > .industrial-point-table {
+  min-width: 100%;
 }
 
 body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .data-table-meta {
@@ -5767,5 +5794,464 @@ body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-
 
   body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-data-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 第三轮精修：只调整横向布局、控件数量、顶部对齐、尺寸和深色一致性。 */
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog {
+  --console-radius-card: 6px;
+  --console-radius-control: 4px;
+  --console-radius-sm: var(--console-radius-control);
+  --console-radius-md: var(--console-radius-card);
+  --console-radius-lg: var(--console-radius-card);
+  --console-radius-panel: var(--console-radius-card);
+  --el-bg-color: var(--console-panel);
+  --el-bg-color-overlay: var(--console-panel);
+  --el-fill-color: var(--console-bg-soft);
+  --el-fill-color-light: var(--console-bg-soft);
+  --el-fill-color-lighter: var(--console-bg-soft);
+  --el-fill-color-blank: var(--console-panel);
+  --el-border-color: var(--console-border-soft);
+  --el-border-color-light: var(--console-border-soft);
+  --el-text-color-primary: var(--console-text-primary);
+  --el-text-color-regular: var(--console-text-secondary);
+  --el-text-color-secondary: var(--console-text-muted);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .local-section-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .field-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .connection-test-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-schema-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .surface-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .shadow-summary-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .monitor-panel {
+  border-radius: var(--console-radius-card);
+  background: var(--console-panel);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  grid-auto-rows: minmax(92px, auto);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-card,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-nav-card {
+  display: flex;
+  min-height: 92px;
+  max-height: 105px;
+  margin-top: 0;
+  padding: 8px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-card .local-section-head,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-nav-card .local-section-head {
+  min-height: 18px;
+  height: 18px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-card .label-chip,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-nav-card .label-chip {
+  display: none;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-card .local-section-head h3,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-nav-card .local-section-head h3 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-card .local-section-head p {
+  display: none;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .control-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  flex-wrap: nowrap;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .state-pill {
+  flex: 0 0 118px;
+  width: 118px;
+  height: 44px;
+  min-height: 0;
+  padding: 4px 8px;
+  border-radius: var(--console-radius-control);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .state-pill-message {
+  flex-basis: 130px;
+  width: 130px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .state-pill strong {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-actions {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  width: auto;
+  margin-top: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .run-control-actions .el-button {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 9px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .quick-actions button {
+  width: 100%;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--console-radius-control);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse {
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--console-radius-card);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse > summary {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--console-radius-card);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse[open] > .schema-head,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse[open] > .protocol-capability-strip,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse[open] > .dynamic-form,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse[open] > .schema-actions,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse[open] > .el-alert {
+  margin: 10px 12px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 16px;
+  row-gap: 10px;
+  align-items: start;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form > .protocol-field-group + .protocol-field-group {
+  margin-top: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-group,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-form-grid {
+  display: contents;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-group h4 {
+  display: none;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form > .el-alert {
+  grid-column: 1 / -1;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  margin-bottom: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-row.is-wide {
+  grid-column: span 2;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-label {
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-input,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-input-number,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-select {
+  width: 100%;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-input__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-select__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-input-number,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-control .el-date-editor {
+  min-height: 30px;
+  height: 30px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .device-data-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  margin-bottom: 10px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .device-data-topline .device-inner-tabbar {
+  flex: 0 0 auto;
+  min-height: 34px;
+  margin: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .data-toolbar {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-data-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  margin: 0 0 8px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+  flex: 1 1 auto;
+  align-items: stretch;
+  min-height: 0;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .compact-point-detail {
+  position: static;
+  top: auto;
+  width: 300px;
+  max-width: 300px;
+  align-self: stretch;
+  margin-top: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  border-radius: var(--console-radius-card);
+  background: var(--console-bg-soft);
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .compact-detail-grid input {
+  min-height: 30px;
+  height: 30px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .panel-toolbar,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-toolbar {
+  min-height: 36px;
+  margin-bottom: 10px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .realtime-workbench .table-actions,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-toolbar-left,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-height: 34px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar > .compact-select,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar > .compact-select {
+  flex: 1 1 280px;
+  min-width: 220px;
+  max-width: 360px;
+  width: auto;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar > .mini-filter,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar > .mini-filter {
+  flex: 0 0 118px;
+  width: 118px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar > .el-date-editor,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar > .el-date-editor {
+  flex: 0 0 330px;
+  width: 330px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar .el-button,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar .el-button,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar .el-input__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar .el-input__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar .el-select__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar .el-select__wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar .el-date-editor,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar .el-date-editor,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-filter-bar .el-input-number,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .log-filter-bar .el-input-number {
+  min-height: 30px;
+  height: 30px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 190px));
+  gap: 12px;
+  justify-content: start;
+  margin: 0 0 12px;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card {
+  display: grid;
+  height: 68px;
+  padding: 10px 12px;
+  align-content: center;
+  gap: 3px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-card);
+  background: var(--console-bg-soft);
+  box-shadow: none;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card span,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card small {
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card strong {
+  color: var(--console-text-primary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card.danger strong { color: #f87171; }
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card.warning strong { color: #fbbf24; }
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .alarm-stat-card.success strong { color: #34d399; }
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-table,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-table__inner-wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-table__body-wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-table__header-wrapper,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-table__empty-block,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-empty,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-loading-mask {
+  background: var(--console-panel) !important;
+}
+
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-date-editor .el-range-input,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-date-editor .el-range-separator,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-date-editor .el-range__icon,
+body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .el-date-editor .el-range__close-icon {
+  color: var(--console-text-secondary);
+  background: transparent;
+}
+
+body.modao-exact .el-picker__popper,
+body.modao-exact .el-picker-panel,
+body.modao-exact .el-picker-panel__body,
+body.modao-exact .el-picker-panel__content,
+body.modao-exact .el-picker-panel__footer,
+body.modao-exact .el-date-range-picker,
+body.modao-exact .el-date-range-picker__content,
+body.modao-exact .el-time-panel,
+body.modao-exact .el-time-panel__content,
+body.modao-exact .el-time-panel__footer,
+body.modao-exact .el-select-dropdown,
+body.modao-exact .el-select-dropdown__wrap,
+body.modao-exact .el-scrollbar__view,
+body.modao-exact .el-popover,
+body.modao-exact .el-dialog,
+body.modao-exact .el-dialog__header,
+body.modao-exact .el-dialog__body,
+body.modao-exact .el-dialog__footer {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border-soft) !important;
+  background: var(--console-panel) !important;
+}
+
+@media (min-width: 1201px) {
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .control-row {
+    grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+  }
+
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-content {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+
+@media (max-width: 1600px) {
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .control-row,
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .point-content {
+    grid-template-columns: 1fr;
+  }
+
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .compact-point-detail {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 900px) {
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .dynamic-form {
+    grid-template-columns: 1fr;
+  }
+
+  body.modao-exact .legacy-console #deviceOperationPanel.local-device-panel.local-device-web-dialog .protocol-config-collapse .protocol-field-row.is-wide {
+    grid-column: auto;
   }
 }

@@ -8,7 +8,7 @@
           v-for="field in group.fields"
           :key="field.name"
           class="protocol-field-row"
-          :class="{ 'is-required': field.required, 'is-boolean': field.type === 'boolean' }"
+          :class="{ 'is-required': field.required, 'is-boolean': field.type === 'boolean', 'is-wide': isWideField(field) }"
           :title="fieldHelp(field)"
         >
           <label class="protocol-field-label" :title="field.label || field.name">
@@ -183,6 +183,11 @@ function fieldPlaceholder(field: ProtocolFieldConfig): string {
 function fieldHelp(field: ProtocolFieldConfig): string {
   const source = [field.label, field.description, field.name].filter(Boolean).join("：");
   return source || displayFieldLabel(field);
+}
+
+function isWideField(field: ProtocolFieldConfig): boolean {
+  const key = normalizeKey([field.name, field.label, field.description].filter(Boolean).join(" "));
+  return /connectionstring|endpoint|url|jdbc|dsn|path|certificate|cert|privatekey/.test(key);
 }
 
 function normalizeKey(value: string): string {

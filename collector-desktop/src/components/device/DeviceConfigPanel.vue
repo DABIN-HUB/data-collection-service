@@ -21,7 +21,7 @@
         </div>
       </section>
 
-      <div class="device-control-grid">
+      <div class="device-control-grid control-row">
         <section class="connection-test-card local-section-card run-control-card">
           <div class="local-section-head">
             <div>
@@ -30,15 +30,15 @@
             </div>
             <p>读取当前设备运行态、连接状态和最近消息。</p>
           </div>
-          <div class="protocol-state-strip">
+          <div class="control-status-row">
             <div class="state-pill"><span>运行状态</span><strong :class="statusToneClass(connectionStatusText)"><i></i>{{ connectionStatusText }}</strong></div>
             <div class="state-pill"><span>连接</span><strong :class="statusToneClass(connectionHealthText)"><i></i>{{ connectionHealthText }}</strong></div>
-            <div class="state-pill"><span>最近消息</span><strong>{{ connectionMessage || statusDetail?.message || '连接正常' }}</strong></div>
-          </div>
-          <div class="header-actions run-control-actions">
-            <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
-            <el-button type="primary" @click="$emit('start', device.normalizedId)">启动采集</el-button>
-            <el-button type="danger" plain @click="$emit('stop', device.normalizedId)">停止采集</el-button>
+            <div class="state-pill state-pill-message"><span>最近消息</span><strong>{{ connectionMessage || statusDetail?.message || '连接正常' }}</strong></div>
+            <div class="header-actions run-control-actions">
+              <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
+              <el-button type="primary" @click="$emit('start', device.normalizedId)">启动采集</el-button>
+              <el-button type="danger" plain @click="$emit('stop', device.normalizedId)">停止采集</el-button>
+            </div>
           </div>
         </section>
 
@@ -48,13 +48,12 @@
               <span class="label-chip">快捷导航</span>
               <h3>快捷导航</h3>
             </div>
-            <p>快速切换到设备运行数据。</p>
           </div>
-          <div class="workbench-jump-row">
-            <button type="button" @click="setActiveTab('points')">跳到点位</button>
-            <button type="button" @click="setActiveTab('realtime')">跳到实时</button>
-            <button type="button" @click="setActiveTab('alarm')">跳到告警</button>
-            <button type="button" @click="setActiveTab('log')">跳到日志</button>
+          <div class="workbench-jump-row quick-actions">
+            <button type="button" @click="setActiveTab('points')">点位</button>
+            <button type="button" @click="setActiveTab('realtime')">实时</button>
+            <button type="button" @click="setActiveTab('alarm')">告警</button>
+            <button type="button" @click="setActiveTab('log')">日志</button>
           </div>
         </section>
       </div>
@@ -92,50 +91,48 @@
       </details>
 
       <section class="local-section-card device-data-panel">
-        <div class="local-section-head device-data-head">
-          <div>
-            <span class="label-chip">运行数据</span>
-            <h3>点位列表 / 实时数据 / 告警 / 日志</h3>
+        <div class="device-data-topline">
+          <div class="device-inner-tabbar" role="tablist" aria-label="设备运行数据分区">
+            <button
+              v-for="tab in dataTabs"
+              :key="tab.key"
+              type="button"
+              class="device-inner-tab"
+              :class="{ 'is-active': activeTab === tab.key }"
+              @click="setActiveTab(tab.key)"
+            >
+              {{ tab.label }}
+            </button>
           </div>
-          <div class="schema-toolbar">
+          <div class="schema-toolbar data-toolbar">
             <el-button :loading="workbenchRowsLoading" @click="loadWorkbenchRows">刷新数据</el-button>
             <el-button @click="pointEditVisible = !pointEditVisible">{{ pointEditVisible ? '收起编辑' : '编辑点位' }}</el-button>
           </div>
-        </div>
-        <div class="device-inner-tabbar" role="tablist" aria-label="设备运行数据分区">
-          <button
-            v-for="tab in dataTabs"
-            :key="tab.key"
-            type="button"
-            class="device-inner-tab"
-            :class="{ 'is-active': activeTab === tab.key }"
-            @click="setActiveTab(tab.key)"
-          >
-            {{ tab.label }}
-          </button>
         </div>
 
         <el-alert v-if="workbenchRowsError" :title="workbenchRowsError" type="warning" :closable="false" />
 
         <template v-if="activeTab === 'points'">
-          <div class="point-data-grid">
-            <div class="point-data-table-column">
-              <div class="data-table-meta">
-                <span>共 {{ pointRows.length }} 条</span>
-                <span>页大小：{{ pageSize }} 条/页</span>
-                <span>设备：{{ device.normalizedId }}</span>
+          <div class="point-data-meta-row">
+            <span>共 {{ pointRows.length }} 条</span>
+            <span>页大小：{{ pageSize }} 条/页</span>
+            <span>设备：{{ device.normalizedId }}</span>
+          </div>
+          <div class="point-content point-data-grid">
+            <div class="point-data-table-column table-area">
+              <div class="table-scroll">
+                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" border class="industrial-point-table" highlight-current-row @row-click="selectWorkbenchPoint">
+                  <el-table-column prop="pointCode" label="点位编码" min-width="140" />
+                  <el-table-column prop="pointName" label="点位名称" min-width="140" />
+                  <el-table-column prop="address" label="地址" min-width="96" />
+                  <el-table-column prop="dataType" label="数据类型" width="96" />
+                  <el-table-column prop="readWrite" label="读写" width="68" />
+                  <el-table-column label="当前值" min-width="110"><template #default="{ row }">{{ displayPointValue(row) }}</template></el-table-column>
+                  <el-table-column label="质量" width="92"><template #default="{ row }"><span class="quality-dot" :class="qualityToneClass(row)"><i></i>{{ qualityText(row) }}</span></template></el-table-column>
+                  <el-table-column label="时间戳" min-width="150"><template #default="{ row }">{{ formatPointTime(row) }}</template></el-table-column>
+                  <el-table-column label="操作" width="78" fixed="right"><template #default="{ row }"><button type="button" class="table-link-button" @click.stop="handlePointAction(row)">{{ pointActionText(row) }}</button></template></el-table-column>
+                </el-table>
               </div>
-              <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" height="420" border class="industrial-point-table" highlight-current-row @row-click="selectWorkbenchPoint">
-                <el-table-column prop="pointCode" label="点位编码" min-width="140" />
-                <el-table-column prop="pointName" label="点位名称" min-width="140" />
-                <el-table-column prop="address" label="地址" min-width="96" />
-                <el-table-column prop="dataType" label="数据类型" width="96" />
-                <el-table-column prop="readWrite" label="读写" width="68" />
-                <el-table-column label="当前值" min-width="110"><template #default="{ row }">{{ displayPointValue(row) }}</template></el-table-column>
-                <el-table-column label="质量" width="92"><template #default="{ row }"><span class="quality-dot" :class="qualityToneClass(row)"><i></i>{{ qualityText(row) }}</span></template></el-table-column>
-                <el-table-column label="时间戳" min-width="150"><template #default="{ row }">{{ formatPointTime(row) }}</template></el-table-column>
-                <el-table-column label="操作" width="78" fixed="right"><template #default="{ row }"><button type="button" class="table-link-button" @click.stop="handlePointAction(row)">{{ pointActionText(row) }}</button></template></el-table-column>
-              </el-table>
               <div class="industrial-pagination-row">
                 <span>共 {{ pointRows.length }} 条</span>
                 <el-pagination

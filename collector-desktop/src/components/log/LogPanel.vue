@@ -1,7 +1,7 @@
 <template>
   <section class="monitor-panel log-workbench">
     <div class="panel-toolbar">
-      <div class="table-actions">
+      <div class="table-actions log-filter-bar">
         <el-select v-model="level" placeholder="日志级别" clearable class="mini-filter">
           <el-option label="INFO" value="INFO" />
           <el-option label="WARN" value="WARN" />
@@ -9,8 +9,8 @@
           <el-option label="DEBUG" value="DEBUG" />
           <el-option label="TRACE" value="TRACE" />
         </el-select>
-        <el-input v-model="logger" placeholder="日志来源过滤" clearable class="log-source-filter" />
-        <el-input v-model="keyword" placeholder="搜索日志内容" clearable :prefix-icon="Search" class="compact-select" />
+        <el-input v-model="keyword" placeholder="搜索设备 / 模块 / 日志内容" clearable :prefix-icon="Search" class="compact-select" />
+        <el-date-picker v-model="timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" />
         <el-input-number v-model="limit" :min="50" :max="2000" :step="50" controls-position="right" />
         <el-switch v-model="autoRefresh" active-text="自动刷新" inactive-text="手动" />
         <el-button :loading="loading" @click="load">刷新</el-button>
@@ -45,8 +45,8 @@ const loading = ref(false);
 const error = ref("");
 const rows = ref<LogRow[]>([]);
 const level = ref("");
-const logger = ref("");
 const keyword = ref("");
+const timeRange = ref<[Date, Date] | null>(null);
 const limit = ref(200);
 const autoRefresh = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -54,9 +54,10 @@ let timer: ReturnType<typeof setInterval> | null = null;
 const filteredRows = computed(() => rows.value.filter((row) => {
   const value = keyword.value.trim().toLowerCase();
   const matchesDevice = !props.deviceId || row.deviceId === props.deviceId || row.deviceName === props.deviceId;
-  const matchesLogger = !logger.value || String(row.logger || "").toLowerCase().includes(logger.value.toLowerCase());
   const matchesKeyword = !value || [row.message, row.content, row.deviceId, row.deviceName, row.logger, row.thread].some((item) => String(item || "").toLowerCase().includes(value));
-  return matchesDevice && matchesLogger && matchesKeyword;
+  const timestamp = logTimeMs(row);
+  const matchesTime = !timeRange.value || !timestamp || (timestamp >= timeRange.value[0].getTime() && timestamp <= timeRange.value[1].getTime());
+  return matchesDevice && matchesKeyword && matchesTime;
 }));
 
 async function load() {
@@ -123,6 +124,18 @@ function formatTime(value: unknown): string {
     return new Date(value).toLocaleString();
   }
   return value ? String(value) : "-";
+}
+
+function logTimeMs(row: LogRow): number | null {
+  const value = row.timestamp || row.time;
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value) {
+    const parsed = Date.parse(String(value));
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
 }
 
 onMounted(() => {

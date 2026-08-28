@@ -1,7 +1,7 @@
 <template>
   <section class="monitor-panel alarm-workbench">
     <div class="panel-toolbar">
-      <div class="table-actions">
+      <div class="table-actions alarm-filter-bar">
         <el-select v-model="level" placeholder="级别" clearable class="mini-filter">
           <el-option label="严重" value="CRITICAL" />
           <el-option label="重要" value="MAJOR" />
@@ -15,11 +15,11 @@
       </div>
     </div>
 
-    <div class="modao-stat-grid alarm-stat-grid">
-      <article class="modao-stat-card info"><span>告警总数</span><strong>{{ summary.total }}</strong><small>当前查询结果</small></article>
-      <article class="modao-stat-card danger"><span>严重/重要</span><strong>{{ summary.critical }}</strong><small>需要优先处理</small></article>
-      <article class="modao-stat-card warning"><span>提醒/一般</span><strong>{{ summary.warning }}</strong><small>关注趋势</small></article>
-      <article class="modao-stat-card success"><span>已确认</span><strong>{{ summary.acknowledged }}</strong><small>ACK 完成</small></article>
+    <div class="alarm-stat-list">
+      <article class="alarm-stat-card info"><span>告警总数</span><strong>{{ summary.total }}</strong><small>当前查询结果</small></article>
+      <article class="alarm-stat-card danger"><span>严重/重要</span><strong>{{ summary.critical }}</strong><small>需要优先处理</small></article>
+      <article class="alarm-stat-card warning"><span>提醒/一般</span><strong>{{ summary.warning }}</strong><small>关注趋势</small></article>
+      <article class="alarm-stat-card success"><span>已确认</span><strong>{{ summary.acknowledged }}</strong><small>ACK 完成</small></article>
     </div>
 
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
