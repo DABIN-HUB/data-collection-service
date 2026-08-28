@@ -51,8 +51,8 @@ import { ElMessage } from "element-plus";
 
 import { getRecentAlarms, normalizeAlarmRows } from "@/api/data.api";
 import { acknowledgeAlarm } from "@/api/ops.api";
+import { buildAlarmAckPayload, summarizeAlarms } from "@/features/alarm/utils/alarm-utils";
 import type { AlarmRow } from "@/types/monitor";
-import { buildAlarmAckPayload, summarizeAlarms } from "@/views/ops/ops-utils";
 
 const props = defineProps<{
   deviceId?: string;

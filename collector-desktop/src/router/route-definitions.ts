@@ -6,6 +6,7 @@ const AppShell = () => import("@/app/AppShell.vue");
 const DashboardView = () => import("@/views/dashboard/DashboardView.vue");
 const RealtimeView = () => import("@/views/realtime/RealtimeView.vue");
 const LogView = () => import("@/views/log/LogView.vue");
+const AlarmView = () => import("@/views/alarm/AlarmView.vue");
 const LegacyConsoleView = () => import("@/views/legacy/LegacyConsoleView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
@@ -22,7 +23,7 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
       { path: "dashboard", name: RouteNames.DASHBOARD, component: DashboardView },
       { path: "realtime", name: RouteNames.REALTIME, component: RealtimeView },
       { path: "history", name: RouteNames.HISTORY, component: LegacyConsoleView },
-      { path: "alarm", name: RouteNames.ALARM, component: LegacyConsoleView },
+      { path: "alarm", name: RouteNames.ALARM, component: AlarmView },
       { path: "device", name: RouteNames.DEVICE, component: LegacyConsoleView },
       { path: "device/workbench", name: RouteNames.DEVICE_WORKBENCH, component: LegacyConsoleView },
       { path: "collect", name: RouteNames.COLLECTION, component: LegacyConsoleView },

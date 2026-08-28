@@ -163,7 +163,7 @@ import { ElMessage } from "element-plus";
 
 import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
 import { getDevicePointsConfig } from "@/api/config.api";
-import { normalizeAlarmHistoryRows } from "./alarm-history-utils";
+import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "./history-trend-utils";
 import { normalizeHistoryRows, type HistoryRow } from "@/views/runtime/runtime-utils";
 import type { AlarmRow } from "@/types/monitor";

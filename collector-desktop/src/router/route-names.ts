@@ -17,14 +17,13 @@ export const RouteNames = {
 
 export type RouteName = typeof RouteNames[keyof typeof RouteNames];
 
-export type LegacyModuleKey = "overview" | "history" | "alarm" | "device" | "collect" | "cloud" | "diag" | "network" | "workbench";
+export type LegacyModuleKey = "overview" | "history" | "device" | "collect" | "cloud" | "diag" | "network" | "workbench";
 
 export type WorkbenchRouteTab = "control" | "shadow";
 
 const legacyModuleByRoutePath: Record<string, LegacyModuleKey | WorkbenchRouteTab> = {
   dashboard: "overview",
   history: "history",
-  alarm: "alarm",
   device: "device",
   "device/workbench": "workbench",
   collect: "collect",
@@ -38,7 +37,6 @@ const legacyModuleByRoutePath: Record<string, LegacyModuleKey | WorkbenchRouteTa
 const routePathByLegacyModule: Record<LegacyModuleKey, string> = {
   overview: "/dashboard",
   history: "/history",
-  alarm: "/alarm",
   device: "/device",
   collect: "/collect",
   cloud: "/cloud",
