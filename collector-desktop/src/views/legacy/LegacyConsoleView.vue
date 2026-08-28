@@ -1,51 +1,5 @@
 <template>
-  <div class="shell legacy-console theme-anchor modao-exact">
-    <aside class="sidebar">
-      <div class="sidebar-top">
-        <div class="brand">
-          <span class="brand-mark"><img :src="factoryIcon" alt=""></span>
-          <div class="brand-copy"><strong>工业数据控制台</strong></div>
-        </div>
-        <nav class="section-nav" aria-label="控制台主导航">
-          <div v-for="group in navGroups" :key="group.title" class="nav-group">
-            <span class="nav-group-title">{{ group.title }}</span>
-            <a
-              v-for="item in group.items"
-              :key="item.key"
-              href=""
-              :class="{ 'is-active': activeModule === item.key }"
-              @click.prevent="switchModule(item.key)"
-            >
-              <span class="nav-glyph" aria-hidden="true"><img :src="item.icon" alt=""></span><span>{{ item.label }}</span>
-            </a>
-          </div>
-        </nav>
-      </div>
-
-      <div class="sidebar-bottom">
-        <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}</span></div>
-        <details class="sidebar-token-drawer">
-          <summary>运维令牌</summary>
-          <div class="top-token-panel">
-            <label>接口访问令牌</label>
-            <input v-model="tokenInput" type="password" placeholder="请输入接口令牌" autocomplete="off" @keyup.enter="saveToken" />
-            <button type="button" @click="saveToken">保存令牌</button>
-          </div>
-        </details>
-      </div>
-    </aside>
-
-    <main class="content">
-      <header class="topbar">
-        <div class="node-status-bar">
-          <span class="node-item"><span>本机节点: <strong>{{ nodeIdentity }}</strong></span></span>
-          <span class="node-divider"></span>
-          <span class="node-item node-health"><i></i>服务状态: {{ systemStatusText }}</span>
-          <span class="node-divider"></span>
-          <span class="node-item"><span>时间: <strong>{{ liveClock }}</strong></span></span>
-        </div>
-      </header>
-
+  <div class="legacy-page-host">
       <section v-show="activeModule === 'overview'" id="overview" class="overview-section">
         <div class="section-heading">
           <div class="heading-title-line">
@@ -313,8 +267,6 @@
           </div>
         </div>
       </section>
-    </main>
-
     <input ref="configImportInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="handleConfigImportFile" />
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocols" @saved="handleLocalSaved" />
   </div>
@@ -339,6 +291,7 @@ import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDev
 import { getAllDeviceDataSummaries, getDeviceAlarmHistory, getDeviceRealtimeData, getPointRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
 import { acknowledgeAlarm, diagnoseNetwork, getOpsLogs, normalizeLogRows, queryAlarmAcknowledgements } from "@/api/ops.api";
+import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyModuleKey } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
@@ -352,31 +305,16 @@ import { buildRealtimeSummary, normalizeRealtimeRows, normalizeSinglePointRealti
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
-import alertCircleIcon from "@/assets/legacy-icons/alert-circle.svg";
-import chartTimelineIcon from "@/assets/legacy-icons/chart-timeline-variant.svg";
-import cloudUploadIcon from "@/assets/legacy-icons/cloud-upload.svg";
-import databaseCogIcon from "@/assets/legacy-icons/database-cog.svg";
-import factoryIcon from "@/assets/legacy-icons/factory.svg";
-import fileDocumentIcon from "@/assets/legacy-icons/file-document-outline.svg";
-import monitorDashboardIcon from "@/assets/legacy-icons/monitor-dashboard.svg";
-import networkOutlineIcon from "@/assets/legacy-icons/network-outline.svg";
-import routerWirelessIcon from "@/assets/legacy-icons/router-wireless.svg";
-import viewDashboardIcon from "@/assets/legacy-icons/view-dashboard.svg";
 
-type ModuleKey = "overview" | "realtime" | "history" | "alarm" | "device" | "collect" | "cloud" | "diag" | "log" | "network" | "workbench";
-
-const navGroups: Array<{ title: string; items: Array<{ key: ModuleKey; label: string; icon: string }> }> = [
-  { title: "运行", items: [{ key: "overview", label: "概览", icon: viewDashboardIcon }, { key: "realtime", label: "实时数据", icon: chartTimelineIcon }, { key: "history", label: "历史趋势", icon: chartTimelineIcon }, { key: "alarm", label: "告警总览", icon: alertCircleIcon }] },
-  { title: "配置", items: [{ key: "device", label: "设备管理", icon: routerWirelessIcon }, { key: "collect", label: "采集配置", icon: databaseCogIcon }, { key: "cloud", label: "云平台配置", icon: cloudUploadIcon }] },
-  { title: "诊断", items: [{ key: "diag", label: "系统诊断", icon: monitorDashboardIcon }, { key: "log", label: "日志", icon: fileDocumentIcon }, { key: "network", label: "网络检测", icon: networkOutlineIcon }] }
-];
+type ModuleKey = LegacyModuleKey;
 
 const appStore = useAppStore();
 const route = useRoute();
 const router = useRouter();
-const activeModule = ref<ModuleKey>("overview");
-const tokenInput = ref("");
-const liveClock = ref("--:--:--");
+const activeModule = computed<ModuleKey>(() => {
+  const module = resolveLegacyModuleByRoutePath(route.path);
+  return module === "control" || module === "shadow" ? "workbench" : module;
+});
 const lastRefresh = ref<Date | null>(null);
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
@@ -443,13 +381,11 @@ const configFileExporting = ref(false);
 const configFileImporting = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
-let clockTimer = 0;
 let realtimeTimer = 0;
 let logTimer = 0;
 
 const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
-const systemStatusClass = computed(() => appStore.initialized ? "is-online" : "is-unknown");
 const onlineCount = computed(() => devices.value.filter((device) => String(device.status || "").toUpperCase() === "ONLINE").length);
 const riskDevices = computed(() => devices.value.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
 const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知");
@@ -680,12 +616,8 @@ const networkResultRows = computed(() => networkResult.value ? buildNetworkResul
 ]);
 
 onMounted(async () => {
-  document.body.classList.add("theme-anchor", "modao-exact");
-  syncModuleFromRoute();
   await appStore.initialize();
-  tokenInput.value = appStore.token;
-  tickClock();
-  clockTimer = window.setInterval(tickClock, 1000);
+  syncWorkbenchTabFromRoute(route.path);
   realtimeTimer = window.setInterval(() => {
     if (realtimeAuto.value && activeModule.value === "realtime") {
       void loadRealtime();
@@ -700,79 +632,37 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  document.body.classList.remove("theme-anchor", "modao-exact");
-  window.clearInterval(clockTimer);
   window.clearInterval(realtimeTimer);
   window.clearInterval(logTimer);
 });
 
-function tickClock() {
-  liveClock.value = new Date().toLocaleTimeString();
-}
-
 function switchModule(module: ModuleKey) {
-  activeModule.value = module;
-  const targetPath = routePathByModule(module);
+  const targetPath = routePathForLegacyModule(module);
   if (route.path !== targetPath) {
     router.push(targetPath).catch(() => undefined);
   }
+}
+
+watch(() => route.path, (path) => {
+  syncWorkbenchTabFromRoute(path);
+});
+
+watch(activeModule, (module) => {
   if (module === "realtime") void loadRealtime();
   if (module === "alarm") void loadAlarms();
   if (module === "log") void loadLogs();
   if (module === "diag") void runDiagnostic();
-}
+});
 
-watch(() => route.path, syncModuleFromRoute);
-
-function syncModuleFromRoute() {
-  const module = moduleByRoutePath(route.path);
+function syncWorkbenchTabFromRoute(path: string) {
+  const module = resolveLegacyModuleByRoutePath(path);
   if (module === "control" || module === "shadow") {
-    activeModule.value = "workbench";
     workbenchTab.value = module;
     return;
   }
-  activeModule.value = module;
-}
-
-function moduleByRoutePath(path: string): ModuleKey | "control" | "shadow" {
-  const normalized = path.replace(/^\//, "") || "dashboard";
-  const mapping: Record<string, ModuleKey | "control" | "shadow"> = {
-    dashboard: "overview",
-    realtime: "realtime",
-    history: "history",
-    alarm: "alarm",
-    device: "device",
-    collect: "collect",
-    cloud: "cloud",
-    diagnostic: "diag",
-    log: "log",
-    network: "network",
-    control: "control",
-    shadow: "shadow"
-  };
-  return mapping[normalized] || "overview";
-}
-
-function routePathByModule(module: ModuleKey): string {
-  const mapping: Record<ModuleKey, string> = {
-    overview: "/dashboard",
-    realtime: "/realtime",
-    history: "/history",
-    alarm: "/alarm",
-    device: "/device",
-    collect: "/collect",
-    cloud: "/cloud",
-    diag: "/diagnostic",
-    log: "/log",
-    network: "/network",
-    workbench: "/device"
-  };
-  return mapping[module] || "/dashboard";
-}
-
-function saveToken() {
-  appStore.setToken(tokenInput.value, true);
-  ElMessage.success("令牌已保存");
+  if (module === "workbench") {
+    workbenchTab.value = "config";
+  }
 }
 
 async function refreshAll() {
@@ -1274,8 +1164,7 @@ async function editDevice(device: DeviceInfo) {
   }
   selectDevice(deviceIdOf(device));
   workbenchTab.value = "config";
-  activeModule.value = "workbench";
-  router.push("/device").catch(() => undefined);
+  router.push("/device/workbench").catch(() => undefined);
 }
 
 function openDeviceDiff(device: DeviceInfo) {
@@ -1365,8 +1254,7 @@ function downloadDiagnosticPackage() {
 function openDeviceOperation(device: DeviceInfo, tab: "config" | "control" | "shadow") {
   selectDevice(deviceIdOf(device));
   workbenchTab.value = tab;
-  activeModule.value = "workbench";
-  router.push(tab === "control" ? "/control" : (tab === "shadow" ? "/shadow" : "/device")).catch(() => undefined);
+  router.push(tab === "control" ? "/control" : (tab === "shadow" ? "/shadow" : "/device/workbench")).catch(() => undefined);
 }
 
 function protocolDefaultPort(protocol: ProtocolSchema): string {
@@ -1527,3 +1415,9 @@ function prettyJson(value: unknown): string { return JSON.stringify(value ?? {},
 function compactJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }
 function formatTime(value: unknown): string { if (!value) return "-"; const date = typeof value === "number" ? new Date(value) : new Date(String(value)); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(); }
 </script>
+
+<style scoped>
+.legacy-page-host {
+  display: contents;
+}
+</style>

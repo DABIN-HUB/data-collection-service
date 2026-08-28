@@ -15,10 +15,15 @@ tmp
 !.env.example
 logs/
 docs
+!/collector-desktop/docs/
+collector-desktop/docs/*
+!/collector-desktop/docs/frontend-refactor/
+!/collector-desktop/docs/frontend-refactor/**
 scripts/*
 !scripts/soak/
 !scripts/soak/**
 AGENTS.md
+!/collector-desktop/AGENTS.md
 .m2-local
 scripts
 !/collector-desktop/scripts/
