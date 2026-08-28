@@ -69,8 +69,6 @@
 
       <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" :selected-point-ref="historySelectedPointRef" @select-device="selectDevice" />
 
-      <section v-show="activeModule === 'network'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>网络检测</h1><span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span></div></div><div class="exact-page-body"><div class="exact-toolbar network-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="networkType" @change="syncNetworkMode"><option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option></select><select v-model="networkDeviceId" @change="applyNetworkDevice"><option value="">本机 / 白名单目标</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" /><input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" /><input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" /><button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button></div><div class="exact-toolbar-group network-toolbar-actions"><button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button><button type="button" :disabled="networkHistory.length === 0" class="primary" @click="downloadNetworkReport">导出检测结果</button></div></div><div class="exact-diagnostic-cards network-summary-cards"><div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div><div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div><div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div><div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div></div><section class="exact-surface network-result-panel"><div class="exact-surface-head"><h2>检测结果</h2><span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span></div><div class="network-result-grid"><div v-for="row in networkResultRows" :key="row.label" class="exact-config-item"><span>{{ row.label }}</span><strong>{{ row.value }}</strong></div></div><pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre><div v-if="networkResult?.details?.length" class="network-trace-lines"><strong>路由明细</strong><code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code></div></section><section class="exact-table-card network-history-table"><div class="exact-table-title"><h2>检测历史记录</h2><span>最多保留 10 条</span></div><table><thead><tr><th>时间</th><th>方式</th><th>目标</th><th>端口</th><th>结论</th><th>耗时</th><th>原因</th></tr></thead><tbody><tr v-if="networkHistory.length === 0"><td colspan="7" class="exact-empty">暂无网络检测历史</td></tr><tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`"><td>{{ formatTime(item.completedAt) }}</td><td>{{ item.type }}</td><td>{{ item.target }}</td><td>{{ item.port ?? '-' }}</td><td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td><td>{{ item.durationMs ?? '-' }} ms</td><td>{{ item.reasonText }}</td></tr></tbody></table></section><LegacyEdgeTelemetryPanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" /></div></section>
-
       <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>Outbox / ACK 明细</h2><span>{{ cloudOperationalRows.length }} 项</span></div><div class="modao-property-grid"><div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
 
       <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
@@ -143,7 +141,6 @@ import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import LegacyConfigOpsPanel from "./LegacyConfigOpsPanel.vue";
 import LegacyDeviceRuntimePanel from "./LegacyDeviceRuntimePanel.vue";
 import LegacyDiagnosticDetailPanel from "./LegacyDiagnosticDetailPanel.vue";
-import LegacyEdgeTelemetryPanel from "./LegacyEdgeTelemetryPanel.vue";
 import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
@@ -152,7 +149,7 @@ import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDev
 import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
 import { getDeviceRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
-import { diagnoseNetwork, getOpsLogs, normalizeLogRows } from "@/api/ops.api";
+import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
 import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyModuleKey } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
@@ -160,7 +157,6 @@ import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/d
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
-import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
@@ -198,14 +194,6 @@ const statusFilter = ref("");
 const deviceLoading = ref(false);
 const deviceLoadError = ref("");
 const selectedProtocol = ref<ProtocolSchema | null>(null);
-const networkDeviceId = ref("");
-const networkType = ref<NetworkDiagnosticType>("PING");
-const networkTarget = ref("127.0.0.1");
-const networkPort = ref(9090);
-const networkTimeout = ref(3000);
-const networkOperating = ref(false);
-const networkResult = ref<NormalizedNetworkDiagnosticResult | null>(null);
-const networkHistory = ref<NormalizedNetworkDiagnosticResult[]>([]);
 const diagnosticRaw = ref<unknown>({});
 const localEditorVisible = ref(false);
 const configImportInput = ref<HTMLInputElement | null>(null);
@@ -381,17 +369,10 @@ const cloudRisks = computed(() => {
   const risks = asRecord(reportMetrics.value).risks;
   return Array.isArray(risks) && risks.length ? risks.map((risk) => String(risk)) : ["未发现已知上报风险"];
 });
-const networkResultRows = computed(() => networkResult.value ? buildNetworkResultRows(networkResult.value) : [
-  { label: "检测方式", value: networkType.value },
-  { label: "检测目标", value: networkTarget.value || "-" },
-  { label: "检测结论", value: "等待检测" },
-  { label: "失败原因", value: "尚未执行" }
-]);
 
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
-  applyNetworkRouteQuery();
   await Promise.allSettled([loadProtocols(), loadDevices()]);
   await loadActiveLegacyModule(activeModule.value);
 });
@@ -405,12 +386,8 @@ function switchModule(module: ModuleKey) {
 
 watch(() => route.path, (path) => {
   syncWorkbenchTabFromRoute(path);
-  applyNetworkRouteQuery();
 });
 
-watch(() => [route.query.target, route.query.port], () => {
-  applyNetworkRouteQuery();
-});
 
 watch(activeModule, (module) => {
   void loadActiveLegacyModule(module);
@@ -651,82 +628,6 @@ async function runDiagnostic() {
   diagnosticRaw.value = buildDiagnosticRaw();
 }
 
-function applyNetworkDevice() {
-  fillNetworkFromSelectedDevice();
-}
-
-function fillNetworkFromSelectedDevice() {
-  if (!networkDeviceId.value && selectedDeviceId.value) {
-    networkDeviceId.value = selectedDeviceId.value;
-  }
-  const device = devices.value.find((item) => deviceIdOf(item) === networkDeviceId.value);
-  const target = resolveNetworkTargetFromDevice(device || null);
-  networkTarget.value = target.target;
-  if (target.port !== undefined) {
-    networkPort.value = target.port;
-  }
-}
-
-function syncNetworkMode() {
-  if (networkType.value !== "TCP") {
-    networkPort.value = 0;
-  } else if (!networkPort.value) {
-    const device = devices.value.find((item) => deviceIdOf(item) === networkDeviceId.value);
-    networkPort.value = Number(device?.port || 9090);
-  }
-}
-
-function applyNetworkRouteQuery() {
-  if (activeModule.value !== "network") {
-    return;
-  }
-  const target = normalizeRouteQuery(route.query.target);
-  const portText = normalizeRouteQuery(route.query.port);
-  if (target) {
-    networkTarget.value = target;
-  }
-  if (portText) {
-    const parsedPort = Number(portText);
-    if (Number.isFinite(parsedPort) && parsedPort > 0) {
-      networkPort.value = Math.trunc(parsedPort);
-      networkType.value = "TCP";
-    }
-  } else if (target) {
-    networkType.value = "PING";
-  }
-}
-
-async function runNetwork() {
-  let payload;
-  try {
-    payload = buildNetworkDiagnosticPayload({ type: networkType.value, deviceId: networkDeviceId.value, target: networkTarget.value, port: networkPort.value, timeoutMs: networkTimeout.value });
-  } catch (error) {
-    ElMessage.warning(error instanceof Error ? error.message : "网络检测参数无效");
-    return;
-  }
-  networkOperating.value = true;
-  try {
-    const result = normalizeNetworkDiagnosticResult(await diagnoseNetwork(payload));
-    networkResult.value = result;
-    networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
-  } finally {
-    networkOperating.value = false;
-  }
-}
-
-function downloadNetworkReport() {
-  if (!networkHistory.value.length) {
-    ElMessage.warning("当前没有可导出的网络检测结果");
-    return;
-  }
-  const blob = new Blob([buildNetworkExportText(networkHistory.value)], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `collector-network-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
 
 function buildDiagnosticRaw(): Record<string, unknown> {
   return {
@@ -857,7 +758,6 @@ async function downloadDiagnosticPackage() {
     overview: buildDiagnosticRaw(),
     alarms: await loadDiagnosticAlarmSample(),
     logs: await loadDiagnosticLogSample(),
-    networkHistory: networkHistory.value.slice(0, 10),
     runtimeSummary: {
       totalDevices: devices.value.length,
       onlineCount: onlineCount.value,
@@ -907,12 +807,6 @@ function cloudStatusText(status: unknown): string {
   return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", WARN: "存在风险", WARNING: "存在风险", ERROR: "异常", FAILED: "异常", DOWN: "异常", DISABLED: "未启用" } as Record<string, string>)[key] || "未知";
 }
 
-function normalizeRouteQuery(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.length > 0 ? String(value[0] ?? "") : "";
-  }
-  return value === undefined || value === null ? "" : String(value);
-}
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
 function deviceNameOf(deviceId: string): string { return devices.value.find((device) => deviceIdOf(device) === deviceId)?.deviceName || deviceId; }
 function sumPoints(source: DeviceInfo[]): number { return source.reduce((sum, device) => sum + Number(device.pointCount || (Array.isArray(device.points) ? device.points.length : 0) || 0), 0); }

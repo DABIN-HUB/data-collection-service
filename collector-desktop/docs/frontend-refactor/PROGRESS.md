@@ -1,22 +1,23 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-28 14:58:06 +0800
+更新时间：2026-08-28 15:26:35 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `5ce0594` 优化
   - `787c57c` 优化
   - `5c6bb9d` 修改
   - `da42b6d` 前端修改
   - `a16d805` 修改
-  - `cd572d3` 前端修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
 - Phase 4：Log 迁移已完成并通过验证。
 - Phase 5：Alarm 迁移已完成并通过验证。
-- 下一阶段：Phase 6 迁移 Network。
+- Phase 6：Network 迁移已完成并通过验证。
+- 下一阶段：Phase 7 迁移 Cloud。
 
 ## Baseline 验证结果
 
@@ -289,18 +290,105 @@ Phase 5 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 6：Network 迁移完成内容
+
+- 新增 `src/views/network/NetworkView.vue`，承载原 `activeModule === "network"` 的“网络检测”页面。
+- `/network` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `NetworkView.vue`；当前 `/dashboard`、`/realtime`、`/log`、`/alarm`、`/network` 均为独立 View。
+- `/history`、`/device`、`/device/workbench`、`/collect`、`/cloud`、`/diagnostic`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- Network 新增独立 `runNetwork()`，按页面表单状态调用 `buildNetworkDiagnosticPayload()`，再调用 `diagnoseNetwork()`，然后通过 `normalizeNetworkDiagnosticResult()` 写入 `networkResult` 并用 `appendNetworkHistory(..., 10)` 保留最多 10 条历史。
+- Network 页面状态保留在 View 内：`networkType`、`networkDeviceId`、`networkTarget`、`networkPort`、`networkTimeout`、`networkOperating`、`networkResult`、`networkHistory`。
+- Network 设备列表来源切到 `useDeviceStore()` 的 `devices`，进入页面时调用 `deviceStore.refresh()`，不再维护另一套长期 `devices = ref([])`。
+- PING / TRACE / TCP 表单语义保持不变：仍通过 `NETWORK_DIAGNOSTIC_TYPES` 渲染，`buildNetworkDiagnosticPayload()` 统一校验；PING/TRACE 不发送无意义 port；TCP 必须校验 1-65535；timeout 保持 100-10000 ms 限制。
+- 设备配置带入保留：`fillNetworkFromSelectedDevice()` 与 `applyNetworkDevice()` 使用 `resolveNetworkTargetFromDevice()`，不在 View 中重新写 `device.ipAddress || device.host` 第二套解析逻辑。
+- Alarm -> Network route query 由 `NetworkView.vue` 接管：支持 `target`、`port`、`type`、`deviceId`；`target+port` 会填充目标并切到 TCP，只有 `target` 且无显式 `type` 时保持 PING；query 变化时通过 watcher 重新应用，不自动发起网络检测。
+- 结果行继续通过 `networkResultRows = computed(() => networkResult.value ? buildNetworkResultRows(networkResult.value) : [])` 构造；TRACE `details` 路由明细继续显示。
+- 报告导出继续使用 `buildNetworkExportText(networkHistory.value)`，View 只负责 Blob 下载。
+- `src/views/legacy/network-utils.ts` 与 `src/views/legacy/network-utils.test.ts` 已迁移到 `src/features/network/utils/`，保留 `NETWORK_DIAGNOSTIC_TYPES`、`buildNetworkDiagnosticPayload()`、`resolveNetworkTargetFromDevice()`、`normalizeNetworkDiagnosticResult()`、`buildNetworkResultRows()`、`appendNetworkHistory()`、`buildNetworkExportText()` 及相关类型。
+- `src/views/legacy/LegacyEdgeTelemetryPanel.vue` 已迁移为 `src/features/network/components/EdgeTelemetryPanel.vue`。
+- `src/views/legacy/edge-telemetry-utils.ts` 与 `src/views/legacy/edge-telemetry-utils.test.ts` 已迁移到 `src/features/network/utils/`。
+- `EdgeTelemetryPanel.vue` 仅调整目录与依赖路径，继续使用 `ingestEdgeTelemetry()`，保留快捷表单、原始 JSON、gatewayId、protocol、configVersion、deviceId、pointRef、valueType、value、quality、timestamp、sequence、提交遥测、刷新时间戳/序号、请求预览和响应预览。
+- `EdgeTelemetryPanel.vue` 继续通过 `select-device` 事件通知父级，`NetworkView.vue` 将页面本地 `networkDeviceId` 作为 `selected-device-id` 传入，不操作全局 selectedDeviceId。
+- `src/views/ops/ops-utils.ts` 中无用 Network 重复函数 `formatNetworkResult()` 已删除，并删除对应 `ops-utils.test.ts` 测试；Report / Diagnostic 函数仍保留在 `ops-utils.ts`，未提前拆分。
+- 从 `LegacyConsoleView.vue` 删除主 Network template、Network 页面级 state、`networkResultRows`、`runNetwork()`、`applyNetworkDevice()`、`fillNetworkFromSelectedDevice()`、`syncNetworkMode()`、`downloadNetworkReport()`，以及 Phase 5 临时加入 Legacy 的 `applyNetworkRouteQuery()` / route query watcher。
+- 诊断包不再依赖已迁出 Network 页面会话状态；Legacy 中不再保留 `networkHistory` 作为跨页面缓存。
+- Network 专属样式从 `legacy-console.css` 迁入 `NetworkView.vue` scoped style，包括 `network-toolbar`、`network-toolbar-actions`、`network-summary-cards`、`network-result-panel .json-view`、`network-result-grid`、`network-trace-lines`、`network-history-table`。
+- EdgeTelemetry 专属样式从 `legacy-console.css` 迁入 `EdgeTelemetryPanel.vue` scoped style，包括 `edge-mode-row`、`edge-action-row`、`edge-form-grid textarea`、`edge-json-grid`。
+- 公共 `section-heading`、`exact-page`、`exact-page-body`、`exact-toolbar`、`exact-table-card`、`exact-surface`、`exact-diagnostic-card`、`exact-config-item`、`status-badge`、`json-view`、`form-grid` 等仍保留公共 legacy 样式。
+
+## Phase 6 验证结果
+
+执行时间：2026-08-28 15:21-15:26，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 30 个测试文件、152 个测试通过；`src/features/network/utils/network-utils.test.ts` 与 `src/features/network/utils/edge-telemetry-utils.test.ts` 保留并通过，`router.test.ts` 覆盖 `/network -> NetworkView` 和 `/network?target=127.0.0.1&port=502` resolve |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `NetworkView` chunk |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 30 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误，Git 仅提示部分 Web 构建产物 LF/CRLF 工作区换行转换 |
+
+Phase 6 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 6 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5176/#/dashboard` 能打开，页面文本显示“控制台总览”，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5176/#/realtime` 能打开，页面文本显示“实时数据查询”，仍由 `RealtimeView.vue` 承载。
+- `/log`：dev server `http://127.0.0.1:5176/#/log` 能打开，仍由 `LogView.vue` 承载。
+- `/alarm`：dev server `http://127.0.0.1:5176/#/alarm` 能打开，仍由 `AlarmView.vue` 承载。
+- `/network?target=127.0.0.1&port=502`：dev server 能打开，页面文本显示“网络检测”“PING 可达性”“TRACE 路由跟踪”“TCP 端口”“从设备配置带入”“开始检测”“导出检测结果”“检测方式 TCP”“检测结果 127.0.0.1:502”“尚未执行网络检测”“最多保留 10 条”“边缘遥测调试”。说明 Alarm -> Network 的 `target/port` query 由 `NetworkView.vue` 接收，并且没有自动执行网络检测。
+- `/network?target=127.0.0.1&type=TRACE`：dev server 能打开，页面文本显示“检测方式 TRACE”“检测结果 127.0.0.1”，证明显式 type query 可接收。
+- `/device`：dev server `http://127.0.0.1:5176/#/device` 能打开，仍显示 Legacy 设备管理页面。
+- 搜索确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'network'`、Network 页面 state、主 Network `runNetwork()` / route query watcher / report export 函数。
+- 搜索确认 `src/views/legacy/` 下已无 `network-utils*`、`edge-telemetry-utils*`、`LegacyEdgeTelemetryPanel.vue`。
+- 搜索确认 `src/styles/legacy-console.css` 与 `src/styles/workbench.css` 已无 Network / EdgeTelemetry 专属选择器。
+
+## Phase 6 新增文件
+
+- `collector-desktop/src/views/network/NetworkView.vue`
+- `collector-desktop/src/features/network/components/EdgeTelemetryPanel.vue`
+- `collector-desktop/src/features/network/utils/network-utils.ts`
+- `collector-desktop/src/features/network/utils/network-utils.test.ts`
+- `collector-desktop/src/features/network/utils/edge-telemetry-utils.ts`
+- `collector-desktop/src/features/network/utils/edge-telemetry-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/NetworkView-9MUMl5H9.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/NetworkView-BvkqIyXT.js`（`build:web` 生成）
+
+## Phase 6 修改文件
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/ops/ops-utils.ts`
+- `collector-desktop/src/views/ops/ops-utils.test.ts`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 6 删除文件
+
+- `collector-desktop/src/views/legacy/LegacyEdgeTelemetryPanel.vue`
+- `collector-desktop/src/views/legacy/edge-telemetry-utils.ts`
+- `collector-desktop/src/views/legacy/edge-telemetry-utils.test.ts`
+- `collector-desktop/src/views/legacy/network-utils.ts`
+- `collector-desktop/src/views/legacy/network-utils.test.ts`
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Cloud / Diagnostic / Network / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
-- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、监控指标、配置摘要、上报链路、网络诊断等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
+- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Cloud / Diagnostic / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、监控指标、配置摘要、上报链路等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
 - 主 `/log` 页面继续保持 HTTP 查询语义，没有修改后端 `/api/ops/logs` 契约。
 - 主 `/alarm` 页面继续保持现有告警历史与确认 API 语义，没有修改后端历史告警或告警确认契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空数据/服务不可达显示不崩溃；真实告警数据查询、确认状态查询、单条确认提交、Alarm -> Log / Network 真实业务结果仍依赖后端服务与运行数据环境。
-- Vite dev server 首次尝试使用 5174 时发现端口已占用，改用 5175 完成 smoke check；用于 smoke check 的 5175 dev server 已停止。
+- 主 `/network` 页面继续保持现有网络诊断 API 语义，没有修改后端 `/api/ops/network/diagnose` 契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实网络检测、边缘遥测提交、从真实设备配置带入 host/port 的成功路径仍依赖后端服务与运行数据环境。
+- Vite dev server 使用 5176 完成 smoke check；用于 smoke check 的 5176 dev server 已停止。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 6：迁移 Network。
+等待确认后进入 Phase 7：迁移 Cloud。
 
-Phase 6 只迁移 Network，不自动进入 History、Device、Collection、Cloud、Diagnostic 或其它业务页面。
+Phase 7 只迁移 Cloud，不自动进入 History、Device、Collection、Diagnostic 或其它业务页面。

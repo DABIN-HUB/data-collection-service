@@ -31,21 +31,6 @@ export function buildDiagnosticAdvice(diagnostic: Record<string, unknown>): stri
   return advice;
 }
 
-export function formatNetworkResult(result: unknown): string {
-  const body = readRecord(result);
-  const success = Boolean(body.success ?? body.ok ?? body.reachable);
-  const lines = [
-    `检测结果：${success ? "成功" : "失败"}`,
-    `目标：${body.target || body.host || "-"}`,
-    `端口：${body.port || "-"}`,
-    `耗时：${body.elapsedMs || body.durationMs || "-"} ms`,
-    `消息：${body.message || body.error || "-"}`,
-    "",
-    JSON.stringify(result, null, 2)
-  ];
-  return lines.join("\n");
-}
-
 function diagnosticName(key: string): string {
   return {
     health: "健康检查",

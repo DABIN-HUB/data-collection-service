@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDiagnosticAdvice,
-  formatNetworkResult,
   summarizeReportMetrics
 } from "./ops-utils";
 
@@ -15,10 +14,5 @@ describe("ops-utils", () => {
   it("根据诊断结果给出建议", () => {
     expect(buildDiagnosticAdvice({ cache: { status: "ERROR" }, devices: { status: "OK" } })).toContain("缓存模块异常");
     expect(buildDiagnosticAdvice({ health: { status: "UP" } })).toContain("暂无明显异常");
-  });
-
-  it("格式化网络检测结果", () => {
-    expect(formatNetworkResult({ success: true, target: "127.0.0.1", elapsedMs: 3 })).toContain("成功");
-    expect(formatNetworkResult({ success: false, message: "timeout" })).toContain("失败");
   });
 });

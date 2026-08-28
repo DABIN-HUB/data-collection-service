@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createMemoryHistory, createRouter } from "vue-router";
 
 import { appRouteDefinitions } from "./route-definitions";
-import { resolveLegacyModuleByRoutePath, routePathForLegacyModule } from "./route-names";
+import { RouteNames, resolveLegacyModuleByRoutePath, routePathForLegacyModule } from "./route-names";
 
 describe("router", () => {
   function childRoute(path: string) {
@@ -45,8 +46,19 @@ describe("router", () => {
     expect(String(childRoute("alarm")?.component)).toContain("AlarmView.vue");
   });
 
+  it("network 直接路由到独立 NetworkView", () => {
+    expect(String(childRoute("network")?.component)).toContain("NetworkView.vue");
+  });
+
+  it("network route query 可以正常 resolve", () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
+    const resolved = router.resolve("/network?target=127.0.0.1&port=502");
+    expect(resolved.name).toBe(RouteNames.NETWORK);
+    expect(resolved.query).toMatchObject({ target: "127.0.0.1", port: "502" });
+  });
+
   it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["history", "device", "device/workbench", "collect", "cloud", "diagnostic", "network", "control", "shadow"]) {
+    for (const path of ["history", "device", "device/workbench", "collect", "cloud", "diagnostic", "control", "shadow"]) {
       expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
     }
   });

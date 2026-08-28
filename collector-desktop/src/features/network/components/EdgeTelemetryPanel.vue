@@ -64,14 +64,14 @@
       <span>{{ resultText }}</span>
     </div>
     <div class="surface-grid two edge-json-grid">
-      <section class="exact-json-panel" open>
+      <details class="exact-json-panel" open>
         <summary>请求内容预览</summary>
         <pre class="json-view compact-result-view">{{ payloadPreview }}</pre>
-      </section>
-      <section class="exact-json-panel" open>
+      </details>
+      <details class="exact-json-panel" open>
         <summary>接入响应</summary>
         <pre class="json-view compact-result-view">{{ prettyJson(result) }}</pre>
-      </section>
+      </details>
     </div>
   </section>
 </template>
@@ -82,7 +82,7 @@ import { ElMessage } from "element-plus";
 
 import { ingestEdgeTelemetry } from "@/api/edge.api";
 import type { DeviceInfo } from "@/types/device";
-import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryPayload, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson, type EdgeTelemetryQuickForm } from "./edge-telemetry-utils";
+import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryPayload, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson, type EdgeTelemetryQuickForm } from "@/features/network/utils/edge-telemetry-utils";
 
 const props = defineProps<{
   devices: DeviceInfo[];
@@ -178,3 +178,44 @@ watch(() => [form.gatewayId, form.protocol, form.configVersion, form.deviceId, f
   }
 });
 </script>
+
+<style scoped>
+.edge-mode-row,
+.edge-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+.edge-mode-row button,
+.edge-action-row button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--exact-border);
+  border-radius: 6px;
+  background: var(--exact-panel-soft);
+}
+
+.edge-mode-row button.is-active,
+.edge-action-row button.primary {
+  color: #fff;
+  border-color: var(--exact-blue);
+  background: #2563eb;
+}
+
+.edge-action-row span {
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+.edge-form-grid textarea {
+  min-height: 190px;
+  resize: vertical;
+}
+
+.edge-json-grid {
+  padding-top: 12px;
+}
+</style>
