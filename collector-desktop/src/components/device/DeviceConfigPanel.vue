@@ -197,6 +197,7 @@ import { getDeviceConnection, getDeviceDiff, updateDeviceConnection } from "@/ap
 import { getDeviceRealtimeData } from "@/api/data.api";
 import { getDeviceStatus } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
+import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
 import LogPanel from "@/components/log/LogPanel.vue";
 import PointEditor from "@/components/point/PointEditor.vue";
@@ -363,7 +364,7 @@ async function loadWorkbenchRows() {
   workbenchRowsLoading.value = true;
   workbenchRowsError.value = "";
   try {
-    workbenchRows.value = normalizeRealtimeRows(await getDeviceRealtimeData(props.device.normalizedId));
+    workbenchRows.value = normalizeRealtimeRows(await getDeviceRealtimeData(props.device.normalizedId), props.device.normalizedId);
     selectedWorkbenchPoint.value = resolveSelectedWorkbenchPoint(workbenchRows.value, selectedWorkbenchPoint.value);
     currentPage.value = 1;
   } catch (error) {
@@ -419,24 +420,6 @@ async function showDiff() {
 
 function normalizeConnectionPayload(value: unknown): ConnectionPayload {
   return value && typeof value === "object" && !Array.isArray(value) ? value as ConnectionPayload : {};
-}
-
-function normalizeRealtimeRows(value: unknown): RealtimePointRow[] {
-  if (Array.isArray(value)) {
-    return value as RealtimePointRow[];
-  }
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-  const body = value as Record<string, unknown>;
-  for (const key of ["points", "data", "values", "rows", "items"]) {
-    if (Array.isArray(body[key])) {
-      return body[key] as RealtimePointRow[];
-    }
-  }
-  return Object.entries(body)
-    .filter(([, row]) => row && typeof row === "object" && !Array.isArray(row))
-    .map(([pointId, row]) => ({ pointId, ...(row as RealtimePointRow) }));
 }
 
 function resolveSelectedWorkbenchPoint(rows: RealtimePointRow[], current: RealtimePointRow | null): RealtimePointRow | null {

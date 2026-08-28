@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRealtimeSummary, normalizeRealtimeRows, normalizeSinglePointRealtimeRow } from "./realtime-utils";
+import {
+  buildRealtimeSummary,
+  normalizeRealtimeRows,
+  normalizeSinglePointRealtimeRow,
+  realtimeAddress,
+  realtimeProcessingText,
+  realtimeQualityClass,
+  realtimeQualityText,
+  realtimeScale,
+  realtimeValueText
+} from "./realtime-utils";
 
 describe("realtime-utils", () => {
   it("归一化设备实时数据 Map 响应", () => {
@@ -30,5 +40,21 @@ describe("realtime-utils", () => {
 
   it("统计实时数据摘要", () => {
     expect(buildRealtimeSummary([{ qualityLevel: "GOOD" }, { qualityLevel: "A" }, { qualityLevel: "BAD" }, { qualityAvailable: false }])).toEqual({ total: 4, good: 2, bad: 2 });
+  });
+
+  it("格式化实时行展示文本", () => {
+    const row = {
+      address: "7",
+      scale: 0.5,
+      value: 12.34567,
+      qualityLevel: "BAD",
+      processCostMs: 42
+    };
+    expect(realtimeAddress(row)).toBe("7");
+    expect(realtimeScale(row)).toBe("0.5");
+    expect(realtimeValueText(row)).toBe("12.3457");
+    expect(realtimeQualityText(row)).toBe("异常");
+    expect(realtimeQualityClass(row)).toBe("is-bad");
+    expect(realtimeProcessingText(row)).toBe("42 ms");
   });
 });

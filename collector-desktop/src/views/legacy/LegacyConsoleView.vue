@@ -1,24 +1,5 @@
 <template>
   <div class="legacy-page-host">
-      <section v-show="activeModule === 'realtime'" class="exact-page">
-        <div class="section-heading">
-          <div class="heading-title-line"><h1>实时数据查询</h1><span class="heading-online"><i></i>实时采集链路</span></div>
-          <div class="heading-actions"><button type="button" @click="loadRealtime">立即刷新</button></div>
-        </div>
-        <div class="exact-page-body">
-          <div class="exact-toolbar">
-            <div class="exact-toolbar-group"><button type="button" class="toggle-button" :class="{ 'is-active': realtimeAuto }" @click="realtimeAuto = !realtimeAuto"><span></span>自动刷新</button><small>默认间隔 5 秒</small></div>
-            <div class="exact-toolbar-group exact-toolbar-filters"><select v-model="realtimeDeviceId" @change="loadRealtime"><option value="">全部设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="realtimeKeyword" type="search" placeholder="搜索点位名称、编码或地址" /></div>
-          </div>
-          <div class="exact-diagnostic-cards realtime-summary-cards"><div class="exact-diagnostic-card"><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div><div class="exact-diagnostic-card"><span>质量正常</span><strong>{{ realtimeSummary.good }}</strong></div><div class="exact-diagnostic-card"><span>异常/未知</span><strong>{{ realtimeSummary.bad }}</strong></div></div>
-          <section class="exact-surface realtime-single-panel">
-            <div class="exact-surface-head"><h2>单点实时查询</h2><span>按稳定 pointId / 点位编码查询</span></div>
-            <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><select v-model="realtimeSingleDeviceId"><option value="">选择设备</option><option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option></select><input v-model="realtimeSinglePointId" type="text" placeholder="pointId 或点位编码" /><button type="button" class="primary" :disabled="!realtimeSingleDeviceId || !realtimeSinglePointId" @click="loadSingleRealtime">查询单点</button></div></div>
-            <pre class="json-view compact-result-view">{{ prettyJson(realtimeSingleResult) }}</pre>
-          </section>
-          <section class="exact-table-card"><table><thead><tr><th>点位名称</th><th>设备名称</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>当前值</th><th>单位</th><th>采集时间</th><th>质量</th><th>处理耗时</th><th>操作</th></tr></thead><tbody><tr v-if="filteredRealtimeRows.length === 0"><td colspan="12" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td></tr><tr v-for="row in filteredRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode}`"><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.deviceName || deviceNameOf(String(row.deviceId || realtimeDeviceId)) }}</td><td>{{ row.dataType || '-' }}</td><td><code>{{ realtimeAddress(row) }}</code></td><td>{{ row.readWrite || '-' }}</td><td>{{ realtimeScale(row) }}</td><td><strong>{{ realtimeValueText(row) }}</strong></td><td>{{ row.unit || '-' }}</td><td>{{ formatTime(row.timestamp || row.collectTime || row.lastUpdateTime) }}</td><td><span class="quality-badge" :class="realtimeQualityClass(row)">{{ realtimeQualityText(row) }}</span></td><td>{{ realtimeProcessingText(row) }}</td><td><button type="button" @click="pickRealtimePoint(row)">查单点</button></td></tr></tbody></table></section>
-        </div>
-      </section>
 
       <section v-show="activeModule === 'device'" class="exact-page">
         <div class="section-heading">
@@ -181,7 +162,7 @@ import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
 import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
 import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
-import { getAllDeviceDataSummaries, getDeviceAlarmHistory, getDeviceRealtimeData, getPointRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
+import { getDeviceAlarmHistory, getDeviceRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
 import { acknowledgeAlarm, diagnoseNetwork, getOpsLogs, normalizeLogRows, queryAlarmAcknowledgements } from "@/api/ops.api";
 import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyModuleKey } from "@/router/route-names";
@@ -194,7 +175,7 @@ import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmp
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { buildLogExportFilename, buildLogQueryParams, buildLogSearchFromException, exportLogRowsAsJson, exportLogRowsAsText, filterLogRows, summarizeLogRows } from "./log-utils";
 import { NETWORK_DIAGNOSTIC_TYPES, appendNetworkHistory, buildNetworkDiagnosticPayload, buildNetworkExportText, buildNetworkResultRows, normalizeNetworkDiagnosticResult, resolveNetworkTargetFromDevice, type NetworkDiagnosticType, type NormalizedNetworkDiagnosticResult } from "./network-utils";
-import { buildRealtimeSummary, normalizeRealtimeRows, normalizeSinglePointRealtimeRow } from "./realtime-utils";
+import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
@@ -233,17 +214,10 @@ const alarmKeyword = ref("");
 const alarmHours = ref(24);
 const alarmLimit = ref(50);
 const logs = ref<LogRow[]>([]);
-const realtimeRows = ref<RealtimePointRow[]>([]);
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
 const historySelectedPointRef = ref("");
 const deviceConfigOperatingId = ref("");
-const realtimeDeviceId = ref("");
-const realtimeKeyword = ref("");
-const realtimeSingleDeviceId = ref("");
-const realtimeSinglePointId = ref("");
-const realtimeSingleResult = ref<unknown>({ message: "选择设备和点位后查询单点实时数据" });
-const realtimeAuto = ref(true);
 const deviceKeyword = ref("");
 const protocolFilter = ref("");
 const statusFilter = ref("");
@@ -272,7 +246,6 @@ const configFileExporting = ref(false);
 const configFileImporting = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
-let realtimeTimer = 0;
 let logTimer = 0;
 
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
@@ -305,11 +278,6 @@ const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
   errorMessage: deviceLoadError.value,
   hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
 }));
-const filteredRealtimeRows = computed(() => {
-  const keyword = realtimeKeyword.value.trim().toLowerCase();
-  return realtimeRows.value.filter((row) => !keyword || [row.pointName, row.pointCode, row.address, row.deviceName].join(" ").toLowerCase().includes(keyword));
-});
-const realtimeSummary = computed(() => buildRealtimeSummary(filteredRealtimeRows.value));
 const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
 const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
@@ -464,11 +432,6 @@ const networkResultRows = computed(() => networkResult.value ? buildNetworkResul
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
-  realtimeTimer = window.setInterval(() => {
-    if (realtimeAuto.value && activeModule.value === "realtime") {
-      void loadRealtime();
-    }
-  }, 5000);
   logTimer = window.setInterval(() => {
     if (logAutoRefresh.value && activeModule.value === "log") {
       void loadLogs();
@@ -479,7 +442,6 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  window.clearInterval(realtimeTimer);
   window.clearInterval(logTimer);
 });
 
@@ -499,7 +461,6 @@ watch(activeModule, (module) => {
 });
 
 async function loadActiveLegacyModule(module: ModuleKey) {
-  if (module === "realtime") await loadRealtime();
   if (module === "alarm") await loadAlarms();
   if (module === "log") await loadLogs();
   if (module === "diag") await runDiagnostic();
@@ -646,46 +607,10 @@ function downloadLogs(type: "json" | "txt") {
   URL.revokeObjectURL(url);
 }
 
-async function loadRealtime() {
-  if (realtimeDeviceId.value) {
-    const response = await getDeviceRealtimeData(realtimeDeviceId.value);
-    realtimeRows.value = normalizeRealtimeRows(response, realtimeDeviceId.value);
-    return;
-  }
-  const summaries = normalizeRealtimeRows(await getAllDeviceDataSummaries());
-  const deviceIds = Array.from(new Set([
-    ...summaries.map((row) => String(row.deviceId || "")).filter(Boolean),
-    ...devices.value.map((device) => deviceIdOf(device)).filter(Boolean)
-  ]));
-  if (deviceIds.length === 0) {
-    realtimeRows.value = [];
-    return;
-  }
-  const results = await Promise.allSettled(deviceIds.map(async (deviceId) => normalizeRealtimeRows(await getDeviceRealtimeData(deviceId), deviceId)));
-  realtimeRows.value = results.flatMap((result, index) => result.status === "fulfilled" && result.value.length ? result.value : summaries.filter((row) => row.deviceId === deviceIds[index]));
-}
-
 async function loadSelectedRealtime() {
   if (!selectedDeviceId.value) return;
   const response = await getDeviceRealtimeData(selectedDeviceId.value);
   selectedRealtimeRows.value = normalizeRealtimeRows(response, selectedDeviceId.value);
-}
-
-async function loadSingleRealtime() {
-  if (!realtimeSingleDeviceId.value || !realtimeSinglePointId.value.trim()) {
-    ElMessage.warning("请先选择设备并填写点位引用");
-    return;
-  }
-  const response = await getPointRealtimeData(realtimeSingleDeviceId.value, realtimeSinglePointId.value.trim());
-  realtimeSingleResult.value = normalizeSinglePointRealtimeRow(response) || response;
-}
-
-function pickRealtimePoint(row: RealtimePointRow) {
-  realtimeSingleDeviceId.value = String(row.deviceId || realtimeDeviceId.value || selectedDeviceId.value || "");
-  realtimeSinglePointId.value = String(row.pointId || row.pointCode || "");
-  if (realtimeSingleDeviceId.value && realtimeSinglePointId.value) {
-    void loadSingleRealtime();
-  }
 }
 
 async function resetSelectedAdaptive() {
@@ -1068,11 +993,7 @@ function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; poi
   if (!target.deviceId || !target.pointRef) {
     return;
   }
-  selectDevice(target.deviceId);
-  realtimeSingleDeviceId.value = target.deviceId;
-  realtimeSinglePointId.value = target.pointRef;
-  switchModule("realtime");
-  void loadSingleRealtime();
+  router.push({ path: "/realtime", query: { deviceId: target.deviceId, pointId: target.pointRef } }).catch(() => undefined);
   ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
 }
 
@@ -1138,54 +1059,6 @@ function shortLoggerName(logger: unknown): string {
   const value = String(logger || "-");
   const parts = value.split(".").filter(Boolean);
   return parts.length > 2 ? parts.slice(-2).join(".") : value;
-}
-
-function realtimeAddress(row: RealtimePointRow): string {
-  return String(valueOf(row, ["address", "registerAddress", "pointAddress"], "-"));
-}
-
-function realtimeScale(row: RealtimePointRow): string {
-  return String(valueOf(row, ["scalingFactor", "scale", "factor"], "-"));
-}
-
-function realtimeValueText(row: RealtimePointRow): string {
-  const value = valueOf(row, ["value", "currentValue", "rawValue"], "-");
-  if (typeof value === "number") return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
-  return String(value ?? "-");
-}
-
-function realtimeQualityText(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["qualityLevel", "qualityDescription", "quality", "qualityCode", "status"], "UNKNOWN"));
-  if (row.qualityAvailable === false) {
-    return "未评估";
-  }
-  if (row.qualityAcceptable === false || row.processSuccess === false) {
-    return quality === "UNKNOWN" ? "异常" : quality;
-  }
-  switch (quality.toUpperCase()) {
-    case "GOOD":
-    case "OK":
-    case "SUCCESS":
-      return "良好";
-    case "BAD":
-    case "ERROR":
-      return "异常";
-    default:
-      return quality || "未知";
-  }
-}
-
-function realtimeQualityClass(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode", "status"], "UNKNOWN")).toUpperCase();
-  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) return "is-bad";
-  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) return "is-good";
-  if (["BAD", "ERROR", "FAILED"].includes(quality)) return "is-bad";
-  return "";
-}
-
-function realtimeProcessingText(row: RealtimePointRow): string {
-  const value = valueOf(row, ["processCostMs", "processingTime", "costMs", "elapsedMs"], "-");
-  return typeof value === "number" ? `${value} ms` : String(value || "-");
 }
 
 function alarmMessage(alarm: AlarmRow): string {

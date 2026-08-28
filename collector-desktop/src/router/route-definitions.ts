@@ -4,6 +4,7 @@ import { RouteNames } from "./route-names";
 
 const AppShell = () => import("@/app/AppShell.vue");
 const DashboardView = () => import("@/views/dashboard/DashboardView.vue");
+const RealtimeView = () => import("@/views/realtime/RealtimeView.vue");
 const LegacyConsoleView = () => import("@/views/legacy/LegacyConsoleView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
@@ -18,7 +19,7 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
     children: [
       { path: "", redirect: "/dashboard" },
       { path: "dashboard", name: RouteNames.DASHBOARD, component: DashboardView },
-      { path: "realtime", name: RouteNames.REALTIME, component: LegacyConsoleView },
+      { path: "realtime", name: RouteNames.REALTIME, component: RealtimeView },
       { path: "history", name: RouteNames.HISTORY, component: LegacyConsoleView },
       { path: "alarm", name: RouteNames.ALARM, component: LegacyConsoleView },
       { path: "device", name: RouteNames.DEVICE, component: LegacyConsoleView },

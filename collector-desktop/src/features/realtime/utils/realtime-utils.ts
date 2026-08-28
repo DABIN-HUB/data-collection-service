@@ -68,6 +68,62 @@ export function buildRealtimeSummary(rows: RealtimePointRow[]): RealtimeSummary 
   };
 }
 
+export function realtimeAddress(row: RealtimePointRow): string {
+  return String(valueOf(row, ["address", "registerAddress", "pointAddress"], "-"));
+}
+
+export function realtimeScale(row: RealtimePointRow): string {
+  return String(valueOf(row, ["scalingFactor", "scale", "factor"], "-"));
+}
+
+export function realtimeValueText(row: RealtimePointRow): string {
+  const value = valueOf(row, ["value", "currentValue", "rawValue"], "-");
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+  }
+  return String(value ?? "-");
+}
+
+export function realtimeQualityText(row: RealtimePointRow): string {
+  const quality = String(valueOf(row, ["qualityLevel", "qualityDescription", "quality", "qualityCode", "status"], "UNKNOWN"));
+  if (row.qualityAvailable === false) {
+    return "未评估";
+  }
+  if (row.qualityAcceptable === false || row.processSuccess === false) {
+    return quality === "UNKNOWN" ? "异常" : quality;
+  }
+  switch (quality.toUpperCase()) {
+    case "GOOD":
+    case "OK":
+    case "SUCCESS":
+      return "良好";
+    case "BAD":
+    case "ERROR":
+      return "异常";
+    default:
+      return quality || "未知";
+  }
+}
+
+export function realtimeQualityClass(row: RealtimePointRow): string {
+  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode", "status"], "UNKNOWN")).toUpperCase();
+  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) {
+    return "is-bad";
+  }
+  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) {
+    return "is-good";
+  }
+  if (["BAD", "ERROR", "FAILED"].includes(quality)) {
+    return "is-bad";
+  }
+  return "";
+}
+
+export function realtimeProcessingText(row: RealtimePointRow): string {
+  const value = valueOf(row, ["processCostMs", "processingTime", "costMs", "elapsedMs"], "-");
+  return typeof value === "number" ? `${value} ms` : String(value || "-");
+}
+
 function attachDeviceId(row: RealtimePointRow, fallbackDeviceId: string): RealtimePointRow {
   if (!fallbackDeviceId || row.deviceId) {
     return row;
@@ -107,6 +163,16 @@ function isGoodQuality(row: RealtimePointRow): boolean {
   }
   const value = String(row.qualityLevel || row.quality || row.status || "").toUpperCase();
   return ["A", "GOOD", "OK", "SUCCESS", "ONLINE", "1", "100"].includes(value);
+}
+
+function valueOf(row: RealtimePointRow, keys: string[], fallback: unknown): unknown {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return fallback;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
