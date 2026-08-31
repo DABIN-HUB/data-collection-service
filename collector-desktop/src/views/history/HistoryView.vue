@@ -160,25 +160,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { useRoute } from "vue-router";
 
 import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
 import { getDevicePointsConfig } from "@/api/config.api";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
-import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "./history-trend-utils";
-import { normalizeHistoryRows, type HistoryRow } from "@/views/runtime/runtime-utils";
+import { normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
+import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "@/features/history/utils/history-trend-utils";
+import { useAppStore } from "@/stores/app.store";
+import { useDeviceStore } from "@/stores/device.store";
 import type { AlarmRow } from "@/types/monitor";
-import type { DeviceInfo } from "@/types/device";
+import type { DeviceViewModel } from "@/types/device";
 import type { DataPoint } from "@/types/point";
 
-const props = defineProps<{
-  devices: DeviceInfo[];
-  selectedDeviceId: string;
-  selectedPointRef?: string;
-}>();
-
-const emit = defineEmits<{
-  selectDevice: [deviceId: string];
-}>();
+const route = useRoute();
+const appStore = useAppStore();
+const deviceStore = useDeviceStore();
 
 const deviceId = ref("");
 const pointRef = ref("");
@@ -191,6 +188,10 @@ const loading = ref(false);
 const limit = ref(200);
 const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000));
 const endTime = ref(defaultDateTimeLocal(0));
+const initialized = ref(false);
+const lastAppliedRouteKey = ref("__initial__");
+
+const devices = computed(() => deviceStore.devices);
 
 const selectedPointLabel = computed(() => {
   const point = points.value.find((item) => pointKey(item) === pointRef.value);
@@ -235,40 +236,26 @@ const historyExportText = computed(() => buildHistoryTrendExportText({
   relatedAlarms: relatedAlarms.value
 }));
 
-onMounted(() => {
-  deviceId.value = props.selectedDeviceId || deviceIdOf(props.devices[0]);
-  if (deviceId.value) {
-    void loadPoints();
-  }
+onMounted(async () => {
+  await appStore.initialize();
+  await deviceStore.refresh();
+  await applyRouteQuery({ autoQuery: true });
+  initialized.value = true;
 });
 
-watch(() => props.selectedDeviceId, (value) => {
-  if (value && value !== deviceId.value) {
-    deviceId.value = value;
-    void loadPoints();
+watch(() => [route.query.deviceId, route.query.pointId, route.query.pointRef], () => {
+  if (!initialized.value) {
+    return;
   }
-});
-
-watch(() => props.selectedPointRef, (value) => {
-  if (value && value !== pointRef.value) {
-    pointRef.value = value;
-    void loadHistory();
-  }
-});
-
-watch(() => props.devices, () => {
-  if (!deviceId.value && props.devices.length > 0) {
-    deviceId.value = deviceIdOf(props.devices[0]);
-    void loadPoints();
-  }
+  void applyRouteQuery({ autoQuery: true });
 });
 
 async function handleDeviceChange() {
-  emit("selectDevice", deviceId.value);
+  deviceStore.selectDevice(deviceId.value);
   await loadPoints();
 }
 
-async function loadPoints() {
+async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boolean } = {}) {
   pointRef.value = "";
   comparePointRefs.value = [];
   historyRows.value = [];
@@ -281,12 +268,53 @@ async function loadPoints() {
   try {
     const response = await getDevicePointsConfig(deviceId.value);
     points.value = extractPoints(response);
-    pointRef.value = props.selectedPointRef && points.value.some((point) => pointKey(point) === props.selectedPointRef)
-      ? props.selectedPointRef
-      : pointKey(points.value[0]);
+    const resolvedPointRef = resolvePointRef(options.preferredPointRef);
+    pointRef.value = resolvedPointRef || pointKey(points.value[0]);
+    if (options.autoQuery && resolvedPointRef) {
+      await loadHistory();
+    }
   } catch (error) {
     points.value = [];
     ElMessage.warning(error instanceof Error ? error.message : "点位配置加载失败");
+  }
+}
+
+async function applyRouteQuery(options: { autoQuery: boolean }) {
+  const routeKey = routeQueryKey();
+  if (routeKey === lastAppliedRouteKey.value) {
+    return;
+  }
+  lastAppliedRouteKey.value = routeKey;
+
+  const queryDeviceId = firstQueryValue(route.query.deviceId);
+  const queryPointRef = firstQueryValue(route.query.pointId) || firstQueryValue(route.query.pointRef);
+  const targetDeviceId = resolveTargetDeviceId(queryDeviceId);
+  if (!targetDeviceId) {
+    deviceId.value = "";
+    points.value = [];
+    pointRef.value = "";
+    historyRows.value = [];
+    comparePointRows.value = {};
+    relatedAlarms.value = [];
+    return;
+  }
+
+  if (deviceStore.selectedDeviceId !== targetDeviceId) {
+    deviceStore.selectDevice(targetDeviceId);
+  }
+
+  if (deviceId.value !== targetDeviceId || points.value.length === 0) {
+    deviceId.value = targetDeviceId;
+    await loadPoints({ preferredPointRef: queryPointRef, autoQuery: options.autoQuery && Boolean(queryPointRef) });
+    return;
+  }
+
+  const resolvedPointRef = resolvePointRef(queryPointRef);
+  if (resolvedPointRef) {
+    pointRef.value = resolvedPointRef;
+    if (options.autoQuery && queryPointRef) {
+      await loadHistory();
+    }
   }
 }
 
@@ -361,8 +389,53 @@ function extractPoints(value: unknown): DataPoint[] {
   return [];
 }
 
-function deviceIdOf(device?: DeviceInfo): string {
-  return String(device?.deviceId || device?.id || device?.connectionKey || "");
+function resolveTargetDeviceId(preferredDeviceId: string): string {
+  const matchedDevice = preferredDeviceId ? devices.value.find((device) => deviceMatchesId(device, preferredDeviceId)) : undefined;
+  if (matchedDevice) {
+    return deviceIdOf(matchedDevice);
+  }
+  if (preferredDeviceId && devices.value.length === 0) {
+    return preferredDeviceId;
+  }
+  if (deviceStore.selectedDeviceId && (devices.value.length === 0 || devices.value.some((device) => deviceMatchesId(device, deviceStore.selectedDeviceId)))) {
+    return deviceStore.selectedDeviceId;
+  }
+  return deviceIdOf(devices.value[0]);
+}
+
+function deviceMatchesId(device: DeviceViewModel, value: string): boolean {
+  return [device.normalizedId, device.deviceId, device.id, device.connectionKey]
+    .filter((item) => item !== undefined && item !== null)
+    .map(String)
+    .includes(value);
+}
+
+function resolvePointRef(value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const point = points.value.find((item) => pointMatchesRef(item, value));
+  return pointKey(point);
+}
+
+function pointMatchesRef(point: DataPoint, value: string): boolean {
+  return [point.pointId, point.pointCode, point.id, point.address]
+    .filter((item) => item !== undefined && item !== null)
+    .map(String)
+    .includes(value);
+}
+
+function firstQueryValue(value: unknown): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" ? raw : "";
+}
+
+function routeQueryKey(): string {
+  return [firstQueryValue(route.query.deviceId), firstQueryValue(route.query.pointId), firstQueryValue(route.query.pointRef)].join("|");
+}
+
+function deviceIdOf(device?: DeviceViewModel): string {
+  return String(device?.normalizedId || device?.deviceId || device?.id || device?.connectionKey || "");
 }
 
 function pointKey(point?: DataPoint): string {
@@ -400,3 +473,162 @@ function defaultDateTimeLocal(offsetMs: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 </script>
+
+<style scoped>
+.history-summary-cards {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-bottom: 14px;
+}
+
+.history-summary-cards .exact-diagnostic-card strong {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.history-summary-cards .exact-diagnostic-card small {
+  line-height: 1.4;
+}
+
+.history-query-bar {
+  min-height: auto;
+  padding: 14px 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: visible;
+}
+
+.history-filter-main {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.2fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(90px, 0.48fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.history-filter-bottom {
+  display: grid;
+  padding-top: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  border-top: 1px solid rgba(45, 74, 122, 0.42);
+}
+
+.history-filter-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.history-filter-field > span {
+  color: var(--exact-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.history-filter-field input,
+.history-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.history-compare-select {
+  min-width: 0;
+  min-height: 74px;
+  height: 74px;
+}
+
+.history-compare-field small {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+.history-query-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.history-query-actions button {
+  min-width: 86px;
+}
+
+.history-chart {
+  width: 100%;
+  height: 320px;
+}
+
+.history-chart-dark {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #0f172a;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0f172a, #111827);
+}
+
+.history-chart-dark svg {
+  width: 100%;
+  height: 240px;
+}
+
+.history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.history-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.history-stat-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+}
+
+.history-stat-row b {
+  color: #0f172a;
+}
+
+.history-alarm-card,
+.history-alarm-table {
+  margin-top: 0;
+}
+
+.history-alarm-table th,
+.history-alarm-table td {
+  white-space: nowrap;
+}
+
+.history-alarm-table td:nth-child(5) {
+  white-space: normal;
+}
+</style>

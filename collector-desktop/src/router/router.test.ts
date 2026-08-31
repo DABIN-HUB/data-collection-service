@@ -38,6 +38,10 @@ describe("router", () => {
     expect(String(childRoute("realtime")?.component)).toContain("RealtimeView.vue");
   });
 
+  it("history 直接路由到独立 HistoryView", () => {
+    expect(String(childRoute("history")?.component)).toContain("HistoryView.vue");
+  });
+
   it("log 直接路由到独立 LogView", () => {
     expect(String(childRoute("log")?.component)).toContain("LogView.vue");
   });
@@ -72,8 +76,15 @@ describe("router", () => {
     expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
   });
 
+  it("history route query 可以携带设备和点位上下文", () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
+    const resolved = router.resolve("/history?deviceId=dev-1&pointId=temp-1");
+    expect(resolved.name).toBe(RouteNames.HISTORY);
+    expect(resolved.query).toMatchObject({ deviceId: "dev-1", pointId: "temp-1" });
+  });
+
   it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["history", "device", "device/workbench", "collect", "control", "shadow"]) {
+    for (const path of ["device", "device/workbench", "collect", "control", "shadow"]) {
       expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
     }
   });

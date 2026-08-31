@@ -1,5 +1,5 @@
 import type { AlarmRow } from "@/types/monitor";
-import type { HistoryRow } from "@/views/runtime/runtime-utils";
+import type { HistoryRow } from "./history-data-utils";
 
 export interface HistoryTrendSeriesInput {
   key: string;

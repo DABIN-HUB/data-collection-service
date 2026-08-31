@@ -56,8 +56,6 @@
         </div>
       </section>
 
-      <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" :selected-point-ref="historySelectedPointRef" @select-device="selectDevice" />
-
       <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
         <div class="local-editor-title">
           <div>
@@ -126,10 +124,9 @@ import { useRoute, useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import LegacyConfigOpsPanel from "./LegacyConfigOpsPanel.vue";
-import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
-import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
+import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
 import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getDeviceRealtimeData, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
@@ -159,7 +156,6 @@ const protocols = ref<ProtocolSchema[]>([]);
 const configSummary = ref<unknown>({});
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
-const historySelectedPointRef = ref("");
 const deviceConfigOperatingId = ref("");
 const deviceKeyword = ref("");
 const protocolFilter = ref("");
@@ -521,8 +517,7 @@ function openWorkbenchHistory(target: { deviceId: string; pointRef: string; poin
     return;
   }
   selectDevice(target.deviceId);
-  historySelectedPointRef.value = target.pointRef;
-  switchModule("history");
+  router.push({ path: "/history", query: { deviceId: target.deviceId, pointId: target.pointRef } }).catch(() => undefined);
   ElMessage.info(`已切换到历史趋势：${target.pointLabel || target.pointName || target.pointRef}`);
 }
 

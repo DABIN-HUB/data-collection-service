@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 09:15:57 +0800
+更新时间：2026-08-31 09:44:47 +0800
 
 ## 当前状态
 
@@ -19,7 +19,8 @@
 - Phase 6：Network 迁移已完成并通过验证。
 - Phase 7：Cloud 迁移已完成并通过验证。
 - Phase 8：Diagnostic 迁移已完成并通过验证。
-- 下一阶段：Phase 9 迁移 History。
+- Phase 9：History 迁移已完成并通过验证。
+- 下一阶段：Phase 10 迁移 Collection。
 
 ## Baseline 验证结果
 
@@ -556,21 +557,111 @@ Phase 8 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 9：History 迁移完成内容
+
+- `src/views/legacy/LegacyHistoryPanel.vue` 已移动并改名为 `src/views/history/HistoryView.vue`，承载原“历史趋势”页面，不保留第二套 Legacy History 实现。
+- `/history` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `HistoryView.vue`；当前 `/dashboard`、`/realtime`、`/history`、`/log`、`/alarm`、`/network`、`/cloud`、`/diagnostic` 均为独立 View。
+- `/device`、`/device/workbench`、`/collect`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- `HistoryView.vue` 删除 `props.devices`、`props.selectedDeviceId`、`props.selectedPointRef` 和 `emit("selectDevice")`，不再通过 Legacy 父子 props 获取设备状态。
+- `HistoryView.vue` 使用 `useDeviceStore()` 作为设备领域状态来源：设备下拉来自 `deviceStore.devices`，设备选择调用 `deviceStore.selectDevice(deviceId)`，进入页面时调用 `deviceStore.refresh()`。
+- History 页面本地状态继续留在 View 内：`deviceId`、`pointRef`、`comparePointRefs`、`points`、`historyRows`、`comparePointRows`、`relatedAlarms`、`loading`、`limit`、`startTime`、`endTime`，没有新增 `history.store.ts`。
+- `onMounted()` 现在按独立页面初始化：`appStore.initialize()` -> `deviceStore.refresh()` -> 应用 route query -> 确定设备 -> 加载点位。
+- 普通 `/history` 不会默认请求历史数据；有可用设备时只选择当前或第一台设备并加载点位，保留用户点击“查询历史”的交互。
+- 支持 `/history?deviceId=xxx&pointId=xxx`，并兼容 `/history?deviceId=xxx&pointRef=xxx`。query 指定点位能在当前设备点位中匹配时，自动执行一次历史查询。
+- route query 后续变化通过 watcher 响应，且不反向 `router.replace()`，避免 query watcher 循环。
+- 设备不存在时优先使用可用设备或保持未选择；点位不存在时不自动查询，保留用户手动选择能力，页面不崩溃。
+- 手动切换设备时继续执行 `handleDeviceChange()` / `loadPoints()` 语义：更新 `deviceStore.selectedDeviceId`，清空旧点位、对比点位、历史数据、对比曲线和相关告警，再加载新设备点位。
+- 点位配置继续使用 `getDevicePointsConfig(deviceId)`，响应解析继续兼容 `points`、`data`、`items`、`records`、`rows`。
+- 历史查询继续使用 `getPointHistory(deviceId, pointRef, { startTs, endTs, limit })`，多点位对比仍按主 `pointRef` + `comparePointRefs` 分别请求，没有新增虚构批量接口。
+- 相关告警继续使用 `getDeviceAlarmHistory(deviceId, { pointCode, pointId, startTs, endTs, limit: 20 })`，并复用 `features/alarm/utils/alarm-history-utils.ts` 中的 `normalizeAlarmHistoryRows()`，不依赖 `AlarmView` 状态。
+- 趋势导出继续使用 `buildHistoryTrendExportText()`，导出内容保持 `deviceId`、`pointRef`、`pointLabel`、`generatedAt`、`series`、`relatedAlarms`，文件名仍为 `collector-history-{device}-{point}-{timestamp}.json` 形式。
+- `src/views/legacy/history-trend-utils.ts` 与测试已移动到 `src/features/history/utils/history-trend-utils.ts` / `.test.ts`，保留 `buildHistoryTrendSeries()`、`buildHistoryTrendExportText()`、`buildHistoryTrendSummaryCards()`，未修改 SVG polyline 趋势算法。
+- `HistoryRow` 与 `normalizeHistoryRows()` 已从 `src/views/runtime/runtime-utils.ts` 移动到 `src/features/history/utils/history-data-utils.ts`，对应“归一化历史数据响应”测试移动到 `history-data-utils.test.ts`。
+- `src/views/runtime/runtime-utils.ts` 未整体迁移，继续只保留非 History 职责：`normalizeDeviceOptions()`、`buildSinglePointWritePayload()`、`buildBatchWriteTemplate()`、`buildCommandTemplate()`、`parseJsonOrThrow()`。
+- 代码搜索确认 `runtime-utils.ts` 当前除自身测试外无生产引用；因其剩余函数属于 Control / Shadow / 后续运行操作边界，本 Phase 不删除。
+- DeviceWorkbench -> History 联动改为 Router Query：`openWorkbenchHistory()` 现在跳转 `{ path: "/history", query: { deviceId, pointId: pointRef } }`，不再写 `historySelectedPointRef` 或 `switchModule("history")`。
+- `LegacyConsoleView.vue` 已删除 `<LegacyHistoryPanel ... />`、`LegacyHistoryPanel` import 和 `historySelectedPointRef`。
+- `src/router/route-names.ts` 中 `LegacyModuleKey` 已删除 `"history"`，`legacyModuleByRoutePath` / `routePathByLegacyModule` 也不再把 History 定义为 Legacy Module；`RouteNames.HISTORY` 保留为正式路由名。
+- History 专属样式已从 `legacy-console.css` / `workbench.css` 移入 `HistoryView.vue` scoped style，包括历史查询栏、对比点位多选、摘要卡片、SVG 曲线、图例、统计行、相关告警表等规则。
+- 公共样式 `section-heading`、`heading-title-line`、`heading-online`、`exact-page`、`exact-page-body`、`exact-toolbar`、`exact-diagnostic-cards`、`exact-diagnostic-card`、`surface-grid`、`surface-card`、`surface-card-head`、`exact-table-card`、`exact-table-title`、`runtime-table`、`json-view`、`empty-state` 继续保留公共样式，没有复制一整套公共 CSS。
+
+## Phase 9 验证结果
+
+执行时间：2026-08-31 09:40-09:44，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 32 个测试文件、177 个测试通过；新增 `src/features/history/utils/history-data-utils.test.ts`，迁移后的 `history-trend-utils.test.ts` 通过，`router.test.ts` 覆盖 `/history -> HistoryView` 与 `/history?deviceId=dev-1&pointId=temp-1` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `HistoryView` chunk |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 38 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 9 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 9 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5180/#/dashboard` 能打开，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5180/#/realtime` 能打开，仍由 `RealtimeView.vue` 承载。
+- `/history`：dev server `http://127.0.0.1:5180/#/history` 能打开，页面文本显示“历史趋势”“设备”“点位”“开始”“结束”“条数”“对比点位”“查询历史”“导出趋势”“主曲线最新值”“采样总数”“数值范围”“点位历史曲线”“查询结果 JSON”“相关告警”“历史数据表”“暂无历史数据”；无后端数据时页面不崩溃，普通进入未自动执行无效历史查询。
+- `/history?deviceId=dev-1&pointId=temp-001`：dev server 能打开，查询结果 JSON 中带入 `deviceId: "dev-1"`；因本地后端采集服务不可达，点位配置无法加载，`pointRef` 保持空并显示“无法连接采集服务，请检查服务地址和后端是否已启动”，页面未崩溃。
+- `/history?deviceId=dev-1&pointRef=temp-001`：dev server 能打开，兼容别名 query，后端不可达时同样不崩溃。
+- `/log`：dev server `http://127.0.0.1:5180/#/log` 能打开，仍由 `LogView.vue` 承载。
+- `/alarm`：dev server `http://127.0.0.1:5180/#/alarm` 能打开，仍由 `AlarmView.vue` 承载。
+- `/network?target=127.0.0.1&port=502`：dev server 能打开，仍由 `NetworkView.vue` 承载。
+- `/cloud`：dev server `http://127.0.0.1:5180/#/cloud` 能打开，仍由 `CloudView.vue` 承载。
+- `/diagnostic`：dev server `http://127.0.0.1:5180/#/diagnostic` 能打开，仍由 `DiagnosticView.vue` 承载。
+- `/device`：dev server `http://127.0.0.1:5180/#/device` 能打开，仍显示 Legacy 设备管理页面。
+- `/collect`：dev server `http://127.0.0.1:5180/#/collect` 能打开，仍显示 Legacy 采集配置页面。
+- 代码检查确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'history'`、`LegacyHistoryPanel`、`historySelectedPointRef`，`openWorkbenchHistory()` 已改为 `/history?deviceId=...&pointId=...`。
+- 搜索确认 `src/views/legacy/` 下已无 `LegacyHistoryPanel.vue`、`history-trend-utils.ts`、`history-trend-utils.test.ts`。
+- 搜索确认 `src/styles/legacy-console.css` 与 `src/styles/workbench.css` 中已无 History 专属 selector：`legacy-history-panel`、`history-query-bar`、`history-filter-main`、`history-filter-field`、`history-filter-bottom`、`history-compare-field`、`history-compare-select`、`history-query-actions`、`history-summary-cards`、`history-chart`、`history-chart-dark`、`history-legend`、`history-stat-row`、`history-json-view`、`history-alarm-card`、`history-alarm-table`、`history-toolbar`。
+- Vite dev server 使用 5180 完成 smoke check；用于 smoke check 的 5180 dev server 已停止。
+
+## Phase 9 新增文件
+
+- `collector-desktop/src/views/history/HistoryView.vue`
+- `collector-desktop/src/features/history/utils/history-trend-utils.ts`
+- `collector-desktop/src/features/history/utils/history-trend-utils.test.ts`
+- `collector-desktop/src/features/history/utils/history-data-utils.ts`
+- `collector-desktop/src/features/history/utils/history-data-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/HistoryView-D18EPo6x.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/HistoryView-CCRsoyj6.js`（`build:web` 生成）
+
+## Phase 9 修改文件
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/styles/workbench.css`
+- `collector-desktop/src/views/history/HistoryView.vue`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/runtime/runtime-utils.ts`
+- `collector-desktop/src/views/runtime/runtime-utils.test.ts`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 9 删除文件
+
+- `collector-desktop/src/views/legacy/LegacyHistoryPanel.vue`
+- `collector-desktop/src/views/legacy/history-trend-utils.ts`
+- `collector-desktop/src/views/legacy/history-trend-utils.test.ts`
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- `LegacyConsoleView.vue` 仍然承载 Device / Collection / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
 - 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、`configSummary` 等 Device / Collection / Workbench 仍需要的状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
-- 主 `/log` 页面继续保持 HTTP 查询语义，没有修改后端 `/api/ops/logs` 契约。
-- 主 `/alarm` 页面继续保持现有告警历史与确认 API 语义，没有修改后端历史告警或告警确认契约。
-- 主 `/network` 页面继续保持现有网络诊断 API 语义，没有修改后端 `/api/ops/network/diagnose` 契约。
-- 主 `/cloud` 页面继续保持现有云上报运行状态展示语义，没有修改后端 `/monitor/report` 契约。
-- 主 `/diagnostic` 页面继续保持现有系统诊断、运行设备状态、诊断包导出和告警/日志样本语义，没有修改后端监控、设备运行态、告警历史或日志接口契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实运行时指标、设备列表、ACK/Outbox、历史存储、异常 Top、最慢设备和单设备运行状态仍依赖后端服务与运行数据环境。
-- Vite dev server 对 Legacy Collection 区域仍提示 `<summary>` 非 `<details>` 子元素 warning，来源于未迁移的 Collection Legacy template，不是 DiagnosticView 新增问题。
+- 主 `/history` 页面继续保持现有历史查询、相关告警和趋势导出 API 语义，没有修改后端历史数据或告警历史契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实设备列表、点位配置、历史曲线数据、对比曲线和相关告警仍依赖后端服务与运行数据环境。
+- Vite dev server 对 Legacy Collection 区域仍提示 `<summary>` 非 `<details>` 子元素 warning，来源于未迁移的 Collection Legacy template，不是 HistoryView 新增问题。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 9：迁移 History。
+等待确认后进入 Phase 10：迁移 Collection。
 
-Phase 9 只迁移 History，不自动进入 Device、Collection、Control、Shadow 或其它业务页面。
+Phase 10 只迁移 Collection，不自动进入 Device、DeviceWorkbench、Control、Shadow 或其它业务页面。
