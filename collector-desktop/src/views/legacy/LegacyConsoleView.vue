@@ -35,27 +35,6 @@
         </div>
       </section>
 
-      <section v-show="activeModule === 'collect'" class="exact-page">
-        <div class="section-heading"><div class="heading-title-line"><h1>数据采集配置</h1><span class="heading-online"><i></i>{{ protocols.length }} 种协议</span></div><div class="heading-actions"><button type="button" @click="loadConfigSummary">刷新概览</button></div></div>
-        <div class="exact-page-body">
-          <section class="exact-surface exact-global-config">
-            <div class="exact-surface-head"><h2>全局采集配置</h2><span>当前运行配置</span></div>
-            <div class="exact-config-grid">
-              <div v-for="item in collectionSummaryItems" :key="item.label" class="exact-config-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-            </div>
-          </section>
-          <LegacyConfigOpsPanel :devices="devices" :selected-device-id="selectedDeviceId" @imported="refreshAll" @synced="refreshAll" />
-          <section class="exact-table-card">
-            <div class="exact-table-title"><h2>协议配置列表</h2><span>{{ protocols.length }} 种协议</span></div>
-            <table><thead><tr><th>协议名称</th><th>规范编码</th><th>默认端口</th><th>采集方式</th><th>能力状态</th><th>操作</th></tr></thead><tbody><tr v-if="protocols.length === 0"><td colspan="6" class="exact-empty">当前没有可用的协议定义</td></tr><tr v-for="item in protocols" :key="item.protocol"><td><strong>{{ item.title || item.protocol || '-' }}</strong></td><td><code>{{ item.protocol || '-' }}</code></td><td>{{ protocolDefaultPort(item) }}</td><td>{{ protocolMode(item) }}</td><td><span class="capability-badge">{{ protocolCapability(item) }}</span></td><td><button type="button" @click="openProtocolConfig(item)">配置设备</button></td></tr></tbody></table>
-          </section>
-          <section v-if="selectedProtocol" class="exact-json-panel" open>
-            <summary>{{ selectedProtocol.title || selectedProtocol.protocol }} Schema</summary>
-            <pre class="json-view">{{ prettyJson(selectedProtocol) }}</pre>
-          </section>
-        </div>
-      </section>
-
       <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
         <div class="local-editor-title">
           <div>
@@ -123,10 +102,9 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
-import LegacyConfigOpsPanel from "./LegacyConfigOpsPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
-import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
+import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
 import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getDeviceRealtimeData, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
@@ -134,7 +112,8 @@ import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyMo
 import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
-import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
+import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
+import { buildDeviceListEmptyText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
@@ -153,7 +132,6 @@ const activeModule = computed<ModuleKey>(() => {
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const protocols = ref<ProtocolSchema[]>([]);
-const configSummary = ref<unknown>({});
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
 const deviceConfigOperatingId = ref("");
@@ -162,7 +140,6 @@ const protocolFilter = ref("");
 const statusFilter = ref("");
 const deviceLoading = ref(false);
 const deviceLoadError = ref("");
-const selectedProtocol = ref<ProtocolSchema | null>(null);
 const localEditorVisible = ref(false);
 const configImportInput = ref<HTMLInputElement | null>(null);
 const configFileExporting = ref(false);
@@ -196,16 +173,6 @@ const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
   errorMessage: deviceLoadError.value,
   hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
 }));
-const collectionSummaryItems = computed(() => {
-  const summary = asRecord(configSummary.value);
-  const stats = asRecord(summary.cacheStats);
-  return [
-    { label: "设备配置", value: `${valueOf(stats, ["deviceCount"], valueOf(summary, ["deviceCount"], devices.value.length))} 台` },
-    { label: "点位总数", value: `${valueOf(stats, ["pointCount"], valueOf(summary, ["pointCount"], sumPoints(devices.value)))} 个` },
-    { label: "连接配置", value: `${valueOf(stats, ["connectionCount"], valueOf(summary, ["connectionCount"], devices.value.length))} 个` },
-    { label: "配置来源", value: String(valueOf(summary, ["configSource", "source"], "当前运行配置")) }
-  ];
-});
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
@@ -230,7 +197,6 @@ watch(activeModule, (module) => {
 });
 
 async function loadActiveLegacyModule(module: ModuleKey) {
-  if (module === "collect") await loadConfigSummary();
   if (module === "workbench") await loadSelectedRealtime();
 }
 
@@ -245,8 +211,8 @@ function syncWorkbenchTabFromRoute(path: string) {
   }
 }
 
-async function refreshAll() {
-  await Promise.allSettled([loadProtocols(), loadDevices(), loadConfigSummary()]);
+async function refreshDeviceContext() {
+  await Promise.allSettled([loadProtocols(), loadDevices()]);
 }
 
 async function loadProtocols() {
@@ -273,14 +239,6 @@ async function loadDevices() {
     throw error;
   } finally {
     deviceLoading.value = false;
-  }
-}
-
-async function loadConfigSummary() {
-  try {
-    configSummary.value = await getConfigSummary();
-  } catch {
-    configSummary.value = {};
   }
 }
 
@@ -416,7 +374,7 @@ async function handleConfigImportFile(event: Event) {
       return;
     }
     await importConfigs(buildConfigImportRequest(parsed, true));
-    await refreshAll();
+    await refreshDeviceContext();
     ElMessage.success(`已导入 ${bundleCount} 个设备配置包`);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "设备配置数据导入失败");
@@ -478,8 +436,9 @@ async function editDevice(device: DeviceInfo) {
 }
 
 function openDeviceDiff(device: DeviceInfo) {
-  selectDevice(deviceIdOf(device));
-  switchModule("collect");
+  const deviceId = deviceIdOf(device);
+  selectDevice(deviceId);
+  router.push({ path: "/collect", query: { deviceId } }).catch(() => undefined);
   ElMessage.info("已切换到采集配置，可查看当前设备相关配置");
 }
 
@@ -535,34 +494,9 @@ function openDeviceOperation(device: DeviceInfo, tab: "config" | "control" | "sh
   router.push(tab === "control" ? "/control" : (tab === "shadow" ? "/shadow" : "/device/workbench")).catch(() => undefined);
 }
 
-function protocolDefaultPort(protocol: ProtocolSchema): string {
-  const record = asRecord(protocol);
-  const fields = Array.isArray(record.connectionFields) ? record.connectionFields.map((item) => asRecord(item)) : [];
-  const portField = fields.find((field) => field.name === "port");
-  return String(valueOf(record, ["defaultPort"], valueOf(portField || {}, ["defaultValue"], "-")));
-}
-
-function protocolMode(protocol: ProtocolSchema): string {
-  const record = asRecord(protocol);
-  return String(valueOf(record, ["collectionMode", "triggerMode", "addressingMode", "collectorType"], "轮询/协议驱动"));
-}
-
-function protocolCapability(protocol: ProtocolSchema): string {
-  const record = asRecord(protocol);
-  return String(valueOf(record, ["implementationStatus", "status", "implementationState"], protocol.implemented === false ? "未实现" : "已接入"));
-}
-
-function openProtocolConfig(protocol: ProtocolSchema) {
-  selectedProtocol.value = protocol;
-  localEditorVisible.value = true;
-}
-
-
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
-function sumPoints(source: DeviceInfo[]): number { return source.reduce((sum, device) => sum + Number(device.pointCount || (Array.isArray(device.points) ? device.points.length : 0) || 0), 0); }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function extractArray<T>(value: unknown, keys: string[]): T[] { if (Array.isArray(value)) return value as T[]; const record = asRecord(value); for (const key of keys) if (Array.isArray(record[key])) return record[key] as T[]; return []; }
-function valueOf(value: unknown, keys: string[], fallback: unknown): unknown { const record = asRecord(value); for (const key of keys) if (record[key] !== undefined && record[key] !== null) return record[key]; return fallback; }
 function prettyJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }
 </script>
 

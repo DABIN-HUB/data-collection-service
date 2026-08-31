@@ -820,8 +820,7 @@ body.modao-exact .legacy-console .workbench-device-actions button:disabled {
 }
 
 body.modao-exact .legacy-console .status-badge,
-body.modao-exact .legacy-console .quality-badge,
-body.modao-exact .legacy-console .capability-badge {
+body.modao-exact .legacy-console .quality-badge {
   display: inline-flex;
   width: fit-content;
   padding: 3px 8px;
@@ -857,13 +856,6 @@ body.modao-exact .legacy-console .exact-diagnostic-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 15px;
-}
-
-body.modao-exact .legacy-console .exact-config-grid {
-  display: grid;
-  padding: 20px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
 }
 
 body.modao-exact .legacy-console .exact-config-item {

@@ -63,7 +63,8 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 
 import { exportConfigs, getConfigSyncStatus, importConfigs, triggerFullConfigSync, triggerPartialConfigSync } from "@/api/config.api";
-import { buildConfigImportRequest, CONFIG_SYNC_TYPES, normalizeConfigExportText, normalizeSyncStatusItems, parseConfigImportText } from "./config-utils";
+import { CONFIG_SYNC_TYPES, normalizeSyncStatusItems } from "@/features/collection/utils/config-sync-utils";
+import { buildConfigExportFilename, buildConfigImportRequest, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
 import type { DeviceInfo } from "@/types/device";
 
 const props = defineProps<{
@@ -118,7 +119,7 @@ function downloadExport() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `collector-config-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  anchor.download = buildConfigExportFilename();
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -182,3 +183,39 @@ function deviceIdOf(device: DeviceInfo): string {
   return String(device.deviceId || device.id || device.connectionKey || "");
 }
 </script>
+
+<style scoped>
+.config-ops-panel {
+  display: block;
+}
+
+.config-export-view {
+  min-height: 240px;
+}
+
+.config-import-textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.config-sync-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.config-sync-status-grid {
+  display: grid;
+  padding: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 1100px) {
+  .config-sync-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .config-sync-form {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

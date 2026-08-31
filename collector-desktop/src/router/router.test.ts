@@ -62,6 +62,10 @@ describe("router", () => {
     expect(String(childRoute("network")?.component)).toContain("NetworkView.vue");
   });
 
+  it("collect 直接路由到独立 CollectionView", () => {
+    expect(String(childRoute("collect")?.component)).toContain("CollectionView.vue");
+  });
+
   it("network route query 可以正常 resolve", () => {
     const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
     const resolved = router.resolve("/network?target=127.0.0.1&port=502");
@@ -83,8 +87,15 @@ describe("router", () => {
     expect(resolved.query).toMatchObject({ deviceId: "dev-1", pointId: "temp-1" });
   });
 
+  it("collect route query 可以携带设备上下文", () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
+    const resolved = router.resolve("/collect?deviceId=dev-1");
+    expect(resolved.name).toBe(RouteNames.COLLECTION);
+    expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
+  });
+
   it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["device", "device/workbench", "collect", "control", "shadow"]) {
+    for (const path of ["device", "device/workbench", "control", "shadow"]) {
       expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
     }
   });

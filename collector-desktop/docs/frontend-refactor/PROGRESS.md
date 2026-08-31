@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 09:44:47 +0800
+更新时间：2026-08-31 10:23:23 +0800
 
 ## 当前状态
 
@@ -20,7 +20,8 @@
 - Phase 7：Cloud 迁移已完成并通过验证。
 - Phase 8：Diagnostic 迁移已完成并通过验证。
 - Phase 9：History 迁移已完成并通过验证。
-- 下一阶段：Phase 10 迁移 Collection。
+- Phase 10：Collection 迁移已完成并通过验证。
+- 下一阶段：Phase 11 迁移 Device List。
 
 ## Baseline 验证结果
 
@@ -651,17 +652,111 @@ Phase 9 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 10：Collection 迁移完成内容
+
+- 新增 `src/views/collection/CollectionView.vue`，承载原 `activeModule === "collect"` 的“数据采集配置”页面。
+- `/collect` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `CollectionView.vue`；当前 `/dashboard`、`/realtime`、`/history`、`/alarm`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/collect` 均为独立 View。
+- `/device`、`/device/workbench`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移 Device、DeviceWorkbench、Control、Shadow、LocalDeviceEditor 或 PointEditor。
+- `CollectionView.vue` 使用 `useDeviceStore()` 提供设备领域状态：`deviceStore.devices`、`deviceStore.selectedDeviceId`、`deviceStore.selectedDevice`，进入页面和导入/同步/保存后按需调用 `deviceStore.refresh()`。
+- `CollectionView.vue` 使用 `useProtocolStore()` 提供协议领域状态：模板使用 `protocolStore.protocols`，进入页面调用 `protocolStore.refresh()`，不再维护长期 `protocols = ref([])` 或直接长期调用 `listProtocols()`。
+- `configSummary` 继续作为 Collection 页面聚合快照留在 `CollectionView.vue`，通过 `loadConfigSummary()` 调用 `getConfigSummary()`；没有新增 `collection.store.ts`。
+- 进入 `/collect` 的初始化只执行 `appStore.initialize()`，并行刷新 `deviceStore.refresh()`、`protocolStore.refresh()`、`loadConfigSummary()`；`ConfigOpsPanel` 自身读取同步状态 `getConfigSyncStatus()`。没有请求 Diagnostic / Cloud / History / Alarm / Network 的监控接口。
+- `src/views/legacy/LegacyConfigOpsPanel.vue` 已迁移并改名为 `src/features/collection/components/ConfigOpsPanel.vue`，CollectionView 不再 import `views/legacy/*`。
+- `ConfigOpsPanel.vue` 保留低耦合 props / emit：`devices`、`selectedDeviceId`、`imported`、`synced`；组件自身不直接依赖整个 `deviceStore`。
+- `ConfigOpsPanel` 保留配置导出、下载 JSON、配置导入、`reloadAfterImport`、全量同步、局部同步、同步类型、目标设备、同步状态和同步结果。
+- `ConfigOpsPanel` 的 `imported` / `synced` 事件现在只触发 `refreshCollectionContext()`，刷新 Collection 真正依赖的设备、协议和配置摘要，不再调用 Legacy `refreshAll()` 或其它页面 loader。
+- 通用配置导入导出函数已从 `src/views/legacy/config-utils.ts` 迁移到 `src/features/config/utils/config-transfer-utils.ts`，包括 `normalizeConfigExportText()`、`parseConfigImportText()`、`buildConfigImportRequest()`、`countConfigImportBundles()`、`buildConfigExportFilename()`。
+- Collection 配置同步函数已迁移到 `src/features/collection/utils/config-sync-utils.ts`，包括 `CONFIG_SYNC_TYPES` 和 `normalizeSyncStatusItems()`。
+- `buildDeviceListEmptyText()` 继续留在 `src/views/legacy/config-utils.ts`，该文件已缩减为 Device 列表过渡 helper，没有把 Device 专属空态错误放入 Collection feature。
+- `config-utils.test.ts` 已按职责拆分：通用导入导出测试迁入 `features/config/utils/config-transfer-utils.test.ts`，同步状态测试迁入 `features/collection/utils/config-sync-utils.test.ts`，Device 空态测试保留在 `views/legacy/config-utils.test.ts`。
+- 配置导入导出后端 API 保持不变：继续使用 `exportConfigs()`、`importConfigs()`、`reloadAfterImport`，并继续兼容 `{ "bundles": [...] }`、bundle 数组和单个 bundle JSON。
+- 配置同步 API 保持不变：继续使用 `triggerFullConfigSync()`、`triggerPartialConfigSync()`、`getConfigSyncStatus()`，同步类型仍为 `device`、`points`、`connection`、`collection`、`all`。
+- 局部同步目标设备逻辑保持：需要设备的同步类型优先使用 `syncDeviceId`，其次使用 `props.selectedDeviceId`，否则为 `undefined`；不强制所有局部同步必须指定设备。
+- `CollectionView.vue` 支持 `/collect?deviceId=xxx`，query 变化时会重新应用设备上下文；设备存在时选择该设备，设备列表为空时保留 query 上下文，设备不存在且存在其它设备时回退到可用设备，不自动执行同步操作。
+- Legacy Device 的 `openDeviceDiff()` 已改为 Router Query 跳转 `{ path: "/collect", query: { deviceId } }`，保留“已切换到采集配置，可查看当前设备相关配置”提示，不再 `switchModule("collect")`。
+- `src/router/route-names.ts` 中 `LegacyModuleKey` 已删除 `"collect"`，`legacyModuleByRoutePath` / `routePathByLegacyModule` 也不再把 `/collect` 定义为 Legacy Module；`RouteNames.COLLECTION` 保留为正式路由名。
+- `LegacyConsoleView.vue` 已删除 Collection template、`LegacyConfigOpsPanel` import、`configSummary`、`collectionSummaryItems`、`selectedProtocol`、`loadConfigSummary()`、`protocolDefaultPort()`、`protocolMode()`、`protocolCapability()`、`openProtocolConfig()`。
+- `loadActiveLegacyModule()` 不再处理 `collect`，当前只为剩余 Workbench 入口加载选中设备实时数据。
+- Legacy 的刷新入口已从 `refreshAll()` 收敛为 `refreshDeviceContext()`，只刷新 `loadProtocols()` 与 `loadDevices()`，不再加载已迁出的 Collection `configSummary`。
+- Collection 协议 Schema 展示已从错误的 `<section><summary>` 改为正确的 `<details><summary>`，保持视觉和功能不变，并消除 Collection 区域的 `<summary>` 非 `<details>` 子元素 warning。
+- Collection 专属样式已从全局 legacy CSS 中退出：`exact-config-grid` 和 Collection 使用的 `capability-badge` 改为 `CollectionView.vue` / `ConfigOpsPanel.vue` scoped style；ConfigOpsPanel 的导出视图、导入文本域、同步表单和同步状态网格也收口到组件 scoped style。
+- 公共样式 `section-heading`、`heading-title-line`、`heading-online`、`heading-actions`、`exact-page`、`exact-page-body`、`exact-surface`、`exact-surface-head`、`exact-table-card`、`exact-table-title`、`exact-config-item`、`exact-json-panel`、`json-view`、`surface-grid`、`surface-card`、`form-grid`、`inline-actions` 继续保留公共样式，没有复制一整套公共 CSS。
+
+## Phase 10 验证结果
+
+执行时间：2026-08-31 10:22-10:23，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 34 个测试文件、179 个测试通过；新增 `src/features/config/utils/config-transfer-utils.test.ts`、`src/features/collection/utils/config-sync-utils.test.ts`，`router.test.ts` 覆盖 `/collect -> CollectionView` 与 `/collect?deviceId=dev-1` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `CollectionView` 和 `config-transfer-utils` chunks |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 41 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 10 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 10 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5181/#/dashboard` 能打开，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5181/#/realtime` 能打开，仍由 `RealtimeView.vue` 承载。
+- `/history`：dev server `http://127.0.0.1:5181/#/history` 能打开，仍由 `HistoryView.vue` 承载。
+- `/alarm`：dev server `http://127.0.0.1:5181/#/alarm` 能打开，仍由 `AlarmView.vue` 承载。
+- `/log`：dev server `http://127.0.0.1:5181/#/log` 能打开，仍由 `LogView.vue` 承载。
+- `/network?target=127.0.0.1&port=502`：dev server 能打开，仍由 `NetworkView.vue` 承载。
+- `/cloud`：dev server `http://127.0.0.1:5181/#/cloud` 能打开，仍由 `CloudView.vue` 承载。
+- `/diagnostic`：dev server `http://127.0.0.1:5181/#/diagnostic` 能打开，仍由 `DiagnosticView.vue` 承载。
+- `/collect`：dev server `http://127.0.0.1:5181/#/collect` 能打开，页面文本显示“数据采集配置”“刷新概览”“全局采集配置”“设备配置”“点位总数”“连接配置”“配置来源”“配置导入导出与同步”“配置导出”“下载 JSON”“配置导入”“导入后刷新设备”“全量同步”“局部同步”“同步类型”“目标设备”“同步状态”“协议配置列表”“协议名称”“规范编码”“默认端口”“采集方式”“能力状态”“操作”。后端不可达时显示“无法连接采集服务，请检查服务地址和后端是否已启动”，页面未崩溃。
+- `/collect?deviceId=dev-1`：dev server 能打开，后端不可达/无设备时页面不崩溃，不自动执行同步操作。
+- `/device`：dev server `http://127.0.0.1:5181/#/device` 能打开，仍显示 Legacy 设备管理页面。
+- 代码检查确认 `CollectionView.vue` / `ConfigOpsPanel.vue` 没有引用 Diagnostic / Cloud / History / Alarm / Network 监控 API；`LegacyConsoleView.vue` 已无 `activeModule === 'collect'`、`LegacyConfigOpsPanel`、`loadConfigSummary()`、`configSummary`、`collectionSummaryItems`、`selectedProtocol`。
+- 搜索确认 `src/views/legacy/` 下已无 `LegacyConfigOpsPanel.vue`。
+- 搜索确认 `src/styles/legacy-console.css` 与 `src/styles/workbench.css` 中已无 Collection 专属 selector：`exact-global-config`、`exact-config-grid`、`config-ops-panel`、`config-export-view`、`config-import-textarea`、`config-sync-form`、`config-sync-status-grid`、`capability-badge`。
+- 搜索 `<summary>` 确认剩余 summary 均为 `<details>` 子元素；dev server 输出未再出现 Collection 旧 `<summary>` HTML warning。
+- Vite dev server 使用 5181 完成 smoke check；用于 smoke check 的 5181 dev server 已停止。
+
+## Phase 10 新增文件
+
+- `collector-desktop/src/views/collection/CollectionView.vue`
+- `collector-desktop/src/features/collection/components/ConfigOpsPanel.vue`
+- `collector-desktop/src/features/collection/utils/config-sync-utils.ts`
+- `collector-desktop/src/features/collection/utils/config-sync-utils.test.ts`
+- `collector-desktop/src/features/config/utils/config-transfer-utils.ts`
+- `collector-desktop/src/features/config/utils/config-transfer-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/CollectionView-BDtsIuwO.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/CollectionView-CjcJC7SP.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/config-transfer-utils-CxKDpqe5.js`（`build:web` 生成）
+
+## Phase 10 修改文件
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/legacy/config-utils.ts`
+- `collector-desktop/src/views/legacy/config-utils.test.ts`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 10 删除文件
+
+- `collector-desktop/src/views/legacy/LegacyConfigOpsPanel.vue`
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 Device / Collection / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
-- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、`configSummary` 等 Device / Collection / Workbench 仍需要的状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
-- 主 `/history` 页面继续保持现有历史查询、相关告警和趋势导出 API 语义，没有修改后端历史数据或告警历史契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实设备列表、点位配置、历史曲线数据、对比曲线和相关告警仍依赖后端服务与运行数据环境。
-- Vite dev server 对 Legacy Collection 区域仍提示 `<summary>` 非 `<details>` 子元素 warning，来源于未迁移的 Collection Legacy template，不是 HistoryView 新增问题。
+- `LegacyConsoleView.vue` 仍然承载 Device / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、`protocols`、`localEditorVisible`、`editingBundle` 等 Device / Workbench 仍需要的状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
+- 主 `/collect` 页面继续保持现有配置摘要、配置导入导出、配置同步、协议列表、Schema 展示和 LocalDeviceEditor 打开语义，没有修改后端 Config / Protocol API 契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实设备、协议 Schema、配置导入导出和同步状态仍依赖后端服务与运行数据环境。
+- `runtime-utils.ts` 剩余未引用 helper 未在本 Phase 处理，继续留给后续 Control / Shadow / Workbench 清理边界。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 10：迁移 Collection。
+等待确认后进入 Phase 11：迁移 Device List。
 
-Phase 10 只迁移 Collection，不自动进入 Device、DeviceWorkbench、Control、Shadow 或其它业务页面。
+Phase 11 只迁移 Device List，不自动进入 DeviceWorkbench、Control、Shadow、LocalDeviceEditor、PointEditor 或其它业务页面。
