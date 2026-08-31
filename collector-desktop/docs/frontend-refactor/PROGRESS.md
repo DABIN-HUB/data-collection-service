@@ -1,16 +1,16 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 11:31:55 +0800
+更新时间：2026-08-31 14:31:10 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `e4f7add` xg
   - `16032b0` xg
   - `00f0038` xg
   - `ebfdc3a` 修改
   - `46d7bb6` 修改
-  - `9e01d61` 修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
@@ -23,7 +23,8 @@
 - Phase 10：Collection 迁移已完成并通过验证。
 - Phase 11：Device List 迁移已完成并通过验证。
 - Phase 12：Device Workbench 迁移已完成并通过验证。
-- 下一阶段：Phase 13 迁移 Local Device Editor。
+- Phase 13：Local Device Editor 整理与迁移已完成并通过验证。
+- 下一阶段：Phase 14 迁移 Point Feature。
 
 ## Baseline 验证结果
 
@@ -945,16 +946,111 @@ Phase 12 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` P
 - 无源码文件删除。
 - `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 13：Local Device Editor 整理与迁移完成内容
+
+- `src/components/device/LocalDeviceEditor.vue` 已正式移动到 `src/features/device/components/LocalDeviceEditor.vue`，继续作为 DeviceList、Collection、Dashboard 三个独立页面共享的本地临时设备编辑器。
+- `src/components/device/local-device-utils.ts` 与 `src/components/device/local-device-utils.test.ts` 已移动到 `src/features/device/utils/local-device-utils.ts` / `.test.ts`，旧路径不保留第二套长期副本。
+- `local-device-utils.ts` 继续 export `AdaptiveConfig`、`CloudTargetConfig`、`LocalDeviceDraft`、`LocalDevicePayload`、`LocalDeviceBundle`、`ProtocolPointNotes`，以及 `DEFAULT_ADAPTIVE_CONFIG`、`extractLocalDeviceBundle()`、`buildLocalDevicePayload()`、`validateLocalDeviceDraft()`、`buildProtocolPointNotes()`、`normalizeLocalPoints()`、`normalizeAdaptive()`。
+- `LocalDeviceEditor.vue` 删除内部重复 `interface LocalDeviceBundle`，统一从 `features/device/utils/local-device-utils` import `LocalDeviceBundle`；代码搜索确认 `LocalDeviceBundle` 只有 `local-device-utils.ts` 一个正式接口定义。
+- `DeviceListView.vue`、`CollectionView.vue`、`DashboardView.vue` 均已改为 import `@/features/device/components/LocalDeviceEditor.vue`，需要 `LocalDeviceBundle` / `extractLocalDeviceBundle()` 的地方统一 import `@/features/device/utils/local-device-utils`。
+- `LocalDeviceEditor.vue` 保持低耦合 props：`modelValue`、`editingBundle`、`protocols`；组件内部未引入 `useDeviceStore()` 或 `useProtocolStore()`，仍由父页面传入协议列表。
+- 协议 Schema 按需加载保持不变：编辑器仍在打开或协议切换时调用 `getProtocol(protocol)` 获取完整 `connectionFields`、`pointFields`、`pointAddressHints`、`dataTypes`，不会把父页面传入的列表协议元数据误认为完整 Schema。
+- `DashboardView.vue` 的 LocalDeviceEditor 协议来源已收敛到 `useProtocolStore()`：模板传入 `protocolStore.protocols`，`openLocalEditor()` 仅在协议列表为空时 `await protocolStore.refresh()`，有 `protocolStore.error` 时提示并停止打开；已删除 Dashboard 自己维护的 `protocols ref`、`listProtocols` import 和 `ProtocolSchema` type import。
+- `DeviceListView.vue` 与 `CollectionView.vue` 本 Phase 只调整 LocalDeviceEditor / local-device-utils import，继续保持原有 `protocolStore`、`deviceStore`、配置同步、导入导出、Router Query 等业务边界。
+- 新增 `src/features/device/utils/local-device-editor-utils.ts` / `.test.ts`，仅承接输入输出明确、不依赖 Vue ref/computed/props 的纯 helper，没有新增 `useLocalDeviceEditor` composable，也没有创建 `local-device.store.ts`。
+- 迁出的 pure helper 包括：`normalizeInitialPoints()`、`defaultPointTemplate()`、`defaultAddress()`、`normalizeCloudTarget()`、`alarmRules()`、`serializeAlarmRules()`、`parsePointsJson()`、`sanitizePointForSave()`、`removeDeprecatedCloudIdentityConfig()`、`cloudTargetSummary()`、`cloudPointStatus()`、`statusLabel()`、`parseBooleanOption()`、`parseFieldValue()`、`toNumber()`、`findDuplicatePointCode()`、`createUniqueCode()`、`buildReadonlyItems()`、`isOpcUaProtocol()`、`hasValue()`、`pruneEmpty()`。
+- 留在组件内的仍是 UI / Vue 状态操作：`setActiveStep()`、`moveStep()`、`reset()`、`onProtocolChanged()`、`selectPoint()`、`updatePointField()`、`save()`、`close()`、keydown/modal 生命周期、协议 Schema state 和点位选择 state。
+- 本 Phase 没有拆 `LocalDeviceSetupStep.vue`、`LocalDeviceCloudStep.vue`、`LocalDeviceJsonStep.vue` 或复杂 Point Step。原因是当前模板拆分会制造大量 props/emits，尤其点位详情区与 JSON/云/协议 Schema 之间仍有紧耦合；Phase 13 只做目录与纯函数边界整理。
+- 四个主步骤完整保留：`01 基础连接`、`02 点位建模`、`03 云平台上报`、`04 JSON 高级`；没有新增 Route、没有新增 Wizard，也没有调整步骤顺序。
+- 基础连接能力保持：设备 ID、设备名称、协议、基础/最小/最大采集周期、点位变化阈值、cloudTarget、Topic preview、ProtocolDynamicForm 动态连接参数、必填字段统计和校验仍在原编辑器流程中。
+- 新增模式保持：`deviceId` 可编辑，默认协议仍为 `MODBUS_TCP` 或父级协议列表第一项，默认 adaptive 使用 `DEFAULT_ADAPTIVE_CONFIG`，无点位时自动建立一个默认点位，`overwrite` 与 `startAfterSave` 默认关闭。
+- 编辑模式保持：`editingBundle` 存在时继续读取旧 device / connection / points / cloudTarget，设备 ID 禁止修改，`overwrite` 默认启用，协议、adaptive、动态连接参数和点位全部回填。
+- 协议切换保持：`onProtocolChanged()` 继续清空/重建 connection model、重新归一化 points、同步 JSON，并触发 `ensureProtocolSchema(protocol)` 获取完整 Schema；默认地址/类型逻辑由纯 helper 覆盖 MQTT、OPC UA、SIEMENS S7、Modbus。
+- `ProtocolDynamicForm.vue` 和 `protocol-form-utils.ts` 未迁移、未重写；LocalDeviceEditor 继续使用 `buildConnectionPayload()`、`buildProtocolInitialModel()`、`extractProtocolModel()`、`getPathValue()`、`setPathValue()`、`validateProtocolModel()`。
+- 点位编辑能力保持：新增点位、复制点位、删除点位、搜索点位、选择点位仍在组件内；点位详情 Tabs `基础信息`、`数据处理`、`上报 / 缓存参数`、`协议扩展`、`告警规则`、`只读信息` 均保留。
+- Phase 13 未提前迁移 Point Feature：未移动 `src/components/point/PointEditor.vue`，未创建 point store，未统一两个点位编辑器，未重做点位表格。
+- `alarmRule` 语义保持为保存前 JSON 字符串；`local-device-utils.test.ts` 保留并补充覆盖点位 adaptive、reportField/reportEnabled、alarmRule JSON string、cloudTarget、connection extJson、temporaryConfig、configSource 等保存格式。
+- 云上报语义保持：设备级 `cloudTarget` 继续负责 `productKey`、`deviceName`、`deviceType`、`topologyEnabled`；点位级 `additionalConfig.reportField`、`reportEnabled`、`eventEnabled`、`streamEnabled`、`historyEnabled` 保持；保存前仍清理废弃 `reportBindings`、`reportProductKey`、`reportDeviceName`、`cloudBindings`。
+- JSON 高级模式保持：点位 JSON 数组编辑、格式化 JSON、应用 JSON 到列表和解析失败明确错误仍在；列表变更与 JSON 同步仍由组件状态操作维护。
+- 保存流程保持：补 connection 默认值 -> normalize points -> sanitize points -> `validateLocalDeviceDraft()` -> `validateProtocolModel()` -> `buildConnectionPayload()` -> `buildLocalDevicePayload()` -> `updateLocalDevice()` 或 `createLocalDevice()` -> `startAfterSave` 时 `startLocalDevice()` -> `emit("saved", deviceId)` -> 关闭。
+- `saved(deviceId)` 契约保持，三个父页面仍以保存后的 deviceId 刷新/选择设备上下文；没有改成无参数事件或 payload 事件。
+- 关闭行为保持：Teleport 到 body、点击背景关闭、关闭按钮、Escape 关闭、`document.body.classList.toggle("modal-active", visible)`、unmount 时移除 keydown listener 和 `modal-active`。
+- CSS 本 Phase 未从 `workbench.css` 迁出到 scoped style。已搜索确认 `local-editor`、`local-device-panel`、`local-device-web-dialog`、`local-editor-title`、`local-editor-tabs`、`local-editor-layout`、`local-editor-rail`、`local-editor-body`、`local-checklist`、`local-section-card` 等仍被 DeviceWorkbench / Legacy Control / Legacy Shadow / DeviceConfigPanel / ManualShadowPanels / LocalDeviceEditor 共同使用，避免复制全局样式。
+- 搜索中识别到若干 Editor-only selector（如 `local-setup-*`、`local-cloud-*`、`local-point-*`、`point-detail-*`、`local-options`、`local-editor-footer`、`local-connection-meta` 等）主要只由 LocalDeviceEditor 模板与 `workbench.css` 使用；考虑到这些规则夹在当前共享 modal/workbench 样式块内且共享外壳仍未迁完，本 Phase 记录边界但不复制/拆半套 CSS，等待 Control / Shadow 和最终 `workbench.css` 阶段统一处理。
+- 代码搜索确认旧路径引用为 0：`components/device/LocalDeviceEditor`、`components/device/local-device-utils` 均无命中；`src/components/device/LocalDeviceEditor.vue`、`src/components/device/local-device-utils.ts`、`src/components/device/local-device-utils.test.ts` 均已不存在。
+- 代码检查确认 `/dashboard`、`/realtime`、`/history`、`/alarm`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/device`、`/device/workbench` 仍直接解析到独立 View；`/control`、`/shadow` 仍解析到 `LegacyConsoleView.vue`。
+
+## Phase 13 验证结果
+
+执行时间：2026-08-31 13:51-14:31，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 35 个测试文件、193 个测试通过；新增 `src/features/device/utils/local-device-editor-utils.test.ts`，迁移后的 `local-device-utils.test.ts` 通过 |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成新的 `DeviceListView`、`CollectionView`、`DashboardView`、`DeviceWorkbenchView` 等 hash 产物 |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 46 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 13 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 13 路由与页面检查结果
+
+- `/device`：dev server `http://127.0.0.1:5184/#/device` 能打开，仍由 `DeviceListView.vue` 承载；页面显示“设备管理”“新增本地设备”等入口，后端不可达/CORS 失败时页面不崩溃。
+- `/device` 新增本地设备 smoke：在带 CORS 的本地 mock 采集服务下点击“新增本地设备”，LocalDeviceEditor 正常打开；四个步骤存在，默认协议为 `MODBUS_TCP`，至少一个默认点位；关闭按钮、Escape、背景点击均能关闭，关闭后 `modal-active` 清理。
+- `/device` 编辑本地设备 smoke：mock 本地设备点击“编辑”后通过 `getLocalDevice()` -> `extractLocalDeviceBundle()` -> `LocalDeviceEditor` 回填；设备 ID 禁止编辑，设备名称、协议、点位、cloudTarget/adaptive 进入编辑状态，`overwrite` 默认启用。
+- `/device` 保存 smoke：mock 服务下新增本地设备并勾选“保存后立即本地启动”，确认调用 `createLocalDevice()` 1 次与 `startLocalDevice()` 1 次，保存后弹窗关闭并触发父页面刷新链路。
+- `/collect`：dev server 能打开，仍由 `CollectionView.vue` 承载；mock 协议列表下点击协议行“配置设备”能打开 LocalDeviceEditor，Editor 接收 `protocolStore.protocols`，默认协议和默认点位正常。
+- `/dashboard`：dev server 能打开，仍由 `DashboardView.vue` 承载；mock smoke 先清空请求日志后进入 Dashboard，页面启动阶段没有请求 `/api/protocols`；点击“新增本地设备”后才通过 `protocolStore.refresh()` 请求协议列表并打开 LocalDeviceEditor。
+- `/device/workbench?deviceId=local-smoke-1`：dev server 能打开，仍由 `DeviceWorkbenchView.vue` 承载，显示 Workbench / Control / Shadow 三项外层 Tab。
+- `/control?deviceId=local-smoke-1`：dev server 能打开，仍由 `LegacyConsoleView.vue + LegacyManualShadowPanels.vue` 承载，显示“手动控制”和设备上下文。
+- `/shadow?deviceId=local-smoke-1`：dev server 能打开，仍由 `LegacyConsoleView.vue + LegacyManualShadowPanels.vue` 承载，显示“设备影子”和设备上下文。
+- 代码检查确认 `LocalDeviceEditor.vue` 没有 `useDeviceStore()`、`useProtocolStore()` 或 `local-device.store.ts`；`getProtocol()`、`createLocalDevice()`、`updateLocalDevice()`、`startLocalDevice()` 仍是它直接依赖的后端 API 边界。
+- 代码检查确认 `DashboardView.vue` 已无 `listProtocols`、`ProtocolSchema` 和 `protocols = ref<ProtocolSchema[]>([])`；只保留 `protocolStore` 按需加载。
+- 因当前 in-app preview `drive_preview` 会返回 “The in-app browser only takes actions in the session the user is looking at.”，交互 smoke 通过独立 Headless Chrome + CDP 完成；dev server、headless Chrome、mock 后端进程均在验证后停止。
+
+## Phase 13 新增文件
+
+- `collector-desktop/src/features/device/utils/local-device-editor-utils.ts`
+- `collector-desktop/src/features/device/utils/local-device-editor-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/DeviceWorkbenchView-DrTXVYw_.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/DeviceListView-DywcU1fT.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/DeviceListView-SI_Y4VxW.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/CollectionView-CP0xkHgY.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/CollectionView-UMtYFAkz.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/DashboardView-Cjx-EyaJ.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/DashboardView-CxVFgIqF.css`（`build:web` 生成）
+
+## Phase 13 修改 / 移动文件
+
+- `collector-desktop/src/features/device/components/LocalDeviceEditor.vue`（从 `src/components/device/LocalDeviceEditor.vue` 移动后整理）
+- `collector-desktop/src/features/device/utils/local-device-utils.ts`（从 `src/components/device/local-device-utils.ts` 移动）
+- `collector-desktop/src/features/device/utils/local-device-utils.test.ts`（从 `src/components/device/local-device-utils.test.ts` 移动后补充断言）
+- `collector-desktop/src/views/device/DeviceListView.vue`
+- `collector-desktop/src/views/collection/CollectionView.vue`
+- `collector-desktop/src/views/dashboard/DashboardView.vue`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 13 删除文件
+
+- `collector-desktop/src/components/device/LocalDeviceEditor.vue`
+- `collector-desktop/src/components/device/local-device-utils.ts`
+- `collector-desktop/src/components/device/local-device-utils.test.ts`
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- 本地 smoke check 在后端采集服务未启动/不可达状态下完成；真实设备、真实点位、真实启动/停止、配置缓存刷新/清理、协议配置读写、历史/实时跳转后的真实数据仍依赖后端服务与设备数据环境。
+- `/device`、`/collect`、`/dashboard` 的 LocalDeviceEditor 交互 smoke 使用带 CORS 的本地 mock 采集服务完成，用于验证前端路由、弹窗、协议加载、保存调用顺序和关闭行为；真实设备、真实点位、真实启动/停止、配置缓存刷新/清理、协议配置读写、历史/实时跳转后的真实数据仍依赖后端服务与设备数据环境。
 - Control / Shadow 仍在 `LegacyConsoleView.vue` 中过渡，仍保留 Legacy 局部 `devices`、`deviceRuntimeMap`、`selectedDeviceId`、`selectedRealtimeRows`、`loadDevices()`、`loadSelectedRealtime()`、`operateDeviceConfig()`；这些将在后续 Control / Shadow / Legacy Host 阶段继续收敛。
-- `DeviceConfigPanel.vue` 内部结构、`LocalDeviceEditor.vue`、`PointEditor.vue`、`RealtimeDataPanel.vue`、`AlarmTablePanel.vue`、`LogPanel.vue` 本 Phase 未拆分，按阶段边界保留。
-- `workbench.css` 中同时服务 DeviceWorkbench、Legacy Control、Legacy Shadow、DeviceConfigPanel、ManualShadowPanels 的共享样式仍暂时保留为全局样式，未复制到新 View；等 Control/Shadow 迁出后再统一拆解。
+- `DeviceConfigPanel.vue`、`PointEditor.vue`、`RealtimeDataPanel.vue`、`AlarmTablePanel.vue`、`LogPanel.vue` 本 Phase 未拆分；`LocalDeviceEditor.vue` 只迁出纯 helper，模板和 UI 状态仍按阶段边界保留在组件内。
+- `workbench.css` 中同时服务 DeviceWorkbench、Legacy Control、Legacy Shadow、DeviceConfigPanel、ManualShadowPanels、LocalDeviceEditor 的共享样式仍暂时保留为全局样式，未复制到新 View；等 Control/Shadow 迁出和最终样式阶段再统一拆解。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 13：迁移 Local Device Editor。
+等待确认后进入 Phase 14：迁移 Point Feature。
 
-Phase 13 只迁移 Local Device Editor，不自动进入 PointEditor、Control、Shadow 或最终 Legacy Host 清理。
+Phase 14 只处理 Point Feature；不自动进入 Control、Shadow 或最终 Legacy Host 清理。

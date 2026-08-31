@@ -64,8 +64,8 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { getConfigSummary } from "@/api/config.api";
-import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
-import type { LocalDeviceBundle } from "@/components/device/local-device-utils";
+import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
+import type { LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 import ConfigOpsPanel from "@/features/collection/components/ConfigOpsPanel.vue";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";

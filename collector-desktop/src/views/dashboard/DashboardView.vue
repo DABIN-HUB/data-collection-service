@@ -128,7 +128,7 @@
       </div>
     </div>
 
-    <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocols" @saved="handleLocalSaved" />
+    <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />
   </section>
 </template>
 
@@ -139,19 +139,19 @@ import { useRouter } from "vue-router";
 
 import { getRecentAlarms } from "@/api/data.api";
 import { getCacheMetrics, getCloudReportMetrics, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
-import { listProtocols } from "@/api/protocol.api";
-import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
+import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
+import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { buildAlarmIdentity } from "@/features/alarm/utils/alarm-utils";
 import type { AlarmRow } from "@/types/monitor";
-import type { LocalDeviceBundle } from "@/components/device/local-device-utils";
-import type { ProtocolSchema } from "@/types/protocol";
+import type { LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 
 const appStore = useAppStore();
 const deviceStore = useDeviceStore();
+const protocolStore = useProtocolStore();
 const router = useRouter();
 
 const recentAlarms = ref<AlarmRow[]>([]);
@@ -165,7 +165,6 @@ const lastRefresh = ref<Date | null>(null);
 const dashboardLoading = ref(false);
 const localEditorVisible = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
-const protocols = ref<ProtocolSchema[]>([]);
 
 const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
 const deviceCount = computed(() => deviceStore.devices.length);
@@ -313,13 +312,12 @@ async function loadPerformanceDetail() {
 }
 
 async function openLocalEditor() {
-  if (!protocols.value.length) {
-    try {
-      protocols.value = await listProtocols();
-    } catch (error) {
-      ElMessage.error(error instanceof Error ? error.message : "协议列表加载失败");
-      return;
-    }
+  if (!protocolStore.protocols.length) {
+    await protocolStore.refresh();
+  }
+  if (protocolStore.error) {
+    ElMessage.error(protocolStore.error);
+    return;
   }
   editingBundle.value = null;
   localEditorVisible.value = true;

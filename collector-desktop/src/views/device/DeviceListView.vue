@@ -85,8 +85,8 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import { clearDeviceConfig, exportConfigs, getLocalDevice, importConfigs, refreshDeviceConfig } from "@/api/config.api";
-import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
-import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
+import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
+import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceListEmptyText } from "@/features/device/utils/device-list-utils";

@@ -356,9 +356,9 @@
                               <span>{{ row.pointCode || `point_${index + 1}` }}</span>
                             </button>
                           </td>
-                          <td>{{ cloudTargetSummary(row) }}</td>
+                          <td>{{ cloudTargetSummary(row, cloudTarget) }}</td>
                           <td>{{ row.additionalConfig?.reportField || '-' }}</td>
-                          <td>{{ cloudPointStatus(row) }}</td>
+                          <td>{{ cloudPointStatus(row, cloudTarget) }}</td>
                         </tr>
                         <tr v-if="points.length === 0"><td colspan="4">暂无点位</td></tr>
                       </tbody>
@@ -450,15 +450,10 @@ import { startLocalDevice } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, getPathValue, setPathValue, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
-import { buildLocalDevicePayload, buildProtocolPointNotes, DEFAULT_ADAPTIVE_CONFIG, normalizeLocalPoints, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig } from "./local-device-utils";
+import { buildLocalDevicePayload, buildProtocolPointNotes, DEFAULT_ADAPTIVE_CONFIG, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig, type LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
+import { alarmRules, buildReadonlyItems, cloneData, cloudPointStatus, cloudTargetSummary, createUniqueCode, defaultPointTemplate, findDuplicatePointCode, firstPointValue, hasValue, isOpcUaProtocol, isPlainObject, normalizeCloudTarget, normalizeInitialPoints, parseBooleanOption, parseFieldValue, parsePointsJson, sanitizePointForSave, serializeAlarmRules, statusLabel, toNumber, type AlarmRule, type FieldValueType } from "@/features/device/utils/local-device-editor-utils";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig, ProtocolSchema } from "@/types/protocol";
-
-interface LocalDeviceBundle {
-  device?: Record<string, unknown>;
-  connection?: Record<string, unknown>;
-  points?: DataPoint[];
-}
 
 type PointDetailTab = "basic" | "data" | "report" | "protocol" | "alarm" | "readonly";
 type ChecklistState = "ok" | "warn" | "error";
@@ -473,25 +468,13 @@ interface PointEditorField {
   path: string;
   label: string;
   control?: FieldControl;
-  valueType?: "string" | "number" | "integer" | "boolean";
+  valueType?: FieldValueType;
   options?: SelectOption[];
   required?: boolean;
   description?: string;
   fullWidth?: boolean;
   disabled?: boolean;
   step?: number;
-}
-
-interface AlarmRule {
-  ruleId?: string;
-  ruleName?: string;
-  operator?: string;
-  threshold?: number;
-  duration?: number;
-  level?: string;
-  enabled?: boolean;
-  description?: string;
-  [key: string]: unknown;
 }
 
 const props = defineProps<{
@@ -681,6 +664,20 @@ const cloudTargetDetail = computed(() => {
   return `当前点位将随设备上报到 ${cloudTarget.productKey}/${cloudTarget.deviceName}，主题（Topic）：/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`;
 });
 
+function normalizePointsForEditor(rawPoints: DataPoint[], currentDeviceId: string, currentProtocol: string): DataPoint[] {
+  return normalizeInitialPoints(rawPoints, currentDeviceId, currentProtocol, {
+    adaptive: { ...adaptive },
+    pointDataTypes: pointDataTypes.value
+  });
+}
+
+function buildDefaultPoint(currentDeviceId: string, currentProtocol: string, overrides: Partial<DataPoint> = {}): DataPoint {
+  return defaultPointTemplate(currentDeviceId, currentProtocol, overrides, {
+    adaptive: { ...adaptive },
+    pointDataTypes: pointDataTypes.value
+  });
+}
+
 function setActiveStep(index: number) {
   activeStep.value = Math.max(0, Math.min(localEditorSteps.length - 1, index));
   if (activeStep.value === 1) {
@@ -713,7 +710,7 @@ function reset(bundle: LocalDeviceBundle | null = null) {
   adaptive.maxCollectionInterval = Number(firstPointValue(bundle?.points, "maxCollectionInterval") || DEFAULT_ADAPTIVE_CONFIG.maxCollectionInterval);
   adaptive.pointChangeThreshold = Number(firstPointValue(bundle?.points, "pointChangeThreshold") || DEFAULT_ADAPTIVE_CONFIG.pointChangeThreshold);
   Object.assign(cloudTarget, { enabled: false, deviceType: "SUB_DEVICE", productKey: "", deviceName: "", topologyEnabled: true }, normalizeCloudTarget(device.cloudTarget));
-  points.value = normalizeInitialPoints(bundle?.points || [], deviceId.value || "local-device", protocol.value);
+  points.value = normalizePointsForEditor(bundle?.points || [], deviceId.value || "local-device", protocol.value);
   if (points.value.length === 0) {
     addPoint();
   }
@@ -725,7 +722,7 @@ function reset(bundle: LocalDeviceBundle | null = null) {
 
 function onProtocolChanged() {
   connectionModel.value = {};
-  points.value = normalizeInitialPoints(points.value, deviceId.value || "local-device", protocol.value);
+  points.value = normalizePointsForEditor(points.value, deviceId.value || "local-device", protocol.value);
   syncJsonFromPoints();
   void ensureProtocolSchema(protocol.value);
 }
@@ -752,7 +749,7 @@ async function ensureProtocolSchema(protocolCode: string) {
         ...buildProtocolInitialModel(detail.connectionFields || []),
         ...connectionModel.value
       };
-      points.value = normalizeInitialPoints(points.value, deviceId.value || "local-device", normalizedProtocol);
+      points.value = normalizePointsForEditor(points.value, deviceId.value || "local-device", normalizedProtocol);
       syncJsonFromPoints();
     }
   } catch (caught) {
@@ -766,7 +763,7 @@ function hasRenderableProtocolFields(schema: ProtocolSchema | null | undefined):
 
 function addPoint() {
   const pointCode = createUniqueCode(points.value, "point");
-  const point = defaultPointTemplate(deviceId.value || "local-device", protocol.value, { pointCode, pointName: `点位 ${points.value.length + 1}` });
+  const point = buildDefaultPoint(deviceId.value || "local-device", protocol.value, { pointCode, pointName: `点位 ${points.value.length + 1}` });
   points.value = [...points.value, point];
   selectedPointIndex.value = points.value.length - 1;
   syncJsonFromPoints();
@@ -855,6 +852,46 @@ function updateSelectedPath(path: string, value: unknown) {
   syncJsonFromPoints();
 }
 
+function updateAlarmRule(index: number, field: string, value: unknown) {
+  const point = selectedPoint.value;
+  if (!point) {
+    return;
+  }
+  const rules = alarmRules(point);
+  while (rules.length <= index) {
+    rules.push({});
+  }
+  if (value === undefined || value === null || value === "") {
+    delete rules[index][field];
+  } else {
+    rules[index][field] = value;
+  }
+  point.alarmRule = serializeAlarmRules(rules);
+  syncJsonFromPoints();
+}
+
+function addAlarmRule() {
+  const point = selectedPoint.value;
+  if (!point) {
+    return;
+  }
+  const rules = alarmRules(point);
+  rules.push({ operator: ">", enabled: true });
+  point.alarmRule = serializeAlarmRules(rules);
+  syncJsonFromPoints();
+}
+
+function removeAlarmRule(index: number) {
+  const point = selectedPoint.value;
+  if (!point) {
+    return;
+  }
+  const rules = alarmRules(point);
+  rules.splice(index, 1);
+  point.alarmRule = serializeAlarmRules(rules);
+  syncJsonFromPoints();
+}
+
 function syncDeviceIdToPoints() {
   points.value = points.value.map((point) => ({ ...point, deviceId: deviceId.value || "local-device" }));
   syncJsonFromPoints();
@@ -890,7 +927,7 @@ function applyPointsJson() {
   try {
     const currentCode = selectedPoint.value?.pointCode || null;
     const parsed = parsePointsJson(pointsJson.value || "[]");
-    const normalized = normalizeInitialPoints(parsed, deviceId.value || "local-device", protocol.value);
+    const normalized = normalizePointsForEditor(parsed, deviceId.value || "local-device", protocol.value);
     points.value = normalized;
     const nextIndex = currentCode ? normalized.findIndex((item) => item.pointCode === currentCode) : -1;
     selectedPointIndex.value = nextIndex >= 0 ? nextIndex : (normalized.length ? 0 : -1);
@@ -907,7 +944,7 @@ async function save() {
     ...buildProtocolInitialModel(connectionFields.value),
     ...connectionModel.value
   };
-  const normalizedPoints = normalizeInitialPoints(points.value, deviceId.value || "local-device", protocol.value).map(sanitizePointForSave);
+  const normalizedPoints = normalizePointsForEditor(points.value, deviceId.value || "local-device", protocol.value).map(sanitizePointForSave);
   const errors = [...validateLocalDeviceDraft({ deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value, points: normalizedPoints, cloudTarget: { ...cloudTarget } }), ...validateProtocolModel(connectionFields.value, mergedConnectionModel)];
   if (errors.length > 0) {
     error.value = errors.join("；");
@@ -983,302 +1020,6 @@ function getPointFieldValue(path: string): unknown {
 function protocolPointFieldPath(field: ProtocolFieldConfig): string {
   return field.name.startsWith("additionalConfig.") ? field.name : `additionalConfig.${field.name}`;
 }
-
-function normalizeInitialPoints(rawPoints: DataPoint[], currentDeviceId: string, currentProtocol: string): DataPoint[] {
-  const normalized = normalizeLocalPoints(rawPoints, currentDeviceId, currentProtocol, { ...adaptive });
-  return normalized.map((point, index) => {
-    const pointCode = point.pointCode || `point_${index + 1}`;
-    const additionalConfig = { reportEnabled: true, reportField: pointCode, ...(point.additionalConfig || {}) };
-    removeDeprecatedCloudIdentityConfig(additionalConfig);
-    return {
-      ...point,
-      pointId: point.pointId || `local-${pointCode}`,
-      pointCode,
-      pointName: point.pointName || `点位 ${index + 1}`,
-      address: point.address || defaultAddress(currentProtocol),
-      dataType: point.dataType || pointDataTypes.value[0] || "FLOAT",
-      additionalConfig
-    };
-  });
-}
-
-function defaultPointTemplate(currentDeviceId: string, currentProtocol: string, overrides: Partial<DataPoint> = {}): DataPoint {
-  const pointCode = overrides.pointCode || "temperature";
-  return normalizeInitialPoints([{
-    pointCode,
-    pointName: overrides.pointName || "温度",
-    deviceId: currentDeviceId,
-    address: overrides.address || defaultAddress(currentProtocol),
-    dataType: overrides.dataType || pointDataTypes.value[0] || "FLOAT",
-    readWrite: "R",
-    status: 1,
-    cacheEnabled: 1,
-    alarmEnabled: 0,
-    baseCollectionInterval: adaptive.baseCollectionInterval,
-    currentCollectionInterval: adaptive.baseCollectionInterval,
-    minCollectionInterval: adaptive.minCollectionInterval,
-    maxCollectionInterval: adaptive.maxCollectionInterval,
-    pointChangeThreshold: adaptive.pointChangeThreshold,
-    additionalConfig: {
-      reportEnabled: true,
-      reportField: pointCode,
-      writeAddress: "C_SE_NC_1:1",
-      writeCommonAddress: 1,
-      writeSelect: false,
-      writeQl: 0
-    },
-    ...overrides
-  }], currentDeviceId, currentProtocol)[0];
-}
-
-function defaultAddress(currentProtocol = protocol.value): string {
-  if (currentProtocol === "MQTT") {
-    return "sensor/temperature";
-  }
-  if (isOpcUaProtocol(currentProtocol)) {
-    return "ns=2;s=Channel1.Device1.Tag1";
-  }
-  if (currentProtocol === "SIEMENS_S7") {
-    return "DB1.DBW0";
-  }
-  return "40001";
-}
-
-function normalizeCloudTarget(value: unknown): Partial<CloudTargetConfig> {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-  return {
-    enabled: Boolean(value.enabled),
-    deviceType: String(value.deviceType || "SUB_DEVICE"),
-    productKey: value.productKey ? String(value.productKey) : "",
-    deviceName: value.deviceName ? String(value.deviceName) : "",
-    topologyEnabled: value.topologyEnabled !== false
-  };
-}
-
-function alarmRules(point: DataPoint | null): AlarmRule[] {
-  const raw = point?.alarmRule;
-  if (!raw) {
-    return [];
-  }
-  if (Array.isArray(raw)) {
-    return raw.filter(isPlainObject).map((item) => ({ ...item })) as AlarmRule[];
-  }
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter(isPlainObject).map((item) => ({ ...item })) as AlarmRule[] : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function updateAlarmRule(index: number, field: string, value: unknown) {
-  const point = selectedPoint.value;
-  if (!point) {
-    return;
-  }
-  const rules = alarmRules(point);
-  while (rules.length <= index) {
-    rules.push({});
-  }
-  if (value === undefined || value === null || value === "") {
-    delete rules[index][field];
-  } else {
-    rules[index][field] = value;
-  }
-  point.alarmRule = serializeAlarmRules(rules);
-  syncJsonFromPoints();
-}
-
-function addAlarmRule() {
-  const point = selectedPoint.value;
-  if (!point) {
-    return;
-  }
-  const rules = alarmRules(point);
-  rules.push({ operator: ">", enabled: true });
-  point.alarmRule = serializeAlarmRules(rules);
-  syncJsonFromPoints();
-}
-
-function removeAlarmRule(index: number) {
-  const point = selectedPoint.value;
-  if (!point) {
-    return;
-  }
-  const rules = alarmRules(point);
-  rules.splice(index, 1);
-  point.alarmRule = serializeAlarmRules(rules);
-  syncJsonFromPoints();
-}
-
-function serializeAlarmRules(rules: AlarmRule[]): string {
-  const normalized = rules.map((rule) => pruneEmpty(rule)).filter((rule) => Object.keys(rule).length > 0);
-  return normalized.length ? JSON.stringify(normalized) : "";
-}
-
-function parsePointsJson(value: string): DataPoint[] {
-  const parsed = JSON.parse(value || "[]") as DataPoint | DataPoint[];
-  return Array.isArray(parsed) ? parsed : [parsed];
-}
-
-function sanitizePointForSave(point: DataPoint): DataPoint {
-  const clone = cloneData(point);
-  const additionalConfig = isPlainObject(clone.additionalConfig) ? clone.additionalConfig : {};
-  removeDeprecatedCloudIdentityConfig(additionalConfig);
-  clone.additionalConfig = additionalConfig;
-  return clone;
-}
-
-function removeDeprecatedCloudIdentityConfig(additionalConfig: Record<string, unknown>) {
-  const obsoleteKey = ["report", "Bindings"].join("");
-  delete additionalConfig[obsoleteKey];
-  delete additionalConfig.reportDeviceName;
-  delete additionalConfig.reportProductKey;
-  delete additionalConfig.productKey;
-  delete additionalConfig.cloudBindings;
-}
-
-function cloudTargetSummary(_point: DataPoint): string {
-  if (!cloudTarget.enabled) {
-    return "未启用";
-  }
-  return [cloudTarget.productKey, cloudTarget.deviceName].filter(hasValue).join(" / ") || "云身份不完整";
-}
-
-function cloudPointStatus(point: DataPoint): string {
-  if (!cloudTarget.enabled) {
-    return "设备未上云";
-  }
-  if (!cloudTarget.productKey || !cloudTarget.deviceName) {
-    return "云身份不完整";
-  }
-  if (!hasValue(point.additionalConfig?.reportField)) {
-    return "缺少上报属性";
-  }
-  if (point.additionalConfig?.reportEnabled !== true) {
-    return "未开启上报";
-  }
-  return "可上报";
-}
-
-function statusLabel(value: unknown): string {
-  return Number(value ?? 1) === 0 ? "禁用" : "启用";
-}
-
-function parseBooleanOption(value: unknown): boolean | undefined {
-  if (value === "") {
-    return undefined;
-  }
-  return value === true || value === "true" || value === "1" || value === 1;
-}
-
-function parseFieldValue(value: unknown, valueType: PointEditorField["valueType"]): unknown {
-  if (value === "") {
-    return undefined;
-  }
-  if (valueType === "boolean") {
-    return value === true || value === "true" || value === "1" || value === 1;
-  }
-  if (valueType === "number" || valueType === "integer") {
-    const numberValue = Number(value);
-    if (!Number.isFinite(numberValue)) {
-      return undefined;
-    }
-    return valueType === "integer" ? Math.trunc(numberValue) : numberValue;
-  }
-  return value;
-}
-
-function toNumber(value: unknown): number | undefined {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
-}
-
-function findDuplicatePointCode(source: DataPoint[]): string {
-  const seen = new Set<string>();
-  for (const point of source) {
-    const code = String(point.pointCode || "").trim();
-    if (!code) {
-      continue;
-    }
-    if (seen.has(code)) {
-      return code;
-    }
-    seen.add(code);
-  }
-  return "";
-}
-
-function createUniqueCode(source: DataPoint[], base: string): string {
-  const used = new Set(source.map((point) => String(point.pointCode || "").trim()).filter(Boolean));
-  let candidate = base.replace(/[^a-zA-Z0-9_]/g, "_") || "point";
-  let index = 1;
-  while (used.has(candidate)) {
-    candidate = `${base.replace(/[^a-zA-Z0-9_]/g, "_") || "point"}_${index}`;
-    index += 1;
-  }
-  return candidate;
-}
-
-function buildReadonlyItems(point: DataPoint | null): Array<{ label: string; value: string }> {
-  if (!point) {
-    return [];
-  }
-  return [
-    ["记录ID", point.id],
-    ["点位ID", point.pointId],
-    ["设备ID", point.deviceId],
-    ["设备名称", point.deviceName],
-    ["基础采集周期", point.baseCollectionInterval],
-    ["当前采集周期", point.currentCollectionInterval],
-    ["最小采集周期", point.minCollectionInterval],
-    ["最大采集周期", point.maxCollectionInterval],
-    ["点位变化阈值", point.pointChangeThreshold],
-    ["稳定次数", point.stableCount],
-    ["最新值", point.lastValue],
-    ["变化率", point.changeRate],
-    ["最近调整时间", point.lastAdjustTime],
-    ["上报属性冲突", point.reportFieldConflict],
-    ["创建时间", point.createTime],
-    ["更新时间", point.updateTime]
-  ].filter(([, value]) => hasValue(value)).map(([label, value]) => ({ label: String(label), value: typeof value === "object" ? JSON.stringify(value) : String(value) }));
-}
-
-function firstPointValue(source: DataPoint[] | undefined, key: string): unknown {
-  return Array.isArray(source) && source.length ? source[0]?.[key] : undefined;
-}
-
-function isOpcUaProtocol(value: string): boolean {
-  return value === "OPC_UA" || value === "OPC_UA_PLC4X" || value === "OPC_UA_MILO" || value.startsWith("OPC_UA");
-}
-
-function hasValue(value: unknown): boolean {
-  return value !== undefined && value !== null && String(value).trim() !== "";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function cloneData<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function pruneEmpty(rule: AlarmRule): AlarmRule {
-  const next: AlarmRule = {};
-  for (const [key, value] of Object.entries(rule)) {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      next[key] = value;
-    }
-  }
-  return next;
-}
-
 
 function handleLocalEditorKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && props.modelValue) {

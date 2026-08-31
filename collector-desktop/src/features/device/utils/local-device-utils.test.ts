@@ -88,6 +88,52 @@ describe("local-device-utils", () => {
     expect(JSON.parse(payload.points[0].alarmRule || "[]")).toEqual([{ ruleId: "r1", operator: ">=", threshold: 10, enabled: true }]);
   });
 
+  it("保持点位 adaptive、云上报、连接 extJson 和本地配置来源语义", () => {
+    const payload = buildLocalDevicePayload({
+      deviceId: "local-cloud",
+      deviceName: "云上报测试设备",
+      protocol: "MQTT",
+      adaptive: { baseCollectionInterval: 3000, minCollectionInterval: 1000, maxCollectionInterval: 6000, pointChangeThreshold: 0.05 },
+      connection: { host: "127.0.0.1", port: 1883, extJson: { clientId: "local-cloud" } },
+      cloudTarget: { enabled: true, deviceType: "SUB_DEVICE", productKey: "pk", deviceName: "dn", topologyEnabled: false },
+      points: [{
+        pointCode: "temperature",
+        pointName: "温度",
+        address: "factory/temperature",
+        additionalConfig: {
+          reportField: "temperature",
+          reportEnabled: true,
+          eventEnabled: true,
+          streamEnabled: true,
+          historyEnabled: true
+        }
+      }]
+    });
+
+    expect(payload.device.cloudTarget).toEqual({ enabled: true, deviceType: "SUB_DEVICE", productKey: "pk", deviceName: "dn", topologyEnabled: false });
+    expect(payload.connection.extJson).toEqual({ clientId: "local-cloud", configSource: "local", temporaryConfig: true });
+    expect(payload.points[0]).toMatchObject({
+      deviceId: "local-cloud",
+      dataType: "STRING",
+      collectionMode: "SUBSCRIPTION",
+      baseCollectionInterval: 3000,
+      currentCollectionInterval: 3000,
+      minCollectionInterval: 1000,
+      maxCollectionInterval: 6000,
+      pointChangeThreshold: 0.05,
+      additionalConfig: {
+        reportField: "temperature",
+        reportEnabled: true,
+        eventEnabled: true,
+        streamEnabled: true,
+        historyEnabled: true,
+        configSource: "local",
+        temporaryConfig: true,
+        topic: "factory/temperature"
+      }
+    });
+  });
+
   it("启用云上报时要求云端产品和设备名称", () => {
     expect(validateLocalDeviceDraft({
       deviceId: "dev",
