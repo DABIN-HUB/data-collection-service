@@ -1,6 +1,6 @@
 <template>
   <div class="legacy-page-host">
-      <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
+      <section id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
         <div class="local-editor-title">
           <div>
             <span class="label-chip">设备配置</span>
@@ -18,14 +18,14 @@
         </div>
 
         <div class="local-editor-tabs" role="tablist" aria-label="设备操作工作台分区">
-          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'config' }" @click="workbenchTab = 'config'">
+          <button type="button" class="local-editor-tab" @click="openWorkbenchTab('config')">
             <span>01</span><strong>工作台</strong><small>点位、实时和日志</small>
           </button>
-          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'control' }" @click="workbenchTab = 'control'">
+          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'control' }" @click="openWorkbenchTab('control')">
             <span>02</span><strong>批量和协议命令</strong><small>单点、批量和协议命令</small>
           </button>
-          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="workbenchTab = 'shadow'">
-            <span>03</span><strong>desired、desired_delta</strong><small>reported、desired、delta</small>
+          <button type="button" class="local-editor-tab" :class="{ 'is-active': workbenchTab === 'shadow' }" @click="openWorkbenchTab('shadow')">
+            <span>03</span><strong>设备影子</strong><small>reported、desired、delta</small>
           </button>
         </div>
 
@@ -51,8 +51,7 @@
           </aside>
 
           <div class="local-editor-body device-operation-body">
-            <DeviceConfigPanel v-if="workbenchTab === 'config'" :device="selectedDeviceView" @start="startSelectedDevice" @stop="stopSelectedDevice" @open-history="openWorkbenchHistory" @open-realtime="openWorkbenchRealtime" />
-            <ManualShadowPanels v-else :tab="workbenchTab" :device-id="selectedDeviceId" />
+            <ManualShadowPanels :tab="workbenchTab" :device-id="selectedDeviceId" />
           </div>
         </div>
       </section>
@@ -64,34 +63,27 @@ import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
-import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
 import { clearDeviceConfig, getConfigDevices as getConfigDeviceList, refreshDeviceConfig } from "@/api/config.api";
-import { getDeviceRuntime, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
-import { getDeviceRealtimeData, resetAdaptiveConfig } from "@/api/data.api";
-import { resolveLegacyModuleByRoutePath, type LegacyModuleKey } from "@/router/route-names";
+import { getDeviceRuntime } from "@/api/device.api";
+import { getDeviceRealtimeData } from "@/api/data.api";
+import { resolveWorkbenchRouteTab, routePathForWorkbenchTab, type WorkbenchNavigationTab, type WorkbenchRouteTab } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
-import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
+import { normalizeDeviceViewModelWithRuntimeStatus } from "@/stores/device.store";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { RealtimePointRow } from "@/types/monitor";
 
-type ModuleKey = LegacyModuleKey;
-
 const appStore = useAppStore();
 const route = useRoute();
 const router = useRouter();
-const activeModule = computed<ModuleKey>(() => {
-  const module = resolveLegacyModuleByRoutePath(route.path);
-  return module === "control" || module === "shadow" ? "workbench" : module;
-});
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
 const deviceConfigOperatingId = ref("");
-const workbenchTab = ref<"config" | "control" | "shadow">("config");
+const workbenchTab = computed<WorkbenchRouteTab>(() => resolveWorkbenchRouteTab(route.path) || "control");
 
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
 const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
@@ -107,38 +99,21 @@ const selectedOperationStatus = computed(() => {
 });
 onMounted(async () => {
   await appStore.initialize();
-  syncWorkbenchTabFromRoute(route.path);
   applyRouteDeviceQuery();
   await loadDevices();
   applyRouteDeviceQuery();
-  await loadActiveLegacyModule(activeModule.value);
+  await loadSelectedRealtime();
 });
 
-watch(() => route.path, (path) => {
-  syncWorkbenchTabFromRoute(path);
+watch(() => route.path, () => {
   applyRouteDeviceQuery();
-  void loadActiveLegacyModule(activeModule.value);
+  void loadSelectedRealtime();
 });
 
 watch(() => route.query.deviceId, () => {
   applyRouteDeviceQuery();
-  void loadActiveLegacyModule(activeModule.value);
+  void loadSelectedRealtime();
 });
-
-async function loadActiveLegacyModule(module: ModuleKey) {
-  if (module === "workbench") await loadSelectedRealtime();
-}
-
-function syncWorkbenchTabFromRoute(path: string) {
-  const module = resolveLegacyModuleByRoutePath(path);
-  if (module === "control" || module === "shadow") {
-    workbenchTab.value = module;
-    return;
-  }
-  if (module === "workbench") {
-    workbenchTab.value = "config";
-  }
-}
 
 async function loadDevices() {
   try {
@@ -167,22 +142,6 @@ async function loadSelectedRealtime() {
     selectedRealtimeRows.value = [];
   }
 }
-
-async function resetSelectedAdaptive() {
-  if (!selectedDeviceId.value) return;
-  await resetAdaptiveConfig(selectedDeviceId.value);
-  ElMessage.success("已重置自适应采集参数");
-  await loadSelectedRealtime();
-}
-
-async function startSelectedDevice(deviceId: string) {
-  const device = devices.value.find((item) => deviceIdOf(item) === deviceId);
-  const startAction = resolveDeviceStartMode(device) === "local" ? startLocalDevice : startDevice;
-  await startAction(deviceId);
-  await loadDevices();
-  await loadSelectedRealtime();
-}
-async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); await loadSelectedRealtime(); }
 
 async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionType) {
   if (!deviceId) {
@@ -216,6 +175,13 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
 }
 
 function selectDevice(deviceId: string) { selectedDeviceId.value = deviceId; void loadSelectedRealtime(); }
+
+function openWorkbenchTab(tab: WorkbenchNavigationTab) {
+  router.push({
+    path: routePathForWorkbenchTab(tab),
+    query: selectedDeviceId.value ? { deviceId: selectedDeviceId.value } : {}
+  }).catch(() => undefined);
+}
 
 function applyRouteDeviceQuery() {
   const deviceId = routeDeviceId();
@@ -280,27 +246,9 @@ function openSelectedDeviceAlarmHistory() {
   openDeviceAlarmHistory(selectedDevice.value);
 }
 
-function openWorkbenchHistory(target: { deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }) {
-  if (!target.deviceId || !target.pointRef) {
-    return;
-  }
-  selectDevice(target.deviceId);
-  router.push({ path: "/history", query: { deviceId: target.deviceId, pointId: target.pointRef } }).catch(() => undefined);
-  ElMessage.info(`已切换到历史趋势：${target.pointLabel || target.pointName || target.pointRef}`);
-}
-
-function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; pointName?: string; pointLabel?: string }) {
-  if (!target.deviceId || !target.pointRef) {
-    return;
-  }
-  router.push({ path: "/realtime", query: { deviceId: target.deviceId, pointId: target.pointRef } }).catch(() => undefined);
-  ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
-}
-
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || device["normalizedId"] || ""); }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function extractArray<T>(value: unknown, keys: string[]): T[] { if (Array.isArray(value)) return value as T[]; const record = asRecord(value); for (const key of keys) if (Array.isArray(record[key])) return record[key] as T[]; return []; }
-function prettyJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }
 </script>
 
 <style scoped>

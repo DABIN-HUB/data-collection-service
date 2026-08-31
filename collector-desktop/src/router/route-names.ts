@@ -17,30 +17,28 @@ export const RouteNames = {
 
 export type RouteName = typeof RouteNames[keyof typeof RouteNames];
 
-export type LegacyModuleKey = "overview" | "workbench";
-
 export type WorkbenchRouteTab = "control" | "shadow";
+export type WorkbenchNavigationTab = "config" | WorkbenchRouteTab;
 
-const legacyModuleByRoutePath: Record<string, LegacyModuleKey | WorkbenchRouteTab> = {
-  dashboard: "overview",
-  "device/workbench": "workbench",
+const workbenchTabByRoutePath: Record<string, WorkbenchRouteTab> = {
   control: "control",
   shadow: "shadow"
 };
 
-const routePathByLegacyModule: Record<LegacyModuleKey, string> = {
-  overview: "/dashboard",
-  workbench: "/device/workbench"
+const routePathByWorkbenchTab: Record<WorkbenchNavigationTab, string> = {
+  config: "/device/workbench",
+  control: "/control",
+  shadow: "/shadow"
 };
 
 export function normalizeRoutePath(path: string): string {
   return path.replace(/^\//, "").replace(/\/$/, "") || "dashboard";
 }
 
-export function resolveLegacyModuleByRoutePath(path: string): LegacyModuleKey | WorkbenchRouteTab {
-  return legacyModuleByRoutePath[normalizeRoutePath(path)] || "overview";
+export function resolveWorkbenchRouteTab(path: string): WorkbenchRouteTab | null {
+  return workbenchTabByRoutePath[normalizeRoutePath(path)] || null;
 }
 
-export function routePathForLegacyModule(module: LegacyModuleKey): string {
-  return routePathByLegacyModule[module] || "/dashboard";
+export function routePathForWorkbenchTab(tab: WorkbenchNavigationTab): string {
+  return routePathByWorkbenchTab[tab];
 }

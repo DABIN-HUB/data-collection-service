@@ -1,16 +1,16 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 11:01:31 +0800
+更新时间：2026-08-31 11:31:55 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `16032b0` xg
   - `00f0038` xg
   - `ebfdc3a` 修改
   - `46d7bb6` 修改
   - `9e01d61` 修改
-  - `bf93ad2` 优化
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
@@ -22,7 +22,8 @@
 - Phase 9：History 迁移已完成并通过验证。
 - Phase 10：Collection 迁移已完成并通过验证。
 - Phase 11：Device List 迁移已完成并通过验证。
-- 下一阶段：Phase 12 迁移 Device Workbench。
+- Phase 12：Device Workbench 迁移已完成并通过验证。
+- 下一阶段：Phase 13 迁移 Local Device Editor。
 
 ## Baseline 验证结果
 
@@ -856,17 +857,104 @@ Phase 11 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` P
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 12：Device Workbench 迁移完成内容
+
+- 新增 `src/views/device/DeviceWorkbenchView.vue`，承载原 `/device/workbench` 的设备配置工作台外层宿主。
+- `/device/workbench` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `DeviceWorkbenchView.vue`；最终结构为 `AppShell -> AppTopbar -> RouterView -> DeviceWorkbenchView.vue`。
+- `/control` 与 `/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移 Control、Shadow、LegacyManualShadowPanels、LocalDeviceEditor、PointEditor 或 DeviceConfigPanel 内部大结构。
+- `DeviceWorkbenchView.vue` 继续组合 `<DeviceConfigPanel />` 作为主体，未复制、重写或拆分 `DeviceConfigPanel.vue` 内部的设备基础信息、运行控制、连接检查、协议连接配置、配置差异、点位列表、实时数据、告警、日志和 PointEditor。
+- `DeviceWorkbenchView.vue` 使用 `useDeviceStore()` 作为设备领域状态来源：设备列表来自 `deviceStore.devices`，运行快照来自 `deviceStore.runtimeMap`，当前选择来自 `deviceStore.selectedDeviceId` 与 `deviceStore.selectedDevice`。
+- `DeviceWorkbenchView.vue` 没有维护第二套 `const devices = ref([])`、`deviceRuntimeMap` 或 `const selectedDeviceId = ref("")`。
+- `DeviceConfigPanel` 直接接收 `:device="deviceStore.selectedDevice"`，没有在新 View 中调用 `normalizeDeviceViewModelWithRuntimeStatus()` 构建第二套 `selectedDeviceView`。
+- 页面初始化按独立路由执行：`appStore.initialize()` -> `deviceStore.refresh()` -> `applyRouteDevice()` -> `loadRealtimePreview()`；没有额外手工调用 `getConfigDevices()` / `getDeviceRuntime()`。
+- 完整支持 `/device/workbench?deviceId=dev-1`：route query 单向写入 Store；设备存在时选择该设备，设备不存在但设备列表存在时回退第一台设备，设备列表为空时保留 query 上下文并让 `DeviceConfigPanel` 进入 `device = null` 空状态。
+- route query 后续变化由 `watch(route.query.deviceId)` 处理，只做 `Route Query -> deviceStore`，不反向 `router.replace()` 或 `router.push()`，避免 query/store 循环。
+- 顶部设备信息改用 Store：设备名称优先 `deviceStore.selectedDevice.displayName`，deviceId 优先 `normalizedId` / `deviceStore.selectedDeviceId`，协议优先 `displayProtocol`，采集周期来自 `collectionInterval`。
+- 顶部地址继续使用页面级简单 `deviceAddress()`：优先 `ipAddress/host + port`，小范围兼容 `url`，未新增设备详情 API。
+- 运行状态摘要改为基于 `deviceStore.selectedDevice.runtime` 与 `deviceStore.runtimeMap[selectedDeviceId]` 计算；连接状态同时参考 runtime 与页面级实时预览行数。
+- 顶部和左侧“实时点位 N 个”使用页面局部 `realtimePreviewRows`，通过 `getDeviceRealtimeData(deviceId)` + `normalizeRealtimeRows()` 生成，只服务 Workbench 外层摘要，不放入 Pinia，也不访问 `DeviceConfigPanel` 内部 ref。
+- `DeviceConfigPanel` 的 `start(deviceId)` 事件由 `DeviceWorkbenchView` 接收后调用 `deviceStore.startSmart(deviceId)`，保持本地设备走 `startLocalDevice`、远端设备走 `startDevice` 的语义；成功后刷新实时预览。
+- `DeviceConfigPanel` 的 `stop(deviceId)` 事件由 `DeviceWorkbenchView` 接收后调用 `deviceStore.stop(deviceId)`，成功后刷新实时预览；新 View 不直接调用 `stopDevice()`。
+- 外层左侧栏“刷新配置 / 清理缓存”继续使用 `refreshDeviceConfig()` / `clearDeviceConfig()`，并复用 `features/device/utils/device-config-actions-utils.ts` 中的 `DEVICE_CONFIG_ACTIONS`、`normalizeDeviceConfigActionResult()`、`buildDeviceConfigActionMessage()`。
+- `deviceConfigOperatingId` 继续作为页面局部按钮 loading 状态保存在 `DeviceWorkbenchView.vue`，未进入 `deviceStore`。
+- 配置缓存刷新 / 清理成功后执行 `deviceStore.refresh()`、重新应用 route query，并刷新 realtime preview。
+- “返回列表”继续走 Router Query：`/device?deviceId=当前设备`，没有回退到 `switchModule("device")`。
+- “运行状态”继续跳转 `/diagnostic?deviceId=xxx`；“告警历史”继续跳转 `/alarm?deviceId=xxx`，不直接调用 DiagnosticView / AlarmView，也不共享它们的页面状态。
+- `DeviceConfigPanel` 的 `open-history` 事件由 `DeviceWorkbenchView` 跳转 `/history?deviceId=target.deviceId&pointId=target.pointRef`，并保留中文提示。
+- `DeviceConfigPanel` 的 `open-realtime` 事件由 `DeviceWorkbenchView` 跳转 `/realtime?deviceId=target.deviceId&pointId=target.pointRef`，并保留中文提示。
+- 新 Workbench 顶部三项外层 Tab 改为路由导航：“工作台”当前 active，“批量和协议命令”跳 `/control?deviceId=xxx`，“设备影子”跳 `/shadow?deviceId=xxx`；新 View 不维护 `workbenchTab = "control" / "shadow"`。
+- `LegacyConsoleView.vue` 中 Control / Shadow 顶部三项 Tab 做最小兼容修改：Tab active 状态由 `resolveWorkbenchRouteTab(route.path)` 推导，点击“工作台”跳 `/device/workbench?deviceId=xxx`，点击“批量和协议命令”跳 `/control?deviceId=xxx`，点击“设备影子”跳 `/shadow?deviceId=xxx`。
+- `LegacyConsoleView.vue` 不再 import / render `DeviceConfigPanel`，也不再负责 `/device/workbench`。
+- `LegacyConsoleView.vue` 删除只属于 config Workbench 的 `startSelectedDevice()`、`stopSelectedDevice()`、`resetSelectedAdaptive()`、`openWorkbenchHistory()`、`openWorkbenchRealtime()` 以及 `resetAdaptiveConfig`、`startDevice`、`startLocalDevice`、`stopDevice`、`resolveDeviceStartMode` imports。
+- `LegacyConsoleView.vue` 保留 Control / Shadow 仍需要的过渡外壳、当前设备上下文、`ManualShadowPanels`、`devices`、`deviceRuntimeMap`、`selectedDeviceId`、`selectedDevice`、`selectedDeviceView`、`selectedRuntimeSnapshot`、`selectedRealtimeRows`、`loadDevices()`、`loadSelectedRealtime()`、`operateDeviceConfig()`、运行状态/告警历史跳转和 `deviceAddress()`。
+- `src/router/route-names.ts` 删除 `LegacyModuleKey`、`resolveLegacyModuleByRoutePath()` 和 `routePathForLegacyModule()`，避免未知 Legacy route 继续 fallback 到 `overview` / Dashboard。
+- `src/router/route-names.ts` 新增并保留最小路由 helper：`WorkbenchRouteTab = "control" | "shadow"`、`WorkbenchNavigationTab = "config" | "control" | "shadow"`、`resolveWorkbenchRouteTab()`、`routePathForWorkbenchTab()`。
+- `src/router/router.test.ts` 更新覆盖：`/device -> DeviceListView`、`/device/workbench -> DeviceWorkbenchView`、`/device/workbench?deviceId=dev-1 -> DeviceWorkbenchView`、`/control?deviceId=dev-1 -> LegacyConsoleView`、`/shadow?deviceId=dev-1 -> LegacyConsoleView`，以及 Workbench 路由 helper 不再把 `/device/workbench`、`/dashboard`、`/device` 解析为 Legacy fallback。
+- 本 Phase 未迁移 Workbench CSS 到 scoped style：当前 `deviceOperationPanel` 外壳、外层 Tab、左侧 rail、`device-config-workbench-pane`、`manual-shadow-pane`、`device-operation-body`、DeviceConfigPanel 内部和 ManualShadowPanels 仍共享同一套 `workbench.css` 全局样式，避免复制第二套 CSS。
+- `LegacyConsoleView.vue` 保留自身 `legacy-page-host` scoped style；`DeviceWorkbenchView.vue` 没有新增重复 scoped CSS。
+
+## Phase 12 验证结果
+
+执行时间：2026-08-31 11:25-11:31，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 34 个测试文件、184 个测试通过；`router.test.ts` 新增/更新 `/device/workbench -> DeviceWorkbenchView`、Control/Shadow Legacy 和 Workbench route helper 断言 |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `DeviceWorkbenchView` chunk，`LegacyConsoleView` chunk 明显收敛 |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 46 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 12 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。一次额外尝试 `npm test -- --runInBand` 因 Vitest 不支持 `--runInBand` 失败，随后已按项目标准命令重新执行 `npm test` 并通过。
+
+## Phase 12 路由与页面检查结果
+
+- `/device`：dev server `http://127.0.0.1:5183/#/device` 能打开，仍由 `DeviceListView.vue` 承载，后端不可达时显示“设备配置加载失败：无法连接采集服务，请检查服务地址和后端是否已启动”。
+- `/device/workbench`：dev server 能打开，页面文本显示“设备配置”“请选择设备”“返回列表”“01 工作台”“02 批量和协议命令”“03 设备影子”“当前设备”“刷新配置”“清理缓存”“运行状态”“告警历史”，并显示 `DeviceConfigPanel` 的空状态“请从左侧设备树或设备列表选择设备”。
+- `/device/workbench?deviceId=dev-1`：dev server 能打开，顶部和左侧上下文显示 `dev-1`，后端不可达/无设备时 `DeviceConfigPanel` 保持空状态，不崩溃，不反向修改 query。
+- `/control?deviceId=dev-1`：dev server 能打开，仍由 `LegacyConsoleView.vue + LegacyManualShadowPanels.vue` 承载，显示 `dev-1` 上下文和“手动控制”主体。
+- `/shadow?deviceId=dev-1`：dev server 能打开，仍由 `LegacyConsoleView.vue + LegacyManualShadowPanels.vue` 承载，显示 `dev-1` 上下文和“设备影子”主体。
+- `/history?deviceId=dev-1&pointId=p1`：dev server 能打开，仍由 `HistoryView.vue` 承载，查询结果 JSON 带入 `deviceId: "dev-1"`，后端不可达时不崩溃。
+- `/realtime?deviceId=dev-1&pointId=p1`：dev server 能打开，仍由 `RealtimeView.vue` 承载，后端不可达时不崩溃。
+- `/diagnostic?deviceId=dev-1`：dev server 能打开，仍由 `DiagnosticView.vue` 承载，单设备状态 JSON 带入 `deviceId: "dev-1"`，后端不可达时显示“单设备状态查询失败”。
+- `/alarm?deviceId=dev-1`：dev server 能打开，仍由 `AlarmView.vue` 承载，页面显示“设备 dev-1 · 0 条 · 已确认 0”，后端不可达时不崩溃。
+- 额外 smoke：`/dashboard`、`/cloud`、`/log`、`/network?target=127.0.0.1&port=502` 均能打开，仍由对应独立 View 承载。
+- 代码检查确认 `/dashboard`、`/realtime`、`/history`、`/alarm`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/device`、`/device/workbench` 均直接解析到独立 View；`/control`、`/shadow` 仍解析到 `LegacyConsoleView.vue`。
+- 代码检查确认 `LegacyConsoleView.vue` 已无 `DeviceConfigPanel`、`activeModule`、`resetSelectedAdaptive`、`openWorkbenchHistory`、`openWorkbenchRealtime`、`startSelectedDevice`、`stopSelectedDevice`、`resetAdaptiveConfig`、`startDevice`、`startLocalDevice`、`stopDevice`。
+- 代码检查确认 `DeviceWorkbenchView.vue` 没有 `normalizeDeviceViewModelWithRuntimeStatus`、`const devices = ref`、`deviceRuntimeMap` 或 `const selectedDeviceId = ref`。
+- 受当前 in-app preview session 限制，`drive_preview` 无法执行真实点击；Tab 点击链路通过源码 `openWorkbenchTab()` / `routePathForWorkbenchTab()`、router test 和直接打开目标 URL 验证 URL 与显示内容一致。
+- Vite dev server 使用 5183 完成 smoke check；用于 smoke check 的 5183 dev server 已停止。
+
+## Phase 12 新增文件
+
+- `collector-desktop/src/views/device/DeviceWorkbenchView.vue`
+- `collector-boot/src/main/resources/static/desktop/assets/DeviceWorkbenchView-DigYNbxw.js`（`build:web` 生成）
+
+## Phase 12 修改文件
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 12 删除文件
+
+- 无源码文件删除。
+- `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 Device Workbench / Control / Shadow，是下一阶段迁移的主要对象。
-- 为避免破坏 Workbench，本阶段仍在 Legacy 内保留 `devices`、`deviceRuntimeMap`、`selectedDeviceId`、`selectedRealtimeRows`、`loadDevices()`、`loadSelectedRealtime()`、`startSelectedDevice()`、`stopSelectedDevice()`、`operateDeviceConfig()` 等 Workbench 必需逻辑；这些将在 Phase 12 迁移 Device Workbench 时继续收敛。
-- 主 `/device` 页面继续保持现有设备列表、筛选、导入导出、本地新增/编辑、远端编辑跳转、启动/停止、配置缓存刷新/清理、删除本地设备和跨页联动语义，没有修改后端 Device / Config API 契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实设备卡片、本地设备编辑详情、启动/停止、配置缓存操作和导入导出仍依赖后端服务与运行数据环境。
-- `runtime-utils.ts` 剩余未引用 helper 未在本 Phase 处理，继续留给后续 Control / Shadow / Workbench 清理边界。
+- 本地 smoke check 在后端采集服务未启动/不可达状态下完成；真实设备、真实点位、真实启动/停止、配置缓存刷新/清理、协议配置读写、历史/实时跳转后的真实数据仍依赖后端服务与设备数据环境。
+- Control / Shadow 仍在 `LegacyConsoleView.vue` 中过渡，仍保留 Legacy 局部 `devices`、`deviceRuntimeMap`、`selectedDeviceId`、`selectedRealtimeRows`、`loadDevices()`、`loadSelectedRealtime()`、`operateDeviceConfig()`；这些将在后续 Control / Shadow / Legacy Host 阶段继续收敛。
+- `DeviceConfigPanel.vue` 内部结构、`LocalDeviceEditor.vue`、`PointEditor.vue`、`RealtimeDataPanel.vue`、`AlarmTablePanel.vue`、`LogPanel.vue` 本 Phase 未拆分，按阶段边界保留。
+- `workbench.css` 中同时服务 DeviceWorkbench、Legacy Control、Legacy Shadow、DeviceConfigPanel、ManualShadowPanels 的共享样式仍暂时保留为全局样式，未复制到新 View；等 Control/Shadow 迁出后再统一拆解。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 12：迁移 Device Workbench。
+等待确认后进入 Phase 13：迁移 Local Device Editor。
 
-Phase 12 只迁移 Device Workbench，不自动进入 Control、Shadow、LocalDeviceEditor、PointEditor 或其它业务页面。
+Phase 13 只迁移 Local Device Editor，不自动进入 PointEditor、Control、Shadow 或最终 Legacy Host 清理。
