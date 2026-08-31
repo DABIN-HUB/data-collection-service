@@ -988,69 +988,6 @@ body.modao-exact .legacy-console .exact-diagnostic-card strong {
   font-size: 20px;
 }
 
-body.modao-exact .legacy-console .exact-cloud-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
-  gap: 14px;
-}
-
-body.modao-exact .legacy-console .exact-cloud-status {
-  display: flex;
-  min-height: 210px;
-  padding: 20px;
-  align-items: center;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-body.modao-exact .legacy-console .exact-cloud-icon {
-  display: grid;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 13px;
-  place-items: center;
-  border: 1px solid var(--exact-border);
-  border-radius: 50%;
-  background: #101d31;
-  color: var(--exact-cyan);
-  font-size: 20px;
-  font-weight: 700;
-}
-
-body.modao-exact .legacy-console .exact-cloud-status strong {
-  color: #fff;
-  font-size: 17px;
-}
-
-body.modao-exact .legacy-console .exact-cloud-status small {
-  margin-top: 8px;
-  color: var(--exact-dim);
-}
-
-body.modao-exact .legacy-console .cloud-stat-row {
-  display: grid;
-  width: 100%;
-  margin-top: 20px;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-body.modao-exact .legacy-console .cloud-stat-row span {
-  display: grid;
-  padding: 10px 6px;
-  gap: 5px;
-  border: 1px solid var(--exact-border);
-  border-radius: 7px;
-  background: var(--exact-bg);
-  color: var(--exact-dim);
-  font-size: 10px;
-}
-
-body.modao-exact .legacy-console .cloud-stat-row b {
-  color: #e2e8f0;
-  font-size: 15px;
-}
 
 body.modao-exact .legacy-console .modao-property-grid {
   display: grid;

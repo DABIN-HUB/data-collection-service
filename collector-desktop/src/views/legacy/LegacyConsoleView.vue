@@ -69,8 +69,6 @@
 
       <LegacyHistoryPanel v-show="activeModule === 'history'" :devices="devices" :selected-device-id="selectedDeviceId" :selected-point-ref="historySelectedPointRef" @select-device="selectDevice" />
 
-      <section v-show="activeModule === 'cloud'" class="exact-page"><div class="section-heading"><div class="heading-title-line"><h1>云平台配置</h1><span class="heading-online"><i></i>可靠上报链路</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新链路</button></div></div><div class="exact-page-body"><div class="exact-cloud-grid"><section class="exact-surface exact-cloud-status"><div class="exact-cloud-icon">云</div><strong>{{ cloudStatusTextValue }}</strong><small>{{ cloudEnabledText }}</small><div class="cloud-stat-row"><span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>上报策略</h2><span>{{ reportState }}</span></div><div class="modao-property-grid"><div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section></div><section class="exact-surface"><div class="exact-surface-head"><h2>Outbox / ACK 明细</h2><span>{{ cloudOperationalRows.length }} 项</span></div><div class="modao-property-grid"><div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div></section><section class="exact-surface"><div class="exact-surface-head"><h2>链路风险</h2><span>{{ cloudRisks.length }} 项</span></div><div class="modao-risk-list"><div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div></div></section><details class="exact-json-panel"><summary>查看上报链路 JSON</summary><pre class="json-view">{{ prettyJson(reportMetrics) }}</pre></details></div></section>
-
       <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
         <div class="local-editor-title">
           <div>
@@ -155,6 +153,7 @@ import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
+import { cloudStatusText } from "@/features/cloud/utils/cloud-report-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
@@ -205,7 +204,6 @@ const workbenchTab = ref<"config" | "control" | "shadow">("config");
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
 const onlineCount = computed(() => devices.value.filter((device) => String(device.status || "").toUpperCase() === "ONLINE").length);
 const riskDevices = computed(() => devices.value.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
-const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知");
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
 const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
 const selectedRuntimeSnapshot = computed(() => selectedDeviceId.value ? (selectedDeviceView.value?.runtime || deviceRuntimeMap.value[selectedDeviceId.value]) : undefined);
@@ -315,61 +313,10 @@ const diagnosticRows = computed(() => {
     { name: "线程池拒绝", status: queued === 0 && rejected === 0 ? "正常" : "异常", current: `${resourceSummary.value.title}，队列 ${queued}，拒绝 ${rejected}`, suggestion: "检查队列容量、任务耗时和拒绝策略" },
     { name: "异常统计", status: exceptionCount === 0 ? "正常" : "警告", current: `${exceptionCount} 次`, suggestion: "查看异常统计明细和应用日志" },
     { name: "历史存储", status: storageKnown && ["UP", "OK", "ONLINE", "SUCCESS"].includes(storageStatus) ? "正常" : "警告", current: storageKnown ? cloudStatusText(storageStatus) : "指标不可用", suggestion: "检查 TDengine 或历史存储配置" },
-    { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: cloudStatusTextValue.value, suggestion: "检查处理器、Outbox 和 ACK 状态" }
+    { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: cloudStatusText(reportStatus), suggestion: "检查处理器、Outbox 和 ACK 状态" }
   ];
   return rows.map((row) => ({ ...row, tone: row.status === "正常" ? "is-online" : (row.status === "异常" ? "is-error" : "") }));
 });
-const cloudStatusTextValue = computed(() => cloudStatusText(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")));
-const cloudEnabledText = computed(() => Boolean(asRecord(reportMetrics.value).enabled) ? "云端上报已启用" : "云端上报未启用");
-const cloudSummaryCards = computed(() => {
-  const report = asRecord(reportMetrics.value);
-  const outbox = asRecord(report.outbox);
-  const executor = asRecord(report.executor);
-  const ackRuntime = asRecord(report.ackRuntime);
-  return [
-    { label: "待发送", value: String(valueOf(outbox, ["pendingCount"], valueOf(executor, ["queueSize"], "-"))) },
-    { label: "待 ACK", value: String(valueOf(outbox, ["pendingAckCount"], valueOf(ackRuntime, ["pendingCount"], "-"))) },
-    { label: "隔离消息", value: String(valueOf(outbox, ["isolatedCount"], "-")) }
-  ];
-});
-const cloudStrategyRows = computed(() => {
-  const report = asRecord(reportMetrics.value);
-  const configured = asRecord(report.configured);
-  const batch = asRecord(report.batch);
-  const ack = asRecord(report.ack);
-  const outbox = asRecord(report.outbox);
-  return [
-    { label: "总开关", value: Boolean(report.enabled) ? "已启用" : "未启用" },
-    { label: "上报模式", value: String(valueOf(report, ["mode"], "-")) },
-    { label: "云服务商", value: String(valueOf(report, ["cloudProvider", "provider"], "-")) },
-    { label: "可上报点位", value: `${valueOf(configured, ["reportablePointCount"], 0)} / ${valueOf(configured, ["pointCount"], 0)}` },
-    { label: "批量聚合", value: Boolean(batch.enabled) ? `最多 ${valueOf(batch, ["maxPropertiesPerPack"], "-")} 属性` : "未启用" },
-    { label: "ACK 提交点", value: String(valueOf(ack, ["commitOn"], "-")) },
-    { label: "ACK 超时", value: valueOf(ack, ["timeoutMs"], null) === null ? "-" : `${valueOf(ack, ["timeoutMs"], "-")} ms` },
-    { label: "可靠发件箱", value: Boolean(outbox.enabled) ? "已启用" : "未启用" }
-  ];
-});
-const cloudOperationalRows = computed(() => {
-  const report = asRecord(reportMetrics.value);
-  const outbox = asRecord(report.outbox);
-  const ack = asRecord(report.ack);
-  const ackRuntime = asRecord(report.ackRuntime);
-  const executor = asRecord(report.executor);
-  return [
-    { label: "待发送", value: String(valueOf(outbox, ["pendingCount"], valueOf(executor, ["queueSize"], "-"))) },
-    { label: "待 ACK", value: String(valueOf(outbox, ["pendingAckCount"], valueOf(ackRuntime, ["pendingCount"], "-"))) },
-    { label: "隔离消息", value: String(valueOf(outbox, ["isolatedCount"], "-")) },
-    { label: "ACK 成功", value: String(valueOf(ackRuntime, ["successCount"], "-")) },
-    { label: "ACK 失败", value: String(valueOf(ackRuntime, ["failureCount"], "-")) },
-    { label: "ACK 提交点", value: String(valueOf(ack, ["commitOn"], "-")) },
-    { label: "ACK 超时", value: valueOf(ack, ["timeoutMs"], null) === null ? "-" : `${valueOf(ack, ["timeoutMs"], "-")} ms` }
-  ];
-});
-const cloudRisks = computed(() => {
-  const risks = asRecord(reportMetrics.value).risks;
-  return Array.isArray(risks) && risks.length ? risks.map((risk) => String(risk)) : ["未发现已知上报风险"];
-});
-
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
@@ -395,7 +342,7 @@ watch(activeModule, (module) => {
 
 async function loadActiveLegacyModule(module: ModuleKey) {
   if (module === "diag") await runDiagnostic();
-  if (module === "collect" || module === "cloud") await loadOverview();
+  if (module === "collect") await loadOverview();
   if (module === "workbench") await loadSelectedRealtime();
 }
 
@@ -762,7 +709,7 @@ async function downloadDiagnosticPackage() {
       totalDevices: devices.value.length,
       onlineCount: onlineCount.value,
       riskDevices: riskDevices.value.length,
-      reportState: reportState.value
+      reportState: Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知"
     }
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
@@ -802,10 +749,6 @@ function openProtocolConfig(protocol: ProtocolSchema) {
   localEditorVisible.value = true;
 }
 
-function cloudStatusText(status: unknown): string {
-  const key = String(status || "").toUpperCase();
-  return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", WARN: "存在风险", WARNING: "存在风险", ERROR: "异常", FAILED: "异常", DOWN: "异常", DISABLED: "未启用" } as Record<string, string>)[key] || "未知";
-}
 
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
 function deviceNameOf(deviceId: string): string { return devices.value.find((device) => deviceIdOf(device) === deviceId)?.deviceName || deviceId; }

@@ -1,23 +1,24 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-28 15:26:35 +0800
+更新时间：2026-08-31 08:49:34 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `bf93ad2` 优化
   - `5ce0594` 优化
   - `787c57c` 优化
   - `5c6bb9d` 修改
   - `da42b6d` 前端修改
-  - `a16d805` 修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
 - Phase 4：Log 迁移已完成并通过验证。
 - Phase 5：Alarm 迁移已完成并通过验证。
 - Phase 6：Network 迁移已完成并通过验证。
-- 下一阶段：Phase 7 迁移 Cloud。
+- Phase 7：Cloud 迁移已完成并通过验证。
+- 下一阶段：Phase 8 迁移 Diagnostic。
 
 ## Baseline 验证结果
 
@@ -376,19 +377,96 @@ Phase 6 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 7：Cloud 迁移完成内容
+
+- 新增 `src/views/cloud/CloudView.vue`，承载原 `activeModule === "cloud"` 的“云平台配置 / 上报链路”页面。
+- `/cloud` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `CloudView.vue`；当前 `/dashboard`、`/realtime`、`/log`、`/alarm`、`/network`、`/cloud` 均为独立 View。
+- `/history`、`/device`、`/device/workbench`、`/collect`、`/diagnostic`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- `CloudView.vue` 只持有页面级 `reportMetrics`、`loading`、`error`、`lastRefresh` 状态，不引入 `useDeviceStore()`，不新建 `cloud.store.ts`。
+- `CloudView.vue` 新增独立 `loadCloud()` / `refreshCloud()`，只调用 `getCloudReportMetrics()`，不复制或调用 `loadOverview()`。
+- “刷新链路”按钮改为调用 `refreshCloud()`，只刷新 `/monitor/report` 指标，不刷新运行状态、系统资源、配置摘要、缓存、设备连接、性能、异常、存储等其它监控接口。
+- 页面展示能力保持：云上报状态、云上报是否启用、待发送、待 ACK、隔离消息、上报模式、云服务商、可上报点位、批量聚合、ACK 提交点、ACK 超时、可靠发件箱、ACK 成功/失败、链路风险和原始上报链路 JSON。
+- 没有新增编辑云配置、保存配置、MQTT 参数编辑、云服务商配置表单、测试连接或配置提交功能。
+- 新增 `src/features/cloud/utils/cloud-report-utils.ts`，收敛 Cloud / Report 纯转换逻辑：`cloudStatusText()`、`buildCloudEnabledText()`、`buildCloudSummaryCards()`、`buildCloudStrategyRows()`、`buildCloudOperationalRows()`、`buildCloudRisks()`、`summarizeReportMetrics()`。
+- 新增 `src/features/cloud/utils/cloud-report-utils.test.ts`，覆盖 status 中文映射、启用显示、Outbox、ACK runtime、configured、batch、risks 和原 `summarizeReportMetrics()` 摘要逻辑。
+- `summarizeReportMetrics()` 已从 `src/views/ops/ops-utils.ts` 迁出到 `src/features/cloud/utils/cloud-report-utils.ts`，对应测试也从 `ops-utils.test.ts` 迁出。
+- `src/views/ops/ops-utils.ts` 现在只保留 `buildDiagnosticAdvice()` 及其私有辅助函数，继续作为 Diagnostic 过渡 helper，不提前迁 Diagnostic。
+- 从 `LegacyConsoleView.vue` 删除主 Cloud template、Cloud 页面 computed：`cloudStatusTextValue`、`cloudEnabledText`、`cloudSummaryCards`、`cloudStrategyRows`、`cloudOperationalRows`、`cloudRisks`。
+- `cloudStatusText()` 已不再在 `LegacyConsoleView.vue` 本地定义；Diagnostic 仍需要 status 中文映射，所以改为小范围复用 `features/cloud/utils/cloud-report-utils.ts` 中的 `cloudStatusText()`，没有重构 Diagnostic 页面结构。
+- `LegacyConsoleView.vue` 的 `loadActiveLegacyModule()` 已删除 `module === "cloud"` 分支，现在只在 `module === "collect"` 时调用 `loadOverview()`，`module === "diag"` 仍走 `runDiagnostic()`。
+- Legacy 中的 `reportMetrics` 暂时保留，因为 Diagnostic 的 `diagnosticRows`、`buildDiagnosticRaw()`、诊断包导出仍依赖云端上报指标；这是 Legacy Diagnostic 的独立快照，不与 `CloudView.vue` 或 `DashboardView.vue` 共享 mutable ref。
+- Cloud 专属样式 `exact-cloud-grid`、`exact-cloud-status`、`exact-cloud-icon`、`cloud-stat-row` 已从 `legacy-console.css` 迁入 `CloudView.vue` scoped style。
+- `modao-property-grid`、`modao-property-item`、`modao-risk-list`、`modao-risk-item` 仍被 `LegacyDiagnosticDetailPanel.vue` 使用，暂时保留在 `legacy-console.css` 中。
+- 公共 `section-heading`、`heading-title-line`、`heading-actions`、`heading-online`、`exact-page`、`exact-page-body`、`exact-surface`、`exact-surface-head`、`exact-json-panel`、`json-view` 仍保留公共 legacy 样式。
+
+## Phase 7 验证结果
+
+执行时间：2026-08-31 08:39-08:49，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 31 个测试文件、169 个测试通过；新增 `src/features/cloud/utils/cloud-report-utils.test.ts`，`router.test.ts` 覆盖 `/cloud -> CloudView` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `CloudView` 与 `cloud-report-utils` chunks |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 33 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 7 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 7 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5177/#/dashboard` 能打开，页面文本显示“控制台总览”，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5177/#/realtime` 能打开，页面文本显示“实时数据查询”，仍由 `RealtimeView.vue` 承载。
+- `/log`：dev server `http://127.0.0.1:5177/#/log` 能打开，仍由 `LogView.vue` 承载。
+- `/alarm`：dev server `http://127.0.0.1:5177/#/alarm` 能打开，仍由 `AlarmView.vue` 承载。
+- `/network?target=127.0.0.1&port=502`：dev server 能打开，仍由 `NetworkView.vue` 承载。
+- `/cloud`：dev server `http://127.0.0.1:5178/#/cloud` 能打开，页面文本显示“云平台配置”“刷新链路”“未知”“上报策略”“Outbox / ACK 明细”“链路风险”“查看原始上报链路 JSON”；后端不可达时展示“无法连接采集服务，请检查服务地址和后端是否已启动”，页面未崩溃。
+- `/device`：dev server `http://127.0.0.1:5177/#/device` 能打开，仍显示 Legacy 设备管理页面。
+- `/diagnostic`：dev server `http://127.0.0.1:5177/#/diagnostic` 能打开，仍显示 Legacy 系统诊断页面；云端上报诊断行可展示“未知”。
+- 代码检查确认 `CloudView.vue` 中没有 `getRuntimeStatus()`、`getSystemResources()`、`getConfigSummary()`、`getCacheMetrics()`、`getDeviceConnectionMetrics()`、`getCollectorPerformance()`、`getExceptionStats()`、`getStorageMetrics()`、`getPerformanceDetail()`、`useDeviceStore()`、`deviceStore` 或 `loadOverview()`。
+- 代码检查确认 `CloudView.vue` 只直接调用 `getCloudReportMetrics()`；`AppShell` 的 `appStore.initialize()` 只做本地配置/桌面桥初始化，不发起 Overview 监控接口请求。
+- 代码检查确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'cloud'`、Cloud 页面 computed、Cloud 页面 template 和 `module === "cloud"` 初始化分支。
+- 搜索确认 `src/styles/legacy-console.css` 中已无 `exact-cloud-grid`、`exact-cloud-status`、`exact-cloud-icon`、`cloud-stat-row`。
+- 搜索确认仓库未新增 `cloud.store.ts`。
+
+## Phase 7 新增文件
+
+- `collector-desktop/src/views/cloud/CloudView.vue`
+- `collector-desktop/src/features/cloud/utils/cloud-report-utils.ts`
+- `collector-desktop/src/features/cloud/utils/cloud-report-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/CloudView-BAlPB5eO.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/CloudView-D7KgGvmM.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/cloud-report-utils-DuSH22lD.js`（`build:web` 生成）
+
+## Phase 7 修改文件
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/ops/ops-utils.ts`
+- `collector-desktop/src/views/ops/ops-utils.test.ts`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Cloud / Diagnostic / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Diagnostic / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
 - 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、监控指标、配置摘要、上报链路等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
 - 主 `/log` 页面继续保持 HTTP 查询语义，没有修改后端 `/api/ops/logs` 契约。
 - 主 `/alarm` 页面继续保持现有告警历史与确认 API 语义，没有修改后端历史告警或告警确认契约。
 - 主 `/network` 页面继续保持现有网络诊断 API 语义，没有修改后端 `/api/ops/network/diagnose` 契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实网络检测、边缘遥测提交、从真实设备配置带入 host/port 的成功路径仍依赖后端服务与运行数据环境。
-- Vite dev server 使用 5176 完成 smoke check；用于 smoke check 的 5176 dev server 已停止。
+- 主 `/cloud` 页面继续保持现有云上报运行状态展示语义，没有修改后端 `/monitor/report` 契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实上报指标填充、ACK 成功/失败数和链路风险仍依赖后端服务与运行数据环境。
+- Vite dev server 使用 5177 完成整体路由 smoke check，并在调整 `appStore.initialize()` 后使用 5178 复查 `/cloud`；用于 smoke check 的 dev server 均已停止。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 7：迁移 Cloud。
+等待确认后进入 Phase 8：迁移 Diagnostic。
 
-Phase 7 只迁移 Cloud，不自动进入 History、Device、Collection、Diagnostic 或其它业务页面。
+Phase 8 只迁移 Diagnostic，不自动进入 History、Device、Collection 或其它业务页面。

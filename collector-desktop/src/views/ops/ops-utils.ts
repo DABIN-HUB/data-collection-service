@@ -1,22 +1,3 @@
-export interface ReportSummary {
-  pending: number;
-  pendingAck: number;
-  isolated: number;
-  processors: number;
-  riskLevel: "LOW" | "MEDIUM" | "HIGH";
-}
-
-export function summarizeReportMetrics(report: Record<string, unknown>): ReportSummary {
-  const outbox = readRecord(report.outbox);
-  const ackRuntime = readRecord(report.ackRuntime);
-  const pending = toNumber(outbox.pendingCount ?? outbox.pending ?? report.pendingCount);
-  const pendingAck = toNumber(ackRuntime.pendingCount ?? report.pendingAckCount);
-  const isolated = toNumber(outbox.isolatedCount ?? report.isolatedCount);
-  const processors = Array.isArray(report.processors) ? report.processors.length : toNumber(report.processorCount);
-  const riskLevel = isolated > 0 || pendingAck > 100 ? "HIGH" : pending > 0 || pendingAck > 0 ? "MEDIUM" : "LOW";
-  return { pending, pendingAck, isolated, processors, riskLevel };
-}
-
 export function buildDiagnosticAdvice(diagnostic: Record<string, unknown>): string[] {
   const advice: string[] = [];
   for (const [key, value] of Object.entries(diagnostic)) {
@@ -45,9 +26,4 @@ function diagnosticName(key: string): string {
 
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function toNumber(value: unknown): number {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : 0;
 }
