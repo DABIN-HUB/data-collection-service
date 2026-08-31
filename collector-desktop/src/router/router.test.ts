@@ -66,6 +66,10 @@ describe("router", () => {
     expect(String(childRoute("collect")?.component)).toContain("CollectionView.vue");
   });
 
+  it("device 直接路由到独立 DeviceListView", () => {
+    expect(String(childRoute("device")?.component)).toContain("DeviceListView.vue");
+  });
+
   it("network route query 可以正常 resolve", () => {
     const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
     const resolved = router.resolve("/network?target=127.0.0.1&port=502");
@@ -94,8 +98,24 @@ describe("router", () => {
     expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
   });
 
+  it("device route query 可以携带设备上下文", () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
+    const resolved = router.resolve("/device?deviceId=dev-1");
+    expect(resolved.name).toBe(RouteNames.DEVICE);
+    expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
+  });
+
+  it("workbench/control/shadow route query 仍进入 LegacyConsoleView", () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
+    for (const target of ["/device/workbench?deviceId=dev-1", "/control?deviceId=dev-1", "/shadow?deviceId=dev-1"]) {
+      const resolved = router.resolve(target);
+      expect(String(resolved.matched.at(-1)?.components?.default)).toContain("LegacyConsoleView.vue");
+      expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
+    }
+  });
+
   it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["device", "device/workbench", "control", "shadow"]) {
+    for (const path of ["device/workbench", "control", "shadow"]) {
       expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
     }
   });
@@ -105,6 +125,7 @@ describe("router", () => {
     expect(resolveLegacyModuleByRoutePath("/device/workbench")).toBe("workbench");
     expect(resolveLegacyModuleByRoutePath("/control")).toBe("control");
     expect(resolveLegacyModuleByRoutePath("/shadow")).toBe("shadow");
+    expect(resolveLegacyModuleByRoutePath("/device")).toBe("overview");
     expect(routePathForLegacyModule("workbench")).toBe("/device/workbench");
   });
 });

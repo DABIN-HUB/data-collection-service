@@ -12,6 +12,7 @@ const NetworkView = () => import("@/views/network/NetworkView.vue");
 const CloudView = () => import("@/views/cloud/CloudView.vue");
 const DiagnosticView = () => import("@/views/diagnostic/DiagnosticView.vue");
 const CollectionView = () => import("@/views/collection/CollectionView.vue");
+const DeviceListView = () => import("@/views/device/DeviceListView.vue");
 const LegacyConsoleView = () => import("@/views/legacy/LegacyConsoleView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
@@ -29,7 +30,7 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
       { path: "realtime", name: RouteNames.REALTIME, component: RealtimeView },
       { path: "history", name: RouteNames.HISTORY, component: HistoryView },
       { path: "alarm", name: RouteNames.ALARM, component: AlarmView },
-      { path: "device", name: RouteNames.DEVICE, component: LegacyConsoleView },
+      { path: "device", name: RouteNames.DEVICE, component: DeviceListView },
       { path: "device/workbench", name: RouteNames.DEVICE_WORKBENCH, component: LegacyConsoleView },
       { path: "collect", name: RouteNames.COLLECTION, component: CollectionView },
       { path: "cloud", name: RouteNames.CLOUD, component: CloudView },

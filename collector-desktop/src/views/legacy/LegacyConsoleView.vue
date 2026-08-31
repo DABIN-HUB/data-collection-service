@@ -1,40 +1,5 @@
 <template>
   <div class="legacy-page-host">
-
-      <section v-show="activeModule === 'device'" class="exact-page">
-        <div class="section-heading">
-          <div class="heading-title-line"><h1>设备管理</h1><span class="heading-online"><i></i>{{ filteredDevices.length }} 台设备</span></div>
-          <div class="heading-actions"><button type="button" @click="loadDevices">刷新列表</button><button type="button" :disabled="configFileExporting" @click="exportDeviceConfigData">导出配置数据</button><button type="button" :disabled="configFileImporting" @click="openConfigImportFile">导入配置数据</button><button type="button" class="primary" @click="openLocalEditor()">新增本地设备</button></div>
-        </div>
-        <div class="exact-page-body">
-          <div class="exact-toolbar"><div class="exact-toolbar-group exact-toolbar-filters"><input v-model="deviceKeyword" type="search" placeholder="搜索设备名称、标识或地址" /><select v-model="protocolFilter"><option value="">全部协议</option><option v-for="protocolItem in protocols" :key="protocolItem.protocol" :value="protocolItem.protocol">{{ protocolItem.title || protocolItem.protocol }}</option></select><select v-model="statusFilter"><option value="">全部状态</option><option value="ONLINE">在线</option><option value="OFFLINE">离线</option><option value="ERROR">异常</option></select></div><div class="exact-toolbar-group"><button type="button" @click="syncDevices">同步远端配置</button></div></div>
-          <div class="exact-device-list">
-            <div v-if="filteredDevices.length === 0" class="exact-empty">{{ deviceListEmptyText }}</div>
-            <article v-for="device in filteredDevices" :key="deviceIdOf(device)" class="exact-device-card" :class="{ 'is-selected': selectedDeviceId === deviceIdOf(device) }" @click="selectDevice(deviceIdOf(device))">
-              <div class="exact-device-main">
-                <h3>{{ device.deviceName || deviceIdOf(device) }}</h3>
-                <p>{{ deviceIdOf(device) }} · {{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</p>
-              </div>
-              <div class="exact-device-meta">
-                <strong>{{ device.protocolType || device.connectionType || '-' }}</strong>
-                <span>连接地址 {{ deviceAddress(device) }}</span>
-              </div>
-              <div class="exact-device-meta">
-                <span class="status-badge" :class="statusBadgeClass(device)">{{ localizeDeviceStatus(device.status) }}</span>
-                <span>采集周期 {{ device.collectionInterval ?? '-' }} ms</span>
-              </div>
-              <div class="exact-device-actions">
-                <button type="button" @click.stop="startSelectedDevice(deviceIdOf(device))">启动</button><button type="button" @click.stop="stopSelectedDevice(deviceIdOf(device))">停止</button>
-                <button type="button" :disabled="deviceConfigOperatingId === `refresh:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'refresh')">刷新配置</button><button type="button" class="danger" :disabled="deviceConfigOperatingId === `clear:${deviceIdOf(device)}`" @click.stop="operateDeviceConfig(deviceIdOf(device), 'clear')">清理缓存</button>
-                <button type="button" @click.stop="openDeviceOperation(device, 'config')">配置</button><button type="button" @click.stop="editDevice(device)">编辑</button><button type="button" @click.stop="openDeviceDiff(device)">差异</button><button type="button" @click.stop="openDeviceRuntimeStatus(device)">运行状态</button><button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
-                <button type="button" @click.stop="openDeviceOperation(device, 'control')">控制</button><button type="button" @click.stop="openDeviceOperation(device, 'shadow')">影子</button>
-                <button v-if="isLocalDevice(device)" type="button" class="danger" @click.stop="deleteLocal(deviceIdOf(device))">删除本地</button>
-              </div>
-            </article>
-          </div>
-        </div>
-      </section>
-
       <section v-show="activeModule === 'workbench'" id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
         <div class="local-editor-title">
           <div>
@@ -48,7 +13,7 @@
               <div class="local-editor-stat"><strong>{{ selectedDevice?.collectionInterval || '-' }}</strong><span>采集周期 ms</span></div>
               <div class="local-editor-stat"><strong>{{ selectedRealtimeRows.length }}</strong><span>实时点位</span></div>
             </div>
-            <button type="button" @click="switchModule('device')">返回列表</button>
+            <button type="button" @click="backToDeviceList">返回列表</button>
           </div>
         </div>
 
@@ -91,8 +56,6 @@
           </div>
         </div>
       </section>
-    <input ref="configImportInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="handleConfigImportFile" />
-    <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocols" @saved="handleLocalSaved" />
   </div>
 </template>
 
@@ -102,23 +65,17 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
-import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
-import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
-import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
+import { clearDeviceConfig, getConfigDevices as getConfigDeviceList, refreshDeviceConfig } from "@/api/config.api";
+import { getDeviceRuntime, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import { getDeviceRealtimeData, resetAdaptiveConfig } from "@/api/data.api";
-import { listProtocols } from "@/api/protocol.api";
-import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyModuleKey } from "@/router/route-names";
+import { resolveLegacyModuleByRoutePath, type LegacyModuleKey } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
-import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
-import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
-import { buildDeviceListEmptyText } from "./config-utils";
-import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
+import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
 import type { RealtimePointRow } from "@/types/monitor";
-import type { ProtocolSchema } from "@/types/protocol";
 
 type ModuleKey = LegacyModuleKey;
 
@@ -131,20 +88,9 @@ const activeModule = computed<ModuleKey>(() => {
 });
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
-const protocols = ref<ProtocolSchema[]>([]);
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
 const deviceConfigOperatingId = ref("");
-const deviceKeyword = ref("");
-const protocolFilter = ref("");
-const statusFilter = ref("");
-const deviceLoading = ref(false);
-const deviceLoadError = ref("");
-const localEditorVisible = ref(false);
-const configImportInput = ref<HTMLInputElement | null>(null);
-const configFileExporting = ref(false);
-const configFileImporting = ref(false);
-const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
 
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
@@ -159,41 +105,24 @@ const selectedOperationStatus = computed(() => {
   }
   return String(selectedDeviceView.value?.status || selectedDevice.value?.status || "未知");
 });
-const filteredDevices = computed(() => {
-  const keyword = deviceKeyword.value.trim().toLowerCase();
-  return devices.value.filter((device) => {
-    const protocol = String(device.protocolType || device.connectionType || "");
-    const status = String(device.status || "");
-    const text = [device.deviceName, deviceIdOf(device), device.ipAddress, protocol, status].join(" ").toLowerCase();
-    return (!keyword || text.includes(keyword)) && (!protocolFilter.value || protocol === protocolFilter.value) && (!statusFilter.value || status === statusFilter.value);
-  });
-});
-const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
-  loading: deviceLoading.value,
-  errorMessage: deviceLoadError.value,
-  hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
-}));
 onMounted(async () => {
   await appStore.initialize();
   syncWorkbenchTabFromRoute(route.path);
-  await Promise.allSettled([loadProtocols(), loadDevices()]);
+  applyRouteDeviceQuery();
+  await loadDevices();
+  applyRouteDeviceQuery();
   await loadActiveLegacyModule(activeModule.value);
 });
 
-function switchModule(module: ModuleKey) {
-  const targetPath = routePathForLegacyModule(module);
-  if (route.path !== targetPath) {
-    router.push(targetPath).catch(() => undefined);
-  }
-}
-
 watch(() => route.path, (path) => {
   syncWorkbenchTabFromRoute(path);
+  applyRouteDeviceQuery();
+  void loadActiveLegacyModule(activeModule.value);
 });
 
-
-watch(activeModule, (module) => {
-  void loadActiveLegacyModule(module);
+watch(() => route.query.deviceId, () => {
+  applyRouteDeviceQuery();
+  void loadActiveLegacyModule(activeModule.value);
 });
 
 async function loadActiveLegacyModule(module: ModuleKey) {
@@ -211,17 +140,7 @@ function syncWorkbenchTabFromRoute(path: string) {
   }
 }
 
-async function refreshDeviceContext() {
-  await Promise.allSettled([loadProtocols(), loadDevices()]);
-}
-
-async function loadProtocols() {
-  protocols.value = await listProtocols();
-}
-
 async function loadDevices() {
-  deviceLoading.value = true;
-  deviceLoadError.value = "";
   try {
     const [deviceResponse, runtimeResponse] = await Promise.allSettled([getConfigDeviceList(), getDeviceRuntime()]);
     if (runtimeResponse.status === "fulfilled") {
@@ -235,17 +154,18 @@ async function loadDevices() {
       .map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, deviceRuntimeMap.value));
     if (!selectedDeviceId.value && devices.value.length) selectedDeviceId.value = deviceIdOf(devices.value[0]);
   } catch (error) {
-    deviceLoadError.value = error instanceof Error ? error.message : "设备配置加载失败";
-    throw error;
-  } finally {
-    deviceLoading.value = false;
+    ElMessage.error(error instanceof Error ? error.message : "设备配置加载失败");
   }
 }
 
 async function loadSelectedRealtime() {
   if (!selectedDeviceId.value) return;
-  const response = await getDeviceRealtimeData(selectedDeviceId.value);
-  selectedRealtimeRows.value = normalizeRealtimeRows(response, selectedDeviceId.value);
+  try {
+    const response = await getDeviceRealtimeData(selectedDeviceId.value);
+    selectedRealtimeRows.value = normalizeRealtimeRows(response, selectedDeviceId.value);
+  } catch {
+    selectedRealtimeRows.value = [];
+  }
 }
 
 async function resetSelectedAdaptive() {
@@ -253,13 +173,6 @@ async function resetSelectedAdaptive() {
   await resetAdaptiveConfig(selectedDeviceId.value);
   ElMessage.success("已重置自适应采集参数");
   await loadSelectedRealtime();
-}
-
-async function syncDevices() {
-  await triggerFullConfigSync();
-  await reloadDevices();
-  await loadDevices();
-  ElMessage.success("已触发远端配置同步");
 }
 
 async function startSelectedDevice(deviceId: string) {
@@ -270,19 +183,6 @@ async function startSelectedDevice(deviceId: string) {
   await loadSelectedRealtime();
 }
 async function stopSelectedDevice(deviceId: string) { await stopDevice(deviceId); await loadDevices(); await loadSelectedRealtime(); }
-async function deleteLocal(deviceId: string) {
-  try {
-    await ElMessageBox.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`, "删除本地设备", {
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-      type: "warning"
-    });
-  } catch {
-    return;
-  }
-  await deleteLocalDevice(deviceId);
-  await loadDevices();
-}
 
 async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionType) {
   if (!deviceId) {
@@ -316,130 +216,39 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
 }
 
 function selectDevice(deviceId: string) { selectedDeviceId.value = deviceId; void loadSelectedRealtime(); }
-function openLocalEditor() { editingBundle.value = null; localEditorVisible.value = true; }
-async function handleLocalSaved() { localEditorVisible.value = false; await loadDevices(); }
 
-async function exportDeviceConfigData() {
-  configFileExporting.value = true;
-  try {
-    const exportText = normalizeConfigExportText(await exportConfigs());
-    const blob = new Blob([exportText], { type: "application/json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = buildConfigExportFilename();
-    anchor.click();
-    URL.revokeObjectURL(url);
-    ElMessage.success("设备配置数据已导出，可用于点位测试环境导入");
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "设备配置数据导出失败");
-  } finally {
-    configFileExporting.value = false;
+function applyRouteDeviceQuery() {
+  const deviceId = routeDeviceId();
+  if (deviceId) {
+    selectedDeviceId.value = deviceId;
+    return;
+  }
+  if (!selectedDeviceId.value && devices.value.length) {
+    selectedDeviceId.value = deviceIdOf(devices.value[0]);
+    return;
+  }
+  if (selectedDeviceId.value && devices.value.length && !devices.value.some((device) => deviceIdOf(device) === selectedDeviceId.value)) {
+    selectedDeviceId.value = deviceIdOf(devices.value[0]);
   }
 }
 
-function openConfigImportFile() {
-  configImportInput.value?.click();
+function routeDeviceId(): string {
+  const value = route.query.deviceId;
+  if (Array.isArray(value)) {
+    return String(value[0] || "");
+  }
+  return String(value || "");
 }
 
-async function handleConfigImportFile(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) {
-    return;
-  }
-  if (!file.name.toLowerCase().endsWith(".json")) {
-    ElMessage.warning("请选择 JSON 配置文件");
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    ElMessage.warning("配置文件不能超过 5MB");
-    return;
-  }
-  configFileImporting.value = true;
-  try {
-    const parsed = parseConfigImportText(await file.text());
-    const bundleCount = countConfigImportBundles(parsed);
-    if (bundleCount === 0) {
-      throw new Error("导入配置包 bundles 不能为空");
-    }
-    try {
-      await ElMessageBox.confirm(`将导入 ${bundleCount} 个设备配置包并刷新设备，请确认当前本地测试配置可被覆盖。`, "导入设备配置数据", {
-        confirmButtonText: "确认导入",
-        cancelButtonText: "取消",
-        type: "warning"
-      });
-    } catch {
-      return;
-    }
-    await importConfigs(buildConfigImportRequest(parsed, true));
-    await refreshDeviceContext();
-    ElMessage.success(`已导入 ${bundleCount} 个设备配置包`);
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "设备配置数据导入失败");
-  } finally {
-    configFileImporting.value = false;
-  }
-}
-function isLocalDevice(device: DeviceInfo): boolean {
-  return Boolean(device.temporaryConfig || device.configSource === "local" || device.configSource === "LOCAL" || asRecord(device).localDevice);
+function backToDeviceList() {
+  router.push({
+    path: "/device",
+    query: selectedDeviceId.value ? { deviceId: selectedDeviceId.value } : {}
+  }).catch(() => undefined);
 }
 
 function deviceAddress(device: DeviceInfo): string {
   return [device.ipAddress, device.port].filter((value) => value !== null && value !== undefined && value !== "").join(":") || "-";
-}
-
-function localizeDeviceStatus(status: unknown): string {
-  switch (String(status || "UNKNOWN").toUpperCase()) {
-    case "ONLINE":
-    case "RUNNING":
-      return "在线";
-    case "OFFLINE":
-      return "离线";
-    case "ERROR":
-      return "异常";
-    case "STOPPED":
-      return "已停止";
-    default:
-      return "未知";
-  }
-}
-
-function statusBadgeClass(device: DeviceInfo): string {
-  const status = String(device.status || "UNKNOWN").toUpperCase();
-  if (status === "ONLINE" || status === "RUNNING") return "is-online";
-  if (status === "ERROR") return "is-error";
-  return "";
-}
-
-async function editDevice(device: DeviceInfo) {
-  if (isLocalDevice(device)) {
-    const deviceId = deviceIdOf(device);
-    selectDevice(deviceId);
-    try {
-      const detail = await getLocalDevice(deviceId);
-      const bundle = extractLocalDeviceBundle(detail);
-      if (!bundle) {
-        throw new Error("本地设备详情缺少可编辑配置");
-      }
-      editingBundle.value = bundle;
-      localEditorVisible.value = true;
-    } catch (caught) {
-      ElMessage.error(caught instanceof Error ? caught.message : "本地设备详情加载失败");
-    }
-    return;
-  }
-  selectDevice(deviceIdOf(device));
-  workbenchTab.value = "config";
-  router.push("/device/workbench").catch(() => undefined);
-}
-
-function openDeviceDiff(device: DeviceInfo) {
-  const deviceId = deviceIdOf(device);
-  selectDevice(deviceId);
-  router.push({ path: "/collect", query: { deviceId } }).catch(() => undefined);
-  ElMessage.info("已切换到采集配置，可查看当前设备相关配置");
 }
 
 function openDeviceAlarmHistory(device: DeviceInfo) {
@@ -488,13 +297,7 @@ function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; poi
   ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
 }
 
-function openDeviceOperation(device: DeviceInfo, tab: "config" | "control" | "shadow") {
-  selectDevice(deviceIdOf(device));
-  workbenchTab.value = tab;
-  router.push(tab === "control" ? "/control" : (tab === "shadow" ? "/shadow" : "/device/workbench")).catch(() => undefined);
-}
-
-function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
+function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || device["normalizedId"] || ""); }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function extractArray<T>(value: unknown, keys: string[]): T[] { if (Array.isArray(value)) return value as T[]; const record = asRecord(value); for (const key of keys) if (Array.isArray(record[key])) return record[key] as T[]; return []; }
 function prettyJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }

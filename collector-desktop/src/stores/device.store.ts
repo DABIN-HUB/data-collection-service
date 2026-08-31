@@ -78,9 +78,15 @@ export const useDeviceStore = defineStore("device", {
     async syncConfig() {
       await this.operate(() => triggerFullConfigSync());
     },
+    async syncRemoteDevices() {
+      await this.operate(async () => {
+        await triggerFullConfigSync();
+        await reloadDevices();
+      });
+    },
     async deleteLocal(deviceId: string) {
       await this.operate(() => deleteLocalDevice(deviceId));
-      if (this.selectedDeviceId === deviceId) {
+      if (!this.error && this.selectedDeviceId === deviceId) {
         this.selectedDeviceId = this.devices[0]?.normalizedId || "";
       }
     },

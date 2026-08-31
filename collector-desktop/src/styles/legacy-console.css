@@ -709,69 +709,6 @@ body.modao-exact .legacy-console .empty-state {
   text-align: center;
 }
 
-body.modao-exact .legacy-console .exact-device-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-body.modao-exact .legacy-console .exact-device-card {
-  display: grid;
-  min-height: 110px;
-  padding: 17px 18px;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(230px, 1fr) minmax(220px, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  color: #e2e8f0;
-  border: 1px solid var(--exact-border);
-  border-radius: 12px;
-  background: var(--exact-panel);
-  cursor: pointer;
-}
-
-body.modao-exact .legacy-console .exact-device-card:hover,
-body.modao-exact .legacy-console .exact-device-card.is-selected {
-  border-color: var(--exact-blue);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
-}
-
-body.modao-exact .legacy-console .exact-device-main h3,
-body.modao-exact .legacy-console .exact-device-main p {
-  margin: 0;
-}
-
-body.modao-exact .legacy-console .exact-device-main h3 {
-  color: #fff;
-  font-size: 15px;
-}
-
-body.modao-exact .legacy-console .exact-device-main p,
-body.modao-exact .legacy-console .exact-device-meta span {
-  margin-top: 7px;
-  color: var(--exact-dim);
-  font-size: 11px;
-}
-
-body.modao-exact .legacy-console .exact-device-meta {
-  display: flex;
-  flex-direction: column;
-}
-
-body.modao-exact .legacy-console .exact-device-meta strong {
-  display: block;
-  margin: 0;
-  color: #fff;
-  font-size: 15px;
-}
-
-body.modao-exact .legacy-console .exact-device-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-body.modao-exact .legacy-console .exact-device-actions button,
 body.modao-exact .legacy-console .exact-toolbar button,
 body.modao-exact .legacy-console .exact-table-card button,
 body.modao-exact .legacy-console .workbench-device-actions button {
@@ -783,7 +720,6 @@ body.modao-exact .legacy-console .workbench-device-actions button {
   font-size: 11px;
 }
 
-body.modao-exact .legacy-console .exact-device-actions button:hover,
 body.modao-exact .legacy-console .exact-toolbar button:hover,
 body.modao-exact .legacy-console .exact-table-card button:hover,
 body.modao-exact .legacy-console .workbench-device-actions button:hover {
@@ -811,7 +747,6 @@ body.modao-exact .legacy-console .workbench-device-actions button.primary:active
   background: #1e40af;
 }
 
-body.modao-exact .legacy-console .exact-device-actions button:disabled,
 body.modao-exact .legacy-console .exact-toolbar button:disabled,
 body.modao-exact .legacy-console .exact-table-card button:disabled,
 body.modao-exact .legacy-console .workbench-device-actions button:disabled {
@@ -1102,10 +1037,6 @@ body.modao-exact .legacy-console .surface-card > button.wide {
 }
 
 @media (max-width: 1100px) {
-  body.modao-exact .legacy-console .exact-device-card {
-    grid-template-columns: 1fr 1fr;
-  }
-
   body.modao-exact .legacy-console .exact-diagnostic-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
