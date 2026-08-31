@@ -107,7 +107,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { buildCacheDetail, buildDeviceConnectionRows, buildExceptionDetail, buildPerformanceDetail, buildStorageDetail } from "./diagnostic-detail-utils";
+import { buildCacheDetail, buildDeviceConnectionRows, buildExceptionDetail, buildPerformanceDetail, buildStorageDetail } from "../utils/diagnostic-detail-utils";
 
 const props = defineProps<{
   cacheMetrics: unknown;
@@ -133,3 +133,39 @@ function formatTime(value: unknown): string {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
 }
 </script>
+
+<style scoped>
+.diagnostic-detail-panel {
+  margin-top: 16px;
+}
+
+.diagnostic-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.diagnostic-detail-cards {
+  padding: 16px;
+}
+
+.diagnostic-detail-cards small {
+  display: block;
+  margin-top: 6px;
+  color: var(--exact-dim);
+  font-size: 12px;
+}
+
+.diagnostic-sub-card,
+.diagnostic-connection-table,
+.diagnostic-exception-table {
+  margin-top: 14px;
+}
+
+@media (max-width: 1100px) {
+  .diagnostic-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

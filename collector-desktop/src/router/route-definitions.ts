@@ -9,6 +9,7 @@ const LogView = () => import("@/views/log/LogView.vue");
 const AlarmView = () => import("@/views/alarm/AlarmView.vue");
 const NetworkView = () => import("@/views/network/NetworkView.vue");
 const CloudView = () => import("@/views/cloud/CloudView.vue");
+const DiagnosticView = () => import("@/views/diagnostic/DiagnosticView.vue");
 const LegacyConsoleView = () => import("@/views/legacy/LegacyConsoleView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
@@ -30,7 +31,7 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
       { path: "device/workbench", name: RouteNames.DEVICE_WORKBENCH, component: LegacyConsoleView },
       { path: "collect", name: RouteNames.COLLECTION, component: LegacyConsoleView },
       { path: "cloud", name: RouteNames.CLOUD, component: CloudView },
-      { path: "diagnostic", name: RouteNames.DIAGNOSTIC, component: LegacyConsoleView },
+      { path: "diagnostic", name: RouteNames.DIAGNOSTIC, component: DiagnosticView },
       { path: "log", name: RouteNames.LOG, component: LogView },
       { path: "network", name: RouteNames.NETWORK, component: NetworkView },
       { path: "control", name: RouteNames.CONTROL, component: LegacyConsoleView },

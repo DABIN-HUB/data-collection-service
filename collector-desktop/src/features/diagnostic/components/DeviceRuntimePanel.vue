@@ -56,7 +56,7 @@ import { ElMessage } from "element-plus";
 
 import { getDeviceRuntime, getDeviceStatus, getRunningDevices, isDeviceRunning } from "@/api/device.api";
 import type { DeviceInfo, DeviceRuntimeSnapshot } from "@/types/device";
-import { buildDeviceRuntimeSummary, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "./device-runtime-utils";
+import { buildDeviceRuntimeSummary, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "../utils/device-runtime-utils";
 
 const props = defineProps<{
   devices: DeviceInfo[];
@@ -151,3 +151,21 @@ onMounted(() => {
   }
 });
 </script>
+
+<style scoped>
+.device-runtime-panel {
+  margin-top: 16px;
+}
+
+.runtime-device-toolbar {
+  align-items: center;
+}
+
+.runtime-summary-cards {
+  margin-top: 14px;
+}
+
+.runtime-device-table {
+  margin-top: 14px;
+}
+</style>

@@ -204,7 +204,7 @@ import PointEditor from "@/components/point/PointEditor.vue";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { resolveDeviceStatus } from "@/stores/device.store";
-import { normalizeDeviceStatusDetail, type DeviceStatusDetail } from "@/views/legacy/device-runtime-utils";
+import { normalizeDeviceStatusDetail, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
 import { buildConnectionPayload, extractProtocolModel, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import type { DeviceViewModel } from "@/types/device";
 import type { RealtimePointRow } from "@/types/monitor";

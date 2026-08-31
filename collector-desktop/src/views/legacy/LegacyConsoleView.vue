@@ -36,7 +36,7 @@
       </section>
 
       <section v-show="activeModule === 'collect'" class="exact-page">
-        <div class="section-heading"><div class="heading-title-line"><h1>数据采集配置</h1><span class="heading-online"><i></i>{{ protocols.length }} 种协议</span></div><div class="heading-actions"><button type="button" @click="loadOverview">刷新概览</button></div></div>
+        <div class="section-heading"><div class="heading-title-line"><h1>数据采集配置</h1><span class="heading-online"><i></i>{{ protocols.length }} 种协议</span></div><div class="heading-actions"><button type="button" @click="loadConfigSummary">刷新概览</button></div></div>
         <div class="exact-page-body">
           <section class="exact-surface exact-global-config">
             <div class="exact-surface-head"><h2>全局采集配置</h2><span>当前运行配置</span></div>
@@ -53,17 +53,6 @@
             <summary>{{ selectedProtocol.title || selectedProtocol.protocol }} Schema</summary>
             <pre class="json-view">{{ prettyJson(selectedProtocol) }}</pre>
           </section>
-        </div>
-      </section>
-
-      <section v-show="activeModule === 'diag'" class="exact-page">
-        <div class="section-heading"><div class="heading-title-line"><h1>系统实时状态诊断</h1><span class="heading-online"><i></i>运行数据</span></div><div class="heading-actions"><button type="button" class="primary" @click="runDiagnostic">运行完整诊断</button><button type="button" @click="downloadDiagnosticPackage">导出诊断包</button></div></div>
-        <div class="exact-page-body">
-          <div class="exact-diagnostic-cards"><div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></div>
-          <section class="exact-table-card"><table><thead><tr><th>诊断项</th><th>状态</th><th>当前值</th><th>处理建议</th></tr></thead><tbody><tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr></tbody></table></section>
-          <LegacyDiagnosticDetailPanel :cache-metrics="cacheMetrics" :device-metrics="deviceConnectionMetrics" :performance-metrics="performanceDetail" :exception-stats="exceptionStats" :storage-metrics="storageMetrics" />
-          <LegacyDeviceRuntimePanel :devices="devices" :selected-device-id="selectedDeviceId" @select-device="selectDevice" />
-          <details class="exact-json-panel" open><summary>查看原始诊断 JSON</summary><pre class="json-view">{{ prettyJson(diagnosticRaw) }}</pre></details>
         </div>
       </section>
 
@@ -137,28 +126,22 @@ import { useRoute, useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import LegacyConfigOpsPanel from "./LegacyConfigOpsPanel.vue";
-import LegacyDeviceRuntimePanel from "./LegacyDeviceRuntimePanel.vue";
-import LegacyDiagnosticDetailPanel from "./LegacyDiagnosticDetailPanel.vue";
 import LegacyHistoryPanel from "./LegacyHistoryPanel.vue";
 import LocalDeviceEditor from "@/components/device/LocalDeviceEditor.vue";
 import ManualShadowPanels from "./LegacyManualShadowPanels.vue";
 import { clearDeviceConfig, deleteLocalDevice, exportConfigs, getConfigDevices as getConfigDeviceList, getConfigSummary, getDevicePointsConfig, getLocalDevice, importConfigs, refreshDeviceConfig, triggerFullConfigSync } from "@/api/config.api";
 import { getDeviceRuntime, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
-import { getCacheMetrics, getCloudReportMetrics, getCollectorPerformance, getDeviceConnectionMetrics, getExceptionStats, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
-import { getDeviceRealtimeData, getRecentAlarms, resetAdaptiveConfig } from "@/api/data.api";
+import { getDeviceRealtimeData, resetAdaptiveConfig } from "@/api/data.api";
 import { listProtocols } from "@/api/protocol.api";
-import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
 import { resolveLegacyModuleByRoutePath, routePathForLegacyModule, type LegacyModuleKey } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
 import { normalizeDeviceViewModelWithRuntimeStatus, resolveDeviceStartMode } from "@/stores/device.store";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/components/device/local-device-utils";
-import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
-import { cloudStatusText } from "@/features/cloud/utils/cloud-report-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, buildDeviceListEmptyText, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "./config-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "./device-config-actions-utils";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
-import type { AlarmRow, LogRow, RealtimePointRow } from "@/types/monitor";
+import type { RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
 
 type ModuleKey = LegacyModuleKey;
@@ -173,15 +156,6 @@ const activeModule = computed<ModuleKey>(() => {
 const devices = ref<DeviceViewModel[]>([]);
 const deviceRuntimeMap = ref<Record<string, DeviceRuntimeSnapshot>>({});
 const protocols = ref<ProtocolSchema[]>([]);
-const runtimeStatus = ref<unknown>({});
-const systemResource = ref<unknown>({});
-const reportMetrics = ref<unknown>({});
-const cacheMetrics = ref<unknown>({});
-const deviceConnectionMetrics = ref<unknown>({});
-const collectorPerformance = ref<unknown>({});
-const exceptionStats = ref<unknown>({});
-const storageMetrics = ref<unknown>({});
-const performanceDetail = ref<unknown>({});
 const configSummary = ref<unknown>({});
 const selectedRealtimeRows = ref<RealtimePointRow[]>([]);
 const selectedDeviceId = ref("");
@@ -193,7 +167,6 @@ const statusFilter = ref("");
 const deviceLoading = ref(false);
 const deviceLoadError = ref("");
 const selectedProtocol = ref<ProtocolSchema | null>(null);
-const diagnosticRaw = ref<unknown>({});
 const localEditorVisible = ref(false);
 const configImportInput = ref<HTMLInputElement | null>(null);
 const configFileExporting = ref(false);
@@ -201,9 +174,6 @@ const configFileImporting = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 const workbenchTab = ref<"config" | "control" | "shadow">("config");
 
-const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
-const onlineCount = computed(() => devices.value.filter((device) => String(device.status || "").toUpperCase() === "ONLINE").length);
-const riskDevices = computed(() => devices.value.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
 const selectedDevice = computed(() => devices.value.find((device) => deviceIdOf(device) === selectedDeviceId.value));
 const selectedDeviceView = computed(() => selectedDevice.value ? normalizeDeviceViewModelWithRuntimeStatus(selectedDevice.value, deviceRuntimeMap.value) : null);
 const selectedRuntimeSnapshot = computed(() => selectedDeviceId.value ? (selectedDeviceView.value?.runtime || deviceRuntimeMap.value[selectedDeviceId.value]) : undefined);
@@ -230,43 +200,6 @@ const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
   errorMessage: deviceLoadError.value,
   hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
 }));
-const resourceSummary = computed(() => {
-  const resource = asRecord(systemResource.value);
-  const pools = asRecord(resource.threadPools);
-  let activeThreads = 0;
-  let maxThreads = 0;
-  let queuedTasks = 0;
-  let rejectedTasks = 0;
-  for (const pool of Object.values(pools)) {
-    const record = asRecord(pool);
-    activeThreads += numberValue(record.activeCount, 0);
-    maxThreads += numberValue(record.maxPoolSize, 0);
-    queuedTasks += numberValue(record.queueSize, 0);
-    rejectedTasks += numberValue(record.rejectedCount, 0);
-  }
-  const executor = asRecord(asRecord(reportMetrics.value).executor);
-  if (maxThreads === 0 && Object.keys(executor).length) {
-    activeThreads = numberValue(executor.activeCount, 0);
-    maxThreads = numberValue(executor.maxPoolSize, 0);
-    queuedTasks = numberValue(executor.queueSize, 0);
-    rejectedTasks = numberValue(executor.rejectedCount, 0);
-  }
-  const perf = asRecord(performanceDetail.value);
-  if (maxThreads === 0 && Object.keys(perf).length) {
-    activeThreads = numberValue(valueOf(perf, ["activeThreads", "activeCount", "collectActiveCount", "processActiveCount"], 0));
-    maxThreads = numberValue(valueOf(perf, ["maxThreads", "maxPoolSize", "collectMaxPoolSize", "processMaxPoolSize"], 0));
-    queuedTasks = numberValue(valueOf(perf, ["queuedTasks", "queueSize", "collectQueueSize", "processQueueSize"], 0));
-    rejectedTasks = numberValue(valueOf(perf, ["rejectedTasks", "rejectedCount", "batchDispatchRejectedCount", "collectRejectedCount", "processRejectedCount"], 0));
-  }
-  const usage = maxThreads > 0 ? Math.max(0, Math.min(100, Math.round((activeThreads / maxThreads) * 100))) : 0;
-  return {
-    activeThreads: maxThreads > 0 ? String(activeThreads) : "-",
-    maxThreads: maxThreads > 0 ? String(maxThreads) : "-",
-    queuedTasks: maxThreads > 0 ? String(queuedTasks) : "-",
-    threadUsage: `${usage}%`,
-    title: `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${valueOf(resource, ["threadCount"], "-")} 个`
-  };
-});
 const collectionSummaryItems = computed(() => {
   const summary = asRecord(configSummary.value);
   const stats = asRecord(summary.cacheStats);
@@ -276,46 +209,6 @@ const collectionSummaryItems = computed(() => {
     { label: "连接配置", value: `${valueOf(stats, ["connectionCount"], valueOf(summary, ["connectionCount"], devices.value.length))} 个` },
     { label: "配置来源", value: String(valueOf(summary, ["configSource", "source"], "当前运行配置")) }
   ];
-});
-const diagnosticCards = computed(() => {
-  const resource = asRecord(systemResource.value);
-  const summary = asRecord(configSummary.value);
-  const stats = asRecord(summary.cacheStats);
-  const deviceMetrics = asRecord(deviceConnectionMetrics.value);
-  const activeConnections = valueOf(deviceMetrics, ["activeConnections", "connectedCount", "onlineCount"], onlineCount.value);
-  const cacheRate = ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null)));
-  return [
-    { label: "系统运行时间", value: formatDurationMs(valueOf(resource, ["uptimeMillis", "uptime"], null)) },
-    { label: "设备配置总数", value: `${valueOf(stats, ["deviceCount"], devices.value.length)} 台` },
-    { label: "点位总数", value: `${valueOf(stats, ["pointCount"], sumPoints(devices.value))} 个` },
-    { label: "活跃连接", value: `${activeConnections} 个` },
-    { label: "缓存命中率", value: percentText(cacheRate) },
-    { label: "异常统计", value: `${valueOf(exceptionStats.value, ["totalCount", "exceptionCount", "errorCount"], 0)} 次` }
-  ];
-});
-const diagnosticRows = computed(() => {
-  const cacheRate = ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], null)));
-  const perf = asRecord(performanceDetail.value);
-  const queued = numberValue(resourceSummary.value.queuedTasks === "-" ? valueOf(perf, ["queuedTasks", "queueSize", "collectQueueSize", "processQueueSize"], 0) : resourceSummary.value.queuedTasks, 0);
-  const rejected = numberValue(valueOf(perf, ["rejectedTasks", "rejectedCount", "batchDispatchRejectedCount", "collectRejectedCount", "processRejectedCount"], 0), 0);
-  const reportStatus = String(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")).toUpperCase();
-  const deviceMetrics = asRecord(deviceConnectionMetrics.value);
-  const expectedConnections = numberValue(valueOf(deviceMetrics, ["expectedConnections", "totalConnections", "deviceCount"], devices.value.length), devices.value.length);
-  const activeConnections = numberValue(valueOf(deviceMetrics, ["activeConnections", "connectedCount", "onlineCount"], onlineCount.value), onlineCount.value);
-  const missing = Math.max(0, expectedConnections - activeConnections);
-  const storageStatus = String(valueOf(storageMetrics.value, ["status", "state"], Object.keys(asRecord(storageMetrics.value)).length ? "UP" : "UNKNOWN")).toUpperCase();
-  const storageKnown = Object.keys(asRecord(storageMetrics.value)).length > 0;
-  const exceptionCount = numberValue(valueOf(exceptionStats.value, ["totalCount", "exceptionCount", "errorCount"], 0), 0);
-  const rows = [
-    { name: "应用服务", status: appStore.initialized ? "正常" : "异常", current: systemStatusText.value, suggestion: appStore.initialized ? "无需处理" : "检查应用健康检查明细" },
-    { name: "设备连接", status: missing === 0 ? "正常" : "警告", current: `${activeConnections}/${expectedConnections}`, suggestion: "检查缺失连接和设备网络" },
-    { name: "缓存服务", status: cacheRate === null || cacheRate >= 0.8 ? "正常" : "警告", current: cacheRate === null ? "指标不可用" : percentText(cacheRate), suggestion: "低命中率时检查缓存配置" },
-    { name: "线程池拒绝", status: queued === 0 && rejected === 0 ? "正常" : "异常", current: `${resourceSummary.value.title}，队列 ${queued}，拒绝 ${rejected}`, suggestion: "检查队列容量、任务耗时和拒绝策略" },
-    { name: "异常统计", status: exceptionCount === 0 ? "正常" : "警告", current: `${exceptionCount} 次`, suggestion: "查看异常统计明细和应用日志" },
-    { name: "历史存储", status: storageKnown && ["UP", "OK", "ONLINE", "SUCCESS"].includes(storageStatus) ? "正常" : "警告", current: storageKnown ? cloudStatusText(storageStatus) : "指标不可用", suggestion: "检查 TDengine 或历史存储配置" },
-    { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: cloudStatusText(reportStatus), suggestion: "检查处理器、Outbox 和 ACK 状态" }
-  ];
-  return rows.map((row) => ({ ...row, tone: row.status === "正常" ? "is-online" : (row.status === "异常" ? "is-error" : "") }));
 });
 onMounted(async () => {
   await appStore.initialize();
@@ -341,8 +234,7 @@ watch(activeModule, (module) => {
 });
 
 async function loadActiveLegacyModule(module: ModuleKey) {
-  if (module === "diag") await runDiagnostic();
-  if (module === "collect") await loadOverview();
+  if (module === "collect") await loadConfigSummary();
   if (module === "workbench") await loadSelectedRealtime();
 }
 
@@ -358,7 +250,7 @@ function syncWorkbenchTabFromRoute(path: string) {
 }
 
 async function refreshAll() {
-  await Promise.allSettled([loadProtocols(), loadDevices(), loadOverview(), runDiagnostic()]);
+  await Promise.allSettled([loadProtocols(), loadDevices(), loadConfigSummary()]);
 }
 
 async function loadProtocols() {
@@ -388,44 +280,11 @@ async function loadDevices() {
   }
 }
 
-async function loadOverview() {
-  const [runtime, resource, report, summary, cache, devicesMetric, collectorPerf, exceptions, storage, perfDetail] = await Promise.allSettled([
-    getRuntimeStatus(),
-    getSystemResources(),
-    getCloudReportMetrics(),
-    getConfigSummary(),
-    getCacheMetrics(),
-    getDeviceConnectionMetrics(),
-    getCollectorPerformance(),
-    getExceptionStats(),
-    getStorageMetrics(),
-    getPerformanceDetail()
-  ]);
-  if (runtime.status === "fulfilled") runtimeStatus.value = runtime.value;
-  if (resource.status === "fulfilled") systemResource.value = resource.value;
-  if (report.status === "fulfilled") reportMetrics.value = report.value;
-  if (summary.status === "fulfilled") configSummary.value = summary.value;
-  if (cache.status === "fulfilled") cacheMetrics.value = cache.value;
-  if (devicesMetric.status === "fulfilled") deviceConnectionMetrics.value = devicesMetric.value;
-  if (collectorPerf.status === "fulfilled") collectorPerformance.value = collectorPerf.value;
-  if (exceptions.status === "fulfilled") exceptionStats.value = exceptions.value;
-  if (storage.status === "fulfilled") storageMetrics.value = storage.value;
-  if (perfDetail.status === "fulfilled") performanceDetail.value = perfDetail.value;
-}
-
-async function loadDiagnosticLogSample(): Promise<LogRow[]> {
+async function loadConfigSummary() {
   try {
-    return normalizeLogRows(await getOpsLogs({ limit: 50 }));
+    configSummary.value = await getConfigSummary();
   } catch {
-    return [];
-  }
-}
-
-async function loadDiagnosticAlarmSample(): Promise<AlarmRow[]> {
-  try {
-    return normalizeAlarmHistoryRows(await getRecentAlarms({ limit: 20 }));
-  } catch {
-    return [];
+    configSummary.value = {};
   }
 }
 
@@ -569,28 +428,6 @@ async function handleConfigImportFile(event: Event) {
     configFileImporting.value = false;
   }
 }
-async function runDiagnostic() {
-  diagnosticRaw.value = buildDiagnosticRaw();
-  await loadOverview();
-  diagnosticRaw.value = buildDiagnosticRaw();
-}
-
-
-function buildDiagnosticRaw(): Record<string, unknown> {
-  return {
-    runtime: runtimeStatus.value,
-    system: systemResource.value,
-    devices: deviceConnectionMetrics.value,
-    cache: cacheMetrics.value,
-    performance: collectorPerformance.value,
-    performanceDetail: performanceDetail.value,
-    exceptions: exceptionStats.value,
-    storage: storageMetrics.value,
-    report: reportMetrics.value,
-    summary: configSummary.value
-  };
-}
-
 function isLocalDevice(device: DeviceInfo): boolean {
   return Boolean(device.temporaryConfig || device.configSource === "local" || device.configSource === "LOCAL" || asRecord(device).localDevice);
 }
@@ -659,7 +496,7 @@ function openDeviceAlarmHistory(device: DeviceInfo) {
 function openDeviceRuntimeStatus(device: DeviceInfo) {
   const deviceId = deviceIdOf(device);
   selectDevice(deviceId);
-  switchModule("diag");
+  router.push({ path: "/diagnostic", query: { deviceId } }).catch(() => undefined);
   ElMessage.info("已切换到运行设备状态面板");
 }
 
@@ -697,30 +534,6 @@ function openWorkbenchRealtime(target: { deviceId: string; pointRef: string; poi
   ElMessage.info(`已切换到实时数据：${target.pointLabel || target.pointName || target.pointRef}`);
 }
 
-async function downloadDiagnosticPackage() {
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    selectedDeviceId: selectedDeviceId.value,
-    selectedDevice: selectedDeviceView.value || null,
-    overview: buildDiagnosticRaw(),
-    alarms: await loadDiagnosticAlarmSample(),
-    logs: await loadDiagnosticLogSample(),
-    runtimeSummary: {
-      totalDevices: devices.value.length,
-      onlineCount: onlineCount.value,
-      riskDevices: riskDevices.value.length,
-      reportState: Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知"
-    }
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `collector-diagnostic-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 function openDeviceOperation(device: DeviceInfo, tab: "config" | "control" | "shadow") {
   selectDevice(deviceIdOf(device));
   workbenchTab.value = tab;
@@ -751,30 +564,11 @@ function openProtocolConfig(protocol: ProtocolSchema) {
 
 
 function deviceIdOf(device: DeviceInfo): string { return String(device.deviceId || device.id || ""); }
-function deviceNameOf(deviceId: string): string { return devices.value.find((device) => deviceIdOf(device) === deviceId)?.deviceName || deviceId; }
 function sumPoints(source: DeviceInfo[]): number { return source.reduce((sum, device) => sum + Number(device.pointCount || (Array.isArray(device.points) ? device.points.length : 0) || 0), 0); }
 function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function extractArray<T>(value: unknown, keys: string[]): T[] { if (Array.isArray(value)) return value as T[]; const record = asRecord(value); for (const key of keys) if (Array.isArray(record[key])) return record[key] as T[]; return []; }
 function valueOf(value: unknown, keys: string[], fallback: unknown): unknown { const record = asRecord(value); for (const key of keys) if (record[key] !== undefined && record[key] !== null) return record[key]; return fallback; }
-function numberValue(value: unknown, fallback = 0): number { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : fallback; }
-function optionalNumber(value: unknown): number | null { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
-function ratioFrom(value: unknown): number | null { const parsed = optionalNumber(value); if (parsed === null) return null; const normalized = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed; return Math.max(0, Math.min(1, normalized)); }
-function percentText(value: number | null): string { return value === null ? "-" : `${Math.round(value * 100)}%`; }
-function formatDurationMs(value: unknown): string {
-  const ms = optionalNumber(value);
-  if (ms === null) return "-";
-  const seconds = Math.floor(ms / 1000);
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}天 ${hours}小时`;
-  if (hours > 0) return `${hours}小时 ${minutes}分钟`;
-  if (minutes > 0) return `${minutes}分钟`;
-  return `${seconds}秒`;
-}
 function prettyJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }
-function compactJson(value: unknown): string { return JSON.stringify(value ?? {}, null, 2); }
-function formatTime(value: unknown): string { if (!value) return "-"; const date = typeof value === "number" ? new Date(value) : new Date(String(value)); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(); }
 </script>
 
 <style scoped>

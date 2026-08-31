@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 08:49:34 +0800
+更新时间：2026-08-31 09:15:57 +0800
 
 ## 当前状态
 
@@ -18,7 +18,8 @@
 - Phase 5：Alarm 迁移已完成并通过验证。
 - Phase 6：Network 迁移已完成并通过验证。
 - Phase 7：Cloud 迁移已完成并通过验证。
-- 下一阶段：Phase 8 迁移 Diagnostic。
+- Phase 8：Diagnostic 迁移已完成并通过验证。
+- 下一阶段：Phase 9 迁移 History。
 
 ## Baseline 验证结果
 
@@ -453,20 +454,123 @@ Phase 7 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PU
 
 `build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
 
+## Phase 8：Diagnostic 迁移完成内容
+
+- 新增 `src/views/diagnostic/DiagnosticView.vue`，承载原 `activeModule === "diag"` 的“系统实时状态诊断”页面。
+- `/diagnostic` 路由已从 `LegacyConsoleView.vue` 改为 lazy import `DiagnosticView.vue`；当前 `/dashboard`、`/realtime`、`/log`、`/alarm`、`/network`、`/cloud`、`/diagnostic` 均为独立 View。
+- `/history`、`/device`、`/device/workbench`、`/collect`、`/control`、`/shadow` 继续保持 `LegacyConsoleView.vue` 过渡状态，未提前迁移。
+- `DiagnosticView.vue` 页面级聚合快照保留在 View 内：`runtimeStatus`、`systemResource`、`reportMetrics`、`configSummary`、`cacheMetrics`、`deviceConnectionMetrics`、`collectorPerformance`、`exceptionStats`、`storageMetrics`、`performanceDetail`、`diagnosticRaw`、`loading`、`error`。
+- `DiagnosticView.vue` 使用 `useDeviceStore()` 提供设备领域状态：`devices`、`selectedDeviceId`、`selectedDevice`、`onlineCount`、`totalPointCount`，进入页面时按需调用 `deviceStore.refresh()`，不再维护长期 `devices = ref([])` / `selectedDeviceId = ref("")` 副本。
+- 新增独立 `loadDiagnostic()`，先应用 `route.query.deviceId`，再通过 `Promise.allSettled()` 并行加载 Diagnostic 真正需要的监控数据：`getRuntimeStatus()`、`getSystemResources()`、`getCloudReportMetrics()`、`getConfigSummary()`、`getCacheMetrics()`、`getDeviceConnectionMetrics()`、`getCollectorPerformance()`、`getExceptionStats()`、`getStorageMetrics()`、`getPerformanceDetail()`。
+- `runDiagnostic()` 现在只调用 `loadDiagnostic()`，不再调用 Legacy `loadOverview()` 或 `refreshAll()`；`onMounted()` 保持进入 `/diagnostic` 自动运行完整诊断。
+- `loadDiagnostic()` 独立容错：单个监控接口失败只记录部分不可用提示，已有数据继续展示；后端整体不可达时页面显示“无法连接采集服务，请检查服务地址和后端是否已启动”，不崩溃。
+- 诊断包导出迁入 `DiagnosticView.vue`，继续包含 `generatedAt`、`selectedDeviceId`、`selectedDevice`、`overview` / `diagnosticRaw`、`alarms`、`logs`、`runtimeSummary`。
+- 诊断包中的告警样本继续在导出时最小化调用 `getRecentAlarms({ limit: 20 })` 并通过 `normalizeAlarmHistoryRows()` 归一化，不依赖 `AlarmView` 状态。
+- 诊断包中的日志样本继续在导出时最小化调用 `getOpsLogs({ limit: 50 })` 并通过 `normalizeLogRows()` 归一化，不依赖 `LogView` 状态。
+- Device -> Diagnostic 跨页跳转改为 Router Query：`openDeviceRuntimeStatus()` 现在跳转 `{ path: "/diagnostic", query: { deviceId } }`，不再 `switchModule("diag")`。
+- `DiagnosticView.vue` 支持 `/diagnostic?deviceId=dev-1`：读取 `route.query.deviceId` 后调用 `deviceStore.selectDevice(deviceId)`，并在 query 后续变化时同步更新；`DeviceRuntimePanel` 通过 props 接收选中设备。
+- `src/views/legacy/LegacyDiagnosticDetailPanel.vue` 已迁移并改名为 `src/features/diagnostic/components/DiagnosticDetailPanel.vue`，新 DiagnosticView 不再反向依赖 `views/legacy/*`。
+- `src/views/legacy/LegacyDeviceRuntimePanel.vue` 已迁移并改名为 `src/features/diagnostic/components/DeviceRuntimePanel.vue`，组件继续通过 `devices`、`selectedDeviceId` props 与 `select-device` 事件保持低耦合，不直接依赖整个 `deviceStore`。
+- `DeviceRuntimePanel` 继续使用 `getRunningDevices()`、`getDeviceRuntime()`、`getDeviceStatus()`、`isDeviceRunning()`，保留刷新运行列表、查询单设备状态、检查是否运行、运行态摘要、运行设备表格和单设备状态 JSON。
+- `src/views/legacy/diagnostic-detail-utils.ts` 与测试已迁移到 `src/features/diagnostic/utils/diagnostic-detail-utils.ts` / `.test.ts`，保留 `buildCacheDetail()`、`buildDeviceConnectionRows()`、`buildPerformanceDetail()`、`buildExceptionDetail()`、`buildStorageDetail()`。
+- `src/views/legacy/device-runtime-utils.ts` 与测试已迁移到 `src/features/diagnostic/utils/device-runtime-utils.ts` / `.test.ts`，保留 `normalizeRunningDeviceIds()`、`normalizeDeviceRuntimeRows()`、`normalizeDeviceStatusDetail()`、`normalizeDeviceRunningFlag()`、`buildDeviceRuntimeSummary()`。
+- 新增 `src/features/diagnostic/utils/diagnostic-utils.ts` / `.test.ts`，迁移 `buildDiagnosticAdvice()`，并抽出 `buildResourceSummary()`、`buildDiagnosticCards()`、`buildDiagnosticRows()`、`buildDiagnosticRaw()`、`buildDiagnosticRuntimeSummary()`、`hasDiagnosticData()` 等纯数据转换。
+- `src/views/ops/ops-utils.ts` 与 `src/views/ops/ops-utils.test.ts` 已无剩余有效职责并删除；`src/views/ops/` 目录已为空并删除。
+- 从 `LegacyConsoleView.vue` 删除主 Diagnostic template、`LegacyDiagnosticDetailPanel` / `LegacyDeviceRuntimePanel` imports、Diagnostic 页面 state/computed/function/API imports：`runtimeStatus`、`systemResource`、`reportMetrics`、`cacheMetrics`、`deviceConnectionMetrics`、`collectorPerformance`、`exceptionStats`、`storageMetrics`、`performanceDetail`、`diagnosticRaw`、`resourceSummary`、`diagnosticCards`、`diagnosticRows`、`runDiagnostic()`、`buildDiagnosticRaw()`、`downloadDiagnosticPackage()`、`loadDiagnosticAlarmSample()`、`loadDiagnosticLogSample()`。
+- `configSummary` 与 `getConfigSummary()` 继续保留在 Legacy，因为 `/collect` 的 `collectionSummaryItems` 仍真实依赖配置摘要。
+- `LegacyConsoleView.vue` 已删除 `loadOverview()`；Collection 的“刷新概览”和 `loadActiveLegacyModule("collect")` 改为只调用 `loadConfigSummary()`。
+- `refreshAll()` 已收敛为 `Promise.allSettled([loadProtocols(), loadDevices(), loadConfigSummary()])`，不再调用 `runDiagnostic()` 或加载已迁出的 Dashboard / Cloud / Diagnostic 监控接口。
+- Diagnostic 专属样式 `diagnostic-detail-panel`、`device-runtime-panel`、`diagnostic-detail-grid`、`diagnostic-detail-cards`、`diagnostic-sub-card`、`diagnostic-connection-table`、`diagnostic-exception-table` 已从 `legacy-console.css` 迁入 `DiagnosticDetailPanel.vue` / `DeviceRuntimePanel.vue` scoped style。
+- 公共样式 `section-heading`、`exact-page`、`exact-page-body`、`exact-surface`、`exact-table-card`、`exact-diagnostic-cards`、`exact-diagnostic-card`、`status-badge`、`exact-json-panel`、`json-view`、`modao-property-grid`、`modao-property-item`、`modao-risk-list`、`modao-risk-item` 仍被多个页面使用，按 Phase 边界暂不复制或删除。
+
+## Phase 8 验证结果
+
+执行时间：2026-08-31 09:11-09:15，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 31 个测试文件、175 个测试通过；新增 `src/features/diagnostic/utils/diagnostic-utils.test.ts`，迁移后的 diagnostic/detail/runtime utils 测试通过，`router.test.ts` 覆盖 `/diagnostic -> DiagnosticView` 和 `/diagnostic?deviceId=dev-1` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；生成独立 `DiagnosticView` 与 `device-runtime-utils` chunks，Diagnostic 纯工具随页面 chunk 打包 |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 36 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 8 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。
+
+## Phase 8 路由与页面检查结果
+
+- `/dashboard`：dev server `http://127.0.0.1:5179/#/dashboard` 能打开，仍由 `DashboardView.vue` 承载。
+- `/realtime`：dev server `http://127.0.0.1:5179/#/realtime` 能打开，仍由 `RealtimeView.vue` 承载。
+- `/log`：dev server `http://127.0.0.1:5179/#/log` 能打开，仍由 `LogView.vue` 承载。
+- `/alarm`：dev server `http://127.0.0.1:5179/#/alarm` 能打开，仍由 `AlarmView.vue` 承载。
+- `/network?target=127.0.0.1&port=502`：dev server 能打开，仍由 `NetworkView.vue` 承载。
+- `/cloud`：dev server `http://127.0.0.1:5179/#/cloud` 能打开，仍由 `CloudView.vue` 承载。
+- `/diagnostic`：dev server `http://127.0.0.1:5179/#/diagnostic` 能打开，页面文本显示“系统实时状态诊断”“运行完整诊断”“导出诊断包”“诊断摘要”“诊断项列表”“诊断详情增强”“缓存服务明细”“性能详情”“设备连接指标”“异常统计 Top”“最慢设备 Top”“最近异常”“运行设备状态”“查看原始诊断 JSON”；后端不可达时显示“无法连接采集服务，请检查服务地址和后端是否已启动”，页面未崩溃。
+- `/diagnostic?deviceId=dev-1`：dev server 能打开，单设备状态 JSON 中带入 `deviceId: "dev-1"`，后端不可达时展示“单设备状态查询失败”，页面未崩溃。
+- `/device`：dev server `http://127.0.0.1:5179/#/device` 能打开，仍显示 Legacy 设备管理页面；设备“运行状态”动作代码已改为 `/diagnostic?deviceId=...` query 跳转。
+- `/collect`：dev server `http://127.0.0.1:5179/#/collect` 能打开，仍显示 Legacy 采集配置页面；代码检查确认 `LegacyConsoleView.vue` 已无 `loadOverview`、`getRuntimeStatus`、`getCloudReportMetrics`、`getPerformanceDetail` 等 Diagnostic 监控接口引用，只保留 `loadConfigSummary()`。
+- 代码检查确认 `LegacyConsoleView.vue` 中已无 `activeModule === 'diag'`、`runDiagnostic`、`downloadDiagnosticPackage`、`buildDiagnosticRaw`、`diagnosticRaw`、Diagnostic metrics state 和 Diagnostic 监控 API imports。
+- 搜索确认 `src/views/legacy/` 下已无 `LegacyDiagnosticDetailPanel.vue`、`LegacyDeviceRuntimePanel.vue`、`diagnostic-detail-utils*`、`device-runtime-utils*`。
+- 搜索确认 `src/views/ops/` 目录已删除。
+- 搜索确认 `src/styles/legacy-console.css` 中已无 Diagnostic 专属 selector：`diagnostic-detail-panel`、`diagnostic-detail-cards`、`diagnostic-detail-grid`、`diagnostic-sub-card`、`diagnostic-connection-table`、`diagnostic-exception-table`、`device-runtime-panel`、`runtime-device-toolbar`、`runtime-summary-cards`、`runtime-device-table`。
+- Vite dev server 使用 5179 完成 smoke check；用于 smoke check 的 5179 dev server 已停止。
+
+## Phase 8 新增文件
+
+- `collector-desktop/src/views/diagnostic/DiagnosticView.vue`
+- `collector-desktop/src/features/diagnostic/components/DiagnosticDetailPanel.vue`
+- `collector-desktop/src/features/diagnostic/components/DeviceRuntimePanel.vue`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-detail-utils.ts`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-detail-utils.test.ts`
+- `collector-desktop/src/features/diagnostic/utils/device-runtime-utils.ts`
+- `collector-desktop/src/features/diagnostic/utils/device-runtime-utils.test.ts`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-utils.ts`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-utils.test.ts`
+- `collector-boot/src/main/resources/static/desktop/assets/DiagnosticView-D9ULrdcb.css`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/DiagnosticView-BijKmlcA.js`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/device-runtime-utils-BYamEGO2.js`（`build:web` 生成）
+
+## Phase 8 修改文件
+
+- `collector-desktop/src/components/device/DeviceConfigPanel.vue`
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/route-names.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 8 删除文件
+
+- `collector-desktop/src/views/legacy/LegacyDiagnosticDetailPanel.vue`
+- `collector-desktop/src/views/legacy/LegacyDeviceRuntimePanel.vue`
+- `collector-desktop/src/views/legacy/diagnostic-detail-utils.ts`
+- `collector-desktop/src/views/legacy/diagnostic-detail-utils.test.ts`
+- `collector-desktop/src/views/legacy/device-runtime-utils.ts`
+- `collector-desktop/src/views/legacy/device-runtime-utils.test.ts`
+- `collector-desktop/src/views/ops/ops-utils.ts`
+- `collector-desktop/src/views/ops/ops-utils.test.ts`
+- `collector-desktop/src/views/ops/`（空目录删除）
+
+`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
 ## 已知问题与回归风险
 
-- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Diagnostic / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
-- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、监控指标、配置摘要、上报链路等共享或工作台状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
+- `LegacyConsoleView.vue` 仍然承载 History / Device / Collection / Workbench / Control / Shadow 等旧业务页面，是后续逐页迁移的主要对象。
+- 为避免破坏旧页面，Legacy 内部仍暂时保留 `devices/runtimeMap/selectedDeviceId`、`selectedRealtimeRows`、`configSummary` 等 Device / Collection / Workbench 仍需要的状态；具体页面迁移时再收敛到 Pinia 或页面级 composable。
 - 主 `/log` 页面继续保持 HTTP 查询语义，没有修改后端 `/api/ops/logs` 契约。
 - 主 `/alarm` 页面继续保持现有告警历史与确认 API 语义，没有修改后端历史告警或告警确认契约。
 - 主 `/network` 页面继续保持现有网络诊断 API 语义，没有修改后端 `/api/ops/network/diagnose` 契约。
 - 主 `/cloud` 页面继续保持现有云上报运行状态展示语义，没有修改后端 `/monitor/report` 契约。
-- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实上报指标填充、ACK 成功/失败数和链路风险仍依赖后端服务与运行数据环境。
-- Vite dev server 使用 5177 完成整体路由 smoke check，并在调整 `appStore.initialize()` 后使用 5178 复查 `/cloud`；用于 smoke check 的 dev server 均已停止。
+- 主 `/diagnostic` 页面继续保持现有系统诊断、运行设备状态、诊断包导出和告警/日志样本语义，没有修改后端监控、设备运行态、告警历史或日志接口契约。
+- 本地 dev server 检查在后端采集服务未启动/不可达状态下完成，验证了页面和路由可打开、空状态显示不崩溃；真实运行时指标、设备列表、ACK/Outbox、历史存储、异常 Top、最慢设备和单设备运行状态仍依赖后端服务与运行数据环境。
+- Vite dev server 对 Legacy Collection 区域仍提示 `<summary>` 非 `<details>` 子元素 warning，来源于未迁移的 Collection Legacy template，不是 DiagnosticView 新增问题。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
 ## 下一步
 
-等待确认后进入 Phase 8：迁移 Diagnostic。
+等待确认后进入 Phase 9：迁移 History。
 
-Phase 8 只迁移 Diagnostic，不自动进入 History、Device、Collection 或其它业务页面。
+Phase 9 只迁移 History，不自动进入 Device、Collection、Control、Shadow 或其它业务页面。
