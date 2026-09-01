@@ -14,7 +14,8 @@ const DiagnosticView = () => import("@/views/diagnostic/DiagnosticView.vue");
 const CollectionView = () => import("@/views/collection/CollectionView.vue");
 const DeviceListView = () => import("@/views/device/DeviceListView.vue");
 const DeviceWorkbenchView = () => import("@/views/device/DeviceWorkbenchView.vue");
-const LegacyConsoleView = () => import("@/views/legacy/LegacyConsoleView.vue");
+const ControlView = () => import("@/views/control/ControlView.vue");
+const ShadowView = () => import("@/views/shadow/ShadowView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
   {
@@ -38,8 +39,8 @@ export const appRouteDefinitions: RouteRecordRaw[] = [
       { path: "diagnostic", name: RouteNames.DIAGNOSTIC, component: DiagnosticView },
       { path: "log", name: RouteNames.LOG, component: LogView },
       { path: "network", name: RouteNames.NETWORK, component: NetworkView },
-      { path: "control", name: RouteNames.CONTROL, component: LegacyConsoleView },
-      { path: "shadow", name: RouteNames.SHADOW, component: LegacyConsoleView }
+      { path: "control", name: RouteNames.CONTROL, component: ControlView },
+      { path: "shadow", name: RouteNames.SHADOW, component: ShadowView }
     ]
   },
   { path: "/:pathMatch(.*)*", redirect: "/" }

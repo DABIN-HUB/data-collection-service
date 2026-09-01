@@ -1,16 +1,16 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-09-01 09:26:46 +0800
+更新时间：2026-09-01 10:23:51 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `737c3c9` 修改
   - `47670f6` xg
   - `e4f7add` xg
   - `16032b0` xg
   - `00f0038` xg
-  - `ebfdc3a` 修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
@@ -25,7 +25,8 @@
 - Phase 12：Device Workbench 迁移已完成并通过验证。
 - Phase 13：Local Device Editor 整理与迁移已完成并通过验证。
 - Phase 14：Point Feature 迁移与整理已完成并通过验证。
-- 下一阶段：Phase 15 Remove Legacy Host。执行前需先分析 Control、Shadow、LegacyManualShadowPanels 和 LegacyConsoleView 的迁出/删除闭环；当前不自动进入 Phase 15。
+- Phase 15：Remove Legacy Host 已完成并通过验证。
+- 下一阶段：Phase 16 清理 `legacy-console.css` / `workbench.css`。当前不自动进入 Phase 16。
 
 ## Baseline 验证结果
 
@@ -1146,8 +1147,78 @@ Phase 14 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` P
 - `workbench.css` 仍承载 PointEditor、DeviceWorkbench、LocalDeviceEditor、Control/Shadow 过渡样式，最终样式拆解留到 Legacy Host 清理阶段统一处理。
 - `/control`、`/shadow` 仍由 `LegacyConsoleView.vue` 承载，`LegacyConsoleView.vue` 未删除；Phase 15 前必须先分析 Control、Shadow、`LegacyManualShadowPanels.vue` 和 Legacy Host 的完整迁出方式。
 
+## Phase 15：Remove Legacy Host 完成内容
+
+- 新增 `src/views/control/ControlView.vue` 与 `src/views/shadow/ShadowView.vue`，`/control`、`/shadow` 已直接由独立 View 承载，不再进入 Legacy Host。
+- 新增 `src/features/device/components/DeviceOperationShell.vue`，由 `AppShell -> AppTopbar -> RouterView` 下的独立页面复用设备操作外壳；它负责 `appStore.initialize()`、`deviceStore.refresh()`、`route.query.deviceId` 单向同步、当前设备摘要、实时点位预览、运行/连接摘要、配置刷新、清理缓存、返回设备列表、运行状态、告警历史和工作台/控制/影子三路 Router 导航。
+- Control 业务从 `LegacyManualShadowPanels.vue` 拆到 `src/features/control/components/ControlPanel.vue`；`ControlView.vue` 只组合 `DeviceOperationShell active-tab="control"` 与 `ControlPanel`。
+- Control 新增 `src/features/control/utils/control-utils.ts` 与测试，覆盖单点值转换、单点 payload、批量模板、命令模板和 JSON 解析。单点写入、批量写点位、协议命令继续使用 `writeDevicePoint()`、`writeDevicePoints()`、`executeDeviceCommand()`，后端 URL 与 payload 语义未改。
+- Shadow 业务从 `LegacyManualShadowPanels.vue` 拆到 `src/features/shadow/components/ShadowPanel.vue`；`ShadowView.vue` 只组合 `DeviceOperationShell active-tab="shadow"` 与 `ShadowPanel`。
+- `shadow-utils.ts` 与测试从 `src/views/legacy/` 移到 `src/features/shadow/utils/`，保留 `ShadowHistoryRow`、`ShadowStateSummary`、`normalizeShadowHistoryRows()`、`summarizeShadowState()`，并补充 `parseShadowJson()`、`formatShadowTime()`、`compactJson()`、导出 payload 和文件名 helper 测试。
+- Shadow 继续使用 `getShadow()`、`getShadowDelta()`、`getShadowHistory()`、`updateShadowDesired()`、`clearShadowDesired()`；desired 默认 payload 仍为 `{ "desired": {} }`，提交时仍发送当前 JSON 对象本身，不改成只发送内层对象。
+- Router 已改为 `/control -> ControlView`、`/shadow -> ShadowView`，并删除 `LegacyConsoleView` lazy import；`router.test.ts` 覆盖 `/control`、`/control?deviceId=dev-1`、`/shadow`、`/shadow?deviceId=dev-1` 以及已迁移业务路由独立解析。
+- 删除 `src/views/legacy/LegacyConsoleView.vue`、`src/views/legacy/LegacyManualShadowPanels.vue`、旧 `shadow-utils.ts` / `shadow-utils.test.ts`，`src/views/legacy/` 目录已不存在。
+- 复查 `src/views/runtime/runtime-utils.ts` / `runtime-utils.test.ts` 仅剩旧模板测试用途，且其中批量模板已与当前生产 Control payload 不一致；本阶段已删除 `src/views/runtime/`，没有把过时 helper 重新引入 Control。
+- 本阶段未重写 `DeviceWorkbenchView.vue`、`DeviceListView.vue`、`PointEditor.vue`、`LocalDeviceEditor.vue`，未修改后端、Electron 和 CSS 主体；`legacy-console.css` 与 `workbench.css` 按 Phase 16 之前的共享样式继续保留。
+
+## Phase 15 验证结果
+
+执行时间：2026-09-01 10:22-10:23，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 37 个测试文件、206 个测试通过；新增 `control-utils.test.ts`，迁移后 `shadow-utils.test.ts` 继续通过，Router 测试覆盖 Control/Shadow 独立 View |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过，生成独立 `ControlView`、`ShadowView` 与 `DeviceOperationShell` chunk |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 47 |
+| `git diff --check` | 通过 | exit code 0；仅有 Git 对 Web 构建产物 LF/CRLF 的工作区换行提示 |
+
+本阶段 Headless Chrome/CDP smoke 使用本地 mock 采集服务验证以下页面和交互：`/device`、`/device/workbench?deviceId=dev-1`、`/control?deviceId=dev-1`、`/shadow?deviceId=dev-1`、`/diagnostic?deviceId=dev-1`、`/alarm?deviceId=dev-1`、`/dashboard`、`/realtime`、`/history`、`/collect`、`/cloud`、`/network`、`/log`。其中 Control 覆盖 STRING / BOOLEAN / INT / FLOAT / DOUBLE 单点写入、批量模板、非法 JSON 防崩溃、批量写入、命令模板和协议命令；Shadow 覆盖读取全部、读取影子、读取 delta、history limit、读取历史、提交 desired、清理 desired；三路导航覆盖 Workbench -> Control -> Shadow -> Workbench -> Shadow -> Control -> Device List，`deviceId=dev-1` 未丢失。
+
+## Phase 15 文件变化
+
+新增：
+
+- `collector-desktop/src/views/control/ControlView.vue`
+- `collector-desktop/src/views/shadow/ShadowView.vue`
+- `collector-desktop/src/features/device/components/DeviceOperationShell.vue`
+- `collector-desktop/src/features/control/components/ControlPanel.vue`
+- `collector-desktop/src/features/control/utils/control-utils.ts`
+- `collector-desktop/src/features/control/utils/control-utils.test.ts`
+- `collector-desktop/src/features/shadow/components/ShadowPanel.vue`
+
+移动：
+
+- `collector-desktop/src/views/legacy/shadow-utils.ts` -> `collector-desktop/src/features/shadow/utils/shadow-utils.ts`
+- `collector-desktop/src/views/legacy/shadow-utils.test.ts` -> `collector-desktop/src/features/shadow/utils/shadow-utils.test.ts`
+
+修改：
+
+- `collector-desktop/src/router/route-definitions.ts`
+- `collector-desktop/src/router/router.test.ts`
+- `collector-desktop/scripts/workbench-layout-contract.test.mjs`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+删除：
+
+- `collector-desktop/src/views/legacy/LegacyConsoleView.vue`
+- `collector-desktop/src/views/legacy/LegacyManualShadowPanels.vue`
+- `collector-desktop/src/views/runtime/runtime-utils.ts`
+- `collector-desktop/src/views/runtime/runtime-utils.test.ts`
+- `collector-desktop/src/views/legacy/` 空目录
+- `collector-desktop/src/views/runtime/` 空目录
+
+## Phase 15 已知问题与回归风险
+
+- 本阶段 smoke 使用本地 mock 采集服务验证前端页面和请求 payload；真实设备、真实协议命令、真实 Shadow desired/delta/history 行为仍需真实后端与设备环境联调。
+- `DeviceWorkbenchView.vue` 暂未接入 `DeviceOperationShell`，避免扩大 Phase 12 已验证工作台的改动范围；目前 Shell 只服务 Control/Shadow。
+- `legacy-console.css` 与 `workbench.css` 仍保留共享样式，Phase 16 需要基于实际 selector 使用情况系统化清理，不能直接按文件名删除。
+- 搜索 `runtime-utils` 仍会命中 `features/diagnostic/utils/device-runtime-utils.ts`，这是诊断 feature 的独立 helper，不是已删除的 `src/views/runtime/runtime-utils.ts`。
+
 ## 下一步
 
-等待确认后进入 Phase 15：Remove Legacy Host。
+等待确认后进入 Phase 16：清理 `legacy-console.css` / `workbench.css`。
 
-Phase 15 执行前需要先分析 Control / Shadow / `LegacyManualShadowPanels.vue` / `LegacyConsoleView.vue` 的拆分、路由接管、共享状态和最终删除闭环；当前不自动执行 Phase 15。
+Phase 16 执行前需要先统计 `legacy-console.css` / `workbench.css` 中仍被已迁页面复用的 selector，区分全局共享样式、设备操作工作台样式、已死亡 Legacy Host 样式和页面专属样式；当前不自动执行 Phase 16。

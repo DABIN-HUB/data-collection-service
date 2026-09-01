@@ -74,6 +74,14 @@ describe("router", () => {
     expect(String(childRoute("device/workbench")?.component)).toContain("DeviceWorkbenchView.vue");
   });
 
+  it("control 直接路由到独立 ControlView", () => {
+    expect(String(childRoute("control")?.component)).toContain("ControlView.vue");
+  });
+
+  it("shadow 直接路由到独立 ShadowView", () => {
+    expect(String(childRoute("shadow")?.component)).toContain("ShadowView.vue");
+  });
+
   it("network route query 可以正常 resolve", () => {
     const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
     const resolved = router.resolve("/network?target=127.0.0.1&port=502");
@@ -117,22 +125,25 @@ describe("router", () => {
     expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
   });
 
-  it("control/shadow route query 仍进入 LegacyConsoleView", () => {
+  it("control/shadow route query 进入独立设备操作页面", () => {
     const router = createRouter({ history: createMemoryHistory(), routes: appRouteDefinitions });
-    for (const target of ["/control?deviceId=dev-1", "/shadow?deviceId=dev-1"]) {
-      const resolved = router.resolve(target);
-      expect(String(resolved.matched.at(-1)?.components?.default)).toContain("LegacyConsoleView.vue");
-      expect(resolved.query).toMatchObject({ deviceId: "dev-1" });
-    }
+    const controlResolved = router.resolve("/control?deviceId=dev-1");
+    expect(controlResolved.name).toBe(RouteNames.CONTROL);
+    expect(String(controlResolved.matched.at(-1)?.components?.default)).toContain("ControlView.vue");
+    expect(controlResolved.query).toMatchObject({ deviceId: "dev-1" });
+
+    const shadowResolved = router.resolve("/shadow?deviceId=dev-1");
+    expect(shadowResolved.name).toBe(RouteNames.SHADOW);
+    expect(String(shadowResolved.matched.at(-1)?.components?.default)).toContain("ShadowView.vue");
+    expect(shadowResolved.query).toMatchObject({ deviceId: "dev-1" });
   });
 
-  it("其它未迁移页面仍保持 LegacyConsoleView 过渡状态", () => {
-    for (const path of ["control", "shadow"]) {
-      expect(String(childRoute(path)?.component)).toContain("LegacyConsoleView.vue");
-    }
+  it("Router 中不再保留旧宿主业务路由", () => {
+    const serializedRoutes = JSON.stringify(appRouteDefinitions, (_key, value) => typeof value === "function" ? String(value) : value);
+    expect(serializedRoutes).not.toContain(["views", "legacy"].join("/"));
   });
 
-  it("为 Control/Shadow 过渡宿主提供 route 到分区的单向映射", () => {
+  it("为设备操作三分区提供 route 到分区的单向映射", () => {
     expect(resolveWorkbenchRouteTab("/control")).toBe("control");
     expect(resolveWorkbenchRouteTab("/shadow")).toBe("shadow");
     expect(resolveWorkbenchRouteTab("/device/workbench")).toBeNull();

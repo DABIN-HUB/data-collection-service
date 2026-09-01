@@ -1,8 +1,11 @@
 export interface ShadowHistoryRow {
   timestamp?: number | string;
   time?: number | string;
+  createdAt?: number | string;
+  updateTime?: number | string;
   version?: number | string;
   operation?: string;
+  type?: string;
   [key: string]: unknown;
 }
 
@@ -14,6 +17,15 @@ export interface ShadowStateSummary {
   currentText: string;
   desiredText: string;
   deltaText: string;
+}
+
+export interface ShadowExportPayload {
+  deviceId: string;
+  generatedAt: string;
+  current: unknown;
+  desired: unknown;
+  delta: unknown;
+  history: ShadowHistoryRow[];
 }
 
 export function normalizeShadowHistoryRows(response: unknown): ShadowHistoryRow[] {
@@ -30,6 +42,54 @@ export function summarizeShadowState(current: unknown, desired: unknown, delta: 
     desiredText: `${countRecordKeys(extractShadowRecord(desired))} 项`,
     deltaText: `${countRecordKeys(extractShadowRecord(delta))} 项`
   };
+}
+
+export function parseShadowJson(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { raw: text };
+  }
+}
+
+export function parseShadowJsonOrThrow<T = unknown>(text: string, label: string): T {
+  try {
+    return JSON.parse(text || "{}") as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "JSON 解析失败";
+    throw new Error(`${label} 格式错误：${message}`);
+  }
+}
+
+export function formatShadowTime(row: ShadowHistoryRow): string {
+  const raw = row.timestamp || row.time || row.createdAt || row.updateTime;
+  if (!raw) {
+    return "-";
+  }
+  if (typeof raw !== "string" && typeof raw !== "number") {
+    return String(raw);
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleString();
+}
+
+export function compactJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+export function buildShadowExportPayload(deviceId: string, current: unknown, desired: unknown, delta: unknown, history: ShadowHistoryRow[], generatedAt = new Date().toISOString()): ShadowExportPayload {
+  return {
+    deviceId,
+    generatedAt,
+    current,
+    desired,
+    delta,
+    history
+  };
+}
+
+export function buildShadowExportFilename(deviceId: string, generatedAt = new Date().toISOString()): string {
+  return `collector-shadow-${deviceId}-${generatedAt.replace(/[:.]/g, "-")}.json`;
 }
 
 function extractRows(value: unknown, keys: string[]): unknown[] {

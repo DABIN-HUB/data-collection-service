@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const workbenchCss = readFileSync(new URL("../src/styles/workbench.css", import.meta.url), "utf8");
-const legacyConsoleView = readFileSync(new URL("../src/views/legacy/LegacyConsoleView.vue", import.meta.url), "utf8");
+const deviceOperationShell = readFileSync(new URL("../src/features/device/components/DeviceOperationShell.vue", import.meta.url), "utf8");
 const deviceConfigPanel = readFileSync(new URL("../src/components/device/DeviceConfigPanel.vue", import.meta.url), "utf8");
 const protocolDynamicForm = readFileSync(new URL("../src/components/protocol/ProtocolDynamicForm.vue", import.meta.url), "utf8");
 const alarmTablePanel = readFileSync(new URL("../src/components/alarm/AlarmTablePanel.vue", import.meta.url), "utf8");
 const logPanel = readFileSync(new URL("../src/components/log/LogPanel.vue", import.meta.url), "utf8");
-const manualShadowPanels = readFileSync(new URL("../src/views/legacy/LegacyManualShadowPanels.vue", import.meta.url), "utf8");
+const controlPanel = readFileSync(new URL("../src/features/control/components/ControlPanel.vue", import.meta.url), "utf8");
+const shadowPanel = readFileSync(new URL("../src/features/shadow/components/ShadowPanel.vue", import.meta.url), "utf8");
 
 function expectRuleContains(selector, declarations) {
   let selectorIndex = workbenchCss.indexOf(selector);
@@ -43,21 +44,23 @@ describe("本地临时设备点位建模布局", () => {
 
 describe("设备操作工作台布局", () => {
   it("设备管理进入的三页工作台应复用新增设备编辑器骨架", () => {
-    expect(legacyConsoleView).toContain('id="deviceOperationPanel"');
-    expect(legacyConsoleView).toContain('class="local-editor local-device-panel local-device-web-dialog device-operation-panel"');
-    expect(legacyConsoleView).toContain('class="local-editor-title"');
-    expect(legacyConsoleView).toContain('class="local-editor-tabs"');
-    expect(legacyConsoleView).toContain('class="local-editor-tab"');
-    expect(legacyConsoleView).toContain('class="local-editor-layout"');
-    expect(legacyConsoleView).toContain('class="local-editor-rail device-operation-rail"');
-    expect(legacyConsoleView).toContain('class="local-editor-body device-operation-body"');
+    expect(deviceOperationShell).toContain('id="deviceOperationPanel"');
+    expect(deviceOperationShell).toContain('class="local-editor local-device-panel local-device-web-dialog device-operation-panel"');
+    expect(deviceOperationShell).toContain('class="local-editor-title"');
+    expect(deviceOperationShell).toContain('class="local-editor-tabs"');
+    expect(deviceOperationShell).toContain('class="local-editor-tab"');
+    expect(deviceOperationShell).toContain('class="local-editor-layout"');
+    expect(deviceOperationShell).toContain('class="local-editor-rail device-operation-rail"');
+    expect(deviceOperationShell).toContain('class="local-editor-body device-operation-body"');
   });
 
   it("配置、控制和影子内容应使用统一的本地工作台卡片", () => {
     expect(deviceConfigPanel).toContain('class="local-editor-pane device-config-workbench-pane"');
     expect(deviceConfigPanel).toContain("local-section-card");
-    expect(manualShadowPanels).toContain('class="local-editor-pane manual-shadow-pane"');
-    expect(manualShadowPanels).toContain("local-section-card");
+    expect(controlPanel).toContain('class="local-editor-pane manual-shadow-pane"');
+    expect(controlPanel).toContain("local-section-card");
+    expect(shadowPanel).toContain('class="local-editor-pane manual-shadow-pane"');
+    expect(shadowPanel).toContain("local-section-card");
   });
 
   it("设备操作工作台样式应声明与新增设备一致的三段式布局", () => {
