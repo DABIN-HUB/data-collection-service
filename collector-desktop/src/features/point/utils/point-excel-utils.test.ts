@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_POINT_IMPORT_ROWS, MAX_POINT_IMPORT_SIZE_BYTES, parsePointCsv, serializePointCsv, validatePointImportFile } from "./point-excel-utils";
+import { MAX_POINT_IMPORT_ROWS, MAX_POINT_IMPORT_SIZE_BYTES, parsePointCsv, serializePointCsv, validatePointImportFile } from "@/features/point/utils/point-excel-utils";
 import type { DataPoint } from "@/types/point";
 
 describe("point-excel-utils", () => {

@@ -1,4 +1,4 @@
-import { normalizePointRows } from "./point-editor-utils";
+import { normalizePointRows } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
 
 export const MAX_POINT_IMPORT_SIZE_BYTES = 1024 * 1024;

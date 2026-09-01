@@ -49,7 +49,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 
-import type { PointBatchEditPayload } from "./point-editor-utils";
+import type { PointBatchEditPayload } from "../utils/point-editor-utils";
 
 const props = defineProps<{
   modelValue: boolean;

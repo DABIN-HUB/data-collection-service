@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 
 import { getDevicePointConfig, saveDevicePointConfig } from "@/api/point.api";
-import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/components/point/point-editor-utils";
+import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
 
 interface PointState {

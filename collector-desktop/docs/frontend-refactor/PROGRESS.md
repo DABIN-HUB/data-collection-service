@@ -1,16 +1,16 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-08-31 14:31:10 +0800
+更新时间：2026-09-01 09:26:46 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `47670f6` xg
   - `e4f7add` xg
   - `16032b0` xg
   - `00f0038` xg
   - `ebfdc3a` 修改
-  - `46d7bb6` 修改
 - Phase 1：已完成并通过验证。
 - Phase 2：Dashboard 迁移已完成并通过验证。
 - Phase 3：Realtime 迁移已完成并通过验证。
@@ -24,7 +24,8 @@
 - Phase 11：Device List 迁移已完成并通过验证。
 - Phase 12：Device Workbench 迁移已完成并通过验证。
 - Phase 13：Local Device Editor 整理与迁移已完成并通过验证。
-- 下一阶段：Phase 14 迁移 Point Feature。
+- Phase 14：Point Feature 迁移与整理已完成并通过验证。
+- 下一阶段：Phase 15 Remove Legacy Host。执行前需先分析 Control、Shadow、LegacyManualShadowPanels 和 LegacyConsoleView 的迁出/删除闭环；当前不自动进入 Phase 15。
 
 ## Baseline 验证结果
 
@@ -1049,8 +1050,104 @@ Phase 13 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` P
 - `workbench.css` 中同时服务 DeviceWorkbench、Legacy Control、Legacy Shadow、DeviceConfigPanel、ManualShadowPanels、LocalDeviceEditor 的共享样式仍暂时保留为全局样式，未复制到新 View；等 Control/Shadow 迁出和最终样式阶段再统一拆解。
 - Web 静态产物 hash 因 `build:web` 更新，属于验证命令产生的预期变更。
 
+## Phase 13 后续说明
+
+Phase 13 完成后已按确认进入 Phase 14。本段保留为历史说明；Control、Shadow 和最终 Legacy Host 清理仍未在 Phase 13 中执行。
+
+## Phase 14：Point Feature 迁移与整理完成内容
+
+- `src/components/point/PointEditor.vue` 已正式移动到 `src/features/point/components/PointEditor.vue`，旧路径删除；`DeviceConfigPanel.vue` 的 import 已统一改为 `@/features/point/components/PointEditor.vue`。
+- `src/components/point/PointBatchEditDialog.vue` 已移动到 `src/features/point/components/PointBatchEditDialog.vue`，继续保持 `modelValue`、`selectedCount`、`apply(payload)` 契约；批量编辑字段仍为 `alarmEnabled`、`dataType`、`readWrite`、`unit`、`baseCollectionInterval`。
+- `src/components/point/PointGenerateDialog.vue` 已移动到 `src/features/point/components/PointGenerateDialog.vue`，继续保持数量、起始地址、地址步长、编码前缀、名称前缀、数据类型、读写类型和 `generate(options)` 契约；没有新增 S7、OPC UA、IEC104 等协议地址递增规则。
+- `src/components/point/point-editor-utils.ts` 与测试已移动到 `src/features/point/utils/point-editor-utils.ts` / `.test.ts`，保留 `BuildIncrementalPointsOptions`、`PointBatchEditPayload`、`PointImportPreview`、`PointLocationTarget`、`PointExtraModel`，以及 `buildIncrementalPoints()`、`applyPointBatchEdit()`、`buildPointImportPreview()`、`buildPointLocationTarget()`、`normalizePointRows()`、`buildPointExtraModel()`、`applyPointExtraModel()`、`mergePointRuntime()`、`formatJsonForTextarea()`、`parseJsonTextarea()`。
+- `src/components/point/point-excel-utils.ts` 与测试已移动到 `src/features/point/utils/point-excel-utils.ts` / `.test.ts`。文件名暂不改为 csv-utils，避免本阶段扩大 rename 范围；实际行为仍是 CSV：只支持 `.csv`、最大 1 MB、最大 2000 行，继续支持既有中文表头。
+- `src/stores/point.store.ts` 继续留在共享 `src/stores/`，但 import 已改为依赖 `@/features/point/utils/point-editor-utils`；没有新增 `features/point/point.store.ts`、`point-editor.store.ts` 或 `pointDraftStore`。
+- 新增 `src/stores/point.store.test.ts`，覆盖 `addEmptyPoint()`、`appendGeneratedPoints()`、`replacePoints()`、`applyBatch()`、`removeSelected()`、`setSelectedIds()`，验证 Store 继续通过迁移后的 Point Feature utils 执行轻量 actions。
+- `PointEditor.vue` 仍只接收 `deviceId`、`protocol`、`protocolCode` props，不直接使用 `useDeviceStore()`、`useProtocolStore()` 或 `useRouter()`；设备和协议上下文继续由 `DeviceConfigPanel.vue` 传入。
+- `PointEditor.vue` 继续使用 `usePointStore()` 作为持久化点位编辑唯一状态源：点位数组来自 `pointStore.getPoints(deviceId)`，选中项来自 `pointStore.getSelectedIds(deviceId)`，保存仍调用 `pointStore.save(deviceId)` -> `saveDevicePointConfig()`。组件本地只保留 `keyword`、`selectedPointId`、`detailTab`、Dialog 可见性、JSON textarea、realtimeRows 等 UI 临时状态。
+- `PointEditor.vue` 的实时数据加载已收敛为 `getDeviceRealtimeData(deviceId)` -> `normalizeRealtimeRows(response, deviceId)` -> `realtimeRows`，不再使用 `response.points || response.data || response.values || []` 第三套兼容逻辑；`mergePointRuntime()` 仍按 `pointId`、`pointCode`、`address` 匹配实时点位。
+- `PointEditor.vue` 原有新增点位、批量生成、批量编辑、批量删除、搜索、CSV 导入、CSV 导出、实时值刷新、配置刷新、点位保存、多选、当前点位详情、基础信息、数据处理、上报参数、协议扩展、告警、additionalConfig JSON、alarmRule JSON、当前值、质量、处理耗时、查看实时、查看历史、导入预览、重复编码提示、重复地址提示均保留。
+- CSV Import Preview 流程保持：选择文件 -> `validatePointImportFile()` -> `parsePointCsv()` -> `buildPointImportPreview()` -> Preview Dialog -> 确认导入 -> `pointStore.replacePoints()`；重复编码/地址仍是 warning，不升级为阻断 error。
+- 动态协议字段语义保持：`ProtocolSchema.pointFields` 继续通过 `buildPointExtraModel()` / `applyPointExtraModel()` 映射到 `additionalConfig`，没有修改 Protocol Schema 或 Point API。
+- `open-history` / `open-realtime` emit 契约保持，目标仍由 `buildPointLocationTarget()` 生成，路由跳转仍由 `DeviceConfigPanel` -> `DeviceWorkbenchView` 承接，Point Feature 不直接持有 Router。
+- `LocalDeviceEditor.vue` 未嵌入或复用 `<PointEditor />`，也未改用 `usePointStore()`；本地设备草稿点位仍是 LocalDevicePayload 的一部分，继续随 device / connection / cloudTarget 一起保存，避免尚未保存的新设备污染全局点位状态或触发 point API。
+- 从 Phase 13 的 `features/device/utils/local-device-editor-utils.ts` 中迁出通用点位草稿 helper 到 `src/features/point/utils/point-draft-utils.ts` / `.test.ts`：`alarmRules()`、`serializeAlarmRules()`、`parsePointsJson()`、`statusLabel()`、`parseBooleanOption()`、`parseFieldValue()`、`toNumber()`、`findDuplicatePointCode()`、`createUniqueCode()`、`buildReadonlyItems()` 以及相关轻量类型。迁移原因是这些能力是点位编辑通用数据规则，不依赖 Local Device Draft 的保存事务。
+- Device 专属 Draft helper 继续留在 `features/device/utils/local-device-editor-utils.ts`：`normalizeInitialPoints()`、`defaultPointTemplate()`、`defaultAddress()`、`normalizeCloudTarget()`、`sanitizePointForSave()`、`removeDeprecatedCloudIdentityConfig()`、`cloudTargetSummary()`、`cloudPointStatus()`、`firstPointValue()`、`isOpcUaProtocol()`、`hasValue()`、`isPlainObject()`、`cloneData()`。保留原因是它们与 Local Device 草稿初始化、cloudTarget/adaptive、保存前清理和旧 Web 兼容默认值强相关。
+- CSS 本 Phase 没有大规模搬迁：`point-toolbar`、`point-workbench-grid`、`point-table-panel`、`point-detail-panel`、`point-detail-tabs`、`point-json-textarea`、`point-import-preview-*` 等仍在 `workbench.css` 中；原因是其中部分选择器仍与 DeviceWorkbench、LocalDeviceEditor 或全局 workbench 结构共用，避免复制一套 scoped CSS 与全局 CSS 并存。后续 Control/Shadow/Legacy Host 清理阶段再统一拆解。
+- 代码检查确认 `src/components/point/` 已无旧文件且目录不存在；`components/point`、`@/components/point`、`./point-editor-utils`、`./point-excel-utils` 搜索均为 0；`PointEditor.vue` 内 `useDeviceStore()`、`useProtocolStore()`、`useRouter()` 搜索均为 0；`LocalDeviceEditor.vue` 内 `usePointStore()` 搜索为 0。
+- 代码检查确认 `/dashboard`、`/realtime`、`/history`、`/alarm`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/device`、`/device/workbench` 仍解析到独立 View；`/control`、`/shadow` 仍解析到 `LegacyConsoleView.vue`。
+
+## Phase 14 验证结果
+
+执行时间：2026-09-01 08:53-09:26，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 37 个测试文件、200 个测试通过；包含迁移后的 point utils、point draft utils、point excel/csv utils、point.store 测试 |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过 |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 46 |
+| `git diff --check` | 通过 | exit code 0；最终无空白错误 |
+
+Phase 14 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` PURE annotation warning；Element Plus vendor chunk 超过 500 kB。这些不是本阶段新增失败。
+
+## Phase 14 路由与页面检查结果
+
+- `/device`：独立 `DeviceListView.vue` 保持；LocalDeviceEditor “新增本地设备”入口 smoke 通过。
+- `/device/workbench?deviceId=dev-1`：独立 `DeviceWorkbenchView.vue` 保持；点击“编辑点位”后 `PointEditor.vue` 正常显示。
+- `/dashboard`：独立 `DashboardView.vue` 保持；LocalDeviceEditor “新增本地设备”入口回归 smoke 通过。
+- `/collect`：独立 `CollectionView.vue` 保持；协议列表“配置设备”入口回归 smoke 通过。
+- `/control?deviceId=dev-1`：仍由 `LegacyConsoleView.vue` 承载，页面显示“手动控制”。本 Phase 未迁移 Control。
+- `/shadow?deviceId=dev-1`：仍由 `LegacyConsoleView.vue` 承载，页面显示“设备影子”。本 Phase 未迁移 Shadow。
+- PointEditor smoke 使用本地 mock 采集服务验证：点位加载、新增点位、批量生成、多选、批量编辑、CSV 导入、导入预览、重复编码/地址 warning、确认导入、CSV 导出、刷新实时值、保存、协议扩展字段、additionalConfig JSON、alarmRule JSON、查看实时、查看历史均可走通。
+- PointEditor 后端失败态 smoke 使用 `dev-fail` mock 设备验证：点位配置接口和实时数据接口返回失败时，编辑器显示“配置加载失败”“实时数据加载失败”，页面仍保持可显示和可操作的空/失败状态。
+- LocalDeviceEditor 三入口回归 smoke：`/device`、`/collect`、`/dashboard` 均能打开四步编辑器，并验证点位新增/复制/删除、告警规则、云配置、JSON 高级入口无回归。
+
+## Phase 14 新增文件
+
+- `collector-desktop/src/features/point/utils/point-draft-utils.ts`
+- `collector-desktop/src/features/point/utils/point-draft-utils.test.ts`
+- `collector-desktop/src/stores/point.store.test.ts`
+
+## Phase 14 修改 / 移动文件
+
+- `collector-desktop/src/features/point/components/PointEditor.vue`（从 `src/components/point/PointEditor.vue` 移动）
+- `collector-desktop/src/features/point/components/PointBatchEditDialog.vue`（从 `src/components/point/PointBatchEditDialog.vue` 移动）
+- `collector-desktop/src/features/point/components/PointGenerateDialog.vue`（从 `src/components/point/PointGenerateDialog.vue` 移动）
+- `collector-desktop/src/features/point/utils/point-editor-utils.ts`（从 `src/components/point/point-editor-utils.ts` 移动）
+- `collector-desktop/src/features/point/utils/point-editor-utils.test.ts`（从 `src/components/point/point-editor-utils.test.ts` 移动）
+- `collector-desktop/src/features/point/utils/point-excel-utils.ts`（从 `src/components/point/point-excel-utils.ts` 移动）
+- `collector-desktop/src/features/point/utils/point-excel-utils.test.ts`（从 `src/components/point/point-excel-utils.test.ts` 移动）
+- `collector-desktop/src/components/device/DeviceConfigPanel.vue`
+- `collector-desktop/src/features/device/components/LocalDeviceEditor.vue`
+- `collector-desktop/src/features/device/utils/local-device-editor-utils.ts`
+- `collector-desktop/src/features/device/utils/local-device-editor-utils.test.ts`
+- `collector-desktop/src/stores/point.store.ts`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+## Phase 14 删除文件
+
+- `collector-desktop/src/components/point/PointEditor.vue`
+- `collector-desktop/src/components/point/PointBatchEditDialog.vue`
+- `collector-desktop/src/components/point/PointGenerateDialog.vue`
+- `collector-desktop/src/components/point/point-editor-utils.ts`
+- `collector-desktop/src/components/point/point-editor-utils.test.ts`
+- `collector-desktop/src/components/point/point-excel-utils.ts`
+- `collector-desktop/src/components/point/point-excel-utils.test.ts`
+
+`src/components/point/` 目录为空后已不存在。`build:web` 同步时删除上一版 Web 静态构建 hash 文件，新增本次构建对应 hash 文件；这些都是验证命令产生的预期变更。
+
+## Phase 14 已知问题与回归风险
+
+- 本阶段 smoke 使用本地 mock 采集服务和 Headless Chrome/CDP 验证前端流程；真实设备、真实协议连接、真实点位保存后的设备行为、真实历史/实时数据仍依赖实际后端与设备环境。
+- PointEditor 模板仍较大，本阶段没有拆 `PointBasicTab`、`PointDataTab`、`PointReportTab`、`PointProtocolTab`、`PointAlarmTab`，避免产生大量双向绑定 props；可选 `PointImportPreviewDialog` 也未拆，因为当前内联预览逻辑仍足够清晰且不影响 feature 目录边界。
+- `workbench.css` 仍承载 PointEditor、DeviceWorkbench、LocalDeviceEditor、Control/Shadow 过渡样式，最终样式拆解留到 Legacy Host 清理阶段统一处理。
+- `/control`、`/shadow` 仍由 `LegacyConsoleView.vue` 承载，`LegacyConsoleView.vue` 未删除；Phase 15 前必须先分析 Control、Shadow、`LegacyManualShadowPanels.vue` 和 Legacy Host 的完整迁出方式。
+
 ## 下一步
 
-等待确认后进入 Phase 14：迁移 Point Feature。
+等待确认后进入 Phase 15：Remove Legacy Host。
 
-Phase 14 只处理 Point Feature；不自动进入 Control、Shadow 或最终 Legacy Host 清理。
+Phase 15 执行前需要先分析 Control / Shadow / `LegacyManualShadowPanels.vue` / `LegacyConsoleView.vue` 的拆分、路由接管、共享状态和最终删除闭环；当前不自动执行 Phase 15。

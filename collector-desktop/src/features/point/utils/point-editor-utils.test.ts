@@ -11,7 +11,7 @@ import {
   mergePointRuntime,
   normalizePointRows,
   parseJsonTextarea
-} from "./point-editor-utils";
+} from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
 
 describe("point-editor-utils", () => {

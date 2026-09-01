@@ -234,9 +234,10 @@ import { Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 import { getDeviceRealtimeData } from "@/api/data.api";
+import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import PointBatchEditDialog from "./PointBatchEditDialog.vue";
 import PointGenerateDialog from "./PointGenerateDialog.vue";
-import { downloadPointCsv, parsePointCsv, validatePointImportFile } from "./point-excel-utils";
+import { downloadPointCsv, parsePointCsv, validatePointImportFile } from "../utils/point-excel-utils";
 import {
   applyPointExtraModel,
   buildPointExtraModel,
@@ -248,7 +249,7 @@ import {
   type PointExtraModel,
   type PointImportPreview,
   type PointLocationTarget
-} from "./point-editor-utils";
+} from "../utils/point-editor-utils";
 import { usePointStore } from "@/stores/point.store";
 import type { RealtimePointRow } from "@/types/monitor";
 import type { DataPoint } from "@/types/point";
@@ -346,7 +347,7 @@ async function loadRealtime() {
   realtimeError.value = "";
   try {
     const response = await getDeviceRealtimeData(props.deviceId);
-    realtimeRows.value = response.points || response.data || response.values || [];
+    realtimeRows.value = normalizeRealtimeRows(response, props.deviceId);
   } catch (error) {
     realtimeError.value = error instanceof Error ? error.message : "实时数据加载失败";
   } finally {

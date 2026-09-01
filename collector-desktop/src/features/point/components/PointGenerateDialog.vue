@@ -35,7 +35,7 @@
 <script setup lang="ts">
 import { reactive } from "vue";
 
-import type { BuildIncrementalPointsOptions } from "./point-editor-utils";
+import type { BuildIncrementalPointsOptions } from "../utils/point-editor-utils";
 
 defineProps<{
   modelValue: boolean;

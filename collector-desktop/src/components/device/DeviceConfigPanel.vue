@@ -200,7 +200,7 @@ import { getProtocol } from "@/api/protocol.api";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
 import LogPanel from "@/components/log/LogPanel.vue";
-import PointEditor from "@/components/point/PointEditor.vue";
+import PointEditor from "@/features/point/components/PointEditor.vue";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { resolveDeviceStatus } from "@/stores/device.store";
