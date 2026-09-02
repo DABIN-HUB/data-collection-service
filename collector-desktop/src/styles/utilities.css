@@ -1,0 +1,44 @@
+/* 小型 utility：禁止在这里放复杂页面布局或 feature 专属规则。 */
+.inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.text-muted {
+  color: var(--console-text-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hidden,
+.hidden-file-input {
+  display: none;
+}
+
+.wide {
+  width: 100%;
+}
+
+.compact-select {
+  width: 240px;
+}
+
+.mini-filter {
+  width: 132px;
+}
+
+.wide-select {
+  width: 300px;
+}

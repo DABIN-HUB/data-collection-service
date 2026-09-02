@@ -179,3 +179,88 @@ function formatTime(value: unknown): string {
 onMounted(load);
 watch(() => [props.deviceId, level.value, timeRange.value?.[0]?.getTime(), timeRange.value?.[1]?.getTime()], load);
 </script>
+
+<style scoped>
+.alarm-workbench,
+.monitor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.panel-toolbar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.table-actions,
+.alarm-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.alarm-filter-bar :deep(.el-date-editor) {
+  flex: 0 0 360px;
+  width: 360px;
+}
+
+.alarm-stat-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.alarm-stat-card {
+  display: grid;
+  min-height: 66px;
+  padding: 9px 10px;
+  gap: 3px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-panel);
+}
+
+.alarm-stat-card span,
+.alarm-stat-card small {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.alarm-stat-card strong {
+  color: var(--console-text-primary);
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.alarm-stat-card.danger strong {
+  color: #f87171;
+}
+
+.alarm-stat-card.warning strong {
+  color: #fb923c;
+}
+
+.alarm-stat-card.success strong {
+  color: #34d399;
+}
+
+@media (max-width: 1280px) {
+  .alarm-stat-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>

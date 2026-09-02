@@ -544,3 +544,254 @@ watch(() => props.deviceId, async (nextDeviceId) => {
 });
 watch(() => [selectedPoint.value?.pointId, pointFields.value.length], () => syncDetailModels());
 </script>
+
+<style scoped>
+.point-editor,
+.point-workbench {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--console-text-secondary);
+}
+
+.point-toolbar {
+  display: flex;
+  min-height: 42px;
+  padding: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.point-toolbar-left,
+.point-toolbar-right,
+.point-detail-head-actions,
+.json-panel-actions,
+.point-import-preview-stats {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.point-toolbar-right {
+  justify-content: flex-end;
+  overflow-x: auto;
+}
+
+.point-toolbar-right :deep(.el-input) {
+  flex: 0 0 230px;
+  width: 230px;
+}
+
+.point-workbench-grid {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 10px;
+}
+
+.point-table-panel,
+.point-detail-panel,
+.point-runtime-strip {
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-bg-soft);
+}
+
+.point-table-panel,
+.point-detail-panel {
+  min-width: 0;
+  padding: 8px;
+}
+
+.point-table-meta,
+.point-detail-head p,
+.point-runtime-strip,
+.point-detail-form-grid label,
+.field-description {
+  color: var(--console-text-muted);
+}
+
+.point-table-meta {
+  display: flex;
+  min-height: 24px;
+  margin-bottom: 8px;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.point-detail-panel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 560px;
+  overflow: auto;
+}
+
+.point-detail-head {
+  display: flex;
+  min-width: 0;
+  margin-bottom: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.point-detail-head h3,
+.point-runtime-strip strong,
+.json-panel-actions span,
+.point-import-preview-head strong {
+  margin: 0;
+  color: var(--console-text-primary);
+}
+
+.point-detail-head p,
+.point-import-preview-head p {
+  margin: 3px 0 0;
+  font-size: 12px;
+}
+
+.point-runtime-strip {
+  display: flex;
+  min-height: 34px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.point-detail-tabs {
+  min-width: 0;
+}
+
+.point-detail-form-grid,
+.protocol-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.point-detail-form-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.protocol-form-grid :deep(.el-form-item) {
+  margin-bottom: 8px;
+}
+
+.protocol-form-grid :deep(.el-form-item__label) {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.json-panel-actions {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.point-json-textarea {
+  width: 100%;
+  min-height: 220px;
+  padding: 10px;
+  color: #dbeafe;
+  border: 1px solid #1e3a5f;
+  border-radius: var(--console-radius-lg);
+  background: #0f172a;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+:global(.point-import-preview-dialog.el-dialog),
+:global(.point-import-preview-dialog .el-dialog__header),
+:global(.point-import-preview-dialog .el-dialog__body),
+:global(.point-import-preview-dialog .el-dialog__footer),
+.point-import-preview-table {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border-soft);
+  background: var(--console-panel);
+}
+
+.point-import-preview-head {
+  display: flex;
+  margin-bottom: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.point-import-preview-table {
+  max-height: 430px;
+  overflow: auto;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-lg);
+}
+
+.point-import-preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.point-import-preview-table th,
+.point-import-preview-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--console-border-soft);
+  text-align: left;
+}
+
+.point-import-preview-table th {
+  color: var(--console-text-primary);
+  background: var(--console-bg-soft);
+}
+
+.point-import-preview-table td {
+  color: var(--console-text-muted);
+}
+
+@media (max-width: 1440px) {
+  .point-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .point-detail-panel {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .point-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .point-detail-form-grid,
+  .protocol-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

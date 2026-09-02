@@ -148,3 +148,42 @@ onBeforeUnmount(() => {
 watch(() => [level.value, keyword.value, limit.value], load);
 watch(autoRefresh, syncTimer);
 </script>
+
+<style scoped>
+.log-workbench,
+.monitor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.panel-toolbar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.table-actions,
+.log-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.log-filter-bar :deep(.el-date-editor) {
+  flex: 0 0 360px;
+  width: 360px;
+}
+</style>

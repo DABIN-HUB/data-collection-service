@@ -1,0 +1,231 @@
+/* Element Plus 全局覆盖：仅承接组件库根变量、Teleport 弹层和跨页面基础控件密度。 */
+:root {
+  --el-color-primary: var(--console-primary);
+  --el-color-primary-light-3: var(--console-primary-hover);
+  --el-color-primary-dark-2: var(--console-primary-active);
+  --el-bg-color: var(--console-panel);
+  --el-bg-color-overlay: var(--console-panel);
+  --el-fill-color: var(--console-bg-soft);
+  --el-fill-color-light: var(--console-bg-soft);
+  --el-fill-color-lighter: var(--console-bg-soft);
+  --el-fill-color-blank: var(--console-input-bg);
+  --el-border-color: var(--console-border-soft);
+  --el-border-color-light: var(--console-border-soft);
+  --el-border-color-lighter: rgba(45, 74, 122, 0.42);
+  --el-text-color-primary: var(--console-text-primary);
+  --el-text-color-regular: var(--console-text-secondary);
+  --el-text-color-secondary: var(--console-text-muted);
+  --el-text-color-placeholder: var(--console-text-dim);
+  --el-mask-color: rgba(2, 6, 23, 0.62);
+}
+
+.app-shell .el-button,
+.el-dialog .el-button,
+.el-message-box .el-button {
+  min-height: 30px;
+  border-radius: var(--console-radius-md);
+  box-shadow: none;
+}
+
+.app-shell .el-button:not(.el-button--primary),
+.el-dialog .el-button:not(.el-button--primary),
+.el-message-box .el-button:not(.el-button--primary) {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border);
+  background: var(--console-panel-soft);
+}
+
+.app-shell .el-button:not(.el-button--primary):hover,
+.el-dialog .el-button:not(.el-button--primary):hover,
+.el-message-box .el-button:not(.el-button--primary):hover {
+  color: var(--console-text-primary);
+  border-color: var(--console-primary-hover);
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.app-shell .el-button--primary,
+.el-dialog .el-button--primary,
+.el-message-box .el-button--primary {
+  color: #fff;
+  border-color: var(--console-primary);
+  background: var(--console-primary);
+}
+
+.app-shell .el-button--danger,
+.app-shell .el-button--danger.is-plain,
+.el-dialog .el-button--danger,
+.el-dialog .el-button--danger.is-plain {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.app-shell .el-input__wrapper,
+.app-shell .el-select__wrapper,
+.app-shell .el-input-number,
+.app-shell .el-textarea__inner,
+.app-shell .el-date-editor {
+  border-radius: var(--console-radius-md);
+  background: var(--console-input-bg);
+  box-shadow: 0 0 0 1px var(--console-input-border) inset;
+}
+
+.app-shell .el-input__wrapper:hover,
+.app-shell .el-select__wrapper:hover,
+.app-shell .el-textarea__inner:hover,
+.app-shell .el-date-editor:hover {
+  box-shadow: 0 0 0 1px var(--console-border-active) inset;
+}
+
+.app-shell .el-input__wrapper.is-focus,
+.app-shell .el-select__wrapper.is-focused,
+.app-shell .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--console-primary-hover) inset, 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.app-shell .el-input__inner,
+.app-shell .el-select__placeholder,
+.app-shell .el-textarea__inner,
+.el-popper .el-input__inner,
+.el-popper .el-select__placeholder {
+  color: var(--console-text-secondary);
+}
+
+.app-shell .el-input__inner::placeholder,
+.app-shell .el-textarea__inner::placeholder,
+.el-popper .el-input__inner::placeholder {
+  color: var(--console-text-dim);
+}
+
+.app-shell .el-tag {
+  border-radius: 999px;
+}
+
+.app-shell .el-table,
+.app-shell .runtime-table {
+  --el-table-bg-color: var(--console-panel);
+  --el-table-tr-bg-color: var(--console-panel);
+  --el-table-header-bg-color: var(--console-bg-soft);
+  --el-table-header-text-color: var(--console-text-muted);
+  --el-table-text-color: var(--console-text-secondary);
+  --el-table-border-color: var(--console-border-soft);
+  --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.12);
+  color: var(--console-text-secondary);
+  background: var(--console-panel);
+}
+
+.app-shell .el-table__inner-wrapper::before,
+.app-shell .el-table__border-left-patch,
+.app-shell .el-table__fixed-right::before,
+.app-shell .el-table__fixed::before {
+  background: var(--console-border-soft);
+}
+
+.app-shell .el-table .cell {
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.app-shell .el-table .el-table__cell {
+  padding: 6px 0;
+}
+
+.app-shell .el-pagination {
+  --el-pagination-bg-color: var(--console-panel);
+  --el-pagination-button-bg-color: var(--console-panel);
+  --el-pagination-button-disabled-bg-color: var(--console-bg-strong);
+  --el-pagination-button-disabled-color: var(--console-text-dim);
+  --el-pagination-hover-color: var(--console-primary-hover);
+  --el-pagination-text-color: var(--console-text-muted);
+  color: var(--console-text-muted);
+}
+
+.el-popper,
+.el-select-dropdown,
+.el-dropdown__popper,
+.el-picker__popper,
+.el-tooltip__popper,
+.el-popover,
+.el-dialog.device-operation-dialog,
+.point-import-preview-dialog.el-dialog,
+.el-message-box {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border-soft) !important;
+  background: var(--console-panel) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36) !important;
+}
+
+.el-select-dropdown__item,
+.el-dropdown-menu__item,
+.el-picker-panel,
+.el-picker-panel__body,
+.el-picker-panel__content,
+.el-picker-panel__footer,
+.el-date-range-picker,
+.el-date-range-picker__content,
+.el-time-panel,
+.el-time-panel__content,
+.el-time-panel__footer,
+.el-dialog.device-operation-dialog .el-dialog__body,
+.el-dialog.device-operation-dialog .el-dialog__header,
+.point-import-preview-dialog .el-dialog__header,
+.point-import-preview-dialog .el-dialog__body,
+.point-import-preview-dialog .el-dialog__footer,
+.el-message-box__content,
+.el-message-box__header {
+  color: var(--console-text-secondary);
+  background: var(--console-panel) !important;
+}
+
+.el-select-dropdown__item.hover,
+.el-select-dropdown__item:hover,
+.el-dropdown-menu__item:hover {
+  color: var(--console-text-primary);
+  background: rgba(59, 130, 246, 0.14) !important;
+}
+
+.el-select-dropdown__item.selected,
+.el-dropdown-menu__item.is-active {
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.22) !important;
+}
+
+.el-popper__arrow::before,
+.el-select-dropdown__wrap,
+.el-scrollbar__view {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border-soft) !important;
+  background: var(--console-panel) !important;
+}
+
+.el-message-box__title,
+.el-message-box__message {
+  color: var(--console-text-secondary);
+}
+
+.el-message,
+.el-notification {
+  border-color: var(--console-border-soft);
+  background: var(--console-panel);
+}
+
+.el-popper ::-webkit-scrollbar,
+.el-dialog ::-webkit-scrollbar,
+.el-message-box ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.el-popper ::-webkit-scrollbar-track,
+.el-dialog ::-webkit-scrollbar-track,
+.el-message-box ::-webkit-scrollbar-track {
+  background: var(--console-bg);
+}
+
+.el-popper ::-webkit-scrollbar-thumb,
+.el-dialog ::-webkit-scrollbar-thumb,
+.el-message-box ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.36);
+}

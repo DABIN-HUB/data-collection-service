@@ -1,7 +1,7 @@
 :root {
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
-  color: #172033;
-  background: #e9eef5;
+  color: var(--app-color-text-secondary);
+  background: var(--app-color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,6 +21,8 @@ body,
 
 body {
   overflow: hidden;
+  color: var(--app-color-text-secondary);
+  background: var(--app-color-bg);
 }
 
 button,

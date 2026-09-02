@@ -151,3 +151,118 @@ function handleControlError(error: unknown, fallback: string) {
   ElMessage.error(message || fallback);
 }
 </script>
+
+<style scoped>
+.manual-shadow-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manual-shadow-head-card {
+  display: flex;
+  min-height: 48px;
+  padding: 10px 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-panel);
+}
+
+.manual-shadow-head-card h2 {
+  margin: 0;
+  color: var(--console-text-primary);
+  font-size: 15px;
+}
+
+.manual-shadow-head-card span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.surface-grid.two {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.surface-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.surface-card-head {
+  display: flex;
+  min-height: 32px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.surface-card-head h3,
+.surface-card-head span {
+  margin: 0;
+}
+
+.surface-card-head h3 {
+  color: var(--console-text-primary);
+  font-size: 14px;
+}
+
+.surface-card-head span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.form-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+textarea {
+  width: 100%;
+  min-height: 170px;
+  padding: 10px;
+  color: #dbeafe;
+  border: 1px solid #1e3a5f;
+  border-radius: var(--console-radius-lg);
+  background: #0f172a;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.json-view {
+  min-height: 160px;
+}
+
+@media (max-width: 1280px) {
+  .surface-grid.two,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

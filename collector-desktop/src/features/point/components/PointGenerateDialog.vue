@@ -61,3 +61,27 @@ function apply() {
   emit("update:modelValue", false);
 }
 </script>
+
+<style scoped>
+.batch-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.batch-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.batch-form :deep(.el-select),
+.batch-form :deep(.el-input),
+.batch-form :deep(.el-input-number) {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .batch-form {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

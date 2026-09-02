@@ -253,3 +253,94 @@ watch(() => props.modelValue, (value) => {
   }
 }, { deep: true });
 </script>
+
+<style scoped>
+.dynamic-form {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.protocol-field-group {
+  margin-top: 0;
+}
+
+.dynamic-form > .protocol-field-group + .protocol-field-group {
+  margin-top: 0;
+}
+
+.protocol-field-group h4 {
+  display: flex;
+  margin: 0 0 8px;
+  align-items: center;
+  gap: 7px;
+  color: var(--console-text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.protocol-field-group h4::before {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--console-primary-hover);
+  content: "";
+}
+
+.protocol-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 8px 12px;
+}
+
+.protocol-field-row {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  grid-template-columns: minmax(72px, 88px) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.protocol-field-row.is-wide {
+  grid-column: 1 / -1;
+}
+
+.protocol-field-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protocol-field-required {
+  margin-left: 2px;
+  color: #fca5a5;
+}
+
+.protocol-field-control {
+  min-width: 0;
+}
+
+.protocol-field-control :deep(.el-input),
+.protocol-field-control :deep(.el-input-number),
+.protocol-field-control :deep(.el-select) {
+  width: 100%;
+}
+
+.protocol-field-control :deep(.el-switch) {
+  min-height: 32px;
+}
+
+@media (max-width: 980px) {
+  .protocol-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

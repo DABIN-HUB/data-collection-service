@@ -216,3 +216,130 @@ function handleShadowError(error: unknown, fallback: string, assign?: (message: 
   ElMessage.error(message || fallback);
 }
 </script>
+
+<style scoped>
+.manual-shadow-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manual-shadow-head-card {
+  display: flex;
+  min-height: 48px;
+  padding: 10px 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-panel);
+}
+
+.manual-shadow-head-card h2 {
+  margin: 0;
+  color: var(--console-text-primary);
+  font-size: 15px;
+}
+
+.manual-shadow-head-card span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.shadow-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shadow-summary-card {
+  display: grid;
+  min-height: 56px;
+  padding: 9px 10px;
+  gap: 3px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-panel);
+}
+
+.shadow-summary-card span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.shadow-summary-card strong {
+  overflow: hidden;
+  color: var(--console-text-primary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surface-grid.two {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.surface-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.surface-card-head,
+.inline-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inline-actions {
+  justify-content: flex-end;
+}
+
+.surface-card-head h3 {
+  margin: 0;
+  color: var(--console-text-primary);
+  font-size: 14px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 220px;
+  padding: 10px;
+  color: #dbeafe;
+  border: 1px solid #1e3a5f;
+  border-radius: var(--console-radius-lg);
+  background: #0f172a;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.shadow-history-wrap {
+  max-height: 280px;
+}
+
+@media (max-width: 1280px) {
+  .shadow-summary-grid,
+  .surface-grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .shadow-summary-grid,
+  .surface-grid.two {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -1222,3 +1222,126 @@ Phase 14 后仍存在与 baseline 一致的提示：Vite/Rollup `@vueuse/core` P
 等待确认后进入 Phase 16：清理 `legacy-console.css` / `workbench.css`。
 
 Phase 16 执行前需要先统计 `legacy-console.css` / `workbench.css` 中仍被已迁页面复用的 selector，区分全局共享样式、设备操作工作台样式、已死亡 Legacy Host 样式和页面专属样式；当前不自动执行 Phase 16。
+
+## Phase 16：CSS Migration / Cleanup 完成内容
+
+- 完成 `legacy-console.css` / `workbench.css` selector inventory，先按当前 `src/**/*.vue`、`src/**/*.ts`、`src/**/*.mjs` 引用情况区分死亡 selector、App 全局基础、共享 primitive 和 feature/component 专属规则，再开始迁移。
+- 删除 `src/styles/legacy-console.css` 与 `src/styles/workbench.css`，`main.ts` 不再导入两个历史大 CSS。
+- `main.ts` 样式入口固定为：Element Plus 原始 CSS -> `tokens.css` -> `global.css` -> `base.css` -> `element-plus.css` -> `utilities.css`。
+- `AppShell.vue` 根节点从 `shell legacy-console theme-anchor modao-exact app-shell` 收敛为 `shell app-shell`，删除 `onMounted/onBeforeUnmount` 中对 `theme-anchor`、`modao-exact` 的 body class 操作；`modal-active` 仅由 `LocalDeviceEditor` 管理弹层滚动锁定。
+- `tokens.css` 中 `--console-*`、`--exact-*` compatibility aliases 改为挂在 `:root`，不再依赖 `body.modao-exact` 才存在；本阶段没有扩大到全量变量重命名，后续新代码优先使用 `--app-*`。
+- `global.css` 只保留 `html/body/#app` 高度链路、box-sizing、body reset、字体继承和 `.dot` 状态点等真正全局 primitive。
+- 新增 `base.css`，只放跨业务页面共享的 `exact-page`、`section-heading`、toolbar、surface/card、table、badge、json、empty-state、form-grid 等基础语义样式。
+- 新增 `element-plus.css`，承接 Element Plus 变量、表单/表格/弹层/Dialog/MessageBox/Popper/DatePicker 等必要全局覆盖，Teleport 样式不放入普通 scoped 规则。
+- 新增 `utilities.css`，只保留 `inline-actions`、`text-muted`、`hidden`、`sr-only` 等小型 utility，避免形成新的 `workbench.css`。
+- `AppShell` 主布局样式迁入 `AppShell.vue` scoped style；`AppSidebar` 导航、品牌、分组、底部状态和令牌抽屉样式迁入 `AppSidebar.vue`；`AppTopbar` 仅保留自身状态条样式。
+- `DeviceOperationShell.vue` 作为 Workbench / Control / Shadow 公共外壳，拥有 `device-operation-*`、外壳标题、三段 tab、左侧 rail、设备信息与外壳 body 样式。
+- `DeviceWorkbenchView.vue` 改为复用 `DeviceOperationShell active-tab="config"`，不再重复旧 Device Operation Shell CSS。
+- `DeviceConfigPanel.vue` 拥有运行控制、快捷导航、协议配置折叠区、运行数据区、点位详情、表格滚动和响应式布局样式。
+- `LocalDeviceEditor.vue` 拥有 Teleport 编辑器 overlay/panel、四步 tab、左侧校验 rail、setup/point/cloud/json 区、footer、点位详情与相关响应式规则。
+- `PointEditor.vue` 拥有 point toolbar、point workbench grid、table/detail/tabs/runtime/json/import preview 样式；`PointBatchEditDialog.vue` / `PointGenerateDialog.vue` 拥有各自小型弹窗表单样式。
+- `ControlPanel.vue` 拥有 manual shadow/control 专属 pane、head card、surface grid 与 textarea 样式；`ShadowPanel.vue` 拥有 shadow summary、history、desired/delta 操作区样式。
+- `AlarmTablePanel.vue`、`LogPanel.vue`、`ProtocolDynamicForm.vue` 分别迁入自身 filter/stat/form-grid scoped style，不再依赖旧 `workbench.css`。
+- `RealtimeDataPanel.vue` 迁入自身表格与空状态小范围样式。
+- 重构 `scripts/workbench-layout-contract.test.mjs`：测试不再读取 `workbench.css`，改为拼接真实样式所有者（`base.css`、`element-plus.css`、`DeviceOperationShell.vue`、`DeviceConfigPanel.vue`、`LocalDeviceEditor.vue`、`PointEditor.vue`、`AlarmTablePanel.vue`、`LogPanel.vue`、`ProtocolDynamicForm.vue`）验证布局契约。
+- 新增 `scripts/css-architecture.test.mjs`，长期防止历史 CSS 文件、旧入口 import、AppShell legacy/modao anchor、旧高权重 selector 和 tokens `body.modao-exact` 绑定回归；同步更新根 `.gitignore` 只放行该新增长期测试脚本。
+
+## Phase 16 Selector Inventory 与规模统计
+
+| 文件 | 原始 bytes | 原始行数 | 规则数 | selector 数 | unique class/id | `!important` | A 死亡规则/selector | B App/Global 规则 | C 共享 primitive 规则 | D feature/component 规则 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `src/styles/legacy-console.css` | 24,622 | 1,047 | 126 | 187 | 70 | 3 | 30 / 41 | 26 | 70 | 0 |
+| `src/styles/workbench.css` | 179,926 | 6,164 | 870 | 1,406 | 363 | 24 | 113 / 133 | 10 | 259 | 488 |
+| 合计 | 204,548 | 7,211 | 996 | 1,593 | - | 27 | 143 / 174 | 36 | 329 | 488 |
+
+- 第一轮直接删除的死亡样式为 A 类至少 143 条规则 / 174 个 selector；剩余仍有引用的规则没有整体搬家，而是按 AppShell、Sidebar、Topbar、DeviceOperationShell、DeviceConfigPanel、LocalDeviceEditor、PointEditor、Control、Shadow、Alarm、Log、ProtocolDynamicForm、RealtimeDataPanel 与共享 primitive 分发并压缩。
+- 新共享项目 CSS 规模：`base.css` 7,767 bytes / 404 行，`element-plus.css` 6,917 bytes / 231 行，`utilities.css` 598 bytes / 44 行，合计 15,282 bytes。
+- 入口 CSS 总规模（含 tokens/global）：`tokens.css` 2,917 bytes / 77 行，`global.css` 1,051 bytes / 61 行，加上 base/element/utilities 合计 19,250 bytes。
+- `src/styles/` 下不存在超过 50 KB 的单一项目全局 CSS；未出现把 200 KB 历史 CSS 改名搬家的情况。
+- 旧 CSS `!important` 合计 27 处；迁移后项目共享 CSS 中仅 `element-plus.css` 保留 8 处，均用于 Element Plus Teleport/组件库 DOM 覆盖。当前 `src` 全量 `!important` 为 10 处，其中 2 处为既有 `DashboardView.vue` scoped 样式。
+
+## Phase 16 验证结果
+
+执行时间：2026-09-01 15:11-15:15，执行目录：`collector-desktop/`。
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm test` | 通过 | 38 个测试文件、211 个测试通过；包含重构后的 `workbench-layout-contract.test.mjs` 与新增 `css-architecture.test.mjs` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；baseline `@vueuse` PURE warning 与 Element Plus vendor chunk > 500 KB warning 仍存在，本阶段未处理 |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 53 |
+| `git diff --check` | 通过 | exit code 0；仅有 Git 对部分工作区文件 LF/CRLF 的提示 |
+
+最终搜索：
+
+| 搜索 | 结果 |
+|---|---:|
+| `rg 'legacy-console\.css' collector-desktop/src collector-desktop/scripts` | 0 命中 |
+| `rg 'workbench\.css' collector-desktop/src collector-desktop/scripts` | 0 命中 |
+| `rg 'legacy-console' collector-desktop/src` | 0 命中 |
+| `rg 'modao-exact' collector-desktop/src` | 0 命中 |
+| `rg 'body\.modao-exact' collector-desktop/src` | 0 命中 |
+| `rg 'views/legacy' collector-desktop/src` | 0 命中 |
+| `rg 'theme-anchor' collector-desktop/src` | 0 命中 |
+
+本阶段 Headless Chrome/CDP smoke 使用本地 mock 采集服务验证以下内容：
+
+- 业务 Route：`/dashboard`、`/realtime`、`/history`、`/alarm`、`/device`、`/device/workbench?deviceId=dev-1`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/control?deviceId=dev-1`、`/shadow?deviceId=dev-1`。
+- 尺寸：`1920x1080`、`1440x900`、`1280x720`。
+- 断言：页面可打开、`AppShell` 高度链路正常、无 `legacy-console` / `modao-exact` DOM/class、无页面级横向溢出、无严重 console error。
+- LocalDeviceEditor 三入口：`/device -> 新增本地设备`、`/collect -> 配置设备`、`/dashboard -> 新增本地设备`；均验证 Teleport panel 可见、四步 tab 存在、基础输入存在、`modal-active` 正常、Escape 可关闭、弹层不超屏。
+- Element Plus Popup：在设备工作台告警子页验证 `ElSelect` dropdown 与 `DatePicker`，在设备列表验证 `ElMessageBox` 与 `ElMessage`；弹层均为深色背景、文字可见、z-index 可用。
+
+Smoke 验证后已停止临时 Headless Chrome、Vite dev server 和 mock backend 进程。
+
+## Phase 16 文件变化
+
+新增：
+
+- `collector-desktop/src/styles/base.css`
+- `collector-desktop/src/styles/element-plus.css`
+- `collector-desktop/src/styles/utilities.css`
+- `collector-desktop/scripts/css-architecture.test.mjs`
+
+修改：
+
+- `.gitignore`
+- `collector-desktop/src/main.ts`
+- `collector-desktop/src/styles/tokens.css`
+- `collector-desktop/src/styles/global.css`
+- `collector-desktop/src/app/AppShell.vue`
+- `collector-desktop/src/app/AppSidebar.vue`
+- `collector-desktop/src/app/AppTopbar.vue`
+- `collector-desktop/src/views/device/DeviceWorkbenchView.vue`
+- `collector-desktop/src/features/device/components/DeviceOperationShell.vue`
+- `collector-desktop/src/components/device/DeviceConfigPanel.vue`
+- `collector-desktop/src/features/device/components/LocalDeviceEditor.vue`
+- `collector-desktop/src/features/point/components/PointEditor.vue`
+- `collector-desktop/src/features/point/components/PointBatchEditDialog.vue`
+- `collector-desktop/src/features/point/components/PointGenerateDialog.vue`
+- `collector-desktop/src/features/control/components/ControlPanel.vue`
+- `collector-desktop/src/features/shadow/components/ShadowPanel.vue`
+- `collector-desktop/src/components/alarm/AlarmTablePanel.vue`
+- `collector-desktop/src/components/log/LogPanel.vue`
+- `collector-desktop/src/components/protocol/ProtocolDynamicForm.vue`
+- `collector-desktop/src/components/realtime/RealtimeDataPanel.vue`
+- `collector-desktop/scripts/workbench-layout-contract.test.mjs`
+- `collector-desktop/docs/frontend-refactor/PROGRESS.md`
+- `collector-boot/src/main/resources/static/desktop/index.html`（`build:web` 生成）
+- `collector-boot/src/main/resources/static/desktop/assets/*`（`build:web` 生成 hash 产物）
+
+删除：
+
+- `collector-desktop/src/styles/legacy-console.css`
+- `collector-desktop/src/styles/workbench.css`
+
+## Phase 16 已知问题与回归风险
+
+- 本阶段 smoke 基于本地 mock 后端和 Headless Chrome/CDP，验证 CSS 迁移后的布局、弹层和基础页面打开；真实后端、真实设备、真实历史/告警/影子数据仍依赖后续联调环境。
+- `--console-*`、`--exact-*` 作为 compatibility aliases 保留在 `:root`；本阶段未做全量 CSS variable rename，避免扩大低价值 diff。
+- `exact-*`、`modao-property-*` 等已成为长期 UI primitive 的 class 名本阶段未强制重命名；已清除的是 Legacy Host anchor：`legacy-console`、`modao-exact` 与 `body.modao-exact .legacy-console`。
+- 构建仍只有既有两类 baseline warning：`@vueuse/core` PURE annotation warning 与 Element Plus vendor chunk > 500 KB warning；Phase 16 未处理 vendor chunk / tree-shaking / manualChunks 优化。
+
+## 下一步
+
+等待确认后进入 Phase 17：最终代码质量门禁。Phase 16 完成后当前不自动执行 Phase 17。

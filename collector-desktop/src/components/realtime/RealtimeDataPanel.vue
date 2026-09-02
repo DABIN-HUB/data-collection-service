@@ -154,3 +154,31 @@ watch(() => props.deviceId, () => {
 });
 watch(() => [props.autoRefresh, props.refreshIntervalMs], syncTimer);
 </script>
+
+<style scoped>
+.realtime-workbench,
+.monitor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.panel-toolbar,
+.table-actions {
+  display: flex;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+</style>

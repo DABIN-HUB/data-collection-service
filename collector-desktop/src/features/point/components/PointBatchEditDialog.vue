@@ -88,3 +88,22 @@ function apply() {
 
 void props;
 </script>
+
+<style scoped>
+.batch-edit-body,
+.batch-form,
+.batch-field-list {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-field-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.batch-form :deep(.el-select),
+.batch-form :deep(.el-input),
+.batch-form :deep(.el-input-number) {
+  width: 100%;
+}
+</style>

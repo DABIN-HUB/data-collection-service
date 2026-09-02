@@ -38,7 +38,7 @@ function tickClock() {
 </script>
 
 <style scoped>
-body.modao-exact .legacy-console .app-topbar {
+.app-topbar {
   display: flex;
   min-height: var(--app-topbar-height);
   padding: 0 var(--app-space-6);
