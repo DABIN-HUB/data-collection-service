@@ -33,6 +33,7 @@ scripts
 !/collector-desktop/scripts/web-console-utils.test.mjs
 !/collector-desktop/scripts/workbench-layout-contract.test.mjs
 !/collector-desktop/scripts/css-architecture.test.mjs
+!/collector-desktop/scripts/frontend-architecture.test.mjs
 AGENTS1.md
 IDEA.md
 .hermes

@@ -63,14 +63,14 @@ export function buildCloudStrategyRows(report: unknown): CloudMetricRow[] {
   const ack = asRecord(record.ack);
   const outbox = asRecord(record.outbox);
   return [
-    { label: "总开关", value: Boolean(record.enabled) ? "已启用" : "未启用" },
+    { label: "总开关", value: record.enabled ? "已启用" : "未启用" },
     { label: "上报模式", value: String(valueOf(record, ["mode"], "-")) },
     { label: "云服务商", value: String(valueOf(record, ["cloudProvider", "provider"], "-")) },
     { label: "可上报点位", value: `${valueOf(configured, ["reportablePointCount"], 0)} / ${valueOf(configured, ["pointCount"], 0)}` },
-    { label: "批量聚合", value: Boolean(batch.enabled) ? `最多 ${valueOf(batch, ["maxPropertiesPerPack"], "-")} 属性` : "未启用" },
+    { label: "批量聚合", value: batch.enabled ? `最多 ${valueOf(batch, ["maxPropertiesPerPack"], "-")} 属性` : "未启用" },
     { label: "ACK 提交点", value: String(valueOf(ack, ["commitOn"], "-")) },
     { label: "ACK 超时", value: valueOf(ack, ["timeoutMs"], null) === null ? "-" : `${valueOf(ack, ["timeoutMs"], "-")} ms` },
-    { label: "可靠发件箱", value: Boolean(outbox.enabled) ? "已启用" : "未启用" }
+    { label: "可靠发件箱", value: outbox.enabled ? "已启用" : "未启用" }
   ];
 }
 

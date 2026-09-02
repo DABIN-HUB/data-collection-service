@@ -126,7 +126,7 @@ export async function executeCollectorProxyRequest(request: CollectorProxyReques
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("请求采集服务超时");
+      throw new Error("请求采集服务超时", { cause: error });
     }
     throw error;
   } finally {

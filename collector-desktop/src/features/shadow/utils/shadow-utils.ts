@@ -57,7 +57,7 @@ export function parseShadowJsonOrThrow<T = unknown>(text: string, label: string)
     return JSON.parse(text || "{}") as T;
   } catch (error) {
     const message = error instanceof Error ? error.message : "JSON 解析失败";
-    throw new Error(`${label} 格式错误：${message}`);
+    throw new Error(`${label} 格式错误：${message}`, { cause: error });
   }
 }
 

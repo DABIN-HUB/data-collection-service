@@ -451,7 +451,7 @@ import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, getPathValue, setPathValue, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import { buildLocalDevicePayload, buildProtocolPointNotes, DEFAULT_ADAPTIVE_CONFIG, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig, type LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
-import { buildReadonlyItems, createUniqueCode, findDuplicatePointCode, alarmRules, parseBooleanOption, parseFieldValue, parsePointsJson, serializeAlarmRules, statusLabel, toNumber, type AlarmRule, type FieldValueType } from "@/features/point/utils/point-draft-utils";
+import { buildReadonlyItems, createUniqueCode, findDuplicatePointCode, alarmRules, parseBooleanOption, parseFieldValue, parsePointsJson, serializeAlarmRules, statusLabel, toNumber, type FieldValueType } from "@/features/point/utils/point-draft-utils";
 import { cloneData, cloudPointStatus, cloudTargetSummary, defaultPointTemplate, firstPointValue, hasValue, isOpcUaProtocol, isPlainObject, normalizeCloudTarget, normalizeInitialPoints, sanitizePointForSave } from "@/features/device/utils/local-device-editor-utils";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig, ProtocolSchema } from "@/types/protocol";
@@ -567,7 +567,6 @@ const pointSelectionMeta = computed(() => {
 const cloudTopicPreview = computed(() => cloudTarget.enabled && cloudTarget.productKey && cloudTarget.deviceName
   ? `/sys/${cloudTarget.productKey}/${cloudTarget.deviceName}/thing/property/post`
   : "未启用云上报或云身份不完整");
-const validationSummary = computed(() => validateLocalDeviceDraft({ deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value, points: points.value, cloudTarget: { ...cloudTarget } }));
 const localEditorChecklist = computed<Array<{ label: string; state: ChecklistState }>>(() => {
   const duplicateCode = findDuplicatePointCode(points.value);
   const missingPoint = points.value.find((point) => !hasValue(point.pointCode) || !hasValue(point.pointName) || !hasValue(point.address));

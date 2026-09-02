@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "./history-trend-utils";
+import { buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "./history-trend-utils";
 
 describe("history-trend-utils", () => {
   it("按全局尺度构建多点位历史趋势曲线", () => {

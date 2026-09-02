@@ -12,7 +12,6 @@
 - Pinia
 - Vue Router
 - Element Plus
-- ECharts
 - Vitest
 - Electron 33
 - electron-builder
@@ -53,11 +52,25 @@ npm run electron:dev
 
 ## 构建验证
 
+本地完整前端质量门禁：
+
 ```bash
+npm run lint
+npm run stylelint
 npm test
 npm run typecheck
 npm run build
+npm run build:web
+npm run quality
+npm run verify
 ```
+
+其中：
+
+- `quality` = ESLint + Stylelint + Vitest + TypeScript；
+- `verify` = `quality` + Electron/Web renderer build + Web 静态资源同步；
+- `build:web` 会更新 `collector-boot/src/main/resources/static/desktop/**` 下的 Web 构建产物；
+- `smoke:*` 依赖真实后端、令牌或本地模拟器，不属于普通开发机必过的静态质量门禁。
 
 真实后端 smoke 联调：
 
@@ -210,15 +223,30 @@ collector-desktop/release/
 - 手动控制；
 - 设备影子。
 
+当前前端结构：
+
+```text
+AppShell
+├─ AppSidebar
+├─ AppTopbar
+└─ RouterView
+   ├─ DashboardView / RealtimeView / HistoryView / AlarmView
+   ├─ DeviceListView / DeviceWorkbenchView
+   ├─ CollectionView / CloudView / DiagnosticView / LogView / NetworkView
+   └─ ControlView / ShadowView
+```
+
+设备域由 `DeviceListView`、`DeviceWorkbenchView`、`DeviceOperationShell`、`LocalDeviceEditor` 和 Point Feature 共同承载；详细重构记录维护在 `docs/frontend-refactor/`。
+
 关键能力：
 
 - 协议 Schema 动态表单；
 - 点位通用字段 + 协议动态字段；
-- Excel 导入/导出；
+- CSV 导入/导出；
 - 本地临时设备四步编辑器；
 - 设备启动/停止/状态/diff；
 - 实时数据 HTTP 兜底与 WebSocket-ready；
-- 历史趋势图；
+- 历史趋势 SVG 曲线；
 - 告警确认和批量确认；
 - 日志导出；
 - 云上报 Outbox/ACK 摘要；

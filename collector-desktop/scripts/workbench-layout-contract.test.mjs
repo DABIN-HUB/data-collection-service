@@ -112,14 +112,14 @@ describe("设备操作工作台布局", () => {
   });
 
   it("告警筛选应只有一个关键词输入和一个时间范围控件，toolbar 单行", () => {
-    expect((styleFiles.alarmTablePanel.match(/v-model=\"keyword\"/g) || [])).toHaveLength(1);
+    expect((styleFiles.alarmTablePanel.match(/v-model="keyword"/g) || [])).toHaveLength(1);
     expect((styleFiles.alarmTablePanel.match(/<el-input(?=[\s>])/g) || [])).toHaveLength(2);
-    expect((styleFiles.alarmTablePanel.match(/type=\"datetimerange\"/g) || [])).toHaveLength(1);
+    expect((styleFiles.alarmTablePanel.match(/type="datetimerange"/g) || [])).toHaveLength(1);
     expectStyleContains(".table-actions,", ["display: flex", "flex-wrap: nowrap"], styleFiles.alarmTablePanel);
   });
 
   it("日志筛选应只有一个关键词输入且 toolbar 单行", () => {
-    expect((styleFiles.logPanel.match(/v-model=\"keyword\"/g) || [])).toHaveLength(1);
+    expect((styleFiles.logPanel.match(/v-model="keyword"/g) || [])).toHaveLength(1);
     expect((styleFiles.logPanel.match(/<el-input(?=[\s>])/g) || [])).toHaveLength(1);
     expect(styleFiles.logPanel).not.toContain("log-source-filter");
     expectStyleContains(".table-actions,", ["display: flex", "flex-wrap: nowrap"], styleFiles.logPanel);

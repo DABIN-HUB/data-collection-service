@@ -14,7 +14,7 @@ export function parseConfigImportText(text: string): unknown {
     return JSON.parse(trimmed) as unknown;
   } catch (error) {
     const message = error instanceof Error ? error.message : "JSON 解析失败";
-    throw new Error(`配置导入 JSON 格式错误：${message}`);
+    throw new Error(`配置导入 JSON 格式错误：${message}`, { cause: error });
   }
 }
 

@@ -113,11 +113,7 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
     if (axios.isAxiosError(error)) {
       const httpStatus = error.response?.status;
       if (error.response?.data) {
-        try {
-          return unwrapApiResponse<T>(error.response.data as ApiResult<T> | T, httpStatus);
-        } catch (apiError) {
-          throw apiError;
-        }
+        return unwrapApiResponse<T>(error.response.data as ApiResult<T> | T, httpStatus);
       }
       throw new ApiRequestError(resolveNetworkMessage(error.message), { httpStatus });
     }
@@ -147,15 +143,11 @@ async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["c
 }
 
 function unwrapProxyResponse<T>(body: unknown, httpStatus: number): T {
-  try {
-    const data = unwrapApiResponse<T>(body as ApiResult<T> | T, httpStatus);
-    if (httpStatus < 200 || httpStatus >= 300) {
-      throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
-    }
-    return data;
-  } catch (error) {
-    throw error;
+  const data = unwrapApiResponse<T>(body as ApiResult<T> | T, httpStatus);
+  if (httpStatus < 200 || httpStatus >= 300) {
+    throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
   }
+  return data;
 }
 
 function resolveHttpErrorMessage(body: unknown, httpStatus: number): string {

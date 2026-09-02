@@ -20,7 +20,6 @@ const HEADER_TO_FIELD: Record<string, keyof DataPoint> = {
   "备注": "remark"
 };
 
-const FIELD_TO_HEADER = Object.fromEntries(Object.entries(HEADER_TO_FIELD).map(([header, field]) => [field, header])) as Record<string, string>;
 const CSV_HEADERS = Object.keys(HEADER_TO_FIELD);
 
 export interface PointImportParseOptions {

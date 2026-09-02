@@ -258,20 +258,6 @@ const pagedPointRows = computed(() => {
   return pointRows.value.slice(start, start + pageSize.value);
 });
 
-type DeviceStatusTag = "success" | "warning" | "danger" | "info";
-
-const connectionPayloadPreview = computed(() => {
-  if (!props.device) {
-    return {};
-  }
-  return buildConnectionPayload(protocolFields.value, protocolModel.value, {
-    ...connectionConfig.value,
-    deviceId: props.device.normalizedId,
-    connectionType: protocolKey.value,
-    protocolType: protocolKey.value
-  });
-});
-const connectionPayloadPreviewText = computed(() => JSON.stringify(connectionPayloadPreview.value, null, 2));
 const connectionStatusText = computed(() => {
   if (!statusDetail.value) {
     return resolveDeviceStatus(props.device || ({ status: "OFFLINE" } as DeviceViewModel));
@@ -301,17 +287,6 @@ const deviceStatusText = computed(() => {
     DISABLED: "禁用",
     OFFLINE: "离线"
   }[status];
-});
-
-const deviceStatusTag = computed<DeviceStatusTag>(() => {
-  const status = props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
-  return {
-    ONLINE: "success",
-    CONNECTING: "warning",
-    ERROR: "danger",
-    DISABLED: "info",
-    OFFLINE: "info"
-  }[status] as DeviceStatusTag;
 });
 
 async function loadProtocolConfig() {

@@ -59,7 +59,7 @@ export function parseEdgeTelemetryJson(text: string): Record<string, unknown> {
     parsed = JSON.parse(trimmed) as unknown;
   } catch (error) {
     const message = error instanceof Error ? error.message : "JSON 解析失败";
-    throw new Error(`边缘遥测 JSON 格式错误：${message}`);
+    throw new Error(`边缘遥测 JSON 格式错误：${message}`, { cause: error });
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("边缘遥测 JSON 必须是对象");
