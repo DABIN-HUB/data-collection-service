@@ -33,9 +33,6 @@
   --app-radius-md: 6px;
   --app-radius-lg: 8px;
   --app-radius-panel: 12px;
-}
-
-:root {
   --exact-bg: var(--app-color-bg);
   --exact-sidebar: var(--app-color-sidebar);
   --exact-panel: var(--app-color-panel);

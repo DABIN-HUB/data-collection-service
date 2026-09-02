@@ -41,7 +41,9 @@ src/
 │  ├─ cloud/CloudView.vue
 │  ├─ diagnostic/DiagnosticView.vue
 │  ├─ log/LogView.vue
-│  └─ network/NetworkView.vue
+│  ├─ network/NetworkView.vue
+│  ├─ control/ControlView.vue
+│  └─ shadow/ShadowView.vue
 ├─ features/
 │  ├─ device/
 │  ├─ point/
@@ -182,10 +184,12 @@ src/
 
 ### Phase 17：补齐最终质量门禁
 
-- 评估并补充 ESLint / Prettier / Stylelint。
-- 补齐最终检查脚本。
-- 执行 test/typecheck/build/build:web/lint/stylelint。
-- 更新最终进度和剩余风险。
+- ESLint 已落地为长期硬门禁。
+- Stylelint 已落地为 CSS / Vue SFC 长期硬门禁。
+- Prettier 已评估，但因会造成大范围纯格式 diff，本轮不纳入硬 Gate。
+- Architecture contract、CSS architecture contract 和 workbench layout contract 已加入最终验证链路。
+- `npm run quality` 与 `npm run verify` 已建立为最终检查脚本。
+- 执行 lint/stylelint/test/typecheck/build/build:web/verify/smoke，并更新最终进度和剩余风险。
 
 ## 每阶段完成标准
 
@@ -194,3 +198,24 @@ src/
 - Router、Pinia、CSS 决策符合 `AGENTS.md` 和 `DECISIONS.md`。
 - 四项验证完成并记录；失败必须标明是否为 baseline failure 或本阶段新增失败。
 - `PROGRESS.md` 已更新下一步。
+
+## 本轮重构状态
+
+`collector-desktop` 前端架构重构 Phase 1 ~ Phase 17 已全部执行完成。
+
+本轮重构已完成以下长期目标：
+
+- 所有业务页面由 Router 独立承载；
+- Legacy Host 已退出，且禁止重新引入；
+- `legacy-console.css` 与 `workbench.css` 已删除，CSS ownership 收敛为 component scoped + 小型 shared CSS；
+- ESLint / Stylelint / architecture contract / final verify 已成为长期质量门禁；
+- README、AGENTS、DECISIONS、PROGRESS 已按最终架构状态收尾。
+
+不要创建 Phase 18。后续如继续优化，应作为独立任务重新确认范围，包括：
+
+- 真实后端 / 真实设备联调；
+- Element Plus bundle 优化；
+- `@vueuse/core` PURE warning 跟踪；
+- compatibility CSS variable 渐进收敛；
+- coverage 体系建设；
+- Prettier 是否在未来单独格式化窗口采用。

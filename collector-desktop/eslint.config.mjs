@@ -1,22 +1,18 @@
 import js from "@eslint/js";
 import globals from "globals";
+import { builtinModules } from "node:module";
 import tseslint from "typescript-eslint";
 import vue from "eslint-plugin-vue";
 
 const rendererFiles = ["src/**/*.{ts,vue}"];
 const nodeFiles = ["electron/**/*.{ts,cts}", "scripts/**/*.mjs", "vite.config.ts", "eslint.config.mjs", "stylelint.config.mjs"];
+const normalizedNodeBuiltins = builtinModules.map((name) => name.replace(/^node:/u, ""));
 const nodeBuiltinImports = [
-  "fs",
-  "node:fs",
-  "path",
-  "node:path",
-  "child_process",
-  "node:child_process",
-  "os",
-  "node:os",
-  "crypto",
-  "node:crypto",
-  "electron"
+  ...new Set([
+    ...normalizedNodeBuiltins,
+    ...normalizedNodeBuiltins.map((name) => `node:${name}`),
+    "electron"
+  ])
 ];
 
 export default tseslint.config(
@@ -48,7 +44,13 @@ export default tseslint.config(
           paths: nodeBuiltinImports.map((name) => ({
             name,
             message: "渲染进程源码不得直接访问 Node/Electron API，请通过 preload 白名单能力。"
-          }))
+          })),
+          patterns: [
+            {
+              group: ["node:*", "electron/*"],
+              message: "渲染进程源码不得直接访问 Node/Electron API，请通过 preload 白名单能力。"
+            }
+          ]
         }
       ]
     }

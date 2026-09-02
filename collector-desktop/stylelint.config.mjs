@@ -20,7 +20,7 @@ export default {
     "keyframes-name-pattern": null,
     "media-feature-range-notation": null,
     "no-descending-specificity": null,
-    "no-duplicate-selectors": null,
+    "no-duplicate-selectors": true,
     "rule-empty-line-before": null,
     "selector-class-pattern": null,
     "selector-pseudo-class-no-unknown": [

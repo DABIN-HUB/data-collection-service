@@ -1,33 +1,17 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-09-02 09:11:44 +0800
+更新时间：2026-09-02 13:52:11 +0800
 
 ## 当前状态
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
+  - `00c7fe1` 修改
   - `20e360d` 修改
   - `857360a` 修改
-  - `737c3c9` 修改
-  - `47670f6` xg
-  - `e4f7add` xg
-- Phase 1：已完成并通过验证。
-- Phase 2：Dashboard 迁移已完成并通过验证。
-- Phase 3：Realtime 迁移已完成并通过验证。
-- Phase 4：Log 迁移已完成并通过验证。
-- Phase 5：Alarm 迁移已完成并通过验证。
-- Phase 6：Network 迁移已完成并通过验证。
-- Phase 7：Cloud 迁移已完成并通过验证。
-- Phase 8：Diagnostic 迁移已完成并通过验证。
-- Phase 9：History 迁移已完成并通过验证。
-- Phase 10：Collection 迁移已完成并通过验证。
-- Phase 11：Device List 迁移已完成并通过验证。
-- Phase 12：Device Workbench 迁移已完成并通过验证。
-- Phase 13：Local Device Editor 整理与迁移已完成并通过验证。
-- Phase 14：Point Feature 迁移与整理已完成并通过验证。
-- Phase 15：Remove Legacy Host 已完成并通过验证。
-- Phase 16：CSS Migration / Cleanup 已完成并通过验证。
-- 当前阶段：Phase 17 Final Code Quality Gate，执行最终代码质量门禁、死代码审查和文档收尾。
+- Phase 1 ~ Phase 17：全部完成并通过验证。
+- `collector-desktop` 前端架构重构：已完成。
+- 不创建 Phase 18；后续优化作为独立任务重新确认范围。
 
 ## Baseline 验证结果
 
@@ -1343,6 +1327,73 @@ Smoke 验证后已停止临时 Headless Chrome、Vite dev server 和 mock backen
 - `exact-*`、`modao-property-*` 等已成为长期 UI primitive 的 class 名本阶段未强制重命名；已清除的是 Legacy Host anchor：`legacy-console`、`modao-exact` 与 `body.modao-exact .legacy-console`。
 - 构建仍只有既有两类 baseline warning：`@vueuse/core` PURE annotation warning 与 Element Plus vendor chunk > 500 KB warning；Phase 16 未处理 vendor chunk / tree-shaking / manualChunks 优化。
 
-## 下一步
+## Phase 17 Final Code Quality Gate 完成内容
 
-等待确认后进入 Phase 17：最终代码质量门禁。Phase 16 完成后当前不自动执行 Phase 17。
+执行时间：2026-09-02 13:28-13:52，执行目录：`collector-desktop/`。
+
+### 静态质量门禁
+
+- ESLint 已落地为 Flat Config：`eslint.config.mjs`，覆盖 `src/**/*.{ts,vue}`、`electron/**/*.{ts,cts}`、`scripts/**/*.mjs`、`vite.config.ts`、`eslint.config.mjs`、`stylelint.config.mjs`。
+- Renderer ESLint 环境只开放 browser globals；Electron / scripts / Vite / lint config 使用 node globals。
+- Renderer Node/Electron import 限制已从少量手写模块扩展为 `node:module` 的 `builtinModules` + `node:*` pattern + `electron` / `electron/*`，临时 stdin 校验证明 `node:fs` 与 `electron` 会被 `no-restricted-imports` 拦截。
+- Stylelint 已覆盖 `src/**/*.{css,vue}`；`no-duplicate-selectors` 已开启，发现并修复 `tokens.css` 中重复 `:root`，无大范围 CSS 格式化。
+- `npm run lint`、`npm run stylelint`、`npm run quality`、`npm run verify` 均为 check-only；不包含 `--fix`，不会修改源码。`build:web` 仍按设计更新后端静态 `desktop/**` 构建产物。
+- 未新增 `eslint-disable`、`stylelint-disable` 或整文件关闭规则。
+
+### Prettier 评估
+
+- 已执行 Prettier check 评估，日志显示当前 `src/**/*.{ts,vue,css}` 会产生 116 个文件的纯格式 warning。
+- 本轮未采用 Prettier 作为硬 Gate，也未执行 `prettier --write`，避免 Phase 17 变成大范围非语义格式化重写。
+- 后续如需采用 Prettier，应作为独立格式化窗口处理。
+
+### Dead Code / Type Escape / 架构审查
+
+- 已删除并在前半段提交：`DeviceTree.vue`、`AppStatusBar.vue`、`cache.api.ts`、`health.api.ts`；本次断点继续未继续删除未确认 dead code。
+- 保留 `runtime.store.ts`、`runtime.api.ts`、`diagnostic-detail-utils.ts`、`websocket-utils.ts` 等仍有生产或测试引用的模块。
+- 最终源码扫描 132 个 `src` / `electron` 文件：`LegacyConsoleView`、`LegacyManualShadowPanels`、`views/legacy`、`views/runtime`、`legacy-console`、`modao-exact`、`activeModule`、`switchModule`、`components/point`、`components/device/LocalDeviceEditor` 均为 0。
+- `features -> views`、`stores -> views`、`api -> views` 反向依赖均为 0。
+- `@ts-ignore`、`@ts-expect-error`、`eslint-disable`、`stylelint-disable`、`debugger`、`console.log`、`as any`、`: any`、`<any>` 均为 0。
+- `tsconfig.json` 继续保持 `strict: true`，未降低 TypeScript 严格度。
+- `electron/main/http-proxy-utils.ts` 的超时错误 message 仍为 `请求采集服务超时`，仅保留 `{ cause: error }` 以保留原始异常。
+
+### 文档收尾
+
+- `AGENTS.md` 已改为最终长期规则：独立 Router/View 架构、Legacy Host 禁止回归、CSS 最终结构、正式 lint/stylelint/test/typecheck/build/build:web/verify 门禁。
+- `PLAN.md` 保留 Phase 0 ~ Phase 17 历史计划，并新增“本轮重构状态”；明确前端架构重构已完成，不创建 Phase 18。
+- `DECISIONS.md` 保留 ADR-001 ~ ADR-006，并追加 ADR-007 ~ ADR-014，覆盖 Router 独立承载、Legacy Host 退出、Point 草稿隔离、CSS ownership、Element Plus Teleport、ESLint/Stylelint、Prettier 与 architecture contract。
+- `README.md` 已与真实实现一致：删除 ECharts，Excel 描述修正为 CSV，补充 `quality` / `verify` 命令和当前 AppShell / RouterView 架构。
+
+### 最终 Smoke
+
+- 使用本地 mock backend + Vite + Headless Chrome/CDP 执行轻量 route smoke。
+- 覆盖 13 个 route：`/dashboard`、`/realtime`、`/history`、`/alarm`、`/device`、`/device/workbench?deviceId=dev-1`、`/collect`、`/cloud`、`/diagnostic`、`/log`、`/network`、`/control?deviceId=dev-1`、`/shadow?deviceId=dev-1`。
+- 重点交互：`/device -> 新增本地设备` 打开 LocalDeviceEditor；`/device/workbench -> 编辑点位` 打开 PointEditor。
+- 结果：`routes = 13`，`localDevice = passed`，`pointEditor = passed`，`severeErrors = 0`。
+- Smoke 后已停止 mock backend、Vite dev server、Headless Chrome/CDP；tracked background processes 均为 exited。
+
+### 最终验证结果
+
+| 命令 | 结果 | 说明 |
+|---|---:|---|
+| `npm run lint` | 通过 | 0 error / 0 warning |
+| `npm run stylelint` | 通过 | 0 error / 0 warning；`no-duplicate-selectors` 已开启 |
+| `npm test` | 通过 | 39 个测试文件、218 个测试通过；包含 `frontend-architecture.test.mjs`、`css-architecture.test.mjs`、`workbench-layout-contract.test.mjs` |
+| `npm run typecheck` | 通过 | `vue-tsc --noEmit` 与 `tsc -p tsconfig.node.json --noEmit` 通过 |
+| `npm run build` | 通过 | renderer 与 Electron main/preload 构建通过；仅保留 baseline warning |
+| `npm run build:web` | 通过 | renderer 构建后同步到 `collector-boot/src/main/resources/static/desktop`，同步文件数 53 |
+| `npm run verify` | 通过 | 串联 `quality`、`build`、`build:web` 通过 |
+| `git diff --check` | 通过 | Phase 17 最终收尾后执行，exit code 0 |
+
+### npm audit
+
+- 已执行 `npm audit`，命令返回 exit code 1。
+- 当前报告：18 vulnerabilities（2 moderate、14 high、2 critical）。主要来自 Electron / electron-builder 相关依赖链、Vitest/Vite/esbuild、glob、tar 等。
+- 未执行 `npm audit fix`、`npm audit fix --force`、`npm update`；不在 Phase 17 中升级 Vue / Electron / Element Plus 或引入破坏性依赖变更。
+
+### baseline warning 与剩余真实联调风险
+
+- baseline warning 仍为两类：`@vueuse/core` PURE annotation warning；`vendor-element-plus` chunk 超过 500 kB。
+- 最终 smoke 使用 mock backend 验证前端 route、Router、主要交互和 console/runtime 错误；真实后端、真实设备、真实 Redis/TDengine、真实云上报 ACK、真实历史/告警/影子数据仍需在具备环境时单独联调。
+- 后续独立优化建议：真实后端 / 真实设备联调、Element Plus bundle 优化、`@vueuse/core` PURE warning 跟踪、compatibility CSS variable 渐进收敛、coverage 体系、Prettier 独立格式化窗口。
+
+Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架构重构正式结束。

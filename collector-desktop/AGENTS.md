@@ -11,10 +11,9 @@
 - 保留现有后端 API、DTO、接口语义和业务行为。
 - 不修改设备启动/停止、点位配置、实时数据、历史数据、告警确认、日志、网络诊断、云上报、设备影子等业务能力。
 
-## 重构目标
+## 当前最终架构
 
-- `LegacyConsoleView.vue` 当前承担菜单、布局、顶部栏、所有业务页面、API 调用、计时器和导航状态，最终必须删除。
-- App 外壳目标结构：
+- App 外壳最终结构：
 
 ```text
 AppShell
@@ -31,12 +30,15 @@ AppShell
    ├─ CloudView
    ├─ DiagnosticView
    ├─ LogView
-   └─ NetworkView
+   ├─ NetworkView
+   ├─ ControlView
+   └─ ShadowView
 ```
 
 - Vue Router 是当前页面的唯一状态源。
+- Legacy Host 不得重新引入，所有业务页面必须由独立 Route/View 承载。
 - 禁止重新引入 `activeModule ref + router` 双向同步。
-- 过渡期间如旧宿主仍需 `activeModule` 做 `v-show`，只能使用由 `route.path` 单向推导的 `computed`。
+- 禁止重新引入 `switchModule` 或其它手动模块状态切换来代替 Router。
 
 ## Pinia 状态规则
 
@@ -52,53 +54,48 @@ AppShell
 ```text
 src/styles/
 ├─ tokens.css
+├─ global.css
 ├─ base.css
 ├─ element-plus.css
 └─ utilities.css
 ```
 
 - 组件自身布局优先使用 Vue scoped style。
-- `legacy-console.css` 必须最终删除。
-- `workbench.css` 必须最终删除，或完全拆解后删除。
+- `legacy-console.css` 已删除，后续不得重新引入。
+- `workbench.css` 已删除，后续不得重新引入。
 - 禁止新增 `new-console.css`、`refactor.css`、`override-v2.css` 等第三套全局覆盖文件。
 - 不通过越来越高的 specificity 叠加覆盖，例如 `body.modao-exact .legacy-console #xxx ...`。
 
-## 分阶段规则
+## 质量门禁规则
 
-- 每次只做当前 Phase；当前 Phase 未验证通过，不自动进入下一阶段。
-- 每个 Phase 必须小范围、可回滚，不做全项目无意义格式化。
+- Phase 1 ~ Phase 17 已完成，后续不自动创建 Phase 18；新增优化必须作为独立任务重新确认范围。
+- 每次修改必须小范围、可回滚，不做全项目无意义格式化。
 - 不覆盖未提交代码，不删除测试，不降低 TypeScript strict，不用大量 `any` 逃避类型错误。
 - 修改前检查 `git branch`、`git status` 和最近提交。
-- 修改后执行：
+- 修改后至少执行：
 
 ```bash
+npm run lint
+npm run stylelint
 npm test
 npm run typecheck
 npm run build
 npm run build:web
 ```
 
-- 如果之后加入 lint/stylelint，还必须执行对应检查。
-- 每阶段完成后更新 `docs/frontend-refactor/PROGRESS.md`，记录完成内容、文件变更、验证结果、已知问题和下一阶段。
+- 推荐完整执行 `npm run verify`。
+- `npm run lint`、`npm run stylelint`、`npm run quality`、`npm run verify` 必须保持 check-only；不得默认 `--fix` 或修改源码。
+- lint/stylelint 禁止通过大量 disable 绕过，不得整文件关闭规则；确需局部例外时必须写明中文原因。
+- 涉及重构文档时更新 `docs/frontend-refactor/PROGRESS.md`，记录完成内容、文件变更、验证结果和剩余风险，不写不存在的下一阶段。
 
-## 页面迁移固定流程
+## 页面与状态长期规则
 
-每迁移一个页面必须按顺序处理：
-
-1. 找到 `LegacyConsoleView.vue` 中对应 section。
-2. 找到该页面用到的 ref/computed/function/API。
-3. 判断哪些数据来自 Pinia。
-4. 判断哪些属于 View 本地状态。
-5. 判断是否有真正值得抽的 composable。
-6. 创建新的 View。
-7. 移动代码，不复制保留第二份实现。
-8. Router 改到新 View。
-9. 删除 `LegacyConsoleView.vue` 中原实现。
-10. 移动对应 utils/test。
-11. 移动对应 CSS。
-12. 删除原 CSS。
-13. 执行验证。
-14. 更新 `PROGRESS.md`。
+- 新增业务入口必须使用独立 View 和明确 Route，不得恢复旧宿主 `v-show` 聚合页面模式。
+- 页面只保留搜索、分页、Tab、Dialog、临时表单、展开/折叠等本地 UI 状态。
+- 跨页面领域状态必须回到对应 Pinia 单一来源，禁止在多个页面复制一份等价领域缓存。
+- 后端 API、DTO、接口语义和业务行为不随前端结构调整而改变。
+- Electron main / preload / IPC 只承载桌面能力和白名单桥接，不吸收业务协议、采集、缓存或云上报逻辑。
+- Electron/Web 继续共用 renderer，Web 交付继续通过 `build:web` 和 `sync:web` 同步到后端静态目录。
 
 ## 优先保留内容
 
