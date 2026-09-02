@@ -19,6 +19,8 @@ docs
 collector-desktop/docs/*
 !/collector-desktop/docs/frontend-refactor/
 !/collector-desktop/docs/frontend-refactor/**
+!/collector-desktop/docs/production-readiness/
+!/collector-desktop/docs/production-readiness/**
 scripts/*
 !scripts/soak/
 !scripts/soak/**
