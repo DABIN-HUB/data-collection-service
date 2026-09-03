@@ -1,4 +1,4 @@
-import type { RealtimePointRow } from "@/types/monitor";
+import type { DeviceListResponse, DeviceRealtimeDataResponse, PointRealtimePayload, PointRealtimeResponse, RealtimePointRow } from "@/types/monitor";
 
 export interface RealtimeSummary {
   total: number;
@@ -6,7 +6,7 @@ export interface RealtimeSummary {
   bad: number;
 }
 
-export function normalizeRealtimeRows(response: unknown, fallbackDeviceId = ""): RealtimePointRow[] {
+export function normalizeRealtimeRows(response: DeviceRealtimeDataResponse | RealtimePointRow[] | unknown, fallbackDeviceId = ""): RealtimePointRow[] {
   if (Array.isArray(response)) {
     return response as RealtimePointRow[];
   }
@@ -15,12 +15,15 @@ export function normalizeRealtimeRows(response: unknown, fallbackDeviceId = ""):
   }
   const record = response as Record<string, unknown>;
   const deviceId = String(record.deviceId || fallbackDeviceId || "");
-  for (const key of ["points", "values", "rows", "items", "devices"]) {
+  const data = record.data;
+  if (isPointPayloadMap(data)) {
+    return pointPayloadMapToRows(data, deviceId);
+  }
+  for (const key of ["points", "values", "rows", "items"]) {
     if (Array.isArray(record[key])) {
       return (record[key] as RealtimePointRow[]).map((row) => attachDeviceId(row, deviceId));
     }
   }
-  const data = record.data;
   if (Array.isArray(data)) {
     return (data as RealtimePointRow[]).map((row) => attachDeviceId(row, deviceId));
   }
@@ -42,7 +45,22 @@ export function normalizeRealtimeRows(response: unknown, fallbackDeviceId = ""):
   return [];
 }
 
-export function normalizeSinglePointRealtimeRow(response: unknown): RealtimePointRow | null {
+export function extractRealtimeDeviceIds(response: DeviceListResponse | RealtimePointRow[] | unknown): string[] {
+  if (!response || typeof response !== "object") {
+    return [];
+  }
+  const record = response as Record<string, unknown>;
+  const devices = Array.isArray(record.devices) ? record.devices : [];
+  const primaryIds = devices
+    .map((device) => String(asRecord(device).deviceId || ""))
+    .filter(Boolean);
+  if (primaryIds.length) {
+    return Array.from(new Set(primaryIds));
+  }
+  return Array.from(new Set(normalizeRealtimeRows(response).map((row) => String(row.deviceId || "")).filter(Boolean)));
+}
+
+export function normalizeSinglePointRealtimeRow(response: PointRealtimeResponse | PointRealtimePayload | unknown): RealtimePointRow | null {
   const record = asRecord(response);
   if (!Object.keys(record).length) {
     return null;
@@ -56,6 +74,17 @@ export function normalizeSinglePointRealtimeRow(response: unknown): RealtimePoin
     } as RealtimePointRow;
   }
   return record as RealtimePointRow;
+}
+
+function pointPayloadMapToRows(data: Record<string, PointRealtimePayload>, deviceId: string): RealtimePointRow[] {
+  return Object.entries(data).map(([pointId, value]) => attachDeviceId({ pointId, ...value }, deviceId));
+}
+
+function isPointPayloadMap(value: unknown): value is Record<string, PointRealtimePayload> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((item) => Boolean(item) && typeof item === "object" && !Array.isArray(item));
 }
 
 export function buildRealtimeSummary(rows: RealtimePointRow[]): RealtimeSummary {

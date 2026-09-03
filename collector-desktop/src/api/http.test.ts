@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, resolveBrowserServerUrl, unwrapApiResponse } from "./http";
+import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, requestEnvelope, requestRaw, resolveBrowserServerUrl, unwrapApiResponse } from "./http";
+import type { ApiResult } from "@/types/api";
+import type { DeviceRealtimeDataResponse } from "@/types/monitor";
 
 const globalWindow = globalThis as unknown as { window?: unknown };
 const originalWindow = globalWindow.window;
@@ -51,6 +53,40 @@ describe("http", () => {
 
   it("解析 ApiResult 成功响应", () => {
     expect(unwrapApiResponse({ code: 200, message: "成功", data: { ok: true } })).toEqual({ ok: true });
+    expect(unwrapApiResponse({ code: 200, data: { ok: true } }, "apiData")).toEqual({ ok: true });
+  });
+
+  it("RAW 模式保留业务 DTO 自身的 data 字段", () => {
+    const body: DeviceRealtimeDataResponse = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      data: {
+        "point-1": {
+          pointId: "point-1",
+          value: 10
+        }
+      },
+      timestamp: 123456
+    };
+
+    expect(unwrapApiResponse<DeviceRealtimeDataResponse>(body, "raw")).toEqual(body);
+  });
+
+  it("RAW 模式仍会把业务错误转换成异常", () => {
+    expect(() => unwrapApiResponse({ status: "error", message: "device not found" }, "raw")).toThrow(ApiRequestError);
+    expect(() => unwrapApiResponse({ status: "error", message: "device not found" }, "raw")).toThrow("device not found");
+  });
+
+  it("ENVELOPE 模式保留 ApiResult 顶层 metadata", () => {
+    const body: ApiResult<null> = {
+      status: "success",
+      deviceId: "device-1",
+      running: true,
+      timestamp: 123456
+    };
+
+    expect(unwrapApiResponse<ApiResult<null>>(body, "envelope")).toEqual(body);
   });
 
   it("把业务错误转换成包含状态码的异常", () => {
@@ -97,6 +133,47 @@ describe("http", () => {
       method: "GET",
       params: { limit: 1 }
     }));
+  });
+
+  it("Electron 代理在 RAW 模式下保留 DTO 自身 data 字段", async () => {
+    const rawBody: DeviceRealtimeDataResponse = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      data: {
+        "point-1": {
+          pointId: "point-1",
+          value: 10
+        }
+      },
+      timestamp: 123456
+    };
+    const proxyRequest = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: rawBody
+    });
+    installDesktopProxy(proxyRequest);
+
+    await expect(requestRaw<DeviceRealtimeDataResponse>({ url: "/api/data/device/device-1", method: "GET" })).resolves.toEqual(rawBody);
+  });
+
+  it("requestEnvelope 能读取 ApiResult 顶层运行状态 metadata", async () => {
+    const proxyRequest = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: { status: "success", deviceId: "device-1", running: true, timestamp: 123456 }
+    });
+    installDesktopProxy(proxyRequest);
+
+    await expect(requestEnvelope<null>({ url: "/api/device/device-1/running", method: "GET" })).resolves.toEqual({
+      status: "success",
+      deviceId: "device-1",
+      running: true,
+      timestamp: 123456
+    });
   });
 
   it("Electron 代理返回鉴权错误时保持中文提示和响应体", async () => {

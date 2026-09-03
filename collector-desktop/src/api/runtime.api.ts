@@ -1,15 +1,15 @@
-import { request } from "./http";
+import { requestRaw } from "./http";
 import type { ConsoleRuntimeStatusSnapshot, HealthStatus } from "@/types/runtime";
 
 export function getHealth(): Promise<HealthStatus> {
-  return request<HealthStatus>({
+  return requestRaw<HealthStatus>({
     url: "/health",
     method: "GET"
   });
 }
 
 export function getRuntimeStatus(): Promise<ConsoleRuntimeStatusSnapshot> {
-  return request<ConsoleRuntimeStatusSnapshot>({
+  return requestRaw<ConsoleRuntimeStatusSnapshot>({
     url: "/monitor/runtime",
     method: "GET"
   });

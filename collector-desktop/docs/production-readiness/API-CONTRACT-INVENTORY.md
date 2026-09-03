@@ -10,6 +10,7 @@
 - 前端范围：`collector-desktop/src/api/`、`src/views/`、`src/features/`、`src/stores/`、`src/types/`。
 - 后端范围：Controller 实际位于 `collector-web/src/main/java/com/wangbin/collector/api/controller/`；Application Service 与 DTO 位于 `collector-application/src/main/java/com/wangbin/collector/api/`；监控与协议 Schema 的返回模型分别位于 `collector-monitor/`、`collector-protocol-spi/`、`collector-runtime/` 等真实模块。
 - 本文只建立契约盘点，不修改业务代码、不改 Electron 请求链路、不重构 DTO。
+- 01.2A 更新：前端 HTTP 层已增加显式 `apiData` / `raw` / `envelope` response mode；DataController raw DTO、`isDeviceRunning`、`getRunningDevices` 的核心边界问题已标记为 `RESOLVED IN 01.2A`，历史风险条目保留供后续任务追踪。
 
 ## 2. HTTP 与 Electron 请求边界
 
@@ -18,7 +19,8 @@
 - 默认服务地址：`collector-desktop/src/api/http.ts:5`，`http://127.0.0.1:9090/collector`。
 - Axios timeout：`http.ts:91-93`，默认 `8000ms`。
 - 请求头：`http.ts:95-100`，renderer 直接请求时统一写入 `X-Collector-Token`。
-- 统一解包：`http.ts:179-195`，当响应对象存在 `data` 字段时返回 `data`；当 `status=error` 或 `code != 200` 时抛出 `ApiRequestError`。
+- Task 01.1 发现：`http.ts` 曾在响应对象存在 `data` 字段时直接返回 `data`，导致 raw DTO 自身的 `data` 可能被误拆。
+- RESOLVED IN 01.2A：`http.ts` 已改为显式 response mode：`apiData` 用于 `ApiResult<T>` 解包；`raw` 用于直接业务 DTO 且不剥离 DTO 自身 `data`；`envelope` 用于保留 `ApiResult` 顶层 `deviceId` / `count` / `running` / `extra` 等 metadata。错误校验与 data extraction 已分离，Browser Axios 与 Electron preload proxy 共用同一 renderer HTTP 边界。
 - 错误消息本地化：`http.ts:215-233`，401/403/网络错误/超时转换为中文消息。
 - 注意：当前 `request<T>()` 未暴露 `AbortSignal`，页面无法取消旧请求；这属于 Task 01.2 之后的可靠性改造候选。
 
@@ -39,8 +41,8 @@
 |---|---:|---:|---|
 | `config.api.ts` | 20 | 19 | 配置治理 API 最主要的类型缺口，除点位配置读取外几乎全为 unknown。 |
 | `control.api.ts` | 3 | 3 | 写点、批量写、协议命令均返回 unknown；命令结果本身包含动态结构。 |
-| `data.api.ts` | 8 | 7 | 实时、历史、告警混合；历史/告警存在兼容 normalize。 |
-| `device.api.ts` | 10 | 7 | 设备操作多为 `ApiResult<Object>`；运行快照已 typed。 |
+| `data.api.ts` | 8 | 0 | RESOLVED IN 01.2A：DataController 直接返回业务 DTO，本模块已明确使用 RAW DTO response boundary；历史/告警 normalize 作为 LEGACY_COMPAT 保留。 |
+| `device.api.ts` | 10 | 6 | RESOLVED IN 01.2A：`getRunningDevices` 已从 `Promise<unknown[]>` 修正为 `Promise<string[]>`；`isDeviceRunning` 使用 ENVELOPE 读取顶层 `running` 后仍对调用方返回 boolean。 |
 | `edge.api.ts` | 1 | 1 | 后端已有 `EdgeTelemetryIngressResult`，前端仍 unknown。 |
 | `monitor.api.ts` | 9 | 9 | 监控 API 全 unknown；部分 DTO 已在后端稳定。 |
 | `ops.api.ts` | 4 | 3 | 日志本地类型为兼容形态；确认/网络诊断未 typed。 |
@@ -48,7 +50,7 @@
 | `protocol.api.ts` | 3 | 0 | 协议 Schema typed。 |
 | `runtime.api.ts` | 2 | 0 | `/health` 与 `/monitor/runtime` typed。 |
 | `shadow.api.ts` | 5 | 5 | 影子当前均 unknown，历史天然 Map 动态。 |
-| **合计** | **67** | **55** | API-local normalizer：`data.api.ts normalizeAlarmRows`、`ops.api.ts normalizeLogRows` 未计入 HTTP API 总数。 |
+| **合计** | **67** | **47** | 01.2A 后 DataController 8 个核心 raw DTO endpoint 已 typed；API-local normalizer：`data.api.ts normalizeAlarmRows`、`ops.api.ts normalizeLogRows` 未计入 HTTP API 总数。 |
 
 ## 4. 完整 API Contract Inventory
 
@@ -89,14 +91,14 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `getPointRealtimeData` | GET | `/api/data/device/{deviceId}/point/{pointId}` | path: `deviceId`, `pointId` | `Promise<unknown>` | `DataController.getPointData` → `RealtimeDataApplicationService.getPointData` | `PointRealtimeResponse`（非 ApiResult） | `RealtimeView` | `normalizeSinglePointRealtimeRow` | SHOULD_TYPE；后端单点响应 DTO 已稳定。 |
-| `getDeviceRealtimeData` | GET | `/api/data/device/{deviceId}` | query: `pointIds?`，前端拼成逗号字符串 | `Promise<DeviceRealtimeDataResponse>` | `DataController.getDeviceData` → `RealtimeDataApplicationService.getDeviceData` | `DeviceRealtimeDataResponse`（非 ApiResult） | `RealtimeView`, `PointEditor`, `DeviceConfigPanel`, `DeviceOperationShell`, `RealtimeDataPanel` | `normalizeRealtimeRows` | PARTIAL：后端 `data` 是 `Map<String, PointRealtimePayload>`；前端类型将 `data` 声明为数组候选，依赖 normalize 兜底。另需确认 Spring 对逗号字符串 `List<String>` 的绑定。 |
-| `getAllDeviceDataSummaries` | GET | `/api/data/devices` | 无 | `Promise<unknown>` | `DataController.getAllDevices` → `RealtimeDataApplicationService.getAllDevices` | `DeviceListResponse`（非 ApiResult） | `RealtimeView` | `normalizeRealtimeRows` | SHOULD_TYPE；当前将设备摘要交给 realtime rows normalizer，fallback 显示存在语义风险。 |
-| `getDevicePointSummaries` | GET | `/api/data/device/{deviceId}/points` | path: `deviceId` | `Promise<unknown>` | `DataController.getDevicePoints` → `RealtimeDataApplicationService.getDevicePoints` | `DevicePointListResponse`（非 ApiResult） | 当前未发现生产引用 | 无 | SHOULD_TYPE；unused/reserved。 |
-| `resetAdaptiveConfig` | POST | `/api/data/device/{deviceId}/reset-adaptive` | path: `deviceId` | `Promise<unknown>` | `DataController.resetAdaptiveConfig` → `RealtimeDataApplicationService.resetAdaptiveConfig` | `AdaptiveResetResponse`（非 ApiResult） | 当前未发现生产引用 | 无 | SHOULD_TYPE；unused/reserved。 |
-| `getPointHistory` | GET | `/api/data/history/device/{deviceId}/point/{pointId}` | query: `startTs?`, `endTs?`, `limit?` | `Promise<unknown>` | `DataController.getPointHistory` → `RealtimeDataApplicationService.getPointHistory` | `HistoryDataResponse`（非 ApiResult） | `HistoryView` | `normalizeHistoryRows` | LEGACY_COMPAT：后端当前 `data` 稳定，但前端兼容 `records/rows/items/data/values/points`。 |
-| `getRecentAlarms` | GET | `/api/data/history/alarms` | query: `deviceId?`, `pointId?`, `pointCode?`, `level?`, `ruleId?`, `startTs?`, `endTs?`, `limit?` | `Promise<unknown>` | `DataController.getRecentAlarmHistory` → `RealtimeDataApplicationService.getRecentAlarmHistory` | `AlarmHistoryDataResponse`（非 ApiResult） | `AlarmView`, `DashboardView`, `DiagnosticView`, `AlarmTablePanel` | `normalizeAlarmHistoryRows` / `normalizeAlarmRows` | LEGACY_COMPAT：兼容 `alarms/records/rows/items/data`。 |
-| `getDeviceAlarmHistory` | GET | `/api/data/history/device/{deviceId}/alarms` | path: `deviceId`; query 同上 | `Promise<unknown>` | `DataController.getAlarmHistory` → `RealtimeDataApplicationService.getAlarmHistory` | `AlarmHistoryDataResponse`（非 ApiResult） | `AlarmView`, `HistoryView` | `normalizeAlarmHistoryRows` | LEGACY_COMPAT。 |
+| `getPointRealtimeData` | GET | `/api/data/device/{deviceId}/point/{pointId}` | path: `deviceId`, `pointId` | `Promise<PointRealtimeResponse>` | `DataController.getPointData` → `RealtimeDataApplicationService.getPointData` | `PointRealtimeResponse`（非 ApiResult） | `RealtimeView` | `normalizeSinglePointRealtimeRow` | RESOLVED IN 01.2A：使用 RAW DTO，单点响应 DTO 已 typed；normalizer 保留 DTO→ViewModel。 |
+| `getDeviceRealtimeData` | GET | `/api/data/device/{deviceId}` | query: `pointIds?`，前端拼成逗号字符串 | `Promise<DeviceRealtimeDataResponse>` | `DataController.getDeviceData` → `RealtimeDataApplicationService.getDeviceData` | `DeviceRealtimeDataResponse`（非 ApiResult） | `RealtimeView`, `PointEditor`, `DeviceConfigPanel`, `DeviceOperationShell`, `RealtimeDataPanel` | `normalizeRealtimeRows` | RESOLVED IN 01.2A：使用 RAW DTO，前端 `data` 已对齐 `Record<string, PointRealtimePayload>`；仍需后续确认 Spring 对逗号字符串 `List<String>` 的绑定。 |
+| `getAllDeviceDataSummaries` | GET | `/api/data/devices` | 无 | `Promise<DeviceListResponse>` | `DataController.getAllDevices` → `RealtimeDataApplicationService.getAllDevices` | `DeviceListResponse`（非 ApiResult） | `RealtimeView` | `extractRealtimeDeviceIds` | RESOLVED IN 01.2A：接口已 typed 为 RAW DTO；`DeviceListResponse.devices` 只用于提取全设备查询的 `deviceId`，不再被 normalizer 当作实时点位行。 |
+| `getDevicePointSummaries` | GET | `/api/data/device/{deviceId}/points` | path: `deviceId` | `Promise<DevicePointListResponse>` | `DataController.getDevicePoints` → `RealtimeDataApplicationService.getDevicePoints` | `DevicePointListResponse`（非 ApiResult） | 当前未发现生产引用 | 无 | RESOLVED IN 01.2A：RAW DTO typed；unused/reserved。 |
+| `resetAdaptiveConfig` | POST | `/api/data/device/{deviceId}/reset-adaptive` | path: `deviceId` | `Promise<AdaptiveResetResponse>` | `DataController.resetAdaptiveConfig` → `RealtimeDataApplicationService.resetAdaptiveConfig` | `AdaptiveResetResponse`（非 ApiResult） | 当前未发现生产引用 | 无 | RESOLVED IN 01.2A：RAW DTO typed；unused/reserved。 |
+| `getPointHistory` | GET | `/api/data/history/device/{deviceId}/point/{pointId}` | query: `startTs?`, `endTs?`, `limit?` | `Promise<HistoryDataResponse>` | `DataController.getPointHistory` → `RealtimeDataApplicationService.getPointHistory` | `HistoryDataResponse`（非 ApiResult） | `HistoryView` | `normalizeHistoryRows` | RESOLVED IN 01.2A：RAW DTO typed；LEGACY_COMPAT normalizer 保留以兼容 `records/rows/items/data/values/points`。 |
+| `getRecentAlarms` | GET | `/api/data/history/alarms` | query: `deviceId?`, `pointId?`, `pointCode?`, `level?`, `ruleId?`, `startTs?`, `endTs?`, `limit?` | `Promise<AlarmHistoryDataResponse>` | `DataController.getRecentAlarmHistory` → `RealtimeDataApplicationService.getRecentAlarmHistory` | `AlarmHistoryDataResponse`（非 ApiResult） | `AlarmView`, `DashboardView`, `DiagnosticView`, `AlarmTablePanel` | `normalizeAlarmHistoryRows` / `normalizeAlarmRows` | RESOLVED IN 01.2A：RAW DTO typed；LEGACY_COMPAT normalizer 保留以兼容历史行字段。 |
+| `getDeviceAlarmHistory` | GET | `/api/data/history/device/{deviceId}/alarms` | path: `deviceId`; query 同上 | `Promise<AlarmHistoryDataResponse>` | `DataController.getAlarmHistory` → `RealtimeDataApplicationService.getAlarmHistory` | `AlarmHistoryDataResponse`（非 ApiResult） | `AlarmView`, `HistoryView` | `normalizeAlarmHistoryRows` | RESOLVED IN 01.2A：RAW DTO typed；LEGACY_COMPAT 保留。 |
 
 ### 4.4 `device.api.ts`
 
@@ -109,9 +111,9 @@
 | `reloadDevices` | POST | `/api/device/reload` | 无 | `Promise<unknown>` | `DeviceController.reloadAllDevices` → `DeviceConsoleApplicationService.reloadAllDevices` | `ApiResult<Object>` | `device.store` | Store 只看成功/失败 | DYNAMIC_OK。 |
 | `getDeviceStatus` | GET | `/api/device/{deviceId}/status` | path: `deviceId` | `Promise<unknown>` | `DeviceController.getDeviceStatus` → `DeviceConsoleApplicationService.getDeviceStatus` | `ApiResult<DeviceStatusResponse>` | `DeviceConfigPanel`, `DeviceRuntimePanel`, `device.store` | `normalizeDeviceStatusDetail` | SHOULD_TYPE。 |
 | `getAllDeviceStatistics` | GET | `/api/device/statistics` | 无 | `Promise<unknown>` | `DeviceController.getAllStatistics` → `DeviceConsoleApplicationService.getAllStatistics` | `ApiResult<Map<String, DeviceStatisticsResponse>>` | 当前未发现生产引用 | 无 | SHOULD_TYPE；unused/reserved。 |
-| `getRunningDevices` | GET | `/api/device/running` | 无 | `Promise<unknown[]>` | `DeviceController.getRunningDevices` → `DeviceConsoleApplicationService.getRunningDevices` | `ApiResult<List<String>>` | `DeviceRuntimePanel` | `normalizeRunningDeviceIds` | SHOULD_TYPE：应至少改为 `Promise<string[]>`。 |
+| `getRunningDevices` | GET | `/api/device/running` | 无 | `Promise<string[]>` | `DeviceController.getRunningDevices` → `DeviceConsoleApplicationService.getRunningDevices` | `ApiResult<List<String>>` | `DeviceRuntimePanel` | `normalizeRunningDeviceIds` 兼容保留 | RESOLVED IN 01.2A：HTTP 层按 `apiData` 解包后 API 返回 `string[]`。 |
 | `getDeviceRuntime` | GET | `/api/device/runtime` | 无 | `Promise<DeviceRuntimeSnapshot[]>` | `DeviceController.getDeviceRuntimeSnapshots` → `DeviceConsoleApplicationService.getDeviceRuntimeSnapshots` | `ApiResult<List<DeviceRuntimeSnapshot>>` | `device.store`, `DeviceRuntimePanel` | `normalizeDeviceRuntimeRows` 兜底 | MATCHED。 |
-| `isDeviceRunning` | GET | `/api/device/{deviceId}/running` | path: `deviceId` | `Promise<boolean>` | `DeviceController.isDeviceRunning` → `DeviceConsoleApplicationService.isDeviceRunning` | `ApiResult<Object>`，顶层 `running` 字段 | `DeviceRuntimePanel` | `normalizeDeviceRunningFlag` | PARTIAL：`request<boolean>` 实际可能返回带 `running` 的对象而不是 boolean；页面 normalizer 兜底后可工作，但 API 类型不真实。 |
+| `isDeviceRunning` | GET | `/api/device/{deviceId}/running` | path: `deviceId` | `Promise<boolean>` | `DeviceController.isDeviceRunning` → `DeviceConsoleApplicationService.isDeviceRunning` | `ApiResult<Object>`，顶层 `running` 字段 | `DeviceRuntimePanel` | `normalizeDeviceRunningFlag` 兼容保留 | RESOLVED IN 01.2A：API 使用 ENVELOPE 读取顶层 `running`，调用方仍得到真实 boolean。 |
 
 ### 4.5 `edge.api.ts`
 
@@ -180,8 +182,8 @@
 
 | 分类 | 数量 | API |
 |---|---:|---|
-| SHOULD_TYPE | 45 | `config.api.ts`: `getConfigSummary`, `getConfigDevices`, `createLocalDevice`, `getLocalDevice`, `updateLocalDevice`, `deleteLocalDevice`, `getDeviceConfig`, `updateDeviceConfig`, `updateDevicePointsConfig`, `getDeviceConnection`, `updateDeviceConnection`, `getDeviceDiff`, `refreshDeviceConfig`, `clearDeviceConfig`, `triggerPartialConfigSync`, `getConfigSyncStatus`, `exportConfigs`, `importConfigs`; `control.api.ts`: `writeDevicePoint`, `writeDevicePoints`; `data.api.ts`: `getPointRealtimeData`, `getAllDeviceDataSummaries`, `getDevicePointSummaries`, `resetAdaptiveConfig`; `device.api.ts`: `getDeviceStatus`, `getAllDeviceStatistics`, `getRunningDevices`; `edge.api.ts`: `ingestEdgeTelemetry`; `monitor.api.ts`: 全 9 个； `ops.api.ts`: `queryAlarmAcknowledgements`, `acknowledgeAlarm`, `diagnoseNetwork`; `point.api.ts`: `saveDevicePointConfig`; `shadow.api.ts`: `getShadow`, `getShadowDelta`, `updateShadowDesired`, `clearShadowDesired`。 |
-| LEGACY_COMPAT | 3 | `data.api.ts`: `getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory`。后端 DTO 当前可定位，但前端仍兼容 `records/rows/items/data/alarms/values/points` 等历史形态。 |
+| SHOULD_TYPE | 40 | 01.2A 后仍待处理：`config.api.ts`: `getConfigSummary`, `getConfigDevices`, `createLocalDevice`, `getLocalDevice`, `updateLocalDevice`, `deleteLocalDevice`, `getDeviceConfig`, `updateDeviceConfig`, `updateDevicePointsConfig`, `getDeviceConnection`, `updateDeviceConnection`, `getDeviceDiff`, `refreshDeviceConfig`, `clearDeviceConfig`, `triggerPartialConfigSync`, `getConfigSyncStatus`, `exportConfigs`, `importConfigs`; `control.api.ts`: `writeDevicePoint`, `writeDevicePoints`; `device.api.ts`: `getDeviceStatus`, `getAllDeviceStatistics`; `edge.api.ts`: `ingestEdgeTelemetry`; `monitor.api.ts`: 全 9 个； `ops.api.ts`: `queryAlarmAcknowledgements`, `acknowledgeAlarm`, `diagnoseNetwork`; `point.api.ts`: `saveDevicePointConfig`; `shadow.api.ts`: `getShadow`, `getShadowDelta`, `updateShadowDesired`, `clearShadowDesired`。已解决：DataController 4 个 SHOULD_TYPE 和 `getRunningDevices`。 |
+| LEGACY_COMPAT | 0 | 01.2A 后 `data.api.ts`: `getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory` 已 typed 为 RAW DTO；兼容分支仍保留在 normalizer，不再计入 API 层 unknown。 |
 | DYNAMIC_OK | 7 | `config.api.ts`: `triggerFullConfigSync`; `control.api.ts`: `executeDeviceCommand`; `device.api.ts`: `startDevice`, `startLocalDevice`, `stopDevice`, `reloadDevices`; `shadow.api.ts`: `getShadowHistory`。这些接口当前要么后端就是 `ApiResult<Object>` 操作结果，要么数据天然动态。 |
 
 ## 6. Normalize / Extract / Resolve / Parse 清单
@@ -189,7 +191,7 @@
 | 文件 | 函数 | 分类 | 存在理由 | 后续建议 |
 |---|---|---|---|---|
 | `src/api/http.ts` | `unwrapApiResponse`, `resolveHttpErrorMessage`, `resolveNetworkMessage` | DEFENSIVE | 统一处理 ApiResult/raw DTO 与错误本地化。 | 保留；Task 01.2 可评估增加 request id / abort 支持。 |
-| `src/features/realtime/utils/realtime-utils.ts` | `normalizeRealtimeRows`, `normalizeSinglePointRealtimeRow`, `normalizeTopLevelPointMap` | BACKEND_COMPAT + TYPE_GAP | 兼容 raw array、`points/values/rows/items/devices/data`、top-level point map；同时掩盖 `DeviceRealtimeDataResponse.data` Map 与 TS 数组声明不一致。 | 不直接删除；先补真实 DTO，再收窄兼容分支。 |
+| `src/features/realtime/utils/realtime-utils.ts` | `normalizeRealtimeRows`, `normalizeSinglePointRealtimeRow`, `extractRealtimeDeviceIds`, `normalizeTopLevelPointMap` | BACKEND_COMPAT + VIEW_MODEL + LEGACY_COMPAT | RESOLVED IN 01.2A：primary path 已改为后端真实 `DeviceRealtimeDataResponse.data: Record<string, PointRealtimePayload>` / `PointRealtimeResponse.data` → `RealtimePointRow`；`DeviceListResponse.devices` 改由 `extractRealtimeDeviceIds` 提取设备 ID，不再作为实时点位行；`points/values/rows/items/data` 和 top-level point map 兼容分支保留。 | 后续只在确认无历史响应后再收窄兼容分支；不要在 01.2A 删除。 |
 | `src/api/data.api.ts` | `normalizeAlarmRows` | DUPLICATED | 与 `features/alarm/utils/alarm-history-utils.normalizeAlarmHistoryRows` 功能重叠，供 device-scoped `AlarmTablePanel` 使用。 | Task 01.2/01.4 可统一 alarm normalizer。 |
 | `src/features/history/utils/history-data-utils.ts` | `normalizeHistoryRows` / `extractRows` | BACKEND_COMPAT | 兼容 `records/rows/items/data/values/points`。 | 后端 `HistoryDataResponse.data` 稳定后，可标注 legacy 分支。 |
 | `src/features/alarm/utils/alarm-history-utils.ts` | `normalizeAlarmHistoryRows`, `normalizeAlarmRow`, `extractRows` | BACKEND_COMPAT + VIEW_MODEL | 后端 alarm history 是 `List<Map<String,Object>>`，前端需要规范字段名和展示字段。 | 保留；可增加后端字段到 TS 明确类型。 |
@@ -199,7 +201,7 @@
 | `src/stores/device.store.ts` | `normalizeDeviceViewModel*`, `resolveDeviceStatus`, `resolvePointCount`, `resolveDeviceStartMode` | VIEW_MODEL + DEFENSIVE | 后端设备配置与运行快照合并为 UI 设备状态。 | 保留；与类型补强同步。 |
 | `src/stores/point.store.ts` / `point-editor-utils.ts` | `normalizePointRows`, `mergePointRuntime`, `buildPointExtraModel`, `applyPointExtraModel` | VIEW_MODEL | 点位配置转编辑态、协议扩展字段映射、实时值合并。 | 保留；性能风险见基线文档。 |
 | `src/features/point/utils/point-excel-utils.ts` | `parsePointCsv`, `normalizeImportedValue` | VIEW_MODEL + DEFENSIVE | CSV 导入到点位模型；1MB/2000 行限制。 | 保留。 |
-| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + TYPE_GAP | 兼容 ApiResult data 与顶层字段；弥补 `isDeviceRunning` frontend type 与 backend envelope 不一致。 | Task 01.2 应优先修正 API 类型。 |
+| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；normalizer 兼容层保留以保护既有页面逻辑。 | 后续可在调用点确认稳定后减少冗余 normalize，但不属于 01.2A。 |
 | `src/features/network/utils/network-utils.ts` | `buildNetworkDiagnosticPayload`, `normalizeNetworkDiagnosticResult` | VIEW_MODEL + DEFENSIVE | 表单输入 → 后端请求；后端结果 → UI 展示模型；失败时生成不可达结果。 | 保留；补 TS DTO 后收窄输入输出。 |
 | `src/features/network/utils/edge-telemetry-utils.ts` | `parseEdgeTelemetryJson`, `normalizeEdgeTelemetryResult`, `parseTypedValue` | DYNAMIC_OK + VIEW_MODEL | 边缘遥测 value 天然动态，但 response result 有稳定计数字段。 | 请求/响应外壳可 typed，value 继续 unknown。 |
 | `src/features/shadow/utils/shadow-utils.ts` | `normalizeShadowHistoryRows`, `parseShadowJson*`, `summarizeShadowState` | DYNAMIC_OK + VIEW_MODEL | 影子 state/delta/history 是动态文档，需要 JSON 解析和摘要。 | 保留；响应外壳可 typed。 |
@@ -235,10 +237,10 @@
 | 状态 | API 条目数 | 说明 / 代表项 |
 |---|---:|---|
 | MATCHED | 9 | `device.api.getConfigDevices`, `device.api.getDeviceRuntime`, `point.api.getDevicePointConfig`, `protocol.api.*`, `runtime.api.*`, `config.api.getDevicePointsConfig`。 |
-| PARTIAL | 5 | `getDeviceRealtimeData`（后端 Map vs 前端 array 候选）、`isDeviceRunning`（后端 envelope vs frontend boolean）、`getRunningDevices`（应为 string[]）、`config.api.getConfigDevices`（重复未 typed）、`monitor.api.getRuntimeStatus`（typed 函数在 runtime.api 中重复存在）。 |
-| MISSING | 42 | 后端已有明确 DTO/record/class，但对应 API 仍返回 unknown；集中在 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。 |
+| PARTIAL | 2 | 01.2A 后剩余：`config.api.getConfigDevices`（重复未 typed）、`monitor.api.getRuntimeStatus`（typed 函数在 runtime.api 中重复存在）。已解决：`getDeviceRealtimeData`、`isDeviceRunning`、`getRunningDevices`。 |
+| MISSING | 35 | 01.2A 后 DataController raw DTO 已补齐；剩余缺口集中在 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。 |
 | DYNAMIC | 7 | 后端当前就是 `ApiResult<Object>` 操作结果或数据天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history。 |
-| LEGACY_COMPAT | 4 | `getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory`, `getOpsLogs`。 |
+| LEGACY_COMPAT | 1 | 01.2A 后 API 返回类型层面的 legacy unknown 仅剩 `getOpsLogs`；`getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory` 已 typed，兼容逻辑保留在 normalizer。 |
 
 关键后端 DTO 对照：
 
@@ -246,10 +248,10 @@
 |---|---|---|---|
 | `ConfigDeviceListResponse` | `types/device.ts ConfigDeviceListResponse` | MATCHED/PARTIAL | `device.api.ts` matched；`config.api.ts` 同端点仍 unknown。 |
 | `DevicePointConfigResponse` | `types/point.ts DevicePointConfigResponse` | MATCHED | 读取 typed；保存结果 `DeviceIdResponse` 缺 TS。 |
-| `DeviceRealtimeDataResponse` | `types/monitor.ts DeviceRealtimeDataResponse` | PARTIAL | 后端 `data: Map<String, PointRealtimePayload>`；前端 `data?: RealtimePointRow[]` 并依赖 normalizer。 |
-| `PointRealtimeResponse` | 无独立 TS 响应 DTO | MISSING | 仅通过 `RealtimePointRow` 和 normalizer 展示。 |
-| `HistoryDataResponse` | 无独立 TS 响应 DTO；`HistoryRow` 为行模型 | LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>`，前端兼容多字段。 |
-| `AlarmHistoryDataResponse` | 无独立 TS 响应 DTO；`AlarmRow` 为行模型 | LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>`。 |
+| `DeviceRealtimeDataResponse` | `types/monitor.ts DeviceRealtimeDataResponse` | RESOLVED IN 01.2A | 后端 `data: Map<String, PointRealtimePayload>` 已对齐为 `Record<string, PointRealtimePayload>`；normalizer 负责 DTO→ViewModel。 |
+| `PointRealtimeResponse` | `types/monitor.ts PointRealtimeResponse` | RESOLVED IN 01.2A | 单点 raw DTO 已 typed；`data` 为 `PointRealtimePayload`。 |
+| `HistoryDataResponse` | `types/monitor.ts HistoryDataResponse`；`HistoryRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；前端继续兼容多字段。 |
+| `AlarmHistoryDataResponse` | `types/monitor.ts AlarmHistoryDataResponse`；`AlarmRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；历史字段动态合理。 |
 | `DeviceStatusResponse` | `DeviceStatusDetail` view model | PARTIAL | 前端没有原始 DTO；normalizer 合并 running/isRunning。 |
 | `DeviceRuntimeSnapshot` | `types/device.ts DeviceRuntimeSnapshot` | MATCHED | 布尔/时间/phase 字段对齐。 |
 | `ConfigSummaryResponse` | 无 | MISSING | Dashboard/Collection/Diagnostic 以 `unknown/asRecord` 读取。 |
@@ -271,10 +273,10 @@
 | `DeviceShadowResponse` / `DeviceShadowDeltaResponse` | 无独立 TS DTO | MISSING/DYNAMIC | response shell 稳定，state/delta/metadata 内部动态。 |
 | `List<Map<String,Object>>` shadow history | `ShadowHistoryRow` view model | DYNAMIC | 历史记录天然动态。 |
 
-## 9. 立即可用的 Task 01.2 输入
+## 9. 01.2A 完成后剩余输入
 
-1. 优先补 API 层类型，不改页面行为：`config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。
-2. 先修正“类型与真实响应不一致”的 API：`getDeviceRealtimeData`、`isDeviceRunning`、`getRunningDevices`。
+1. RESOLVED IN 01.2A：`getDeviceRealtimeData`、`PointRealtimeResponse`、`DeviceRealtimeDataResponse.data` Map contract、`getRunningDevices`、`isDeviceRunning`、DataController raw DTO response boundary。
+2. Task 01.2B 建议继续补 API 层类型，不改页面行为：优先 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。
 3. 将 `monitor.api.ts.getRuntimeStatus` 与 `runtime.api.ts.getRuntimeStatus` 的重复契约统一，避免同一端点一处 typed、一处 unknown。
 4. 对 `getOpsLogs` 前端多传的 `deviceId/thread` 与后端未接收参数建立明确决策：要么后端支持过滤，要么前端只做本地过滤并标注文案。
 5. 保留 `DYNAMIC_OK` 的动态 payload/value/result，不为了“零 unknown”创造无业务价值 DTO。

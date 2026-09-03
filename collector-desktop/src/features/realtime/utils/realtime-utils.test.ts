@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRealtimeSummary,
+  extractRealtimeDeviceIds,
   normalizeRealtimeRows,
   normalizeSinglePointRealtimeRow,
   realtimeAddress,
@@ -29,9 +30,13 @@ describe("realtime-utils", () => {
     ]);
   });
 
-  it("归一化全部设备摘要和数组响应", () => {
-    expect(normalizeRealtimeRows({ devices: [{ deviceId: "dev-1", pointCount: 2 }] })).toEqual([{ deviceId: "dev-1", pointCount: 2 }]);
+  it("不把 DataController 设备摘要误归一化为实时点位行", () => {
+    expect(normalizeRealtimeRows({ devices: [{ deviceId: "dev-1", pointCount: 2 }] })).toEqual([]);
     expect(normalizeRealtimeRows({ data: [{ deviceId: "dev-2", pointId: "p2", value: 1 }] })).toEqual([{ deviceId: "dev-2", pointId: "p2", value: 1 }]);
+  });
+
+  it("从 DataController 设备摘要提取全设备实时查询 deviceId", () => {
+    expect(extractRealtimeDeviceIds({ devices: [{ deviceId: "dev-1", pointCount: 2 }, { deviceId: "", pointCount: 1 }] })).toEqual(["dev-1"]);
   });
 
   it("归一化单点实时响应", () => {

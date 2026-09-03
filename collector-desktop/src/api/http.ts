@@ -27,6 +27,12 @@ export interface ConnectionTestResult {
   message: string;
 }
 
+export type ResponseMode = "apiData" | "raw" | "envelope";
+
+export interface RequestOptions {
+  responseMode?: ResponseMode;
+}
+
 export function normalizeServerUrl(serverUrl: string): string {
   const trimmed = serverUrl.trim().replace(/\/+$/, "");
   if (!trimmed) {
@@ -101,19 +107,20 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-export async function request<T>(config: AxiosRequestConfig): Promise<T> {
+export async function request<T>(config: AxiosRequestConfig, options: RequestOptions = {}): Promise<T> {
+  const responseMode = options.responseMode ?? "apiData";
   const desktopProxy = resolveDesktopProxy();
   if (desktopProxy) {
-    return requestThroughDesktopProxy<T>(desktopProxy, config);
+    return requestThroughDesktopProxy<T>(desktopProxy, config, responseMode);
   }
   try {
-    const response = await client.request<ApiResult<T> | T>(config);
-    return unwrapApiResponse<T>(response.data);
+    const response = await client.request<unknown>(config);
+    return unwrapApiResponse<T>(response.data, responseMode);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const httpStatus = error.response?.status;
       if (error.response?.data) {
-        return unwrapApiResponse<T>(error.response.data as ApiResult<T> | T, httpStatus);
+        return unwrapApiResponse<T>(error.response.data, responseMode, httpStatus);
       }
       throw new ApiRequestError(resolveNetworkMessage(error.message), { httpStatus });
     }
@@ -121,7 +128,19 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
   }
 }
 
-async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig): Promise<T> {
+export function requestApiData<T>(config: AxiosRequestConfig): Promise<T> {
+  return request<T>(config, { responseMode: "apiData" });
+}
+
+export function requestRaw<T>(config: AxiosRequestConfig): Promise<T> {
+  return request<T>(config, { responseMode: "raw" });
+}
+
+export function requestEnvelope<T>(config: AxiosRequestConfig): Promise<ApiResult<T>> {
+  return request<ApiResult<T>>(config, { responseMode: "envelope" });
+}
+
+async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig, responseMode: ResponseMode): Promise<T> {
   try {
     const response = await desktopProxy({
       serverUrl: currentServerUrl,
@@ -133,7 +152,7 @@ async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["c
       headers: normalizeProxyRequestHeaders(config.headers),
       timeoutMs: typeof config.timeout === "number" ? config.timeout : Number(client.defaults.timeout) || undefined
     });
-    return unwrapProxyResponse<T>(response.body, response.status);
+    return unwrapProxyResponse<T>(response.body, response.status, responseMode);
   } catch (error) {
     if (error instanceof ApiRequestError) {
       throw error;
@@ -142,8 +161,8 @@ async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["c
   }
 }
 
-function unwrapProxyResponse<T>(body: unknown, httpStatus: number): T {
-  const data = unwrapApiResponse<T>(body as ApiResult<T> | T, httpStatus);
+function unwrapProxyResponse<T>(body: unknown, httpStatus: number, responseMode: ResponseMode): T {
+  const data = unwrapApiResponse<T>(body, responseMode, httpStatus);
   if (httpStatus < 200 || httpStatus >= 300) {
     throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
   }
@@ -176,18 +195,17 @@ function normalizeProxyRequestHeaders(headers: AxiosRequestConfig["headers"]): R
   return Object.fromEntries(Object.entries(normalized).map(([key, value]) => [key, String(value)]));
 }
 
-export function unwrapApiResponse<T>(body: ApiResult<T> | T, httpStatus?: number): T {
+export function unwrapApiResponse<T>(body: unknown, httpStatus?: number): T;
+export function unwrapApiResponse<T>(body: unknown, responseMode: ResponseMode, httpStatus?: number): T;
+export function unwrapApiResponse<T>(body: unknown, responseModeOrHttpStatus: ResponseMode | number = "apiData", maybeHttpStatus?: number): T {
+  const responseMode = typeof responseModeOrHttpStatus === "string" ? responseModeOrHttpStatus : "apiData";
+  const httpStatus = typeof responseModeOrHttpStatus === "number" ? responseModeOrHttpStatus : maybeHttpStatus;
+  assertSuccessfulResponseBody(body, httpStatus);
+  if (responseMode === "raw" || responseMode === "envelope") {
+    return body as T;
+  }
   if (body && typeof body === "object") {
     const apiBody = body as ApiResult<T>;
-    const status = String(apiBody.status || "").toLowerCase();
-    const code = typeof apiBody.code === "number" ? apiBody.code : undefined;
-    if (status === "error" || (code !== undefined && code !== 200)) {
-      throw new ApiRequestError(localizeApiMessage(apiBody.message, httpStatus || code), {
-        httpStatus,
-        code,
-        body
-      });
-    }
     if (Object.prototype.hasOwnProperty.call(apiBody, "data")) {
       return apiBody.data as T;
     }
@@ -195,8 +213,26 @@ export function unwrapApiResponse<T>(body: ApiResult<T> | T, httpStatus?: number
   return body as T;
 }
 
+function assertSuccessfulResponseBody(body: unknown, httpStatus?: number): void {
+  if (body && typeof body === "object") {
+    const apiBody = body as ApiResult<unknown>;
+    const status = String(apiBody.status || "").toLowerCase();
+    const code = typeof apiBody.code === "number" ? apiBody.code : undefined;
+    if (status === "error" || (code !== undefined && code !== 200 && code !== 0)) {
+      throw new ApiRequestError(localizeApiMessage(apiBody.message, httpStatus ?? code), {
+        httpStatus,
+        code,
+        body
+      });
+    }
+  }
+  if (httpStatus !== undefined && (httpStatus < 200 || httpStatus >= 300)) {
+    throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
+  }
+}
+
 export async function testServerConnection(): Promise<ConnectionTestResult> {
-  const health = await request<unknown>({ url: "/health", method: "GET" });
+  const health = await requestRaw<unknown>({ url: "/health", method: "GET" });
   if (!currentToken) {
     return {
       healthOk: Boolean(health),

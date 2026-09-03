@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildCollectorProxyUrl, normalizeProxyHeaders, serializeQueryParams } from "./http-proxy-utils.js";
+import { buildCollectorProxyUrl, executeCollectorProxyRequest, normalizeProxyHeaders, serializeQueryParams } from "./http-proxy-utils.js";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+});
 
 describe("http-proxy-utils", () => {
   it("把相对接口路径限制在配置的 collector baseUrl 内", () => {
@@ -23,6 +30,36 @@ describe("http-proxy-utils", () => {
       "Accept": "application/json",
       "Content-Type": "application/json",
       "X-Collector-Token": "token-value"
+    });
+  });
+
+  it("主进程代理保留包含 data 字段的 RAW DTO 响应体", async () => {
+    const body = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      data: {
+        "point-1": {
+          pointId: "point-1",
+          value: 10
+        }
+      },
+      timestamp: 123456
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "content-type": "application/json" }),
+      text: vi.fn().mockResolvedValue(JSON.stringify(body))
+    }) as unknown as typeof fetch;
+
+    await expect(executeCollectorProxyRequest({
+      serverUrl: "http://127.0.0.1:9090/collector",
+      url: "/api/data/device/device-1",
+      method: "GET"
+    })).resolves.toMatchObject({
+      status: 200,
+      body
     });
   });
 });

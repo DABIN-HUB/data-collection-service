@@ -1,5 +1,10 @@
-import { request } from "./http";
+import { request, requestEnvelope } from "./http";
+import type { ApiResult } from "@/types/api";
 import type { ConfigDeviceListResponse, DeviceRuntimeSnapshot } from "@/types/device";
+
+interface DeviceRunningResponse extends ApiResult<null> {
+  running?: boolean;
+}
 
 export function getConfigDevices(): Promise<ConfigDeviceListResponse> {
   return request<ConfigDeviceListResponse>({ url: "/api/config/devices", method: "GET" });
@@ -29,14 +34,15 @@ export function getAllDeviceStatistics(): Promise<unknown> {
   return request<unknown>({ url: "/api/device/statistics", method: "GET" });
 }
 
-export function getRunningDevices(): Promise<unknown[]> {
-  return request<unknown[]>({ url: "/api/device/running", method: "GET" });
+export function getRunningDevices(): Promise<string[]> {
+  return request<string[]>({ url: "/api/device/running", method: "GET" });
 }
 
 export function getDeviceRuntime(): Promise<DeviceRuntimeSnapshot[]> {
   return request<DeviceRuntimeSnapshot[]>({ url: "/api/device/runtime", method: "GET" });
 }
 
-export function isDeviceRunning(deviceId: string): Promise<boolean> {
-  return request<boolean>({ url: `/api/device/${encodeURIComponent(deviceId)}/running`, method: "GET" });
+export async function isDeviceRunning(deviceId: string): Promise<boolean> {
+  const response = await requestEnvelope<null>({ url: `/api/device/${encodeURIComponent(deviceId)}/running`, method: "GET" }) as DeviceRunningResponse;
+  return response.running === true;
 }

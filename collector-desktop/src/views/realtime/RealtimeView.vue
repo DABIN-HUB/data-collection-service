@@ -111,6 +111,7 @@ import { useDeviceStore } from "@/stores/device.store";
 import type { RealtimePointRow } from "@/types/monitor";
 import {
   buildRealtimeSummary,
+  extractRealtimeDeviceIds,
   normalizeRealtimeRows,
   normalizeSinglePointRealtimeRow,
   realtimeAddress,
@@ -170,9 +171,11 @@ async function loadRealtime() {
       await deviceStore.refresh();
     }
 
-    const summaries = normalizeRealtimeRows(await getAllDeviceDataSummaries());
+    const deviceSummaryResponse = await getAllDeviceDataSummaries();
+    const summaries = normalizeRealtimeRows(deviceSummaryResponse);
     const deviceIds = Array.from(
       new Set([
+        ...extractRealtimeDeviceIds(deviceSummaryResponse),
         ...summaries.map((row) => String(row.deviceId || "")).filter(Boolean),
         ...deviceStore.devices.map((device) => device.normalizedId).filter(Boolean)
       ])

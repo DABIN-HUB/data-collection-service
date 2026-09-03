@@ -3,6 +3,11 @@ export interface ApiResult<T> {
   status?: string;
   message?: string;
   data?: T;
+  timestamp?: number;
+  extra?: Record<string, unknown>;
+  deviceId?: string;
+  count?: number;
+  running?: boolean;
   [key: string]: unknown;
 }
 

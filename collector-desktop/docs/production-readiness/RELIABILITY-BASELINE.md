@@ -4,6 +4,8 @@
 
 本文件记录 `Frontend Production Readiness / 01 API Contract & Runtime Reliability` 的可靠性基线。范围只包括发现和记录，不包含统一 Error Model、AbortController、WebSocket 架构或性能重构。
 
+01.2A 更新：HTTP response boundary 已能显式区分 `ApiResult<T>` data 解包、raw DTO 保留和 envelope metadata 保留；DataController raw DTO、`DeviceRealtimeDataResponse.data` Map、`PointRealtimeResponse`、`getAllDeviceDataSummaries` 设备摘要与 realtime rows 分离、`getRunningDevices`、`isDeviceRunning` 已标记为 `RESOLVED IN 01.2A`。Realtime fan-out、request sequence/AbortController、WebSocket、PointEditor 性能风险未在 01.2A 修改。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -34,7 +36,7 @@
 |---|---|---|---|---|---|
 | P0 | `src/views/realtime/RealtimeView.vue` | `loadRealtime()` | 未捕获请求开始时的 `realtimeDeviceId`；请求过程中切换设备时，`loading` guard 会拒绝新请求，旧响应可能写入当前视图，甚至用新的 `realtimeDeviceId.value` 作为 fallback deviceId。 | 单设备模式下网络慢，用户从设备 A 切到设备 B。 | Task 01.2/01.3 引入 request sequence 或 AbortController，响应前校验 deviceId。 |
 | P0 | `src/views/realtime/RealtimeView.vue` | all-device `loadRealtime()` + 5 秒 timer | 全设备模式每次刷新产生 `N + 1` 个 realtime HTTP 请求；设备数增加时请求线性放大。 | 默认自动刷新开启，设备数 N 较大。 | Task 01.2 先加请求生命周期/退避；后续考虑聚合端点或分批刷新。 |
-| P0 | `src/views/realtime/RealtimeView.vue` | `getAllDeviceDataSummaries()` fallback | `/api/data/devices` 返回 `DeviceListResponse.devices`，当前用 `normalizeRealtimeRows()` 当实时行；当单设备详情失败时可能把设备摘要行显示在实时点位表。 | 全设备 refresh 中某设备 `getDeviceRealtimeData` 失败。 | Task 01.2 明确 all-device summary DTO 与 realtime row 的边界；失败设备应显示错误状态而不是伪点位行。 |
+| RESOLVED IN 01.2A | `src/views/realtime/RealtimeView.vue` | `getAllDeviceDataSummaries()` fallback | `/api/data/devices` 返回 `DeviceListResponse.devices`，01.1 时会经 `normalizeRealtimeRows()` 当实时行；01.2A 已改为 `extractRealtimeDeviceIds()` 只提取设备 ID，设备摘要不再 fallback 显示为实时点位行。 | 全设备 refresh 中某设备 `getDeviceRealtimeData` 失败。 | 后续仍需为失败设备增加可观测错误状态，但不再显示伪点位行。 |
 | P1 | `src/views/realtime/RealtimeView.vue` | `loadSingleRealtime()` / route watcher | 单点请求无 sequence/abort，route point 变化后旧响应仍可覆盖 `realtimeSingleResult`。 | 从告警/Workbench 连续跳转不同点位。 | 加请求 token 并在响应前核对 deviceId/pointId。 |
 | P1 | `src/components/realtime/RealtimeDataPanel.vue` | `watch(props.deviceId)` | deviceId 变化时立即重连 WS 和发 HTTP；旧 HTTP 响应无校验，可能覆盖新设备 fallback rows。 | Workbench 快速切换设备。 | 加 request sequence；WS close callback 也需要 generation guard。 |
 | P1 | `src/stores/websocket.store.ts` | `connectRealtime()` callbacks | `socket` 是模块级单例，callback 捕获旧 `deviceId`；close/onmessage 无 socket generation 校验。旧 socket 的迟到 callback 可更新 store 状态或旧设备 rows。 | 快速切换设备或网络断开重连。 | 引入 socket generation/currentDevice guard；解析错误写入可观测字段。 |
@@ -114,7 +116,7 @@
 
 1. `RealtimeView.loadRealtime()` 设备切换旧响应覆盖新设备展示，可能造成设备 A 数据显示在设备 B 上下文。
 2. Realtime 全设备模式默认 5 秒刷新产生 `N + 1` HTTP 请求，设备数大时高频请求放大。
-3. Realtime 全设备 fallback 可能把 `DeviceListResponse.devices` 设备摘要当作实时点位行显示，造成错误业务数据展示。
+3. RESOLVED IN 01.2A：Realtime 全设备 fallback 不再把 `DeviceListResponse.devices` 设备摘要当作实时点位行显示；后续仍需补失败设备错误状态。
 
 ### P1
 
@@ -136,12 +138,13 @@
 5. ConfigOpsPanel 初始化 sync status 失败 `.catch(() => undefined)`，无提示。
 6. `getOpsLogs` 前端传 `deviceId/thread` 但后端 `OpsController.logs` 未接收，契约需明确。
 
-## 7. Task 01.2 推荐修改范围
+## 7. Task 01.2 推荐修改范围 / 01.2A 结果
 
-Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI 重构：
+Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI 重构。01.2A 已完成 response boundary 的核心修正：
 
-1. 为 stable backend DTO 补前端 API 类型：优先 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。
-2. 修正不真实的 API 类型：`getDeviceRealtimeData`、`isDeviceRunning`、`getRunningDevices`。
-3. 把 `DeviceRealtimeDataResponse.data` 从数组候选修正为后端真实 Map，并让 `normalizeRealtimeRows` 明确从真实 DTO 转 ViewModel。
-4. 保留 `LEGACY_COMPAT` normalizer，但在类型和注释中说明兼容原因。
-5. 暂不改 AbortController、WebSocket、Realtime fan-out、PointEditor 性能；这些进入 Task 01.3+。
+1. RESOLVED IN 01.2A：`src/api/http.ts` 增加 `apiData` / `raw` / `envelope` response mode，错误校验与 `data` extraction 分离。
+2. RESOLVED IN 01.2A：DataController 8 个接口使用 RAW DTO：`PointRealtimeResponse`、`DeviceRealtimeDataResponse`、`DeviceListResponse`、`DevicePointListResponse`、`AdaptiveResetResponse`、`HistoryDataResponse`、`AlarmHistoryDataResponse`。
+3. RESOLVED IN 01.2A：`DeviceRealtimeDataResponse.data` 修正为 `Record<string, PointRealtimePayload>`；`normalizeRealtimeRows` primary path 明确为 DTO→`RealtimePointRow`。
+4. RESOLVED IN 01.2A：`getRunningDevices` 返回 `string[]`；`isDeviceRunning` 使用 `envelope` 读取顶层 `running`，对调用方仍返回 boolean。
+5. 保留：`LEGACY_COMPAT` normalizer 未删除，避免破坏历史响应兼容。
+6. 未处理：AbortController、request sequence、WebSocket、Realtime fan-out、PointEditor `runtimeOf` 性能；这些进入 Task 01.3+。
