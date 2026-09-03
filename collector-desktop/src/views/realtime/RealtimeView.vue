@@ -50,7 +50,7 @@
               </option>
             </select>
             <input v-model="realtimeSinglePointId" type="text" placeholder="pointId 或点位编码" />
-            <button type="button" class="primary" :disabled="!realtimeSingleDeviceId || !realtimeSinglePointId || singleLoading" @click="loadSingleRealtime">
+            <button type="button" class="primary" :disabled="singleRealtimeSubmitDisabled" @click="loadSingleRealtime">
               查询单点
             </button>
           </div>
@@ -123,7 +123,11 @@ import {
   realtimeScale,
   realtimeValueText
 } from "@/features/realtime/utils/realtime-utils";
-import { createLatestRealtimeRequestOwner, type RealtimeRequestContext } from "@/features/realtime/utils/realtime-request-lifecycle";
+import {
+  createLatestRealtimeRequestOwner,
+  shouldDisableRealtimeSubmit,
+  type RealtimeRequestContext
+} from "@/features/realtime/utils/realtime-request-lifecycle";
 
 const appStore = useAppStore();
 const deviceStore = useDeviceStore();
@@ -140,6 +144,7 @@ const loading = ref(false);
 const singleLoading = ref(false);
 const realtimeError = ref("");
 const singleRealtimeError = ref("");
+const pendingSingleRealtimeContext = ref<RealtimeRequestContext | null>(null);
 let realtimeTimer: number | null = null;
 const realtimeRequestOwner = createLatestRealtimeRequestOwner();
 const singleRealtimeRequestOwner = createLatestRealtimeRequestOwner();
@@ -163,6 +168,12 @@ const filteredRealtimeRows = computed(() => {
 });
 
 const realtimeSummary = computed(() => buildRealtimeSummary(filteredRealtimeRows.value));
+const singleRealtimeSubmitDisabled = computed(() => {
+  const liveContext = currentSingleRealtimeContext();
+  return !liveContext.deviceId
+    || !liveContext.pointId
+    || shouldDisableRealtimeSubmit(singleLoading.value, pendingSingleRealtimeContext.value, liveContext);
+});
 
 async function loadRealtime(source: RealtimeLoadSource = "manual") {
   if (source === "timer" && loading.value) {
@@ -229,7 +240,7 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
     realtimeError.value = error instanceof Error ? error.message : "实时数据刷新失败";
     console.error(error);
   } finally {
-    if (realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+    if (realtimeRequestOwner.isLatest(requestTicket)) {
       loading.value = false;
     }
   }
@@ -244,6 +255,7 @@ async function loadSingleRealtime() {
   const requestTicket = singleRealtimeRequestOwner.begin(requestContext);
   singleLoading.value = true;
   singleRealtimeError.value = "";
+  pendingSingleRealtimeContext.value = requestContext;
   try {
     const response = await getPointRealtimeData(requestContext.deviceId, requestContext.pointId || "");
     if (!singleRealtimeRequestOwner.isCurrent(requestTicket, currentSingleRealtimeContext())) {
@@ -257,8 +269,9 @@ async function loadSingleRealtime() {
     singleRealtimeError.value = error instanceof Error ? error.message : "单点实时查询失败";
     console.error(error);
   } finally {
-    if (singleRealtimeRequestOwner.isCurrent(requestTicket, currentSingleRealtimeContext())) {
+    if (singleRealtimeRequestOwner.isLatest(requestTicket)) {
       singleLoading.value = false;
+      pendingSingleRealtimeContext.value = null;
     }
   }
 }
@@ -345,6 +358,7 @@ onBeforeUnmount(() => {
   singleRealtimeRequestOwner.invalidate();
   loading.value = false;
   singleLoading.value = false;
+  pendingSingleRealtimeContext.value = null;
   if (realtimeTimer) {
     clearInterval(realtimeTimer);
     realtimeTimer = null;

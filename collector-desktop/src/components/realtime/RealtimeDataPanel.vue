@@ -99,7 +99,7 @@ async function load(source: PanelLoadSource = "manual") {
     }
     error.value = caught instanceof Error ? caught.message : "实时数据加载失败";
   } finally {
-    if (requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+    if (requestOwner.isLatest(requestTicket)) {
       loading.value = false;
     }
   }

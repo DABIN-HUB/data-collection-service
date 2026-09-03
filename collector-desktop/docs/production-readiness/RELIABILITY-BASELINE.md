@@ -12,7 +12,7 @@
 
 01.2D 更新：`control.api.ts` 与 `shadow.api.ts` 已完成最后一轮 contract closure：Control 三个写接口统一为 `requestApiData<T>()` 并补齐 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteResponse` / `DeviceCommandResponse`；Shadow 五个接口统一为 `requestApiData<T>()` 并补齐 typed outer DTO，同时继续保留 `reported/desired/delta/metadata/history` 的动态文档边界。业务 API wrapper unknown 统计已从 19 降到 0，Task 01.2 Contract Typing 可以标记为 COMPLETE；Realtime stale response、Realtime N+1、Request Lifecycle、History partial failure、Alarm partial failure、WebSocket、PointEditor 性能风险仍未在 01.2D 修改。
 
-01.3A 更新：`RealtimeView` 主查询与单点查询已改为 latest-request-wins：请求开始时捕获 `mode/deviceId/pointId` snapshot，并以独立 generation 控制提交与 loading ownership；设备切换、全设备/单设备切换、route 单点切换时，旧响应不再覆盖新上下文。`RealtimeDataPanel` 的 HTTP fallback 也补了相同 generation guard。`Realtime N + 1`、WebSocket generation/reconnect、History/Alarm/DeviceConfigPanel/Store lifecycle 仍保持 OPEN。
+01.3A 更新：`RealtimeView` 主查询与单点查询已改为 latest-request-wins：请求开始时捕获 `mode/deviceId/pointId` snapshot，并将“latest generation ownership”与“context commit eligibility”分离；业务结果/错误提交继续要求 generation + context 同时匹配，loading finalization 只依赖 latest generation ownership。设备切换、全设备/单设备切换、route 单点切换时，旧响应不再覆盖新上下文。`RealtimeDataPanel` 的 HTTP fallback 也补了相同 generation guard。`Realtime N + 1`、WebSocket generation/reconnect、History/Alarm/DeviceConfigPanel/Store lifecycle 仍保持 OPEN。
 
 ## 1. 错误处理模式盘点
 
