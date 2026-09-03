@@ -19,7 +19,7 @@
           <small>默认间隔 5 秒</small>
         </div>
         <div class="exact-toolbar-group exact-toolbar-filters">
-          <select v-model="realtimeDeviceId" @change="refreshRealtime">
+          <select v-model="realtimeDeviceId" @change="handleRealtimeDeviceChange">
             <option value="">全部设备</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
@@ -28,6 +28,7 @@
           <input v-model="realtimeKeyword" type="search" placeholder="搜索点位名称、编码或地址" />
         </div>
       </div>
+      <small v-if="realtimeError">{{ realtimeError }}</small>
 
       <div class="exact-diagnostic-cards realtime-summary-cards">
         <div class="exact-diagnostic-card"><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div>
@@ -54,6 +55,7 @@
             </button>
           </div>
         </div>
+        <small v-if="singleRealtimeError">{{ singleRealtimeError }}</small>
         <pre class="json-view compact-result-view">{{ prettyJson(realtimeSingleResult) }}</pre>
       </section>
 
@@ -121,6 +123,7 @@ import {
   realtimeScale,
   realtimeValueText
 } from "@/features/realtime/utils/realtime-utils";
+import { createLatestRealtimeRequestOwner, type RealtimeRequestContext } from "@/features/realtime/utils/realtime-request-lifecycle";
 
 const appStore = useAppStore();
 const deviceStore = useDeviceStore();
@@ -135,7 +138,13 @@ const realtimeSinglePointId = ref("");
 const realtimeSingleResult = ref<unknown>({ message: "选择设备和点位后查询单点实时数据" });
 const loading = ref(false);
 const singleLoading = ref(false);
+const realtimeError = ref("");
+const singleRealtimeError = ref("");
 let realtimeTimer: number | null = null;
+const realtimeRequestOwner = createLatestRealtimeRequestOwner();
+const singleRealtimeRequestOwner = createLatestRealtimeRequestOwner();
+
+type RealtimeLoadSource = "init" | "manual" | "device-change" | "timer";
 
 const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
@@ -155,23 +164,36 @@ const filteredRealtimeRows = computed(() => {
 
 const realtimeSummary = computed(() => buildRealtimeSummary(filteredRealtimeRows.value));
 
-async function loadRealtime() {
-  if (loading.value) {
+async function loadRealtime(source: RealtimeLoadSource = "manual") {
+  if (source === "timer" && loading.value) {
     return;
   }
+  const requestContext = currentMainRealtimeContext();
+  const requestTicket = realtimeRequestOwner.begin(requestContext);
   loading.value = true;
+  realtimeError.value = "";
   try {
-    if (realtimeDeviceId.value) {
-      const response = await getDeviceRealtimeData(realtimeDeviceId.value);
-      realtimeRows.value = normalizeRealtimeRows(response, realtimeDeviceId.value);
+    if (requestContext.mode === "device" && requestContext.deviceId) {
+      const response = await getDeviceRealtimeData(requestContext.deviceId);
+      const rows = normalizeRealtimeRows(response, requestContext.deviceId);
+      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+        return;
+      }
+      realtimeRows.value = rows;
       return;
     }
 
     if (!deviceStore.devices.length && !deviceStore.loading) {
       await deviceStore.refresh();
+      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+        return;
+      }
     }
 
     const deviceSummaryResponse = await getAllDeviceDataSummaries();
+    if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+      return;
+    }
     const summaries = normalizeRealtimeRows(deviceSummaryResponse);
     const deviceIds = Array.from(
       new Set([
@@ -181,41 +203,63 @@ async function loadRealtime() {
       ])
     );
     if (deviceIds.length === 0) {
+      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+        return;
+      }
       realtimeRows.value = [];
       return;
     }
     const results = await Promise.allSettled(
       deviceIds.map(async (deviceId) => normalizeRealtimeRows(await getDeviceRealtimeData(deviceId), deviceId))
     );
-    realtimeRows.value = results.flatMap((result, index) => {
+    const rows = results.flatMap((result, index) => {
       if (result.status === "fulfilled" && result.value.length) {
         return result.value;
       }
       return summaries.filter((row) => row.deviceId === deviceIds[index]);
     });
+    if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+      return;
+    }
+    realtimeRows.value = rows;
   } catch (error) {
+    if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+      return;
+    }
+    realtimeError.value = error instanceof Error ? error.message : "实时数据刷新失败";
     console.error(error);
   } finally {
-    loading.value = false;
+    if (realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+      loading.value = false;
+    }
   }
 }
 
 async function loadSingleRealtime() {
-  if (singleLoading.value) {
-    return;
-  }
   if (!realtimeSingleDeviceId.value || !realtimeSinglePointId.value.trim()) {
     ElMessage.warning("请先选择设备并填写点位引用");
     return;
   }
+  const requestContext = currentSingleRealtimeContext();
+  const requestTicket = singleRealtimeRequestOwner.begin(requestContext);
   singleLoading.value = true;
+  singleRealtimeError.value = "";
   try {
-    const response = await getPointRealtimeData(realtimeSingleDeviceId.value, realtimeSinglePointId.value.trim());
+    const response = await getPointRealtimeData(requestContext.deviceId, requestContext.pointId || "");
+    if (!singleRealtimeRequestOwner.isCurrent(requestTicket, currentSingleRealtimeContext())) {
+      return;
+    }
     realtimeSingleResult.value = normalizeSinglePointRealtimeRow(response) || response;
   } catch (error) {
+    if (!singleRealtimeRequestOwner.isCurrent(requestTicket, currentSingleRealtimeContext())) {
+      return;
+    }
+    singleRealtimeError.value = error instanceof Error ? error.message : "单点实时查询失败";
     console.error(error);
   } finally {
-    singleLoading.value = false;
+    if (singleRealtimeRequestOwner.isCurrent(requestTicket, currentSingleRealtimeContext())) {
+      singleLoading.value = false;
+    }
   }
 }
 
@@ -228,7 +272,11 @@ function pickRealtimePoint(row: RealtimePointRow) {
 }
 
 function refreshRealtime() {
-  void loadRealtime();
+  void loadRealtime("manual");
+}
+
+function handleRealtimeDeviceChange() {
+  void loadRealtime("device-change");
 }
 
 function syncTimer() {
@@ -238,7 +286,7 @@ function syncTimer() {
   }
   if (realtimeAuto.value) {
     realtimeTimer = window.setInterval(() => {
-      void loadRealtime();
+      void loadRealtime("timer");
     }, 5000);
   }
 }
@@ -288,16 +336,36 @@ async function initializeRealtimeView() {
   await appStore.initialize();
   applyRouteQuery();
   await deviceStore.refresh();
-  await loadRealtime();
+  await loadRealtime("init");
   syncTimer();
 }
 
 onBeforeUnmount(() => {
+  realtimeRequestOwner.invalidate();
+  singleRealtimeRequestOwner.invalidate();
+  loading.value = false;
+  singleLoading.value = false;
   if (realtimeTimer) {
     clearInterval(realtimeTimer);
     realtimeTimer = null;
   }
 });
+
+function currentMainRealtimeContext(): RealtimeRequestContext {
+  const deviceId = realtimeDeviceId.value.trim();
+  return {
+    mode: deviceId ? "device" : "all",
+    deviceId
+  };
+}
+
+function currentSingleRealtimeContext(): RealtimeRequestContext {
+  return {
+    mode: "single",
+    deviceId: realtimeSingleDeviceId.value.trim(),
+    pointId: realtimeSinglePointId.value.trim()
+  };
+}
 
 watch(() => realtimeAuto.value, syncTimer);
 watch(() => [route.query.deviceId, route.query.pointId], () => {

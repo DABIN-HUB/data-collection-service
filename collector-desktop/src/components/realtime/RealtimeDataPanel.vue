@@ -26,6 +26,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { getDeviceRealtimeData } from "@/api/data.api";
+import { createLatestRealtimeRequestOwner, type RealtimeRequestContext } from "@/features/realtime/utils/realtime-request-lifecycle";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import { useWebSocketStore } from "@/stores/websocket.store";
 import type { RealtimePointRow } from "@/types/monitor";
@@ -46,6 +47,9 @@ const loading = ref(false);
 const error = ref("");
 const rows = ref<RealtimePointRow[]>([]);
 let timer: ReturnType<typeof setInterval> | null = null;
+const requestOwner = createLatestRealtimeRequestOwner();
+
+type PanelLoadSource = "mount" | "manual" | "device-change" | "timer";
 
 const wsRows = computed(() => webSocketStore.rows(props.deviceId));
 const displayRows = computed(() => wsRows.value.length > 0 ? wsRows.value : rows.value);
@@ -67,20 +71,37 @@ const wsStatusText = computed(() => {
   return "未连接";
 });
 
-async function load() {
+async function load(source: PanelLoadSource = "manual") {
+  if (source === "timer" && loading.value) {
+    return;
+  }
   if (!props.deviceId) {
+    requestOwner.invalidate();
+    loading.value = false;
+    error.value = "";
     rows.value = [];
     return;
   }
+  const requestContext = currentPanelRealtimeContext();
+  const requestTicket = requestOwner.begin(requestContext);
   loading.value = true;
   error.value = "";
   try {
-    const response = await getDeviceRealtimeData(props.deviceId);
-    rows.value = normalizeRealtimeRows(response, props.deviceId);
+    const response = await getDeviceRealtimeData(requestContext.deviceId);
+    const nextRows = normalizeRealtimeRows(response, requestContext.deviceId);
+    if (!requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+      return;
+    }
+    rows.value = nextRows;
   } catch (caught) {
+    if (!requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+      return;
+    }
     error.value = caught instanceof Error ? caught.message : "实时数据加载失败";
   } finally {
-    loading.value = false;
+    if (requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+      loading.value = false;
+    }
   }
 }
 
@@ -131,7 +152,7 @@ function syncTimer() {
     timer = null;
   }
   if (props.autoRefresh && props.deviceId) {
-    timer = setInterval(() => load(), Math.max(1000, props.refreshIntervalMs));
+    timer = setInterval(() => void load("timer"), Math.max(1000, props.refreshIntervalMs));
   }
 }
 
@@ -139,20 +160,29 @@ defineExpose({ load });
 
 onMounted(() => {
   connectWebSocket();
-  load();
+  void load("mount");
   syncTimer();
 });
 onBeforeUnmount(() => {
+  requestOwner.invalidate();
+  loading.value = false;
   if (timer) {
     clearInterval(timer);
   }
 });
 watch(() => props.deviceId, () => {
   connectWebSocket();
-  load();
+  void load("device-change");
   syncTimer();
 });
 watch(() => [props.autoRefresh, props.refreshIntervalMs], syncTimer);
+
+function currentPanelRealtimeContext(): RealtimeRequestContext {
+  return {
+    mode: "panel",
+    deviceId: props.deviceId
+  };
+}
 </script>
 
 <style scoped>

@@ -12,13 +12,15 @@
 
 01.2D 更新：`control.api.ts` 与 `shadow.api.ts` 已完成最后一轮 contract closure：Control 三个写接口统一为 `requestApiData<T>()` 并补齐 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteResponse` / `DeviceCommandResponse`；Shadow 五个接口统一为 `requestApiData<T>()` 并补齐 typed outer DTO，同时继续保留 `reported/desired/delta/metadata/history` 的动态文档边界。业务 API wrapper unknown 统计已从 19 降到 0，Task 01.2 Contract Typing 可以标记为 COMPLETE；Realtime stale response、Realtime N+1、Request Lifecycle、History partial failure、Alarm partial failure、WebSocket、PointEditor 性能风险仍未在 01.2D 修改。
 
+01.3A 更新：`RealtimeView` 主查询与单点查询已改为 latest-request-wins：请求开始时捕获 `mode/deviceId/pointId` snapshot，并以独立 generation 控制提交与 loading ownership；设备切换、全设备/单设备切换、route 单点切换时，旧响应不再覆盖新上下文。`RealtimeDataPanel` 的 HTTP fallback 也补了相同 generation guard。`Realtime N + 1`、WebSocket generation/reconnect、History/Alarm/DeviceConfigPanel/Store lifecycle 仍保持 OPEN。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
 |---|---|---|---|
 | `src/api/http.ts` | `ApiResult` code/status 错误抛 `ApiRequestError`；Axios 无响应时转换网络/超时中文消息。 | PAGE_ERROR 基础设施 | API 层可抛出结构化错误，但页面层多数只消费 message。 |
-| `src/views/realtime/RealtimeView.vue:193-195` | 全局实时列表失败只 `console.error(error)`，不写页面错误状态。 | SWALLOWED | 生产现场无法从页面判断实时刷新失败原因。 |
-| `src/views/realtime/RealtimeView.vue:212-214` | 单点实时查询失败只 `console.error(error)`。 | SWALLOWED | 单点查询失败无可见错误。 |
+| `src/views/realtime/RealtimeView.vue` | RESOLVED IN 01.3A：主实时查询当前请求失败会写 `realtimeError`，并保留最后一次成功数据；stale 请求静默丢弃。 | PAGE_ERROR + LATEST_REQUEST_WINS | 生产现场能区分“最新刷新失败”和“旧请求被丢弃”。 |
+| `src/views/realtime/RealtimeView.vue` | RESOLVED IN 01.3A：单点实时查询当前请求失败会写 `singleRealtimeError`；旧请求不会覆盖当前点位结果。 | PAGE_ERROR + LATEST_REQUEST_WINS | 单点查询失败不再只剩控制台日志。 |
 | `src/views/dashboard/DashboardView.vue:269-278` | 多个 dashboard 请求 `Promise.allSettled`，未逐项记录失败；01.2B 后 monitor refs 改为 typed/null，但失败项仍显示未知/不可用。 | PARTIAL_FAILURE / SILENT_FALLBACK | 页面不会整体崩溃，但缺少失败接口明细。 |
 | `src/views/diagnostic/DiagnosticView.vue:173-191` | 多指标 `Promise.allSettled`，失败项进入 `partialWarning`。 | PARTIAL_FAILURE / PAGE_ERROR | 这是当前较好的生产化模式，可作为后续参考。 |
 | `src/views/history/HistoryView.vue:321-345` | 主历史、比较历史、关联告警在同一 try；任一失败清空历史/比较/告警。 | ALL_OR_NOTHING | 关联告警失败可能导致已成功历史查询也被清空。 |
@@ -40,11 +42,11 @@
 
 | 严重级别 | 文件 | 函数 / 位置 | 风险 | 触发方式 | 后续处理建议 |
 |---|---|---|---|---|---|
-| P0 | `src/views/realtime/RealtimeView.vue` | `loadRealtime()` | 未捕获请求开始时的 `realtimeDeviceId`；请求过程中切换设备时，`loading` guard 会拒绝新请求，旧响应可能写入当前视图，甚至用新的 `realtimeDeviceId.value` 作为 fallback deviceId。 | 单设备模式下网络慢，用户从设备 A 切到设备 B。 | Task 01.2/01.3 引入 request sequence 或 AbortController，响应前校验 deviceId。 |
+| RESOLVED IN 01.3A | `src/views/realtime/RealtimeView.vue` | `loadRealtime()` | 主实时查询已捕获 `mode/deviceId` snapshot，并使用独立 generation 控制 latest-request-wins；设备切换不会再被旧 `loading` 阻塞，旧响应也不会再覆盖新设备或全设备上下文。 | 单设备模式下网络慢，用户从设备 A 切到设备 B，或单设备/全设备来回切换。 | 已通过 race tests 验证；后续只处理 N+1 与更广页面 lifecycle。 |
 | P0 | `src/views/realtime/RealtimeView.vue` | all-device `loadRealtime()` + 5 秒 timer | 全设备模式每次刷新产生 `N + 1` 个 realtime HTTP 请求；设备数增加时请求线性放大。 | 默认自动刷新开启，设备数 N 较大。 | Task 01.2 先加请求生命周期/退避；后续考虑聚合端点或分批刷新。 |
 | RESOLVED IN 01.2A | `src/views/realtime/RealtimeView.vue` | `getAllDeviceDataSummaries()` fallback | `/api/data/devices` 返回 `DeviceListResponse.devices`，01.1 时会经 `normalizeRealtimeRows()` 当实时行；01.2A 已改为 `extractRealtimeDeviceIds()` 只提取设备 ID，设备摘要不再 fallback 显示为实时点位行。 | 全设备 refresh 中某设备 `getDeviceRealtimeData` 失败。 | 后续仍需为失败设备增加可观测错误状态，但不再显示伪点位行。 |
-| P1 | `src/views/realtime/RealtimeView.vue` | `loadSingleRealtime()` / route watcher | 单点请求无 sequence/abort，route point 变化后旧响应仍可覆盖 `realtimeSingleResult`。 | 从告警/Workbench 连续跳转不同点位。 | 加请求 token 并在响应前核对 deviceId/pointId。 |
-| P1 | `src/components/realtime/RealtimeDataPanel.vue` | `watch(props.deviceId)` | deviceId 变化时立即重连 WS 和发 HTTP；旧 HTTP 响应无校验，可能覆盖新设备 fallback rows。 | Workbench 快速切换设备。 | 加 request sequence；WS close callback 也需要 generation guard。 |
+| RESOLVED IN 01.3A | `src/views/realtime/RealtimeView.vue` | `loadSingleRealtime()` / route watcher | 单点查询已使用独立 generation，并在响应前核对 `deviceId/pointId` snapshot；旧响应不会覆盖当前 `realtimeSingleResult`。 | 从告警/Workbench 连续跳转不同点位。 | 已通过 route-style race tests 验证；后续如需 Browser abort 可再加资源优化。 |
+| RESOLVED IN 01.3A | `src/components/realtime/RealtimeDataPanel.vue` | `watch(props.deviceId)` 的 HTTP fallback | Workbench 嵌入实时面板的 HTTP fallback 已补 `panel` 级 generation guard；旧 HTTP 响应不会再覆盖新的 `props.deviceId` 上下文。 | Workbench 快速切换设备。 | 本次只处理 HTTP fallback stale response；WebSocket close/onmessage generation 仍保持 OPEN。 |
 | P1 | `src/stores/websocket.store.ts` | `connectRealtime()` callbacks | `socket` 是模块级单例，callback 捕获旧 `deviceId`；close/onmessage 无 socket generation 校验。旧 socket 的迟到 callback 可更新 store 状态或旧设备 rows。 | 快速切换设备或网络断开重连。 | 引入 socket generation/currentDevice guard；解析错误写入可观测字段。 |
 | P1 | `src/views/history/HistoryView.vue` | `loadPoints()` / `loadHistory()` | 查询参数、deviceId、pointRef 在 await 后未校验；旧请求可能覆盖新路由的 points/history。 | route query 快速变化或设备切换。 | 加 sequence/abort；历史和关联告警拆成可部分失败。 |
 | P1 | `src/views/alarm/AlarmView.vue` | `loadAlarms()` | filter 变化期间旧请求可写入新 filter 下的 alarms；确认状态失败会清空成功的告警历史。 | 用户快速切换 device/level/keyword。 | 加 sequence；确认状态失败时保留告警历史并显示部分失败。 |
@@ -120,18 +122,18 @@
 
 ### P0（克制，仅生产不可接受风险）
 
-1. `RealtimeView.loadRealtime()` 设备切换旧响应覆盖新设备展示，可能造成设备 A 数据显示在设备 B 上下文。
+1. RESOLVED IN 01.3A：`RealtimeView.loadRealtime()` 设备切换/全设备切换的旧响应覆盖问题已修复，主实时查询改为 latest-request-wins。
 2. Realtime 全设备模式默认 5 秒刷新产生 `N + 1` HTTP 请求，设备数大时高频请求放大。
 3. RESOLVED IN 01.2A：Realtime 全设备 fallback 不再把 `DeviceListResponse.devices` 设备摘要当作实时点位行显示；后续仍需补失败设备错误状态。
 
 ### P1
 
-1. `RealtimeView.loadSingleRealtime()` route/query 快速变化时旧单点响应覆盖新结果。
+1. RESOLVED IN 01.3A：`RealtimeView.loadSingleRealtime()` route/query 快速变化时的旧单点响应覆盖问题已修复。
 2. `HistoryView.loadHistory()` 主历史、比较历史、关联告警 all-or-nothing；关联告警失败会清空成功历史。
 3. `AlarmView.loadAlarms()` 告警历史成功但确认状态失败时会清空告警列表。
 4. `DeviceConfigPanel` 协议配置/连接配置/实时行读取缺 request snapshot 校验。
 5. `DeviceOperationShell.loadRealtimePreview()` 失败静默置空，且旧请求可覆盖新设备预览。
-6. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测。
+6. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
 7. `PointEditor.runtimeOf()` O(P²) 渲染风险。
 8. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
 
