@@ -22,16 +22,16 @@ describe("control-utils", () => {
   });
 
   it("构造单点写入 payload 时不把 pointRef 放进请求体", () => {
-    expect(buildSinglePointControlPayload("12", "INT")).toEqual({ value: 12, dataType: "INT" });
+    expect(buildSinglePointControlPayload("12", "INT")).toEqual({ value: 12 });
   });
 
-  it("保持当前批量写入和协议命令模板结构", () => {
-    expect(buildBatchControlTemplate()).toEqual({ points: [{ pointId: "point_001", value: 1, dataType: "INT" }] });
+  it("保持当前协议命令模板，并按真实 PointWriteRequest.values 生成批量写入模板", () => {
+    expect(buildBatchControlTemplate()).toEqual({ values: { point_001: 1 } });
     expect(buildCommandTemplate()).toEqual({ command: "custom", params: {} });
   });
 
   it("解析控制 JSON 并保留中文错误标签", () => {
-    expect(parseControlJson('{"points":[]}', "批量写入 JSON")).toEqual({ points: [] });
+    expect(parseControlJson('{"values":{}}', "批量写入 JSON")).toEqual({ values: {} });
     expect(parseControlJson("", "批量写入 JSON")).toEqual({});
     expect(() => parseControlJson("{", "批量写入 JSON")).toThrow("批量写入 JSON 格式错误");
   });

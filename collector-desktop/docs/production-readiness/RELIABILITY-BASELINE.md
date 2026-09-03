@@ -8,7 +8,9 @@
 
 01.2B 更新：`monitor.api.ts` 9 个 `/monitor/*` endpoint 已统一为 RAW DTO + 真实 Snapshot/DTO 类型；`config.api.ts` 20 个 endpoint 已补齐稳定 response type，其中 19 个走 `requestApiData<T>()`，`triggerFullConfigSync` 保留 command envelope。API 层 unknown 统计从 47 降到 19；剩余契约漂移集中在 control/device/edge/ops/point/shadow，Realtime P0、History P1、WebSocket、PointEditor 性能风险未在 01.2B 修改。
 
-01.2C 更新：`device.api.ts`、`ops.api.ts`、`edge.api.ts`、`point.api.ts` 已按真实 Java Contract 收尾：Device 查询 API 改为 `requestApiData<T>()`，Device command API 改为 `requestEnvelope<null>()` 保留 message/deviceId；Ops 四个接口改为稳定 typed `ApiResult.data`，并停止把 `deviceId/thread` 当作后端日志查询参数；Edge 接口补齐稳定 request/response 类型但保留 telemetry value 动态；Point API 改为复用 `config.api.ts` 合同。Control/Shadow 保持待 01.2D 处理。
+01.2C 更新：`device.api.ts`、`ops.api.ts`、`edge.api.ts`、`point.api.ts` 已按真实 Java Contract 收尾：Device 查询 API 改为 `requestApiData<T>()`，Device command API 改为 `requestEnvelope<null>()` 保留 message/deviceId；Ops 四个接口改为稳定 typed `ApiResult.data`，并停止把 `deviceId/thread` 当作后端日志查询参数；Edge 接口补齐稳定 request/response 类型但保留 telemetry value 动态；Point API 改为复用 `config.api.ts` 合同。
+
+01.2D 更新：`control.api.ts` 与 `shadow.api.ts` 已完成最后一轮 contract closure：Control 三个写接口统一为 `requestApiData<T>()` 并补齐 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteResponse` / `DeviceCommandResponse`；Shadow 五个接口统一为 `requestApiData<T>()` 并补齐 typed outer DTO，同时继续保留 `reported/desired/delta/metadata/history` 的动态文档边界。业务 API wrapper unknown 统计已从 19 降到 0，Task 01.2 Contract Typing 可以标记为 COMPLETE；Realtime stale response、Realtime N+1、Request Lifecycle、History partial failure、Alarm partial failure、WebSocket、PointEditor 性能风险仍未在 01.2D 修改。
 
 ## 1. 错误处理模式盘点
 
@@ -142,7 +144,7 @@
 5. ConfigOpsPanel 初始化 sync status 失败 `.catch(() => undefined)`，无提示。
 6. RESOLVED IN 01.2C：`getOpsLogs` 现在只向后端发送 `level/logger/keyword/limit`；`deviceId/thread` 改为当前结果内本地过滤，并在日志页明确标注服务端能力边界。
 
-## 7. Task 01.2 推荐修改范围 / 01.2A-01.2C 结果
+## 7. Task 01.2 推荐修改范围 / 01.2A-01.2D 结果
 
 Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI 重构。01.2A 已完成 response boundary 的核心修正：
 
@@ -168,4 +170,14 @@ Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI
 3. RESOLVED IN 01.2C：日志页不再把 `deviceId/thread` 伪装成后端过滤条件；服务端真实支持 `level/logger/keyword/limit`，设备/线程改为前端本地过滤并增加说明文案。
 4. RESOLVED IN 01.2C：`edge.api.ts` 返回 `EdgeTelemetryIngressResult`，请求补齐 `EdgeTelemetryBatchRequest` / `EdgeTelemetryItem` / `EdgeProtocolType`；动态 telemetry `value` 继续保留 `unknown`。
 5. RESOLVED IN 01.2C：`point.api.ts` 不再维护第二套 points contract，改为复用 `config.api.ts` 的 `getDevicePointsConfig` / `updateDevicePointsConfig`。
-6. 剩余仅限 `control.api.ts` 与 `shadow.api.ts` 的稳定 contract 收尾；Request Lifecycle、Realtime fan-out、WebSocket、PointEditor 性能风险仍未开始。
+6. 01.2C 完成后剩余仅限 `control.api.ts` 与 `shadow.api.ts` 的稳定 contract 收尾；Request Lifecycle、Realtime fan-out、WebSocket、PointEditor 性能风险仍未开始。
+
+01.2D 已完成 Control + Shadow Contract Closure：
+
+1. RESOLVED IN 01.2D：`control.api.ts` 的 `writeDevicePoint`、`writeDevicePoints`、`executeDeviceCommand` 已全部改为显式 `requestApiData<T>()`，并对齐 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteFieldResponse` / `BatchPointWriteResponse` / `DeviceCommandRequest` / `DeviceCommandResponse`。
+2. RESOLVED IN 01.2D：`PointWriteRequest.values` 的 key 语义已按 `DevicePointResolver` 与 `ControlCommandApplicationService.writePoints()` 对齐记录为 pointRef 解析链：`reportField → pointAlias → pointCode → pointId → pointName`；单点/批量写入的动态 value 继续保留 `unknown`。
+3. RESOLVED IN 01.2D：`shadow.api.ts` 的 `getShadow`、`getShadowDelta`、`getShadowHistory`、`updateShadowDesired`、`clearShadowDesired` 已全部改为 typed `requestApiData<T>()`；`types/shadow.ts` 只强类型化 outer DTO，不硬编码 inner properties。
+4. RESOLVED IN 01.2D：`ShadowDesiredUpdateRequest` 已按 `ShadowController` 对齐兼容 `state.desired` / `desired` / `properties` / `params` / 顶层业务字段，并保留 `source`、`shadowVersion`、`expectedVersion` 表达；未新增任何新功能或修改 reserved-key 规则。
+5. RESOLVED IN 01.2D：`ControlPanel`、`ShadowPanel`、`control-utils.ts`、`shadow-utils.ts` 已改为消费 typed outer contract，但继续保留动态 JSON parse、`typeof` / `Array.isArray` defensive handling 与 history/document normalizer。
+6. Task 01.2 Contract Typing COMPLETE：业务 API wrapper 的 `Promise<unknown>` 已清零；仅 `src/api/http.ts` transport 内部仍保留 generic `request<unknown>` / `requestRaw<unknown>`，不属于业务 contract 漏洞。
+7. NEXT：Task 01.3 — Request Lifecycle Reliability，只处理 request sequence / AbortController、Realtime stale response、Realtime N+1 fan-out、partial-failure observability、WebSocket readiness；不要回头重做 01.2 的 contract typing。

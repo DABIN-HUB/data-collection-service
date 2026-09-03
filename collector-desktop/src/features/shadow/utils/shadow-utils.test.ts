@@ -22,12 +22,26 @@ describe("shadow-utils", () => {
   });
 
   it("汇总影子当前态、期望态和 delta 摘要", () => {
-    expect(summarizeShadowState({ data: { desired: { a: 1 }, reported: { b: 2 } } }, { c: 3 }, { d: 4, e: 5 }, [{ version: 1 }, { version: 2 }])).toEqual({
-      currentCount: 2,
+    expect(summarizeShadowState({
+      deviceId: "dev-1",
+      version: 3,
+      timestamp: 1700000000000,
+      state: {
+        reported: { b: 2 },
+        desired: { a: 1 },
+        delta: {},
+        lastReported: {}
+      },
+      metadata: {
+        reported: {},
+        desired: {}
+      }
+    }, { desired: { c: 3 } }, { deviceId: "dev-1", version: 3, timestamp: 1700000000000, delta: { d: 4, e: 5 }, metadata: {} }, [{ version: 1 }, { version: 2 }])).toEqual({
+      currentCount: 1,
       desiredCount: 1,
       deltaCount: 2,
       historyCount: 2,
-      currentText: "2 项",
+      currentText: "1 项",
       desiredText: "1 项",
       deltaText: "2 项"
     });
@@ -47,12 +61,52 @@ describe("shadow-utils", () => {
   });
 
   it("构造影子导出 payload 和文件名", () => {
-    expect(buildShadowExportPayload("dev-1", { reported: {} }, { desired: {} }, { delta: {} }, [], "2026-09-01T00:00:00.000Z")).toEqual({
+    expect(buildShadowExportPayload("dev-1", {
+      deviceId: "dev-1",
+      version: 1,
+      timestamp: 1700000000000,
+      state: {
+        reported: {},
+        desired: {},
+        delta: {},
+        lastReported: {}
+      },
+      metadata: {
+        reported: {},
+        desired: {}
+      }
+    }, { desired: {} }, {
+      deviceId: "dev-1",
+      version: 1,
+      timestamp: 1700000000000,
+      delta: {},
+      metadata: {}
+    }, [], "2026-09-01T00:00:00.000Z")).toEqual({
       deviceId: "dev-1",
       generatedAt: "2026-09-01T00:00:00.000Z",
-      current: { reported: {} },
+      current: {
+        deviceId: "dev-1",
+        version: 1,
+        timestamp: 1700000000000,
+        state: {
+          reported: {},
+          desired: {},
+          delta: {},
+          lastReported: {}
+        },
+        metadata: {
+          reported: {},
+          desired: {}
+        }
+      },
       desired: { desired: {} },
-      delta: { delta: {} },
+      delta: {
+        deviceId: "dev-1",
+        version: 1,
+        timestamp: 1700000000000,
+        delta: {},
+        metadata: {}
+      },
       history: []
     });
     expect(buildShadowExportFilename("dev-1", "2026-09-01T00:00:00.000Z")).toBe("collector-shadow-dev-1-2026-09-01T00-00-00-000Z.json");

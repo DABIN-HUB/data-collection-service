@@ -41,17 +41,17 @@
 | API 模块 | HTTP API 数 | `Promise<unknown>` / `Record<string, unknown>` 数 | 备注 |
 |---|---:|---:|---|
 | `config.api.ts` | 20 | 0 | RESOLVED IN 01.2B：稳定 ConfigController response 全部 typed；19 个走 `requestApiData<T>()`，`triggerFullConfigSync` 保留 command envelope。 |
-| `control.api.ts` | 3 | 3 | 写点、批量写、协议命令仍返回 unknown；命令值/结果本身包含动态结构，外壳留到后续。 |
+| `control.api.ts` | 3 | 0 | RESOLVED IN 01.2D：3 个写操作已显式 `requestApiData<T>()`；`PointWriteRequest.values` 的 key 语义已按 `DevicePointResolver` 对齐并记录。 |
 | `data.api.ts` | 8 | 0 | RESOLVED IN 01.2A：DataController 直接返回业务 DTO，本模块已明确使用 RAW DTO response boundary；历史/告警 normalize 作为 LEGACY_COMPAT 保留。 |
-| `device.api.ts` | 10 | 6 | 01.2A 已修复 running 相关契约；01.2B 顺带让重复的 `getConfigDevices` 使用显式 `requestApiData<T>()`。剩余 unknown 集中在 start/stop/reload/status/statistics。 |
-| `edge.api.ts` | 1 | 1 | 后端已有 `EdgeTelemetryIngressResult`，前端仍 unknown。 |
+| `device.api.ts` | 10 | 0 | RESOLVED IN 01.2C：查询接口已 typed；命令接口已收敛为 `requestEnvelope<null>()`。 |
+| `edge.api.ts` | 1 | 0 | RESOLVED IN 01.2C：`ingestEdgeTelemetry` 已 typed，telemetry `value` 保留动态。 |
 | `monitor.api.ts` | 9 | 0 | RESOLVED IN 01.2B：9 个 `/monitor/*` endpoint 均为 RAW DTO，并已映射真实 Snapshot/DTO 类型。 |
-| `ops.api.ts` | 4 | 3 | 日志本地类型为兼容形态；确认/网络诊断未 typed。 |
-| `point.api.ts` | 2 | 1 | 读取点位配置 typed，保存结果 unknown。 |
+| `ops.api.ts` | 4 | 0 | RESOLVED IN 01.2C：4 个接口全部 typed；日志 query drift 已按真实后端能力收口。 |
+| `point.api.ts` | 2 | 0 | RESOLVED IN 01.2C：读取/保存均复用 `config.api.ts` 的稳定 contract。 |
 | `protocol.api.ts` | 3 | 0 | 协议 Schema typed。 |
 | `runtime.api.ts` | 2 | 0 | `/health` typed；`/monitor/runtime` 通过 `monitor.api.ts.getRuntimeStatus` 复用同一 RAW contract。 |
-| `shadow.api.ts` | 5 | 5 | 影子当前均 unknown，历史天然 Map 动态。 |
-| **合计** | **67** | **19** | 01.2B 后 Monitor 与 Config 稳定 response 缺口已清理；剩余 unknown 集中在 control/device/edge/ops/point/shadow 的动态或未处理契约。 |
+| `shadow.api.ts` | 5 | 0 | RESOLVED IN 01.2D：5 个接口已 typed；history/state/delta/metadata 的动态内层结构继续保留。 |
+| **合计** | **67** | **0** | Task 01.2 Contract Typing COMPLETE：业务 API wrapper 的 `Promise<unknown>` 已清零；仅 `src/api/http.ts` 内部 generic transport 仍保留 `request<unknown>` / `requestRaw<unknown>`。 |
 
 ## 4. 完整 API Contract Inventory
 
@@ -84,9 +84,9 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `writeDevicePoint` | POST | `/api/control/device/{deviceId}/point/{pointRef}` | body: `PointWriteRequest`，当前 `unknown` | `Promise<unknown>` | `ControlController.writePoint` → `ControlCommandApplicationService.writePoint` | `ApiResult<PointWriteResultResponse>` | `ControlPanel` | `buildSinglePointControlPayload`、JSON 展示 | SHOULD_TYPE；写入值本身允许动态。 |
-| `writeDevicePoints` | POST | `/api/control/device/{deviceId}/points` | body: `PointWriteRequest.values`，当前 `unknown` | `Promise<unknown>` | `ControlController.writePoints` → `ControlCommandApplicationService.writePoints` | `ApiResult<BatchPointWriteResponse>` | `ControlPanel` | `parseControlJson` | SHOULD_TYPE；字段值 Map 动态合理。 |
-| `executeDeviceCommand` | POST | `/api/control/device/{deviceId}/command` | body: `DeviceCommandRequest`，当前 `unknown` | `Promise<unknown>` | `ControlController.executeCommand` → `ControlCommandApplicationService.executeCommand` | `ApiResult<DeviceCommandResponse>`，其中 `params`/`result` 动态 | `ControlPanel` | `parseControlJson`、JSON 展示 | DYNAMIC_OK：协议命令结果天然动态，但外壳可后续 typed。 |
+| `writeDevicePoint` | POST | `/api/control/device/{deviceId}/point/{pointRef}` | body: `PointWriteRequest`，单点通常使用 `value` | `Promise<PointWriteResultResponse>` | `ControlController.writePoint` → `ControlCommandApplicationService.writePoint` | `ApiResult<PointWriteResultResponse>` | `ControlPanel` | `buildSinglePointControlPayload`、JSON 展示 | RESOLVED IN 01.2D：显式 `requestApiData<PointWriteResultResponse>()`；`value` 保持动态。 |
+| `writeDevicePoints` | POST | `/api/control/device/{deviceId}/points` | body: `PointWriteRequest.values`；key 作为 `pointRef` 透传，后端按 `reportField → pointAlias → pointCode → pointId → pointName` 解析 | `Promise<BatchPointWriteResponse>` | `ControlController.writePoints` → `ControlCommandApplicationService.writePoints` | `ApiResult<BatchPointWriteResponse>` | `ControlPanel` | `buildBatchControlTemplate`、`parseControlJson` | RESOLVED IN 01.2D：显式 `requestApiData<BatchPointWriteResponse>()`；field value 保持动态。 |
+| `executeDeviceCommand` | POST | `/api/control/device/{deviceId}/command` | body: `DeviceCommandRequest` | `Promise<DeviceCommandResponse>` | `ControlController.executeCommand` → `ControlCommandApplicationService.executeCommand` | `ApiResult<DeviceCommandResponse>`，其中 `params`/`result` 动态 | `ControlPanel` | `buildCommandTemplate`、`parseControlJson`、JSON 展示 | RESOLVED IN 01.2D：显式 `requestApiData<DeviceCommandResponse>()`；协议命令参数和结果继续保持动态。 |
 
 ### 4.3 `data.api.ts`
 
@@ -106,12 +106,12 @@
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
 | `getConfigDevices` | GET | `/api/config/devices` | 无 | `Promise<ConfigDeviceListResponse>` | `ConfigController.getAllDevices` → `ConfigConsoleApplicationService.getAllDevices` | `ApiResult<ConfigDeviceListResponse>` | `device.store` | `normalizeDeviceViewModelWithRuntimeStatus` | MATCHED。 |
-| `startDevice` | POST | `/api/device/{deviceId}/start` | path: `deviceId` | `Promise<unknown>` | `DeviceController.startDevice` → `DeviceConsoleApplicationService.startDevice` | `ApiResult<Object>` | `device.store` | Store 只看成功/失败 | DYNAMIC_OK：当前后端 Object 响应只用于操作成功状态。 |
-| `startLocalDevice` | POST | `/api/device/{deviceId}/start-local` | path: `deviceId` | `Promise<unknown>` | `DeviceController.startLocalDevice` → `DeviceConsoleApplicationService.startLocalDevice` | `ApiResult<Object>` | `device.store`, `LocalDeviceEditor` | Store/Editor 只看成功/失败 | DYNAMIC_OK。 |
-| `stopDevice` | POST | `/api/device/{deviceId}/stop` | path: `deviceId` | `Promise<unknown>` | `DeviceController.stopDevice` → `DeviceConsoleApplicationService.stopDevice` | `ApiResult<Object>` | `device.store` | Store 只看成功/失败 | DYNAMIC_OK。 |
-| `reloadDevices` | POST | `/api/device/reload` | 无 | `Promise<unknown>` | `DeviceController.reloadAllDevices` → `DeviceConsoleApplicationService.reloadAllDevices` | `ApiResult<Object>` | `device.store` | Store 只看成功/失败 | DYNAMIC_OK。 |
-| `getDeviceStatus` | GET | `/api/device/{deviceId}/status` | path: `deviceId` | `Promise<unknown>` | `DeviceController.getDeviceStatus` → `DeviceConsoleApplicationService.getDeviceStatus` | `ApiResult<DeviceStatusResponse>` | `DeviceConfigPanel`, `DeviceRuntimePanel`, `device.store` | `normalizeDeviceStatusDetail` | SHOULD_TYPE。 |
-| `getAllDeviceStatistics` | GET | `/api/device/statistics` | 无 | `Promise<unknown>` | `DeviceController.getAllStatistics` → `DeviceConsoleApplicationService.getAllStatistics` | `ApiResult<Map<String, DeviceStatisticsResponse>>` | 当前未发现生产引用 | 无 | SHOULD_TYPE；unused/reserved。 |
+| `startDevice` | POST | `/api/device/{deviceId}/start` | path: `deviceId` | `Promise<ApiResult<null>>` | `DeviceController.startDevice` → `DeviceConsoleApplicationService.startDevice` | `ApiResult<Object>`，当前 data 为 `null` | `device.store` | Store 只看成功/失败 | RESOLVED IN 01.2C / DYNAMIC_OK：显式 `requestEnvelope<null>()`，保留顶层 command metadata。 |
+| `startLocalDevice` | POST | `/api/device/{deviceId}/start-local` | path: `deviceId` | `Promise<ApiResult<null>>` | `DeviceController.startLocalDevice` → `DeviceConsoleApplicationService.startLocalDevice` | `ApiResult<Object>`，当前 data 为 `null` | `device.store`, `LocalDeviceEditor` | Store/Editor 只看成功/失败 | RESOLVED IN 01.2C / DYNAMIC_OK。 |
+| `stopDevice` | POST | `/api/device/{deviceId}/stop` | path: `deviceId` | `Promise<ApiResult<null>>` | `DeviceController.stopDevice` → `DeviceConsoleApplicationService.stopDevice` | `ApiResult<Object>`，当前 data 为 `null` | `device.store` | Store 只看成功/失败 | RESOLVED IN 01.2C / DYNAMIC_OK。 |
+| `reloadDevices` | POST | `/api/device/reload` | 无 | `Promise<ApiResult<null>>` | `DeviceController.reloadAllDevices` → `DeviceConsoleApplicationService.reloadAllDevices` | `ApiResult<Object>`，当前 data 为 `null` | `device.store` | Store 只看成功/失败 | RESOLVED IN 01.2C / DYNAMIC_OK。 |
+| `getDeviceStatus` | GET | `/api/device/{deviceId}/status` | path: `deviceId` | `Promise<DeviceStatusResponse>` | `DeviceController.getDeviceStatus` → `DeviceConsoleApplicationService.getDeviceStatus` | `ApiResult<DeviceStatusResponse>` | `DeviceConfigPanel`, `DeviceRuntimePanel`, `device.store` | `normalizeDeviceStatusDetail` | RESOLVED IN 01.2C。 |
+| `getAllDeviceStatistics` | GET | `/api/device/statistics` | 无 | `Promise<Record<string, DeviceStatisticsResponse>>` | `DeviceController.getAllStatistics` → `DeviceConsoleApplicationService.getAllStatistics` | `ApiResult<Map<String, DeviceStatisticsResponse>>` | 当前未发现生产引用 | 无 | RESOLVED IN 01.2C；unused/reserved。 |
 | `getRunningDevices` | GET | `/api/device/running` | 无 | `Promise<string[]>` | `DeviceController.getRunningDevices` → `DeviceConsoleApplicationService.getRunningDevices` | `ApiResult<List<String>>` | `DeviceRuntimePanel` | `normalizeRunningDeviceIds` 兼容保留 | RESOLVED IN 01.2A：HTTP 层按 `apiData` 解包后 API 返回 `string[]`。 |
 | `getDeviceRuntime` | GET | `/api/device/runtime` | 无 | `Promise<DeviceRuntimeSnapshot[]>` | `DeviceController.getDeviceRuntimeSnapshots` → `DeviceConsoleApplicationService.getDeviceRuntimeSnapshots` | `ApiResult<List<DeviceRuntimeSnapshot>>` | `device.store`, `DeviceRuntimePanel` | `normalizeDeviceRuntimeRows` 兜底 | MATCHED。 |
 | `isDeviceRunning` | GET | `/api/device/{deviceId}/running` | path: `deviceId` | `Promise<boolean>` | `DeviceController.isDeviceRunning` → `DeviceConsoleApplicationService.isDeviceRunning` | `ApiResult<Object>`，顶层 `running` 字段 | `DeviceRuntimePanel` | `normalizeDeviceRunningFlag` 兼容保留 | RESOLVED IN 01.2A：API 使用 ENVELOPE 读取顶层 `running`，调用方仍得到真实 boolean。 |
@@ -120,7 +120,7 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `ingestEdgeTelemetry` | POST | `/api/edge/telemetry` | body: `EdgeTelemetryBatchRequest`，当前 `unknown` | `Promise<unknown>` | `EdgeTelemetryController.ingest` → `EdgeTelemetryIngressService.ingest` | `ApiResult<EdgeTelemetryIngressResult>` | `EdgeTelemetryPanel` | `normalizeEdgeTelemetryResult` | SHOULD_TYPE；请求最多 1000 items，前端可 typed 外壳并保留 value 动态。 |
+| `ingestEdgeTelemetry` | POST | `/api/edge/telemetry` | body: `EdgeTelemetryBatchRequest` | `Promise<EdgeTelemetryIngressResult>` | `EdgeTelemetryController.ingest` → `EdgeTelemetryIngressService.ingest` | `ApiResult<EdgeTelemetryIngressResult>` | `EdgeTelemetryPanel` | `normalizeEdgeTelemetryResult` | RESOLVED IN 01.2C：请求/响应外壳已 typed，telemetry `value` 保留动态。 |
 
 ### 4.6 `monitor.api.ts`
 
@@ -140,17 +140,17 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `getOpsLogs` | GET | `/api/ops/logs` | query: `level?`, `logger?`, `keyword?`, `limit?`；前端还传 `deviceId`、`thread`，后端当前不接收 | `Promise<OpsLogResponse>` | `OpsController.logs` → `OpsConsoleApplicationService.logs` | `ApiResult<OpsLogResponse>`，后端字段为 `items` | `LogView`, `DiagnosticView`, `LogPanel` | `normalizeLogRows` 兼容 `logs/records/rows/items` | LEGACY_COMPAT；同时存在前端多传查询参数的契约漂移。 |
-| `queryAlarmAcknowledgements` | POST | `/api/ops/alarms/acknowledgements/query` | body: `{ alarmIds: string[] }` | `Promise<Record<string, unknown>>` | `OpsController.acknowledgementStates` → `OpsConsoleApplicationService.acknowledgementStates` | `ApiResult<Map<String, AlarmAcknowledgement>>` | `AlarmView` | `normalizeAlarmAcknowledgementMap` | SHOULD_TYPE：应为 `Record<string, AlarmAcknowledgementRecord>`。 |
-| `acknowledgeAlarm` | POST | `/api/ops/alarms/{alarmId}/acknowledge` | body: `AlarmAcknowledgementRequest`，当前本地 payload | `Promise<unknown>` | `OpsController.acknowledge` → `OpsConsoleApplicationService.acknowledge` | `ApiResult<AlarmAcknowledgement>` | `AlarmView`, `AlarmTablePanel` | `applyAlarmAcknowledgement` | SHOULD_TYPE。 |
-| `diagnoseNetwork` | POST | `/api/ops/network/diagnose` | body: `NetworkDiagnosticRequest`，当前 `unknown` | `Promise<unknown>` | `OpsController.diagnose` → `OpsConsoleApplicationService.diagnose` | `ApiResult<NetworkDiagnosticResult>` | `NetworkView` | `normalizeNetworkDiagnosticResult` | SHOULD_TYPE；请求与响应均已有稳定后端 record/class。 |
+| `getOpsLogs` | GET | `/api/ops/logs` | query: `level?`, `logger?`, `keyword?`, `limit?`；设备/线程过滤改为前端本地处理 | `Promise<OpsLogResponse>` | `OpsController.logs` → `OpsConsoleApplicationService.logs` | `ApiResult<OpsLogResponse>`，后端字段为 `items` | `LogView`, `DiagnosticView`, `LogPanel` | `normalizeLogRows` 兼容 `logs/records/rows/items` | RESOLVED IN 01.2C / LEGACY_COMPAT：服务端真实只支持 `level/logger/keyword/limit`，历史字段兼容仍保留。 |
+| `queryAlarmAcknowledgements` | POST | `/api/ops/alarms/acknowledgements/query` | body: `{ alarmIds: string[] }` | `Promise<Record<string, AlarmAcknowledgement>>` | `OpsController.acknowledgementStates` → `OpsConsoleApplicationService.acknowledgementStates` | `ApiResult<Map<String, AlarmAcknowledgement>>` | `AlarmView` | `normalizeAlarmAcknowledgementMap` | RESOLVED IN 01.2C。 |
+| `acknowledgeAlarm` | POST | `/api/ops/alarms/{alarmId}/acknowledge` | body: `AlarmAcknowledgementRequest` | `Promise<AlarmAcknowledgement>` | `OpsController.acknowledge` → `OpsConsoleApplicationService.acknowledge` | `ApiResult<AlarmAcknowledgement>` | `AlarmView`, `AlarmTablePanel` | `applyAlarmAcknowledgement` | RESOLVED IN 01.2C。 |
+| `diagnoseNetwork` | POST | `/api/ops/network/diagnose` | body: `NetworkDiagnosticRequest` | `Promise<NetworkDiagnosticResult>` | `OpsController.diagnose` → `OpsConsoleApplicationService.diagnose` | `ApiResult<NetworkDiagnosticResult>` | `NetworkView` | `normalizeNetworkDiagnosticResult` | RESOLVED IN 01.2C；请求与响应均按真实后端 DTO typed。 |
 
 ### 4.8 `point.api.ts`
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
 | `getDevicePointConfig` | GET | `/api/config/device/{deviceId}/points` | query: `includeAdaptive`，默认 `true` | `Promise<DevicePointConfigResponse>` | `ConfigController.getDevicePoints` → `ConfigConsoleApplicationService.getDevicePoints` | `ApiResult<DevicePointConfigResponse>` | `point.store`, `PointEditor` 间接使用 | `normalizePointRows` | MATCHED。 |
-| `saveDevicePointConfig` | PUT | `/api/config/device/{deviceId}/points` | body: `DataPoint[]` | `Promise<unknown>` | `ConfigController.updatePoints` → `ConfigConsoleApplicationService.updatePoints` | `ApiResult<DeviceIdResponse>` | `point.store` | 保存后 `pointStore.load` 重新读取 | SHOULD_TYPE。 |
+| `saveDevicePointConfig` | PUT | `/api/config/device/{deviceId}/points` | body: `DataPoint[]` | `Promise<DeviceIdResponse>` | `ConfigController.updatePoints` → `ConfigConsoleApplicationService.updatePoints` | `ApiResult<DeviceIdResponse>` | `point.store` | 保存后 `pointStore.load` 重新读取 | RESOLVED IN 01.2C。 |
 
 ### 4.9 `protocol.api.ts`
 
@@ -171,11 +171,11 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `getShadow` | GET | `/api/shadow/{deviceId}` | path: `deviceId` | `Promise<unknown>` | `ShadowController.getShadow` → `ShadowManager.getShadowDocument` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `summarizeShadowState`、JSON 展示 | SHOULD_TYPE；state/metadata 内部动态合理。 |
-| `getShadowDelta` | GET | `/api/shadow/{deviceId}/delta` | path: `deviceId` | `Promise<unknown>` | `ShadowController.getDelta` → `ShadowManager.getShadowDelta` | `ApiResult<DeviceShadowDeltaResponse>` | `ShadowPanel` | `summarizeShadowState` | SHOULD_TYPE；delta Map 动态合理。 |
-| `getShadowHistory` | GET | `/api/shadow/{deviceId}/history` | query: `limit`，默认 `50` | `Promise<unknown>` | `ShadowController.getHistory` → `ShadowManager.getShadowHistory` | `ApiResult<List<Map<String,Object>>>` | `ShadowPanel` | `normalizeShadowHistoryRows` | DYNAMIC_OK：历史记录结构是 shadow document 操作快照。 |
-| `updateShadowDesired` | POST | `/api/shadow/{deviceId}/desired` | body: `desired/state/properties/params` 等兼容形态 | `Promise<unknown>` | `ShadowController.updateDesired` → `ShadowManager.updateDesired` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `parseShadowJsonOrThrow`、`summarizeShadowState` | SHOULD_TYPE；请求体兼容多形态，响应可 typed。 |
-| `clearShadowDesired` | DELETE | `/api/shadow/{deviceId}/desired` | query: `fields?`，前端逗号字符串 | `Promise<unknown>` | `ShadowController.clearDesired` → `ShadowManager.clearDesired` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `summarizeShadowState` | SHOULD_TYPE；需确认 Spring 对逗号字符串 `List<String>` 的绑定。 |
+| `getShadow` | GET | `/api/shadow/{deviceId}` | path: `deviceId` | `Promise<DeviceShadowResponse>` | `ShadowController.getShadow` → `ShadowManager.getShadowDocument` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `summarizeShadowState`、JSON 展示 | RESOLVED IN 01.2D：外层 DTO 已 typed；`state.reported/desired/delta/lastReported` 动态 Map 保留。 |
+| `getShadowDelta` | GET | `/api/shadow/{deviceId}/delta` | path: `deviceId` | `Promise<DeviceShadowDeltaResponse>` | `ShadowController.getDelta` → `ShadowManager.getShadowDelta` | `ApiResult<DeviceShadowDeltaResponse>` | `ShadowPanel` | `summarizeShadowState` | RESOLVED IN 01.2D：外层 DTO 已 typed；`delta/metadata` 动态 Map 保留。 |
+| `getShadowHistory` | GET | `/api/shadow/{deviceId}/history` | query: `limit`，默认 `50` | `Promise<ShadowHistoryDocument[]>` | `ShadowController.getHistory` → `ShadowManager.getShadowHistory` | `ApiResult<List<Map<String,Object>>>` | `ShadowPanel` | `normalizeShadowHistoryRows` | RESOLVED IN 01.2D / DYNAMIC_OK：history 保持动态文档，不伪装成固定 DTO 数组。 |
+| `updateShadowDesired` | POST | `/api/shadow/{deviceId}/desired` | body: `ShadowDesiredUpdateRequest`，兼容 `state.desired` / `desired` / `properties` / `params` / 顶层业务字段，并保留 `source/shadowVersion/expectedVersion` | `Promise<DeviceShadowResponse>` | `ShadowController.updateDesired` → `ShadowManager.updateDesired` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `parseShadowJsonOrThrow`、`summarizeShadowState` | RESOLVED IN 01.2D：请求外壳已 typed，但动态 property 不做硬编码。 |
+| `clearShadowDesired` | DELETE | `/api/shadow/{deviceId}/desired` | query: `fields?`，前端继续使用逗号字符串 | `Promise<DeviceShadowResponse>` | `ShadowController.clearDesired` → `ShadowManager.clearDesired` | `ApiResult<DeviceShadowResponse>` | `ShadowPanel` | `summarizeShadowState` | RESOLVED IN 01.2D：响应 typed；保留当前 `fields` 序列化行为。 |
 
 ## 5. `Promise<unknown>` 分类
 
@@ -183,9 +183,11 @@
 
 | 分类 | 数量 | API |
 |---|---:|---|
-| SHOULD_TYPE | 13 | 01.2B 后仍待处理：`control.api.ts`: `writeDevicePoint`, `writeDevicePoints`; `device.api.ts`: `getDeviceStatus`, `getAllDeviceStatistics`; `edge.api.ts`: `ingestEdgeTelemetry`; `ops.api.ts`: `queryAlarmAcknowledgements`, `acknowledgeAlarm`, `diagnoseNetwork`; `point.api.ts`: `saveDevicePointConfig`; `shadow.api.ts`: `getShadow`, `getShadowDelta`, `updateShadowDesired`, `clearShadowDesired`。 |
+| SHOULD_TYPE | 0 | Task 01.2D 完成后，业务 API wrapper 不再存在待补稳定 contract 的 `Promise<unknown>`。 |
 | LEGACY_COMPAT | 0 | API 层返回类型不再以 legacy unknown 计数；兼容逻辑继续保留在 normalizer。 |
-| DYNAMIC_OK | 6 | `control.api.ts`: `executeDeviceCommand`; `device.api.ts`: `startDevice`, `startLocalDevice`, `stopDevice`, `reloadDevices`; `shadow.api.ts`: `getShadowHistory`。这些接口当前要么后端就是 `ApiResult<Object>` 操作结果，要么数据天然动态。 |
+| DYNAMIC_OK | 0 | 动态值已下沉到 typed DTO 内部：如 `PointWriteRequest.value`、`BatchPointWriteFieldResponse.value`、`DeviceCommandResponse.params/result`、`DeviceShadowStateResponse.*`、`ShadowHistoryDocument`。 |
+
+说明：`src/api/http.ts` 仍保留 `request<unknown>` / `requestRaw<unknown>` 作为 transport 层内部泛型实现，不属于业务 API wrapper contract 缺口。
 
 ## 6. Normalize / Extract / Resolve / Parse 清单
 
@@ -205,7 +207,8 @@
 | `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；RESOLVED IN 01.2C：`getDeviceStatus` 已有稳定 TS DTO，normalizer 只保留为页面兼容层。 | 保留；不再承担顶层 unknown 兜底的主 contract。 |
 | `src/features/network/utils/network-utils.ts` | `buildNetworkDiagnosticPayload`, `normalizeNetworkDiagnosticResult` | VIEW_MODEL + DEFENSIVE | RESOLVED IN 01.2C：请求已收窄到 `NetworkDiagnosticRequest`，API 返回 `NetworkDiagnosticResult`；失败时仍会生成不可达结果供页面与导出使用。 | 保留；失败分支和扩展 details 仍需 defensive normalize。 |
 | `src/features/network/utils/edge-telemetry-utils.ts` | `parseEdgeTelemetryJson`, `normalizeEdgeTelemetryResult`, `parseTypedValue` | DYNAMIC_OK + VIEW_MODEL | RESOLVED IN 01.2C：边缘遥测请求/响应外壳已 typed；`value` 继续是动态字段。 | 保留；不为动态 telemetry 值制造伪强类型。 |
-| `src/features/shadow/utils/shadow-utils.ts` | `normalizeShadowHistoryRows`, `parseShadowJson*`, `summarizeShadowState` | DYNAMIC_OK + VIEW_MODEL | 影子 state/delta/history 是动态文档，需要 JSON 解析和摘要。 | 保留；响应外壳可 typed。 |
+| `src/features/control/utils/control-utils.ts` | `parseControlValue`, `buildSinglePointControlPayload`, `buildBatchControlTemplate`, `buildCommandTemplate`, `parseControlJson` | DYNAMIC_OK + VIEW_MODEL | RESOLVED IN 01.2D：Control API request/response 外壳已 typed；helper 仍负责用户输入转动态写入值、批量模板和命令 JSON 解析。 | 保留；不要在 helper 中引入自动重试或补发语义。 |
+| `src/features/shadow/utils/shadow-utils.ts` | `normalizeShadowHistoryRows`, `parseShadowJson*`, `summarizeShadowState` | DYNAMIC_OK + VIEW_MODEL | RESOLVED IN 01.2D：Shadow API outer DTO 已 typed；history/state/delta/metadata 仍是动态文档，需要 defensive parse 与摘要。 | 保留；不要把动态 property 硬编码成固定字段。 |
 | `src/stores/websocket-utils.ts` | `normalizeRealtimeMessage`, `parseRealtimePayload` | DEFENSIVE | 兼容 WS array / `points` / `data` / single point。 | 解析错误当前不可观测，见可靠性基线。 |
 
 ## 7. 页面 → API Mapping
@@ -237,10 +240,10 @@
 
 | 状态 | API 条目数 | 说明 / 代表项 |
 |---|---:|---|
-| MATCHED | 54 | 01.2C 新增：`device.api.ts` 查询接口、`ops.api.ts` 四个接口、`edge.api.ts`、`point.api.ts` 已与真实 Java DTO / envelope 对齐。 |
+| MATCHED | 59 | 01.2D 新增：`control.api.ts` 的 `writeDevicePoint` / `writeDevicePoints`、`shadow.api.ts` 的 `getShadow` / `getShadowDelta` / `updateShadowDesired` / `clearShadowDesired` 已与真实 Java DTO 对齐。 |
 | PARTIAL | 0 | 01.2C 后仍不保留“半 typed 顶层 wrapper”；动态结构改归入 DYNAMIC/LEGACY。 |
-| MISSING | 5 | 剩余缺口只集中在 `control.api.ts` 3 个写操作和 `shadow.api.ts` 2 个 outer DTO。 |
-| DYNAMIC | 7 | 后端当前就是 command envelope 或内部 payload 天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history/文档。 |
+| MISSING | 0 | Task 01.2D 完成后，业务 API wrapper 的稳定 contract 缺口清零。 |
+| DYNAMIC | 7 | 动态性继续保留在真实业务字段中：设备 start/stop/reload command envelope、全量 sync、协议 command `params/result`、shadow history/document。 |
 | LEGACY_COMPAT | 1 | `getOpsLogs` 已以 `items` 为 primary contract，但 normalizer 仍兼容 `logs/records/rows` 历史字段。 |
 
 关键后端 DTO 对照：
@@ -261,8 +264,8 @@
 | `LocalDeviceConfigResponse` / `LocalDeviceConfigRequest` | `types/config.ts LocalDeviceConfigResponse` / `LocalDeviceConfigRequest`，编辑器仍使用 feature-local draft/payload | RESOLVED IN 01.2B / DYNAMIC_OK | API response typed；请求中的 protocol-specific config、connection extJson、point additionalConfig 保留动态。 |
 | `DeviceConnectionConfigResponse` | `types/config.ts DeviceConnectionConfigResponse`；`ConnectionPayload` 仍为表单 view model | RESOLVED IN 01.2B / DYNAMIC_OK | 响应外壳 typed，`DeviceConfigPanel` 直接读取 `response.connection`；协议扩展 Map 保留动态。 |
 | `DeviceIdResponse` | `types/config.ts DeviceIdResponse` | RESOLVED IN 01.2B | 多个配置写操作统一复用该 DTO。 |
-| `PointWriteResultResponse` / `BatchPointWriteResponse` | 无 | MISSING | 控制写入结果仅 JSON 展示。 |
-| `DeviceCommandResponse` | 无 | DYNAMIC | `result` 动态，但 response shell 可 typed。 |
+| `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteFieldResponse` / `BatchPointWriteResponse` | `types/control.ts` | RESOLVED IN 01.2D / MATCHED | `PointWriteRequest.values` 的 key 语义已按 `DevicePointResolver` 对齐为 pointRef 解析链；写入值继续动态。 |
+| `DeviceCommandRequest` / `DeviceCommandResponse` | `types/control.ts` | RESOLVED IN 01.2D / DYNAMIC_OK | request/response 外壳已 typed；`params/result` 仍由协议能力决定。 |
 | `CloudReportMetricsResponse` | `types/monitor.ts CloudReportMetricsResponse` | RESOLVED IN 01.2B / DYNAMIC_OK | 重要监控 DTO 已按 Java nested classes typed；handlers/status statistics 为动态 Map。 |
 | `ConsoleRuntimeStatusSnapshot` | `types/monitor.ts ConsoleRuntimeStatusSnapshot`；`types/runtime.ts` re-export | RESOLVED IN 01.2B | `monitor.api.ts` 与 `runtime.api.ts` 复用同一 RAW wrapper。 |
 | `CacheMetricsSnapshot`, `DeviceStatusSnapshot`, `SystemResourceSnapshot`, `ExceptionStatsSnapshot`, `StorageMetricsSnapshot`, `PerformanceStatsSnapshot`, `CollectorMetrics` | `types/monitor.ts` | RESOLVED IN 01.2B / DYNAMIC_OK | 监控 Snapshot 已 typed；内部 `Map<String,Object>`/`protocolMetrics`/`deviceStats` 保留动态。 |
@@ -271,13 +274,14 @@
 | `NetworkDiagnosticResult` | `types/ops.ts NetworkDiagnosticResult`；`NormalizedNetworkDiagnosticResult` 为展示模型 | RESOLVED IN 01.2C / MATCHED | 原始 request/response DTO 已补齐；页面 normalizer 仅负责展示文案与失败回填。 |
 | `EdgeTelemetryIngressResult` | `types/edge.ts EdgeTelemetryIngressResult` | RESOLVED IN 01.2C / MATCHED | `edge.api.ts` 已显式 `requestApiData<EdgeTelemetryIngressResult>`；请求外壳同步补齐。 |
 | `ProtocolSchema` / `ProtocolFieldConfig` | `types/protocol.ts` | MATCHED | 协议动态字段通过 schema 表达。 |
-| `DeviceShadowResponse` / `DeviceShadowDeltaResponse` | 无独立 TS DTO | MISSING/DYNAMIC | response shell 稳定，state/delta/metadata 内部动态。 |
-| `List<Map<String,Object>>` shadow history | `ShadowHistoryRow` view model | DYNAMIC | 历史记录天然动态。 |
+| `DeviceShadowResponse` / `DeviceShadowDeltaResponse` / `DeviceShadowStateResponse` / `DeviceShadowMetadataResponse` | `types/shadow.ts` | RESOLVED IN 01.2D / DYNAMIC_OK | outer DTO 已 typed；`reported/desired/delta/lastReported/metadata` 内层继续使用动态 Map。 |
+| `List<Map<String,Object>>` shadow history | `types/shadow.ts ShadowHistoryDocument` + `ShadowHistoryRow` view model | RESOLVED IN 01.2D / DYNAMIC | history envelope 只补稳定字段，其余属性继续动态。 |
 
-## 9. 01.2C 完成后剩余输入
+## 9. Task 01.2 完成结论
 
 1. RESOLVED IN 01.2A：`getDeviceRealtimeData`、`PointRealtimeResponse`、`DeviceRealtimeDataResponse.data` Map contract、`getRunningDevices`、`isDeviceRunning`、DataController raw DTO response boundary。
 2. RESOLVED IN 01.2B：`monitor.api.ts` 9 个 RAW DTO endpoint、`config.api.ts` 稳定 response DTO、`runtime.api.ts.getRuntimeStatus` 重复契约已统一。
-3. Task 01.2D 只建议继续处理 `control.api.ts` 与 `shadow.api.ts`：前者补 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteResponse` / `DeviceCommandResponse`，后者补 `DeviceShadowResponse` / `DeviceShadowDeltaResponse` 的稳定 outer DTO。
-4. `getOpsLogs` drift 已在 01.2C 明确：后端真实只支持 `level/logger/keyword/limit`，前端设备/线程条件改为当前结果内本地过滤，仍存在“非服务端精确过滤”的 UX/backend capability gap。
-5. 保留 `DYNAMIC_OK` 的动态 payload/value/result，不为了“零 unknown”创造无业务价值 DTO；尤其是 shadow 文档、control result payload 与 edge telemetry value。
+3. RESOLVED IN 01.2C：`device.api.ts`、`ops.api.ts`、`edge.api.ts`、`point.api.ts` 已完成稳定 contract 收口。
+4. RESOLVED IN 01.2D：`control.api.ts` 与 `shadow.api.ts` 已完成最后一轮 contract typing；Control 写操作保持动态 value/params/result，Shadow 保持 typed outer + dynamic inner document。
+5. Task 01.2 Contract Typing COMPLETE：业务 API wrapper 的 `Promise<unknown>` 已清零；剩余 generic unknown 仅存在于 `src/api/http.ts` transport 内部实现。
+6. NEXT：Task 01.3 — Request Lifecycle Reliability，处理 realtime stale response、N+1 fan-out、abort/request sequence、WebSocket readiness 与页面级 partial-failure 可观测性。

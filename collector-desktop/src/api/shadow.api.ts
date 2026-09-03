@@ -1,23 +1,38 @@
-import { request } from "./http";
+import { requestApiData } from "./http";
 
-export function getShadow(deviceId: string): Promise<unknown> {
-  return request<unknown>({ url: `/api/shadow/${encodeURIComponent(deviceId)}`, method: "GET" });
+import type {
+  DeviceShadowDeltaResponse,
+  DeviceShadowResponse,
+  ShadowDesiredUpdateRequest,
+  ShadowHistoryDocument
+} from "@/types/shadow";
+
+export function getShadow(deviceId: string): Promise<DeviceShadowResponse> {
+  return requestApiData<DeviceShadowResponse>({ url: `/api/shadow/${encodeURIComponent(deviceId)}`, method: "GET" });
 }
 
-export function getShadowDelta(deviceId: string): Promise<unknown> {
-  return request<unknown>({ url: `/api/shadow/${encodeURIComponent(deviceId)}/delta`, method: "GET" });
+export function getShadowDelta(deviceId: string): Promise<DeviceShadowDeltaResponse> {
+  return requestApiData<DeviceShadowDeltaResponse>({ url: `/api/shadow/${encodeURIComponent(deviceId)}/delta`, method: "GET" });
 }
 
-export function getShadowHistory(deviceId: string, limit = 50): Promise<unknown> {
-  return request<unknown>({ url: `/api/shadow/${encodeURIComponent(deviceId)}/history`, method: "GET", params: { limit } });
+export function getShadowHistory(deviceId: string, limit = 50): Promise<ShadowHistoryDocument[]> {
+  return requestApiData<ShadowHistoryDocument[]>({
+    url: `/api/shadow/${encodeURIComponent(deviceId)}/history`,
+    method: "GET",
+    params: { limit }
+  });
 }
 
-export function updateShadowDesired(deviceId: string, payload: unknown): Promise<unknown> {
-  return request<unknown>({ url: `/api/shadow/${encodeURIComponent(deviceId)}/desired`, method: "POST", data: payload });
+export function updateShadowDesired(deviceId: string, payload: ShadowDesiredUpdateRequest): Promise<DeviceShadowResponse> {
+  return requestApiData<DeviceShadowResponse>({
+    url: `/api/shadow/${encodeURIComponent(deviceId)}/desired`,
+    method: "POST",
+    data: payload
+  });
 }
 
-export function clearShadowDesired(deviceId: string, fields?: string[]): Promise<unknown> {
-  return request<unknown>({
+export function clearShadowDesired(deviceId: string, fields?: string[]): Promise<DeviceShadowResponse> {
+  return requestApiData<DeviceShadowResponse>({
     url: `/api/shadow/${encodeURIComponent(deviceId)}/desired`,
     method: "DELETE",
     params: fields?.length ? { fields: fields.join(",") } : undefined

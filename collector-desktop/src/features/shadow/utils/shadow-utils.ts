@@ -1,4 +1,14 @@
+import type {
+  DeviceShadowDeltaResponse,
+  DeviceShadowResponse,
+  ShadowDesiredUpdateRequest,
+  ShadowHistoryDocument
+} from "@/types/shadow";
+
 export interface ShadowHistoryRow {
+  deviceId?: string;
+  action?: string;
+  baseVersion?: number | string;
   timestamp?: number | string;
   time?: number | string;
   createdAt?: number | string;
@@ -22,25 +32,50 @@ export interface ShadowStateSummary {
 export interface ShadowExportPayload {
   deviceId: string;
   generatedAt: string;
-  current: unknown;
-  desired: unknown;
-  delta: unknown;
+  current: DeviceShadowResponse | ShadowPanelStateMessage;
+  desired: ShadowDesiredUpdateRequest | unknown;
+  delta: DeviceShadowDeltaResponse | ShadowPanelStateMessage;
   history: ShadowHistoryRow[];
 }
 
-export function normalizeShadowHistoryRows(response: unknown): ShadowHistoryRow[] {
+export interface ShadowPanelStateMessage {
+  message?: string;
+  error?: string;
+}
+
+const SHADOW_RESERVED_KEYS = new Set([
+  "id",
+  "messageId",
+  "version",
+  "method",
+  "deviceId",
+  "timestamp",
+  "source",
+  "shadowVersion",
+  "expectedVersion"
+]);
+
+export function normalizeShadowHistoryRows(response: ShadowHistoryDocument[] | unknown): ShadowHistoryRow[] {
   return extractRows(response, ["records", "rows", "items", "data", "history", "versions"]) as ShadowHistoryRow[];
 }
 
-export function summarizeShadowState(current: unknown, desired: unknown, delta: unknown, history: ShadowHistoryRow[]): ShadowStateSummary {
+export function summarizeShadowState(
+  current: DeviceShadowResponse | ShadowPanelStateMessage | unknown,
+  desired: ShadowDesiredUpdateRequest | unknown,
+  delta: DeviceShadowDeltaResponse | ShadowPanelStateMessage | unknown,
+  history: ShadowHistoryRow[]
+): ShadowStateSummary {
+  const currentState = extractCurrentShadowState(current);
+  const desiredState = extractDesiredShadowState(desired);
+  const deltaState = extractDeltaShadowState(delta);
   return {
-    currentCount: countRecordKeys(extractShadowRecord(current)),
-    desiredCount: countRecordKeys(extractShadowRecord(desired)),
-    deltaCount: countRecordKeys(extractShadowRecord(delta)),
+    currentCount: countRecordKeys(currentState),
+    desiredCount: countRecordKeys(desiredState),
+    deltaCount: countRecordKeys(deltaState),
     historyCount: history.length,
-    currentText: `${countRecordKeys(extractShadowRecord(current))} 项`,
-    desiredText: `${countRecordKeys(extractShadowRecord(desired))} 项`,
-    deltaText: `${countRecordKeys(extractShadowRecord(delta))} 项`
+    currentText: `${countRecordKeys(currentState)} 项`,
+    desiredText: `${countRecordKeys(desiredState)} 项`,
+    deltaText: `${countRecordKeys(deltaState)} 项`
   };
 }
 
@@ -77,7 +112,14 @@ export function compactJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function buildShadowExportPayload(deviceId: string, current: unknown, desired: unknown, delta: unknown, history: ShadowHistoryRow[], generatedAt = new Date().toISOString()): ShadowExportPayload {
+export function buildShadowExportPayload(
+  deviceId: string,
+  current: DeviceShadowResponse | ShadowPanelStateMessage,
+  desired: ShadowDesiredUpdateRequest | unknown,
+  delta: DeviceShadowDeltaResponse | ShadowPanelStateMessage,
+  history: ShadowHistoryRow[],
+  generatedAt = new Date().toISOString()
+): ShadowExportPayload {
   return {
     deviceId,
     generatedAt,
@@ -122,6 +164,50 @@ function extractShadowRecord(value: unknown): Record<string, unknown> {
     return record.data as Record<string, unknown>;
   }
   return record;
+}
+
+function extractCurrentShadowState(value: unknown): Record<string, unknown> {
+  const record = extractShadowRecord(value);
+  return extractNestedRecord(record.state, "reported");
+}
+
+function extractDeltaShadowState(value: unknown): Record<string, unknown> {
+  const record = extractShadowRecord(value);
+  if (record.delta && typeof record.delta === "object" && !Array.isArray(record.delta)) {
+    return record.delta as Record<string, unknown>;
+  }
+  return {};
+}
+
+function extractDesiredShadowState(value: unknown): Record<string, unknown> {
+  const record = extractShadowRecord(value);
+  const fromState = extractNestedRecord(record.state, "desired");
+  if (Object.keys(fromState).length > 0) {
+    return fromState;
+  }
+  const directKeys = ["desired", "properties", "params"] as const;
+  for (const key of directKeys) {
+    const nested = extractDirectRecord(record[key]);
+    if (Object.keys(nested).length > 0) {
+      return nested;
+    }
+  }
+  const direct = Object.entries(record).filter(([key]) => !SHADOW_RESERVED_KEYS.has(key));
+  return direct.length > 0 ? Object.fromEntries(direct) : {};
+}
+
+function extractNestedRecord(root: unknown, key: string): Record<string, unknown> {
+  if (!root || typeof root !== "object" || Array.isArray(root)) {
+    return {};
+  }
+  return extractDirectRecord((root as Record<string, unknown>)[key]);
+}
+
+function extractDirectRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
 }
 
 function countRecordKeys(value: Record<string, unknown>): number {

@@ -1,9 +1,6 @@
-export type ControlDataType = "STRING" | "BOOLEAN" | "INT" | "FLOAT" | "DOUBLE";
+import type { DeviceCommandRequest, PointWriteRequest } from "@/types/control";
 
-export interface SinglePointControlPayload {
-  value: unknown;
-  dataType: string;
-}
+export type ControlDataType = "STRING" | "BOOLEAN" | "INT" | "FLOAT" | "DOUBLE";
 
 export interface ControlJsonParseResult<T = unknown> {
   payload: T;
@@ -21,26 +18,21 @@ export function parseControlValue(rawValue: string, dataType: string): unknown {
   return rawValue;
 }
 
-export function buildSinglePointControlPayload(rawValue: string, dataType: string): SinglePointControlPayload {
+export function buildSinglePointControlPayload(rawValue: string, dataType: string): PointWriteRequest {
   return {
-    value: parseControlValue(rawValue, dataType),
-    dataType
+    value: parseControlValue(rawValue, dataType)
   };
 }
 
-export function buildBatchControlTemplate(): Record<string, unknown> {
+export function buildBatchControlTemplate(): PointWriteRequest {
   return {
-    points: [
-      {
-        pointId: "point_001",
-        value: 1,
-        dataType: "INT"
-      }
-    ]
+    values: {
+      point_001: 1
+    }
   };
 }
 
-export function buildCommandTemplate(): Record<string, unknown> {
+export function buildCommandTemplate(): DeviceCommandRequest {
   return {
     command: "custom",
     params: {}

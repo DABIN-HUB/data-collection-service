@@ -60,6 +60,12 @@ import {
   formatControlJson,
   parseControlJson
 } from "@/features/control/utils/control-utils";
+import type { ControlResultResponse, DeviceCommandRequest, PointWriteRequest } from "@/types/control";
+
+interface ControlPanelMessageState {
+  message?: string;
+  error?: string;
+}
 
 const props = defineProps<{ deviceId: string }>();
 
@@ -68,7 +74,7 @@ const singleDataType = ref("STRING");
 const singleValue = ref("");
 const batchPayload = ref(formatControlJson(buildBatchControlTemplate()));
 const commandPayload = ref(formatControlJson(buildCommandTemplate()));
-const result = ref<unknown>({ message: "等待执行结果" });
+const result = ref<ControlResultResponse | ControlPanelMessageState>({ message: "等待执行结果" });
 const singleWriting = ref(false);
 const batchWriting = ref(false);
 const commandExecuting = ref(false);
@@ -96,9 +102,9 @@ async function writeBatch() {
     ElMessage.warning("请先选择设备");
     return;
   }
-  let payload: unknown;
+  let payload: PointWriteRequest;
   try {
-    payload = parseControlJson(batchPayload.value, "批量写入 JSON");
+    payload = parseControlJson<PointWriteRequest>(batchPayload.value, "批量写入 JSON");
   } catch (error) {
     handleControlError(error, "批量写入 JSON 格式错误");
     return;
@@ -119,9 +125,9 @@ async function executeCommand() {
     ElMessage.warning("请先选择设备");
     return;
   }
-  let payload: unknown;
+  let payload: DeviceCommandRequest;
   try {
-    payload = parseControlJson(commandPayload.value, "协议命令 JSON");
+    payload = parseControlJson<DeviceCommandRequest>(commandPayload.value, "协议命令 JSON");
   } catch (error) {
     handleControlError(error, "协议命令 JSON 格式错误");
     return;

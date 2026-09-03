@@ -78,13 +78,15 @@ import {
   parseShadowJson,
   parseShadowJsonOrThrow,
   summarizeShadowState,
-  type ShadowHistoryRow
+  type ShadowHistoryRow,
+  type ShadowPanelStateMessage
 } from "@/features/shadow/utils/shadow-utils";
+import type { DeviceShadowDeltaResponse, DeviceShadowResponse, ShadowDesiredUpdateRequest } from "@/types/shadow";
 
 const props = defineProps<{ deviceId: string }>();
 
-const shadow = ref<unknown>({ message: "选择设备后读取影子" });
-const shadowDelta = ref<unknown>({ message: "选择设备后读取 delta" });
+const shadow = ref<DeviceShadowResponse | ShadowPanelStateMessage>({ message: "选择设备后读取影子" });
+const shadowDelta = ref<DeviceShadowDeltaResponse | ShadowPanelStateMessage>({ message: "选择设备后读取 delta" });
 const shadowHistoryRows = ref<ShadowHistoryRow[]>([]);
 const shadowHistoryLimit = ref(50);
 const desiredPayload = ref(JSON.stringify({ desired: {} }, null, 2));
@@ -172,9 +174,9 @@ async function saveDesired() {
   if (!props.deviceId) {
     return;
   }
-  let payload: unknown;
+  let payload: ShadowDesiredUpdateRequest;
   try {
-    payload = parseShadowJsonOrThrow(desiredPayload.value, "desired JSON");
+    payload = parseShadowJsonOrThrow<ShadowDesiredUpdateRequest>(desiredPayload.value, "desired JSON");
   } catch (error) {
     handleShadowError(error, "desired JSON 格式错误");
     return;
