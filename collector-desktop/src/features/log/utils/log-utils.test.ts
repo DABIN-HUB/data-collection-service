@@ -21,7 +21,7 @@ describe("log-utils", () => {
     expect(buildLogQueryParams({ level: "ERROR", logger: "collector", keyword: "超时", deviceId: "dev-1", thread: "collector-1", limit: 500 })).toEqual({
       level: "ERROR",
       logger: "collector",
-      keyword: "超时 dev-1 collector-1",
+      keyword: "超时",
       limit: 500
     });
   });

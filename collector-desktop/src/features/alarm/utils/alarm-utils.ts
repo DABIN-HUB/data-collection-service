@@ -1,4 +1,5 @@
 import type { AlarmRow } from "@/types/monitor";
+import type { AlarmAcknowledgement, AlarmAcknowledgementRequest } from "@/types/ops";
 
 export interface AlarmSummary {
   total: number;
@@ -6,15 +7,6 @@ export interface AlarmSummary {
   acknowledged: number;
   critical: number;
   warning: number;
-}
-
-export interface AlarmAcknowledgementRecord {
-  alarmId?: string;
-  operator?: string;
-  acknowledgedAt?: number | string;
-  note?: string;
-  idempotencyKey?: string;
-  [key: string]: unknown;
 }
 
 export interface AlarmTroubleshootTarget {
@@ -37,7 +29,7 @@ export function summarizeAlarms(rows: AlarmRow[]): AlarmSummary {
   }, { total: 0, active: 0, acknowledged: 0, critical: 0, warning: 0 });
 }
 
-export function buildAlarmAckPayload(note: string, alarmId = "alarm-ack"): Record<string, string> {
+export function buildAlarmAckPayload(note: string, alarmId = "alarm-ack"): AlarmAcknowledgementRequest {
   const trimmed = note.trim().slice(0, 500);
   return {
     note: trimmed,
@@ -59,7 +51,7 @@ export function buildAlarmIdentity(alarm: Record<string, unknown>): string {
   return `alarm-${fnvHash(source, 2166136261)}${fnvHash(source, 2246822519)}`;
 }
 
-export function mergeAlarmAcknowledgementStates(rows: AlarmRow[], acknowledgements: Record<string, unknown>): AlarmRow[] {
+export function mergeAlarmAcknowledgementStates(rows: AlarmRow[], acknowledgements: Record<string, AlarmAcknowledgement>): AlarmRow[] {
   return rows.map((row) => {
     const alarmId = buildAlarmIdentity(row);
     const acknowledgement = normalizeAcknowledgementRecord(acknowledgements[alarmId] || row.acknowledgement);
@@ -75,7 +67,7 @@ export function mergeAlarmAcknowledgementStates(rows: AlarmRow[], acknowledgemen
   });
 }
 
-export function normalizeAlarmAcknowledgementMap(value: unknown): Record<string, AlarmAcknowledgementRecord> {
+export function normalizeAlarmAcknowledgementMap(value: unknown): Record<string, AlarmAcknowledgement> {
   const record = readRecord(value);
   const data = readRecord(record.data);
   const source = Object.keys(data).length ? data : record;
@@ -156,12 +148,12 @@ function optionalNumber(value: unknown): number | undefined {
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
-function normalizeAcknowledgementRecord(value: unknown): AlarmAcknowledgementRecord | undefined {
+function normalizeAcknowledgementRecord(value: unknown): AlarmAcknowledgement | undefined {
   if (value === true) {
     return {};
   }
   const record = readRecord(value);
-  return Object.keys(record).length ? record as AlarmAcknowledgementRecord : undefined;
+  return Object.keys(record).length ? record as AlarmAcknowledgement : undefined;
 }
 
 function buildAlarmIdempotencyKey(alarmId: string): string {

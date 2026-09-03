@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 
 import { deleteLocalDevice, getDeviceDiff, triggerFullConfigSync } from "@/api/config.api";
 import { getConfigDevices, getDeviceRuntime, getDeviceStatus, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
-import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
+import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceStatusResponse, DeviceViewModel } from "@/types/device";
 
 interface DeviceState {
   loading: boolean;
@@ -90,7 +90,7 @@ export const useDeviceStore = defineStore("device", {
         this.selectedDeviceId = this.devices[0]?.normalizedId || "";
       }
     },
-    async loadStatus(deviceId: string): Promise<unknown> {
+    async loadStatus(deviceId: string): Promise<DeviceStatusResponse> {
       return getDeviceStatus(deviceId);
     },
     async loadDiff(deviceId: string): Promise<unknown> {

@@ -1,4 +1,11 @@
-export type NetworkDiagnosticType = "PING" | "TRACE" | "TCP";
+import type {
+  NetworkDiagnosticRequest,
+  NetworkDiagnosticResult,
+  NetworkDiagnosticType
+} from "@/types/ops";
+
+export type NetworkDiagnosticPayload = NetworkDiagnosticRequest;
+export type { NetworkDiagnosticType };
 
 export interface NetworkDiagnosticTypeOption {
   value: NetworkDiagnosticType;
@@ -12,14 +19,6 @@ export interface NetworkDiagnosticFormInput {
   target?: string;
   port?: number | string;
   timeoutMs?: number | string;
-}
-
-export interface NetworkDiagnosticPayload {
-  type: NetworkDiagnosticType;
-  deviceId?: string;
-  target: string;
-  port?: number;
-  timeoutMs: number;
 }
 
 export interface NetworkDeviceLike {
@@ -64,13 +63,13 @@ export const NETWORK_DIAGNOSTIC_TYPES: NetworkDiagnosticTypeOption[] = [
   { value: "TCP", label: "TCP 端口", description: "检测目标 TCP 端口是否可连接" }
 ];
 
-export function buildNetworkDiagnosticPayload(input: NetworkDiagnosticFormInput): NetworkDiagnosticPayload {
+export function buildNetworkDiagnosticPayload(input: NetworkDiagnosticFormInput): NetworkDiagnosticRequest {
   const type = normalizeType(input.type);
   const target = String(input.target || "").trim();
   if (!target) {
     throw new Error("请输入检测目标");
   }
-  const payload: NetworkDiagnosticPayload = {
+  const payload: NetworkDiagnosticRequest = {
     type,
     target,
     timeoutMs: clampNumber(input.timeoutMs, 3000, 100, 10000)
@@ -100,7 +99,7 @@ export function resolveNetworkTargetFromDevice(device: NetworkDeviceLike | null 
   };
 }
 
-export function normalizeNetworkDiagnosticResult(input: unknown): NormalizedNetworkDiagnosticResult {
+export function normalizeNetworkDiagnosticResult(input: NetworkDiagnosticResult | Partial<NetworkDiagnosticResult> | unknown): NormalizedNetworkDiagnosticResult {
   const record = unwrapData(input);
   const type = String(record.type || "PING").toUpperCase();
   const message = String(record.message || "-");

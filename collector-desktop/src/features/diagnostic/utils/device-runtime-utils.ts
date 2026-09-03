@@ -1,10 +1,16 @@
+import type { ApiResult } from "@/types/api";
 import type { DeviceRuntimeSnapshot } from "@/types/device";
+import type {
+  DevicePerformanceResponse,
+  DeviceStatisticsResponse,
+  DeviceStatusResponse
+} from "@/types/device";
 
 export interface DeviceStatusDetail extends DeviceRuntimeSnapshot {
   isRunning?: boolean;
   message?: string;
-  statistics?: unknown;
-  performance?: unknown;
+  statistics?: DeviceStatisticsResponse;
+  performance?: DevicePerformanceResponse;
 }
 
 export interface DeviceRuntimeSummary {
@@ -36,7 +42,7 @@ export function normalizeDeviceRuntimeRows(response: unknown): DeviceRuntimeSnap
   return source.map((item) => normalizeRuntimeRow(asRecord(item))).filter((row) => row.deviceId);
 }
 
-export function normalizeDeviceStatusDetail(response: unknown, fallbackDeviceId = ""): DeviceStatusDetail {
+export function normalizeDeviceStatusDetail(response: DeviceStatusResponse | ApiResult<DeviceStatusResponse> | unknown, fallbackDeviceId = ""): DeviceStatusDetail {
   const record = asRecord(response);
   const data = asRecord(record.data);
   const source = Object.keys(data).length ? data : record;
@@ -45,8 +51,8 @@ export function normalizeDeviceStatusDetail(response: unknown, fallbackDeviceId 
     ...normalizeRuntimeRow({ ...source, running }),
     isRunning: running,
     message: String(record.msg || record.message || source.message || ""),
-    statistics: source.statistics,
-    performance: source.performance,
+    statistics: asNestedObject<DeviceStatisticsResponse>(source.statistics),
+    performance: asNestedObject<DevicePerformanceResponse>(source.performance),
     deviceId: String(source.deviceId || fallbackDeviceId || "")
   };
 }
@@ -115,4 +121,8 @@ function textValue(value: unknown): string | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asNestedObject<T>(value: unknown): T | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as T : undefined;
 }

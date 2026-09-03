@@ -8,6 +8,8 @@
 
 01.2B 更新：`monitor.api.ts` 9 个 `/monitor/*` endpoint 已统一为 RAW DTO + 真实 Snapshot/DTO 类型；`config.api.ts` 20 个 endpoint 已补齐稳定 response type，其中 19 个走 `requestApiData<T>()`，`triggerFullConfigSync` 保留 command envelope。API 层 unknown 统计从 47 降到 19；剩余契约漂移集中在 control/device/edge/ops/point/shadow，Realtime P0、History P1、WebSocket、PointEditor 性能风险未在 01.2B 修改。
 
+01.2C 更新：`device.api.ts`、`ops.api.ts`、`edge.api.ts`、`point.api.ts` 已按真实 Java Contract 收尾：Device 查询 API 改为 `requestApiData<T>()`，Device command API 改为 `requestEnvelope<null>()` 保留 message/deviceId；Ops 四个接口改为稳定 typed `ApiResult.data`，并停止把 `deviceId/thread` 当作后端日志查询参数；Edge 接口补齐稳定 request/response 类型但保留 telemetry value 动态；Point API 改为复用 `config.api.ts` 合同。Control/Shadow 保持待 01.2D 处理。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -138,9 +140,9 @@
 3. Device store 多页面并发 refresh 无 generation guard。
 4. Point store 保存后 reload 与手动刷新可能交错。
 5. ConfigOpsPanel 初始化 sync status 失败 `.catch(() => undefined)`，无提示。
-6. `getOpsLogs` 前端传 `deviceId/thread` 但后端 `OpsController.logs` 未接收，契约需明确。
+6. RESOLVED IN 01.2C：`getOpsLogs` 现在只向后端发送 `level/logger/keyword/limit`；`deviceId/thread` 改为当前结果内本地过滤，并在日志页明确标注服务端能力边界。
 
-## 7. Task 01.2 推荐修改范围 / 01.2A-01.2B 结果
+## 7. Task 01.2 推荐修改范围 / 01.2A-01.2C 结果
 
 Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI 重构。01.2A 已完成 response boundary 的核心修正：
 
@@ -158,3 +160,12 @@ Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI
 3. RESOLVED IN 01.2B：`config.api.ts` 20 个 endpoint 已按 ConfigController 契约 typed；稳定 response 走 `requestApiData<T>()`，`triggerFullConfigSync` 作为 `ApiResult<null>` command envelope 保留 message。
 4. RESOLVED IN 01.2B：`CollectionView` 配置摘要、`ConfigOpsPanel` sync/import 结果、`DeviceConfigPanel` 连接配置读取、`DashboardView` 主要 monitor refs 改为 typed access；diagnostic builders 与动态导入导出 helpers 保留 normalizer。
 5. 剩余：control/device/edge/ops/point/shadow 的 response DTO 补齐；错误模型、请求生命周期和性能重构未开始。
+
+01.2C 已完成 Device / Ops / Edge / Point Contract Closure：
+
+1. RESOLVED IN 01.2C：`device.api.ts` 中 `getDeviceStatus`、`getAllDeviceStatistics`、`getRunningDevices`、`getDeviceRuntime` 已显式使用 `requestApiData<T>()`；`startDevice`、`startLocalDevice`、`stopDevice`、`reloadDevices` 改为 `requestEnvelope<null>()`，保留 command metadata。
+2. RESOLVED IN 01.2C：`ops.api.ts` 四个接口全部改为稳定 typed `requestApiData<T>()`；`OpsLogResponse.items` 作为 primary contract，`logs/records/rows` 明确降级为 `LEGACY_COMPAT`。
+3. RESOLVED IN 01.2C：日志页不再把 `deviceId/thread` 伪装成后端过滤条件；服务端真实支持 `level/logger/keyword/limit`，设备/线程改为前端本地过滤并增加说明文案。
+4. RESOLVED IN 01.2C：`edge.api.ts` 返回 `EdgeTelemetryIngressResult`，请求补齐 `EdgeTelemetryBatchRequest` / `EdgeTelemetryItem` / `EdgeProtocolType`；动态 telemetry `value` 继续保留 `unknown`。
+5. RESOLVED IN 01.2C：`point.api.ts` 不再维护第二套 points contract，改为复用 `config.api.ts` 的 `getDevicePointsConfig` / `updateDevicePointsConfig`。
+6. 剩余仅限 `control.api.ts` 与 `shadow.api.ts` 的稳定 contract 收尾；Request Lifecycle、Realtime fan-out、WebSocket、PointEditor 性能风险仍未开始。

@@ -24,13 +24,13 @@
             <option value="DEBUG">调试</option>
           </select>
           <select v-model="logDeviceId" @change="refreshLogs">
-            <option value="">全部设备</option>
+            <option value="">当前结果内全部设备</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
             </option>
           </select>
           <input v-model="logLogger" type="text" placeholder="记录器名称 logger" @keydown.enter="refreshLogs" />
-          <input v-model="logThread" type="text" placeholder="线程名 thread" @keydown.enter="refreshLogs" />
+          <input v-model="logThread" type="text" placeholder="当前结果内线程名" @keydown.enter="refreshLogs" />
           <input v-model="logKeyword" type="search" placeholder="搜索日志内容、设备、点位或来源" @keydown.enter="refreshLogs" />
           <input v-model.number="logLimit" type="number" min="20" max="2000" step="20" />
           <button type="button" class="primary" :disabled="loading" @click="refreshLogs">查询</button>
@@ -42,6 +42,7 @@
           <button type="button" @click="downloadLogs('json')">导出 JSON</button>
         </div>
       </div>
+      <p class="log-filter-note">设备和线程条件只在当前返回结果内本地过滤；服务端真实支持的查询参数只有级别、记录器、关键字和数量。</p>
 
       <div class="exact-diagnostic-cards log-summary-cards">
         <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div>
@@ -348,6 +349,12 @@ watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.
   justify-content: flex-start;
   flex-wrap: nowrap;
   gap: 6px;
+}
+
+.log-view .log-filter-note {
+  margin: -6px 0 12px;
+  color: var(--exact-dim);
+  font-size: 12px;
 }
 
 .log-view .modao-log-level.ERROR { color: #f87171; }

@@ -202,9 +202,9 @@
 | `src/stores/device.store.ts` | `normalizeDeviceViewModel*`, `resolveDeviceStatus`, `resolvePointCount`, `resolveDeviceStartMode` | VIEW_MODEL + DEFENSIVE | 后端设备配置与运行快照合并为 UI 设备状态。 | 保留；与类型补强同步。 |
 | `src/stores/point.store.ts` / `point-editor-utils.ts` | `normalizePointRows`, `mergePointRuntime`, `buildPointExtraModel`, `applyPointExtraModel` | VIEW_MODEL | 点位配置转编辑态、协议扩展字段映射、实时值合并。 | 保留；性能风险见基线文档。 |
 | `src/features/point/utils/point-excel-utils.ts` | `parsePointCsv`, `normalizeImportedValue` | VIEW_MODEL + DEFENSIVE | CSV 导入到点位模型；1MB/2000 行限制。 | 保留。 |
-| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；normalizer 兼容层保留以保护既有页面逻辑。 | 后续可在 `device.api.ts.getDeviceStatus` typed 后减少冗余 normalize。 |
-| `src/features/network/utils/network-utils.ts` | `buildNetworkDiagnosticPayload`, `normalizeNetworkDiagnosticResult` | VIEW_MODEL + DEFENSIVE | 表单输入 → 后端请求；后端结果 → UI 展示模型；失败时生成不可达结果。 | 保留；补 TS DTO 后收窄输入输出。 |
-| `src/features/network/utils/edge-telemetry-utils.ts` | `parseEdgeTelemetryJson`, `normalizeEdgeTelemetryResult`, `parseTypedValue` | DYNAMIC_OK + VIEW_MODEL | 边缘遥测 value 天然动态，但 response result 有稳定计数字段。 | 请求/响应外壳可 typed，value 继续 unknown。 |
+| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；RESOLVED IN 01.2C：`getDeviceStatus` 已有稳定 TS DTO，normalizer 只保留为页面兼容层。 | 保留；不再承担顶层 unknown 兜底的主 contract。 |
+| `src/features/network/utils/network-utils.ts` | `buildNetworkDiagnosticPayload`, `normalizeNetworkDiagnosticResult` | VIEW_MODEL + DEFENSIVE | RESOLVED IN 01.2C：请求已收窄到 `NetworkDiagnosticRequest`，API 返回 `NetworkDiagnosticResult`；失败时仍会生成不可达结果供页面与导出使用。 | 保留；失败分支和扩展 details 仍需 defensive normalize。 |
+| `src/features/network/utils/edge-telemetry-utils.ts` | `parseEdgeTelemetryJson`, `normalizeEdgeTelemetryResult`, `parseTypedValue` | DYNAMIC_OK + VIEW_MODEL | RESOLVED IN 01.2C：边缘遥测请求/响应外壳已 typed；`value` 继续是动态字段。 | 保留；不为动态 telemetry 值制造伪强类型。 |
 | `src/features/shadow/utils/shadow-utils.ts` | `normalizeShadowHistoryRows`, `parseShadowJson*`, `summarizeShadowState` | DYNAMIC_OK + VIEW_MODEL | 影子 state/delta/history 是动态文档，需要 JSON 解析和摘要。 | 保留；响应外壳可 typed。 |
 | `src/stores/websocket-utils.ts` | `normalizeRealtimeMessage`, `parseRealtimePayload` | DEFENSIVE | 兼容 WS array / `points` / `data` / single point。 | 解析错误当前不可观测，见可靠性基线。 |
 
@@ -237,23 +237,23 @@
 
 | 状态 | API 条目数 | 说明 / 代表项 |
 |---|---:|---|
-| MATCHED | 46 | 01.2B 后新增：`config.api.ts` 19 个稳定 response、`monitor.api.ts` 9 个 RAW DTO、`runtime.api.ts.getRuntimeStatus` 复用 monitor wrapper；已解决 01.2A 的 DataController 与 running 相关项。 |
-| PARTIAL | 0 | 01.2B 后不再保留仅因 wrapper 重复导致的 partial contract；动态 Map 另列为 DYNAMIC。 |
-| MISSING | 13 | 剩余缺口集中在 `control.api.ts`、`device.api.ts`、`edge.api.ts`、`ops.api.ts`、`point.api.ts`、`shadow.api.ts`。 |
-| DYNAMIC | 7 | 后端当前就是 `ApiResult<Object>` 操作结果、command envelope 或数据天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history。 |
-| LEGACY_COMPAT | 1 | `getOpsLogs` 返回已 typed，但 normalizer 仍兼容 `logs/records/rows/items`；Data/Alarm/History legacy 分支保留在 normalizer。 |
+| MATCHED | 54 | 01.2C 新增：`device.api.ts` 查询接口、`ops.api.ts` 四个接口、`edge.api.ts`、`point.api.ts` 已与真实 Java DTO / envelope 对齐。 |
+| PARTIAL | 0 | 01.2C 后仍不保留“半 typed 顶层 wrapper”；动态结构改归入 DYNAMIC/LEGACY。 |
+| MISSING | 5 | 剩余缺口只集中在 `control.api.ts` 3 个写操作和 `shadow.api.ts` 2 个 outer DTO。 |
+| DYNAMIC | 7 | 后端当前就是 command envelope 或内部 payload 天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history/文档。 |
+| LEGACY_COMPAT | 1 | `getOpsLogs` 已以 `items` 为 primary contract，但 normalizer 仍兼容 `logs/records/rows` 历史字段。 |
 
 关键后端 DTO 对照：
 
 | Backend DTO / Contract | Frontend Type | 状态 | 备注 |
 |---|---|---|---|
 | `ConfigDeviceListResponse` | `types/device.ts ConfigDeviceListResponse` | MATCHED | `config.api.ts` 与 `device.api.ts` 重复入口均 typed，并显式 `requestApiData`。 |
-| `DevicePointConfigResponse` | `types/point.ts DevicePointConfigResponse` | MATCHED | 读取 typed；`config.api.updateDevicePointsConfig` 保存结果已复用 `DeviceIdResponse`，`point.api.saveDevicePointConfig` 仍待后续处理。 |
+| `DevicePointConfigResponse` | `types/point.ts DevicePointConfigResponse` | RESOLVED IN 01.2C / MATCHED | `point.api.ts` 不再维护第二套 contract，读取与保存都复用 `config.api.ts` 的稳定 points DTO。 |
 | `DeviceRealtimeDataResponse` | `types/monitor.ts DeviceRealtimeDataResponse` | RESOLVED IN 01.2A | 后端 `data: Map<String, PointRealtimePayload>` 已对齐为 `Record<string, PointRealtimePayload>`；normalizer 负责 DTO→ViewModel。 |
 | `PointRealtimeResponse` | `types/monitor.ts PointRealtimeResponse` | RESOLVED IN 01.2A | 单点 raw DTO 已 typed；`data` 为 `PointRealtimePayload`。 |
 | `HistoryDataResponse` | `types/monitor.ts HistoryDataResponse`；`HistoryRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；前端继续兼容多字段。 |
 | `AlarmHistoryDataResponse` | `types/monitor.ts AlarmHistoryDataResponse`；`AlarmRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；历史字段动态合理。 |
-| `DeviceStatusResponse` | `DeviceStatusDetail` view model | PARTIAL | 前端没有原始 DTO；normalizer 合并 running/isRunning。 |
+| `DeviceStatusResponse` | `types/device.ts DeviceStatusResponse`；`DeviceStatusDetail` 仅作为 view model | RESOLVED IN 01.2C / MATCHED | `device.api.ts.getDeviceStatus` 已显式 `requestApiData<DeviceStatusResponse>`；normalizer 只做页面展示态兼容。 |
 | `DeviceRuntimeSnapshot` | `types/device.ts DeviceRuntimeSnapshot` | MATCHED | 布尔/时间/phase 字段对齐。 |
 | `ConfigSummaryResponse` | `types/config.ts ConfigSummaryResponse` | RESOLVED IN 01.2B | `CollectionView` 已改为 typed access；Diagnostic builder 保留 view model 输入。 |
 | `ConfigSyncStatusResponse` | `types/config.ts ConfigSyncStatusResponse`；`normalizeSyncStatusItems` 输出展示项 | RESOLVED IN 01.2B | 后端字段稳定，helper 输入已 typed。 |
@@ -266,18 +266,18 @@
 | `CloudReportMetricsResponse` | `types/monitor.ts CloudReportMetricsResponse` | RESOLVED IN 01.2B / DYNAMIC_OK | 重要监控 DTO 已按 Java nested classes typed；handlers/status statistics 为动态 Map。 |
 | `ConsoleRuntimeStatusSnapshot` | `types/monitor.ts ConsoleRuntimeStatusSnapshot`；`types/runtime.ts` re-export | RESOLVED IN 01.2B | `monitor.api.ts` 与 `runtime.api.ts` 复用同一 RAW wrapper。 |
 | `CacheMetricsSnapshot`, `DeviceStatusSnapshot`, `SystemResourceSnapshot`, `ExceptionStatsSnapshot`, `StorageMetricsSnapshot`, `PerformanceStatsSnapshot`, `CollectorMetrics` | `types/monitor.ts` | RESOLVED IN 01.2B / DYNAMIC_OK | 监控 Snapshot 已 typed；内部 `Map<String,Object>`/`protocolMetrics`/`deviceStats` 保留动态。 |
-| `OpsLogResponse` | `ops.api.ts OpsLogResponse` | LEGACY_COMPAT | 前端接受 `logs/records/rows/items`；后端只声明 `items`。 |
-| `AlarmAcknowledgement` | `AlarmAcknowledgementRecord` | PARTIAL | API 返回 `Record<string, unknown>`；feature normalizer 再转。 |
-| `NetworkDiagnosticResult` | `NormalizedNetworkDiagnosticResult` view model | PARTIAL | 缺原始 API DTO；已有 view model。 |
-| `EdgeTelemetryIngressResult` | 无；`normalizeEdgeTelemetryResult` view model | MISSING | 后端 result 字段稳定。 |
+| `OpsLogResponse` | `types/ops.ts OpsLogResponse` | RESOLVED IN 01.2C / LEGACY_COMPAT | 后端主字段明确为 `items`；`logs/records/rows` 仅作为历史兼容保留。 |
+| `AlarmAcknowledgement` | `types/ops.ts AlarmAcknowledgement` | RESOLVED IN 01.2C / MATCHED | API 已返回 `Record<string, AlarmAcknowledgement>`；告警页和 helper 直接消费 typed acknowledgement。 |
+| `NetworkDiagnosticResult` | `types/ops.ts NetworkDiagnosticResult`；`NormalizedNetworkDiagnosticResult` 为展示模型 | RESOLVED IN 01.2C / MATCHED | 原始 request/response DTO 已补齐；页面 normalizer 仅负责展示文案与失败回填。 |
+| `EdgeTelemetryIngressResult` | `types/edge.ts EdgeTelemetryIngressResult` | RESOLVED IN 01.2C / MATCHED | `edge.api.ts` 已显式 `requestApiData<EdgeTelemetryIngressResult>`；请求外壳同步补齐。 |
 | `ProtocolSchema` / `ProtocolFieldConfig` | `types/protocol.ts` | MATCHED | 协议动态字段通过 schema 表达。 |
 | `DeviceShadowResponse` / `DeviceShadowDeltaResponse` | 无独立 TS DTO | MISSING/DYNAMIC | response shell 稳定，state/delta/metadata 内部动态。 |
 | `List<Map<String,Object>>` shadow history | `ShadowHistoryRow` view model | DYNAMIC | 历史记录天然动态。 |
 
-## 9. 01.2B 完成后剩余输入
+## 9. 01.2C 完成后剩余输入
 
 1. RESOLVED IN 01.2A：`getDeviceRealtimeData`、`PointRealtimeResponse`、`DeviceRealtimeDataResponse.data` Map contract、`getRunningDevices`、`isDeviceRunning`、DataController raw DTO response boundary。
 2. RESOLVED IN 01.2B：`monitor.api.ts` 9 个 RAW DTO endpoint、`config.api.ts` 稳定 response DTO、`runtime.api.ts.getRuntimeStatus` 重复契约已统一。
-3. Task 01.2C 建议继续补 API 层类型，不改页面行为：优先 `control.api.ts`、`ops.api.ts`、`shadow.api.ts`，并评估 `edge.api.ts`、`device.api.ts`、`point.api.ts` 剩余稳定 response。
-4. 对 `getOpsLogs` 前端多传的 `deviceId/thread` 与后端未接收参数建立明确决策：要么后端支持过滤，要么前端只做本地过滤并标注文案。
-5. 保留 `DYNAMIC_OK` 的动态 payload/value/result，不为了“零 unknown”创造无业务价值 DTO。
+3. Task 01.2D 只建议继续处理 `control.api.ts` 与 `shadow.api.ts`：前者补 `PointWriteRequest` / `PointWriteResultResponse` / `BatchPointWriteResponse` / `DeviceCommandResponse`，后者补 `DeviceShadowResponse` / `DeviceShadowDeltaResponse` 的稳定 outer DTO。
+4. `getOpsLogs` drift 已在 01.2C 明确：后端真实只支持 `level/logger/keyword/limit`，前端设备/线程条件改为当前结果内本地过滤，仍存在“非服务端精确过滤”的 UX/backend capability gap。
+5. 保留 `DYNAMIC_OK` 的动态 payload/value/result，不为了“零 unknown”创造无业务价值 DTO；尤其是 shadow 文档、control result payload 与 edge telemetry value。

@@ -1,4 +1,5 @@
 import type { LogRow } from "@/types/monitor";
+import type { OpsLogQuery } from "@/types/ops";
 
 export interface LogFilterInput {
   level?: string;
@@ -17,12 +18,11 @@ export interface LogSummary {
   threadCount: number;
 }
 
-export function buildLogQueryParams(input: LogFilterInput): Record<string, string | number | undefined> {
-  const keywordParts = [input.keyword, input.deviceId, input.thread].map((value) => String(value || "").trim()).filter(Boolean);
+export function buildLogQueryParams(input: LogFilterInput): OpsLogQuery {
   return {
     level: normalizeOptional(input.level)?.toUpperCase(),
     logger: normalizeOptional(input.logger),
-    keyword: keywordParts.length ? keywordParts.join(" ") : undefined,
+    keyword: normalizeOptional(input.keyword),
     limit: normalizeLimit(input.limit)
   };
 }

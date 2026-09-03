@@ -141,6 +141,7 @@ export interface LogRow {
   deviceName?: string;
   level?: string;
   logger?: string;
+  thread?: string;
   message?: string;
   content?: string;
   [key: string]: unknown;

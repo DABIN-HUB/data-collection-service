@@ -1,13 +1,20 @@
+import type {
+  EdgeProtocolType,
+  EdgeTelemetryBatchRequest,
+  EdgeTelemetryIngressResult,
+  EdgeTelemetryItem
+} from "@/types/edge";
+
 export type EdgeTelemetryValueType = "string" | "number" | "boolean" | "json";
 
 export interface EdgeProtocolOption {
-  value: "PROFINET" | "ETHERCAT" | "GENERIC_EDGE";
+  value: EdgeProtocolType;
   label: string;
 }
 
 export interface EdgeTelemetryQuickForm {
   gatewayId: string;
-  protocol: EdgeProtocolOption["value"];
+  protocol: EdgeProtocolType;
   configVersion: string;
   deviceId: string;
   pointRef: string;
@@ -33,7 +40,7 @@ export const EDGE_PROTOCOL_OPTIONS: EdgeProtocolOption[] = [
   { value: "GENERIC_EDGE", label: "通用边缘接入" }
 ];
 
-export function buildEdgeTelemetryPayload(form: EdgeTelemetryQuickForm): Record<string, unknown> {
+export function buildEdgeTelemetryPayload(form: EdgeTelemetryQuickForm): EdgeTelemetryBatchRequest {
   return {
     gatewayId: form.gatewayId.trim(),
     protocol: form.protocol,
@@ -45,11 +52,11 @@ export function buildEdgeTelemetryPayload(form: EdgeTelemetryQuickForm): Record<
       quality: normalizeOptionalInteger(form.quality),
       timestamp: normalizeOptionalInteger(form.timestamp),
       sequence: Math.max(1, Math.floor(Number(form.sequence) || 1))
-    }]
+    }] satisfies EdgeTelemetryItem[]
   };
 }
 
-export function parseEdgeTelemetryJson(text: string): Record<string, unknown> {
+export function parseEdgeTelemetryJson(text: string): EdgeTelemetryBatchRequest {
   const trimmed = text.trim();
   if (!trimmed) {
     throw new Error("边缘遥测 JSON 不能为空");
@@ -64,10 +71,10 @@ export function parseEdgeTelemetryJson(text: string): Record<string, unknown> {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("边缘遥测 JSON 必须是对象");
   }
-  return parsed as Record<string, unknown>;
+  return parsed as EdgeTelemetryBatchRequest;
 }
 
-export function normalizeEdgeTelemetryResult(response: unknown): EdgeTelemetryResultView {
+export function normalizeEdgeTelemetryResult(response: EdgeTelemetryIngressResult | unknown): EdgeTelemetryResultView {
   const record = asRecord(response);
   const data = asRecord(record.data);
   const source = Object.keys(data).length ? data : record;

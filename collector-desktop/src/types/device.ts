@@ -48,6 +48,47 @@ export interface DeviceRuntimeSnapshot {
   generatedAt?: number;
 }
 
+export interface DeviceStatisticsResponse {
+  deviceId?: string;
+  isRunning?: boolean;
+  runningDuration?: number;
+  totalExecutions?: number;
+  successfulExecutions?: number;
+  failedExecutions?: number;
+  totalPoints?: number;
+  currentTaskPoints?: number;
+  averageExecutionTime?: number;
+  successRate?: number;
+  lastExecutionTime?: number;
+}
+
+export interface DevicePerformanceResponse {
+  deviceId?: string;
+  totalPoints?: number;
+  successfulBatches?: number;
+  failedBatches?: number;
+  averageBatchTime?: number;
+  currentBatchSize?: number;
+  maxBatchSize?: number;
+  successRate?: number;
+  healthScore?: number;
+  failureRisk?: string;
+  consecutiveFailures?: number;
+  averageResponseTime?: number;
+  recentResponseTimes?: number[];
+}
+
+export interface DeviceStatusResponse {
+  deviceId?: string;
+  isRunning?: boolean;
+  isStarting?: boolean;
+  connected?: boolean;
+  reconnecting?: boolean;
+  reconnectNextRetryAt?: number;
+  statistics?: DeviceStatisticsResponse;
+  performance?: DevicePerformanceResponse;
+}
+
 export interface ConfigDeviceListResponse {
   devices?: DeviceInfo[];
   count?: number;

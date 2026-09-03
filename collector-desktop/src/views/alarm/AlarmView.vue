@@ -140,6 +140,7 @@ import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistor
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import type { AlarmRow } from "@/types/monitor";
+import type { AlarmAcknowledgement } from "@/types/ops";
 
 const appStore = useAppStore();
 const deviceStore = useDeviceStore();
@@ -147,7 +148,7 @@ const route = useRoute();
 const router = useRouter();
 
 const alarms = ref<AlarmRow[]>([]);
-const alarmAcknowledgements = ref<Record<string, unknown>>({});
+const alarmAcknowledgements = ref<Record<string, AlarmAcknowledgement>>({});
 const acknowledgingAlarmId = ref("");
 const alarmAckDialogVisible = ref(false);
 const alarmAckNote = ref("");
@@ -191,7 +192,7 @@ function refreshAlarms() {
   void loadAlarms();
 }
 
-async function fetchAlarmAcknowledgements(rows: AlarmRow[]): Promise<Record<string, unknown>> {
+async function fetchAlarmAcknowledgements(rows: AlarmRow[]): Promise<Record<string, AlarmAcknowledgement>> {
   const alarmIds = Array.from(new Set(rows.map((alarm) => buildAlarmIdentity(alarm)).filter(Boolean))).slice(0, 500);
   alarmAcknowledgements.value = alarmIds.length ? normalizeAlarmAcknowledgementMap(await queryAlarmAcknowledgements(alarmIds)) : {};
   return alarmAcknowledgements.value;

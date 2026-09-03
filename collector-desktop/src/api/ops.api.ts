@@ -1,39 +1,61 @@
-import { request } from "./http";
-import type { LogRow } from "@/types/monitor";
+import { requestApiData } from "./http";
+import type {
+  AlarmAcknowledgement,
+  AlarmAcknowledgementQueryRequest,
+  AlarmAcknowledgementRequest,
+  NetworkDiagnosticRequest,
+  NetworkDiagnosticResult,
+  OpsLogQuery,
+  OpsLogResponse
+} from "@/types/ops";
 
-export interface OpsLogResponse {
-  logs?: LogRow[];
-  records?: LogRow[];
-  rows?: LogRow[];
-  items?: LogRow[];
-  [key: string]: unknown;
+export function getOpsLogs(params: OpsLogQuery = {}): Promise<OpsLogResponse> {
+  return requestApiData<OpsLogResponse>({
+    url: "/api/ops/logs",
+    method: "GET",
+    params: pickOpsLogQuery(params)
+  });
 }
 
-export interface AlarmAcknowledgePayload {
-  note?: string;
-  comment?: string;
-  idempotencyKey?: string;
+export function queryAlarmAcknowledgements(alarmIds: string[]): Promise<Record<string, AlarmAcknowledgement>> {
+  const payload: AlarmAcknowledgementQueryRequest = { alarmIds };
+  return requestApiData<Record<string, AlarmAcknowledgement>>({
+    url: "/api/ops/alarms/acknowledgements/query",
+    method: "POST",
+    data: payload
+  });
 }
 
-export function getOpsLogs(params: Record<string, string | number | undefined> = {}): Promise<OpsLogResponse> {
-  return request<OpsLogResponse>({ url: "/api/ops/logs", method: "GET", params });
+export function acknowledgeAlarm(alarmId: string, payload: AlarmAcknowledgementRequest): Promise<AlarmAcknowledgement> {
+  return requestApiData<AlarmAcknowledgement>({
+    url: `/api/ops/alarms/${encodeURIComponent(alarmId)}/acknowledge`,
+    method: "POST",
+    data: payload
+  });
 }
 
-export function queryAlarmAcknowledgements(alarmIds: string[]): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>({ url: "/api/ops/alarms/acknowledgements/query", method: "POST", data: { alarmIds } });
+export function diagnoseNetwork(payload: NetworkDiagnosticRequest): Promise<NetworkDiagnosticResult> {
+  return requestApiData<NetworkDiagnosticResult>({
+    url: "/api/ops/network/diagnose",
+    method: "POST",
+    data: payload
+  });
 }
 
-export function acknowledgeAlarm(alarmId: string, payload: AlarmAcknowledgePayload | string = {}): Promise<unknown> {
-  const data = typeof payload === "string"
-    ? { note: payload, idempotencyKey: `desktop-${alarmId}` }
-    : { idempotencyKey: `desktop-${alarmId}`, ...payload };
-  return request<unknown>({ url: `/api/ops/alarms/${encodeURIComponent(alarmId)}/acknowledge`, method: "POST", data });
+export function normalizeLogRows(response: OpsLogResponse) {
+  return response.items
+    // LEGACY_COMPAT：后端真实主字段为 items，其余字段仅兼容历史前端/夹层响应。
+    || response.logs
+    || response.records
+    || response.rows
+    || [];
 }
 
-export function diagnoseNetwork(payload: unknown): Promise<unknown> {
-  return request<unknown>({ url: "/api/ops/network/diagnose", method: "POST", data: payload });
-}
-
-export function normalizeLogRows(response: OpsLogResponse): LogRow[] {
-  return response.logs || response.records || response.rows || response.items || [];
+function pickOpsLogQuery(params: OpsLogQuery): OpsLogQuery {
+  return {
+    level: params.level,
+    logger: params.logger,
+    keyword: params.keyword,
+    limit: params.limit
+  };
 }
