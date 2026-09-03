@@ -1,5 +1,5 @@
 import { requestRaw } from "./http";
-import type { ConsoleRuntimeStatusSnapshot, HealthStatus } from "@/types/runtime";
+import type { HealthStatus } from "@/types/runtime";
 
 export function getHealth(): Promise<HealthStatus> {
   return requestRaw<HealthStatus>({
@@ -8,9 +8,4 @@ export function getHealth(): Promise<HealthStatus> {
   });
 }
 
-export function getRuntimeStatus(): Promise<ConsoleRuntimeStatusSnapshot> {
-  return requestRaw<ConsoleRuntimeStatusSnapshot>({
-    url: "/monitor/runtime",
-    method: "GET"
-  });
-}
+export { getRuntimeStatus } from "./monitor.api";

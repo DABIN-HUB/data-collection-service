@@ -11,6 +11,7 @@
 - 后端范围：Controller 实际位于 `collector-web/src/main/java/com/wangbin/collector/api/controller/`；Application Service 与 DTO 位于 `collector-application/src/main/java/com/wangbin/collector/api/`；监控与协议 Schema 的返回模型分别位于 `collector-monitor/`、`collector-protocol-spi/`、`collector-runtime/` 等真实模块。
 - 本文只建立契约盘点，不修改业务代码、不改 Electron 请求链路、不重构 DTO。
 - 01.2A 更新：前端 HTTP 层已增加显式 `apiData` / `raw` / `envelope` response mode；DataController raw DTO、`isDeviceRunning`、`getRunningDevices` 的核心边界问题已标记为 `RESOLVED IN 01.2A`，历史风险条目保留供后续任务追踪。
+- 01.2B 更新：`monitor.api.ts` 9 个 `/monitor/*` endpoint 已统一改为 `requestRaw<T>()` 并补齐真实 Snapshot/DTO 类型；`config.api.ts` 20 个 endpoint 已按 ConfigController 契约改为 `requestApiData<T>()` 或必要的 `requestEnvelope<T>()`，稳定 Response DTO 已集中到 `types/config.ts`。
 
 ## 2. HTTP 与 Electron 请求边界
 
@@ -39,18 +40,18 @@
 
 | API 模块 | HTTP API 数 | `Promise<unknown>` / `Record<string, unknown>` 数 | 备注 |
 |---|---:|---:|---|
-| `config.api.ts` | 20 | 19 | 配置治理 API 最主要的类型缺口，除点位配置读取外几乎全为 unknown。 |
-| `control.api.ts` | 3 | 3 | 写点、批量写、协议命令均返回 unknown；命令结果本身包含动态结构。 |
+| `config.api.ts` | 20 | 0 | RESOLVED IN 01.2B：稳定 ConfigController response 全部 typed；19 个走 `requestApiData<T>()`，`triggerFullConfigSync` 保留 command envelope。 |
+| `control.api.ts` | 3 | 3 | 写点、批量写、协议命令仍返回 unknown；命令值/结果本身包含动态结构，外壳留到后续。 |
 | `data.api.ts` | 8 | 0 | RESOLVED IN 01.2A：DataController 直接返回业务 DTO，本模块已明确使用 RAW DTO response boundary；历史/告警 normalize 作为 LEGACY_COMPAT 保留。 |
-| `device.api.ts` | 10 | 6 | RESOLVED IN 01.2A：`getRunningDevices` 已从 `Promise<unknown[]>` 修正为 `Promise<string[]>`；`isDeviceRunning` 使用 ENVELOPE 读取顶层 `running` 后仍对调用方返回 boolean。 |
+| `device.api.ts` | 10 | 6 | 01.2A 已修复 running 相关契约；01.2B 顺带让重复的 `getConfigDevices` 使用显式 `requestApiData<T>()`。剩余 unknown 集中在 start/stop/reload/status/statistics。 |
 | `edge.api.ts` | 1 | 1 | 后端已有 `EdgeTelemetryIngressResult`，前端仍 unknown。 |
-| `monitor.api.ts` | 9 | 9 | 监控 API 全 unknown；部分 DTO 已在后端稳定。 |
+| `monitor.api.ts` | 9 | 0 | RESOLVED IN 01.2B：9 个 `/monitor/*` endpoint 均为 RAW DTO，并已映射真实 Snapshot/DTO 类型。 |
 | `ops.api.ts` | 4 | 3 | 日志本地类型为兼容形态；确认/网络诊断未 typed。 |
 | `point.api.ts` | 2 | 1 | 读取点位配置 typed，保存结果 unknown。 |
 | `protocol.api.ts` | 3 | 0 | 协议 Schema typed。 |
-| `runtime.api.ts` | 2 | 0 | `/health` 与 `/monitor/runtime` typed。 |
+| `runtime.api.ts` | 2 | 0 | `/health` typed；`/monitor/runtime` 通过 `monitor.api.ts.getRuntimeStatus` 复用同一 RAW contract。 |
 | `shadow.api.ts` | 5 | 5 | 影子当前均 unknown，历史天然 Map 动态。 |
-| **合计** | **67** | **47** | 01.2A 后 DataController 8 个核心 raw DTO endpoint 已 typed；API-local normalizer：`data.api.ts normalizeAlarmRows`、`ops.api.ts normalizeLogRows` 未计入 HTTP API 总数。 |
+| **合计** | **67** | **19** | 01.2B 后 Monitor 与 Config 稳定 response 缺口已清理；剩余 unknown 集中在 control/device/edge/ops/point/shadow 的动态或未处理契约。 |
 
 ## 4. 完整 API Contract Inventory
 
@@ -58,26 +59,26 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `getConfigSummary` | GET | `/api/config/summary` | 无 | `Promise<unknown>` | `ConfigController.getSummary` → `ConfigConsoleApplicationService.getSummary` | `ApiResult<ConfigSummaryResponse>` | `CollectionView`, `DiagnosticView` | `CollectionView`/`DiagnosticView` 以 `asRecord` 读取 | SHOULD_TYPE：后端 DTO 稳定，前端缺 `ConfigSummaryResponse`。 |
-| `getConfigDevices` | GET | `/api/config/devices` | 无 | `Promise<unknown>` | `ConfigController.getAllDevices` → `ConfigConsoleApplicationService.getAllDevices` | `ApiResult<ConfigDeviceListResponse>` | 当前生产代码未直接使用；`device.api.ts` 有同名 typed 函数 | 无 | SHOULD_TYPE：重复 API 封装且本模块版本未 typed。 |
-| `createLocalDevice` | POST | `/api/config/local/devices` | body: `LocalDeviceConfigRequest` 形态，目前 `unknown` | `Promise<unknown>` | `ConfigController.createLocalDevice` → `ConfigConsoleApplicationService.createLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `LocalDeviceEditor` | `extractLocalDeviceBundle`、本地编辑器 payload builder | SHOULD_TYPE：响应 DTO 稳定；请求含协议扩展字段，可保留局部动态字段。 |
-| `getLocalDevice` | GET | `/api/config/local/device/{deviceId}` | path: `deviceId` | `Promise<unknown>` | `ConfigController.getLocalDevice` → `ConfigConsoleApplicationService.getLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `DeviceListView` | `extractLocalDeviceBundle` | SHOULD_TYPE。 |
-| `updateLocalDevice` | PUT | `/api/config/local/device/{deviceId}` | body: `LocalDeviceConfigRequest` 形态，目前 `unknown` | `Promise<unknown>` | `ConfigController.updateLocalDevice` → `ConfigConsoleApplicationService.updateLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `LocalDeviceEditor` | `extractLocalDeviceBundle` | SHOULD_TYPE；请求中连接/点位扩展仍允许动态。 |
-| `deleteLocalDevice` | DELETE | `/api/config/local/device/{deviceId}` | path: `deviceId` | `Promise<unknown>` | `ConfigController.deleteLocalDevice` → `ConfigConsoleApplicationService.deleteLocalDevice` | `ApiResult<DeviceIdResponse>` | `device.store` | `device.store.deleteLocal` 刷新列表 | SHOULD_TYPE。 |
-| `getDeviceConfig` | GET | `/api/config/device/{deviceId}` | path: `deviceId` | `Promise<unknown>` | `ConfigController.getDevice` → `ConfigConsoleApplicationService.getDevice` | `ApiResult<DeviceConfigDetailResponse>` | 当前未发现生产引用 | 无 | SHOULD_TYPE；同时是 unused/reserved API。 |
-| `updateDeviceConfig` | PUT | `/api/config/device/{deviceId}` | body: `DeviceInfo`，当前 `unknown` | `Promise<unknown>` | `ConfigController.updateDevice` → `ConfigConsoleApplicationService.updateDevice` | `ApiResult<DeviceIdResponse>` | 当前未发现生产引用 | 无 | SHOULD_TYPE；unused/reserved。 |
-| `getDevicePointsConfig` | GET | `/api/config/device/{deviceId}/points` | query: `includeAdaptive`，默认 `true` | `Promise<DevicePointConfigResponse>` | `ConfigController.getDevicePoints` → `ConfigConsoleApplicationService.getDevicePoints` | `ApiResult<DevicePointConfigResponse>` | `HistoryView` | `HistoryView.extractPoints` 兼容数组/嵌套 | MATCHED，但 `HistoryView.extractPoints` 是历史兼容层。 |
-| `updateDevicePointsConfig` | PUT | `/api/config/device/{deviceId}/points` | body: `DataPoint[]` 或 `unknown` | `Promise<unknown>` | `ConfigController.updatePoints` → `ConfigConsoleApplicationService.updatePoints` | `ApiResult<DeviceIdResponse>` | 当前未发现生产引用；`point.api.ts.saveDevicePointConfig` 使用同端点 | 无 | SHOULD_TYPE；重复封装。 |
-| `getDeviceConnection` | GET | `/api/config/device/{deviceId}/connection` | path: `deviceId` | `Promise<unknown>` | `ConfigController.getDeviceConnection` → `ConfigConsoleApplicationService.getDeviceConnection` | `ApiResult<DeviceConnectionConfigResponse>` | `DeviceConfigPanel` | `normalizeConnectionPayload` | SHOULD_TYPE；连接配置含协议动态字段，响应外壳仍可 typed。 |
-| `updateDeviceConnection` | PUT | `/api/config/device/{deviceId}/connection` | body: `DeviceConnection` 形态，目前 `unknown` | `Promise<unknown>` | `ConfigController.updateConnection` → `ConfigConsoleApplicationService.updateConnection` | `ApiResult<DeviceIdResponse>` | `DeviceConfigPanel` | `buildConnectionPayload` | SHOULD_TYPE；请求体需保留协议扩展字段。 |
-| `getDeviceDiff` | GET | `/api/config/device/{deviceId}/diff` | path: `deviceId` | `Promise<unknown>` | `ConfigController.diff` → `ConfigConsoleApplicationService.diff` | `ApiResult<ConfigDiffResponse>` | `DeviceConfigPanel`, `device.store` | JSON 展示或 Store 透传 | SHOULD_TYPE。 |
-| `refreshDeviceConfig` | POST | `/api/config/device/{deviceId}/refresh` | path: `deviceId` | `Promise<unknown>` | `ConfigController.refreshDevice` → `ConfigConsoleApplicationService.refreshDevice` | `ApiResult<DeviceIdResponse>` | `DeviceListView`, `DeviceOperationShell` | `normalizeDeviceConfigActionResult` | SHOULD_TYPE。 |
-| `clearDeviceConfig` | POST | `/api/config/device/{deviceId}/clear` | path: `deviceId` | `Promise<unknown>` | `ConfigController.clearDevice` → `ConfigConsoleApplicationService.clearDevice` | `ApiResult<DeviceIdResponse>` | `DeviceListView`, `DeviceOperationShell` | `normalizeDeviceConfigActionResult` | SHOULD_TYPE。 |
-| `triggerFullConfigSync` | POST | `/api/config/sync` | 无 | `Promise<unknown>` | `ConfigController.triggerFullSync` → `ConfigConsoleApplicationService.triggerFullSync` | `ApiResult<Object>`，当前 data 为 `null` | `ConfigOpsPanel`, `device.store` | JSON/Toast | DYNAMIC_OK：后端无业务 DTO，当前只需要提交成功/失败。 |
-| `triggerPartialConfigSync` | POST | `/api/config/sync/{type}` | path: `type`; query: `deviceId?` | `Promise<unknown>` | `ConfigController.triggerPartialSync` → `ConfigConsoleApplicationService.triggerPartialSync` | `ApiResult<DeviceIdResponse>` | `ConfigOpsPanel` | JSON/Toast | SHOULD_TYPE。 |
-| `getConfigSyncStatus` | GET | `/api/config/sync/status` | 无 | `Promise<unknown>` | `ConfigController.getSyncStatus` → `ConfigConsoleApplicationService.getSyncStatus` | `ApiResult<ConfigSyncStatusResponse>` | `ConfigOpsPanel` | `normalizeSyncStatusItems` | SHOULD_TYPE。 |
-| `exportConfigs` | GET | `/api/config/export` | 无 | `Promise<unknown>` | `ConfigController.exportConfigs` → `ConfigConsoleApplicationService.exportConfigs` | `ApiResult<ConfigExportResponse>` | `ConfigOpsPanel`, `DeviceListView` | `normalizeConfigExportText` | SHOULD_TYPE；导出文本转换是 ViewModel。 |
-| `importConfigs` | POST | `/api/config/import` | body: `ConfigImportRequest`，当前 `unknown` | `Promise<unknown>` | `ConfigController.importConfigs` → `ConfigConsoleApplicationService.importConfigs` | `ApiResult<ConfigImportResult>` | `ConfigOpsPanel`, `DeviceListView` | `parseConfigImportText`、`buildConfigImportRequest` | SHOULD_TYPE；请求可 typed 为 `ConfigImportRequest`。 |
+| `getConfigSummary` | GET | `/api/config/summary` | 无 | `Promise<ConfigSummaryResponse>` | `ConfigController.getSummary` → `ConfigConsoleApplicationService.getSummary` | `ApiResult<ConfigSummaryResponse>` | `CollectionView`, `DiagnosticView` | `CollectionView` 已改为 typed access；Diagnostic summary builder 保留 view model | RESOLVED IN 01.2B：`requestApiData`，TS DTO 来源于 Java。 |
+| `getConfigDevices` | GET | `/api/config/devices` | 无 | `Promise<ConfigDeviceListResponse>` | `ConfigController.getAllDevices` → `ConfigConsoleApplicationService.getAllDevices` | `ApiResult<ConfigDeviceListResponse>` | `device.store` 经 `device.api.ts` 兼容入口；`config.api.ts` 也导出 | `normalizeDeviceViewModelWithRuntimeStatus` | RESOLVED IN 01.2B：重复入口 contract 一致，均为 `requestApiData`。 |
+| `createLocalDevice` | POST | `/api/config/local/devices` | body: `LocalDeviceConfigRequest`，协议字段局部动态 | `Promise<LocalDeviceConfigResponse>` | `ConfigController.createLocalDevice` → `ConfigConsoleApplicationService.createLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `LocalDeviceEditor` | 本地编辑器 payload builder | RESOLVED IN 01.2B：响应 typed；请求中的 `connection/extJson/additionalConfig` 保留动态。 |
+| `getLocalDevice` | GET | `/api/config/local/device/{deviceId}` | path: `deviceId` | `Promise<LocalDeviceConfigResponse>` | `ConfigController.getLocalDevice` → `ConfigConsoleApplicationService.getLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `DeviceListView` | `extractLocalDeviceBundle` | RESOLVED IN 01.2B。 |
+| `updateLocalDevice` | PUT | `/api/config/local/device/{deviceId}` | body: `LocalDeviceConfigRequest`，协议字段局部动态 | `Promise<LocalDeviceConfigResponse>` | `ConfigController.updateLocalDevice` → `ConfigConsoleApplicationService.updateLocalDevice` | `ApiResult<LocalDeviceConfigResponse>` | `LocalDeviceEditor` | 本地编辑器 payload builder | RESOLVED IN 01.2B。 |
+| `deleteLocalDevice` | DELETE | `/api/config/local/device/{deviceId}` | path: `deviceId` | `Promise<DeviceIdResponse>` | `ConfigController.deleteLocalDevice` → `ConfigConsoleApplicationService.deleteLocalDevice` | `ApiResult<DeviceIdResponse>` | `device.store` | Store 刷新列表 | RESOLVED IN 01.2B：复用 `DeviceIdResponse`。 |
+| `getDeviceConfig` | GET | `/api/config/device/{deviceId}` | path: `deviceId` | `Promise<DeviceConfigDetailResponse>` | `ConfigController.getDevice` → `ConfigConsoleApplicationService.getDevice` | `ApiResult<DeviceConfigDetailResponse>` | 当前未发现生产引用 | 无 | RESOLVED IN 01.2B；unused/reserved 但 response typed。 |
+| `updateDeviceConfig` | PUT | `/api/config/device/{deviceId}` | body: `DeviceInfo` | `Promise<DeviceIdResponse>` | `ConfigController.updateDevice` → `ConfigConsoleApplicationService.updateDevice` | `ApiResult<DeviceIdResponse>` | 当前未发现生产引用 | 无 | RESOLVED IN 01.2B；unused/reserved。 |
+| `getDevicePointsConfig` | GET | `/api/config/device/{deviceId}/points` | query: `includeAdaptive`，默认 `true` | `Promise<DevicePointConfigResponse>` | `ConfigController.getDevicePoints` → `ConfigConsoleApplicationService.getDevicePoints` | `ApiResult<DevicePointConfigResponse>` | `HistoryView` | `HistoryView.extractPoints` 兼容数组/嵌套 | MATCHED；01.2B 改为显式 `requestApiData`。 |
+| `updateDevicePointsConfig` | PUT | `/api/config/device/{deviceId}/points` | body: `DataPoint[]` | `Promise<DeviceIdResponse>` | `ConfigController.updatePoints` → `ConfigConsoleApplicationService.updatePoints` | `ApiResult<DeviceIdResponse>` | 当前未发现生产引用；`point.api.ts.saveDevicePointConfig` 使用同端点 | 无 | RESOLVED IN 01.2B；unused/repeated，但 response typed。 |
+| `getDeviceConnection` | GET | `/api/config/device/{deviceId}/connection` | path: `deviceId` | `Promise<DeviceConnectionConfigResponse>` | `ConfigController.getDeviceConnection` → `ConfigConsoleApplicationService.getDeviceConnection` | `ApiResult<DeviceConnectionConfigResponse>` | `DeviceConfigPanel` | 直接读取 `response.connection` | RESOLVED IN 01.2B：响应外壳 typed；连接配置动态 Map 保留。 |
+| `updateDeviceConnection` | PUT | `/api/config/device/{deviceId}/connection` | body: `DeviceConnection`，协议扩展字段局部动态 | `Promise<DeviceIdResponse>` | `ConfigController.updateConnection` → `ConfigConsoleApplicationService.updateConnection` | `ApiResult<DeviceIdResponse>` | `DeviceConfigPanel` | `buildConnectionPayload` | RESOLVED IN 01.2B：复用 `DeviceIdResponse`。 |
+| `getDeviceDiff` | GET | `/api/config/device/{deviceId}/diff` | path: `deviceId` | `Promise<ConfigDiffResponse>` | `ConfigController.diff` → `ConfigConsoleApplicationService.diff` | `ApiResult<ConfigDiffResponse>` | `DeviceConfigPanel`, `device.store` | JSON 展示或 Store 透传 | RESOLVED IN 01.2B。 |
+| `refreshDeviceConfig` | POST | `/api/config/device/{deviceId}/refresh` | path: `deviceId` | `Promise<DeviceIdResponse>` | `ConfigController.refreshDevice` → `ConfigConsoleApplicationService.refreshDevice` | `ApiResult<DeviceIdResponse>` | `DeviceListView`, `DeviceOperationShell` | `normalizeDeviceConfigActionResult` 兼容 ApiResult/typed payload | RESOLVED IN 01.2B。 |
+| `clearDeviceConfig` | POST | `/api/config/device/{deviceId}/clear` | path: `deviceId` | `Promise<DeviceIdResponse>` | `ConfigController.clearDevice` → `ConfigConsoleApplicationService.clearDevice` | `ApiResult<DeviceIdResponse>` | `DeviceListView`, `DeviceOperationShell` | `normalizeDeviceConfigActionResult` 兼容 ApiResult/typed payload | RESOLVED IN 01.2B。 |
+| `triggerFullConfigSync` | POST | `/api/config/sync` | 无 | `Promise<ApiResult<null>>` | `ConfigController.triggerFullSync` → `ConfigConsoleApplicationService.triggerFullSync` | `ApiResult<Object>`，当前 data 为 `null` | `ConfigOpsPanel`, `device.store` | JSON/Toast | COMMAND_ENVELOPE：调用方需要 `message`，保留 envelope，不误用 `apiData`。 |
+| `triggerPartialConfigSync` | POST | `/api/config/sync/{type}` | path: `type`; query: `deviceId?` | `Promise<DeviceIdResponse>` | `ConfigController.triggerPartialSync` → `ConfigConsoleApplicationService.triggerPartialSync` | `ApiResult<DeviceIdResponse>` | `ConfigOpsPanel` | JSON/Toast | RESOLVED IN 01.2B。 |
+| `getConfigSyncStatus` | GET | `/api/config/sync/status` | 无 | `Promise<ConfigSyncStatusResponse>` | `ConfigController.getSyncStatus` → `ConfigConsoleApplicationService.getSyncStatus` | `ApiResult<ConfigSyncStatusResponse>` | `ConfigOpsPanel` | `normalizeSyncStatusItems` typed | RESOLVED IN 01.2B。 |
+| `exportConfigs` | GET | `/api/config/export` | 无 | `Promise<ConfigExportResponse>` | `ConfigController.exportConfigs` → `ConfigConsoleApplicationService.exportConfigs` | `ApiResult<ConfigExportResponse>` | `ConfigOpsPanel`, `DeviceListView` | `normalizeConfigExportText` | RESOLVED IN 01.2B；bundle 内协议扩展字段保留动态。 |
+| `importConfigs` | POST | `/api/config/import` | body: `ConfigImportRequest` | `Promise<ConfigImportResult>` | `ConfigController.importConfigs` → `ConfigConsoleApplicationService.importConfigs` | `ApiResult<ConfigImportResult>` | `ConfigOpsPanel`, `DeviceListView` | `parseConfigImportText`、`buildConfigImportRequest` | RESOLVED IN 01.2B；导入 bundle 内协议扩展字段保留动态。 |
 
 ### 4.2 `control.api.ts`
 
@@ -125,15 +126,15 @@
 
 | Frontend Function | Method | URL | Query / Body | Frontend Return Type | Backend Endpoint / Service | Backend Response DTO | Used By | Normalize / ViewModel | Contract Risk |
 |---|---|---|---|---|---|---|---|---|---|
-| `getRuntimeStatus` | GET | `/monitor/runtime` | 无 | `Promise<unknown>` | `MonitorController.runtimeStatus` → `ConsoleRuntimeStatusApplicationService.getRuntimeStatus` | `ConsoleRuntimeStatusSnapshot` | `DashboardView`, `DiagnosticView` | `asRecord` / summary builders | SHOULD_TYPE；`runtime.api.ts` 已有 typed 同端点，当前存在重复封装。 |
-| `getCacheMetrics` | GET | `/monitor/cache` | 无 | `Promise<unknown>` | `MonitorController.cacheMetrics` | `CacheMetricsSnapshot` | `DashboardView`, `DiagnosticView` | `asRecord` | SHOULD_TYPE。 |
-| `getDeviceConnectionMetrics` | GET | `/monitor/devices` | 无 | `Promise<unknown>` | `MonitorController.deviceStatus` | `DeviceStatusSnapshot` | `DiagnosticView` | `buildDiagnosticRows` | SHOULD_TYPE。 |
-| `getCollectorPerformance` | GET | `/monitor/performance` | 无 | `Promise<unknown>` | `MonitorController.collectorPerformance` | `List<CollectorMetrics>` | `DiagnosticView` | raw diagnostic rows | SHOULD_TYPE。 |
-| `getSystemResources` | GET | `/monitor/system` | 无 | `Promise<unknown>` | `MonitorController.systemResources` | `SystemResourceSnapshot` | `DashboardView`, `DiagnosticView` | `asRecord` / gauges | SHOULD_TYPE。 |
-| `getExceptionStats` | GET | `/monitor/errors` | 无 | `Promise<unknown>` | `MonitorController.exceptionStats` | `ExceptionStatsSnapshot` | `DiagnosticView`, `LogView` | `LogView.extractArray` | SHOULD_TYPE。 |
-| `getCloudReportMetrics` | GET | `/monitor/report` | 无 | `Promise<unknown>` | `MonitorController.cloudReportMetrics` | `CloudReportMetricsResponse` | `CloudView`, `DashboardView`, `DiagnosticView` | cloud/diagnostic summary builders | SHOULD_TYPE；重要 DTO 目前缺 TS 对照。 |
-| `getStorageMetrics` | GET | `/monitor/storage` | 无 | `Promise<unknown>` | `MonitorController.storageMetrics` | `StorageMetricsSnapshot` | `DashboardView`, `DiagnosticView` | `asRecord` | SHOULD_TYPE。 |
-| `getPerformanceDetail` | GET | `/monitor/perf/detail` | 无 | `Promise<unknown>` | `MonitorController.performanceDetail` | `PerformanceStatsSnapshot` | `DashboardView`, `DiagnosticView` | `asRecord` | SHOULD_TYPE。 |
+| `getRuntimeStatus` | GET | `/monitor/runtime` | 无 | `Promise<ConsoleRuntimeStatusSnapshot>` | `MonitorController.runtimeStatus` → `ConsoleRuntimeStatusApplicationService.getRuntimeStatus` | `ConsoleRuntimeStatusSnapshot` | `DashboardView`, `DiagnosticView`, `runtime.store` 经 `runtime.api.ts` 兼容入口 | Dashboard typed access；Diagnostic summary builders | RESOLVED IN 01.2B：RAW DTO，`runtime.api.ts` re-export 同一 wrapper。 |
+| `getCacheMetrics` | GET | `/monitor/cache` | 无 | `Promise<CacheMetricsSnapshot>` | `MonitorController.cacheMetrics` | `CacheMetricsSnapshot` | `DashboardView`, `DiagnosticView` | Dashboard typed access；Diagnostic builder 保留 view model | RESOLVED IN 01.2B：RAW DTO。 |
+| `getDeviceConnectionMetrics` | GET | `/monitor/devices` | 无 | `Promise<DeviceStatusSnapshot>` | `MonitorController.deviceStatus` | `DeviceStatusSnapshot` | `DiagnosticView` | `buildDiagnosticRows` | RESOLVED IN 01.2B：RAW DTO。 |
+| `getCollectorPerformance` | GET | `/monitor/performance` | 无 | `Promise<CollectorMetrics[]>` | `MonitorController.collectorPerformance` | `List<CollectorMetrics>` | `DiagnosticView` | raw diagnostic package | RESOLVED IN 01.2B：RAW DTO，List 已映射为 `CollectorMetrics[]`。 |
+| `getSystemResources` | GET | `/monitor/system` | 无 | `Promise<SystemResourceSnapshot>` | `MonitorController.systemResources` | `SystemResourceSnapshot` | `DashboardView`, `DiagnosticView` | Dashboard typed gauges；Diagnostic builder | RESOLVED IN 01.2B：RAW DTO。 |
+| `getExceptionStats` | GET | `/monitor/errors` | 无 | `Promise<ExceptionStatsSnapshot>` | `MonitorController.exceptionStats` | `ExceptionStatsSnapshot` | `DiagnosticView`, `LogView` | Diagnostic builder；LogView 仍保留独立日志 normalizer | RESOLVED IN 01.2B：RAW DTO。 |
+| `getCloudReportMetrics` | GET | `/monitor/report` | 无 | `Promise<CloudReportMetricsResponse>` | `MonitorController.cloudReportMetrics` | `CloudReportMetricsResponse` | `CloudView`, `DashboardView`, `DiagnosticView` | cloud/diagnostic summary builders | RESOLVED IN 01.2B：RAW DTO；handlers/status statistics 为动态 Map。 |
+| `getStorageMetrics` | GET | `/monitor/storage` | 无 | `Promise<StorageMetricsSnapshot>` | `MonitorController.storageMetrics` | `StorageMetricsSnapshot` | `DashboardView`, `DiagnosticView` | Dashboard typed state；Diagnostic builder | RESOLVED IN 01.2B：RAW DTO。 |
+| `getPerformanceDetail` | GET | `/monitor/perf/detail` | 无 | `Promise<PerformanceStatsSnapshot>` | `MonitorController.performanceDetail` | `PerformanceStatsSnapshot` | `DashboardView`, `DiagnosticView` | Dashboard typed rejection counters；Diagnostic builder | RESOLVED IN 01.2B：RAW DTO。 |
 
 ### 4.7 `ops.api.ts`
 
@@ -182,9 +183,9 @@
 
 | 分类 | 数量 | API |
 |---|---:|---|
-| SHOULD_TYPE | 40 | 01.2A 后仍待处理：`config.api.ts`: `getConfigSummary`, `getConfigDevices`, `createLocalDevice`, `getLocalDevice`, `updateLocalDevice`, `deleteLocalDevice`, `getDeviceConfig`, `updateDeviceConfig`, `updateDevicePointsConfig`, `getDeviceConnection`, `updateDeviceConnection`, `getDeviceDiff`, `refreshDeviceConfig`, `clearDeviceConfig`, `triggerPartialConfigSync`, `getConfigSyncStatus`, `exportConfigs`, `importConfigs`; `control.api.ts`: `writeDevicePoint`, `writeDevicePoints`; `device.api.ts`: `getDeviceStatus`, `getAllDeviceStatistics`; `edge.api.ts`: `ingestEdgeTelemetry`; `monitor.api.ts`: 全 9 个； `ops.api.ts`: `queryAlarmAcknowledgements`, `acknowledgeAlarm`, `diagnoseNetwork`; `point.api.ts`: `saveDevicePointConfig`; `shadow.api.ts`: `getShadow`, `getShadowDelta`, `updateShadowDesired`, `clearShadowDesired`。已解决：DataController 4 个 SHOULD_TYPE 和 `getRunningDevices`。 |
-| LEGACY_COMPAT | 0 | 01.2A 后 `data.api.ts`: `getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory` 已 typed 为 RAW DTO；兼容分支仍保留在 normalizer，不再计入 API 层 unknown。 |
-| DYNAMIC_OK | 7 | `config.api.ts`: `triggerFullConfigSync`; `control.api.ts`: `executeDeviceCommand`; `device.api.ts`: `startDevice`, `startLocalDevice`, `stopDevice`, `reloadDevices`; `shadow.api.ts`: `getShadowHistory`。这些接口当前要么后端就是 `ApiResult<Object>` 操作结果，要么数据天然动态。 |
+| SHOULD_TYPE | 13 | 01.2B 后仍待处理：`control.api.ts`: `writeDevicePoint`, `writeDevicePoints`; `device.api.ts`: `getDeviceStatus`, `getAllDeviceStatistics`; `edge.api.ts`: `ingestEdgeTelemetry`; `ops.api.ts`: `queryAlarmAcknowledgements`, `acknowledgeAlarm`, `diagnoseNetwork`; `point.api.ts`: `saveDevicePointConfig`; `shadow.api.ts`: `getShadow`, `getShadowDelta`, `updateShadowDesired`, `clearShadowDesired`。 |
+| LEGACY_COMPAT | 0 | API 层返回类型不再以 legacy unknown 计数；兼容逻辑继续保留在 normalizer。 |
+| DYNAMIC_OK | 6 | `control.api.ts`: `executeDeviceCommand`; `device.api.ts`: `startDevice`, `startLocalDevice`, `stopDevice`, `reloadDevices`; `shadow.api.ts`: `getShadowHistory`。这些接口当前要么后端就是 `ApiResult<Object>` 操作结果，要么数据天然动态。 |
 
 ## 6. Normalize / Extract / Resolve / Parse 清单
 
@@ -201,7 +202,7 @@
 | `src/stores/device.store.ts` | `normalizeDeviceViewModel*`, `resolveDeviceStatus`, `resolvePointCount`, `resolveDeviceStartMode` | VIEW_MODEL + DEFENSIVE | 后端设备配置与运行快照合并为 UI 设备状态。 | 保留；与类型补强同步。 |
 | `src/stores/point.store.ts` / `point-editor-utils.ts` | `normalizePointRows`, `mergePointRuntime`, `buildPointExtraModel`, `applyPointExtraModel` | VIEW_MODEL | 点位配置转编辑态、协议扩展字段映射、实时值合并。 | 保留；性能风险见基线文档。 |
 | `src/features/point/utils/point-excel-utils.ts` | `parsePointCsv`, `normalizeImportedValue` | VIEW_MODEL + DEFENSIVE | CSV 导入到点位模型；1MB/2000 行限制。 | 保留。 |
-| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；normalizer 兼容层保留以保护既有页面逻辑。 | 后续可在调用点确认稳定后减少冗余 normalize，但不属于 01.2A。 |
+| `src/features/diagnostic/utils/device-runtime-utils.ts` | `normalizeRunningDeviceIds`, `normalizeDeviceRuntimeRows`, `normalizeDeviceStatusDetail`, `normalizeDeviceRunningFlag` | BACKEND_COMPAT + VIEW_MODEL | RESOLVED IN 01.2A：`getRunningDevices` API 已返回 `string[]`，`isDeviceRunning` API 已从 envelope 顶层 `running` 提取 boolean；normalizer 兼容层保留以保护既有页面逻辑。 | 后续可在 `device.api.ts.getDeviceStatus` typed 后减少冗余 normalize。 |
 | `src/features/network/utils/network-utils.ts` | `buildNetworkDiagnosticPayload`, `normalizeNetworkDiagnosticResult` | VIEW_MODEL + DEFENSIVE | 表单输入 → 后端请求；后端结果 → UI 展示模型；失败时生成不可达结果。 | 保留；补 TS DTO 后收窄输入输出。 |
 | `src/features/network/utils/edge-telemetry-utils.ts` | `parseEdgeTelemetryJson`, `normalizeEdgeTelemetryResult`, `parseTypedValue` | DYNAMIC_OK + VIEW_MODEL | 边缘遥测 value 天然动态，但 response result 有稳定计数字段。 | 请求/响应外壳可 typed，value 继续 unknown。 |
 | `src/features/shadow/utils/shadow-utils.ts` | `normalizeShadowHistoryRows`, `parseShadowJson*`, `summarizeShadowState` | DYNAMIC_OK + VIEW_MODEL | 影子 state/delta/history 是动态文档，需要 JSON 解析和摘要。 | 保留；响应外壳可 typed。 |
@@ -236,35 +237,35 @@
 
 | 状态 | API 条目数 | 说明 / 代表项 |
 |---|---:|---|
-| MATCHED | 9 | `device.api.getConfigDevices`, `device.api.getDeviceRuntime`, `point.api.getDevicePointConfig`, `protocol.api.*`, `runtime.api.*`, `config.api.getDevicePointsConfig`。 |
-| PARTIAL | 2 | 01.2A 后剩余：`config.api.getConfigDevices`（重复未 typed）、`monitor.api.getRuntimeStatus`（typed 函数在 runtime.api 中重复存在）。已解决：`getDeviceRealtimeData`、`isDeviceRunning`、`getRunningDevices`。 |
-| MISSING | 35 | 01.2A 后 DataController raw DTO 已补齐；剩余缺口集中在 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。 |
-| DYNAMIC | 7 | 后端当前就是 `ApiResult<Object>` 操作结果或数据天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history。 |
-| LEGACY_COMPAT | 1 | 01.2A 后 API 返回类型层面的 legacy unknown 仅剩 `getOpsLogs`；`getPointHistory`, `getRecentAlarms`, `getDeviceAlarmHistory` 已 typed，兼容逻辑保留在 normalizer。 |
+| MATCHED | 46 | 01.2B 后新增：`config.api.ts` 19 个稳定 response、`monitor.api.ts` 9 个 RAW DTO、`runtime.api.ts.getRuntimeStatus` 复用 monitor wrapper；已解决 01.2A 的 DataController 与 running 相关项。 |
+| PARTIAL | 0 | 01.2B 后不再保留仅因 wrapper 重复导致的 partial contract；动态 Map 另列为 DYNAMIC。 |
+| MISSING | 13 | 剩余缺口集中在 `control.api.ts`、`device.api.ts`、`edge.api.ts`、`ops.api.ts`、`point.api.ts`、`shadow.api.ts`。 |
+| DYNAMIC | 7 | 后端当前就是 `ApiResult<Object>` 操作结果、command envelope 或数据天然动态：设备 start/stop/reload、全量 sync、协议 command、shadow history。 |
+| LEGACY_COMPAT | 1 | `getOpsLogs` 返回已 typed，但 normalizer 仍兼容 `logs/records/rows/items`；Data/Alarm/History legacy 分支保留在 normalizer。 |
 
 关键后端 DTO 对照：
 
 | Backend DTO / Contract | Frontend Type | 状态 | 备注 |
 |---|---|---|---|
-| `ConfigDeviceListResponse` | `types/device.ts ConfigDeviceListResponse` | MATCHED/PARTIAL | `device.api.ts` matched；`config.api.ts` 同端点仍 unknown。 |
-| `DevicePointConfigResponse` | `types/point.ts DevicePointConfigResponse` | MATCHED | 读取 typed；保存结果 `DeviceIdResponse` 缺 TS。 |
+| `ConfigDeviceListResponse` | `types/device.ts ConfigDeviceListResponse` | MATCHED | `config.api.ts` 与 `device.api.ts` 重复入口均 typed，并显式 `requestApiData`。 |
+| `DevicePointConfigResponse` | `types/point.ts DevicePointConfigResponse` | MATCHED | 读取 typed；`config.api.updateDevicePointsConfig` 保存结果已复用 `DeviceIdResponse`，`point.api.saveDevicePointConfig` 仍待后续处理。 |
 | `DeviceRealtimeDataResponse` | `types/monitor.ts DeviceRealtimeDataResponse` | RESOLVED IN 01.2A | 后端 `data: Map<String, PointRealtimePayload>` 已对齐为 `Record<string, PointRealtimePayload>`；normalizer 负责 DTO→ViewModel。 |
 | `PointRealtimeResponse` | `types/monitor.ts PointRealtimeResponse` | RESOLVED IN 01.2A | 单点 raw DTO 已 typed；`data` 为 `PointRealtimePayload`。 |
 | `HistoryDataResponse` | `types/monitor.ts HistoryDataResponse`；`HistoryRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；前端继续兼容多字段。 |
 | `AlarmHistoryDataResponse` | `types/monitor.ts AlarmHistoryDataResponse`；`AlarmRow` 为行模型 | RESOLVED IN 01.2A / LEGACY_COMPAT | 后端 `data: List<Map<String,Object>>` typed；历史字段动态合理。 |
 | `DeviceStatusResponse` | `DeviceStatusDetail` view model | PARTIAL | 前端没有原始 DTO；normalizer 合并 running/isRunning。 |
 | `DeviceRuntimeSnapshot` | `types/device.ts DeviceRuntimeSnapshot` | MATCHED | 布尔/时间/phase 字段对齐。 |
-| `ConfigSummaryResponse` | 无 | MISSING | Dashboard/Collection/Diagnostic 以 `unknown/asRecord` 读取。 |
-| `ConfigSyncStatusResponse` | 无；`normalizeSyncStatusItems` 输出展示项 | MISSING | 后端字段稳定。 |
-| `ConfigExportResponse` / `ConfigImportResult` | 无；配置导入导出 utils 使用动态对象 | MISSING | 可 typed 外壳，bundle 内 domain 对象保留扩展字段。 |
-| `LocalDeviceConfigResponse` / `LocalDeviceConfigRequest` | `LocalDeviceBundle` 等 feature-local 类型 | PARTIAL | 编辑器有 view model，但 API 层无请求/响应 DTO。 |
-| `DeviceConnectionConfigResponse` | `ConnectionPayload` view model | PARTIAL | 协议扩展动态合理，响应外壳缺 TS。 |
-| `DeviceIdResponse` | 无 | MISSING | 多个配置写操作返回该 DTO。 |
+| `ConfigSummaryResponse` | `types/config.ts ConfigSummaryResponse` | RESOLVED IN 01.2B | `CollectionView` 已改为 typed access；Diagnostic builder 保留 view model 输入。 |
+| `ConfigSyncStatusResponse` | `types/config.ts ConfigSyncStatusResponse`；`normalizeSyncStatusItems` 输出展示项 | RESOLVED IN 01.2B | 后端字段稳定，helper 输入已 typed。 |
+| `ConfigExportResponse` / `ConfigImportResult` | `types/config.ts ConfigExportResponse` / `ConfigImportResult` | RESOLVED IN 01.2B | 可 typed 外壳已补齐，bundle 内 domain 对象保留扩展字段。 |
+| `LocalDeviceConfigResponse` / `LocalDeviceConfigRequest` | `types/config.ts LocalDeviceConfigResponse` / `LocalDeviceConfigRequest`，编辑器仍使用 feature-local draft/payload | RESOLVED IN 01.2B / DYNAMIC_OK | API response typed；请求中的 protocol-specific config、connection extJson、point additionalConfig 保留动态。 |
+| `DeviceConnectionConfigResponse` | `types/config.ts DeviceConnectionConfigResponse`；`ConnectionPayload` 仍为表单 view model | RESOLVED IN 01.2B / DYNAMIC_OK | 响应外壳 typed，`DeviceConfigPanel` 直接读取 `response.connection`；协议扩展 Map 保留动态。 |
+| `DeviceIdResponse` | `types/config.ts DeviceIdResponse` | RESOLVED IN 01.2B | 多个配置写操作统一复用该 DTO。 |
 | `PointWriteResultResponse` / `BatchPointWriteResponse` | 无 | MISSING | 控制写入结果仅 JSON 展示。 |
 | `DeviceCommandResponse` | 无 | DYNAMIC | `result` 动态，但 response shell 可 typed。 |
-| `CloudReportMetricsResponse` | 无 | MISSING | 重要监控 DTO，当前 Dashboard/Cloud/Diagnostic 全部 `unknown`。 |
-| `ConsoleRuntimeStatusSnapshot` | `types/runtime.ts ConsoleRuntimeStatusSnapshot` | MATCHED/PARTIAL | `runtime.api.ts` typed；`monitor.api.ts` 同端点 unknown。 |
-| `CacheMetricsSnapshot`, `DeviceStatusSnapshot`, `SystemResourceSnapshot`, `ExceptionStatsSnapshot`, `StorageMetricsSnapshot`, `PerformanceStatsSnapshot`, `CollectorMetrics` | 无或 `Record<string, unknown>` | MISSING | 监控 API 全 unknown。 |
+| `CloudReportMetricsResponse` | `types/monitor.ts CloudReportMetricsResponse` | RESOLVED IN 01.2B / DYNAMIC_OK | 重要监控 DTO 已按 Java nested classes typed；handlers/status statistics 为动态 Map。 |
+| `ConsoleRuntimeStatusSnapshot` | `types/monitor.ts ConsoleRuntimeStatusSnapshot`；`types/runtime.ts` re-export | RESOLVED IN 01.2B | `monitor.api.ts` 与 `runtime.api.ts` 复用同一 RAW wrapper。 |
+| `CacheMetricsSnapshot`, `DeviceStatusSnapshot`, `SystemResourceSnapshot`, `ExceptionStatsSnapshot`, `StorageMetricsSnapshot`, `PerformanceStatsSnapshot`, `CollectorMetrics` | `types/monitor.ts` | RESOLVED IN 01.2B / DYNAMIC_OK | 监控 Snapshot 已 typed；内部 `Map<String,Object>`/`protocolMetrics`/`deviceStats` 保留动态。 |
 | `OpsLogResponse` | `ops.api.ts OpsLogResponse` | LEGACY_COMPAT | 前端接受 `logs/records/rows/items`；后端只声明 `items`。 |
 | `AlarmAcknowledgement` | `AlarmAcknowledgementRecord` | PARTIAL | API 返回 `Record<string, unknown>`；feature normalizer 再转。 |
 | `NetworkDiagnosticResult` | `NormalizedNetworkDiagnosticResult` view model | PARTIAL | 缺原始 API DTO；已有 view model。 |
@@ -273,10 +274,10 @@
 | `DeviceShadowResponse` / `DeviceShadowDeltaResponse` | 无独立 TS DTO | MISSING/DYNAMIC | response shell 稳定，state/delta/metadata 内部动态。 |
 | `List<Map<String,Object>>` shadow history | `ShadowHistoryRow` view model | DYNAMIC | 历史记录天然动态。 |
 
-## 9. 01.2A 完成后剩余输入
+## 9. 01.2B 完成后剩余输入
 
 1. RESOLVED IN 01.2A：`getDeviceRealtimeData`、`PointRealtimeResponse`、`DeviceRealtimeDataResponse.data` Map contract、`getRunningDevices`、`isDeviceRunning`、DataController raw DTO response boundary。
-2. Task 01.2B 建议继续补 API 层类型，不改页面行为：优先 `config.api.ts`、`monitor.api.ts`、`control.api.ts`、`shadow.api.ts`。
-3. 将 `monitor.api.ts.getRuntimeStatus` 与 `runtime.api.ts.getRuntimeStatus` 的重复契约统一，避免同一端点一处 typed、一处 unknown。
+2. RESOLVED IN 01.2B：`monitor.api.ts` 9 个 RAW DTO endpoint、`config.api.ts` 稳定 response DTO、`runtime.api.ts.getRuntimeStatus` 重复契约已统一。
+3. Task 01.2C 建议继续补 API 层类型，不改页面行为：优先 `control.api.ts`、`ops.api.ts`、`shadow.api.ts`，并评估 `edge.api.ts`、`device.api.ts`、`point.api.ts` 剩余稳定 response。
 4. 对 `getOpsLogs` 前端多传的 `deviceId/thread` 与后端未接收参数建立明确决策：要么后端支持过滤，要么前端只做本地过滤并标注文案。
 5. 保留 `DYNAMIC_OK` 的动态 payload/value/result，不为了“零 unknown”创造无业务价值 DTO。

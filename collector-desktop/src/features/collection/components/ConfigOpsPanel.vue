@@ -65,6 +65,8 @@ import { ElMessage } from "element-plus";
 import { exportConfigs, getConfigSyncStatus, importConfigs, triggerFullConfigSync, triggerPartialConfigSync } from "@/api/config.api";
 import { CONFIG_SYNC_TYPES, normalizeSyncStatusItems } from "@/features/collection/utils/config-sync-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
+import type { ApiResult } from "@/types/api";
+import type { ConfigImportResult, ConfigSyncStatusResponse, DeviceIdResponse } from "@/types/config";
 import type { DeviceInfo } from "@/types/device";
 
 const props = defineProps<{
@@ -79,9 +81,9 @@ const emit = defineEmits<{
 
 const exportText = ref("");
 const importText = ref("");
-const importResult = ref<unknown>({ message: "等待导入" });
-const syncResult = ref<unknown>({ message: "等待同步操作" });
-const syncStatus = ref<unknown>({});
+const importResult = ref<ConfigImportResult | Record<string, unknown> | null>(null);
+const syncResult = ref<ApiResult<null> | DeviceIdResponse | Record<string, unknown> | null>(null);
+const syncStatus = ref<ConfigSyncStatusResponse | null>(null);
 const syncType = ref("device");
 const syncDeviceId = ref("");
 const reloadAfterImport = ref(true);
@@ -90,8 +92,8 @@ const importing = ref(false);
 const syncing = ref(false);
 
 const selectedSyncType = computed(() => CONFIG_SYNC_TYPES.find((item) => item.type === syncType.value) || CONFIG_SYNC_TYPES[0]);
-const importResultText = computed(() => JSON.stringify(importResult.value, null, 2));
-const syncResultText = computed(() => JSON.stringify(syncResult.value, null, 2));
+const importResultText = computed(() => JSON.stringify(importResult.value ?? { message: "等待导入" }, null, 2));
+const syncResultText = computed(() => JSON.stringify(syncResult.value ?? { message: "等待同步操作" }, null, 2));
 const syncStatusItems = computed(() => normalizeSyncStatusItems(syncStatus.value));
 
 onMounted(() => {

@@ -1,3 +1,5 @@
+import type { CloudReportMetricsResponse } from "@/types/monitor";
+
 export interface CloudMetricRow {
   label: string;
   value: string;
@@ -28,11 +30,11 @@ export function cloudStatusText(status: unknown): string {
   } as Record<string, string>)[key] || "未知";
 }
 
-export function buildCloudEnabledText(report: unknown): string {
+export function buildCloudEnabledText(report: CloudReportMetricsResponse | null | undefined): string {
   return asRecord(report).enabled ? "云端上报已启用" : "云端上报未启用";
 }
 
-export function summarizeReportMetrics(report: unknown): ReportSummary {
+export function summarizeReportMetrics(report: CloudReportMetricsResponse | null | undefined): ReportSummary {
   const record = asRecord(report);
   const outbox = asRecord(record.outbox);
   const ackRuntime = asRecord(record.ackRuntime);
@@ -44,7 +46,7 @@ export function summarizeReportMetrics(report: unknown): ReportSummary {
   return { pending, pendingAck, isolated, processors, riskLevel };
 }
 
-export function buildCloudSummaryCards(report: unknown): CloudMetricRow[] {
+export function buildCloudSummaryCards(report: CloudReportMetricsResponse | null | undefined): CloudMetricRow[] {
   const record = asRecord(report);
   const outbox = asRecord(record.outbox);
   const executor = asRecord(record.executor);
@@ -56,7 +58,7 @@ export function buildCloudSummaryCards(report: unknown): CloudMetricRow[] {
   ];
 }
 
-export function buildCloudStrategyRows(report: unknown): CloudMetricRow[] {
+export function buildCloudStrategyRows(report: CloudReportMetricsResponse | null | undefined): CloudMetricRow[] {
   const record = asRecord(report);
   const configured = asRecord(record.configured);
   const batch = asRecord(record.batch);
@@ -74,7 +76,7 @@ export function buildCloudStrategyRows(report: unknown): CloudMetricRow[] {
   ];
 }
 
-export function buildCloudOperationalRows(report: unknown): CloudMetricRow[] {
+export function buildCloudOperationalRows(report: CloudReportMetricsResponse | null | undefined): CloudMetricRow[] {
   const record = asRecord(report);
   const outbox = asRecord(record.outbox);
   const ack = asRecord(record.ack);
@@ -91,7 +93,7 @@ export function buildCloudOperationalRows(report: unknown): CloudMetricRow[] {
   ];
 }
 
-export function buildCloudRisks(report: unknown): string[] {
+export function buildCloudRisks(report: CloudReportMetricsResponse | null | undefined): string[] {
   const risks = asRecord(report).risks;
   return Array.isArray(risks) && risks.length ? risks.map((risk) => String(risk)) : ["未发现已知上报风险"];
 }

@@ -4,11 +4,13 @@ import type { ApiResult } from "@/types/api";
 
 const httpMocks = vi.hoisted(() => ({
   request: vi.fn(),
+  requestApiData: vi.fn(),
   requestEnvelope: vi.fn()
 }));
 
 vi.mock("./http", () => ({
   request: httpMocks.request,
+  requestApiData: httpMocks.requestApiData,
   requestEnvelope: httpMocks.requestEnvelope
 }));
 
@@ -16,6 +18,7 @@ import { getRunningDevices, isDeviceRunning } from "./device.api";
 
 beforeEach(() => {
   httpMocks.request.mockReset();
+  httpMocks.requestApiData.mockReset();
   httpMocks.requestEnvelope.mockReset();
 });
 

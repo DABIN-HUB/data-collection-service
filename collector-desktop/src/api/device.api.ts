@@ -1,4 +1,4 @@
-import { request, requestEnvelope } from "./http";
+import { request, requestApiData, requestEnvelope } from "./http";
 import type { ApiResult } from "@/types/api";
 import type { ConfigDeviceListResponse, DeviceRuntimeSnapshot } from "@/types/device";
 
@@ -7,7 +7,7 @@ interface DeviceRunningResponse extends ApiResult<null> {
 }
 
 export function getConfigDevices(): Promise<ConfigDeviceListResponse> {
-  return request<ConfigDeviceListResponse>({ url: "/api/config/devices", method: "GET" });
+  return requestApiData<ConfigDeviceListResponse>({ url: "/api/config/devices", method: "GET" });
 }
 
 export function startDevice(deviceId: string): Promise<unknown> {

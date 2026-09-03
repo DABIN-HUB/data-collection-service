@@ -76,15 +76,16 @@ import {
   cloudStatusText
 } from "@/features/cloud/utils/cloud-report-utils";
 import { useAppStore } from "@/stores/app.store";
+import type { CloudReportMetricsResponse } from "@/types/monitor";
 
 const appStore = useAppStore();
-const reportMetrics = ref<unknown>({});
+const reportMetrics = ref<CloudReportMetricsResponse | null>(null);
 const loading = ref(false);
 const error = ref("");
 const lastRefresh = ref<Date | null>(null);
 
-const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知");
-const reportStatus = computed(() => String(asRecord(reportMetrics.value).status ?? asRecord(reportMetrics.value).state ?? "UNKNOWN"));
+const reportState = computed(() => reportMetrics.value ? "已加载" : "未知");
+const reportStatus = computed(() => String(reportMetrics.value?.status ?? reportMetrics.value?.state ?? "UNKNOWN"));
 const cloudStatusTextValue = computed(() => cloudStatusText(reportStatus.value));
 const cloudEnabledText = computed(() => buildCloudEnabledText(reportMetrics.value));
 const cloudSummaryCards = computed(() => buildCloudSummaryCards(reportMetrics.value));
@@ -113,10 +114,6 @@ async function loadCloud() {
 
 async function refreshCloud() {
   await loadCloud();
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function prettyJson(value: unknown): string {

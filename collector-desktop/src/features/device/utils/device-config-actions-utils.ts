@@ -1,3 +1,6 @@
+import type { ApiResult } from "@/types/api";
+import type { DeviceIdResponse, LocalDeviceConfigResponse } from "@/types/config";
+
 export type DeviceConfigActionType = "refresh" | "clear";
 
 export interface DeviceConfigActionOption {
@@ -24,13 +27,17 @@ export const DEVICE_CONFIG_ACTIONS: DeviceConfigActionOption[] = [
   }
 ];
 
-export function normalizeDeviceConfigActionResult(response: unknown, fallbackDeviceId: string): DeviceConfigActionResult {
-  const record = asRecord(response);
-  const data = asRecord(record.data);
-  const source = Object.keys(data).length ? data : record;
+type DeviceConfigActionData = DeviceIdResponse | LocalDeviceConfigResponse;
+type DeviceConfigActionEnvelope = ApiResult<DeviceConfigActionData | null>;
+type DeviceConfigActionSource = DeviceConfigActionData | DeviceConfigActionEnvelope | null | undefined;
+
+export function normalizeDeviceConfigActionResult(response: DeviceConfigActionSource, fallbackDeviceId: string): DeviceConfigActionResult {
+  const data = isEnvelope(response) ? response.data : response;
+  const record = data && typeof data === "object" ? data : {};
+  const envelope = isEnvelope(response) ? response : {} as Partial<DeviceConfigActionEnvelope>;
   return {
-    deviceId: String(source.deviceId || fallbackDeviceId || ""),
-    message: String(record.msg || record.message || source.message || "")
+    deviceId: String(record.deviceId || fallbackDeviceId || ""),
+    message: String(envelope.msg || envelope.message || (record as { message?: string }).message || "")
   };
 }
 
@@ -42,6 +49,6 @@ export function buildDeviceConfigActionMessage(type: DeviceConfigActionType, res
   return type === "clear" ? `设备 ${deviceId} 配置缓存已清理` : `设备 ${deviceId} 配置缓存已刷新`;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+function isEnvelope(value: DeviceConfigActionSource): value is DeviceConfigActionEnvelope {
+  return value !== null && value !== undefined && typeof value === "object" && "data" in value;
 }

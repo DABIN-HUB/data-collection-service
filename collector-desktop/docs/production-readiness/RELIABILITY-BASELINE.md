@@ -6,6 +6,8 @@
 
 01.2A 更新：HTTP response boundary 已能显式区分 `ApiResult<T>` data 解包、raw DTO 保留和 envelope metadata 保留；DataController raw DTO、`DeviceRealtimeDataResponse.data` Map、`PointRealtimeResponse`、`getAllDeviceDataSummaries` 设备摘要与 realtime rows 分离、`getRunningDevices`、`isDeviceRunning` 已标记为 `RESOLVED IN 01.2A`。Realtime fan-out、request sequence/AbortController、WebSocket、PointEditor 性能风险未在 01.2A 修改。
 
+01.2B 更新：`monitor.api.ts` 9 个 `/monitor/*` endpoint 已统一为 RAW DTO + 真实 Snapshot/DTO 类型；`config.api.ts` 20 个 endpoint 已补齐稳定 response type，其中 19 个走 `requestApiData<T>()`，`triggerFullConfigSync` 保留 command envelope。API 层 unknown 统计从 47 降到 19；剩余契约漂移集中在 control/device/edge/ops/point/shadow，Realtime P0、History P1、WebSocket、PointEditor 性能风险未在 01.2B 修改。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -13,7 +15,7 @@
 | `src/api/http.ts` | `ApiResult` code/status 错误抛 `ApiRequestError`；Axios 无响应时转换网络/超时中文消息。 | PAGE_ERROR 基础设施 | API 层可抛出结构化错误，但页面层多数只消费 message。 |
 | `src/views/realtime/RealtimeView.vue:193-195` | 全局实时列表失败只 `console.error(error)`，不写页面错误状态。 | SWALLOWED | 生产现场无法从页面判断实时刷新失败原因。 |
 | `src/views/realtime/RealtimeView.vue:212-214` | 单点实时查询失败只 `console.error(error)`。 | SWALLOWED | 单点查询失败无可见错误。 |
-| `src/views/dashboard/DashboardView.vue:269-278` | 多个 dashboard 请求 `Promise.allSettled`，未逐项记录失败；失败项保持 `{}` 并显示未知/不可用。 | PARTIAL_FAILURE / SILENT_FALLBACK | 页面不会整体崩溃，但缺少失败接口明细。 |
+| `src/views/dashboard/DashboardView.vue:269-278` | 多个 dashboard 请求 `Promise.allSettled`，未逐项记录失败；01.2B 后 monitor refs 改为 typed/null，但失败项仍显示未知/不可用。 | PARTIAL_FAILURE / SILENT_FALLBACK | 页面不会整体崩溃，但缺少失败接口明细。 |
 | `src/views/diagnostic/DiagnosticView.vue:173-191` | 多指标 `Promise.allSettled`，失败项进入 `partialWarning`。 | PARTIAL_FAILURE / PAGE_ERROR | 这是当前较好的生产化模式，可作为后续参考。 |
 | `src/views/history/HistoryView.vue:321-345` | 主历史、比较历史、关联告警在同一 try；任一失败清空历史/比较/告警。 | ALL_OR_NOTHING | 关联告警失败可能导致已成功历史查询也被清空。 |
 | `src/views/alarm/AlarmView.vue:170-187` | 告警历史 + 确认状态串联；确认状态失败会进入 catch 并清空告警列表。 | ALL_OR_NOTHING | 告警历史成功但确认状态失败时，用户看不到告警历史。 |
@@ -25,7 +27,7 @@
 | `src/features/point/components/PointEditor.vue:341-355` | 实时值加载失败写 `realtimeError`。 | PAGE_ERROR | 可观测。 |
 | `src/features/point/components/PointEditor.vue:358-362` + `point.store.ts:82-93` | 保存失败写 store error，但 `savePoints()` 不额外 toast。 | PAGE_ERROR / TOAST_MISSING | 保存失败是否可见取决于模板是否展示 `pointStore.error`。 |
 | `src/features/shadow/components/ShadowPanel.vue:153-155` | `读取全部` 使用 `Promise.allSettled`，单项内部自行写错误对象/toast。 | PARTIAL_FAILURE | 合理，影子、delta、history 可独立失败。 |
-| `src/features/collection/components/ConfigOpsPanel.vue:97-99` | 初始化读取 sync status `.catch(() => undefined)`。 | SWALLOWED | 初始同步状态失败无页面错误。 |
+| `src/features/collection/components/ConfigOpsPanel.vue:97-99` | 初始化读取 typed sync status 仍 `.catch(() => undefined)`。 | SWALLOWED | 01.2B 只补 contract，初始同步状态失败仍无页面错误。 |
 | `src/stores/device.store.ts:39-58` | 设备列表和 runtime 并行；runtime 失败被忽略，设备失败才进入 store error。 | PARTIAL_FAILURE | 设备列表可用优先，但运行态失败无明确提示。 |
 | `src/stores/runtime.store.ts:33-47` | health/runtime 任一成功即 connected；两者都失败才写 error。 | PARTIAL_FAILURE | 合理，但没有记录单项失败明细。 |
 | `src/stores/websocket-utils.ts:30-35` | WS payload JSON parse 失败返回空数组，无错误记录。 | SWALLOWED | WebSocket 解析错误不可观测。 |
@@ -127,7 +129,7 @@
 5. `DeviceOperationShell.loadRealtimePreview()` 失败静默置空，且旧请求可覆盖新设备预览。
 6. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测。
 7. `PointEditor.runtimeOf()` O(P²) 渲染风险。
-8. `monitor.api.ts` 全 unknown，Dashboard/Cloud/Diagnostic 对重要指标缺类型保护。
+8. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
 
 ### P2
 
@@ -138,7 +140,7 @@
 5. ConfigOpsPanel 初始化 sync status 失败 `.catch(() => undefined)`，无提示。
 6. `getOpsLogs` 前端传 `deviceId/thread` 但后端 `OpsController.logs` 未接收，契约需明确。
 
-## 7. Task 01.2 推荐修改范围 / 01.2A 结果
+## 7. Task 01.2 推荐修改范围 / 01.2A-01.2B 结果
 
 Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI 重构。01.2A 已完成 response boundary 的核心修正：
 
@@ -148,3 +150,11 @@ Task 01.2 建议只处理“API 类型与真实响应边界”，不要进入 UI
 4. RESOLVED IN 01.2A：`getRunningDevices` 返回 `string[]`；`isDeviceRunning` 使用 `envelope` 读取顶层 `running`，对调用方仍返回 boolean。
 5. 保留：`LEGACY_COMPAT` normalizer 未删除，避免破坏历史响应兼容。
 6. 未处理：AbortController、request sequence、WebSocket、Realtime fan-out、PointEditor `runtimeOf` 性能；这些进入 Task 01.3+。
+
+01.2B 已完成 Monitor RAW Contract + Config Stable Contract：
+
+1. RESOLVED IN 01.2B：`monitor.api.ts` 9 个 endpoint 全部使用 `requestRaw<T>()`，返回类型分别为 `ConsoleRuntimeStatusSnapshot`、`CacheMetricsSnapshot`、`DeviceStatusSnapshot`、`CollectorMetrics[]`、`SystemResourceSnapshot`、`ExceptionStatsSnapshot`、`CloudReportMetricsResponse`、`StorageMetricsSnapshot`、`PerformanceStatsSnapshot`。
+2. RESOLVED IN 01.2B：`runtime.api.ts.getRuntimeStatus` 不再维护重复实现，改为 re-export `monitor.api.ts` 的同一 RAW wrapper。
+3. RESOLVED IN 01.2B：`config.api.ts` 20 个 endpoint 已按 ConfigController 契约 typed；稳定 response 走 `requestApiData<T>()`，`triggerFullConfigSync` 作为 `ApiResult<null>` command envelope 保留 message。
+4. RESOLVED IN 01.2B：`CollectionView` 配置摘要、`ConfigOpsPanel` sync/import 结果、`DeviceConfigPanel` 连接配置读取、`DashboardView` 主要 monitor refs 改为 typed access；diagnostic builders 与动态导入导出 helpers 保留 normalizer。
+5. 剩余：control/device/edge/ops/point/shadow 的 response DTO 补齐；错误模型、请求生命周期和性能重构未开始。

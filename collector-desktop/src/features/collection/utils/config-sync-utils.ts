@@ -1,3 +1,5 @@
+import type { ConfigSyncStatusResponse } from "@/types/config";
+
 export interface ConfigSyncTypeOption {
   type: string;
   label: string;
@@ -17,28 +19,17 @@ export const CONFIG_SYNC_TYPES: ConfigSyncTypeOption[] = [
   { type: "all", label: "全部配置" }
 ];
 
-export function normalizeSyncStatusItems(response: unknown): ConfigSyncStatusItem[] {
-  const record = unwrapDataRecord(response);
+export function normalizeSyncStatusItems(response: ConfigSyncStatusResponse | null | undefined): ConfigSyncStatusItem[] {
+  const source = response || {};
   return [
-    { label: "服务实例", value: valueText(record.serviceId) },
-    { label: "最近同步", value: timeText(record.lastSyncTime) },
-    { label: "同步间隔", value: record.syncInterval === undefined || record.syncInterval === null ? "-" : `${record.syncInterval} ms` },
-    { label: "监听器数量", value: valueText(record.listenerCount) },
-    { label: "连续失败", value: valueText(record.consecutiveFailures) },
-    { label: "配置源版本", value: valueText(record.sourceVersion) },
-    { label: "快照设备数", value: valueText(record.snapshotDeviceCount) }
+    { label: "服务实例", value: valueText(source.serviceId) },
+    { label: "最近同步", value: timeText(source.lastSyncTime) },
+    { label: "同步间隔", value: source.syncInterval === undefined || source.syncInterval === null ? "-" : `${source.syncInterval} ms` },
+    { label: "监听器数量", value: valueText(source.listenerCount) },
+    { label: "连续失败", value: valueText(source.consecutiveFailures) },
+    { label: "配置源版本", value: valueText(source.sourceVersion) },
+    { label: "快照设备数", value: valueText(source.snapshotDeviceCount) }
   ];
-}
-
-function unwrapDataRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  const record = value as Record<string, unknown>;
-  if (record.data && typeof record.data === "object" && !Array.isArray(record.data)) {
-    return record.data as Record<string, unknown>;
-  }
-  return record;
 }
 
 function valueText(value: unknown): string {

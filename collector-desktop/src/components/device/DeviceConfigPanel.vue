@@ -302,7 +302,7 @@ async function loadProtocolConfig() {
       getDeviceConnection(props.device.normalizedId)
     ]);
     protocolSchema.value = schema;
-    connectionConfig.value = normalizeConnectionPayload(connection);
+    connectionConfig.value = connection.connection || {};
     protocolModel.value = extractProtocolModel(protocolFields.value, connectionConfig.value);
     connectionMessage.value = "连接配置已读取";
   } catch (error) {
@@ -391,10 +391,6 @@ async function showDiff() {
   } catch (error) {
     protocolError.value = error instanceof Error ? error.message : "配置差异加载失败";
   }
-}
-
-function normalizeConnectionPayload(value: unknown): ConnectionPayload {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as ConnectionPayload : {};
 }
 
 function resolveSelectedWorkbenchPoint(rows: RealtimePointRow[], current: RealtimePointRow | null): RealtimePointRow | null {

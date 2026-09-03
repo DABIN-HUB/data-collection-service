@@ -70,6 +70,7 @@ import ConfigOpsPanel from "@/features/collection/components/ConfigOpsPanel.vue"
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
+import type { ConfigSummaryResponse } from "@/types/config";
 import type { DeviceInfo } from "@/types/device";
 import type { ProtocolSchema } from "@/types/protocol";
 
@@ -78,7 +79,7 @@ const deviceStore = useDeviceStore();
 const protocolStore = useProtocolStore();
 const route = useRoute();
 
-const configSummary = ref<unknown>({});
+const configSummary = ref<ConfigSummaryResponse | null>(null);
 const selectedProtocol = ref<ProtocolSchema | null>(null);
 const localEditorVisible = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
@@ -88,13 +89,13 @@ const initialized = ref(false);
 
 const collectionError = computed(() => deviceStore.error || protocolStore.error || configSummaryError.value);
 const collectionSummaryItems = computed(() => {
-  const summary = asRecord(configSummary.value);
-  const stats = asRecord(summary.cacheStats);
+  const summary = configSummary.value;
+  const stats = summary?.cacheStats;
   return [
-    { label: "设备配置", value: `${valueOf(stats, ["deviceCount"], valueOf(summary, ["deviceCount"], deviceStore.devices.length))} 台` },
-    { label: "点位总数", value: `${valueOf(stats, ["pointCount"], valueOf(summary, ["pointCount"], sumPoints(deviceStore.devices)))} 个` },
-    { label: "连接配置", value: `${valueOf(stats, ["connectionCount"], valueOf(summary, ["connectionCount"], deviceStore.devices.length))} 个` },
-    { label: "配置来源", value: String(valueOf(summary, ["configSource", "source"], "当前运行配置")) }
+    { label: "设备配置", value: `${stats?.deviceCount ?? deviceStore.devices.length} 台` },
+    { label: "点位总数", value: `${stats?.pointCount ?? sumPoints(deviceStore.devices)} 个` },
+    { label: "连接配置", value: `${stats?.connectionCount ?? deviceStore.devices.length} 个` },
+    { label: "配置来源", value: summary?.serviceId ? "当前运行配置" : "未知" }
   ];
 });
 
@@ -130,7 +131,7 @@ async function loadConfigSummary() {
     configSummary.value = await getConfigSummary();
     configSummaryError.value = "";
   } catch (error) {
-    configSummary.value = {};
+    configSummary.value = null;
     configSummaryError.value = error instanceof Error ? error.message : "配置摘要加载失败";
   }
 }

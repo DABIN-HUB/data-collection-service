@@ -146,7 +146,7 @@ import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { buildAlarmIdentity } from "@/features/alarm/utils/alarm-utils";
-import type { AlarmRow } from "@/types/monitor";
+import type { AlarmRow, CacheMetricsSnapshot, CloudReportMetricsResponse, ConsoleRuntimeStatusSnapshot, PerformanceStatsSnapshot, StorageMetricsSnapshot, SystemResourceSnapshot } from "@/types/monitor";
 import type { LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 
 const appStore = useAppStore();
@@ -155,12 +155,12 @@ const protocolStore = useProtocolStore();
 const router = useRouter();
 
 const recentAlarms = ref<AlarmRow[]>([]);
-const reportMetrics = ref<unknown>({});
-const runtimeStatus = ref<unknown>({});
-const systemResource = ref<unknown>({});
-const cacheMetrics = ref<unknown>({});
-const storageMetrics = ref<unknown>({});
-const performanceDetail = ref<unknown>({});
+const reportMetrics = ref<CloudReportMetricsResponse | null>(null);
+const runtimeStatus = ref<ConsoleRuntimeStatusSnapshot | null>(null);
+const systemResource = ref<SystemResourceSnapshot | null>(null);
+const cacheMetrics = ref<CacheMetricsSnapshot | null>(null);
+const storageMetrics = ref<StorageMetricsSnapshot | null>(null);
+const performanceDetail = ref<PerformanceStatsSnapshot | null>(null);
 const lastRefresh = ref<Date | null>(null);
 const dashboardLoading = ref(false);
 const localEditorVisible = ref(false);
@@ -172,43 +172,43 @@ const onlineCount = computed(() => deviceStore.onlineCount);
 const offlineCount = computed(() => deviceStore.offlineCount + deviceStore.errorCount);
 const totalPointCount = computed(() => deviceStore.totalPointCount);
 const riskDevices = computed(() => deviceStore.devices.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
-const reportState = computed(() => Object.keys(asRecord(reportMetrics.value)).length ? "已加载" : "未知");
-const runtimeState = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "资源已加载" : "资源未知");
+const reportState = computed(() => reportMetrics.value ? "已加载" : "未知");
+const runtimeState = computed(() => runtimeStatus.value ? "资源已加载" : "资源未知");
 const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
 
 const overviewCards = computed(() => {
-  const cacheRatio = ratioFrom(valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], null)));
+  const cacheRatio = ratioFrom(cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate ?? null);
   return [
     { label: "采集器总数", value: deviceCount.value, meta: [["已连接", onlineCount.value], ["未连接", offlineCount.value]] },
-    { label: "点位总数", value: totalPointCount.value, meta: [["连接配置", deviceCount.value], ["上报属性", valueOf(reportMetrics.value, ["reportFieldCount", "reportedProperties"], "-")]] },
+    { label: "点位总数", value: totalPointCount.value, meta: [["连接配置", deviceCount.value], ["上报属性", reportMetrics.value?.configured?.reportFieldPointCount ?? reportMetrics.value?.configured?.reportablePointCount ?? "-"]] },
     { label: "全局告警", value: recentAlarms.value.length, subtext: recentAlarms.value.length ? "最近告警记录" : "最近 24 小时没有告警历史记录" },
     { label: "运行设备", value: onlineCount.value, meta: [["缺失连接", offlineCount.value], ["健康连接", onlineCount.value]] },
     { label: "缓存命中率", value: cacheRatio === null ? "-" : percentText(cacheRatio), ring: true, subtext: cacheRatio === null ? "缓存指标不可用" : "缓存访问指标" },
-    { label: "云上报链路", value: reportState.value, subtext: Object.keys(asRecord(reportMetrics.value)).length ? "上报状态已加载" : "上报监控数据不可用" }
+    { label: "云上报链路", value: reportState.value, subtext: reportMetrics.value ? "上报状态已加载" : "上报监控数据不可用" }
   ];
 });
 
 const collectorToneClass = computed(() => riskDevices.value.some((device) => String(device.status || "").toUpperCase() === "ERROR") ? "is-error" : (riskDevices.value.length ? "is-warn" : (deviceStore.devices.length ? "is-ok" : "is-muted")));
 const runningToneClass = computed(() => onlineCount.value > 0 ? "is-ok" : "is-muted");
-const gatewayToneClass = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "is-ok" : "is-muted");
-const cacheToneClass = computed(() => ratioFrom(valueOf(cacheMetrics.value, ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"], valueOf(runtimeStatus.value, ["cacheHitRatio", "hitRatio", "cacheHitRate"], null))) === null ? "is-muted" : "is-ok");
-const storageToneClass = computed(() => Object.keys(asRecord(storageMetrics.value)).length ? "is-ok" : "is-muted");
+const gatewayToneClass = computed(() => runtimeStatus.value ? "is-ok" : "is-muted");
+const cacheToneClass = computed(() => ratioFrom(cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate ?? null) === null ? "is-muted" : "is-ok");
+const storageToneClass = computed(() => storageMetrics.value ? "is-ok" : "is-muted");
 const cloudToneClass = computed(() => {
-  const status = String(valueOf(reportMetrics.value, ["status", "state"], "UNKNOWN")).toUpperCase();
+  const status = String(reportMetrics.value?.status || "UNKNOWN").toUpperCase();
   if (["ERROR", "FAILED", "DOWN"].includes(status)) return "is-error";
   if (["WARN", "WARNING", "DEGRADED"].includes(status)) return "is-warn";
-  return Object.keys(asRecord(reportMetrics.value)).length ? "is-ok" : "is-muted";
+  return reportMetrics.value ? "is-ok" : "is-muted";
 });
 const collectorDetail = computed(() => `${onlineCount.value}/${deviceCount.value} 已连接`);
-const gatewayDetail = computed(() => Object.keys(asRecord(runtimeStatus.value)).length ? "处理指标已加载" : "处理性能数据不可用");
+const gatewayDetail = computed(() => runtimeStatus.value ? "处理指标已加载" : "处理性能数据不可用");
 const resourceGauges = computed(() => {
-  const resource = asRecord(systemResource.value);
-  const cpu = ratioFrom(valueOf(resource, ["systemCpuLoad", "cpuLoad", "processCpuLoad"], null));
-  const totalMemory = optionalNumber(valueOf(resource, ["totalPhysicalMemorySize", "totalMemory", "memoryTotal"], null));
-  const freeMemory = optionalNumber(valueOf(resource, ["freePhysicalMemorySize", "freeMemory", "memoryFree"], null));
+  const resource = systemResource.value;
+  const cpu = ratioFrom(resource?.systemCpuLoad ?? resource?.processCpuLoad ?? null);
+  const totalMemory = optionalNumber(resource?.totalPhysicalMemorySize ?? null);
+  const freeMemory = optionalNumber(resource?.freePhysicalMemorySize ?? null);
   const memory = totalMemory !== null && freeMemory !== null && totalMemory > 0 ? 1 - freeMemory / totalMemory : null;
-  const heapUsed = optionalNumber(valueOf(resource, ["heapUsed", "usedHeap", "jvmHeapUsed"], null));
-  const heapMax = optionalNumber(valueOf(resource, ["heapMax", "maxHeap", "jvmHeapMax"], null));
+  const heapUsed = optionalNumber(resource?.heapUsed ?? null);
+  const heapMax = optionalNumber(resource?.heapMax ?? null);
   const heap = heapUsed !== null && heapMax !== null && heapMax > 0 ? heapUsed / heapMax : null;
   return [
     { label: "CPU 使用率", tone: "blue", value: percentText(cpu), degrees: ratioDegrees(cpu) },
@@ -217,32 +217,28 @@ const resourceGauges = computed(() => {
   ];
 });
 const resourceSummary = computed(() => {
-  const resource = asRecord(systemResource.value);
-  const pools = asRecord(resource.threadPools);
+  const resource = systemResource.value;
+  const pools = resource?.threadPools || {};
   let activeThreads = 0;
   let maxThreads = 0;
   let queuedTasks = 0;
   let rejectedTasks = 0;
   for (const pool of Object.values(pools)) {
-    const record = asRecord(pool);
-    activeThreads += numberValue(record.activeCount, 0);
-    maxThreads += numberValue(record.maxPoolSize, 0);
-    queuedTasks += numberValue(record.queueSize, 0);
-    rejectedTasks += numberValue(record.rejectedCount, 0);
+    activeThreads += numberValue(pool?.activeCount, 0);
+    maxThreads += numberValue(pool?.maxPoolSize, 0);
+    queuedTasks += numberValue(pool?.queueSize, 0);
+    rejectedTasks += numberValue(pool?.rejectedCount, 0);
   }
-  const executor = asRecord(asRecord(reportMetrics.value).executor);
-  if (maxThreads === 0 && Object.keys(executor).length) {
+  const executor = reportMetrics.value?.executor;
+  if (maxThreads === 0 && executor) {
     activeThreads = numberValue(executor.activeCount, 0);
     maxThreads = numberValue(executor.maxPoolSize, 0);
     queuedTasks = numberValue(executor.queueSize, 0);
     rejectedTasks = numberValue(executor.rejectedCount, 0);
   }
-  const perf = asRecord(performanceDetail.value);
-  if (maxThreads === 0 && Object.keys(perf).length) {
-    activeThreads = numberValue(valueOf(perf, ["activeThreads", "activeCount", "collectActiveCount", "processActiveCount"], 0));
-    maxThreads = numberValue(valueOf(perf, ["maxThreads", "maxPoolSize", "collectMaxPoolSize", "processMaxPoolSize"], 0));
-    queuedTasks = numberValue(valueOf(perf, ["queuedTasks", "queueSize", "collectQueueSize", "processQueueSize"], 0));
-    rejectedTasks = numberValue(valueOf(perf, ["rejectedTasks", "rejectedCount", "batchDispatchRejectedCount", "collectRejectedCount", "processRejectedCount"], 0));
+  const perf = performanceDetail.value;
+  if (maxThreads === 0 && perf) {
+    rejectedTasks = numberValue(perf.batchDispatchRejectedCount, 0) + numberValue(perf.collectRejectedCount, 0) + numberValue(perf.processRejectedCount, 0);
   }
   const usage = maxThreads > 0 ? Math.max(0, Math.min(100, Math.round((activeThreads / maxThreads) * 100))) : 0;
   return {
@@ -250,7 +246,7 @@ const resourceSummary = computed(() => {
     maxThreads: maxThreads > 0 ? String(maxThreads) : "-",
     queuedTasks: maxThreads > 0 ? String(queuedTasks) : "-",
     threadUsage: `${usage}%`,
-    title: `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${valueOf(resource, ["threadCount"], "-")} 个`
+    title: `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${resource?.threadCount ?? "-"} 个`
   };
 });
 
@@ -379,20 +375,6 @@ function riskDescription(device: DeviceViewModel): string {
   if (status.toUpperCase() === "OFFLINE") return "当前设备离线，配置存在但运行连接未建立";
   if (status.toUpperCase() === "ERROR") return "当前设备处于异常状态，请检查连接和协议配置";
   return `当前状态 ${status}`;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function valueOf(value: unknown, keys: string[], fallback: unknown): unknown {
-  const record = asRecord(value);
-  for (const key of keys) {
-    if (record[key] !== undefined && record[key] !== null) {
-      return record[key];
-    }
-  }
-  return fallback;
 }
 
 function numberValue(value: unknown, fallback = 0): number {

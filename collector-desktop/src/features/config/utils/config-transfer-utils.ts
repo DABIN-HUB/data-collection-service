@@ -1,3 +1,5 @@
+import type { ConfigImportRequest } from "@/types/config";
+
 export function normalizeConfigExportText(response: unknown): string {
   if (typeof response === "string") {
     return response;
@@ -18,7 +20,7 @@ export function parseConfigImportText(text: string): unknown {
   }
 }
 
-export function buildConfigImportRequest(parsed: unknown, reloadAfterImport: boolean): Record<string, unknown> {
+export function buildConfigImportRequest(parsed: unknown, reloadAfterImport: boolean): ConfigImportRequest {
   return {
     bundles: resolveBundles(parsed),
     reloadAfterImport
@@ -33,19 +35,19 @@ export function buildConfigExportFilename(date = new Date()): string {
   return `collector-device-config-${date.toISOString().replace(/[:.]/g, "-")}.json`;
 }
 
-function resolveBundles(value: unknown): unknown[] {
+function resolveBundles(value: unknown): ConfigImportRequest["bundles"] {
   if (Array.isArray(value)) {
-    return value;
+    return value as ConfigImportRequest["bundles"];
   }
   if (!value || typeof value !== "object") {
     return [];
   }
   const record = value as Record<string, unknown>;
   if (Array.isArray(record.bundles)) {
-    return record.bundles;
+    return record.bundles as ConfigImportRequest["bundles"];
   }
   if (record.device || record.connection || record.points) {
-    return [record];
+    return [record as ConfigImportRequest["bundles"][number]];
   }
   return [];
 }

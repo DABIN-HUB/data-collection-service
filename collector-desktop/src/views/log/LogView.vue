@@ -82,7 +82,7 @@ import {
 } from "@/features/log/utils/log-utils";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
-import type { LogRow } from "@/types/monitor";
+import type { ExceptionStatsSnapshot, LogRow } from "@/types/monitor";
 
 const appStore = useAppStore();
 const deviceStore = useDeviceStore();
@@ -152,10 +152,8 @@ async function searchLatestExceptionLogs() {
   }
   exceptionLoading.value = true;
   try {
-    const root = asRecord(await getExceptionStats());
-    const data = asRecord(root.data);
-    const source = Object.keys(data).length ? data : root;
-    const recent = extractArray<Record<string, unknown>>(source, ["recent", "items", "records"]);
+    const root: ExceptionStatsSnapshot = await getExceptionStats();
+    const recent = Array.isArray(root.recent) ? root.recent : [];
     if (!recent.length) {
       ElMessage.warning("当前没有最近异常可用于日志定位");
       return;
@@ -253,23 +251,6 @@ function normalizeRouteQuery(value: unknown): string {
     return value.length > 0 ? String(value[0] ?? "") : "";
   }
   return value === undefined || value === null ? "" : String(value);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function extractArray<T>(value: unknown, keys: string[]): T[] {
-  if (Array.isArray(value)) {
-    return value as T[];
-  }
-  const record = asRecord(value);
-  for (const key of keys) {
-    if (Array.isArray(record[key])) {
-      return record[key] as T[];
-    }
-  }
-  return [];
 }
 
 async function initializeLogView() {
