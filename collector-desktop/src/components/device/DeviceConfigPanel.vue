@@ -174,7 +174,12 @@
           </div>
           <PointEditor v-if="pointEditVisible" class="embedded-point-editor" :device-id="device.normalizedId" :protocol="protocolSchema" :protocol-code="protocolKey" @open-history="$emit('open-history', $event)" @open-realtime="$emit('open-realtime', $event)" />
         </template>
-        <RealtimeDataPanel v-else-if="activeTab === 'realtime'" :device-id="device.normalizedId" />
+        <RealtimeDataPanel
+          v-else-if="activeTab === 'realtime'"
+          :device-id="device.normalizedId"
+          :auto-refresh="true"
+          :refresh-interval-ms="5000"
+        />
         <AlarmTablePanel v-else-if="activeTab === 'alarm'" :device-id="device.normalizedId" />
         <LogPanel v-else :device-id="device.normalizedId" />
       </section>

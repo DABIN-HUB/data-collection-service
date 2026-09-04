@@ -96,20 +96,20 @@
 ### row key
 
 - `RealtimeView` 表格 key：``${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}``，对正常点位稳定。
-- `websocket.store.ts` 的 `rowKey()` fallback 使用 `Math.random()`：当 WS 消息缺少 `pointId/pointCode/address` 时 key 不稳定，会导致无法合并同一行。
+- RESOLVED IN 01.4B：`websocket.store.ts` 已删除 `Math.random()` fallback，WebSocket 实时行优先使用 `pointId / pointCode / address`，必要时退化为 `deviceId + pointName`；缺少稳定 identity 的匿名行不再随机生成 key。
 
 ## 4. WebSocket 当前实现状态
 
 | 问题 | 当前结论 |
 |---|---|
-| 哪些页面真正使用 websocket store | 只有嵌入组件 `src/components/realtime/RealtimeDataPanel.vue` 使用 `useWebSocketStore()` 并在挂载/设备变化时调用 `connectRealtime()`。 |
+| 哪些页面真正使用 websocket store | 只有嵌入组件 `src/components/realtime/RealtimeDataPanel.vue` 使用 `useWebSocketStore()`；默认不自动连接，只有用户显式启用实时通道后才建立 WebSocket。 |
 | `RealtimeView` 是否实际使用 | 不使用。主路由 `src/views/realtime/RealtimeView.vue` 只走 HTTP polling。 |
-| 后端是否有 `/ws/realtime` | 未发现真实 Spring WebSocket endpoint。`collector-application/src/main/java/com/wangbin/collector/api/service/WebSocketService.java` 只是空预留类；搜索到的其他 WebSocket 多为采集协议/TDengine，不是控制台实时推送。 |
+| 后端是否有 `/ws/realtime` | `NOT IMPLEMENTED`。未发现真实 Spring WebSocket endpoint。`collector-application/src/main/java/com/wangbin/collector/api/service/WebSocketService.java` 只是空预留类；搜索到的其他 WebSocket 多为采集协议/TDengine，不是控制台实时推送。 |
 | WS URL | `buildRealtimeWebSocketUrl(serverUrl, deviceId)` 生成 `{serverUrl}/ws/realtime?deviceId=...`。 |
-| 是否自动重连 | 否。`onerror/onclose` 只更新状态，不做重连。 |
-| stale socket callback 风险 | 有。socket 为模块级单例，callbacks 捕获旧 deviceId，没有 generation guard。 |
-| 解析错误是否可观测 | 否。`parseRealtimePayload()` JSON parse 失败直接返回 `[]`。 |
-| HTTP 与 WS 当前关系 | 嵌入 `RealtimeDataPanel` 优先显示 WS rows，若 WS rows 为空则显示 HTTP rows；主 `RealtimeView` 与 WS 无关系。 |
+| 是否自动重连 | RESOLVED IN 01.4B：首次 handshake 失败不自动重连；只有曾成功连接过的通道才允许最多 5 次指数退避重连（1s/2s/4s/8s/16s）。 |
+| stale socket callback 风险 | RESOLVED IN 01.4B：按 store-instance runtime + `connectionGeneration` 守卫 `onopen/onmessage/onerror/onclose`，旧 socket callback 不再污染新设备或新连接。 |
+| 解析错误是否可观测 | RESOLVED IN 01.4B：`parseRealtimePayload()` 现区分 `VALID / INVALID_JSON / UNSUPPORTED_PAYLOAD`，并在 store 中记录 `parseErrorCount / lastParseError / lastParseErrorAt`。 |
+| HTTP 与 WS 当前关系 | RESOLVED IN 01.4B：生产默认 transport 仍是 HTTP；`RealtimeDataPanel` 仅在当前连接已收到有效 WS rows 时才优先显示 WS，否则继续显示并轮询 HTTP fallback。WS 断开/不可用后会立即回退 HTTP。 |
 
 ## 5. PointEditor 性能基线
 
@@ -151,7 +151,7 @@ Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh owne
 8. RESOLVED IN 01.3C：`device.store.refresh()`、`point.store.load/save()`、`protocol.store.refresh()/loadFields()`、`runtime.store.refresh()` 已完成 generation ownership 修复。
 9. RESOLVED IN 01.3C：`LogView.loadLogs()` 与 `DashboardView.loadDashboard()` 已完成 latest cycle / latest query ownership 修复；`DiagnosticView` 已审计为 `AUDITED / NO CHANGE`。
 10. RESOLVED IN 01.3C-R1：`PointEditor.loadRealtime()` 设备切换 stale success/error/loading ownership 已完成收口。
-11. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
+11. RESOLVED IN 01.4B：WebSocket store 已补 store-instance runtime ownership、connection generation guard、有限重连、parse observability、稳定 row identity 和 stale WS rows → HTTP fallback 回切；后端 `/ws/realtime` 仍未实现，因此 WebSocket 仅为前端安全可选路径，生产默认仍为 HTTP aggregate polling。
 12. `PointEditor.runtimeOf()` O(P²) 渲染风险。
 13. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
 
