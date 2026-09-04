@@ -1,6 +1,7 @@
 import { requestRaw } from "./http";
 import type {
   AdaptiveResetResponse,
+  AllDeviceRealtimeDataResponse,
   AlarmHistoryDataResponse,
   AlarmRow,
   DeviceListResponse,
@@ -22,6 +23,10 @@ export function getDeviceRealtimeData(deviceId: string, pointIds?: string[]): Pr
     method: "GET",
     params: pointIds?.length ? { pointIds: pointIds.join(",") } : undefined
   });
+}
+
+export function getAllDeviceRealtimeData(): Promise<AllDeviceRealtimeDataResponse> {
+  return requestRaw<AllDeviceRealtimeDataResponse>({ url: "/api/data/realtime", method: "GET" });
 }
 
 export function getAllDeviceDataSummaries(): Promise<DeviceListResponse> {

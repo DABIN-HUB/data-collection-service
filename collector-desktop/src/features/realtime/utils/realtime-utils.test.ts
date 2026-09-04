@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRealtimeSummary,
   extractRealtimeDeviceIds,
+  normalizeAllDeviceRealtimeRows,
   normalizeRealtimeRows,
   normalizeSinglePointRealtimeRow,
   realtimeAddress,
@@ -37,6 +38,20 @@ describe("realtime-utils", () => {
 
   it("从 DataController 设备摘要提取全设备实时查询 deviceId", () => {
     expect(extractRealtimeDeviceIds({ devices: [{ deviceId: "dev-1", pointCount: 2 }, { deviceId: "", pointCount: 1 }] })).toEqual(["dev-1"]);
+  });
+
+  it("归一化全部设备聚合实时响应，并跳过失败设备", () => {
+    expect(normalizeAllDeviceRealtimeRows({
+      status: "success",
+      deviceCount: 2,
+      dataCount: 2,
+      devices: [
+        { status: "success", deviceId: "dev-1", dataCount: 1, data: { p1: { pointName: "温度", value: 21 } } },
+        { status: "error", deviceId: "dev-2", dataCount: 0, message: "设备不存在或无数据点" }
+      ]
+    })).toEqual([
+      { deviceId: "dev-1", pointId: "p1", pointName: "温度", value: 21 }
+    ]);
   });
 
   it("归一化单点实时响应", () => {

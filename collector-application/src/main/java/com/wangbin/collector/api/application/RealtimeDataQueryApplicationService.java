@@ -1,5 +1,6 @@
 package com.wangbin.collector.api.application;
 
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceBriefResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,7 @@ public class RealtimeDataQueryApplicationService {
 
     private static final String STATUS_SUCCESS = "success";
     private static final String STATUS_ERROR = "error";
+    private static final String DEVICE_POINTS_MISSING_MESSAGE = "设备不存在或无数据点";
 
     private final MultiLevelCacheManager cacheManager;
     private final ConfigManager configManager;
@@ -90,7 +93,7 @@ public class RealtimeDataQueryApplicationService {
             if (dataPoints.isEmpty()) {
                 return DeviceRealtimeDataResponse.builder()
                         .status(STATUS_ERROR)
-                        .message("设备不存在或无数据点")
+                        .message(DEVICE_POINTS_MISSING_MESSAGE)
                         .timestamp(System.currentTimeMillis())
                         .build();
             }
@@ -101,12 +104,10 @@ public class RealtimeDataQueryApplicationService {
                         .toList();
             }
 
-            Map<CacheKey, Object> values = cacheManager.getAll(buildCacheKeys(deviceId, dataPoints));
-            Map<String, PointRealtimePayload> dataMap = new LinkedHashMap<>();
-            for (DataPoint point : dataPoints) {
-                CacheKey cacheKey = CacheKey.dataKey(deviceId, point.getPointId());
-                dataMap.put(point.getPointId(), buildPointPayload(point, values.get(cacheKey)));
-            }
+            Map<CacheKey, Object> values = dataPoints.isEmpty()
+                    ? Collections.emptyMap()
+                    : cacheManager.getAll(buildCacheKeys(deviceId, dataPoints));
+            Map<String, PointRealtimePayload> dataMap = buildPointDataMap(deviceId, dataPoints, values);
 
             return DeviceRealtimeDataResponse.builder()
                     .status(STATUS_SUCCESS)
@@ -120,6 +121,69 @@ public class RealtimeDataQueryApplicationService {
             return DeviceRealtimeDataResponse.builder()
                     .status(STATUS_ERROR)
                     .message("查询失败: " + exception.getMessage())
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        }
+    }
+
+    /**
+     * 查询全部设备的实时数据。
+     *
+     * @return 全设备实时数据聚合响应
+     */
+    public AllDeviceRealtimeDataResponse getAllRealtimeData() {
+        try {
+            List<String> deviceIds = configManager.getAllDeviceIds();
+            if (deviceIds.isEmpty()) {
+                return AllDeviceRealtimeDataResponse.builder()
+                        .status(STATUS_SUCCESS)
+                        .deviceCount(0)
+                        .dataCount(0)
+                        .devices(List.of())
+                        .timestamp(System.currentTimeMillis())
+                        .build();
+            }
+
+            Map<String, List<DataPoint>> pointsByDevice = new LinkedHashMap<>();
+            List<CacheKey> allCacheKeys = new ArrayList<>();
+            for (String deviceId : deviceIds) {
+                List<DataPoint> dataPoints = configManager.getDataPoints(deviceId);
+                List<DataPoint> safePoints = dataPoints != null ? dataPoints : List.of();
+                pointsByDevice.put(deviceId, safePoints);
+                if (!safePoints.isEmpty()) {
+                    allCacheKeys.addAll(buildCacheKeys(deviceId, safePoints));
+                }
+            }
+
+            Map<CacheKey, Object> values = allCacheKeys.isEmpty()
+                    ? Collections.emptyMap()
+                    : cacheManager.getAll(allCacheKeys);
+            List<DeviceRealtimeDataResponse> devices = new ArrayList<>();
+            int totalDataCount = 0;
+            for (Map.Entry<String, List<DataPoint>> entry : pointsByDevice.entrySet()) {
+                DeviceRealtimeDataResponse response = buildAggregateDeviceRealtimeDataResponse(
+                        entry.getKey(),
+                        entry.getValue(),
+                        values);
+                devices.add(response);
+                totalDataCount += response.getDataCount() == null ? 0 : response.getDataCount();
+            }
+
+            return AllDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_SUCCESS)
+                    .deviceCount(devices.size())
+                    .dataCount(totalDataCount)
+                    .devices(devices)
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        } catch (Exception exception) {
+            log.error("查询全部设备实时数据失败", exception);
+            return AllDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_ERROR)
+                    .message("查询失败: " + exception.getMessage())
+                    .deviceCount(0)
+                    .dataCount(0)
+                    .devices(List.of())
                     .timestamp(System.currentTimeMillis())
                     .build();
         }
@@ -200,6 +264,56 @@ public class RealtimeDataQueryApplicationService {
             cacheKeys.add(CacheKey.dataKey(deviceId, point.getPointId()));
         }
         return cacheKeys;
+    }
+
+    /**
+     * 构建设备点位实时数据映射。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param dataPoints 点位配置列表
+     * @param values 缓存值映射
+     * @return 点位实时数据映射
+     */
+    private Map<String, PointRealtimePayload> buildPointDataMap(String deviceId,
+                                                                List<DataPoint> dataPoints,
+                                                                Map<CacheKey, Object> values) {
+        Map<String, PointRealtimePayload> dataMap = new LinkedHashMap<>();
+        for (DataPoint point : dataPoints) {
+            CacheKey cacheKey = CacheKey.dataKey(deviceId, point.getPointId());
+            dataMap.put(point.getPointId(), buildPointPayload(point, values.get(cacheKey)));
+        }
+        return dataMap;
+    }
+
+    /**
+     * 构建全设备聚合场景下的单设备实时响应。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param dataPoints 点位配置列表
+     * @param values 聚合缓存值映射
+     * @return 单设备实时响应
+     */
+    private DeviceRealtimeDataResponse buildAggregateDeviceRealtimeDataResponse(String deviceId,
+                                                                                List<DataPoint> dataPoints,
+                                                                                Map<CacheKey, Object> values) {
+        if (dataPoints == null || dataPoints.isEmpty()) {
+            return DeviceRealtimeDataResponse.builder()
+                    .status(STATUS_ERROR)
+                    .deviceId(deviceId)
+                    .message(DEVICE_POINTS_MISSING_MESSAGE)
+                    .dataCount(0)
+                    .data(Collections.emptyMap())
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        }
+        Map<String, PointRealtimePayload> dataMap = buildPointDataMap(deviceId, dataPoints, values);
+        return DeviceRealtimeDataResponse.builder()
+                .status(STATUS_SUCCESS)
+                .deviceId(deviceId)
+                .dataCount(dataMap.size())
+                .data(dataMap)
+                .timestamp(System.currentTimeMillis())
+                .build();
     }
 
     /**

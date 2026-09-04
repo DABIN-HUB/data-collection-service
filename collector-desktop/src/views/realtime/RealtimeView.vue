@@ -107,14 +107,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 
-import { getAllDeviceDataSummaries, getDeviceRealtimeData, getPointRealtimeData } from "@/api/data.api";
+import { getPointRealtimeData } from "@/api/data.api";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import type { RealtimePointRow } from "@/types/monitor";
 import {
   buildRealtimeSummary,
-  extractRealtimeDeviceIds,
-  normalizeRealtimeRows,
   normalizeSinglePointRealtimeRow,
   realtimeAddress,
   realtimeProcessingText,
@@ -123,6 +121,7 @@ import {
   realtimeScale,
   realtimeValueText
 } from "@/features/realtime/utils/realtime-utils";
+import { loadRealtimeRowsByContext } from "@/features/realtime/utils/realtime-load-strategy";
 import {
   createLatestRealtimeRequestOwner,
   shouldDisableRealtimeSubmit,
@@ -184,51 +183,7 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
   loading.value = true;
   realtimeError.value = "";
   try {
-    if (requestContext.mode === "device" && requestContext.deviceId) {
-      const response = await getDeviceRealtimeData(requestContext.deviceId);
-      const rows = normalizeRealtimeRows(response, requestContext.deviceId);
-      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
-        return;
-      }
-      realtimeRows.value = rows;
-      return;
-    }
-
-    if (!deviceStore.devices.length && !deviceStore.loading) {
-      await deviceStore.refresh();
-      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
-        return;
-      }
-    }
-
-    const deviceSummaryResponse = await getAllDeviceDataSummaries();
-    if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
-      return;
-    }
-    const summaries = normalizeRealtimeRows(deviceSummaryResponse);
-    const deviceIds = Array.from(
-      new Set([
-        ...extractRealtimeDeviceIds(deviceSummaryResponse),
-        ...summaries.map((row) => String(row.deviceId || "")).filter(Boolean),
-        ...deviceStore.devices.map((device) => device.normalizedId).filter(Boolean)
-      ])
-    );
-    if (deviceIds.length === 0) {
-      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
-        return;
-      }
-      realtimeRows.value = [];
-      return;
-    }
-    const results = await Promise.allSettled(
-      deviceIds.map(async (deviceId) => normalizeRealtimeRows(await getDeviceRealtimeData(deviceId), deviceId))
-    );
-    const rows = results.flatMap((result, index) => {
-      if (result.status === "fulfilled" && result.value.length) {
-        return result.value;
-      }
-      return summaries.filter((row) => row.deviceId === deviceIds[index]);
-    });
+    const rows = await loadRealtimeRowsByContext(requestContext);
     if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
       return;
     }

@@ -81,17 +81,17 @@
 ### 全设备模式
 
 - 稳态每次 refresh：
-  1. `GET /api/data/devices` 一次，获取设备摘要；
-  2. 对 `deviceIds` 中每台设备并行请求 `GET /api/data/device/{deviceId}`。
-- 稳态请求数量：`N + 1`，其中 `N` 是参与实时刷新的设备数。
-- 首次进入页面时，`initializeRealtimeView()` 先执行 `deviceStore.refresh()`，额外触发 `GET /api/config/devices` 和 `GET /api/device/runtime`，因此首屏全设备路径理论请求数约 `N + 3`。
-- 如果 `loadRealtime()` 内发现 `deviceStore.devices` 为空，还会先执行一次 `deviceStore.refresh()`，同样会增加 2 个请求。
+  1. `GET /api/data/realtime` 一次，返回全部设备的实时点位聚合结果；
+  2. 前端按 `devices[].deviceId` 展开并归一化为 `RealtimePointRow[]`。
+- 稳态请求数量：`1`，不再随设备数 `N` 线性增长。
+- 首次进入页面时，`initializeRealtimeView()` 仍会先执行 `deviceStore.refresh()`，额外触发 `GET /api/config/devices` 和 `GET /api/device/runtime`；但全设备 realtime transport 本身已收敛为单次 `GET /api/data/realtime`。
+- 聚合接口只解决 HTTP request count；响应 payload 与前端归一化处理仍随总点位数 `P` 增长，复杂度为 `O(P)`。
 
 ### 5 秒自动刷新请求量
 
 - 单设备：`0.2 req/s`。
-- 全设备稳态：`(N + 1) / 5 req/s = 0.2N + 0.2 req/s`。
-- 示例：`N=10` 时约 `2.2 req/s`；`N=100` 时约 `20.2 req/s`；所有请求在同一 refresh 内并行发起。
+- 全设备稳态：`1 / 5 req/s = 0.2 req/s`。
+- `N=10`、`N=100` 等不同设备规模下，请求数量都保持 `O(1)`；变化的是响应 payload 与点位处理量，不是 HTTP 次数。
 
 ### row key
 
@@ -125,7 +125,7 @@
 | CSV 导入 | `validatePointImportFile()` 限制 `.csv`、最大 1MB；`parsePointCsv()` 限制 2000 行。 | 解析在主线程，2000 行内可接受；预览表渲染 2000 行仍可能卡顿。 |
 | CSV preview | `buildPointImportPreview()` 检查重复 pointCode/address，确认后一次性 replace。 | 合理；大 preview 可作为后续 UI 性能任务。 |
 | 批量编辑 | `applyBatch()` 对 points 做一次 map，仅修改 selected ids。 | O(P)，可接受。 |
-| 保存后 reload | `point.store.save()` 成功后 `await this.load(deviceId)`。 | 数据一致性好；但保存/刷新并发无 sequence，见 lifecycle P2。 |
+| 保存后 reload | `point.store.save()` 成功后 `await this.load(deviceId)`。 | 数据一致性好；save/load lifecycle 已在 01.3C 收口，当前剩余问题是 `runtimeOf()` 的 O(P²) 渲染成本。 |
 
 结论：`runtimeOf(point)` 存在大点位数量下重复线性查找问题。Task 01.1 只记录，不引入 virtual table / worker / pagination。
 
@@ -136,7 +136,7 @@ Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh owne
 ### P0（克制，仅生产不可接受风险）
 
 1. RESOLVED IN 01.3A：`RealtimeView.loadRealtime()` 设备切换/全设备切换的旧响应覆盖问题已修复，主实时查询改为 latest-request-wins。
-2. Realtime 全设备模式默认 5 秒刷新产生 `N + 1` HTTP 请求，设备数大时高频请求放大。
+2. RESOLVED IN 01.4A：Realtime 全设备模式改为 `1 × GET /api/data/realtime` 聚合查询，HTTP 请求数不再随设备数 `N` 线性增长；后端查询优先走单轮 `cacheManager.getAll(...)` 批量聚合。
 3. RESOLVED IN 01.2A：Realtime 全设备 fallback 不再把 `DeviceListResponse.devices` 设备摘要当作实时点位行显示；后续仍需补失败设备错误状态。
 
 ### P1

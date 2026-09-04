@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,6 +59,22 @@ class RealtimeDataApplicationServiceTest {
 
         assertEquals(400, response.getCode());
         assertEquals("重置失败", response.getMessage());
+    }
+
+    @Test
+    void getAllRealtimeDataShouldDelegateToQueryApplicationService() {
+        AllDeviceRealtimeDataResponse expected = AllDeviceRealtimeDataResponse.builder()
+                .status("success")
+                .deviceCount(1)
+                .dataCount(2)
+                .timestamp(1000L)
+                .build();
+        when(realtimeDataQueryApplicationService.getAllRealtimeData()).thenReturn(expected);
+
+        AllDeviceRealtimeDataResponse response = service.getAllRealtimeData();
+
+        assertSame(expected, response);
+        verify(realtimeDataQueryApplicationService).getAllRealtimeData();
     }
 
     private DataPoint point(String deviceId, String pointId) {

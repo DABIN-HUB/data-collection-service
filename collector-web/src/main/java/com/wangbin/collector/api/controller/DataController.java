@@ -2,6 +2,7 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.RealtimeDataApplicationService;
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
@@ -54,6 +55,16 @@ public class DataController {
     public DeviceRealtimeDataResponse getDeviceData(@PathVariable String deviceId,
                                                      @RequestParam(required = false) List<String> pointIds) {
         return realtimeDataApplicationService.getDeviceData(deviceId, pointIds);
+    }
+
+    /**
+     * 查询全部设备的实时点位数据。
+     *
+     * @return 全设备实时数据聚合响应
+     */
+    @GetMapping("/realtime")
+    public AllDeviceRealtimeDataResponse getAllRealtimeData() {
+        return realtimeDataApplicationService.getAllRealtimeData();
     }
 
     /**

@@ -53,6 +53,16 @@ export interface DeviceRealtimeDataResponse {
   [key: string]: unknown;
 }
 
+export interface AllDeviceRealtimeDataResponse {
+  status?: string;
+  message?: string;
+  deviceCount?: number;
+  dataCount?: number;
+  devices?: DeviceRealtimeDataResponse[];
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
 export interface DeviceBriefResponse {
   deviceId?: string;
   pointCount?: number;

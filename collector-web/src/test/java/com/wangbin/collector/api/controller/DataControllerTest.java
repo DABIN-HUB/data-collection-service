@@ -2,6 +2,7 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.RealtimeDataApplicationService;
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.HistoryDataResponse;
@@ -88,6 +89,45 @@ class DataControllerTest {
                 .andExpect(jsonPath("$.data.p-2.value", is("v2")));
 
         verify(realtimeDataApplicationService).getDeviceData("dev-1", List.of("p-1", "p-2"));
+    }
+
+    @Test
+    void shouldBindAllRealtimeRouteAndSerializeAggregateResponse() throws Exception {
+        Map<String, PointRealtimePayload> dev1Data = new LinkedHashMap<>();
+        dev1Data.put("p-1", PointRealtimePayload.builder().pointId("p-1").value("v1").build());
+        when(realtimeDataApplicationService.getAllRealtimeData())
+                .thenReturn(AllDeviceRealtimeDataResponse.builder()
+                        .status("success")
+                        .deviceCount(2)
+                        .dataCount(1)
+                        .devices(List.of(
+                                DeviceRealtimeDataResponse.builder()
+                                        .status("success")
+                                        .deviceId("dev-1")
+                                        .dataCount(1)
+                                        .data(dev1Data)
+                                        .timestamp(1000L)
+                                        .build(),
+                                DeviceRealtimeDataResponse.builder()
+                                        .status("error")
+                                        .deviceId("dev-2")
+                                        .message("设备不存在或无数据点")
+                                        .dataCount(0)
+                                        .timestamp(1000L)
+                                        .build()))
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/realtime"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.deviceCount", is(2)))
+                .andExpect(jsonPath("$.dataCount", is(1)))
+                .andExpect(jsonPath("$.devices[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.devices[0].data.p-1.value", is("v1")))
+                .andExpect(jsonPath("$.devices[1].status", is("error")));
+
+        verify(realtimeDataApplicationService).getAllRealtimeData();
     }
 
     @Test

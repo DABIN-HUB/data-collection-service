@@ -1,4 +1,4 @@
-import type { DeviceListResponse, DeviceRealtimeDataResponse, PointRealtimePayload, PointRealtimeResponse, RealtimePointRow } from "@/types/monitor";
+import type { AllDeviceRealtimeDataResponse, DeviceListResponse, DeviceRealtimeDataResponse, PointRealtimePayload, PointRealtimeResponse, RealtimePointRow } from "@/types/monitor";
 
 export interface RealtimeSummary {
   total: number;
@@ -58,6 +58,19 @@ export function extractRealtimeDeviceIds(response: DeviceListResponse | Realtime
     return Array.from(new Set(primaryIds));
   }
   return Array.from(new Set(normalizeRealtimeRows(response).map((row) => String(row.deviceId || "")).filter(Boolean)));
+}
+
+export function normalizeAllDeviceRealtimeRows(response: AllDeviceRealtimeDataResponse | unknown): RealtimePointRow[] {
+  const record = asRecord(response);
+  const devices = Array.isArray(record.devices) ? record.devices : [];
+  return devices.flatMap((device) => {
+    const deviceRecord = asRecord(device);
+    if (String(deviceRecord.status || "").toLowerCase() === "error") {
+      return [];
+    }
+    const deviceId = String(deviceRecord.deviceId || "");
+    return normalizeRealtimeRows(deviceRecord as DeviceRealtimeDataResponse, deviceId);
+  });
 }
 
 export function normalizeSinglePointRealtimeRow(response: PointRealtimeResponse | PointRealtimePayload | unknown): RealtimePointRow | null {

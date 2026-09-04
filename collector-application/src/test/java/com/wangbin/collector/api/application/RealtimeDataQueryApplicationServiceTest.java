@@ -3,6 +3,7 @@ package com.wangbin.collector.api.application;
 import com.wangbin.collector.api.controller.dto.DeviceBriefResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.PointRealtimePayload;
 import com.wangbin.collector.api.controller.dto.PointRealtimeResponse;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -157,6 +159,76 @@ class RealtimeDataQueryApplicationServiceTest {
         assertEquals("设备不存在或无数据点", response.getMessage());
         assertNotNull(response.getTimestamp());
         verify(cacheManager, never()).getAll(anyList());
+    }
+
+    @Test
+    void getAllRealtimeDataShouldBatchAllDeviceCacheKeysOnceAndGroupByDevice() {
+        DataPoint dev1Point1 = point("dev-1", "p-1", "temperature");
+        DataPoint dev1Point2 = point("dev-1", "p-2", "humidity");
+        DataPoint dev2Point1 = point("dev-2", "p-3", "pressure");
+        when(configManager.getAllDeviceIds()).thenReturn(List.of("dev-1", "dev-2"));
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(dev1Point1, dev1Point2));
+        when(configManager.getDataPoints("dev-2")).thenReturn(List.of(dev2Point1));
+        when(pointRuntimeStateService.snapshot("dev-1", dev1Point1)).thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
+        when(pointRuntimeStateService.snapshot("dev-1", dev1Point2)).thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
+        when(pointRuntimeStateService.snapshot("dev-2", dev2Point1)).thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
+        when(cacheManager.getAll(anyList())).thenAnswer(invocation -> {
+            List<CacheKey> keys = invocation.getArgument(0);
+            return Map.of(keys.get(0), "v1", keys.get(1), "v2", keys.get(2), "v3");
+        });
+
+        AllDeviceRealtimeDataResponse response = service.getAllRealtimeData();
+
+        assertEquals("success", response.getStatus());
+        assertEquals(2, response.getDeviceCount());
+        assertEquals(3, response.getDataCount());
+        assertEquals(List.of("dev-1", "dev-2"), response.getDevices().stream().map(DeviceRealtimeDataResponse::getDeviceId).toList());
+        assertEquals(2, response.getDevices().get(0).getDataCount());
+        assertEquals(1, response.getDevices().get(1).getDataCount());
+        assertEquals("v1", response.getDevices().get(0).getData().get("p-1").getValue());
+        assertEquals("v2", response.getDevices().get(0).getData().get("p-2").getValue());
+        assertEquals("v3", response.getDevices().get(1).getData().get("p-3").getValue());
+        verify(cacheManager, times(1)).getAll(argThat(keys -> keys.size() == 3
+                && "data:dev-1:p-1".equals(keys.get(0).getFullKey())
+                && "data:dev-1:p-2".equals(keys.get(1).getFullKey())
+                && "data:dev-2:p-3".equals(keys.get(2).getFullKey())));
+    }
+
+    @Test
+    void getAllRealtimeDataShouldReturnSuccessWhenNoDevicesConfigured() {
+        when(configManager.getAllDeviceIds()).thenReturn(List.of());
+
+        AllDeviceRealtimeDataResponse response = service.getAllRealtimeData();
+
+        assertEquals("success", response.getStatus());
+        assertEquals(0, response.getDeviceCount());
+        assertEquals(0, response.getDataCount());
+        assertEquals(List.of(), response.getDevices());
+        assertNotNull(response.getTimestamp());
+        verify(cacheManager, never()).getAll(anyList());
+    }
+
+    @Test
+    void getAllRealtimeDataShouldKeepPerDeviceErrorWhenOneDeviceHasNoPoints() {
+        DataPoint dev1Point1 = point("dev-1", "p-1", "temperature");
+        when(configManager.getAllDeviceIds()).thenReturn(List.of("dev-1", "empty"));
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(dev1Point1));
+        when(configManager.getDataPoints("empty")).thenReturn(List.of());
+        when(pointRuntimeStateService.snapshot("dev-1", dev1Point1)).thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
+        when(cacheManager.getAll(anyList())).thenAnswer(invocation -> Map.of(invocation.<List<CacheKey>>getArgument(0).get(0), "v1"));
+
+        AllDeviceRealtimeDataResponse response = service.getAllRealtimeData();
+
+        assertEquals("success", response.getStatus());
+        assertEquals(2, response.getDeviceCount());
+        assertEquals(1, response.getDataCount());
+        assertEquals("success", response.getDevices().get(0).getStatus());
+        assertEquals("error", response.getDevices().get(1).getStatus());
+        assertEquals("empty", response.getDevices().get(1).getDeviceId());
+        assertEquals("设备不存在或无数据点", response.getDevices().get(1).getMessage());
+        assertEquals(0, response.getDevices().get(1).getDataCount());
+        verify(cacheManager, times(1)).getAll(argThat(keys -> keys.size() == 1
+                && "data:dev-1:p-1".equals(keys.get(0).getFullKey())));
     }
 
     @Test

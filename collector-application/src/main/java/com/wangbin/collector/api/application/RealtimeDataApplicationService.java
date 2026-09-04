@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
@@ -68,6 +69,15 @@ public class RealtimeDataApplicationService {
      */
     public DeviceRealtimeDataResponse getDeviceData(String deviceId, List<String> pointIds) {
         return realtimeDataQueryApplicationService.getDeviceData(deviceId, pointIds);
+    }
+
+    /**
+     * 查询全部设备的实时数据。
+     *
+     * @return 全设备实时数据聚合响应
+     */
+    public AllDeviceRealtimeDataResponse getAllRealtimeData() {
+        return realtimeDataQueryApplicationService.getAllRealtimeData();
     }
 
     /**
