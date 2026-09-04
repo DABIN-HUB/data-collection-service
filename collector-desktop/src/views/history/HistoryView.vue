@@ -58,6 +58,9 @@
         </div>
       </section>
 
+      <el-alert v-if="historyError" :title="historyError" type="error" :closable="false" />
+      <el-alert v-if="historyPartialWarning" :title="historyPartialWarning" type="warning" :closable="false" />
+
       <div v-if="historySummaryCards.length" class="exact-diagnostic-cards history-summary-cards">
         <div v-for="card in historySummaryCards" :key="card.label" class="exact-diagnostic-card">
           <span>{{ card.label }}</span>
@@ -114,14 +117,14 @@
       <section class="surface-card history-alarm-card">
         <div class="surface-card-head">
           <h3>相关告警</h3>
-          <span>{{ relatedAlarms.length }} 条</span>
+          <span>{{ relatedAlarmsSummaryText }}</span>
         </div>
         <table class="runtime-table history-alarm-table">
           <thead>
             <tr><th>时间</th><th>级别</th><th>设备</th><th>点位</th><th>内容</th></tr>
           </thead>
           <tbody>
-            <tr v-if="relatedAlarms.length === 0"><td colspan="5">暂无相关告警</td></tr>
+            <tr v-if="relatedAlarms.length === 0"><td colspan="5">{{ relatedAlarmsEmptyText }}</td></tr>
             <tr v-for="alarm in relatedAlarms" :key="`${alarm.alarmId || alarm.id || '-'}-${alarm.timestamp || alarm.occurTime || '-'}`">
               <td>{{ formatHistoryTime({ timestamp: alarm.timestamp || alarm.occurTime }) }}</td>
               <td>{{ alarm.level || alarm.alarmType || '-' }}</td>
@@ -166,6 +169,7 @@ import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
 import { getDevicePointsConfig } from "@/api/config.api";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
+import { resolveHistoryPartialFailure, type HistoryPartialFailureState } from "@/features/history/utils/history-partial-failure";
 import {
   buildHistoryDataQueryParams,
   buildHistoryPointsRequestContext,
@@ -196,6 +200,10 @@ const points = ref<DataPoint[]>([]);
 const historyRows = ref<HistoryRow[]>([]);
 const comparePointRows = ref<Record<string, HistoryRow[]>>({});
 const relatedAlarms = ref<AlarmRow[]>([]);
+const historyError = ref("");
+const historyPartialWarning = ref("");
+const failedComparePointRefs = ref<string[]>([]);
+const relatedAlarmsUnavailable = ref(false);
 const loading = ref(false);
 const limit = ref(200);
 const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000));
@@ -223,6 +231,7 @@ const historySeries = computed(() => buildHistoryTrendSeries([
   { key: pointRef.value, label: selectedPointLabel.value, rows: historyRows.value },
   ...comparePointRefs.value
     .filter((ref) => ref && ref !== pointRef.value)
+    .filter((ref) => !failedComparePointRefs.value.includes(ref))
     .map((ref) => ({ key: ref, label: pointLabelOf(ref), rows: comparePointRows.value[ref] || [] }))
 ]));
 
@@ -242,6 +251,7 @@ const historySummaryCards = computed(() => buildHistoryTrendSummaryCards({
   pointLabel: selectedPointLabel.value,
   series: historySeries.value,
   relatedAlarms: relatedAlarms.value,
+  relatedAlarmsUnavailable: relatedAlarmsUnavailable.value,
   timeRangeText: historyTimeRangeText.value
 }));
 const historyExportText = computed(() => buildHistoryTrendExportText({
@@ -249,8 +259,13 @@ const historyExportText = computed(() => buildHistoryTrendExportText({
   pointRef: pointRef.value,
   pointLabel: selectedPointLabel.value,
   series: historySeries.value,
-  relatedAlarms: relatedAlarms.value
+  relatedAlarms: relatedAlarms.value,
+  relatedAlarmsUnavailable: relatedAlarmsUnavailable.value,
+  failedComparePointRefs: failedComparePointRefs.value,
+  partialWarning: historyPartialWarning.value
 }));
+const relatedAlarmsSummaryText = computed(() => relatedAlarmsUnavailable.value ? "暂不可用" : `${relatedAlarms.value.length} 条`);
+const relatedAlarmsEmptyText = computed(() => relatedAlarmsUnavailable.value ? "关联告警暂不可用" : "暂无相关告警");
 const historyQueryDisabled = computed(() => shouldDisableHistorySubmit(
   loading.value,
   pendingHistoryQueryContext.value,
@@ -294,6 +309,7 @@ async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boo
   historyRows.value = [];
   comparePointRows.value = {};
   relatedAlarms.value = [];
+  clearHistoryFeedbackState();
   if (!snapshot.deviceId) {
     historyPointsOwner.invalidate();
     points.value = [];
@@ -339,9 +355,11 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
     deviceId.value = "";
     points.value = [];
     pointRef.value = "";
+    comparePointRefs.value = [];
     historyRows.value = [];
     comparePointRows.value = {};
     relatedAlarms.value = [];
+    clearHistoryFeedbackState();
     return;
   }
 
@@ -373,27 +391,47 @@ async function loadHistory() {
   const ticket = historyQueryOwner.begin(requestContext);
   loading.value = true;
   pendingHistoryQueryContext.value = requestContext;
+  clearHistoryFeedbackState();
   try {
-    const refs = [requestContext.pointRef, ...requestContext.comparePointRefs];
     const params = buildHistoryDataQueryParams(requestContext);
-    const responses = await Promise.all(refs.map((ref) => getPointHistory(requestContext.deviceId, ref, params)));
-    const nextHistoryRows = normalizeHistoryRows(responses[0]);
-    const nextComparePointRows = Object.fromEntries(refs.slice(1).map((ref, index) => [ref, normalizeHistoryRows(responses[index + 1])]));
-    const nextRelatedAlarms = await loadRelatedAlarms(requestContext);
+    const mainRequest = getPointHistory(requestContext.deviceId, requestContext.pointRef, params)
+      .then((response) => normalizeHistoryRows(response));
+    const compareRequests = requestContext.comparePointRefs.map((ref) => ({
+      ref,
+      request: getPointHistory(requestContext.deviceId, ref, params)
+        .then((response) => normalizeHistoryRows(response))
+    }));
+    const relatedAlarmRequest = loadRelatedAlarms(requestContext);
+    const settledResults = await Promise.allSettled([
+      mainRequest,
+      ...compareRequests.map((item) => item.request),
+      relatedAlarmRequest
+    ]);
+    const nextState = resolveHistoryPartialFailure({
+      mainResult: settledResults[0] as PromiseSettledResult<HistoryRow[]>,
+      compareResults: compareRequests.map((item, index) => ({
+        ref: item.ref,
+        result: settledResults[index + 1] as PromiseSettledResult<HistoryRow[]>
+      })),
+      relatedAlarmsResult: settledResults[settledResults.length - 1] as PromiseSettledResult<AlarmRow[]>,
+      pointLabelOf
+    });
     if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
       return;
     }
-    historyRows.value = nextHistoryRows;
-    comparePointRows.value = nextComparePointRows;
-    relatedAlarms.value = nextRelatedAlarms;
+    applyHistoryPartialState(nextState);
+    if (nextState.historyError) {
+      ElMessage.error(nextState.historyError);
+    } else if (nextState.historyPartialWarning) {
+      ElMessage.warning(nextState.historyPartialWarning);
+    }
   } catch (error) {
     if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
       return;
     }
-    historyRows.value = [];
-    comparePointRows.value = {};
-    relatedAlarms.value = [];
-    ElMessage.error(error instanceof Error ? error.message : "历史数据查询失败");
+    const nextState = buildUnexpectedHistoryFailureState(error);
+    applyHistoryPartialState(nextState);
+    ElMessage.error(nextState.historyError);
   } finally {
     if (historyQueryOwner.isLatest(ticket)) {
       loading.value = false;
@@ -405,6 +443,37 @@ async function loadHistory() {
 async function loadRelatedAlarms(snapshot: HistoryQueryContext): Promise<AlarmRow[]> {
   const response = await getDeviceAlarmHistory(snapshot.deviceId, buildHistoryRelatedAlarmQuery(snapshot));
   return normalizeAlarmHistoryRows(response);
+}
+
+function applyHistoryPartialState(state: HistoryPartialFailureState) {
+  historyRows.value = state.historyRows;
+  comparePointRows.value = state.comparePointRows;
+  relatedAlarms.value = state.relatedAlarms;
+  failedComparePointRefs.value = state.failedComparePointRefs;
+  relatedAlarmsUnavailable.value = state.relatedAlarmsUnavailable;
+  historyError.value = state.historyError;
+  historyPartialWarning.value = state.historyPartialWarning;
+}
+
+function clearHistoryFeedbackState() {
+  historyError.value = "";
+  historyPartialWarning.value = "";
+  failedComparePointRefs.value = [];
+  relatedAlarmsUnavailable.value = false;
+}
+
+function buildUnexpectedHistoryFailureState(error: unknown): HistoryPartialFailureState {
+  return {
+    historyRows: [],
+    comparePointRows: {},
+    relatedAlarms: [],
+    failedComparePointRefs: [],
+    relatedAlarmsUnavailable: false,
+    historyError: error instanceof Error && error.message
+      ? `主历史查询失败：${error.message}`
+      : "主历史查询失败",
+    historyPartialWarning: ""
+  };
 }
 
 function currentHistoryPointsRequestContext() {

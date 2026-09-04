@@ -25,7 +25,20 @@ interface HistoryHarnessState {
   compareRows: Record<string, string[]>;
   alarms: string[];
   error: string | null;
+  partialWarning: string | null;
+  failedComparePointRefs: string[];
+  relatedAlarmsUnavailable: boolean;
   pendingContext: HistoryQueryContext | null;
+}
+
+interface HistoryHarnessLoadResult {
+  mainRows: string[];
+  compareRows: Record<string, string[]>;
+  alarms: string[];
+  error?: string | null;
+  partialWarning?: string | null;
+  failedComparePointRefs?: string[];
+  relatedAlarmsUnavailable?: boolean;
 }
 
 function createDeferred<T>() {
@@ -87,11 +100,14 @@ function createHistoryHarness(initialContext: HistoryQueryContext) {
     compareRows: {},
     alarms: [],
     error: null,
+    partialWarning: null,
+    failedComparePointRefs: [],
+    relatedAlarmsUnavailable: false,
     pendingContext: null
   };
 
   async function load(
-    request: Promise<{ mainRows: string[]; compareRows: Record<string, string[]>; alarms: string[] }>,
+    request: Promise<HistoryHarnessLoadResult>,
     snapshot: HistoryQueryContext
   ) {
     const requestContext = buildHistoryQueryContext(snapshot);
@@ -107,6 +123,10 @@ function createHistoryHarness(initialContext: HistoryQueryContext) {
       state.mainRows = result.mainRows;
       state.compareRows = result.compareRows;
       state.alarms = result.alarms;
+      state.error = result.error || null;
+      state.partialWarning = result.partialWarning || null;
+      state.failedComparePointRefs = result.failedComparePointRefs ? [...result.failedComparePointRefs] : [];
+      state.relatedAlarmsUnavailable = Boolean(result.relatedAlarmsUnavailable);
     } catch (error) {
       if (!owner.canCommit(ticket, buildHistoryQueryContext(live.current))) {
         return;
@@ -115,6 +135,9 @@ function createHistoryHarness(initialContext: HistoryQueryContext) {
       state.compareRows = {};
       state.alarms = [];
       state.error = error instanceof Error ? error.message : String(error || "历史数据查询失败");
+      state.partialWarning = null;
+      state.failedComparePointRefs = [];
+      state.relatedAlarmsUnavailable = false;
     } finally {
       if (owner.isLatest(ticket)) {
         state.loading = false;
@@ -126,6 +149,9 @@ function createHistoryHarness(initialContext: HistoryQueryContext) {
   function unmount() {
     state.loading = false;
     state.pendingContext = null;
+    state.partialWarning = null;
+    state.failedComparePointRefs = [];
+    state.relatedAlarmsUnavailable = false;
     owner.invalidate();
   }
 
@@ -207,6 +233,58 @@ describe("history-request-lifecycle", () => {
     expect(harness.state.loading).toBe(false);
   });
 
+  it("Q1 partial result 在 Q2 成功后晚到时，不得覆盖 Q2 的结果和 warning 状态", async () => {
+    const contextQ1 = buildHistoryQueryContext({
+      deviceId: "device-a",
+      pointRef: "point-1",
+      comparePointRefs: ["point-2", "point-3"],
+      startTime: "2026-09-01T10:00",
+      endTime: "2026-09-01T11:00",
+      limit: 100
+    });
+    const harness = createHistoryHarness(contextQ1);
+    const requestQ1 = createDeferred<HistoryHarnessLoadResult>();
+    const requestQ2 = createDeferred<HistoryHarnessLoadResult>();
+
+    void harness.load(requestQ1.promise, contextQ1);
+    await flushPromises();
+
+    const contextQ2 = buildHistoryQueryContext({
+      deviceId: "device-a",
+      pointRef: "point-9",
+      comparePointRefs: ["point-8"],
+      startTime: "2026-09-01T12:00",
+      endTime: "2026-09-01T13:00",
+      limit: 80
+    });
+    harness.live.current = contextQ2;
+    void harness.load(requestQ2.promise, contextQ2);
+    await flushPromises();
+
+    requestQ2.resolve({
+      mainRows: ["q2-main"],
+      compareRows: { "point-8": ["q2-compare"] },
+      alarms: ["q2-alarm"]
+    });
+    await flushPromises();
+
+    requestQ1.resolve({
+      mainRows: ["q1-main"],
+      compareRows: { "point-3": ["q1-compare"] },
+      alarms: [],
+      partialWarning: "部分数据不可用：对比点位 point-2；关联告警",
+      failedComparePointRefs: ["point-2"],
+      relatedAlarmsUnavailable: true
+    });
+    await flushPromises();
+
+    expect(harness.state.mainRows).toEqual(["q2-main"]);
+    expect(harness.state.compareRows).toEqual({ "point-8": ["q2-compare"] });
+    expect(harness.state.partialWarning).toBeNull();
+    expect(harness.state.failedComparePointRefs).toEqual([]);
+    expect(harness.state.relatedAlarmsUnavailable).toBe(false);
+  });
+
   it("Q1 context 改变但没有发 Q2 时，Q1 不提交且 loading 正常释放", async () => {
     const contextQ1 = buildHistoryQueryContext({
       deviceId: "device-a",
@@ -241,6 +319,52 @@ describe("history-request-lifecycle", () => {
     expect(harness.state.compareRows).toEqual({});
     expect(harness.state.alarms).toEqual([]);
     expect(harness.state.error).toBeNull();
+    expect(harness.state.loading).toBe(false);
+    expect(harness.state.pendingContext).toBeNull();
+  });
+
+  it("context 改变但没有发 Q2 时，Q1 的 fatal/partial 状态也不得提交", async () => {
+    const contextQ1 = buildHistoryQueryContext({
+      deviceId: "device-a",
+      pointRef: "point-1",
+      comparePointRefs: ["point-2"],
+      startTime: "2026-09-01T10:00",
+      endTime: "2026-09-01T11:00",
+      limit: 100
+    });
+    const harness = createHistoryHarness(contextQ1);
+    const requestQ1 = createDeferred<HistoryHarnessLoadResult>();
+
+    void harness.load(requestQ1.promise, contextQ1);
+    await flushPromises();
+
+    harness.live.current = buildHistoryQueryContext({
+      deviceId: "device-a",
+      pointRef: "point-5",
+      comparePointRefs: ["point-6"],
+      startTime: "2026-09-01T12:00",
+      endTime: "2026-09-01T13:00",
+      limit: 80
+    });
+
+    requestQ1.resolve({
+      mainRows: [],
+      compareRows: {},
+      alarms: [],
+      error: "主历史查询失败：timeout",
+      partialWarning: "部分数据不可用：关联告警",
+      failedComparePointRefs: ["point-2"],
+      relatedAlarmsUnavailable: true
+    });
+    await flushPromises();
+
+    expect(harness.state.mainRows).toEqual([]);
+    expect(harness.state.compareRows).toEqual({});
+    expect(harness.state.alarms).toEqual([]);
+    expect(harness.state.error).toBeNull();
+    expect(harness.state.partialWarning).toBeNull();
+    expect(harness.state.failedComparePointRefs).toEqual([]);
+    expect(harness.state.relatedAlarmsUnavailable).toBe(false);
     expect(harness.state.loading).toBe(false);
     expect(harness.state.pendingContext).toBeNull();
   });

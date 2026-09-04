@@ -22,6 +22,9 @@ export interface HistoryTrendExportInput {
   pointLabel: string;
   series: HistoryTrendSeriesSummary[];
   relatedAlarms?: AlarmRow[];
+  relatedAlarmsUnavailable?: boolean;
+  failedComparePointRefs?: string[];
+  partialWarning?: string;
 }
 
 export interface HistoryTrendSummaryInput extends HistoryTrendExportInput {
@@ -77,6 +80,9 @@ export function buildHistoryTrendExportText(input: HistoryTrendExportInput): str
     pointRef: input.pointRef,
     pointLabel: input.pointLabel,
     generatedAt: new Date().toISOString(),
+    relatedAlarmsUnavailable: Boolean(input.relatedAlarmsUnavailable),
+    failedComparePointRefs: input.failedComparePointRefs || [],
+    partialWarning: input.partialWarning || "",
     series: input.series.map((item) => ({
       key: item.key,
       label: item.label,
@@ -96,6 +102,7 @@ export function buildHistoryTrendSummaryCards(input: HistoryTrendSummaryInput): 
   const mainSeries = series[0];
   const compareCount = Math.max(0, series.length - 1);
   const sampleCount = series.reduce((sum, item) => sum + item.sampleCount, 0);
+  const relatedAlarmsUnavailable = Boolean(input.relatedAlarmsUnavailable);
   const alarmCount = input.relatedAlarms?.length || 0;
   const globalMin = allValues.length ? Math.min(...allValues) : undefined;
   const globalMax = allValues.length ? Math.max(...allValues) : undefined;
@@ -120,8 +127,8 @@ export function buildHistoryTrendSummaryCards(input: HistoryTrendSummaryInput): 
     },
     {
       label: "相关告警",
-      value: String(alarmCount),
-      detail: alarmCount > 0 ? "可联动告警历史" : "暂无关联告警"
+      value: relatedAlarmsUnavailable ? "-" : String(alarmCount),
+      detail: relatedAlarmsUnavailable ? "关联告警暂不可用" : alarmCount > 0 ? "可联动告警历史" : "暂无关联告警"
     },
     {
       label: "数值范围",
