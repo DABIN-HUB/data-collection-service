@@ -14,6 +14,8 @@
 
 01.3A 更新：`RealtimeView` 主查询与单点查询已改为 latest-request-wins：请求开始时捕获 `mode/deviceId/pointId` snapshot，并将“latest generation ownership”与“context commit eligibility”分离；业务结果/错误提交继续要求 generation + context 同时匹配，loading finalization 只依赖 latest generation ownership。设备切换、全设备/单设备切换、route 单点切换时，旧响应不再覆盖新上下文。`RealtimeDataPanel` 的 HTTP fallback 也补了相同 generation guard。`Realtime N + 1`、WebSocket generation/reconnect、History/Alarm/DeviceConfigPanel/Store lifecycle 仍保持 OPEN。
 
+01.3B 更新：`HistoryView`、`AlarmView`、`DeviceConfigPanel`、`DeviceOperationShell` 的读请求已补 latest-request-wins：按页面/通道分别捕获 query 或 device snapshot，并把 generation ownership 与 commit eligibility 分离；stale success / stale error 不再写入新页面上下文，`finally` 只由 latest generation 释放 loading。`AlarmView` 的 acknowledgement fetch 已改为先 fetch 后按当前 query 统一 commit，`DeviceConfigPanel` 采用 protocol/status/workbench/diff 四个独立 owner，并修复 same-protocol device switch 仍需重新读取 B 设备连接配置的问题。`History` / `Alarm` partial failure、Realtime N+1、WebSocket generation/reconnect、device/point store lifecycle 仍保持 OPEN。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -23,13 +25,13 @@
 | `src/views/realtime/RealtimeView.vue` | RESOLVED IN 01.3A：单点实时查询当前请求失败会写 `singleRealtimeError`；旧请求不会覆盖当前点位结果。 | PAGE_ERROR + LATEST_REQUEST_WINS | 单点查询失败不再只剩控制台日志。 |
 | `src/views/dashboard/DashboardView.vue:269-278` | 多个 dashboard 请求 `Promise.allSettled`，未逐项记录失败；01.2B 后 monitor refs 改为 typed/null，但失败项仍显示未知/不可用。 | PARTIAL_FAILURE / SILENT_FALLBACK | 页面不会整体崩溃，但缺少失败接口明细。 |
 | `src/views/diagnostic/DiagnosticView.vue:173-191` | 多指标 `Promise.allSettled`，失败项进入 `partialWarning`。 | PARTIAL_FAILURE / PAGE_ERROR | 这是当前较好的生产化模式，可作为后续参考。 |
-| `src/views/history/HistoryView.vue:321-345` | 主历史、比较历史、关联告警在同一 try；任一失败清空历史/比较/告警。 | ALL_OR_NOTHING | 关联告警失败可能导致已成功历史查询也被清空。 |
-| `src/views/alarm/AlarmView.vue:170-187` | 告警历史 + 确认状态串联；确认状态失败会进入 catch 并清空告警列表。 | ALL_OR_NOTHING | 告警历史成功但确认状态失败时，用户看不到告警历史。 |
+| `src/views/history/HistoryView.vue` | RESOLVED IN 01.3B：`loadPoints()` / `loadHistory()` / `loadRelatedAlarms(snapshot)` 已改为 latest-request-wins + snapshot commit guard；旧设备/旧点位/旧 route 查询结果与错误不会再污染当前页面。主历史、比较历史、关联告警仍保持同一 try 的 all-or-nothing。 | LATEST_REQUEST_WINS + ALL_OR_NOTHING | stale query 已解决；partial failure 仍留给 Task 01.5。 |
+| `src/views/alarm/AlarmView.vue` | RESOLVED IN 01.3B：`loadAlarms()` 与 `refreshAlarmAcknowledgements()` 已改为 latest-request-wins；ack fetch 先返回结果再由当前 query/list 统一 commit，不再隐式全局写状态。告警历史 + ack 仍保持当前 all-or-nothing。 | LATEST_REQUEST_WINS + ALL_OR_NOTHING | stale query / stale ack refresh 已解决；ack 失败仍会使当前最新查询失败，留给 Task 01.5。 |
 | `src/views/log/LogView.vue:113-133` | 有 `error` 页面状态；自动/手动刷新共用 loading guard。 | PAGE_ERROR | 基本可观测，但并发刷新会被丢弃。 |
 | `src/views/cloud/CloudView.vue:100-111` | 有 `error` 页面状态。 | PAGE_ERROR | 可观测。 |
 | `src/views/network/NetworkView.vue:135-172` | 网络诊断失败会构造不可达结果并进入历史，同时 toast 错误。 | PAGE_ERROR / DEFENSIVE | 用户仍可导出失败结果，较适合诊断页面。 |
-| `src/features/device/components/DeviceOperationShell.vue:147-157` | 实时预览失败静默置空。 | SILENT_FALLBACK | workbench 顶部可能只显示“未知”，无法区分无数据和请求失败。 |
-| `src/components/device/DeviceConfigPanel.vue:292-393` | 协议配置/连接状态/实时行/差异各自有局部 error/message。 | PAGE_ERROR | 基本可观测。 |
+| `src/features/device/components/DeviceOperationShell.vue` | RESOLVED IN 01.3B：实时预览已按 `selectedDeviceId` snapshot + latest generation guard 提交；当前设备失败仍维持置空，stale failure 静默丢弃。 | LATEST_REQUEST_WINS + SILENT_FALLBACK | 串台已解决；失败 UX 仍保持当前轻量模式。 |
+| `src/components/device/DeviceConfigPanel.vue` | RESOLVED IN 01.3B：协议配置、连接状态、workbench rows、diff 已拆成独立 owner；device/protocol snapshot 不匹配的旧响应不会再写入当前面板。 | PAGE_ERROR + LATEST_REQUEST_WINS | same-protocol device switch 也会重新读取当前设备连接配置。 |
 | `src/features/point/components/PointEditor.vue:341-355` | 实时值加载失败写 `realtimeError`。 | PAGE_ERROR | 可观测。 |
 | `src/features/point/components/PointEditor.vue:358-362` + `point.store.ts:82-93` | 保存失败写 store error，但 `savePoints()` 不额外 toast。 | PAGE_ERROR / TOAST_MISSING | 保存失败是否可见取决于模板是否展示 `pointStore.error`。 |
 | `src/features/shadow/components/ShadowPanel.vue:153-155` | `读取全部` 使用 `Promise.allSettled`，单项内部自行写错误对象/toast。 | PARTIAL_FAILURE | 合理，影子、delta、history 可独立失败。 |
@@ -48,10 +50,10 @@
 | RESOLVED IN 01.3A | `src/views/realtime/RealtimeView.vue` | `loadSingleRealtime()` / route watcher | 单点查询已使用独立 generation，并在响应前核对 `deviceId/pointId` snapshot；旧响应不会覆盖当前 `realtimeSingleResult`。 | 从告警/Workbench 连续跳转不同点位。 | 已通过 route-style race tests 验证；后续如需 Browser abort 可再加资源优化。 |
 | RESOLVED IN 01.3A | `src/components/realtime/RealtimeDataPanel.vue` | `watch(props.deviceId)` 的 HTTP fallback | Workbench 嵌入实时面板的 HTTP fallback 已补 `panel` 级 generation guard；旧 HTTP 响应不会再覆盖新的 `props.deviceId` 上下文。 | Workbench 快速切换设备。 | 本次只处理 HTTP fallback stale response；WebSocket close/onmessage generation 仍保持 OPEN。 |
 | P1 | `src/stores/websocket.store.ts` | `connectRealtime()` callbacks | `socket` 是模块级单例，callback 捕获旧 `deviceId`；close/onmessage 无 socket generation 校验。旧 socket 的迟到 callback 可更新 store 状态或旧设备 rows。 | 快速切换设备或网络断开重连。 | 引入 socket generation/currentDevice guard；解析错误写入可观测字段。 |
-| P1 | `src/views/history/HistoryView.vue` | `loadPoints()` / `loadHistory()` | 查询参数、deviceId、pointRef 在 await 后未校验；旧请求可能覆盖新路由的 points/history。 | route query 快速变化或设备切换。 | 加 sequence/abort；历史和关联告警拆成可部分失败。 |
-| P1 | `src/views/alarm/AlarmView.vue` | `loadAlarms()` | filter 变化期间旧请求可写入新 filter 下的 alarms；确认状态失败会清空成功的告警历史。 | 用户快速切换 device/level/keyword。 | 加 sequence；确认状态失败时保留告警历史并显示部分失败。 |
-| P1 | `src/components/device/DeviceConfigPanel.vue` | `loadProtocolConfig()` / `loadWorkbenchRows()` | props.device/protocolKey 变化时旧 response 无校验，可覆盖当前协议表单或点位运行行。 | Workbench 切设备、切 protocol、切 tab 时网络慢。 | 对 deviceId/protocolKey 建立请求快照校验。 |
-| P1 | `src/features/device/components/DeviceOperationShell.vue` | `loadRealtimePreview()` | 失败静默置空；旧请求无 deviceId 校验。 | route query deviceId 变化或 refresh/clear 后。 | 写入 preview error，并校验请求 deviceId。 |
+| RESOLVED IN 01.3B | `src/views/history/HistoryView.vue` | `loadPoints()` / `loadHistory()` | `deviceId/pointRef/compare/start/end/limit` 已按 snapshot + generation 校验；route/device 快速变化时旧请求不会再覆盖当前 points/history。 | route query 快速变化或设备切换。 | partial failure 仍保持 OPEN，不在 01.3B 处理。 |
+| RESOLVED IN 01.3B | `src/views/alarm/AlarmView.vue` | `loadAlarms()` / `refreshAlarmAcknowledgements()` | filter snapshot、ack list snapshot 与 latest generation 已生效；changed-context query 不再被旧 loading 吞掉。 | 用户快速切换 device/level/keyword。 | partial failure 仍保持 OPEN，不在 01.3B 处理。 |
+| RESOLVED IN 01.3B | `src/components/device/DeviceConfigPanel.vue` | `loadProtocolConfig()` / `loadConnectionStatus()` / `loadWorkbenchRows()` / `showDiff()` | props.device/protocolKey 变化后的旧 response 不再覆盖当前协议表单、状态、点位行或 diff。 | Workbench 切设备、切 protocol、切 tab 时网络慢。 | store lifecycle 与更大范围请求治理留给后续任务。 |
+| RESOLVED IN 01.3B | `src/features/device/components/DeviceOperationShell.vue` | `loadRealtimePreview()` | `selectedDeviceId` snapshot 校验已生效；旧 preview success/failure 均不会再污染当前设备。 | route query deviceId 变化或 refresh/clear 后。 | preview failure UX 保持当前模式。 |
 | P2 | `src/views/log/LogView.vue` | `loadLogs()` + 5 秒 timer | loading guard 会丢弃自动刷新/手动查询中的后发请求；query 变化时可能短暂显示旧日志。 | 自动刷新中修改过滤器或手动点击查询。 | 引入 latest-request wins；自动刷新被手动刷新暂停。 |
 | P2 | `src/views/dashboard/DashboardView.vue` | `loadDashboard()` | 并行请求失败不暴露到卡片级错误；旧 dashboard refresh 也无 sequence。 | 刷新中再次点击或网络抖动。 | 可借鉴 Diagnostic partialWarning，并加 sequence。 |
 | P2 | `src/views/diagnostic/DiagnosticView.vue` | `loadDiagnostic()` | 已有部分失败提示，但 route deviceId 变化只改 selected device，不取消正在生成的 raw snapshot。 | 诊断运行中切换 route query。 | 低优先级加 sequence。 |
@@ -129,13 +131,15 @@
 ### P1
 
 1. RESOLVED IN 01.3A：`RealtimeView.loadSingleRealtime()` route/query 快速变化时的旧单点响应覆盖问题已修复。
-2. `HistoryView.loadHistory()` 主历史、比较历史、关联告警 all-or-nothing；关联告警失败会清空成功历史。
-3. `AlarmView.loadAlarms()` 告警历史成功但确认状态失败时会清空告警列表。
-4. `DeviceConfigPanel` 协议配置/连接配置/实时行读取缺 request snapshot 校验。
-5. `DeviceOperationShell.loadRealtimePreview()` 失败静默置空，且旧请求可覆盖新设备预览。
-6. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
-7. `PointEditor.runtimeOf()` O(P²) 渲染风险。
-8. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
+2. RESOLVED IN 01.3B：`HistoryView.loadPoints()` / `loadHistory()` 已补 query snapshot、latest-request-wins 和 changed-context submit。
+3. `HistoryView` 主历史、比较历史、关联告警仍保持 all-or-nothing；关联告警失败会清空成功历史。
+4. RESOLVED IN 01.3B：`AlarmView.loadAlarms()` 与 `refreshAlarmAcknowledgements()` 已补 filter/list snapshot、latest-request-wins 和 ack fetch 后统一 commit。
+5. `AlarmView` 当前最新查询里，告警历史成功但确认状态失败时仍会清空告警列表。
+6. RESOLVED IN 01.3B：`DeviceConfigPanel` 协议配置/连接状态/实时行/diff 读取已补 request snapshot 校验，并拆为独立 owner。
+7. RESOLVED IN 01.3B：`DeviceOperationShell.loadRealtimePreview()` 旧请求覆盖问题已修复；stale failure 不再清空新设备预览。
+8. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
+9. `PointEditor.runtimeOf()` O(P²) 渲染风险。
+10. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
 
 ### P2
 

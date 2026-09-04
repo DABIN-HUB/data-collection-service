@@ -7,7 +7,7 @@
       </div>
       <div class="heading-actions">
         <button type="button" :disabled="alarms.length === 0 || ackStatusLoading" @click="refreshAlarmAcknowledgements">确认状态批量查询</button>
-        <button type="button" :disabled="loading" @click="refreshAlarms">刷新告警历史</button>
+        <button type="button" :disabled="alarmQueryDisabled" @click="refreshAlarms">刷新告警历史</button>
       </div>
     </div>
 
@@ -33,7 +33,7 @@
           </select>
           <input v-model="alarmKeyword" type="search" placeholder="点位编码或规则 ID" @keydown.enter="refreshAlarms" />
           <input v-model.number="alarmLimit" type="number" min="10" max="500" step="10" />
-          <button type="button" class="primary" :disabled="loading" @click="refreshAlarms">查询</button>
+          <button type="button" class="primary" :disabled="alarmQueryDisabled" @click="refreshAlarms">查询</button>
         </div>
       </div>
 
@@ -119,12 +119,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import { getDeviceAlarmHistory, getRecentAlarms } from "@/api/data.api";
 import { acknowledgeAlarm, queryAlarmAcknowledgements } from "@/api/ops.api";
+import {
+  buildAlarmAcknowledgementRefreshContext,
+  buildAlarmQueryContext,
+  isSameAlarmAcknowledgementRefreshContext,
+  isSameAlarmQueryContext,
+  shouldDisableAlarmSubmit,
+  type AlarmQueryContext
+} from "@/features/alarm/utils/alarm-request-lifecycle";
 import {
   alarmCurrentValue,
   alarmLevelText,
@@ -137,6 +145,7 @@ import {
   normalizeAlarmAcknowledgementMap
 } from "@/features/alarm/utils/alarm-utils";
 import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "@/features/alarm/utils/alarm-history-utils";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import type { AlarmRow } from "@/types/monitor";
@@ -161,30 +170,52 @@ const alarmLimit = ref(50);
 const loading = ref(false);
 const ackStatusLoading = ref(false);
 const error = ref("");
+const pendingAlarmQueryContext = ref<AlarmQueryContext | null>(null);
+
+const alarmQueryOwner = createLatestRequestOwner(isSameAlarmQueryContext);
+const alarmAckRefreshOwner = createLatestRequestOwner(isSameAlarmAcknowledgementRefreshContext);
 
 const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
 const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
 const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
 const selectedAlarmAckIdempotencyKey = computed(() => selectedAlarmAckId.value ? buildAlarmAckPayload(alarmAckNote.value, selectedAlarmAckId.value).idempotencyKey : "-");
+const alarmQueryDisabled = computed(() => shouldDisableAlarmSubmit(
+  loading.value,
+  pendingAlarmQueryContext.value,
+  currentAlarmQueryContext()
+));
 
 async function loadAlarms() {
-  if (loading.value) {
-    return;
-  }
+  const requestContext = currentAlarmQueryContext();
+  const ticket = alarmQueryOwner.begin(requestContext);
+  alarmAckRefreshOwner.invalidate();
   loading.value = true;
+  ackStatusLoading.value = false;
   error.value = "";
+  pendingAlarmQueryContext.value = requestContext;
   try {
-    const params = buildAlarmHistoryQuery({ level: alarmLevelFilter.value, keyword: alarmKeyword.value, hours: alarmHours.value, limit: alarmLimit.value });
-    const response = alarmDeviceId.value ? await getDeviceAlarmHistory(alarmDeviceId.value, params) : await getRecentAlarms(params);
+    const params = buildAlarmHistoryQuery(requestContext);
+    const response = requestContext.deviceId ? await getDeviceAlarmHistory(requestContext.deviceId, params) : await getRecentAlarms(params);
     const rows = normalizeAlarmHistoryRows(response);
-    alarms.value = mergeAlarmAcknowledgementStates(rows, await fetchAlarmAcknowledgements(rows));
+    const acknowledgements = await fetchAlarmAcknowledgements(rows);
+    if (!alarmQueryOwner.canCommit(ticket, currentAlarmQueryContext())) {
+      return;
+    }
+    alarmAcknowledgements.value = acknowledgements;
+    alarms.value = mergeAlarmAcknowledgementStates(rows, acknowledgements);
   } catch (caught) {
+    if (!alarmQueryOwner.canCommit(ticket, currentAlarmQueryContext())) {
+      return;
+    }
     alarmAcknowledgements.value = {};
     alarms.value = [];
     error.value = caught instanceof Error ? caught.message : "告警历史加载失败";
   } finally {
-    loading.value = false;
+    if (alarmQueryOwner.isLatest(ticket)) {
+      loading.value = false;
+      pendingAlarmQueryContext.value = null;
+    }
   }
 }
 
@@ -193,9 +224,8 @@ function refreshAlarms() {
 }
 
 async function fetchAlarmAcknowledgements(rows: AlarmRow[]): Promise<Record<string, AlarmAcknowledgement>> {
-  const alarmIds = Array.from(new Set(rows.map((alarm) => buildAlarmIdentity(alarm)).filter(Boolean))).slice(0, 500);
-  alarmAcknowledgements.value = alarmIds.length ? normalizeAlarmAcknowledgementMap(await queryAlarmAcknowledgements(alarmIds)) : {};
-  return alarmAcknowledgements.value;
+  const { alarmIds } = buildAlarmAcknowledgementRefreshContext(rows);
+  return alarmIds.length ? normalizeAlarmAcknowledgementMap(await queryAlarmAcknowledgements(alarmIds)) : {};
 }
 
 async function refreshAlarmAcknowledgements() {
@@ -203,15 +233,27 @@ async function refreshAlarmAcknowledgements() {
     ElMessage.warning("当前没有可查询确认状态的告警");
     return;
   }
+  const rowsSnapshot = [...alarms.value];
+  const requestContext = buildAlarmAcknowledgementRefreshContext(rowsSnapshot);
+  const ticket = alarmAckRefreshOwner.begin(requestContext);
   ackStatusLoading.value = true;
   try {
-    const acknowledgements = await fetchAlarmAcknowledgements(alarms.value);
+    const acknowledgements = await fetchAlarmAcknowledgements(rowsSnapshot);
+    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
+      return;
+    }
+    alarmAcknowledgements.value = acknowledgements;
     alarms.value = mergeAlarmAcknowledgementStates(alarms.value, acknowledgements);
     ElMessage.success("确认状态批量查询完成");
   } catch (caught) {
+    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
+      return;
+    }
     ElMessage.error(caught instanceof Error ? caught.message : "确认状态批量查询失败");
   } finally {
-    ackStatusLoading.value = false;
+    if (alarmAckRefreshOwner.isLatest(ticket)) {
+      ackStatusLoading.value = false;
+    }
   }
 }
 
@@ -335,11 +377,33 @@ onMounted(() => {
   void initializeAlarmView();
 });
 
+onBeforeUnmount(() => {
+  loading.value = false;
+  ackStatusLoading.value = false;
+  pendingAlarmQueryContext.value = null;
+  alarmQueryOwner.invalidate();
+  alarmAckRefreshOwner.invalidate();
+});
+
 watch(() => [route.query.deviceId, route.query.level, route.query.keyword, route.query.pointCode, route.query.ruleId, route.query.hours, route.query.limit], () => {
   if (applyRouteQuery()) {
     void loadAlarms();
   }
 });
+
+function currentAlarmQueryContext() {
+  return buildAlarmQueryContext({
+    deviceId: alarmDeviceId.value,
+    level: alarmLevelFilter.value,
+    keyword: alarmKeyword.value,
+    hours: alarmHours.value,
+    limit: alarmLimit.value
+  });
+}
+
+function currentAlarmAcknowledgementRefreshContext() {
+  return buildAlarmAcknowledgementRefreshContext(alarms.value);
+}
 </script>
 
 <style scoped>

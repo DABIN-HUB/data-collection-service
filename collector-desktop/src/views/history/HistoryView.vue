@@ -52,7 +52,7 @@
             <small>可选多个点位做趋势对比</small>
           </label>
           <div class="history-query-actions">
-            <button type="button" class="primary" :disabled="loading || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
+            <button type="button" class="primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
             <button type="button" class="primary" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
           </div>
         </div>
@@ -105,7 +105,7 @@
         <section class="surface-card">
           <div class="surface-card-head">
             <h3>查询结果 JSON</h3>
-            <button type="button" :disabled="loading || !deviceId || !pointRef" @click="loadHistory">刷新</button>
+            <button type="button" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">刷新</button>
           </div>
           <pre class="json-view history-json-view">{{ historyExportText }}</pre>
         </section>
@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 
@@ -166,7 +166,19 @@ import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
 import { getDevicePointsConfig } from "@/api/config.api";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
 import { normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
+import {
+  buildHistoryDataQueryParams,
+  buildHistoryPointsRequestContext,
+  buildHistoryPointsRequestSnapshot,
+  buildHistoryQueryContext,
+  buildHistoryRelatedAlarmQuery,
+  isSameHistoryPointsRequestContext,
+  isSameHistoryQueryContext,
+  shouldDisableHistorySubmit,
+  type HistoryQueryContext
+} from "@/features/history/utils/history-request-lifecycle";
 import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "@/features/history/utils/history-trend-utils";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import type { AlarmRow } from "@/types/monitor";
@@ -190,6 +202,10 @@ const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000));
 const endTime = ref(defaultDateTimeLocal(0));
 const initialized = ref(false);
 const lastAppliedRouteKey = ref("__initial__");
+const pendingHistoryQueryContext = ref<HistoryQueryContext | null>(null);
+
+const historyPointsOwner = createLatestRequestOwner(isSameHistoryPointsRequestContext);
+const historyQueryOwner = createLatestRequestOwner(isSameHistoryQueryContext);
 
 const devices = computed(() => deviceStore.devices);
 
@@ -235,6 +251,11 @@ const historyExportText = computed(() => buildHistoryTrendExportText({
   series: historySeries.value,
   relatedAlarms: relatedAlarms.value
 }));
+const historyQueryDisabled = computed(() => shouldDisableHistorySubmit(
+  loading.value,
+  pendingHistoryQueryContext.value,
+  currentHistoryQueryContext()
+));
 
 onMounted(async () => {
   await appStore.initialize();
@@ -250,30 +271,51 @@ watch(() => [route.query.deviceId, route.query.pointId, route.query.pointRef], (
   void applyRouteQuery({ autoQuery: true });
 });
 
+onBeforeUnmount(() => {
+  historyPointsOwner.invalidate();
+  historyQueryOwner.invalidate();
+  loading.value = false;
+  pendingHistoryQueryContext.value = null;
+});
+
 async function handleDeviceChange() {
   deviceStore.selectDevice(deviceId.value);
   await loadPoints();
 }
 
 async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boolean } = {}) {
+  const snapshot = buildHistoryPointsRequestSnapshot({
+    deviceId: deviceId.value,
+    preferredPointRef: options.preferredPointRef,
+    autoQuery: options.autoQuery
+  });
   pointRef.value = "";
   comparePointRefs.value = [];
   historyRows.value = [];
   comparePointRows.value = {};
   relatedAlarms.value = [];
-  if (!deviceId.value) {
+  if (!snapshot.deviceId) {
+    historyPointsOwner.invalidate();
     points.value = [];
     return;
   }
+  const ticket = historyPointsOwner.begin(buildHistoryPointsRequestContext(snapshot));
   try {
-    const response = await getDevicePointsConfig(deviceId.value);
-    points.value = extractPoints(response);
-    const resolvedPointRef = resolvePointRef(options.preferredPointRef);
-    pointRef.value = resolvedPointRef || pointKey(points.value[0]);
-    if (options.autoQuery && resolvedPointRef) {
+    const response = await getDevicePointsConfig(snapshot.deviceId);
+    const nextPoints = extractPoints(response);
+    if (!historyPointsOwner.canCommit(ticket, currentHistoryPointsRequestContext())) {
+      return;
+    }
+    points.value = nextPoints;
+    const resolvedPointRef = resolvePointRefFromPoints(nextPoints, snapshot.preferredPointRef);
+    pointRef.value = resolvedPointRef || pointKey(nextPoints[0]);
+    if (snapshot.autoQuery && resolvedPointRef) {
       await loadHistory();
     }
   } catch (error) {
+    if (!historyPointsOwner.canCommit(ticket, currentHistoryPointsRequestContext())) {
+      return;
+    }
     points.value = [];
     ElMessage.warning(error instanceof Error ? error.message : "点位配置加载失败");
   }
@@ -290,6 +332,10 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
   const queryPointRef = firstQueryValue(route.query.pointId) || firstQueryValue(route.query.pointRef);
   const targetDeviceId = resolveTargetDeviceId(queryDeviceId);
   if (!targetDeviceId) {
+    historyPointsOwner.invalidate();
+    historyQueryOwner.invalidate();
+    loading.value = false;
+    pendingHistoryQueryContext.value = null;
     deviceId.value = "";
     points.value = [];
     pointRef.value = "";
@@ -319,41 +365,61 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
 }
 
 async function loadHistory() {
-  if (!deviceId.value || !pointRef.value) {
+  const requestContext = currentHistoryQueryContext();
+  if (!requestContext.deviceId || !requestContext.pointRef) {
     ElMessage.warning("请先选择设备和点位");
     return;
   }
+  const ticket = historyQueryOwner.begin(requestContext);
   loading.value = true;
+  pendingHistoryQueryContext.value = requestContext;
   try {
-    const params = {
-      startTs: startTime.value ? new Date(startTime.value).getTime() : undefined,
-      endTs: endTime.value ? new Date(endTime.value).getTime() : undefined,
-      limit: limit.value
-    };
-    const refs = [pointRef.value, ...comparePointRefs.value.filter((ref) => ref && ref !== pointRef.value)];
-    const responses = await Promise.all(refs.map((ref) => getPointHistory(deviceId.value, ref, params)));
-    historyRows.value = normalizeHistoryRows(responses[0]);
-    comparePointRows.value = Object.fromEntries(refs.slice(1).map((ref, index) => [ref, normalizeHistoryRows(responses[index + 1])]));
-    await loadRelatedAlarms();
+    const refs = [requestContext.pointRef, ...requestContext.comparePointRefs];
+    const params = buildHistoryDataQueryParams(requestContext);
+    const responses = await Promise.all(refs.map((ref) => getPointHistory(requestContext.deviceId, ref, params)));
+    const nextHistoryRows = normalizeHistoryRows(responses[0]);
+    const nextComparePointRows = Object.fromEntries(refs.slice(1).map((ref, index) => [ref, normalizeHistoryRows(responses[index + 1])]));
+    const nextRelatedAlarms = await loadRelatedAlarms(requestContext);
+    if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
+      return;
+    }
+    historyRows.value = nextHistoryRows;
+    comparePointRows.value = nextComparePointRows;
+    relatedAlarms.value = nextRelatedAlarms;
   } catch (error) {
+    if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
+      return;
+    }
     historyRows.value = [];
     comparePointRows.value = {};
     relatedAlarms.value = [];
     ElMessage.error(error instanceof Error ? error.message : "历史数据查询失败");
   } finally {
-    loading.value = false;
+    if (historyQueryOwner.isLatest(ticket)) {
+      loading.value = false;
+      pendingHistoryQueryContext.value = null;
+    }
   }
 }
 
-async function loadRelatedAlarms() {
-  const response = await getDeviceAlarmHistory(deviceId.value, {
-    pointCode: pointRef.value,
-    pointId: pointRef.value,
-    startTs: startTime.value ? new Date(startTime.value).getTime() : undefined,
-    endTs: endTime.value ? new Date(endTime.value).getTime() : undefined,
-    limit: 20
+async function loadRelatedAlarms(snapshot: HistoryQueryContext): Promise<AlarmRow[]> {
+  const response = await getDeviceAlarmHistory(snapshot.deviceId, buildHistoryRelatedAlarmQuery(snapshot));
+  return normalizeAlarmHistoryRows(response);
+}
+
+function currentHistoryPointsRequestContext() {
+  return buildHistoryPointsRequestContext({ deviceId: deviceId.value });
+}
+
+function currentHistoryQueryContext() {
+  return buildHistoryQueryContext({
+    deviceId: deviceId.value,
+    pointRef: pointRef.value,
+    comparePointRefs: [...comparePointRefs.value],
+    startTime: startTime.value,
+    endTime: endTime.value,
+    limit: limit.value
   });
-  relatedAlarms.value = normalizeAlarmHistoryRows(response);
 }
 
 function downloadHistory() {
@@ -415,6 +481,14 @@ function resolvePointRef(value?: string): string {
     return "";
   }
   const point = points.value.find((item) => pointMatchesRef(item, value));
+  return pointKey(point);
+}
+
+function resolvePointRefFromPoints(pointList: DataPoint[], value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const point = pointList.find((item) => pointMatchesRef(item, value));
   return pointKey(point);
 }
 

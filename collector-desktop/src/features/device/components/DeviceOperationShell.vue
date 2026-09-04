@@ -57,14 +57,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import { clearDeviceConfig, refreshDeviceConfig } from "@/api/config.api";
 import { getDeviceRealtimeData } from "@/api/data.api";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
+import { buildDeviceRequestContext, isSameDeviceRequestContext } from "@/features/device/utils/device-request-lifecycle";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { routePathForWorkbenchTab, type WorkbenchNavigationTab } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
@@ -80,6 +82,8 @@ const router = useRouter();
 
 const realtimePreviewRows = ref<RealtimePointRow[]>([]);
 const deviceConfigOperatingId = ref("");
+
+const previewRequestOwner = createLatestRequestOwner(isSameDeviceRequestContext);
 
 const activeTab = computed(() => props.activeTab);
 const selectedDeviceId = computed(() => deviceStore.selectedDevice?.normalizedId || deviceStore.selectedDeviceId || queryDeviceId());
@@ -110,6 +114,10 @@ onMounted(async () => {
 watch(() => route.query.deviceId, () => {
   applyRouteDevice();
   void loadRealtimePreview();
+});
+
+onBeforeUnmount(() => {
+  previewRequestOwner.invalidate();
 });
 
 async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionType) {
@@ -145,16 +153,29 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
 }
 
 async function loadRealtimePreview() {
-  const deviceId = selectedDeviceId.value;
-  if (!deviceId) {
+  const requestContext = currentPreviewRequestContext();
+  if (!requestContext.deviceId) {
+    previewRequestOwner.invalidate();
     realtimePreviewRows.value = [];
     return;
   }
+  const ticket = previewRequestOwner.begin(requestContext);
   try {
-    realtimePreviewRows.value = normalizeRealtimeRows(await getDeviceRealtimeData(deviceId), deviceId);
+    const nextRows = normalizeRealtimeRows(await getDeviceRealtimeData(requestContext.deviceId), requestContext.deviceId);
+    if (!previewRequestOwner.canCommit(ticket, currentPreviewRequestContext())) {
+      return;
+    }
+    realtimePreviewRows.value = nextRows;
   } catch {
+    if (!previewRequestOwner.canCommit(ticket, currentPreviewRequestContext())) {
+      return;
+    }
     realtimePreviewRows.value = [];
   }
+}
+
+function currentPreviewRequestContext() {
+  return buildDeviceRequestContext(selectedDeviceId.value);
 }
 
 function applyRouteDevice() {

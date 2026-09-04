@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getDeviceConnection, getDeviceDiff, updateDeviceConnection } from "@/api/config.api";
@@ -206,9 +206,17 @@ import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { resolveDeviceStatus } from "@/stores/device.store";
 import { normalizeDeviceStatusDetail, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
 import { buildConnectionPayload, extractProtocolModel, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
+import {
+  buildDeviceProtocolRequestContext,
+  buildDeviceRequestContext,
+  isSameDeviceProtocolRequestContext,
+  isSameDeviceRequestContext,
+  shouldCommitDeviceProtocolSave
+} from "@/features/device/utils/device-request-lifecycle";
 import type { DeviceViewModel } from "@/types/device";
 import type { RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 
 const props = defineProps<{
   device: DeviceViewModel | null;
@@ -250,6 +258,11 @@ const pageSize = ref(10);
 const pointEditVisible = ref(false);
 const selectedWorkbenchPoint = ref<RealtimePointRow | null>(null);
 
+const protocolConfigOwner = createLatestRequestOwner(isSameDeviceProtocolRequestContext);
+const statusOwner = createLatestRequestOwner(isSameDeviceRequestContext);
+const workbenchRowsOwner = createLatestRequestOwner(isSameDeviceRequestContext);
+const diffOwner = createLatestRequestOwner(isSameDeviceRequestContext);
+
 const protocolKey = computed(() => String(props.device?.protocolType || props.device?.connectionType || ""));
 const protocolFields = computed(() => protocolSchema.value?.connectionFields || []);
 const pointRows = computed(() => workbenchRows.value);
@@ -290,70 +303,108 @@ const deviceStatusText = computed(() => {
 });
 
 async function loadProtocolConfig() {
-  if (!props.device || !protocolKey.value) {
+  const requestContext = currentProtocolConfigContext();
+  if (!requestContext.deviceId || !requestContext.protocolKey) {
     return;
   }
+  const ticket = protocolConfigOwner.begin(requestContext);
   protocolLoading.value = true;
   protocolError.value = "";
   connectionMessage.value = "";
   try {
     const [schema, connection] = await Promise.all([
-      getProtocol(protocolKey.value),
-      getDeviceConnection(props.device.normalizedId)
+      getProtocol(requestContext.protocolKey),
+      getDeviceConnection(requestContext.deviceId)
     ]);
+    const nextConnectionConfig = connection.connection || {};
+    const nextProtocolModel = extractProtocolModel(schema.connectionFields || [], nextConnectionConfig);
+    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext())) {
+      return;
+    }
     protocolSchema.value = schema;
-    connectionConfig.value = connection.connection || {};
-    protocolModel.value = extractProtocolModel(protocolFields.value, connectionConfig.value);
+    connectionConfig.value = nextConnectionConfig;
+    protocolModel.value = nextProtocolModel;
     connectionMessage.value = "连接配置已读取";
   } catch (error) {
+    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext())) {
+      return;
+    }
     protocolError.value = error instanceof Error ? error.message : "协议连接配置加载失败";
   } finally {
-    protocolLoading.value = false;
+    if (protocolConfigOwner.isLatest(ticket)) {
+      protocolLoading.value = false;
+    }
   }
 }
 
 async function loadConnectionStatus() {
-  if (!props.device) {
+  const requestContext = currentDeviceRequestContext();
+  if (!requestContext.deviceId) {
     return;
   }
+  const ticket = statusOwner.begin(requestContext);
   statusLoading.value = true;
   try {
-    statusDetail.value = normalizeDeviceStatusDetail(await getDeviceStatus(props.device.normalizedId), props.device.normalizedId);
-    connectionMessage.value = statusDetail.value.message || (statusDetail.value.connected ? "连接正常" : "连接异常");
-    if (!connectionMessage.value) {
-      connectionMessage.value = statusDetail.value.connected ? "连接正常" : "连接异常";
+    const nextStatusDetail = normalizeDeviceStatusDetail(await getDeviceStatus(requestContext.deviceId), requestContext.deviceId);
+    const nextConnectionMessage = nextStatusDetail.message || (nextStatusDetail.connected ? "连接正常" : "连接异常");
+    if (!statusOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
     }
+    statusDetail.value = nextStatusDetail;
+    connectionMessage.value = nextConnectionMessage || (nextStatusDetail.connected ? "连接正常" : "连接异常");
   } catch (error) {
+    if (!statusOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
+    }
     statusDetail.value = null;
     connectionMessage.value = error instanceof Error ? error.message : "连接状态检查失败";
   } finally {
-    statusLoading.value = false;
+    if (statusOwner.isLatest(ticket)) {
+      statusLoading.value = false;
+    }
   }
 }
 
 async function loadWorkbenchRows() {
-  if (!props.device) {
+  const requestContext = currentDeviceRequestContext();
+  if (!requestContext.deviceId) {
+    workbenchRowsOwner.invalidate();
     workbenchRows.value = [];
     return;
   }
+  const ticket = workbenchRowsOwner.begin(requestContext);
   workbenchRowsLoading.value = true;
   workbenchRowsError.value = "";
   try {
-    workbenchRows.value = normalizeRealtimeRows(await getDeviceRealtimeData(props.device.normalizedId), props.device.normalizedId);
-    selectedWorkbenchPoint.value = resolveSelectedWorkbenchPoint(workbenchRows.value, selectedWorkbenchPoint.value);
+    const nextRows = normalizeRealtimeRows(await getDeviceRealtimeData(requestContext.deviceId), requestContext.deviceId);
+    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
+    }
+    workbenchRows.value = nextRows;
+    selectedWorkbenchPoint.value = resolveSelectedWorkbenchPoint(nextRows, selectedWorkbenchPoint.value);
     currentPage.value = 1;
   } catch (error) {
+    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
+    }
     workbenchRowsError.value = error instanceof Error ? error.message : "点位运行数据加载失败";
   } finally {
-    workbenchRowsLoading.value = false;
+    if (workbenchRowsOwner.isLatest(ticket)) {
+      workbenchRowsLoading.value = false;
+    }
   }
 }
 
 async function saveProtocolConfig() {
-  if (!props.device) {
+  const targetContext = currentProtocolConfigContext();
+  if (!targetContext.deviceId || !targetContext.protocolKey || !props.device) {
     return;
   }
-  const errors = validateProtocolModel(protocolFields.value, protocolModel.value);
+  const targetFields = [...protocolFields.value];
+  const targetModel = { ...protocolModel.value };
+  const targetConnectionConfig = cloneConnectionPayload(connectionConfig.value);
+  const targetDeviceName = props.device.displayName || props.device.normalizedId || targetContext.deviceId;
+  const errors = validateProtocolModel(targetFields, targetModel);
   protocolErrors.value = errors;
   if (errors.length > 0) {
     protocolError.value = "请先修正协议字段校验错误";
@@ -362,35 +413,73 @@ async function saveProtocolConfig() {
   savingConnection.value = true;
   protocolError.value = "";
   try {
-    const payload = buildConnectionPayload(protocolFields.value, protocolModel.value, {
-      ...connectionConfig.value,
-      deviceId: props.device.normalizedId,
-      connectionType: protocolKey.value,
-      protocolType: protocolKey.value
+    const payload = buildConnectionPayload(targetFields, targetModel, {
+      ...targetConnectionConfig,
+      deviceId: targetContext.deviceId,
+      connectionType: targetContext.protocolKey,
+      protocolType: targetContext.protocolKey
     });
-    await updateDeviceConnection(props.device.normalizedId, payload);
-    connectionConfig.value = payload;
-    connectionMessage.value = "协议连接配置已保存";
-    ElMessage.success("协议连接配置已保存");
+    await updateDeviceConnection(targetContext.deviceId, payload);
+    if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+      connectionConfig.value = payload;
+      connectionMessage.value = "协议连接配置已保存";
+      ElMessage.success("协议连接配置已保存");
+      return;
+    }
+    ElMessage.success(`设备 ${targetDeviceName} 协议连接配置已保存`);
   } catch (error) {
-    protocolError.value = error instanceof Error ? error.message : "协议连接配置保存失败";
+    const message = error instanceof Error ? error.message : "协议连接配置保存失败";
+    if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+      protocolError.value = message;
+      return;
+    }
+    ElMessage.error(`设备 ${targetDeviceName} 协议连接配置保存失败：${message}`);
   } finally {
     savingConnection.value = false;
   }
 }
 
 async function showDiff() {
-  if (!props.device) {
+  const requestContext = currentDeviceRequestContext();
+  if (!requestContext.deviceId) {
     return;
   }
+  const ticket = diffOwner.begin(requestContext);
   protocolError.value = "";
   try {
-    const diff = await getDeviceDiff(props.device.normalizedId);
+    const diff = await getDeviceDiff(requestContext.deviceId);
+    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
+    }
     diffText.value = JSON.stringify(diff, null, 2);
     diffVisible.value = true;
   } catch (error) {
+    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext())) {
+      return;
+    }
     protocolError.value = error instanceof Error ? error.message : "配置差异加载失败";
   }
+}
+
+function currentDeviceRequestContext() {
+  return buildDeviceRequestContext(props.device?.normalizedId);
+}
+
+function currentProtocolConfigContext() {
+  return buildDeviceProtocolRequestContext(props.device?.normalizedId, protocolKey.value);
+}
+
+function resetProtocolReadState() {
+  protocolModel.value = {};
+  protocolErrors.value = [];
+  protocolSchema.value = null;
+  connectionConfig.value = {};
+  protocolError.value = "";
+  connectionMessage.value = "";
+}
+
+function cloneConnectionPayload(payload: ConnectionPayload): ConnectionPayload {
+  return JSON.parse(JSON.stringify(payload || {})) as ConnectionPayload;
 }
 
 function resolveSelectedWorkbenchPoint(rows: RealtimePointRow[], current: RealtimePointRow | null): RealtimePointRow | null {
@@ -516,25 +605,43 @@ watch(activeTab, (tab) => {
 });
 
 watch(() => props.device?.normalizedId, () => {
+  statusOwner.invalidate();
+  workbenchRowsOwner.invalidate();
+  diffOwner.invalidate();
+  statusLoading.value = false;
+  workbenchRowsLoading.value = false;
   statusDetail.value = null;
   connectionMessage.value = "";
+  diffVisible.value = false;
+  diffText.value = "{}";
+  currentPage.value = 1;
   selectedWorkbenchPoint.value = null;
-  if (props.device) {
-    loadConnectionStatus().catch(() => undefined);
-    loadWorkbenchRows().catch(() => undefined);
+  if (!props.device) {
+    workbenchRows.value = [];
+    workbenchRowsError.value = "";
+    return;
+  }
+  loadConnectionStatus().catch(() => undefined);
+  loadWorkbenchRows().catch(() => undefined);
+}, { immediate: true });
+
+watch(() => [props.device?.normalizedId, protocolKey.value], () => {
+  protocolConfigOwner.invalidate();
+  protocolLoading.value = false;
+  resetProtocolReadState();
+  if (props.device && protocolKey.value) {
+    loadProtocolConfig().catch(() => undefined);
   }
 }, { immediate: true });
 
-watch(protocolKey, () => {
-  protocolModel.value = {};
-  protocolErrors.value = [];
-  protocolSchema.value = null;
-  connectionConfig.value = {};
-  protocolError.value = "";
-  connectionMessage.value = "";
-  if (activeTab.value === "points") {
-    loadProtocolConfig().catch(() => undefined);
-  }
+onBeforeUnmount(() => {
+  protocolConfigOwner.invalidate();
+  statusOwner.invalidate();
+  workbenchRowsOwner.invalidate();
+  diffOwner.invalidate();
+  protocolLoading.value = false;
+  statusLoading.value = false;
+  workbenchRowsLoading.value = false;
 });
 </script>
 
