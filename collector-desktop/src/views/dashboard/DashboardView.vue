@@ -3,7 +3,7 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>控制台总览</h1>
-        <span class="heading-online"><i></i>设备连接 <b>{{ onlineCount }}/{{ deviceCount }}</b></span>
+        <span class="heading-online"><i></i>设备连接 <b>{{ deviceConnectionText }}</b></span>
       </div>
       <div class="heading-actions">
         <button type="button" class="primary" :disabled="dashboardLoading" @click="refreshDashboard">刷新全部</button>
@@ -11,6 +11,11 @@
         <button type="button" class="primary" @click="openLocalEditor">新增本地设备</button>
         <span class="heading-note">{{ lastRefreshText }}</span>
       </div>
+    </div>
+
+    <div class="dashboard-alerts">
+      <el-alert v-if="dashboardError" :title="dashboardError" type="error" :closable="false" />
+      <el-alert v-else-if="dashboardPartialWarning" :title="dashboardPartialWarning" type="warning" :closable="false" />
     </div>
 
     <div class="overview-cards">
@@ -30,10 +35,10 @@
         <section class="home-panel home-panel-large">
           <div class="home-panel-head">
             <div><h2>全局告警最近记录</h2></div>
-            <span class="home-panel-badge">{{ recentAlarms.length ? `${recentAlarms.length} 条` : '数据不可用' }}</span>
+            <span class="home-panel-badge">{{ recentAlarmBadge }}</span>
           </div>
           <div class="home-event-list">
-            <div v-if="recentAlarms.length === 0" class="empty-state compact">暂无告警记录</div>
+            <div v-if="recentAlarms.length === 0" class="empty-state compact">{{ recentAlarmEmptyText }}</div>
             <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
               <div class="home-event-main">
                 <strong>{{ alarmMessage(alarm) }}</strong>
@@ -50,10 +55,10 @@
         <section class="home-panel">
           <div class="home-panel-head">
             <div><h2>设备异常风险</h2></div>
-            <span class="home-panel-badge">{{ riskDevices.length ? `${riskDevices.length} 台风险` : '正常' }}</span>
+            <span class="home-panel-badge">{{ riskDeviceBadge }}</span>
           </div>
           <div class="home-risk-list">
-            <div v-if="riskDevices.length === 0" class="empty-state compact">当前没有明显设备风险</div>
+            <div v-if="riskDevices.length === 0" class="empty-state compact">{{ riskDeviceEmptyText }}</div>
             <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
               <span class="risk-dot"></span>
               <div>
@@ -79,7 +84,7 @@
                 <span class="topology-status-dots"><i :class="runningToneClass"></i><i :class="collectorToneClass"></i></span>
               </div>
               <span class="topology-connector" aria-hidden="true"></span>
-              <div class="topology-node is-gateway" :class="gatewayToneClass" :title="gatewayDetail">
+              <div class="topology-node" :class="gatewayToneClass" :title="gatewayDetail">
                 <span class="topology-icon">网</span>
                 <strong>边缘网关</strong>
                 <small>{{ nodeIdentity }}</small>
@@ -134,13 +139,25 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { getRecentAlarms } from "@/api/data.api";
 import { getCacheMetrics, getCloudReportMetrics, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
 import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
-import { createDashboardRefreshCycle, type DashboardRefreshTicket } from "@/features/dashboard/utils/dashboard-request-lifecycle";
+import {
+  buildDashboardFatalError,
+  buildDashboardInitializeError,
+  buildDashboardPartialWarning,
+  createDashboardMetricState,
+  DASHBOARD_METRIC_LABELS,
+  isDashboardMetricStale,
+  isDashboardMetricUnavailable,
+  runDashboardMetric,
+  type DashboardMetricKey,
+  type DashboardMetricState
+} from "@/features/dashboard/utils/dashboard-metric-state";
+import { createDashboardRefreshCycle } from "@/features/dashboard/utils/dashboard-request-lifecycle";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
@@ -164,48 +181,147 @@ const storageMetrics = ref<StorageMetricsSnapshot | null>(null);
 const performanceDetail = ref<PerformanceStatsSnapshot | null>(null);
 const lastRefresh = ref<Date | null>(null);
 const dashboardLoading = ref(false);
+const dashboardError = ref("");
+const dashboardPartialWarning = ref("");
 const localEditorVisible = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
 
 const dashboardRefreshCycle = createDashboardRefreshCycle();
+const dashboardMetricStates = reactive<Record<DashboardMetricKey, DashboardMetricState>>({
+  devices: createDashboardMetricState(),
+  alarms: createDashboardMetricState(),
+  report: createDashboardMetricState(),
+  runtime: createDashboardMetricState(),
+  systemResource: createDashboardMetricState(),
+  cache: createDashboardMetricState(),
+  storage: createDashboardMetricState(),
+  performance: createDashboardMetricState()
+});
+
+const dashboardSourceKeys: DashboardMetricKey[] = ["devices", "alarms", "report", "runtime", "systemResource", "cache", "storage", "performance"];
 
 const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
+const deviceState = computed(() => dashboardMetricStates.devices);
+const alarmState = computed(() => dashboardMetricStates.alarms);
+const reportMetricState = computed(() => dashboardMetricStates.report);
+const runtimeMetricState = computed(() => dashboardMetricStates.runtime);
+const systemResourceState = computed(() => dashboardMetricStates.systemResource);
+const cacheMetricState = computed(() => dashboardMetricStates.cache);
+const storageMetricState = computed(() => dashboardMetricStates.storage);
+const performanceMetricState = computed(() => dashboardMetricStates.performance);
 const deviceCount = computed(() => deviceStore.devices.length);
 const onlineCount = computed(() => deviceStore.onlineCount);
 const offlineCount = computed(() => deviceStore.offlineCount + deviceStore.errorCount);
 const totalPointCount = computed(() => deviceStore.totalPointCount);
-const riskDevices = computed(() => deviceStore.devices.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
-const reportState = computed(() => reportMetrics.value ? "已加载" : "未知");
-const runtimeState = computed(() => runtimeStatus.value ? "资源已加载" : "资源未知");
-const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "等待刷新");
+const devicesUnavailable = computed(() => isDashboardMetricUnavailable(deviceState.value));
+const devicesStale = computed(() => isDashboardMetricStale(deviceState.value));
+const alarmsUnavailable = computed(() => isDashboardMetricUnavailable(alarmState.value));
+const alarmsStale = computed(() => isDashboardMetricStale(alarmState.value));
+const reportUnavailable = computed(() => isDashboardMetricUnavailable(reportMetricState.value));
+const reportStale = computed(() => isDashboardMetricStale(reportMetricState.value));
+const runtimeUnavailable = computed(() => isDashboardMetricUnavailable(runtimeMetricState.value));
+const runtimeStale = computed(() => isDashboardMetricStale(runtimeMetricState.value));
+const systemResourceUnavailable = computed(() => isDashboardMetricUnavailable(systemResourceState.value));
+const systemResourceStale = computed(() => isDashboardMetricStale(systemResourceState.value));
+const cacheStale = computed(() => isDashboardMetricStale(cacheMetricState.value));
+const cacheUnavailable = computed(() => isDashboardMetricUnavailable(cacheMetricState.value));
+const storageStale = computed(() => isDashboardMetricStale(storageMetricState.value));
+const storageUnavailable = computed(() => isDashboardMetricUnavailable(storageMetricState.value));
+const performanceStale = computed(() => isDashboardMetricStale(performanceMetricState.value));
+const performanceUnavailable = computed(() => isDashboardMetricUnavailable(performanceMetricState.value));
+const riskDevices = computed(() => devicesUnavailable.value ? [] : deviceStore.devices.filter((device) => ["ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase()) || Boolean(device.lastError)).slice(0, 6));
+const deviceConnectionText = computed(() => devicesUnavailable.value ? "-" : `${onlineCount.value}/${deviceCount.value}`);
+const reportState = computed(() => {
+  if (reportUnavailable.value) return "数据不可用";
+  if (reportStale.value) return "刷新失败 · 上次数据";
+  if (reportMetricState.value.status === "loading" && reportMetrics.value) return "刷新中 · 上次数据";
+  return reportMetrics.value?.statusText || reportMetrics.value?.status || (reportMetrics.value ? "已加载" : "未知");
+});
+const runtimeState = computed(() => {
+  if (systemResourceUnavailable.value) return "系统资源不可用";
+  if (systemResourceStale.value) return "系统资源刷新失败 · 上次数据";
+  if (runtimeUnavailable.value) return "运行状态不可用";
+  if (runtimeStale.value) return "运行状态刷新失败 · 上次数据";
+  if (performanceStale.value || performanceUnavailable.value) return "性能详情刷新失败";
+  return systemResource.value || runtimeStatus.value ? "资源已加载" : "资源未知";
+});
+const lastRefreshText = computed(() => {
+  if (!lastRefresh.value) {
+    return "等待刷新";
+  }
+  const suffix = dashboardPartialWarning.value ? " · 部分数据降级" : "";
+  return `刷新于 ${lastRefresh.value.toLocaleTimeString()}${suffix}`;
+});
+const recentAlarmBadge = computed(() => {
+  if (alarmsUnavailable.value) return "数据不可用";
+  if (alarmsStale.value) return `${recentAlarms.value.length} 条 · 上次数据`;
+  return `${recentAlarms.value.length} 条`;
+});
+const recentAlarmEmptyText = computed(() => alarmsUnavailable.value ? "最近告警数据暂不可用" : "暂无告警记录");
+const riskDeviceBadge = computed(() => {
+  if (devicesUnavailable.value) return "数据不可用";
+  if (devicesStale.value) return `${riskDevices.value.length} 台风险 · 上次数据`;
+  return riskDevices.value.length ? `${riskDevices.value.length} 台风险` : "正常";
+});
+const riskDeviceEmptyText = computed(() => devicesUnavailable.value ? "设备状态暂不可用" : (devicesStale.value ? "当前没有明显设备风险（上次数据）" : "当前没有明显设备风险"));
 
 const overviewCards = computed(() => {
-  const cacheRatio = ratioFrom(cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate ?? null);
+  const runtimeCacheRatio = ratioFrom(runtimeStatus.value?.cache?.totalHitRate ?? null);
+  const cacheRatio = ratioFrom(cacheMetrics.value?.totalHitRate ?? null) ?? runtimeCacheRatio;
+  const devicesMeta = devicesUnavailable.value
+    ? [["状态", "设备数据不可用"]]
+    : [["已连接", onlineCount.value], ["未连接", offlineCount.value], ...(devicesStale.value ? [["状态", "显示上次成功数据"]] : [])];
+  const pointMeta = devicesUnavailable.value
+    ? [["状态", "设备数据不可用"]]
+    : [["连接配置", deviceCount.value], ["上报属性", reportMetrics.value?.configured?.reportFieldPointCount ?? reportMetrics.value?.configured?.reportablePointCount ?? "-"], ...(devicesStale.value ? [["状态", "显示上次成功数据"]] : [])];
+  const runningMeta = devicesUnavailable.value
+    ? [["状态", "设备数据不可用"]]
+    : [["缺失连接", offlineCount.value], ["健康连接", onlineCount.value], ...(devicesStale.value ? [["状态", "显示上次成功数据"]] : [])];
+  const alarmSubtext = alarmsUnavailable.value
+    ? "告警数据暂不可用"
+    : (alarmsStale.value ? "刷新失败，显示上次成功数据" : (recentAlarms.value.length ? "最近告警记录" : "最近 24 小时没有告警历史记录"));
+  const cacheSubtext = cacheMetricState.value.status === "error" && runtimeCacheRatio !== null && !cacheMetrics.value
+    ? "缓存独立指标不可用，使用运行状态快照"
+    : (cacheUnavailable.value && cacheRatio === null ? "缓存指标不可用" : (cacheStale.value ? "刷新失败，显示上次成功数据" : "缓存访问指标"));
+  const reportSubtext = reportUnavailable.value
+    ? "上报监控数据不可用"
+    : (reportStale.value ? "刷新失败，显示上次成功数据" : "上报状态已加载");
   return [
-    { label: "采集器总数", value: deviceCount.value, meta: [["已连接", onlineCount.value], ["未连接", offlineCount.value]] },
-    { label: "点位总数", value: totalPointCount.value, meta: [["连接配置", deviceCount.value], ["上报属性", reportMetrics.value?.configured?.reportFieldPointCount ?? reportMetrics.value?.configured?.reportablePointCount ?? "-"]] },
-    { label: "全局告警", value: recentAlarms.value.length, subtext: recentAlarms.value.length ? "最近告警记录" : "最近 24 小时没有告警历史记录" },
-    { label: "运行设备", value: onlineCount.value, meta: [["缺失连接", offlineCount.value], ["健康连接", onlineCount.value]] },
-    { label: "缓存命中率", value: cacheRatio === null ? "-" : percentText(cacheRatio), ring: true, subtext: cacheRatio === null ? "缓存指标不可用" : "缓存访问指标" },
-    { label: "云上报链路", value: reportState.value, subtext: reportMetrics.value ? "上报状态已加载" : "上报监控数据不可用" }
+    { label: "采集器总数", value: devicesUnavailable.value ? "-" : deviceCount.value, meta: devicesMeta },
+    { label: "点位总数", value: devicesUnavailable.value ? "-" : totalPointCount.value, meta: pointMeta },
+    { label: "全局告警", value: alarmsUnavailable.value ? "-" : recentAlarms.value.length, subtext: alarmSubtext },
+    { label: "运行设备", value: devicesUnavailable.value ? "-" : onlineCount.value, meta: runningMeta },
+    { label: "缓存命中率", value: cacheRatio === null ? "-" : percentText(cacheRatio), ring: true, subtext: cacheSubtext },
+    { label: "云上报链路", value: reportState.value, subtext: reportSubtext }
   ];
 });
 
-const collectorToneClass = computed(() => riskDevices.value.some((device) => String(device.status || "").toUpperCase() === "ERROR") ? "is-error" : (riskDevices.value.length ? "is-warn" : (deviceStore.devices.length ? "is-ok" : "is-muted")));
-const runningToneClass = computed(() => onlineCount.value > 0 ? "is-ok" : "is-muted");
-const gatewayToneClass = computed(() => runtimeStatus.value ? "is-ok" : "is-muted");
-const cacheToneClass = computed(() => ratioFrom(cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate ?? null) === null ? "is-muted" : "is-ok");
-const storageToneClass = computed(() => storageMetrics.value ? "is-ok" : "is-muted");
+const collectorToneClass = computed(() => {
+  if (devicesUnavailable.value) return "is-muted";
+  if (devicesStale.value) return "is-warn";
+  return riskDevices.value.some((device) => String(device.status || "").toUpperCase() === "ERROR") ? "is-error" : (riskDevices.value.length ? "is-warn" : (deviceStore.devices.length ? "is-ok" : "is-muted"));
+});
+const runningToneClass = computed(() => devicesUnavailable.value ? "is-muted" : (devicesStale.value ? "is-warn" : (onlineCount.value > 0 ? "is-ok" : "is-muted")));
+const gatewayToneClass = computed(() => runtimeUnavailable.value ? "is-muted" : (runtimeStale.value ? "is-warn" : (runtimeStatus.value ? "is-ok" : "is-muted")));
+const cacheToneClass = computed(() => {
+  const hasRuntimeFallback = ratioFrom(runtimeStatus.value?.cache?.totalHitRate ?? null) !== null;
+  if (cacheStale.value || (cacheMetricState.value.status === "error" && hasRuntimeFallback)) return "is-warn";
+  if (cacheUnavailable.value && !hasRuntimeFallback) return "is-muted";
+  return ratioFrom(cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate ?? null) === null ? "is-muted" : "is-ok";
+});
+const storageToneClass = computed(() => storageUnavailable.value ? "is-muted" : (storageStale.value ? "is-warn" : (storageMetrics.value ? "is-ok" : "is-muted")));
 const cloudToneClass = computed(() => {
+  if (reportUnavailable.value) return "is-muted";
+  if (reportStale.value) return "is-warn";
   const status = String(reportMetrics.value?.status || "UNKNOWN").toUpperCase();
   if (["ERROR", "FAILED", "DOWN"].includes(status)) return "is-error";
   if (["WARN", "WARNING", "DEGRADED"].includes(status)) return "is-warn";
   return reportMetrics.value ? "is-ok" : "is-muted";
 });
-const collectorDetail = computed(() => `${onlineCount.value}/${deviceCount.value} 已连接`);
-const gatewayDetail = computed(() => runtimeStatus.value ? "处理指标已加载" : "处理性能数据不可用");
+const collectorDetail = computed(() => devicesUnavailable.value ? "设备数据暂不可用" : `${onlineCount.value}/${deviceCount.value} 已连接${devicesStale.value ? "，显示上次成功数据" : ""}`);
+const gatewayDetail = computed(() => runtimeUnavailable.value ? "运行状态不可用" : (runtimeStale.value ? "运行状态刷新失败，显示上次成功数据" : (runtimeStatus.value ? "处理指标已加载" : "处理性能数据不可用")));
 const resourceGauges = computed(() => {
-  const resource = systemResource.value;
+  const resource = systemResourceUnavailable.value ? null : systemResource.value;
   const cpu = ratioFrom(resource?.systemCpuLoad ?? resource?.processCpuLoad ?? null);
   const totalMemory = optionalNumber(resource?.totalPhysicalMemorySize ?? null);
   const freeMemory = optionalNumber(resource?.freePhysicalMemorySize ?? null);
@@ -214,13 +330,13 @@ const resourceGauges = computed(() => {
   const heapMax = optionalNumber(resource?.heapMax ?? null);
   const heap = heapUsed !== null && heapMax !== null && heapMax > 0 ? heapUsed / heapMax : null;
   return [
-    { label: "CPU 使用率", tone: "blue", value: percentText(cpu), degrees: ratioDegrees(cpu) },
-    { label: "内存使用率", tone: "orange", value: percentText(memory), degrees: ratioDegrees(memory) },
-    { label: "JVM 堆内存", tone: "green", value: percentText(heap), degrees: ratioDegrees(heap) }
+    { label: "CPU 使用率", tone: cpu === null ? "muted" : "blue", value: percentText(cpu), degrees: ratioDegrees(cpu) },
+    { label: "内存使用率", tone: memory === null ? "muted" : "orange", value: percentText(memory), degrees: ratioDegrees(memory) },
+    { label: "JVM 堆内存", tone: heap === null ? "muted" : "green", value: percentText(heap), degrees: ratioDegrees(heap) }
   ];
 });
 const resourceSummary = computed(() => {
-  const resource = systemResource.value;
+  const resource = systemResourceUnavailable.value ? null : systemResource.value;
   const pools = resource?.threadPools || {};
   let activeThreads = 0;
   let maxThreads = 0;
@@ -239,7 +355,7 @@ const resourceSummary = computed(() => {
     queuedTasks = numberValue(executor.queueSize, 0);
     rejectedTasks = numberValue(executor.rejectedCount, 0);
   }
-  const perf = performanceDetail.value;
+  const perf = performanceUnavailable.value ? null : performanceDetail.value;
   if (maxThreads === 0 && perf) {
     rejectedTasks = numberValue(perf.batchDispatchRejectedCount, 0) + numberValue(perf.collectRejectedCount, 0) + numberValue(perf.processRejectedCount, 0);
   }
@@ -249,7 +365,7 @@ const resourceSummary = computed(() => {
     maxThreads: maxThreads > 0 ? String(maxThreads) : "-",
     queuedTasks: maxThreads > 0 ? String(queuedTasks) : "-",
     threadUsage: `${usage}%`,
-    title: `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${resource?.threadCount ?? "-"} 个`
+    title: maxThreads > 0 ? `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${resource?.threadCount ?? "-"} 个` : "运行资源数据暂不可用"
   };
 });
 
@@ -269,20 +385,38 @@ async function refreshDashboard() {
 async function loadDashboard() {
   const ticket = dashboardRefreshCycle.begin();
   dashboardLoading.value = true;
-  await appStore.initialize();
+  dashboardError.value = "";
   try {
-    await Promise.allSettled([
-      deviceStore.refresh(),
-      loadRecentAlarms(ticket),
-      loadReportMetrics(ticket),
-      loadRuntimeStatus(ticket),
-      loadSystemResource(ticket),
-      loadCacheMetrics(ticket),
-      loadStorageMetrics(ticket),
-      loadPerformanceDetail(ticket)
-    ]);
-    if (dashboardRefreshCycle.isLatest(ticket)) {
+    await appStore.initialize();
+    if (!dashboardRefreshCycle.isLatest(ticket)) {
+      return;
+    }
+    const results = await Promise.all(dashboardSourceKeys.map((key) => runDashboardMetric({
+      key,
+      state: dashboardMetricStates[key],
+      loader: () => loadDashboardMetric(key),
+      commit: (value) => commitDashboardMetric(key, value),
+      isLatest: () => dashboardRefreshCycle.isLatest(ticket)
+    })));
+    if (!dashboardRefreshCycle.isLatest(ticket)) {
+      return;
+    }
+    const successKeys = results.filter((result) => result.status === "success").map((result) => result.key);
+    const failedKeys = results.filter((result) => result.status === "error").map((result) => result.key);
+    if (successKeys.length > 0) {
       lastRefresh.value = new Date();
+    }
+    if (failedKeys.length === dashboardSourceKeys.length) {
+      dashboardError.value = buildDashboardFatalError(failedKeys.map((key) => sourceLabel(key)).join("、"));
+      dashboardPartialWarning.value = "";
+      return;
+    }
+    dashboardError.value = "";
+    dashboardPartialWarning.value = buildDashboardPartialWarning(failedKeys);
+  } catch (error) {
+    if (dashboardRefreshCycle.isLatest(ticket)) {
+      dashboardError.value = buildDashboardInitializeError(error);
+      dashboardPartialWarning.value = "";
     }
   } finally {
     if (dashboardRefreshCycle.isLatest(ticket)) {
@@ -291,60 +425,65 @@ async function loadDashboard() {
   }
 }
 
-async function loadRecentAlarms(ticket: DashboardRefreshTicket) {
-  const response = await getRecentAlarms({ limit: 8 });
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
+async function loadDashboardMetric(key: DashboardMetricKey): Promise<unknown> {
+  switch (key) {
+    case "devices":
+      await deviceStore.refresh();
+      if (deviceStore.error) {
+        throw new Error(deviceStore.error);
+      }
+      return deviceStore.devices;
+    case "alarms":
+      return normalizeAlarmHistoryRows(await getRecentAlarms({ limit: 8 })).slice(0, 8);
+    case "report":
+      return getCloudReportMetrics();
+    case "runtime":
+      return getRuntimeStatus();
+    case "systemResource":
+      return getSystemResources();
+    case "cache":
+      return getCacheMetrics();
+    case "storage":
+      return getStorageMetrics();
+    case "performance":
+      return getPerformanceDetail();
+    default:
+      return null;
   }
-  recentAlarms.value = normalizeAlarmHistoryRows(response).slice(0, 8);
 }
 
-async function loadReportMetrics(ticket: DashboardRefreshTicket) {
-  const nextMetrics = await getCloudReportMetrics();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
+function commitDashboardMetric(key: DashboardMetricKey, value: unknown): void {
+  switch (key) {
+    case "alarms":
+      recentAlarms.value = value as AlarmRow[];
+      break;
+    case "report":
+      reportMetrics.value = value as CloudReportMetricsResponse;
+      break;
+    case "runtime":
+      runtimeStatus.value = value as ConsoleRuntimeStatusSnapshot;
+      break;
+    case "systemResource":
+      systemResource.value = value as SystemResourceSnapshot;
+      break;
+    case "cache":
+      cacheMetrics.value = value as CacheMetricsSnapshot;
+      break;
+    case "storage":
+      storageMetrics.value = value as StorageMetricsSnapshot;
+      break;
+    case "performance":
+      performanceDetail.value = value as PerformanceStatsSnapshot;
+      break;
+    case "devices":
+      break;
+    default:
+      break;
   }
-  reportMetrics.value = nextMetrics;
 }
 
-async function loadRuntimeStatus(ticket: DashboardRefreshTicket) {
-  const nextRuntimeStatus = await getRuntimeStatus();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
-  }
-  runtimeStatus.value = nextRuntimeStatus;
-}
-
-async function loadSystemResource(ticket: DashboardRefreshTicket) {
-  const nextSystemResource = await getSystemResources();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
-  }
-  systemResource.value = nextSystemResource;
-}
-
-async function loadCacheMetrics(ticket: DashboardRefreshTicket) {
-  const nextCacheMetrics = await getCacheMetrics();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
-  }
-  cacheMetrics.value = nextCacheMetrics;
-}
-
-async function loadStorageMetrics(ticket: DashboardRefreshTicket) {
-  const nextStorageMetrics = await getStorageMetrics();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
-  }
-  storageMetrics.value = nextStorageMetrics;
-}
-
-async function loadPerformanceDetail(ticket: DashboardRefreshTicket) {
-  const nextPerformanceDetail = await getPerformanceDetail();
-  if (!dashboardRefreshCycle.isLatest(ticket)) {
-    return;
-  }
-  performanceDetail.value = nextPerformanceDetail;
+function sourceLabel(key: DashboardMetricKey): string {
+  return DASHBOARD_METRIC_LABELS[key];
 }
 
 async function openLocalEditor() {
@@ -468,6 +607,12 @@ function formatTime(value: unknown): string {
   font-size: 11px;
 }
 
+.dashboard-alerts {
+  display: grid;
+  padding: 12px 24px 0;
+  gap: 8px;
+}
+
 .overview-cards {
   display: grid;
   margin: 0;
@@ -589,7 +734,7 @@ function formatTime(value: unknown): string {
 }
 
 .overview-cards .card:nth-child(5) .card-subtext {
-  display: none;
+  display: block;
 }
 
 .home-dashboard {
@@ -962,6 +1107,7 @@ function formatTime(value: unknown): string {
 .resource-ring.is-blue { --resource-color: #3b82f6; }
 .resource-ring.is-orange { --resource-color: #f59e0b; }
 .resource-ring.is-green { --resource-color: #22c55e; }
+.resource-ring.is-muted { --resource-color: #475569; }
 
 .resource-gauge > span {
   color: var(--exact-muted);
