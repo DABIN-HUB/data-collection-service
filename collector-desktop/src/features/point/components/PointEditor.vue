@@ -244,9 +244,11 @@ import {
   buildPointExtraModel,
   buildPointImportPreview,
   buildPointLocationTarget,
+  buildPointRuntimeLookup,
   formatJsonForTextarea,
-  mergePointRuntime,
+  getPointExtraValue,
   parseJsonTextarea,
+  resolvePointRuntime,
   type PointExtraModel,
   type PointImportPreview,
   type PointLocationTarget
@@ -303,7 +305,7 @@ const tablePointFields = computed(() => pointFields.value.slice(0, 3));
 const dataTypes = computed(() => activeProtocol.value?.dataTypes?.length
   ? activeProtocol.value.dataTypes
   : ["BOOL", "INT", "UINT", "DINT", "FLOAT", "DOUBLE", "STRING"]);
-const runtimeMergedRows = computed(() => mergePointRuntime(points.value, realtimeRows.value));
+const runtimeLookup = computed(() => buildPointRuntimeLookup(realtimeRows.value));
 const filteredPoints = computed(() => {
   const value = keyword.value.trim().toLowerCase();
   if (!value) {
@@ -422,7 +424,7 @@ function emitOpenRealtime() {
 }
 
 function runtimeOf(point: DataPoint): RealtimePointRow | undefined {
-  return runtimeMergedRows.value.find((row) => row.pointId === point.pointId || row.pointCode === point.pointCode || row.address === point.address);
+  return resolvePointRuntime(runtimeLookup.value, point);
 }
 
 function qualityType(value: unknown): "success" | "warning" | "danger" | "info" {
@@ -456,8 +458,7 @@ function qualityText(value: unknown): string {
 }
 
 function displayExtraValue(point: DataPoint, fieldName: string): string {
-  const model = buildPointExtraModel([{ name: fieldName }], point);
-  const value = model[fieldName];
+  const value = getPointExtraValue(point, fieldName);
   return value === undefined || value === null || value === "" ? "-" : String(value);
 }
 

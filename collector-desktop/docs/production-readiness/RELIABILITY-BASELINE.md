@@ -26,6 +26,8 @@
 
 01.5C 更新：`DashboardView.loadDashboard()` 已将 `appStore.initialize()` 纳入 refresh cycle 的 `try/finally`，初始化失败不再导致 `dashboardLoading` 永久卡住，且不会启动后续 metric requests。Dashboard 8 个 datasource 已补 source-level `idle/loading/success/error` 状态、`lastSuccessAt`、stale/unavailable 派生语义和持久 `dashboardPartialWarning` / `dashboardError`；单个 datasource 失败不再清空其他成功指标，失败会保留最后一次成功数据并明确标记为上次数据，首次失败显示不可用。Task 01.5 Partial Failure & Degraded UX 可标记为 COMPLETE；仍 OPEN 的仅有 `PointEditor.runtimeOf()` O(P²)。
 
+01.6 更新：`PointEditor.runtimeOf()` 已从 `runtimeMergedRows.value.find(...)` 改为基于 `realtimeRows` 的 component-local `runtimeLookup`，lookup 只在实时快照变化时重建；`resolvePointRuntime()` 复用与 `mergePointRuntime()` 相同的 `pointId -> pointCode -> address` 匹配语义，单点最多 3 次 `Map.get()`。表格仍使用 editable `filteredPoints` 原始点位对象，未改为 merged copies；`displayExtraValue()` 改为 direct additionalConfig path accessor，避免每个动态字段 cell 构建临时 `PointExtraModel`。Task 01.6 PointEditor Performance 可标记为 COMPLETE；后续如真实 profiling 发现 DOM 渲染仍是瓶颈，再单独评估虚拟表格或分页。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -123,21 +125,21 @@
 
 | 项目 | 当前实现 | 风险 |
 |---|---|---|
-| 大数组 computed | `points`、`selectedIds`、`filteredPoints`、`selectedPoint`、`runtimeMergedRows` 均为 computed。 | `filteredPoints` 每次 keyword/points 变化 O(P)；`selectedPoint` O(P)。通常可接受，但 P 大时需评估。 |
+| 大数组 computed | `points`、`selectedIds`、`filteredPoints`、`selectedPoint` 均为 computed；RESOLVED IN 01.6：`runtimeMergedRows` 已移除，改为只依赖 `realtimeRows` 的 `runtimeLookup`。 | `filteredPoints` 每次 keyword/points 变化 O(P)；`selectedPoint` O(P)。标准 `el-table` DOM 渲染仍随行数线性增长，后续需以真实 profiling 决定是否单独引入虚拟表格或分页。 |
 | runtime 合并 | `mergePointRuntime(points, realtimeRows)` 先用 runtime rows 建 Map，再 `points.map`，复杂度 O(P + R)。 | 合并本身合理。 |
-| `runtimeOf(point)` | `runtimeOf` 对 `runtimeMergedRows.value.find(...)` 做线性查找。模板每行至少调用 3 次：当前值、质量、耗时；选中卡片也多次调用。 | 明确性能风险：表格渲染 P 行时可能退化为 O(P²)，点位数大时会卡顿。 |
-| 每行模板调用函数 | `runtimeOf(row)`、`qualityType()`、`qualityText()`、`displayExtraValue()` 等在 table cell 中调用。 | `displayExtraValue()` 每次会 `buildPointExtraModel`，协议字段列较多时额外放大。 |
+| `runtimeOf(point)` | RESOLVED IN 01.6：`runtimeOf` 通过 `resolvePointRuntime(runtimeLookup.value, point)` 查询，内部不再 `Array.find()`；`runtimeLookup` 由 `buildPointRuntimeLookup(realtimeRows)` 一次构建。 | Before：表格约 5 次 `runtimeOf(row)` / row，每次 `Array.find` over P，P=2000 时粗略可达约 20,000,000 次比较。After：build 为 O(R)，单点 lookup 最多 3 次 `Map.get()`，表格 runtime lookup 为 O(P)，整体 runtime join 为 O(P + R)。 |
+| 每行模板调用函数 | `runtimeOf(row)`、`qualityType()`、`qualityText()`、`displayExtraValue()` 等仍在 table cell 中调用。RESOLVED IN 01.6：`displayExtraValue()` 改为 `getPointExtraValue(point, fieldName)` 直接读取 additionalConfig flat/nested path，不再为每个 cell 构建临时数组和完整 `PointExtraModel`。 | 当前仍有正常的常数级模板函数调用与 `el-table` 行渲染成本，但已移除明确的 O(P²) runtime 查找热点和动态字段 cell 临时 model allocation。 |
 | deep watch | 未发现 `{ deep: true }` 的深 watch；主要 watch `props.deviceId` 和 `[selectedPointId, pointFields.length]`。 | 深 watch 风险低。 |
 | CSV 导入 | `validatePointImportFile()` 限制 `.csv`、最大 1MB；`parsePointCsv()` 限制 2000 行。 | 解析在主线程，2000 行内可接受；预览表渲染 2000 行仍可能卡顿。 |
 | CSV preview | `buildPointImportPreview()` 检查重复 pointCode/address，确认后一次性 replace。 | 合理；大 preview 可作为后续 UI 性能任务。 |
 | 批量编辑 | `applyBatch()` 对 points 做一次 map，仅修改 selected ids。 | O(P)，可接受。 |
-| 保存后 reload | `point.store.save()` 成功后 `await this.load(deviceId)`。 | 数据一致性好；save/load lifecycle 已在 01.3C 收口，当前剩余问题是 `runtimeOf()` 的 O(P²) 渲染成本。 |
+| 保存后 reload | `point.store.save()` 成功后 `await this.load(deviceId)`。 | 数据一致性好；save/load lifecycle 已在 01.3C 收口；`runtimeOf()` O(P²) 已在 01.6 收口。 |
 
-结论：`runtimeOf(point)` 存在大点位数量下重复线性查找问题。Task 01.1 只记录，不引入 virtual table / worker / pagination。
+结论：RESOLVED IN 01.6，`runtimeOf(point)` 大点位数量下重复线性查找问题已修复。本轮未引入 virtual table / worker / pagination；剩余的是标准 `el-table` DOM 渲染、`filteredPoints` O(P)、`selectedPoint` 相关重算时 O(P) 和 CSV preview 多行渲染等线性/UI 成本。
 
 ## 6. Reliability Backlog
 
-Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh ownership 直接相关的 backlog 已在 01.3A / 01.3B / 01.3C 收口。以下仍 OPEN 项仅属于 01.4 Realtime Reliability、01.5 Partial Failure 和 01.6 PointEditor Performance。
+Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh ownership 直接相关的 backlog 已在 01.3A / 01.3B / 01.3C 收口。Task 01.4 Realtime Reliability、Task 01.5 Partial Failure 和 Task 01.6 PointEditor Performance 也已分别完成对应 P0/P1/P2 收口；剩余未处理项不属于本轮 01.6。
 
 ### P0（克制，仅生产不可接受风险）
 
@@ -158,7 +160,7 @@ Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh owne
 9. RESOLVED IN 01.3C：`LogView.loadLogs()` 与 `DashboardView.loadDashboard()` 已完成 latest cycle / latest query ownership 修复；`DiagnosticView` 已审计为 `AUDITED / NO CHANGE`。
 10. RESOLVED IN 01.3C-R1：`PointEditor.loadRealtime()` 设备切换 stale success/error/loading ownership 已完成收口。
 11. RESOLVED IN 01.4B：WebSocket store 已补 store-instance runtime ownership、connection generation guard、有限重连、parse observability、稳定 row identity 和 stale WS rows → HTTP fallback 回切；后端 `/ws/realtime` 仍未实现，因此 WebSocket 仅为前端安全可选路径，生产默认仍为 HTTP aggregate polling。
-12. `PointEditor.runtimeOf()` O(P²) 渲染风险。
+12. RESOLVED IN 01.6：`PointEditor.runtimeOf()` O(P²) 渲染风险已通过 component-local runtime Map lookup 收口，`displayExtraValue()` per-cell 临时 model allocation 也已移除。
 13. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；Dashboard 已在 01.5C 完成 source-level partial failure visibility。
 
 ### P2

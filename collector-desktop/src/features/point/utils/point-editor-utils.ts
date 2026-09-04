@@ -116,6 +116,10 @@ export function buildPointExtraModel(fields: ProtocolFieldConfig[], point: Pick<
   return Object.fromEntries(fields.map((field) => [field.name, getPathValue(additionalConfig, field.name)]));
 }
 
+export function getPointExtraValue(point: Pick<DataPoint, "additionalConfig">, fieldName: string): unknown {
+  return getPathValue(point.additionalConfig || {}, fieldName);
+}
+
 export function applyPointExtraModel<T extends DataPoint>(point: T, fields: ProtocolFieldConfig[], model: PointExtraModel): T {
   const additionalConfig = cloneRecord(point.additionalConfig);
   for (const field of fields) {
@@ -128,16 +132,34 @@ export function applyPointExtraModel<T extends DataPoint>(point: T, fields: Prot
 }
 
 export function mergePointRuntime(points: DataPoint[], rows: RealtimePointRow[]): RealtimePointRow[] {
+  const runtimeIndex = buildPointRuntimeLookup(rows);
+  return points.map((point) => {
+    const runtime = resolvePointRuntime(runtimeIndex, point);
+    return runtime ? { ...point, ...runtime } : { ...point };
+  });
+}
+
+export function buildPointRuntimeLookup(rows: RealtimePointRow[]): Map<string, RealtimePointRow> {
   const runtimeIndex = new Map<string, RealtimePointRow>();
   for (const row of rows) {
     for (const key of buildRuntimeKeys(row)) {
       runtimeIndex.set(key, row);
     }
   }
-  return points.map((point) => {
-    const runtime = buildRuntimeKeys(point).map((key) => runtimeIndex.get(key)).find(Boolean);
-    return runtime ? { ...point, ...runtime } : { ...point };
-  });
+  return runtimeIndex;
+}
+
+export function resolvePointRuntime(
+  runtimeIndex: ReadonlyMap<string, RealtimePointRow>,
+  point: Pick<DataPoint, "pointId" | "pointCode" | "address">
+): RealtimePointRow | undefined {
+  for (const key of buildRuntimeKeys(point)) {
+    const runtime = runtimeIndex.get(key);
+    if (runtime) {
+      return runtime;
+    }
+  }
+  return undefined;
 }
 
 export function formatJsonForTextarea(value: unknown): string {
