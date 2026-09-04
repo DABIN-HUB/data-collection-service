@@ -134,12 +134,13 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import { getRecentAlarms } from "@/api/data.api";
 import { getCacheMetrics, getCloudReportMetrics, getPerformanceDetail, getRuntimeStatus, getStorageMetrics, getSystemResources } from "@/api/monitor.api";
 import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
+import { createDashboardRefreshCycle, type DashboardRefreshTicket } from "@/features/dashboard/utils/dashboard-request-lifecycle";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
@@ -165,6 +166,8 @@ const lastRefresh = ref<Date | null>(null);
 const dashboardLoading = ref(false);
 const localEditorVisible = ref(false);
 const editingBundle = ref<LocalDeviceBundle | null>(null);
+
+const dashboardRefreshCycle = createDashboardRefreshCycle();
 
 const nodeIdentity = computed(() => appStore.platform === "browser" ? "本地浏览器" : `Electron/${appStore.platform}`);
 const deviceCount = computed(() => deviceStore.devices.length);
@@ -254,57 +257,94 @@ onMounted(() => {
   void loadDashboard();
 });
 
+onBeforeUnmount(() => {
+  dashboardRefreshCycle.invalidate();
+  dashboardLoading.value = false;
+});
+
 async function refreshDashboard() {
   await loadDashboard();
 }
 
 async function loadDashboard() {
+  const ticket = dashboardRefreshCycle.begin();
   dashboardLoading.value = true;
   await appStore.initialize();
   try {
     await Promise.allSettled([
       deviceStore.refresh(),
-      loadRecentAlarms(),
-      loadReportMetrics(),
-      loadRuntimeStatus(),
-      loadSystemResource(),
-      loadCacheMetrics(),
-      loadStorageMetrics(),
-      loadPerformanceDetail()
+      loadRecentAlarms(ticket),
+      loadReportMetrics(ticket),
+      loadRuntimeStatus(ticket),
+      loadSystemResource(ticket),
+      loadCacheMetrics(ticket),
+      loadStorageMetrics(ticket),
+      loadPerformanceDetail(ticket)
     ]);
-    lastRefresh.value = new Date();
+    if (dashboardRefreshCycle.isLatest(ticket)) {
+      lastRefresh.value = new Date();
+    }
   } finally {
-    dashboardLoading.value = false;
+    if (dashboardRefreshCycle.isLatest(ticket)) {
+      dashboardLoading.value = false;
+    }
   }
 }
 
-async function loadRecentAlarms() {
+async function loadRecentAlarms(ticket: DashboardRefreshTicket) {
   const response = await getRecentAlarms({ limit: 8 });
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
   recentAlarms.value = normalizeAlarmHistoryRows(response).slice(0, 8);
 }
 
-async function loadReportMetrics() {
-  reportMetrics.value = await getCloudReportMetrics();
+async function loadReportMetrics(ticket: DashboardRefreshTicket) {
+  const nextMetrics = await getCloudReportMetrics();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  reportMetrics.value = nextMetrics;
 }
 
-async function loadRuntimeStatus() {
-  runtimeStatus.value = await getRuntimeStatus();
+async function loadRuntimeStatus(ticket: DashboardRefreshTicket) {
+  const nextRuntimeStatus = await getRuntimeStatus();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  runtimeStatus.value = nextRuntimeStatus;
 }
 
-async function loadSystemResource() {
-  systemResource.value = await getSystemResources();
+async function loadSystemResource(ticket: DashboardRefreshTicket) {
+  const nextSystemResource = await getSystemResources();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  systemResource.value = nextSystemResource;
 }
 
-async function loadCacheMetrics() {
-  cacheMetrics.value = await getCacheMetrics();
+async function loadCacheMetrics(ticket: DashboardRefreshTicket) {
+  const nextCacheMetrics = await getCacheMetrics();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  cacheMetrics.value = nextCacheMetrics;
 }
 
-async function loadStorageMetrics() {
-  storageMetrics.value = await getStorageMetrics();
+async function loadStorageMetrics(ticket: DashboardRefreshTicket) {
+  const nextStorageMetrics = await getStorageMetrics();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  storageMetrics.value = nextStorageMetrics;
 }
 
-async function loadPerformanceDetail() {
-  performanceDetail.value = await getPerformanceDetail();
+async function loadPerformanceDetail(ticket: DashboardRefreshTicket) {
+  const nextPerformanceDetail = await getPerformanceDetail();
+  if (!dashboardRefreshCycle.isLatest(ticket)) {
+    return;
+  }
+  performanceDetail.value = nextPerformanceDetail;
 }
 
 async function openLocalEditor() {

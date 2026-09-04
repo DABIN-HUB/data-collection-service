@@ -10,6 +10,7 @@ interface RuntimeState {
   health: HealthStatus | null;
   runtime: ConsoleRuntimeStatusSnapshot | null;
   lastUpdatedAt: number;
+  refreshGeneration: number;
 }
 
 export const useRuntimeStore = defineStore("runtime", {
@@ -19,7 +20,8 @@ export const useRuntimeStore = defineStore("runtime", {
     error: "",
     health: null,
     runtime: null,
-    lastUpdatedAt: 0
+    lastUpdatedAt: 0,
+    refreshGeneration: 0
   }),
   getters: {
     runtimeLevel: (state) => state.runtime?.level || state.health?.level || state.health?.status || "UNKNOWN",
@@ -28,12 +30,17 @@ export const useRuntimeStore = defineStore("runtime", {
   },
   actions: {
     async refresh() {
+      const requestGeneration = this.refreshGeneration + 1;
+      this.refreshGeneration = requestGeneration;
       this.loading = true;
       this.error = "";
       const [healthResult, runtimeResult] = await Promise.allSettled([
         getHealth(),
         getRuntimeStatus()
       ]);
+      if (requestGeneration !== this.refreshGeneration) {
+        return;
+      }
       if (healthResult.status === "fulfilled") {
         this.health = healthResult.value;
       }
@@ -46,7 +53,9 @@ export const useRuntimeStore = defineStore("runtime", {
         this.error = reason instanceof Error ? reason.message : "无法连接采集服务";
       }
       this.lastUpdatedAt = Date.now();
-      this.loading = false;
+      if (requestGeneration === this.refreshGeneration) {
+        this.loading = false;
+      }
     }
   }
 });

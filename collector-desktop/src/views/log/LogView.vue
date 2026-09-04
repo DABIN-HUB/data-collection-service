@@ -9,7 +9,7 @@
         <button type="button" :class="{ 'is-active': logAutoRefresh }" @click="toggleAutoRefresh">
           {{ logAutoRefresh ? '停止自动刷新' : '自动刷新' }}
         </button>
-        <button type="button" :disabled="loading" @click="refreshLogs">刷新日志</button>
+        <button type="button" :disabled="logQueryDisabled" @click="refreshLogs">刷新日志</button>
       </div>
     </div>
 
@@ -23,17 +23,17 @@
             <option value="INFO">信息</option>
             <option value="DEBUG">调试</option>
           </select>
-          <select v-model="logDeviceId" @change="refreshLogs">
+          <select v-model="logDeviceId">
             <option value="">当前结果内全部设备</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
             </option>
           </select>
           <input v-model="logLogger" type="text" placeholder="记录器名称 logger" @keydown.enter="refreshLogs" />
-          <input v-model="logThread" type="text" placeholder="当前结果内线程名" @keydown.enter="refreshLogs" />
+          <input v-model="logThread" type="text" placeholder="当前结果内线程名" />
           <input v-model="logKeyword" type="search" placeholder="搜索日志内容、设备、点位或来源" @keydown.enter="refreshLogs" />
           <input v-model.number="logLimit" type="number" min="20" max="2000" step="20" />
-          <button type="button" class="primary" :disabled="loading" @click="refreshLogs">查询</button>
+          <button type="button" class="primary" :disabled="logQueryDisabled" @click="refreshLogs">查询</button>
         </div>
         <div class="exact-toolbar-group">
           <button type="button" @click="showErrorLogs">错误日志快速定位</button>
@@ -81,6 +81,16 @@ import {
   filterLogRows,
   summarizeLogRows
 } from "@/features/log/utils/log-utils";
+import {
+  buildLogServerQueryContext,
+  buildLogVisibleQueryContext,
+  isSameLogServerQueryContext,
+  isSameLogVisibleQueryContext,
+  shouldDisableLogSubmit,
+  shouldSkipLogTimerTick,
+  type LogServerQueryContext
+} from "@/features/log/utils/log-request-lifecycle";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
 import type { ExceptionStatsSnapshot, LogRow } from "@/types/monitor";
@@ -100,7 +110,11 @@ const logAutoRefresh = ref(false);
 const loading = ref(false);
 const error = ref("");
 const exceptionLoading = ref(false);
+const pendingLogQueryContext = ref<LogServerQueryContext | null>(null);
 let logTimer: number | null = null;
+
+const logQueryOwner = createLatestRequestOwner(isSameLogServerQueryContext);
+const exceptionLookupOwner = createLatestRequestOwner(isSameLogVisibleQueryContext);
 
 const filteredLogs = computed(() => filterLogRows(logs.value, {
   level: logLevel.value,
@@ -110,27 +124,38 @@ const filteredLogs = computed(() => filterLogRows(logs.value, {
   thread: logThread.value
 }));
 const logSummary = computed(() => summarizeLogRows(filteredLogs.value));
+const logQueryDisabled = computed(() => shouldDisableLogSubmit(
+  loading.value,
+  pendingLogQueryContext.value,
+  currentLogServerQueryContext()
+));
 
-async function loadLogs() {
-  if (loading.value) {
+async function loadLogs(options: { fromTimer?: boolean } = {}) {
+  const requestContext = currentLogServerQueryContext();
+  if (options.fromTimer && shouldSkipLogTimerTick(loading.value, pendingLogQueryContext.value, requestContext)) {
     return;
   }
+  const ticket = logQueryOwner.begin(requestContext);
   loading.value = true;
   error.value = "";
+  pendingLogQueryContext.value = requestContext;
   try {
-    logs.value = normalizeLogRows(await getOpsLogs(buildLogQueryParams({
-      level: logLevel.value,
-      logger: logLogger.value,
-      keyword: logKeyword.value,
-      deviceId: logDeviceId.value,
-      thread: logThread.value,
-      limit: logLimit.value
-    })));
+    const nextLogs = normalizeLogRows(await getOpsLogs(buildLogQueryParams(requestContext)));
+    if (!logQueryOwner.canCommit(ticket, currentLogServerQueryContext())) {
+      return;
+    }
+    logs.value = nextLogs;
   } catch (caught) {
+    if (!logQueryOwner.canCommit(ticket, currentLogServerQueryContext())) {
+      return;
+    }
     logs.value = [];
     error.value = caught instanceof Error ? caught.message : "运行日志加载失败";
   } finally {
-    loading.value = false;
+    if (logQueryOwner.isLatest(ticket)) {
+      loading.value = false;
+      pendingLogQueryContext.value = null;
+    }
   }
 }
 
@@ -151,9 +176,14 @@ async function searchLatestExceptionLogs() {
   if (exceptionLoading.value) {
     return;
   }
+  const requestContext = currentLogVisibleQueryContext();
+  const ticket = exceptionLookupOwner.begin(requestContext);
   exceptionLoading.value = true;
   try {
     const root: ExceptionStatsSnapshot = await getExceptionStats();
+    if (!exceptionLookupOwner.canCommit(ticket, currentLogVisibleQueryContext())) {
+      return;
+    }
     const recent = Array.isArray(root.recent) ? root.recent : [];
     if (!recent.length) {
       ElMessage.warning("当前没有最近异常可用于日志定位");
@@ -164,9 +194,14 @@ async function searchLatestExceptionLogs() {
     void loadLogs();
     ElMessage.info("已按最近异常填充日志搜索条件");
   } catch (caught) {
+    if (!exceptionLookupOwner.canCommit(ticket, currentLogVisibleQueryContext())) {
+      return;
+    }
     ElMessage.warning(caught instanceof Error ? caught.message : "最近异常定位失败");
   } finally {
-    exceptionLoading.value = false;
+    if (exceptionLookupOwner.isLatest(ticket)) {
+      exceptionLoading.value = false;
+    }
   }
 }
 
@@ -193,12 +228,14 @@ function syncLogTimer() {
   }
   if (logAutoRefresh.value) {
     logTimer = window.setInterval(() => {
-      void loadLogs();
+      void loadLogs({ fromTimer: true });
     }, 5000);
   }
 }
 
 function applyRouteQuery() {
+  const previousServerContext = currentLogServerQueryContext();
+  const previousVisibleContext = currentLogVisibleQueryContext();
   const nextLevel = normalizeRouteQuery(route.query.level);
   const nextDeviceId = normalizeRouteQuery(route.query.deviceId);
   const nextLogger = normalizeRouteQuery(route.query.logger);
@@ -230,7 +267,34 @@ function applyRouteQuery() {
     logLimit.value = Math.trunc(nextLimit);
     changed = true;
   }
-  return changed;
+  if (!changed) {
+    return { changed: false, serverChanged: false };
+  }
+  return {
+    changed: true,
+    serverChanged: !isSameLogServerQueryContext(previousServerContext, currentLogServerQueryContext())
+      && !isSameLogVisibleQueryContext(previousVisibleContext, currentLogVisibleQueryContext()) ? true : !isSameLogServerQueryContext(previousServerContext, currentLogServerQueryContext())
+  };
+}
+
+function currentLogServerQueryContext() {
+  return buildLogServerQueryContext({
+    level: logLevel.value,
+    logger: logLogger.value,
+    keyword: logKeyword.value,
+    limit: logLimit.value
+  });
+}
+
+function currentLogVisibleQueryContext() {
+  return buildLogVisibleQueryContext({
+    level: logLevel.value,
+    logger: logLogger.value,
+    keyword: logKeyword.value,
+    limit: logLimit.value,
+    deviceId: logDeviceId.value,
+    thread: logThread.value
+  });
 }
 
 function shortLoggerName(logger: unknown): string {
@@ -267,6 +331,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  logQueryOwner.invalidate();
+  exceptionLookupOwner.invalidate();
+  loading.value = false;
+  exceptionLoading.value = false;
+  pendingLogQueryContext.value = null;
   if (logTimer) {
     clearInterval(logTimer);
     logTimer = null;
@@ -275,7 +344,8 @@ onBeforeUnmount(() => {
 
 watch(() => logAutoRefresh.value, syncLogTimer);
 watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.query.thread, route.query.keyword, route.query.limit], () => {
-  if (applyRouteQuery()) {
+  const routeChange = applyRouteQuery();
+  if (routeChange.serverChanged) {
     void loadLogs();
   }
 });

@@ -5,39 +5,55 @@ import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type B
 import type { DataPoint } from "@/types/point";
 
 interface PointState {
-  loading: boolean;
-  saving: boolean;
-  error: string;
   pointsByDevice: Record<string, DataPoint[]>;
   selectedIdsByDevice: Record<string, string[]>;
+  loadGenerationByDevice: Record<string, number>;
+  loadingByDevice: Record<string, boolean>;
+  savingCountByDevice: Record<string, number>;
+  errorByDevice: Record<string, string>;
 }
 
 export const usePointStore = defineStore("point", {
   state: (): PointState => ({
-    loading: false,
-    saving: false,
-    error: "",
     pointsByDevice: {},
-    selectedIdsByDevice: {}
+    selectedIdsByDevice: {},
+    loadGenerationByDevice: {},
+    loadingByDevice: {},
+    savingCountByDevice: {},
+    errorByDevice: {}
   }),
   getters: {
     getPoints: (state) => (deviceId: string) => state.pointsByDevice[deviceId] || [],
-    getSelectedIds: (state) => (deviceId: string) => state.selectedIdsByDevice[deviceId] || []
+    getSelectedIds: (state) => (deviceId: string) => state.selectedIdsByDevice[deviceId] || [],
+    isLoading: (state) => (deviceId: string) => Boolean(state.loadingByDevice[deviceId]),
+    isSaving: (state) => (deviceId: string) => (state.savingCountByDevice[deviceId] || 0) > 0,
+    errorFor: (state) => (deviceId: string) => state.errorByDevice[deviceId] || ""
   },
   actions: {
     async load(deviceId: string) {
-      if (!deviceId) {
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) {
         return;
       }
-      this.loading = true;
-      this.error = "";
+      const requestGeneration = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
+      this.loadGenerationByDevice[targetDeviceId] = requestGeneration;
+      this.loadingByDevice[targetDeviceId] = true;
+      this.errorByDevice[targetDeviceId] = "";
       try {
-        const response = await getDevicePointConfig(deviceId, true);
-        this.pointsByDevice[deviceId] = normalizePointRows(response.points || []);
+        const response = await getDevicePointConfig(targetDeviceId, true);
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
+          return;
+        }
+        this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || []);
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "点位配置加载失败";
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
+          return;
+        }
+        this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置加载失败";
       } finally {
-        this.loading = false;
+        if (requestGeneration === this.loadGenerationByDevice[targetDeviceId]) {
+          this.loadingByDevice[targetDeviceId] = false;
+        }
       }
     },
     setSelectedIds(deviceId: string, ids: string[]) {
@@ -79,17 +95,44 @@ export const usePointStore = defineStore("point", {
       this.pointsByDevice[deviceId] = this.getPoints(deviceId).filter((point) => !selected.has(point.pointId || ""));
       this.selectedIdsByDevice[deviceId] = [];
     },
+    clearError(deviceId: string) {
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) {
+        return;
+      }
+      this.errorByDevice[targetDeviceId] = "";
+    },
+    setError(deviceId: string, message: string) {
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) {
+        return;
+      }
+      this.errorByDevice[targetDeviceId] = message;
+    },
     async save(deviceId: string) {
-      this.saving = true;
-      this.error = "";
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) {
+        return;
+      }
+      const payload = clonePoints(this.getPoints(targetDeviceId));
+      this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
+      this.errorByDevice[targetDeviceId] = "";
       try {
-        await saveDevicePointConfig(deviceId, this.getPoints(deviceId));
-        await this.load(deviceId);
+        await saveDevicePointConfig(targetDeviceId, payload);
+        await this.load(targetDeviceId);
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "点位配置保存失败";
+        this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置保存失败";
       } finally {
-        this.saving = false;
+        this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);
       }
     }
   }
 });
+
+function normalizeDeviceId(deviceId: string): string {
+  return typeof deviceId === "string" ? deviceId.trim() : "";
+}
+
+function clonePoints(points: DataPoint[]): DataPoint[] {
+  return JSON.parse(JSON.stringify(points || [])) as DataPoint[];
+}

@@ -13,12 +13,12 @@
         <el-button @click="fileInputRef?.click()">导入 CSV</el-button>
         <el-button @click="exportCsv">导出 CSV</el-button>
         <el-button :loading="realtimeLoading" @click="loadRealtime">刷新实时值</el-button>
-        <el-button :loading="pointStore.loading" @click="pointStore.load(deviceId)">刷新配置</el-button>
-        <el-button type="primary" :loading="pointStore.saving" @click="savePoints">保存</el-button>
+        <el-button :loading="pointLoading" @click="pointStore.load(deviceId)">刷新配置</el-button>
+        <el-button type="primary" :loading="pointSaving" @click="savePoints">保存</el-button>
       </div>
     </div>
 
-    <el-alert v-if="pointStore.error" :title="pointStore.error" type="warning" :closable="false" />
+    <el-alert v-if="pointError" :title="pointError" type="warning" :closable="false" />
     <el-alert v-if="realtimeError" :title="realtimeError" type="info" :closable="false" />
 
     <div class="point-workbench-grid">
@@ -29,7 +29,7 @@
           <span>动态字段：{{ pointFields.length }}</span>
         </div>
         <el-table
-          v-loading="pointStore.loading"
+          v-loading="pointLoading"
           :data="filteredPoints"
           height="560"
           row-key="pointId"
@@ -286,6 +286,9 @@ const importPreviewLabel = ref("");
 
 const points = computed(() => pointStore.getPoints(props.deviceId));
 const selectedIds = computed(() => pointStore.getSelectedIds(props.deviceId));
+const pointLoading = computed(() => pointStore.isLoading(props.deviceId));
+const pointSaving = computed(() => pointStore.isSaving(props.deviceId));
+const pointError = computed(() => pointStore.errorFor(props.deviceId));
 const activeProtocol = computed(() => props.protocol || null);
 const protocolCode = computed(() => props.protocolCode || activeProtocol.value?.protocol || "");
 const pointFields = computed(() => activeProtocol.value?.pointFields || []);
@@ -481,10 +484,10 @@ function applyAdditionalConfigJson(showError = true) {
     point.additionalConfig = parseJsonTextarea<Record<string, unknown>>(additionalConfigText.value, {});
     additionalConfigModel.value = { ...point.additionalConfig };
     pointExtraModel.value = buildPointExtraModel(pointFields.value, point);
-    pointStore.error = "";
+    pointStore.clearError(props.deviceId);
   } catch (error) {
     if (showError) {
-      pointStore.error = error instanceof Error ? `additionalConfig JSON 格式错误：${error.message}` : "additionalConfig JSON 格式错误";
+      pointStore.setError(props.deviceId, error instanceof Error ? `additionalConfig JSON 格式错误：${error.message}` : "additionalConfig JSON 格式错误");
     }
   }
 }
@@ -501,10 +504,10 @@ function applyAlarmRuleJson(showError = true) {
   try {
     const parsed = parseJsonTextarea<Record<string, unknown>>(alarmRuleText.value, {});
     point.alarmRule = formatJsonForTextarea(parsed);
-    pointStore.error = "";
+    pointStore.clearError(props.deviceId);
   } catch (error) {
     if (showError) {
-      pointStore.error = error instanceof Error ? `alarmRule JSON 格式错误：${error.message}` : "alarmRule JSON 格式错误";
+      pointStore.setError(props.deviceId, error instanceof Error ? `alarmRule JSON 格式错误：${error.message}` : "alarmRule JSON 格式错误");
     }
   }
 }

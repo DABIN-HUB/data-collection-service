@@ -12,6 +12,7 @@ interface DeviceState {
   runtimeMap: Record<string, DeviceRuntimeSnapshot>;
   selectedDeviceId: string;
   lastUpdatedAt: number;
+  refreshGeneration: number;
 }
 
 export const useDeviceStore = defineStore("device", {
@@ -22,7 +23,8 @@ export const useDeviceStore = defineStore("device", {
     devices: [],
     runtimeMap: {},
     selectedDeviceId: "",
-    lastUpdatedAt: 0
+    lastUpdatedAt: 0,
+    refreshGeneration: 0
   }),
   getters: {
     selectedDevice: (state) => state.devices.find((device) => device.normalizedId === state.selectedDeviceId) || null,
@@ -33,6 +35,8 @@ export const useDeviceStore = defineStore("device", {
   },
   actions: {
     async refresh() {
+      const requestGeneration = this.refreshGeneration + 1;
+      this.refreshGeneration = requestGeneration;
       this.loading = true;
       this.error = "";
       try {
@@ -40,23 +44,34 @@ export const useDeviceStore = defineStore("device", {
           getConfigDevices(),
           getDeviceRuntime()
         ]);
+        if (requestGeneration !== this.refreshGeneration) {
+          return;
+        }
+        const nextRuntimeMap = runtimeResponse.status === "fulfilled"
+          ? buildRuntimeMap(runtimeResponse.value)
+          : this.runtimeMap;
         if (runtimeResponse.status === "fulfilled") {
-          this.runtimeMap = Object.fromEntries(runtimeResponse.value.map((item) => [item.deviceId, item]));
+          this.runtimeMap = nextRuntimeMap;
         }
         if (deviceResponse.status === "fulfilled") {
           const rawDevices = Array.isArray(deviceResponse.value.devices) ? deviceResponse.value.devices : [];
-          this.devices = rawDevices.map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, this.runtimeMap));
+          this.devices = rawDevices.map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, nextRuntimeMap));
           if (!this.selectedDeviceId && this.devices.length > 0) {
             this.selectedDeviceId = this.devices[0].normalizedId;
           }
+          this.lastUpdatedAt = Date.now();
         } else {
           throw deviceResponse.reason;
         }
-        this.lastUpdatedAt = Date.now();
       } catch (error) {
+        if (requestGeneration !== this.refreshGeneration) {
+          return;
+        }
         this.error = error instanceof Error ? error.message : "设备列表加载失败";
       } finally {
-        this.loading = false;
+        if (requestGeneration === this.refreshGeneration) {
+          this.loading = false;
+        }
       }
     },
     selectDevice(deviceId: string) {
@@ -175,4 +190,8 @@ export function isLocalDevice(device: DeviceViewModel | undefined): boolean {
 
 export function resolveDeviceStartMode(device: DeviceViewModel | undefined): "local" | "remote" {
   return isLocalDevice(device) ? "local" : "remote";
+}
+
+function buildRuntimeMap(items: DeviceRuntimeSnapshot[]): Record<string, DeviceRuntimeSnapshot> {
+  return Object.fromEntries(items.map((item) => [item.deviceId, item]));
 }

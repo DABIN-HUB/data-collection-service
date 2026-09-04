@@ -1,14 +1,42 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import { usePointStore } from "./point.store";
 import type { DataPoint } from "@/types/point";
 
-describe("point.store", () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-  });
+const apiMocks = vi.hoisted(() => ({
+  getDevicePointConfig: vi.fn(),
+  saveDevicePointConfig: vi.fn()
+}));
 
+vi.mock("@/api/point.api", () => ({
+  getDevicePointConfig: apiMocks.getDevicePointConfig,
+  saveDevicePointConfig: apiMocks.saveDevicePointConfig
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setActivePinia(createPinia());
+  apiMocks.getDevicePointConfig.mockResolvedValue({ points: [] });
+  apiMocks.saveDevicePointConfig.mockResolvedValue({});
+});
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe("point.store", () => {
   it("新增空点位时写入当前设备并补齐默认字段", () => {
     const store = usePointStore();
 
@@ -95,6 +123,179 @@ describe("point.store", () => {
 
     expect(store.getSelectedIds("dev-1")).toEqual(["p1", "p2"]);
     expect(store.getSelectedIds("dev-2")).toEqual(["p3"]);
+  });
+
+  it("同设备 Load1 → Load2 时，旧 Load1 后返回不会覆盖新 Load2", async () => {
+    const load1 = createDeferred<{ points: DataPoint[] }>();
+    const load2 = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => load1.promise)
+      .mockImplementationOnce(() => load2.promise);
+    const store = usePointStore();
+
+    const request1 = store.load("dev-a");
+    await flushPromises();
+    const request2 = store.load("dev-a");
+    await flushPromises();
+
+    load2.resolve({ points: [point({ pointId: "latest", pointCode: "latest" })] });
+    await request2;
+    load1.resolve({ points: [point({ pointId: "stale", pointCode: "stale" })] });
+    await request1;
+
+    expect(store.getPoints("dev-a")[0]).toMatchObject({ pointId: "latest" });
+  });
+
+  it("A 与 B 设备 load 并行时，互相独立提交各自 points 和 error", async () => {
+    const loadA = createDeferred<{ points: DataPoint[] }>();
+    const loadB = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => loadA.promise)
+      .mockImplementationOnce(() => loadB.promise);
+    const store = usePointStore();
+
+    const requestA = store.load("dev-a");
+    const requestB = store.load("dev-b");
+    await flushPromises();
+
+    loadB.resolve({ points: [point({ pointId: "pb", pointCode: "pb" })] });
+    await requestB;
+    loadA.resolve({ points: [point({ pointId: "pa", pointCode: "pa" })] });
+    await requestA;
+
+    expect(store.getPoints("dev-a")[0]).toMatchObject({ pointId: "pa" });
+    expect(store.getPoints("dev-b")[0]).toMatchObject({ pointId: "pb" });
+    expect(store.errorFor("dev-a")).toBe("");
+    expect(store.errorFor("dev-b")).toBe("");
+  });
+
+  it("A 设备旧错误不会污染 B 设备 error", async () => {
+    const loadA = createDeferred<{ points: DataPoint[] }>();
+    const loadB = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => loadA.promise)
+      .mockImplementationOnce(() => loadB.promise);
+    const store = usePointStore();
+
+    const requestA = store.load("dev-a");
+    const requestB = store.load("dev-b");
+    await flushPromises();
+
+    loadB.resolve({ points: [point({ pointId: "pb" })] });
+    await requestB;
+    loadA.reject(new Error("A 加载失败"));
+    await requestA;
+
+    expect(store.errorFor("dev-a")).toBe("A 加载失败");
+    expect(store.errorFor("dev-b")).toBe("");
+  });
+
+  it("同设备旧 finally 不会关闭 newer loading", async () => {
+    const load1 = createDeferred<{ points: DataPoint[] }>();
+    const load2 = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => load1.promise)
+      .mockImplementationOnce(() => load2.promise);
+    const store = usePointStore();
+
+    const request1 = store.load("dev-a");
+    await flushPromises();
+    const request2 = store.load("dev-a");
+    await flushPromises();
+
+    load1.resolve({ points: [point({ pointId: "stale" })] });
+    await request1;
+
+    expect(store.isLoading("dev-a")).toBe(true);
+
+    load2.resolve({ points: [point({ pointId: "latest" })] });
+    await request2;
+
+    expect(store.isLoading("dev-a")).toBe(false);
+  });
+
+  it("save 会捕获 payload snapshot，并在成功后触发当前设备 reload", async () => {
+    const saveRequest = createDeferred<unknown>();
+    const reloadRequest = createDeferred<{ points: DataPoint[] }>();
+    let capturedPayload: DataPoint[] = [];
+    apiMocks.saveDevicePointConfig.mockImplementationOnce(async (_deviceId: string, points: DataPoint[]) => {
+      capturedPayload = JSON.parse(JSON.stringify(points));
+      return saveRequest.promise;
+    });
+    apiMocks.getDevicePointConfig.mockImplementationOnce(() => reloadRequest.promise);
+    const store = usePointStore();
+    store.replacePoints("dev-a", [point({ pointId: "p1", pointName: "原始点位" })]);
+
+    const savePromise = store.save("dev-a");
+    await flushPromises();
+    store.updateCell("dev-a", "p1", "pointName", "已被本地修改");
+
+    expect(store.isSaving("dev-a")).toBe(true);
+
+    saveRequest.resolve({});
+    await flushPromises();
+    reloadRequest.resolve({ points: [point({ pointId: "reloaded", pointCode: "reloaded" })] });
+    await savePromise;
+
+    expect(capturedPayload[0]).toMatchObject({ pointId: "p1", pointName: "原始点位" });
+    expect(store.getPoints("dev-a")[0]).toMatchObject({ pointId: "reloaded" });
+    expect(store.isSaving("dev-a")).toBe(false);
+  });
+
+  it("save pending 时 manual load 先开始，save 完成后的 post-save reload 因更晚开始而成为 latest", async () => {
+    const saveRequest = createDeferred<unknown>();
+    const manualLoad = createDeferred<{ points: DataPoint[] }>();
+    const postSaveLoad = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.saveDevicePointConfig.mockImplementationOnce(() => saveRequest.promise);
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => manualLoad.promise)
+      .mockImplementationOnce(() => postSaveLoad.promise);
+    const store = usePointStore();
+    store.replacePoints("dev-a", [point({ pointId: "base" })]);
+
+    const savePromise = store.save("dev-a");
+    await flushPromises();
+    const manualLoadPromise = store.load("dev-a");
+    await flushPromises();
+
+    saveRequest.resolve({});
+    await flushPromises();
+    manualLoad.resolve({ points: [point({ pointId: "manual-older" })] });
+    await manualLoadPromise;
+
+    expect(store.isLoading("dev-a")).toBe(true);
+
+    postSaveLoad.resolve({ points: [point({ pointId: "post-save-latest" })] });
+    await savePromise;
+
+    expect(store.getPoints("dev-a")[0]).toMatchObject({ pointId: "post-save-latest" });
+  });
+
+  it("save 成功后的 post-save reload 先开始，但随后用户 manual load 开始时，manual load 成为 latest", async () => {
+    const postSaveLoad = createDeferred<{ points: DataPoint[] }>();
+    const manualLoad = createDeferred<{ points: DataPoint[] }>();
+    apiMocks.saveDevicePointConfig.mockResolvedValueOnce({});
+    apiMocks.getDevicePointConfig
+      .mockImplementationOnce(() => postSaveLoad.promise)
+      .mockImplementationOnce(() => manualLoad.promise);
+    const store = usePointStore();
+    store.replacePoints("dev-a", [point({ pointId: "base" })]);
+
+    const savePromise = store.save("dev-a");
+    await flushPromises();
+    const manualLoadPromise = store.load("dev-a");
+    await flushPromises();
+
+    postSaveLoad.resolve({ points: [point({ pointId: "post-save-stale" })] });
+    await savePromise;
+
+    expect(store.isLoading("dev-a")).toBe(true);
+
+    manualLoad.resolve({ points: [point({ pointId: "manual-latest" })] });
+    await manualLoadPromise;
+
+    expect(store.getPoints("dev-a")[0]).toMatchObject({ pointId: "manual-latest" });
+    expect(store.isLoading("dev-a")).toBe(false);
   });
 });
 
