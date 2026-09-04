@@ -3,7 +3,7 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>告警历史中心</h1>
-        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmHistorySummary.acknowledged }}</span>
+        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmSummaryDisplay.acknowledged }}</span>
       </div>
       <div class="heading-actions">
         <button type="button" :disabled="alarms.length === 0 || ackStatusLoading" @click="refreshAlarmAcknowledgements">确认状态批量查询</button>
@@ -37,12 +37,14 @@
         </div>
       </div>
 
+      <el-alert v-if="ackStatusWarning" :title="ackStatusWarning" type="warning" :closable="false" />
+
       <div class="exact-diagnostic-cards alarm-summary-cards">
-        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmHistorySummary.total }}</strong></div>
-        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmHistorySummary.active }}</strong></div>
-        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmHistorySummary.acknowledged }}</strong></div>
-        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmHistorySummary.critical }}</strong></div>
-        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmHistorySummary.warning }}</strong></div>
+        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
+        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
+        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
+        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
+        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
       </div>
 
       <section class="exact-table-card alarm-ack-table">
@@ -72,10 +74,10 @@
               <td>{{ alarm.content || alarm.message || alarm.alarmContent || alarm.ruleName || alarm.ruleId || '-' }}</td>
               <td>{{ alarmCurrentValue(alarm) }}</td>
               <td>
-                <span class="status-badge" :class="alarm.acknowledged ? 'is-online' : 'is-error'">{{ alarm.acknowledged ? '已确认' : '待确认' }}</span>
+                <span class="status-badge" :class="alarmAckStatusClass(alarm)">{{ alarmAckStatusText(alarm) }}</span>
               </td>
               <td>
-                <span class="alarm-ack-detail" :title="describeAlarmAcknowledgement(alarm.acknowledgement)">{{ describeAlarmAcknowledgement(alarm.acknowledgement) }}</span>
+                <span class="alarm-ack-detail" :title="alarmAckDetailText(alarm)">{{ alarmAckDetailText(alarm) }}</span>
               </td>
               <td>
                 <div class="alarm-action-row">
@@ -126,6 +128,11 @@ import { useRoute, useRouter } from "vue-router";
 import { getDeviceAlarmHistory, getRecentAlarms } from "@/api/data.api";
 import { acknowledgeAlarm, queryAlarmAcknowledgements } from "@/api/ops.api";
 import {
+  buildAckStatusWarning,
+  buildAlarmAcknowledgementPresentation,
+  buildAlarmSummaryDisplay
+} from "@/features/alarm/utils/alarm-partial-failure";
+import {
   buildAlarmAcknowledgementRefreshContext,
   buildAlarmQueryContext,
   isSameAlarmAcknowledgementRefreshContext,
@@ -140,7 +147,6 @@ import {
   buildAlarmAckPayload,
   buildAlarmIdentity,
   buildAlarmTroubleshootTarget,
-  describeAlarmAcknowledgement,
   mergeAlarmAcknowledgementStates,
   normalizeAlarmAcknowledgementMap
 } from "@/features/alarm/utils/alarm-utils";
@@ -169,6 +175,9 @@ const alarmHours = ref(24);
 const alarmLimit = ref(50);
 const loading = ref(false);
 const ackStatusLoading = ref(false);
+const ackStatusUnavailable = ref(false);
+const ackStatusWarning = ref("");
+const ackStatusInitialized = ref(false);
 const error = ref("");
 const pendingAlarmQueryContext = ref<AlarmQueryContext | null>(null);
 
@@ -176,6 +185,10 @@ const alarmQueryOwner = createLatestRequestOwner(isSameAlarmQueryContext);
 const alarmAckRefreshOwner = createLatestRequestOwner(isSameAlarmAcknowledgementRefreshContext);
 
 const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
+const alarmSummaryDisplay = computed(() => buildAlarmSummaryDisplay(alarmHistorySummary.value, {
+  ackStatusUnavailable: ackStatusUnavailable.value,
+  ackStatusInitialized: ackStatusInitialized.value
+}));
 const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
 const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
@@ -193,24 +206,37 @@ async function loadAlarms() {
   loading.value = true;
   ackStatusLoading.value = false;
   error.value = "";
+  ackStatusUnavailable.value = false;
+  ackStatusWarning.value = "";
+  ackStatusInitialized.value = false;
   pendingAlarmQueryContext.value = requestContext;
   try {
     const params = buildAlarmHistoryQuery(requestContext);
     const response = requestContext.deviceId ? await getDeviceAlarmHistory(requestContext.deviceId, params) : await getRecentAlarms(params);
     const rows = normalizeAlarmHistoryRows(response);
-    const acknowledgements = await fetchAlarmAcknowledgements(rows);
     if (!alarmQueryOwner.canCommit(ticket, currentAlarmQueryContext())) {
       return;
     }
-    alarmAcknowledgements.value = acknowledgements;
-    alarms.value = mergeAlarmAcknowledgementStates(rows, acknowledgements);
+    if (!rows.length) {
+      alarms.value = [];
+      alarmAcknowledgements.value = {};
+      ackStatusUnavailable.value = false;
+      ackStatusWarning.value = "";
+      ackStatusInitialized.value = true;
+      return;
+    }
+    alarms.value = mergeAlarmAcknowledgementStates(rows, alarmAcknowledgements.value);
+    void refreshAlarmAcknowledgementsInternal("automatic", [...alarms.value]);
   } catch (caught) {
     if (!alarmQueryOwner.canCommit(ticket, currentAlarmQueryContext())) {
       return;
     }
     alarmAcknowledgements.value = {};
     alarms.value = [];
-    error.value = caught instanceof Error ? caught.message : "告警历史加载失败";
+    error.value = buildAlarmHistoryErrorMessage(caught);
+    ackStatusUnavailable.value = false;
+    ackStatusWarning.value = "";
+    ackStatusInitialized.value = false;
   } finally {
     if (alarmQueryOwner.isLatest(ticket)) {
       loading.value = false;
@@ -233,28 +259,7 @@ async function refreshAlarmAcknowledgements() {
     ElMessage.warning("当前没有可查询确认状态的告警");
     return;
   }
-  const rowsSnapshot = [...alarms.value];
-  const requestContext = buildAlarmAcknowledgementRefreshContext(rowsSnapshot);
-  const ticket = alarmAckRefreshOwner.begin(requestContext);
-  ackStatusLoading.value = true;
-  try {
-    const acknowledgements = await fetchAlarmAcknowledgements(rowsSnapshot);
-    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
-      return;
-    }
-    alarmAcknowledgements.value = acknowledgements;
-    alarms.value = mergeAlarmAcknowledgementStates(alarms.value, acknowledgements);
-    ElMessage.success("确认状态批量查询完成");
-  } catch (caught) {
-    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
-      return;
-    }
-    ElMessage.error(caught instanceof Error ? caught.message : "确认状态批量查询失败");
-  } finally {
-    if (alarmAckRefreshOwner.isLatest(ticket)) {
-      ackStatusLoading.value = false;
-    }
-  }
+  await refreshAlarmAcknowledgementsInternal("manual", [...alarms.value]);
 }
 
 function openAlarmAcknowledgementDialog(alarm: AlarmRow) {
@@ -280,6 +285,8 @@ async function submitAlarmAcknowledgement() {
   }
   const alarmId = buildAlarmIdentity(alarm);
   acknowledgingAlarmId.value = alarmId;
+  alarmAckRefreshOwner.invalidate();
+  ackStatusLoading.value = false;
   try {
     const acknowledgement = await acknowledgeAlarm(alarmId, buildAlarmAckPayload(alarmAckNote.value, alarmId));
     alarmAcknowledgements.value = { ...alarmAcknowledgements.value, [alarmId]: acknowledgement };
@@ -349,6 +356,74 @@ function applyRouteQuery() {
 
 function deviceNameOf(deviceId: string): string {
   return deviceStore.devices.find((device) => device.normalizedId === deviceId)?.displayName || deviceId;
+}
+
+function alarmAckPresentation(alarm: AlarmRow) {
+  return buildAlarmAcknowledgementPresentation(alarm, {
+    ackStatusUnavailable: ackStatusUnavailable.value,
+    ackStatusInitialized: ackStatusInitialized.value
+  });
+}
+
+function alarmAckStatusText(alarm: AlarmRow): string {
+  return alarmAckPresentation(alarm).statusText;
+}
+
+function alarmAckStatusClass(alarm: AlarmRow): string {
+  return alarmAckPresentation(alarm).toneClass;
+}
+
+function alarmAckDetailText(alarm: AlarmRow): string {
+  return alarmAckPresentation(alarm).detailText;
+}
+
+async function refreshAlarmAcknowledgementsInternal(
+  source: "automatic" | "manual",
+  rowsSnapshot: AlarmRow[]
+) {
+  const requestContext = buildAlarmAcknowledgementRefreshContext(rowsSnapshot);
+  if (!requestContext.alarmIds.length) {
+    ackStatusLoading.value = false;
+    ackStatusUnavailable.value = false;
+    ackStatusWarning.value = "";
+    ackStatusInitialized.value = true;
+    return;
+  }
+  const ticket = alarmAckRefreshOwner.begin(requestContext);
+  ackStatusLoading.value = true;
+  try {
+    const acknowledgements = await fetchAlarmAcknowledgements(rowsSnapshot);
+    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
+      return;
+    }
+    alarmAcknowledgements.value = acknowledgements;
+    alarms.value = mergeAlarmAcknowledgementStates(alarms.value, acknowledgements);
+    ackStatusUnavailable.value = false;
+    ackStatusWarning.value = "";
+    ackStatusInitialized.value = true;
+    if (source === "manual") {
+      ElMessage.success("确认状态批量查询完成");
+    }
+  } catch (caught) {
+    if (!alarmAckRefreshOwner.canCommit(ticket, currentAlarmAcknowledgementRefreshContext())) {
+      return;
+    }
+    ackStatusUnavailable.value = true;
+    ackStatusWarning.value = buildAckStatusWarning();
+    ackStatusInitialized.value = false;
+    if (source === "manual") {
+      ElMessage.warning(caught instanceof Error ? caught.message : "确认状态批量查询失败");
+    }
+  } finally {
+    if (alarmAckRefreshOwner.isLatest(ticket)) {
+      ackStatusLoading.value = false;
+    }
+  }
+}
+
+function buildAlarmHistoryErrorMessage(caught: unknown): string {
+  const detail = caught instanceof Error ? caught.message : String(caught || "").trim();
+  return detail ? `告警历史加载失败：${detail}` : "告警历史加载失败";
 }
 
 function normalizeRouteQuery(value: unknown): string {

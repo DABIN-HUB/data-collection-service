@@ -22,6 +22,8 @@
 
 01.5A 更新：`HistoryView.loadHistory()` 已从 all-or-nothing 改为分级降级：主历史查询保持 critical，compare histories 改为独立 optional，related alarms 改为 optional。主历史成功时，compare 或关联告警失败不再清空主曲线；页面新增持久 `historyError` / `historyPartialWarning`，并区分“关联告警暂不可用”与“暂无关联告警”。Task 01.5 Partial Failure & Degraded UX 当前状态为 IN PROGRESS；仍 OPEN 的仅有 Alarm partial failure、Dashboard partial failure visibility 与 `PointEditor.runtimeOf()` O(P²)。
 
+01.5B 更新：`AlarmView.loadAlarms()` 现已将告警历史视为 critical，将 acknowledgement bulk query 视为 optional enrichment，并把 acknowledgement WRITE 保持为 authoritative side effect。告警历史成功后会先提交 base alarm rows，再异步刷新确认状态；ack query 失败不再清空告警列表，而是显示持久 `ackStatusWarning`，并把未确认/已确认汇总降级为 `-`。Task 01.5 继续保持 IN PROGRESS；仍 OPEN 的仅有 Dashboard partial failure visibility 与 `PointEditor.runtimeOf()` O(P²)。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -32,7 +34,7 @@
 | `src/views/dashboard/DashboardView.vue` | RESOLVED IN 01.3C：dashboard refresh cycle 已补 generation guard；旧 cycle 的 metric、`lastRefresh` 与 `dashboardLoading` 不再覆盖最新 cycle。失败项仍显示未知/不可用，未拆卡片级提示。 | PARTIAL_FAILURE / LATEST_REQUEST_WINS | stale metric 已解决；partial failure visibility 仍留给 Task 01.5。 |
 | `src/views/diagnostic/DiagnosticView.vue` | AUDITED IN 01.3C / NO CHANGE：多指标 `Promise.allSettled` 失败项进入 `partialWarning`；页面只有 `onMounted` 与按钮触发完整诊断，按钮在 loading 时 disabled，route `deviceId` watcher 只同步选择设备。 | PARTIAL_FAILURE / PAGE_ERROR | 当前没有真实 overlapping diagnostic cycle；device store refresh race 已由 store 层治理。 |
 | `src/views/history/HistoryView.vue` | RESOLVED IN 01.5A：`loadPoints()` / `loadHistory()` / `loadRelatedAlarms(snapshot)` 在保留 latest-request-wins 的前提下，已按主历史 critical、compare optional、related alarms optional 分级降级；failed compare 不再伪装成空曲线，alarm failure 也不再清空成功历史。 | LATEST_REQUEST_WINS + PARTIAL_FAILURE | stale query 与 all-or-nothing 均已解决；Alarm/Dashboard partial failure 仍在后续任务。 |
-| `src/views/alarm/AlarmView.vue` | RESOLVED IN 01.3B：`loadAlarms()` 与 `refreshAlarmAcknowledgements()` 已改为 latest-request-wins；ack fetch 先返回结果再由当前 query/list 统一 commit，不再隐式全局写状态。告警历史 + ack 仍保持当前 all-or-nothing。 | LATEST_REQUEST_WINS + ALL_OR_NOTHING | stale query / stale ack refresh 已解决；ack 失败仍会使当前最新查询失败，留给 Task 01.5。 |
+| `src/views/alarm/AlarmView.vue` | RESOLVED IN 01.5B：`loadAlarms()` 继续保留 latest-request-wins，但已改为“告警历史 critical、acknowledgement enrichment optional、acknowledgement WRITE authoritative”。ack query 失败不再清空告警列表；页面可区分“已确认 / 待确认 / 状态未同步”，并保留最后已知确认状态。 | LATEST_REQUEST_WINS + PARTIAL_FAILURE + WRITE_AUTHORITY | stale query、ack all-or-nothing 与 bulk-read/write race 均已收口；Dashboard partial failure 仍在后续任务。 |
 | `src/views/log/LogView.vue` | RESOLVED IN 01.3C：服务端 query（`level/logger/keyword/limit`）已补 latest-request-wins；`deviceId/thread` 保持当前结果内本地过滤，timer 对同 query pending 会跳过。 | PAGE_ERROR + LATEST_REQUEST_WINS | changed server query 不再被旧 loading 吞掉，exception lookup 也不会覆盖用户后改的查询条件。 |
 | `src/views/cloud/CloudView.vue:100-111` | 有 `error` 页面状态。 | PAGE_ERROR | 可观测。 |
 | `src/views/network/NetworkView.vue:135-172` | 网络诊断失败会构造不可达结果并进入历史，同时 toast 错误。 | PAGE_ERROR / DEFENSIVE | 用户仍可导出失败结果，较适合诊断页面。 |
@@ -59,7 +61,7 @@
 | RESOLVED IN 01.3A | `src/components/realtime/RealtimeDataPanel.vue` | `watch(props.deviceId)` 的 HTTP fallback | Workbench 嵌入实时面板的 HTTP fallback 已补 `panel` 级 generation guard；旧 HTTP 响应不会再覆盖新的 `props.deviceId` 上下文。 | Workbench 快速切换设备。 | 本次只处理 HTTP fallback stale response；WebSocket close/onmessage generation 仍保持 OPEN。 |
 | P1 | `src/stores/websocket.store.ts` | `connectRealtime()` callbacks | `socket` 是模块级单例，callback 捕获旧 `deviceId`；close/onmessage 无 socket generation 校验。旧 socket 的迟到 callback 可更新 store 状态或旧设备 rows。 | 快速切换设备或网络断开重连。 | 引入 socket generation/currentDevice guard；解析错误写入可观测字段。 |
 | RESOLVED IN 01.5A | `src/views/history/HistoryView.vue` | `loadPoints()` / `loadHistory()` | `deviceId/pointRef/compare/start/end/limit` 继续按 snapshot + generation 校验，同时 `loadHistory()` 已改为 main critical / compare optional / alarms optional 的单轮并发 settle；Q1 的 partial/fatal 迟到结果不会覆盖 Q2。 | route query 快速变化、compare 单项失败、关联告警失败。 | 历史页 partial failure 已收口；Alarm/Dashboard 仍待后续任务。 |
-| RESOLVED IN 01.3B | `src/views/alarm/AlarmView.vue` | `loadAlarms()` / `refreshAlarmAcknowledgements()` | filter snapshot、ack list snapshot 与 latest generation 已生效；changed-context query 不再被旧 loading 吞掉。 | 用户快速切换 device/level/keyword。 | partial failure 仍保持 OPEN，不在 01.3B 处理。 |
+| RESOLVED IN 01.5B | `src/views/alarm/AlarmView.vue` | `loadAlarms()` / `refreshAlarmAcknowledgements()` / `submitAlarmAcknowledgement()` | filter snapshot、ack list snapshot 与 latest generation 继续生效；告警历史成功后先提交 base rows，再启动 optional ack enrichment；pre-write bulk ack refresh 会在 WRITE 成功前失效，旧 success/failure 都不会污染已确认结果或 warning。 | 用户快速切换 device/level/keyword；bulk ack refresh 与单条 acknowledge 并发。 | 告警页 partial failure 已收口；Dashboard 仍待 01.5C。 |
 | RESOLVED IN 01.3B | `src/components/device/DeviceConfigPanel.vue` | `loadProtocolConfig()` / `loadConnectionStatus()` / `loadWorkbenchRows()` / `showDiff()` | props.device/protocolKey 变化后的旧 response 不再覆盖当前协议表单、状态、点位行或 diff。 | Workbench 切设备、切 protocol、切 tab 时网络慢。 | store lifecycle 与更大范围请求治理留给后续任务。 |
 | RESOLVED IN 01.3B | `src/features/device/components/DeviceOperationShell.vue` | `loadRealtimePreview()` | `selectedDeviceId` snapshot 校验已生效；旧 preview success/failure 均不会再污染当前设备。 | route query deviceId 变化或 refresh/clear 后。 | preview failure UX 保持当前模式。 |
 | RESOLVED IN 01.3C | `src/views/log/LogView.vue` | `loadLogs()` + 5 秒 timer | 服务端日志查询已改为 latest-request-wins；timer 只跳过相同 pending query，不再吞掉 changed server query。 | 自动刷新中修改 level/logger/keyword/limit 或手动点击查询。 | local-only `device/thread` 过滤保持无后端请求。 |
@@ -147,7 +149,7 @@ Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh owne
 2. RESOLVED IN 01.3B：`HistoryView.loadPoints()` / `loadHistory()` 已补 query snapshot、latest-request-wins 和 changed-context submit。
 3. RESOLVED IN 01.5A：`HistoryView` 现已区分主历史（critical）、比较历史（independent optional）和关联告警（optional）；compare failure 或 alarm failure 不再清空已成功的主历史结果。
 4. RESOLVED IN 01.3B：`AlarmView.loadAlarms()` 与 `refreshAlarmAcknowledgements()` 已补 filter/list snapshot、latest-request-wins 和 ack fetch 后统一 commit。
-5. `AlarmView` 当前最新查询里，告警历史成功但确认状态失败时仍会清空告警列表。
+5. RESOLVED IN 01.5B：`AlarmView` 现已区分告警历史（critical）与 acknowledgement status（optional enrichment）；ack query failure 不再清空告警列表，acknowledge WRITE 成功也不会被旧 bulk refresh 污染。
 6. RESOLVED IN 01.3B：`DeviceConfigPanel` 协议配置/连接状态/实时行/diff 读取已补 request snapshot 校验，并拆为独立 owner。
 7. RESOLVED IN 01.3B：`DeviceOperationShell.loadRealtimePreview()` 旧请求覆盖问题已修复；stale failure 不再清空新设备预览。
 8. RESOLVED IN 01.3C：`device.store.refresh()`、`point.store.load/save()`、`protocol.store.refresh()/loadFields()`、`runtime.store.refresh()` 已完成 generation ownership 修复。

@@ -18,7 +18,7 @@ export interface AlarmTroubleshootTarget {
 
 export function summarizeAlarms(rows: AlarmRow[]): AlarmSummary {
   return rows.reduce<AlarmSummary>((summary, row) => {
-    const acknowledged = Boolean(row.acknowledged || String(row.status || "").toUpperCase().includes("ACK"));
+    const acknowledged = isAlarmAcknowledged(row);
     const level = String(row.level || row.alarmType || "").toUpperCase();
     summary.total += 1;
     summary.acknowledged += acknowledged ? 1 : 0;
@@ -27,6 +27,15 @@ export function summarizeAlarms(rows: AlarmRow[]): AlarmSummary {
     summary.warning += ["WARNING", "MINOR", "WARN", "提醒", "一般"].includes(level) ? 1 : 0;
     return summary;
   }, { total: 0, active: 0, acknowledged: 0, critical: 0, warning: 0 });
+}
+
+export function isAlarmAcknowledged(alarm: Partial<AlarmRow>): boolean {
+  return Boolean(
+    alarm.acknowledged
+    || alarm.acknowledgement
+    || String(alarm.status || "").toUpperCase().includes("ACK")
+    || String(alarm.status || "").includes("确认")
+  );
 }
 
 export function buildAlarmAckPayload(note: string, alarmId = "alarm-ack"): AlarmAcknowledgementRequest {
@@ -55,7 +64,10 @@ export function mergeAlarmAcknowledgementStates(rows: AlarmRow[], acknowledgemen
   return rows.map((row) => {
     const alarmId = buildAlarmIdentity(row);
     const acknowledgement = normalizeAcknowledgementRecord(acknowledgements[alarmId] || row.acknowledgement);
-    const acknowledged = Boolean(row.acknowledged || acknowledgement || String(row.status || "").toUpperCase().includes("ACK") || String(row.status || "").includes("确认"));
+    const acknowledged = isAlarmAcknowledged({
+      ...row,
+      acknowledgement
+    });
     return {
       ...row,
       alarmId,
