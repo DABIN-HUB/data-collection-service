@@ -18,6 +18,8 @@
 
 01.3C 更新：`device.store`、`point.store`、`protocol.store`、`runtime.store`、`LogView`、`DashboardView` 已完成 request lifecycle 收口：Store read refresh 改为 store-instance scoped generation，`point.store` 进一步收敛为 per-device read/write lifecycle；`LogView` 区分服务端 query 与本地 `device/thread` filter，timer 对相同 pending query 跳过但不会吞掉 changed server query，最近异常定位也补了独立 lookup owner；`DashboardView` 采用 refresh cycle generation，旧 cycle 的慢 metric、`lastRefresh` 和 `loading` 不再覆盖最新 cycle。`DiagnosticView` 已审计：当前只有 `onMounted` 与按钮触发完整诊断，按钮在 loading 时 disabled，route `deviceId` watcher 只同步选择设备、不触发第二个 diagnostic cycle，因此 `AUDITED / NO CHANGE`。至此 Task 01.3 Request Lifecycle Reliability 可标记为 COMPLETE；剩余 OPEN 仅属于 Realtime N+1 / WebSocket（Task 01.4）、Partial Failure（Task 01.5）和 PointEditor 性能（Task 01.6）。
 
+01.3C-R1 更新：`PointEditor.loadRealtime()` 已补 component-instance scoped realtime owner，按 immutable `deviceId` snapshot 执行 `getDeviceRealtimeData()` 与 `normalizeRealtimeRows()`；设备切换时 stale success / stale error 不再污染新设备，`finally` 只由 latest request 释放 `realtimeLoading`，无设备与 unmount 场景也会 invalidate 旧请求。Task 01.3 Request Lifecycle Reliability 继续保持 COMPLETE；仍 OPEN 的仅有 Realtime N+1 / WebSocket、History/Alarm/Dashboard partial failure，以及 `PointEditor.runtimeOf()` O(P²) 性能问题。
+
 ## 1. 错误处理模式盘点
 
 | 文件 / 区域 | 当前模式 | 分类 | 影响 |
@@ -34,7 +36,7 @@
 | `src/views/network/NetworkView.vue:135-172` | 网络诊断失败会构造不可达结果并进入历史，同时 toast 错误。 | PAGE_ERROR / DEFENSIVE | 用户仍可导出失败结果，较适合诊断页面。 |
 | `src/features/device/components/DeviceOperationShell.vue` | RESOLVED IN 01.3B：实时预览已按 `selectedDeviceId` snapshot + latest generation guard 提交；当前设备失败仍维持置空，stale failure 静默丢弃。 | LATEST_REQUEST_WINS + SILENT_FALLBACK | 串台已解决；失败 UX 仍保持当前轻量模式。 |
 | `src/components/device/DeviceConfigPanel.vue` | RESOLVED IN 01.3B：协议配置、连接状态、workbench rows、diff 已拆成独立 owner；device/protocol snapshot 不匹配的旧响应不会再写入当前面板。 | PAGE_ERROR + LATEST_REQUEST_WINS | same-protocol device switch 也会重新读取当前设备连接配置。 |
-| `src/features/point/components/PointEditor.vue:341-355` | 实时值加载失败写 `realtimeError`。 | PAGE_ERROR | 可观测。 |
+| `src/features/point/components/PointEditor.vue` | RESOLVED IN 01.3C-R1：`loadRealtime()` 已按 component-instance latest-request-wins + immutable `deviceId` snapshot 保护；stale success / stale error 不再污染当前设备，latest request 才能释放 `realtimeLoading`。 | PAGE_ERROR + LATEST_REQUEST_WINS | PointEditor 实时值在设备切换与卸载场景下不再串台。 |
 | `src/features/point/components/PointEditor.vue` + `src/stores/point.store.ts` | RESOLVED IN 01.3C：PointEditor 已改为按当前 `deviceId` 读取 `point.store` 的 `loading/saving/error`，保存失败仍走 store error，不额外 toast。 | PAGE_ERROR / DEVICE_SCOPED_STATE | 其他设备后台 load/save 不再锁住当前编辑器；failure UX 仍保持当前轻量模式。 |
 | `src/features/shadow/components/ShadowPanel.vue:153-155` | `读取全部` 使用 `Promise.allSettled`，单项内部自行写错误对象/toast。 | PARTIAL_FAILURE | 合理，影子、delta、history 可独立失败。 |
 | `src/features/collection/components/ConfigOpsPanel.vue:97-99` | 初始化读取 typed sync status 仍 `.catch(() => undefined)`。 | SWALLOWED | 01.2B 只补 contract，初始同步状态失败仍无页面错误。 |
@@ -63,6 +65,7 @@
 | AUDITED IN 01.3C / NO CHANGE | `src/views/diagnostic/DiagnosticView.vue` | `loadDiagnostic()` | 页面当前没有真实 overlapping trigger：按钮 loading 时 disabled，route watcher 不触发 `loadDiagnostic()`。 | 只会存在单次完整诊断周期；route 改变仅同步选中设备。 | 保持现状；后续如新增并发触发源再加 owner。 |
 | RESOLVED IN 01.3C | `src/stores/device.store.ts` | `refresh()` / `operate()` | 多页面并发 refresh 已补 generation guard，旧 refresh 不再覆盖 latest `devices/runtimeMap/error/loading`。 | Dashboard、DeviceList、Workbench 同时刷新或操作后刷新。 | write 操作保持原语义，仅后续 refresh 参与 generation。 |
 | RESOLVED IN 01.3C | `src/stores/point.store.ts` | `load()` / `save()` | 同设备 latest-wins 与 per-device loading/error/saving 已落地；save 后 reload 与 manual load 时序均已覆盖测试。 | PointEditor 中保存、刷新、切设备连续操作。 | PointEditor runtime 性能不在本阶段处理。 |
+| RESOLVED IN 01.3C-R1 | `src/features/point/components/PointEditor.vue` | `loadRealtime()` | PointEditor 实时值读取已补 `deviceId` snapshot、component owner 与 unmount invalidate；旧请求不会再覆盖新设备 realtime rows 或错误。 | PointEditor 中快速切换设备、清空设备或组件卸载。 | 保持 `runtimeOf()` 等性能实现不变，后续单独处理 01.6。 |
 | RESOLVED IN 01.3C | `src/stores/protocol.store.ts` | `refresh()` / `loadFields()` | 协议列表 refresh 与同 protocol 字段读取已补 generation；不同 protocol 字段读取彼此独立。 | 多页面并发 refresh 或重复展开同协议字段。 | 缓存结构保持 `fieldsByProtocol`，未引入 TTL。 |
 | RESOLVED IN 01.3C | `src/stores/runtime.store.ts` | `refresh()` | latest refresh 已统一裁决 `health/runtime/connected/error/lastUpdatedAt/loading`。 | 登录页与其他入口连续触发 runtime refresh。 | partial success 语义保持不变。 |
 
@@ -147,9 +150,10 @@ Task 01.3 Request Lifecycle Reliability COMPLETE：与 stale read / refresh owne
 7. RESOLVED IN 01.3B：`DeviceOperationShell.loadRealtimePreview()` 旧请求覆盖问题已修复；stale failure 不再清空新设备预览。
 8. RESOLVED IN 01.3C：`device.store.refresh()`、`point.store.load/save()`、`protocol.store.refresh()/loadFields()`、`runtime.store.refresh()` 已完成 generation ownership 修复。
 9. RESOLVED IN 01.3C：`LogView.loadLogs()` 与 `DashboardView.loadDashboard()` 已完成 latest cycle / latest query ownership 修复；`DiagnosticView` 已审计为 `AUDITED / NO CHANGE`。
-10. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
-11. `PointEditor.runtimeOf()` O(P²) 渲染风险。
-12. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
+10. RESOLVED IN 01.3C-R1：`PointEditor.loadRealtime()` 设备切换 stale success/error/loading ownership 已完成收口。
+11. WebSocket store 无自动重连、无 generation guard、parse 错误不可观测；`RealtimeDataPanel` 仅 HTTP fallback stale response 已在 01.3A 修复，WS 本身仍未处理。
+12. `PointEditor.runtimeOf()` O(P²) 渲染风险。
+13. RESOLVED IN 01.2B：`monitor.api.ts` 全 unknown 已清理，Dashboard/Diagnostic 获得 typed Monitor DTO 输入；页面级 partial failure 仍未改。
 
 ### P2
 

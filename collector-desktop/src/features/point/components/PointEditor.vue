@@ -229,11 +229,12 @@
  </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 import { getDeviceRealtimeData } from "@/api/data.api";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import PointBatchEditDialog from "./PointBatchEditDialog.vue";
 import PointGenerateDialog from "./PointGenerateDialog.vue";
@@ -250,6 +251,10 @@ import {
   type PointImportPreview,
   type PointLocationTarget
 } from "../utils/point-editor-utils";
+import {
+  buildPointRealtimeRequestContext,
+  isSamePointRealtimeRequestContext
+} from "../utils/point-realtime-lifecycle";
 import { usePointStore } from "@/stores/point.store";
 import type { RealtimePointRow } from "@/types/monitor";
 import type { DataPoint } from "@/types/point";
@@ -283,6 +288,8 @@ const alarmRuleText = ref("{}");
 const importPreviewVisible = ref(false);
 const importPreview = ref<PointImportPreview | null>(null);
 const importPreviewLabel = ref("");
+
+const realtimeRequestOwner = createLatestRequestOwner(isSamePointRealtimeRequestContext);
 
 const points = computed(() => pointStore.getPoints(props.deviceId));
 const selectedIds = computed(() => pointStore.getSelectedIds(props.deviceId));
@@ -342,20 +349,38 @@ async function handleImportFile(event: Event) {
 }
 
 async function loadRealtime() {
-  if (!props.deviceId) {
+  const requestContext = currentPointRealtimeContext();
+  if (!requestContext.deviceId) {
+    realtimeRequestOwner.invalidate();
     realtimeRows.value = [];
+    realtimeError.value = "";
+    realtimeLoading.value = false;
     return;
   }
+  const ticket = realtimeRequestOwner.begin(requestContext);
   realtimeLoading.value = true;
   realtimeError.value = "";
   try {
-    const response = await getDeviceRealtimeData(props.deviceId);
-    realtimeRows.value = normalizeRealtimeRows(response, props.deviceId);
+    const response = await getDeviceRealtimeData(requestContext.deviceId);
+    const nextRows = normalizeRealtimeRows(response, requestContext.deviceId);
+    if (!realtimeRequestOwner.canCommit(ticket, currentPointRealtimeContext())) {
+      return;
+    }
+    realtimeRows.value = nextRows;
   } catch (error) {
+    if (!realtimeRequestOwner.canCommit(ticket, currentPointRealtimeContext())) {
+      return;
+    }
     realtimeError.value = error instanceof Error ? error.message : "实时数据加载失败";
   } finally {
-    realtimeLoading.value = false;
+    if (realtimeRequestOwner.isLatest(ticket)) {
+      realtimeLoading.value = false;
+    }
   }
+}
+
+function currentPointRealtimeContext() {
+  return buildPointRealtimeRequestContext(props.deviceId);
 }
 
 async function savePoints() {
@@ -537,15 +562,20 @@ onMounted(async () => {
   await pointStore.load(props.deviceId);
   selectedPointId.value = points.value[0]?.pointId || "";
   syncDetailModels();
-  loadRealtime();
+  void loadRealtime();
 });
 watch(() => props.deviceId, async (nextDeviceId) => {
   await pointStore.load(nextDeviceId);
   selectedPointId.value = pointStore.getPoints(nextDeviceId)[0]?.pointId || "";
   syncDetailModels();
-  loadRealtime();
+  void loadRealtime();
 });
 watch(() => [selectedPoint.value?.pointId, pointFields.value.length], () => syncDetailModels());
+
+onBeforeUnmount(() => {
+  realtimeRequestOwner.invalidate();
+  realtimeLoading.value = false;
+});
 </script>
 
 <style scoped>
