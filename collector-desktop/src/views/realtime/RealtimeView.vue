@@ -60,6 +60,25 @@
       </section>
 
       <section class="exact-table-card">
+        <div class="exact-toolbar realtime-pagination">
+          <div class="exact-toolbar-group">
+            <span>共 {{ realtimePageWindow.total }} 条</span>
+            <small v-if="realtimePageWindow.total > 0">显示 {{ realtimePageWindow.startIndex }}–{{ realtimePageWindow.endIndex }} 条</small>
+            <small v-else>当前没有可分页的数据</small>
+          </div>
+          <div class="exact-toolbar-group">
+            <span>第 {{ realtimePageWindow.totalPages === 0 ? 0 : realtimePageWindow.page }} / {{ realtimePageWindow.totalPages }} 页</span>
+          </div>
+          <div class="exact-toolbar-group exact-toolbar-filters">
+            <select v-model.number="realtimePageSize" @change="handleRealtimePageSizeChange">
+              <option v-for="pageSize in REALTIME_PAGE_SIZE_OPTIONS" :key="pageSize" :value="pageSize">每页 {{ pageSize }}</option>
+            </select>
+            <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page <= 1" @click="goToFirstRealtimePage">首页</button>
+            <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page <= 1" @click="goToPreviousRealtimePage">上一页</button>
+            <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page >= realtimePageWindow.totalPages" @click="goToNextRealtimePage">下一页</button>
+            <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page >= realtimePageWindow.totalPages" @click="goToLastRealtimePage">末页</button>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
@@ -81,7 +100,7 @@
             <tr v-if="filteredRealtimeRows.length === 0">
               <td colspan="12" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td>
             </tr>
-            <tr v-for="row in filteredRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}`">
+            <tr v-for="row in pagedRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}`">
               <td>{{ row.pointName || row.pointCode || '-' }}</td>
               <td>{{ row.deviceName || deviceDisplayName(String(row.deviceId || realtimeDeviceId)) }}</td>
               <td>{{ row.dataType || '-' }}</td>
@@ -123,6 +142,16 @@ import {
 } from "@/features/realtime/utils/realtime-utils";
 import { loadRealtimeRowsByContext } from "@/features/realtime/utils/realtime-load-strategy";
 import {
+  DEFAULT_REALTIME_PAGE_SIZE,
+  REALTIME_PAGE_SIZE_OPTIONS,
+  buildRealtimeDeviceNameLookup,
+  buildRealtimePageWindow,
+  filterRealtimeRows,
+  getPagedRealtimeRows,
+  normalizeRealtimePageSize,
+  resolveRealtimeDeviceName
+} from "@/features/realtime/utils/realtime-table-window";
+import {
   createLatestRealtimeRequestOwner,
   shouldDisableRealtimeSubmit,
   type RealtimeRequestContext
@@ -136,6 +165,8 @@ const realtimeAuto = ref(true);
 const realtimeDeviceId = ref("");
 const realtimeKeyword = ref("");
 const realtimeRows = ref<RealtimePointRow[]>([]);
+const realtimePage = ref(1);
+const realtimePageSize = ref(DEFAULT_REALTIME_PAGE_SIZE);
 const realtimeSingleDeviceId = ref("");
 const realtimeSinglePointId = ref("");
 const realtimeSingleResult = ref<unknown>({ message: "选择设备和点位后查询单点实时数据" });
@@ -147,6 +178,7 @@ const pendingSingleRealtimeContext = ref<RealtimeRequestContext | null>(null);
 let realtimeTimer: number | null = null;
 const realtimeRequestOwner = createLatestRealtimeRequestOwner();
 const singleRealtimeRequestOwner = createLatestRealtimeRequestOwner();
+const deviceDisplayNameLookup = computed(() => buildRealtimeDeviceNameLookup(deviceStore.devices));
 
 type RealtimeLoadSource = "init" | "manual" | "device-change" | "timer";
 
@@ -155,16 +187,16 @@ const filteredRealtimeRows = computed(() => {
   if (!keyword) {
     return realtimeRows.value;
   }
-  return realtimeRows.value.filter((row) => {
-    const searchableValues = [
-      row.pointName,
-      row.pointCode,
-      realtimeAddress(row),
-      row.deviceName || deviceDisplayName(String(row.deviceId || realtimeDeviceId.value))
-    ];
-    return searchableValues.some((value) => String(value || "").toLowerCase().includes(keyword));
-  });
+  return filterRealtimeRows(realtimeRows.value, keyword, deviceDisplayNameLookup.value, realtimeDeviceId.value);
 });
+
+const realtimePageWindow = computed(() => buildRealtimePageWindow({
+  total: filteredRealtimeRows.value.length,
+  page: realtimePage.value,
+  pageSize: realtimePageSize.value
+}));
+
+const pagedRealtimeRows = computed(() => getPagedRealtimeRows(filteredRealtimeRows.value, realtimePageWindow.value));
 
 const realtimeSummary = computed(() => buildRealtimeSummary(filteredRealtimeRows.value));
 const singleRealtimeSubmitDisabled = computed(() => {
@@ -200,6 +232,24 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
     }
   }
 }
+
+watch(realtimeKeyword, () => {
+  if (realtimePage.value !== 1) {
+    realtimePage.value = 1;
+  }
+});
+
+watch(realtimeDeviceId, () => {
+  if (realtimePage.value !== 1) {
+    realtimePage.value = 1;
+  }
+});
+
+watch(realtimePageWindow, (nextWindow) => {
+  if (nextWindow.page !== realtimePage.value) {
+    realtimePage.value = nextWindow.page;
+  }
+}, { immediate: true });
 
 async function loadSingleRealtime() {
   if (!realtimeSingleDeviceId.value || !realtimeSinglePointId.value.trim()) {
@@ -244,7 +294,41 @@ function refreshRealtime() {
 }
 
 function handleRealtimeDeviceChange() {
+  realtimePage.value = 1;
   void loadRealtime("device-change");
+}
+
+function handleRealtimePageSizeChange() {
+  realtimePageSize.value = normalizeRealtimePageSize(realtimePageSize.value);
+  realtimePage.value = 1;
+}
+
+function goToRealtimePage(page: number) {
+  if (realtimePageWindow.value.totalPages === 0) {
+    return;
+  }
+  const nextWindow = buildRealtimePageWindow({
+    total: filteredRealtimeRows.value.length,
+    page,
+    pageSize: realtimePageSize.value
+  });
+  realtimePage.value = nextWindow.page;
+}
+
+function goToFirstRealtimePage() {
+  goToRealtimePage(1);
+}
+
+function goToPreviousRealtimePage() {
+  goToRealtimePage(realtimePageWindow.value.page - 1);
+}
+
+function goToNextRealtimePage() {
+  goToRealtimePage(realtimePageWindow.value.page + 1);
+}
+
+function goToLastRealtimePage() {
+  goToRealtimePage(realtimePageWindow.value.totalPages);
 }
 
 function syncTimer() {
@@ -271,7 +355,7 @@ function applyRouteQuery() {
 }
 
 function deviceDisplayName(deviceId: string): string {
-  return deviceStore.devices.find((device) => device.normalizedId === deviceId)?.displayName || deviceId || "-";
+  return resolveRealtimeDeviceName(deviceDisplayNameLookup.value, deviceId);
 }
 
 function formatTime(value: unknown): string {

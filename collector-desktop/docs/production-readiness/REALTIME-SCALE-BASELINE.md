@@ -1,6 +1,6 @@
 # Task 02.1 Realtime Scale Baseline & Bottleneck Inventory
 
-生成时间：2026-09-07 10:50 +0800
+生成时间：2026-09-07 11:35 +0800
 
 ## 1. Scope
 
@@ -513,7 +513,9 @@ Priority 3: Backend per-point allocation and change-aware refresh
 | Check | Command | Result |
 |---|---|---|
 | Frontend typecheck | `npm --prefix collector-desktop run typecheck` | PASS |
-| Frontend regression tests | `npm --prefix collector-desktop test` | PASS, 64 files / 427 tests |
+| Frontend regression tests | `npm --prefix collector-desktop test` | PASS, 65 files / 449 tests |
+| Frontend build | `npm --prefix collector-desktop run build` | PASS |
+| Frontend build:web | `npm --prefix collector-desktop run build:web` | PASS, 55 files synced |
 | Frontend verify | `npm --prefix collector-desktop run verify` | PASS |
 | Realtime scale benchmark | `npx vitest bench src/features/realtime/utils/realtime-scale.bench.ts --run --outputJson <output-json>` | PASS |
 | Java related test | `cmd.exe /c mvn -B -ntp -DforkCount=0 -pl collector-application -am test` | PASS, 141 tests |
@@ -547,3 +549,78 @@ Benchmark output was written to a local temp file and is intentionally not commi
 - [x] npm test passed
 - [x] npm verify passed
 - [x] diff check passed
+
+## 18. Task 02.2 RESOLVED
+
+02.2 只修复前端 DOM 渲染边界和设备名称查找热点，没有修改后端协议、payload contract、delta/WebSocket 或依赖。
+
+### Before
+
+- `rendered rows = filteredRealtimeRows.length`
+- 100k 场景：`100,000 tr`，`1,200,000 td` 下限
+- `deviceDisplayName()` 使用 `deviceStore.devices.find(...)`
+- fallback 热点为 `CONDITIONAL O(P×D)`
+
+### After
+
+- `rendered rows = pagedRealtimeRows.length`
+- 默认每页 `200`，最大 `500`
+- `pagedRealtimeRows.length <= 500`
+- 默认 DOM 上限：`<= 200 tr` / `<= 2,400 td`
+- 最大 DOM 上限：`<= 500 tr` / `<= 6,000 td`
+- `deviceDisplayNameLookup = computed(() => buildRealtimeDeviceNameLookup(deviceStore.devices))`
+- `deviceDisplayName()` 现在走 `Map.get(...)`
+- 查找复杂度：build `O(D)`，resolve `O(1)`
+
+### Post-02.2 benchmark notes
+
+| Item | Median |
+|---|---:|
+| old 100k fallback linear | `76.41 ms` |
+| new 100k fallback map | `42.50 ms` |
+| 100k render window slice pageSize=500 | `0.0003 ms` |
+
+注：render window slice 只衡量 JS slice / window helper，不代表浏览器 DOM 渲染时间。
+
+### Residual risks after 02.2
+
+- raw payload 100k 仍是 `151,651,557` bytes / `144.63 MiB`
+- stringify / parse / normalize / filter / summary / backend per-point allocation 仍然存在
+- 这些进入 `Task 02.3+`
+
+### 02.2 checklist
+
+- [x] render uses paged/windowed rows
+- [x] default rendered rows <= 200
+- [x] maximum rendered rows <= 500
+- [x] no "show all" option
+- [x] full realtimeRows preserved
+- [x] filtering happens before pagination
+- [x] summary uses full filtered results
+- [x] keyword / device / page-size change resets page 1
+- [x] same-context timer refresh preserves page if valid
+- [x] refresh clamps page if dataset shrinks
+- [x] paging causes zero HTTP requests
+- [x] single-device mode also bounded
+- [x] row object identity is preserved
+- [x] row key is stable, not page index
+- [x] deviceStore.devices.find removed from realtime hot path
+- [x] device display lookup uses computed Map
+- [x] lookup build = O(D)
+- [x] lookup resolve = O(1)
+- [x] no per-row Map rebuild
+- [x] no 100k decorated row copies
+- [x] request lifecycle unchanged
+- [x] polling remains 5000 ms
+- [x] backend contract unchanged
+- [x] no compact DTO yet
+- [x] no delta yet
+- [x] no WebSocket backend
+- [x] no dependency added
+- [x] 100k structural render test passes
+- [x] lifecycle regression passes
+- [x] typecheck passes
+- [x] tests pass
+- [x] build passes
+- [x] build:web passes
+- [x] verify passes
