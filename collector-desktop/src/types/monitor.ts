@@ -63,6 +63,56 @@ export interface AllDeviceRealtimeDataResponse {
   [key: string]: unknown;
 }
 
+export interface CompactRealtimePointPayload {
+  pointId?: string;
+  pointCode?: string;
+  pointName?: string;
+  deviceId?: string;
+  dataType?: string;
+  address?: string;
+  readWrite?: string;
+  scalingFactor?: number;
+  unit?: string;
+  value?: unknown;
+  status?: number | string;
+  quality?: number | string;
+  qualityDescription?: string;
+  qualityLevel?: string;
+  qualityAcceptable?: boolean;
+  qualityAvailable?: boolean;
+  processSuccess?: boolean;
+  processingTime?: number;
+  lastUpdateTime?: number | string;
+}
+
+export interface CompactRealtimeDeviceStatus {
+  status?: string;
+  message?: string;
+  deviceId?: string;
+  dataCount?: number;
+}
+
+export interface CompactDeviceRealtimeDataResponse {
+  status?: string;
+  message?: string;
+  deviceId?: string;
+  dataCount?: number;
+  rows?: CompactRealtimePointPayload[];
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
+export interface CompactAllDeviceRealtimeDataResponse {
+  status?: string;
+  message?: string;
+  deviceCount?: number;
+  dataCount?: number;
+  rows?: CompactRealtimePointPayload[];
+  devices?: CompactRealtimeDeviceStatus[];
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
 export interface DeviceBriefResponse {
   deviceId?: string;
   pointCount?: number;

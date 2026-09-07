@@ -4,6 +4,8 @@ import type {
   AdaptiveResetResponse,
   AllDeviceRealtimeDataResponse,
   AlarmHistoryDataResponse,
+  CompactAllDeviceRealtimeDataResponse,
+  CompactDeviceRealtimeDataResponse,
   DeviceListResponse,
   DevicePointListResponse,
   DeviceRealtimeDataResponse,
@@ -24,6 +26,8 @@ vi.mock("./http", () => ({
 import {
   getAllDeviceDataSummaries,
   getAllDeviceRealtimeData,
+  getCompactAllDeviceRealtimeData,
+  getCompactDeviceRealtimeData,
   getDeviceAlarmHistory,
   getDevicePointSummaries,
   getDeviceRealtimeData,
@@ -82,6 +86,45 @@ describe("data.api", () => {
       url: "/api/data/device/device-1",
       method: "GET",
       params: { pointIds: "point-1" }
+    });
+    expect(httpMocks.request).not.toHaveBeenCalled();
+  });
+
+  it("全部设备紧凑实时数据接口走独立 RAW DTO", async () => {
+    const response: CompactAllDeviceRealtimeDataResponse = {
+      status: "success",
+      deviceCount: 1,
+      dataCount: 1,
+      rows: [{ deviceId: "device-1", pointId: "point-1", value: 10, qualityAvailable: false }],
+      devices: [{ status: "success", deviceId: "device-1", dataCount: 1 }],
+      timestamp: 123456
+    };
+    httpMocks.requestRaw.mockResolvedValue(response);
+
+    await expect(getCompactAllDeviceRealtimeData()).resolves.toBe(response);
+
+    expect(httpMocks.requestRaw).toHaveBeenCalledWith({
+      url: "/api/data/realtime/compact",
+      method: "GET"
+    });
+    expect(httpMocks.request).not.toHaveBeenCalled();
+  });
+
+  it("单设备紧凑实时数据接口走独立 RAW DTO", async () => {
+    const response: CompactDeviceRealtimeDataResponse = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      rows: [{ deviceId: "device-1", pointId: "point-1", value: 10, qualityAvailable: false }],
+      timestamp: 123456
+    };
+    httpMocks.requestRaw.mockResolvedValue(response);
+
+    await expect(getCompactDeviceRealtimeData("device-1")).resolves.toBe(response);
+
+    expect(httpMocks.requestRaw).toHaveBeenCalledWith({
+      url: "/api/data/device/device-1/compact",
+      method: "GET"
     });
     expect(httpMocks.request).not.toHaveBeenCalled();
   });

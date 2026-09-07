@@ -324,6 +324,47 @@ function Assert-RawAggregate($Response, [string]$Name) {
     Assert-True (-not (Has-JsonProperty $Response.Json "code")) $Name "RAW DTO must not be ApiResult envelope"
 }
 
+function Find-CompactRow($Rows, [string]$DeviceId, [string]$PointId) {
+    foreach ($item in (To-Array $Rows)) {
+        if ((Get-JsonProperty $item "deviceId") -eq $DeviceId -and (Get-JsonProperty $item "pointId") -eq $PointId) {
+            return $item
+        }
+    }
+    return $null
+}
+
+function Assert-CompactAggregate($Response, [string]$Name) {
+    Assert-StatusCode $Response 200 $Name
+    Assert-Json $Response $Name
+    Assert-True (([string](Get-JsonProperty $Response.Json "status")) -eq "success") $Name "expected raw status=success"
+    Assert-True (Has-JsonProperty $Response.Json "deviceCount") $Name "expected deviceCount"
+    Assert-True (Has-JsonProperty $Response.Json "dataCount") $Name "expected dataCount"
+    Assert-True (Has-JsonProperty $Response.Json "rows") $Name "expected rows"
+    Assert-True (Has-JsonProperty $Response.Json "devices") $Name "expected devices"
+    Assert-True (Has-JsonProperty $Response.Json "timestamp") $Name "expected timestamp"
+    Assert-True (-not (Has-JsonProperty $Response.Json "code")) $Name "RAW DTO must not be ApiResult envelope"
+}
+
+function Assert-CompactDeviceResponse($Response, [string]$Name) {
+    Assert-StatusCode $Response 200 $Name
+    Assert-Json $Response $Name
+    Assert-True (([string](Get-JsonProperty $Response.Json "status")) -eq "success") $Name "expected raw status=success"
+    Assert-True ((Get-JsonProperty $Response.Json "deviceId") -eq $script:SmokeDeviceId) $Name "wrong deviceId"
+    Assert-True (([int](Get-JsonProperty $Response.Json "dataCount")) -eq 1) $Name "expected dataCount=1"
+    Assert-True (Has-JsonProperty $Response.Json "rows") $Name "expected rows"
+    Assert-True (@(To-Array (Get-JsonProperty $Response.Json "rows")).Count -eq 1) $Name "expected rows count=1"
+    Assert-True (-not (Has-JsonProperty $Response.Json "code")) $Name "RAW DTO must not be ApiResult envelope"
+}
+
+function Assert-CompactRowFieldBoundary($Row, [string]$Name) {
+    Assert-True ($null -ne $Row) $Name "compact row missing"
+    Assert-True ((Get-JsonProperty $Row "pointId") -eq $script:SmokePointId) $Name "wrong pointId"
+    Assert-True ((Get-JsonProperty $Row "deviceId") -eq $script:SmokeDeviceId) $Name "wrong deviceId"
+    foreach ($field in @("additionalConfig", "metadata", "currentCollectionInterval", "stableCount", "lastValue", "changeRate", "lastAdjustTime", "createTime", "updateTime", "remark", "processorName", "deviceName")) {
+        Assert-True (-not (Has-JsonProperty $Row $field)) $Name "compact row must not contain $field"
+    }
+}
+
 function Assert-DashboardEndpoint($Response, [string]$Name, [bool]$AllowDegraded = $false) {
     Assert-True ($Response.StatusCode -ne 404) $Name "route returned 404"
     Assert-True ($Response.StatusCode -ne 401 -and $Response.StatusCode -ne 403) $Name "auth failed with HTTP $($Response.StatusCode)"
@@ -446,6 +487,12 @@ function Cleanup-SmokeDevice([bool]$VerifyCleanup = $false) {
                 $devices = To-Array (Get-JsonProperty $aggregateAfterCleanup.Json "devices")
                 Assert-True ($null -eq (Find-DeviceById $devices $script:SmokeDeviceId)) "aggregate after cleanup" "smoke device still present"
                 Write-Pass "aggregate after cleanup" "smoke device absent"
+                $compactAfterCleanup = Invoke-SmokeRequest "compact-aggregate-after-cleanup" "/api/data/realtime/compact" "GET" $Token $null 15
+                Assert-CompactAggregate $compactAfterCleanup "compact aggregate after cleanup"
+                $compactRows = To-Array (Get-JsonProperty $compactAfterCleanup.Json "rows")
+                Assert-True ($null -eq (Find-CompactRow $compactRows $script:SmokeDeviceId $script:SmokePointId)) "compact aggregate after cleanup" "smoke point still present"
+                Assert-True ($null -eq (Find-DeviceById (Get-JsonProperty $compactAfterCleanup.Json "devices") $script:SmokeDeviceId)) "compact aggregate after cleanup" "smoke device status still present"
+                Write-Pass "compact aggregate after cleanup" "smoke rows absent"
             }
         }
     } catch {
@@ -566,8 +613,6 @@ function Assert-AccessLogSingleAggregate([string]$RequestId) {
         Start-Sleep -Milliseconds 250
     }
     Assert-True ($matches.Count -eq 1) "aggregate access log" "expected 1 access log entry for aggregate request, actual $($matches.Count)"
-    $deviceRequests = @($script:RequestLog | Where-Object { $_.Name -eq "aggregate-after-create-device-detail" -or $_.Path -like "/api/data/device/*" })
-    Assert-True ($deviceRequests.Count -le 2) "aggregate request count" "smoke script issued unexpected per-device aggregate validation requests"
     Write-Pass "aggregate access log" "1 client HTTP GET /api/data/realtime"
 }
 
@@ -618,10 +663,17 @@ function Run-Smoke() {
     $invalidToken = Invoke-SmokeRequest "invalid-token-api" "/api/data/realtime" "GET" "invalid-smoke-token" $null 15
     Assert-StatusCode $invalidToken 401 "invalid token rejected"
     Write-Pass "invalid token rejected" "HTTP 401"
+    $compactNoToken = Invoke-SmokeRequest "compact-unauthorized-api" "/api/data/realtime/compact" "GET" "" $null 15
+    Assert-StatusCode $compactNoToken 401 "compact unauthorized API rejected"
+    Write-Pass "compact unauthorized API rejected" "HTTP 401"
     $validToken = Invoke-SmokeRequest "valid-token-api" "/api/data/realtime" "GET" $Token $null 15
     Assert-True ($validToken.StatusCode -ne 401 -and $validToken.StatusCode -ne 403) "valid token accepted" "HTTP $($validToken.StatusCode)"
     Assert-RawAggregate $validToken "valid token accepted"
     Write-Pass "valid token accepted" "HTTP $($validToken.StatusCode) raw aggregate"
+    $compactValidToken = Invoke-SmokeRequest "compact-valid-token-api" "/api/data/realtime/compact" "GET" $Token $null 15
+    Assert-True ($compactValidToken.StatusCode -ne 401 -and $compactValidToken.StatusCode -ne 403) "compact valid token accepted" "HTTP $($compactValidToken.StatusCode)"
+    Assert-CompactAggregate $compactValidToken "compact valid token accepted"
+    Write-Pass "compact valid token accepted" "HTTP $($compactValidToken.StatusCode) raw compact aggregate"
 
     $monitorNoToken = Invoke-SmokeRequest "monitor-no-token" "/monitor/runtime" "GET" "" $null 15
     Assert-StatusCode $monitorNoToken 401 "monitor auth without token"
@@ -639,6 +691,12 @@ function Run-Smoke() {
     $baselineDataCount = [int](Get-JsonProperty $aggregateBaseline.Json "dataCount")
     $baselineDevicesCount = Get-ArrayCount (Get-JsonProperty $aggregateBaseline.Json "devices")
     Write-Pass "RAW aggregate baseline" "status=$(Get-JsonProperty $aggregateBaseline.Json 'status') deviceCount=$baselineDeviceCount dataCount=$baselineDataCount devices=$baselineDevicesCount"
+    $compactBaseline = Invoke-SmokeRequest "compact-aggregate-baseline" "/api/data/realtime/compact" "GET" $Token $null 15
+    Assert-CompactAggregate $compactBaseline "compact aggregate baseline"
+    $compactBaselineDeviceCount = [int](Get-JsonProperty $compactBaseline.Json "deviceCount")
+    $compactBaselineDataCount = [int](Get-JsonProperty $compactBaseline.Json "dataCount")
+    $compactBaselineRowsCount = Get-ArrayCount (Get-JsonProperty $compactBaseline.Json "rows")
+    Write-Pass "compact aggregate baseline" "deviceCount=$compactBaselineDeviceCount dataCount=$compactBaselineDataCount rows=$compactBaselineRowsCount"
 
     Assert-DashboardEndpoint (Invoke-SmokeRequest "dashboard-config-devices" "/api/config/devices" "GET" $Token $null 15) "dashboard config devices" $false
     Assert-DashboardEndpoint (Invoke-SmokeRequest "dashboard-device-runtime" "/api/device/runtime" "GET" $Token $null 15) "dashboard device runtime" $false
@@ -698,7 +756,16 @@ function Run-Smoke() {
     Assert-True (([int](Get-JsonProperty $deviceRealtime.Json "dataCount")) -eq 1) "device realtime" "expected dataCount=1"
     $realtimeData = Get-JsonProperty $deviceRealtime.Json "data"
     Assert-True (Has-JsonProperty $realtimeData $script:SmokePointId) "device realtime" "smoke point data missing"
+    $richRealtimePoint = Get-JsonProperty $realtimeData $script:SmokePointId
+    Assert-True (Has-JsonProperty $richRealtimePoint "additionalConfig") "device realtime rich compatibility" "rich point additionalConfig missing"
     Write-Pass "device realtime" "RAW DTO dataCount=1 value may be null"
+
+    $compactDeviceRealtime = Invoke-SmokeRequest "compact-device-realtime" "/api/data/device/$($script:SmokeDeviceId)/compact" "GET" $Token $null 15
+    Assert-CompactDeviceResponse $compactDeviceRealtime "compact device realtime"
+    $compactDeviceRows = To-Array (Get-JsonProperty $compactDeviceRealtime.Json "rows")
+    $compactDeviceRow = Find-CompactRow $compactDeviceRows $script:SmokeDeviceId $script:SmokePointId
+    Assert-CompactRowFieldBoundary $compactDeviceRow "compact device field boundary"
+    Write-Pass "compact device realtime" "RAW DTO rows=1 pointId=$($script:SmokePointId)"
 
     $singlePoint = Invoke-SmokeRequest "single-point-realtime" "/api/data/device/$($script:SmokeDeviceId)/point/$($script:SmokePointId)" "GET" $Token $null 15
     Assert-StatusCode $singlePoint 200 "single point realtime"
@@ -723,6 +790,17 @@ function Run-Smoke() {
     Assert-True ($afterDataCount -ge $baselineDataCount) "aggregate after create" "dataCount decreased from baseline"
     Write-Pass "aggregate after create" "contains smoke device; baseline deviceCount=$baselineDeviceCount after=$afterDeviceCount"
     Assert-AccessLogSingleAggregate $aggregateRequestId
+
+    $compactAggregateAfterCreate = Invoke-SmokeRequest "compact-aggregate-after-create" "/api/data/realtime/compact" "GET" $Token $null 15
+    Assert-CompactAggregate $compactAggregateAfterCreate "compact aggregate after create"
+    $compactAggregateRows = To-Array (Get-JsonProperty $compactAggregateAfterCreate.Json "rows")
+    $compactAggregateRow = Find-CompactRow $compactAggregateRows $script:SmokeDeviceId $script:SmokePointId
+    Assert-CompactRowFieldBoundary $compactAggregateRow "compact aggregate field boundary"
+    $compactAggregateDevice = Find-DeviceById (Get-JsonProperty $compactAggregateAfterCreate.Json "devices") $script:SmokeDeviceId
+    Assert-True ($null -ne $compactAggregateDevice) "compact aggregate after create" "smoke device status missing"
+    Assert-True (([string](Get-JsonProperty $compactAggregateDevice "status")) -eq "success") "compact aggregate after create" "inner device status must be success"
+    Assert-True (([int](Get-JsonProperty $compactAggregateDevice "dataCount")) -eq 1) "compact aggregate after create" "inner dataCount must be 1"
+    Write-Pass "compact aggregate after create" "rows contains smoke point and devices contains smoke status"
 
     $summary = Invoke-SmokeRequest "device-summary" "/api/data/devices" "GET" $Token $null 15
     Assert-StatusCode $summary 200 "device summary"

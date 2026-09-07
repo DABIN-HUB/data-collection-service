@@ -3,6 +3,8 @@ package com.wangbin.collector.api.application;
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
 import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
@@ -78,6 +80,25 @@ public class RealtimeDataApplicationService {
      */
     public AllDeviceRealtimeDataResponse getAllRealtimeData() {
         return realtimeDataQueryApplicationService.getAllRealtimeData();
+    }
+
+    /**
+     * 查询指定设备的实时表格紧凑快照。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 单设备实时表格紧凑快照
+     */
+    public CompactDeviceRealtimeDataResponse getCompactDeviceData(String deviceId) {
+        return realtimeDataQueryApplicationService.getCompactDeviceData(deviceId);
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑快照。
+     *
+     * @return 全设备实时表格紧凑聚合响应
+     */
+    public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
+        return realtimeDataQueryApplicationService.getCompactAllRealtimeData();
     }
 
     /**

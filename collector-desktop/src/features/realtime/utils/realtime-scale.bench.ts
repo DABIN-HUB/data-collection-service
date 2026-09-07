@@ -3,12 +3,14 @@ import { bench, describe } from "vitest";
 import { buildRealtimeSummary, normalizeAllDeviceRealtimeRows, normalizeRealtimeRows } from "./realtime-utils";
 import {
   buildAllDeviceRealtimeScaleFixture,
+  buildCompactAllDeviceRealtimeScaleFixture,
   buildSingleDeviceRealtimeScaleFixture,
   estimatePayloadSizeMetric,
   REALTIME_SCALE_CASES,
   removeDeviceNameForFallbackBenchmark,
   SINGLE_DEVICE_SCALE_CASES
 } from "./realtime-scale-fixture";
+import { extractCompactRealtimeRows } from "./realtime-compact-utils";
 import {
   buildRealtimeDeviceNameLookup,
   buildRealtimePageWindow,
@@ -26,13 +28,30 @@ const BENCH_OPTIONS = {
 
 const allDeviceCases = REALTIME_SCALE_CASES.map((scaleCase) => {
   const response = buildAllDeviceRealtimeScaleFixture(scaleCase);
+  const compactResponse = buildCompactAllDeviceRealtimeScaleFixture(scaleCase);
   const json = JSON.stringify(response);
+  const compactJson = JSON.stringify(compactResponse);
   const rows = normalizeAllDeviceRealtimeRows(response);
+  const compactRows = extractCompactRealtimeRows(compactResponse);
   const rowsWithoutDeviceName = removeDeviceNameForFallbackBenchmark(rows);
   const deviceNameLookup = buildBenchmarkDeviceNameLookup(scaleCase.deviceCount);
   const size = estimatePayloadSizeMetric(scaleCase.label, scaleCase.totalPoints, scaleCase.deviceCount, response);
+  const compactSize = estimatePayloadSizeMetric(scaleCase.label, scaleCase.totalPoints, scaleCase.deviceCount, compactResponse);
   const pageWindow = buildRealtimePageWindow({ total: rows.length, page: 1, pageSize: MAX_REALTIME_PAGE_SIZE });
-  return { scaleCase, response, json, rows, rowsWithoutDeviceName, deviceNameLookup, size, pageWindow };
+  return {
+    scaleCase,
+    response,
+    compactResponse,
+    json,
+    compactJson,
+    rows,
+    compactRows,
+    rowsWithoutDeviceName,
+    deviceNameLookup,
+    size,
+    compactSize,
+    pageWindow
+  };
 });
 
 const singleDeviceLookup = buildBenchmarkDeviceNameLookup(1);
@@ -53,6 +72,14 @@ describe("realtime scale payload", () => {
 
     bench(`all JSON parse ${testCase.scaleCase.label}`, () => {
       JSON.parse(testCase.json) as unknown;
+    }, BENCH_OPTIONS);
+
+    bench(`compact payload stringify ${testCase.scaleCase.label} rawBytes=${testCase.compactSize.rawBytes}`, () => {
+      JSON.stringify(testCase.compactResponse);
+    }, BENCH_OPTIONS);
+
+    bench(`compact JSON parse ${testCase.scaleCase.label}`, () => {
+      JSON.parse(testCase.compactJson) as unknown;
     }, BENCH_OPTIONS);
   }
 });
@@ -85,6 +112,10 @@ describe("realtime scale all-device frontend CPU", () => {
 
     bench(`all render slice ${testCase.scaleCase.label} pageSize=${MAX_REALTIME_PAGE_SIZE}`, () => {
       getPagedRealtimeRows(testCase.rows, testCase.pageWindow);
+    }, BENCH_OPTIONS);
+
+    bench(`compact row extraction ${testCase.scaleCase.label} rows=${testCase.compactRows.length}`, () => {
+      extractCompactRealtimeRows(testCase.compactResponse);
     }, BENCH_OPTIONS);
   }
 });

@@ -1,4 +1,12 @@
-import type { AllDeviceRealtimeDataResponse, DeviceRealtimeDataResponse, PointRealtimePayload, RealtimePointRow } from "@/types/monitor";
+import type {
+  AllDeviceRealtimeDataResponse,
+  CompactAllDeviceRealtimeDataResponse,
+  CompactDeviceRealtimeDataResponse,
+  CompactRealtimePointPayload,
+  DeviceRealtimeDataResponse,
+  PointRealtimePayload,
+  RealtimePointRow
+} from "@/types/monitor";
 
 /**
  * 仅供 benchmark/test 使用的实时规模数据集定义，生产代码不得 import。
@@ -86,6 +94,43 @@ export function buildAllDeviceRealtimeScaleFixture(scaleCase: RealtimeScaleCase)
 export function buildSingleDeviceRealtimeScaleFixture(scaleCase: SingleDeviceScaleCase): DeviceRealtimeDataResponse {
   const allDevice = buildAllDeviceRealtimeScaleFixture(scaleCase);
   return allDevice.devices?.[0] || { status: "success", deviceId: "scale-device-001", dataCount: 0, data: {}, timestamp: allDevice.timestamp };
+}
+
+export function buildCompactAllDeviceRealtimeScaleFixture(scaleCase: RealtimeScaleCase): CompactAllDeviceRealtimeDataResponse {
+  const richResponse = buildAllDeviceRealtimeScaleFixture(scaleCase);
+  const rows: CompactRealtimePointPayload[] = [];
+  const devices = (richResponse.devices || []).map((device) => {
+    const deviceRows = Object.values(device.data || {}).map(toCompactPointPayload);
+    rows.push(...deviceRows);
+    return {
+      status: device.status,
+      message: device.message,
+      deviceId: device.deviceId,
+      dataCount: deviceRows.length
+    };
+  });
+  return {
+    status: richResponse.status,
+    message: richResponse.message,
+    deviceCount: devices.length,
+    dataCount: rows.length,
+    rows,
+    devices,
+    timestamp: richResponse.timestamp
+  };
+}
+
+export function buildCompactSingleDeviceRealtimeScaleFixture(scaleCase: SingleDeviceScaleCase): CompactDeviceRealtimeDataResponse {
+  const richResponse = buildSingleDeviceRealtimeScaleFixture(scaleCase);
+  const rows = Object.values(richResponse.data || {}).map(toCompactPointPayload);
+  return {
+    status: richResponse.status,
+    message: richResponse.message,
+    deviceId: richResponse.deviceId,
+    dataCount: rows.length,
+    rows,
+    timestamp: richResponse.timestamp
+  };
 }
 
 export function estimatePayloadSizeMetric(label: string, totalPoints: number, deviceCount: number, payload: unknown): RealtimePayloadSizeMetric {
@@ -232,6 +277,30 @@ function buildPointPayload(deviceId: string, deviceName: string, index: number, 
     },
     lastUpdateTime: timestamp,
     timestamp
+  };
+}
+
+function toCompactPointPayload(point: PointRealtimePayload): CompactRealtimePointPayload {
+  return {
+    pointId: point.pointId,
+    pointCode: point.pointCode,
+    pointName: point.pointName,
+    deviceId: point.deviceId,
+    dataType: point.dataType,
+    address: point.address,
+    readWrite: point.readWrite,
+    scalingFactor: point.scalingFactor,
+    unit: point.unit,
+    value: point.value,
+    status: point.status,
+    quality: point.quality,
+    qualityDescription: point.qualityDescription,
+    qualityLevel: point.qualityLevel,
+    qualityAcceptable: point.qualityAcceptable,
+    qualityAvailable: point.qualityAvailable,
+    processSuccess: point.processSuccess,
+    processingTime: point.processingTime,
+    lastUpdateTime: point.lastUpdateTime
   };
 }
 

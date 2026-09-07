@@ -1,6 +1,10 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeviceStatus;
+import com.wangbin.collector.api.controller.dto.CompactRealtimePointPayload;
 import com.wangbin.collector.api.controller.dto.DeviceBriefResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
@@ -190,6 +194,116 @@ public class RealtimeDataQueryApplicationService {
     }
 
     /**
+     * 查询指定设备的实时表格紧凑快照。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 单设备实时表格紧凑快照
+     */
+    public CompactDeviceRealtimeDataResponse getCompactDeviceData(String deviceId) {
+        try {
+            List<DataPoint> dataPoints = safeDataPoints(configManager.getDataPoints(deviceId));
+            if (dataPoints.isEmpty()) {
+                return CompactDeviceRealtimeDataResponse.builder()
+                        .status(STATUS_ERROR)
+                        .message(DEVICE_POINTS_MISSING_MESSAGE)
+                        .deviceId(deviceId)
+                        .dataCount(0)
+                        .rows(List.of())
+                        .timestamp(System.currentTimeMillis())
+                        .build();
+            }
+
+            Map<CacheKey, Object> values = cacheManager.getAll(buildCacheKeys(deviceId, dataPoints));
+            List<CompactRealtimePointPayload> rows = buildCompactRows(deviceId, dataPoints, values);
+            return CompactDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_SUCCESS)
+                    .deviceId(deviceId)
+                    .dataCount(rows.size())
+                    .rows(rows)
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        } catch (Exception exception) {
+            log.error("查询设备实时紧凑数据失败，设备={}", deviceId, exception);
+            return CompactDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_ERROR)
+                    .message("查询失败: " + exception.getMessage())
+                    .deviceId(deviceId)
+                    .dataCount(0)
+                    .rows(List.of())
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        }
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑快照。
+     *
+     * @return 全设备实时表格紧凑聚合响应
+     */
+    public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
+        try {
+            List<String> deviceIds = configManager.getAllDeviceIds();
+            if (deviceIds.isEmpty()) {
+                return CompactAllDeviceRealtimeDataResponse.builder()
+                        .status(STATUS_SUCCESS)
+                        .deviceCount(0)
+                        .dataCount(0)
+                        .rows(List.of())
+                        .devices(List.of())
+                        .timestamp(System.currentTimeMillis())
+                        .build();
+            }
+
+            Map<String, List<DataPoint>> pointsByDevice = new LinkedHashMap<>();
+            List<CacheKey> allCacheKeys = new ArrayList<>();
+            for (String deviceId : deviceIds) {
+                List<DataPoint> dataPoints = safeDataPoints(configManager.getDataPoints(deviceId));
+                pointsByDevice.put(deviceId, dataPoints);
+                if (!dataPoints.isEmpty()) {
+                    allCacheKeys.addAll(buildCacheKeys(deviceId, dataPoints));
+                }
+            }
+
+            Map<CacheKey, Object> values = allCacheKeys.isEmpty()
+                    ? Collections.emptyMap()
+                    : cacheManager.getAll(allCacheKeys);
+            List<CompactRealtimePointPayload> rows = new ArrayList<>();
+            List<CompactRealtimeDeviceStatus> devices = new ArrayList<>();
+            for (Map.Entry<String, List<DataPoint>> entry : pointsByDevice.entrySet()) {
+                String deviceId = entry.getKey();
+                List<DataPoint> dataPoints = entry.getValue();
+                if (dataPoints.isEmpty()) {
+                    devices.add(compactDeviceStatus(deviceId, STATUS_ERROR, DEVICE_POINTS_MISSING_MESSAGE, 0));
+                    continue;
+                }
+                List<CompactRealtimePointPayload> deviceRows = buildCompactRows(deviceId, dataPoints, values);
+                rows.addAll(deviceRows);
+                devices.add(compactDeviceStatus(deviceId, STATUS_SUCCESS, null, deviceRows.size()));
+            }
+
+            return CompactAllDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_SUCCESS)
+                    .deviceCount(devices.size())
+                    .dataCount(rows.size())
+                    .rows(rows)
+                    .devices(devices)
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        } catch (Exception exception) {
+            log.error("查询全部设备实时紧凑数据失败", exception);
+            return CompactAllDeviceRealtimeDataResponse.builder()
+                    .status(STATUS_ERROR)
+                    .message("查询失败: " + exception.getMessage())
+                    .deviceCount(0)
+                    .dataCount(0)
+                    .rows(List.of())
+                    .devices(List.of())
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+        }
+    }
+
+    /**
      * 查询所有设备的基本摘要。
      *
      * @return 设备摘要列表
@@ -264,6 +378,56 @@ public class RealtimeDataQueryApplicationService {
             cacheKeys.add(CacheKey.dataKey(deviceId, point.getPointId()));
         }
         return cacheKeys;
+    }
+
+    /**
+     * 将可能为 null 的点位列表归一化为空列表。
+     *
+     * @param dataPoints 点位配置列表
+     * @return 非 null 点位配置列表
+     */
+    private List<DataPoint> safeDataPoints(List<DataPoint> dataPoints) {
+        return dataPoints == null ? List.of() : dataPoints;
+    }
+
+    /**
+     * 构建实时表格紧凑点位行。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param dataPoints 点位配置列表
+     * @param values 缓存值映射
+     * @return 实时表格紧凑点位行
+     */
+    private List<CompactRealtimePointPayload> buildCompactRows(String deviceId,
+                                                               List<DataPoint> dataPoints,
+                                                               Map<CacheKey, Object> values) {
+        List<CompactRealtimePointPayload> rows = new ArrayList<>();
+        for (DataPoint point : dataPoints) {
+            CacheKey cacheKey = CacheKey.dataKey(deviceId, point.getPointId());
+            rows.add(CompactRealtimePointPayload.from(point, values.get(cacheKey)));
+        }
+        return rows;
+    }
+
+    /**
+     * 构建紧凑聚合中的轻量设备状态。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param status 设备级业务状态
+     * @param message 设备级业务提示
+     * @param dataCount 当前设备点位行数
+     * @return 轻量设备状态
+     */
+    private CompactRealtimeDeviceStatus compactDeviceStatus(String deviceId,
+                                                            String status,
+                                                            String message,
+                                                            int dataCount) {
+        return CompactRealtimeDeviceStatus.builder()
+                .status(status)
+                .message(message)
+                .deviceId(deviceId)
+                .dataCount(dataCount)
+                .build();
     }
 
     /**

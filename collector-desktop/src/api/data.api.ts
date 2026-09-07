@@ -4,6 +4,8 @@ import type {
   AllDeviceRealtimeDataResponse,
   AlarmHistoryDataResponse,
   AlarmRow,
+  CompactAllDeviceRealtimeDataResponse,
+  CompactDeviceRealtimeDataResponse,
   DeviceListResponse,
   DevicePointListResponse,
   DeviceRealtimeDataResponse,
@@ -27,6 +29,14 @@ export function getDeviceRealtimeData(deviceId: string, pointIds?: string[]): Pr
 
 export function getAllDeviceRealtimeData(): Promise<AllDeviceRealtimeDataResponse> {
   return requestRaw<AllDeviceRealtimeDataResponse>({ url: "/api/data/realtime", method: "GET" });
+}
+
+export function getCompactAllDeviceRealtimeData(): Promise<CompactAllDeviceRealtimeDataResponse> {
+  return requestRaw<CompactAllDeviceRealtimeDataResponse>({ url: "/api/data/realtime/compact", method: "GET" });
+}
+
+export function getCompactDeviceRealtimeData(deviceId: string): Promise<CompactDeviceRealtimeDataResponse> {
+  return requestRaw<CompactDeviceRealtimeDataResponse>({ url: `/api/data/device/${encodeURIComponent(deviceId)}/compact`, method: "GET" });
 }
 
 export function getAllDeviceDataSummaries(): Promise<DeviceListResponse> {

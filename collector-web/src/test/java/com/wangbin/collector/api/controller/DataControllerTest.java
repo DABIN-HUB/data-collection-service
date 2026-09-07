@@ -4,6 +4,10 @@ import com.wangbin.collector.api.application.RealtimeDataApplicationService;
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
 import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeviceStatus;
+import com.wangbin.collector.api.controller.dto.CompactRealtimePointPayload;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.HistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.PointRealtimePayload;
@@ -128,6 +132,125 @@ class DataControllerTest {
                 .andExpect(jsonPath("$.devices[1].status", is("error")));
 
         verify(realtimeDataApplicationService).getAllRealtimeData();
+    }
+
+    @Test
+    void shouldBindCompactAllRealtimeRouteAndSerializeRawTableSnapshot() throws Exception {
+        CompactRealtimePointPayload row = CompactRealtimePointPayload.builder()
+                .deviceId("dev-1")
+                .pointId("p-1")
+                .pointCode("temperature")
+                .pointName("温度")
+                .value(12.3D)
+                .quality(100)
+                .qualityAvailable(true)
+                .processSuccess(true)
+                .processingTime(7L)
+                .lastUpdateTime(1800000000123L)
+                .build();
+        when(realtimeDataApplicationService.getCompactAllRealtimeData())
+                .thenReturn(CompactAllDeviceRealtimeDataResponse.builder()
+                        .status("success")
+                        .deviceCount(1)
+                        .dataCount(1)
+                        .rows(List.of(row))
+                        .devices(List.of(CompactRealtimeDeviceStatus.builder()
+                                .status("success")
+                                .deviceId("dev-1")
+                                .dataCount(1)
+                                .build()))
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/realtime/compact"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.deviceCount", is(1)))
+                .andExpect(jsonPath("$.dataCount", is(1)))
+                .andExpect(jsonPath("$.rows[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.rows[0].pointId", is("p-1")))
+                .andExpect(jsonPath("$.rows[0].value", is(12.3D)))
+                .andExpect(jsonPath("$.rows[0].quality", is(100)))
+                .andExpect(jsonPath("$.rows[0].processingTime", is(7)))
+                .andExpect(jsonPath("$.rows[0].lastUpdateTime", is(1800000000123L)))
+                .andExpect(jsonPath("$.devices[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.devices[0].status", is("success")))
+                .andExpect(jsonPath("$.devices[0].dataCount", is(1)))
+                .andExpect(jsonPath("$.rows[0].deviceName").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].additionalConfig").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].metadata").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].currentCollectionInterval").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].stableCount").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].lastValue").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].changeRate").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].lastAdjustTime").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].createTime").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].updateTime").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].remark").doesNotExist())
+                .andExpect(jsonPath("$.rows[0].processorName").doesNotExist());
+
+        verify(realtimeDataApplicationService).getCompactAllRealtimeData();
+    }
+
+    @Test
+    void shouldBindCompactDeviceRouteAndSerializeRawRows() throws Exception {
+        when(realtimeDataApplicationService.getCompactDeviceData("dev-1"))
+                .thenReturn(CompactDeviceRealtimeDataResponse.builder()
+                        .status("success")
+                        .deviceId("dev-1")
+                        .dataCount(1)
+                        .rows(List.of(CompactRealtimePointPayload.builder()
+                                .deviceId("dev-1")
+                                .pointId("p-1")
+                                .value(12.3D)
+                                .qualityAvailable(false)
+                                .build()))
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/device/dev-1/compact"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.dataCount", is(1)))
+                .andExpect(jsonPath("$.rows[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.rows[0].pointId", is("p-1")))
+                .andExpect(jsonPath("$.rows[0].qualityAvailable", is(false)));
+
+        verify(realtimeDataApplicationService).getCompactDeviceData("dev-1");
+    }
+
+    @Test
+    void richDeviceRouteShouldStillSerializeDetailFields() throws Exception {
+        Map<String, PointRealtimePayload> data = new LinkedHashMap<>();
+        data.put("p-1", PointRealtimePayload.builder()
+                .pointId("p-1")
+                .deviceName("设备一")
+                .additionalConfig(Map.of("driverDataType", "float32"))
+                .currentCollectionInterval(5000L)
+                .stableCount(2)
+                .value(12.3D)
+                .build());
+        when(realtimeDataApplicationService.getDeviceData(eq("dev-1"), eq(null)))
+                .thenReturn(DeviceRealtimeDataResponse.builder()
+                        .status("success")
+                        .deviceId("dev-1")
+                        .dataCount(1)
+                        .data(data)
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/device/dev-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.data.p-1.deviceName", is("设备一")))
+                .andExpect(jsonPath("$.data.p-1.additionalConfig.driverDataType", is("float32")))
+                .andExpect(jsonPath("$.data.p-1.currentCollectionInterval", is(5000)))
+                .andExpect(jsonPath("$.data.p-1.stableCount", is(2)));
+
+        verify(realtimeDataApplicationService).getDeviceData("dev-1", null);
     }
 
     @Test

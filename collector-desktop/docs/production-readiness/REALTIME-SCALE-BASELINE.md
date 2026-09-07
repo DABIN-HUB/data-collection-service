@@ -624,3 +624,107 @@ Benchmark output was written to a local temp file and is intentionally not commi
 - [x] build passes
 - [x] build:web passes
 - [x] verify passes
+
+## 19. Task 02.3 RESOLVED
+
+02.3 新增实时表格专用 compact RAW contract，并让 `RealtimeView` 通过 load strategy 使用 compact endpoints。原 rich endpoints 继续保留给 `PointEditor`、`RealtimeDataPanel`、单点查询和详情消费方。
+
+### Compact contract
+
+| Endpoint | Response | Notes |
+|---|---|---|
+| `GET /api/data/realtime/compact` | `CompactAllDeviceRealtimeDataResponse` | flat `rows[]` + lightweight `devices[]` |
+| `GET /api/data/device/{deviceId}/compact` | `CompactDeviceRealtimeDataResponse` | single-device `rows[]` |
+
+Compact point fields:
+
+```text
+pointId, pointCode, pointName,
+deviceId,
+dataType, address, readWrite, scalingFactor, unit,
+value,
+status,
+quality, qualityDescription, qualityLevel, qualityAcceptable, qualityAvailable,
+processSuccess, processingTime,
+lastUpdateTime
+```
+
+Omitted from compact point:
+
+```text
+deviceName,
+rawValue, processedValue, lastValue,
+additionalConfig, metadata,
+currentCollectionInterval, stableCount, changeRate, lastAdjustTime,
+createTime, updateTime, remark, processorName
+```
+
+### Backend complexity after compact
+
+| Item | Rich path | Compact path |
+|---|---|---|
+| Cache lookup | `1 × cacheManager.getAll(allCacheKeys)` | `1 × cacheManager.getAll(allCacheKeys)` |
+| Runtime snapshot | `P × pointRuntimeStateService.snapshot(...)` | `0 × runtime snapshot` |
+| Point payload | `P × PointRealtimePayload` | `P × CompactRealtimePointPayload` |
+| Serialization | rich DTO bytes | compact DTO bytes |
+
+Compact path 仍为 full snapshot polling，只降低每轮 payload width 和 runtime snapshot allocation，不宣称 GC 或浏览器渲染耗时已解决。
+
+### Post-02.3 compact payload benchmark
+
+Benchmark command:
+
+```bash
+cd collector-desktop
+npx vitest bench src/features/realtime/utils/realtime-scale.bench.ts --run --outputJson C:/Users/wangbin/AppData/Local/Temp/data-collection-service-task-02-3/realtime-scale-bench.json
+```
+
+| Points | Rich MiB | Compact MiB | Reduction | Rich parse | Compact parse |
+| -----: | -------: | ----------: | --------: | ---------: | ------------: |
+| 10k | 14.43 | 4.19 | 70.97% | 74.76 ms | 15.31 ms |
+| 50k | 72.30 | 20.95 | 71.02% | 445.03 ms | 96.29 ms |
+| 100k | 144.63 | 41.90 | 71.03% | 858.59 ms | 201.47 ms |
+
+| Points | Rich bytes | Compact bytes | Compact bytes/point | Rich stringify reference | Compact stringify |
+| -----: | ---------: | ------------: | ------------------: | ----------------------: | ----------------: |
+| 10k | 15,135,252 | 4,393,516 | 439.35 | 99.27 ms | 17.83 ms |
+| 50k | 75,809,163 | 21,967,169 | 439.34 | 558.46 ms | 100.11 ms |
+| 100k | 151,651,557 | 43,934,239 | 439.34 | 1,199.98 ms | 215.18 ms |
+
+100k compact raw payload reduction is `71.03%`, satisfying the deterministic acceptance target `>=40%`.
+
+Compact row extraction keeps `response.rows` references and is `O(1)`:
+
+| Points | Row extraction median |
+| -----: | --------------------: |
+| 10k | 0.0001 ms |
+| 50k | 0.0001 ms |
+| 100k | 0.0001 ms |
+
+注：上述 timing 数字来自 Node/Vitest benchmark，不代表浏览器 DOM 渲染时间。
+
+### Five-second raw network model after compact
+
+| Dataset | MiB/refresh | MiB/s | MiB/min | GiB/hour |
+|---:|---:|---:|---:|---:|
+| 100k rich baseline | 144.63 | 28.93 | 1,735.56 | 101.69 |
+| 100k compact | 41.90 | 8.38 | 502.79 | 29.46 |
+
+The raw 100k hourly model drops from `101.69 GiB/hour` to `29.46 GiB/hour`, while `FULL SNAPSHOT POLLING` remains open for 02.4.
+
+### 02.3 verification targets
+
+- [x] rich endpoints remain separate and backward compatible
+- [x] rich `PointRealtimePayload` remains unchanged
+- [x] compact aggregate endpoint added as RAW DTO
+- [x] compact device endpoint added as RAW DTO
+- [x] compact point omits `deviceName`, `additionalConfig`, `metadata` and adaptive runtime fields
+- [x] compact aggregate uses flat `rows[]` and lightweight `devices[]`
+- [x] all-device compact keeps one bulk cache lookup
+- [x] compact path does not call `pointRuntimeStateService.snapshot(...)`
+- [x] `ProcessResult` value / quality / processing time / collect time semantics are preserved
+- [x] plain cached value uses `value=cachedValue` and `qualityAvailable=false`
+- [x] RealtimeView all/device mode uses compact API through `loadRealtimeRowsByContext`
+- [x] row extraction returns original row references
+- [x] 02.2 filter, summary, lifecycle and render-window tests remain covered
+- [x] no delta, WebSocket or dependency change introduced
