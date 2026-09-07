@@ -118,15 +118,16 @@ public class CompactRealtimePointPayload {
      * 根据点位配置和缓存值构建实时表格紧凑负载。
      *
      * @param point 点位配置
+     * @param deviceId 本次查询上下文中的本地设备唯一标识
      * @param cachedValue 缓存中的实时值
      * @return 实时表格紧凑负载
      */
-    public static CompactRealtimePointPayload from(DataPoint point, Object cachedValue) {
+    public static CompactRealtimePointPayload from(DataPoint point, String deviceId, Object cachedValue) {
         CompactRealtimePointPayload payload = CompactRealtimePointPayload.builder()
                 .pointId(point.getPointId())
                 .pointCode(point.getPointCode())
                 .pointName(point.getPointName())
-                .deviceId(point.getDeviceId())
+                .deviceId(deviceId)
                 .dataType(point.getDataType())
                 .address(point.getAddress())
                 .readWrite(point.getReadWrite())

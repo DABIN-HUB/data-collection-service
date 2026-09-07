@@ -629,6 +629,10 @@ Benchmark output was written to a local temp file and is intentionally not commi
 
 02.3 新增实时表格专用 compact RAW contract，并让 `RealtimeView` 通过 load strategy 使用 compact endpoints。原 rich endpoints 继续保留给 `PointEditor`、`RealtimeDataPanel`、单点查询和详情消费方。
 
+### R1 deviceId hardening
+
+compact row 的 `deviceId` 现在由本次查询上下文提供，而不是依赖 `DataPoint.deviceId`。这样即使配置对象中的 `deviceId` 为空或脏值，`rows[].deviceId` 仍然保持当前设备上下文，且 compact 查询不会修改 `DataPoint`。
+
 ### Compact contract
 
 | Endpoint | Response | Notes |
@@ -676,20 +680,20 @@ Benchmark command:
 
 ```bash
 cd collector-desktop
-npx vitest bench src/features/realtime/utils/realtime-scale.bench.ts --run --outputJson C:/Users/wangbin/AppData/Local/Temp/data-collection-service-task-02-3/realtime-scale-bench.json
+npx vitest bench src/features/realtime/utils/realtime-scale.bench.ts --run --outputJson <temporary-output-json>
 ```
 
 | Points | Rich MiB | Compact MiB | Reduction | Rich parse | Compact parse |
 | -----: | -------: | ----------: | --------: | ---------: | ------------: |
-| 10k | 14.43 | 4.19 | 70.97% | 74.76 ms | 15.31 ms |
-| 50k | 72.30 | 20.95 | 71.02% | 445.03 ms | 96.29 ms |
-| 100k | 144.63 | 41.90 | 71.03% | 858.59 ms | 201.47 ms |
+| 10k | 14.43 | 4.19 | 70.97% | 74.76 ms | 15.41 ms |
+| 50k | 72.30 | 20.95 | 71.02% | 445.03 ms | 104.48 ms |
+| 100k | 144.63 | 41.90 | 71.03% | 858.59 ms | 208.39 ms |
 
 | Points | Rich bytes | Compact bytes | Compact bytes/point | Rich stringify reference | Compact stringify |
 | -----: | ---------: | ------------: | ------------------: | ----------------------: | ----------------: |
-| 10k | 15,135,252 | 4,393,516 | 439.35 | 99.27 ms | 17.83 ms |
-| 50k | 75,809,163 | 21,967,169 | 439.34 | 558.46 ms | 100.11 ms |
-| 100k | 151,651,557 | 43,934,239 | 439.34 | 1,199.98 ms | 215.18 ms |
+| 10k | 15,135,252 | 4,393,516 | 439.35 | 99.27 ms | 17.85 ms |
+| 50k | 75,809,163 | 21,967,169 | 439.34 | 558.46 ms | 107.61 ms |
+| 100k | 151,651,557 | 43,934,239 | 439.34 | 1,199.98 ms | 202.90 ms |
 
 100k compact raw payload reduction is `71.03%`, satisfying the deterministic acceptance target `>=40%`.
 

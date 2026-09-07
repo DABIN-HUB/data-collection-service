@@ -262,6 +262,19 @@ class RealtimeDataQueryApplicationServiceTest {
     }
 
     @Test
+    void getCompactDeviceDataShouldUseAuthoritativeDeviceIdWhenPointDeviceIdMissing() {
+        DataPoint point = point(null, "p-1", "temperature");
+        when(configManager.getDataPoints("dev-authoritative")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenAnswer(invocation -> Map.of(invocation.<List<CacheKey>>getArgument(0).get(0), "v1"));
+
+        CompactRealtimePointPayload row = service.getCompactDeviceData("dev-authoritative").getRows().get(0);
+
+        assertEquals("dev-authoritative", row.getDeviceId());
+        assertNull(point.getDeviceId());
+        verify(pointRuntimeStateService, never()).snapshot(any(), any());
+    }
+
+    @Test
     void getCompactDeviceDataShouldPreserveProcessResultTableSemantics() {
         DataPoint point = point("dev-1", "p-1", "temperature");
         ProcessResult result = new ProcessResult();
@@ -371,6 +384,20 @@ class RealtimeDataQueryApplicationServiceTest {
         assertEquals(0, response.getDevices().get(1).getDataCount());
         verify(cacheManager, times(1)).getAll(argThat(keys -> keys.size() == 1
                 && "data:dev-1:p-1".equals(keys.get(0).getFullKey())));
+        verify(pointRuntimeStateService, never()).snapshot(any(), any());
+    }
+
+    @Test
+    void getCompactAllRealtimeDataShouldUseAuthoritativeDeviceIdWhenPointDeviceIdWrong() {
+        DataPoint point = point("wrong-device", "p-1", "temperature");
+        when(configManager.getAllDeviceIds()).thenReturn(List.of("dev-a"));
+        when(configManager.getDataPoints("dev-a")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenAnswer(invocation -> Map.of(invocation.<List<CacheKey>>getArgument(0).get(0), "v1"));
+
+        CompactRealtimePointPayload row = service.getCompactAllRealtimeData().getRows().get(0);
+
+        assertEquals("dev-a", row.getDeviceId());
+        assertEquals("wrong-device", point.getDeviceId());
         verify(pointRuntimeStateService, never()).snapshot(any(), any());
     }
 

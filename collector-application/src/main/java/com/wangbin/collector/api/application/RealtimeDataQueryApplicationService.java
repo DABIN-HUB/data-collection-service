@@ -404,7 +404,7 @@ public class RealtimeDataQueryApplicationService {
         List<CompactRealtimePointPayload> rows = new ArrayList<>();
         for (DataPoint point : dataPoints) {
             CacheKey cacheKey = CacheKey.dataKey(deviceId, point.getPointId());
-            rows.add(CompactRealtimePointPayload.from(point, values.get(cacheKey)));
+            rows.add(CompactRealtimePointPayload.from(point, deviceId, values.get(cacheKey)));
         }
         return rows;
     }
