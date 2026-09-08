@@ -895,3 +895,35 @@ The benchmark applies changes through the stable row identity `Map` and does not
 - [x] render bound, filtering and summary semantics preserved
 - [x] 1% / 10% / 20% delta measured
 - [x] 50% / 100% full fallback recorded
+
+## 21. Task 02.4-R1 — Epoch Boundary Closure
+
+### Before
+
+- Delta validated `configEpoch=1` at query start.
+- A `ConfigUpdateEvent` during the same query could advance the tracker to `configEpoch=2`.
+- Success response assembly could accidentally read the newer tracker state and return `resetRequired=false` with the wrong epoch.
+- Client cursor could be upgraded to the new epoch while still holding old rows.
+
+### After
+
+- One Delta query captures one immutable `SnapshotCursor` boundary.
+- Cursor validation is tied to that same boundary.
+- `upperRevision` always comes from `boundary.revision`.
+- Success responses always reuse the original boundary cursor:
+  - `snapshotId = boundary.snapshotId`
+  - `configEpoch = boundary.configEpoch`
+  - `revision = boundary.revision`
+- A config change during the query now resolves to `resetRequired=true` and discards any already-built rows.
+- A config change after the final compatibility check remains safe: the response keeps the old boundary, and the next poll detects `CONFIG_CHANGED` and performs full resync.
+
+### Regression coverage
+
+- empty delta race -> `CONFIG_CHANGED` reset
+- non-empty delta race -> `CONFIG_CHANGED` reset with already-built rows discarded
+- revision-only advance -> success with boundary revision unchanged
+- tracker boundary helper -> snapshot/config boundary remains valid while revision advances
+
+### Verification note
+
+- `realtime-scale.bench.ts` reran after this fix; baseline benchmark behavior remained intact.

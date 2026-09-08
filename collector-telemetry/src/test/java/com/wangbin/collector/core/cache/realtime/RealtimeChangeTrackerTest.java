@@ -103,12 +103,28 @@ class RealtimeChangeTrackerTest {
     @Test
     void cursorValidationShouldResetOnSnapshotConfigOrInvalidRevision() {
         RealtimeChangeTracker tracker = new RealtimeChangeTracker("snapshot-test");
-        tracker.record("dev-a", "p1", 10);
+        RealtimeChangeTracker.SnapshotCursor boundary = tracker.capture();
 
-        assertEquals("SNAPSHOT_MISMATCH", tracker.validateCursor("wrong", 1L, 0L).resetReason());
-        assertEquals("CONFIG_CHANGED", tracker.validateCursor("snapshot-test", 2L, 0L).resetReason());
-        assertEquals("CURSOR_INVALID", tracker.validateCursor("snapshot-test", 1L, 2L).resetReason());
-        assertTrue(tracker.validateCursor("snapshot-test", 1L, 0L).valid());
+        assertEquals("SNAPSHOT_MISMATCH", tracker.validateCursor(boundary, "wrong", boundary.configEpoch(), boundary.revision()).resetReason());
+        assertEquals("CONFIG_CHANGED", tracker.validateCursor(boundary, "snapshot-test", boundary.configEpoch() + 1, boundary.revision()).resetReason());
+        assertEquals("CURSOR_INVALID", tracker.validateCursor(boundary, "snapshot-test", boundary.configEpoch(), boundary.revision() + 1).resetReason());
+        assertTrue(tracker.validateCursor(boundary, "snapshot-test", boundary.configEpoch(), boundary.revision()).valid());
+    }
+
+    @Test
+    void boundaryCurrentShouldIgnoreRevisionButRespectSnapshotAndEpoch() {
+        RealtimeChangeTracker tracker = new RealtimeChangeTracker("snapshot-test");
+        RealtimeChangeTracker.SnapshotCursor boundary = tracker.capture();
+
+        assertTrue(tracker.isBoundaryCurrent(boundary));
+
+        tracker.record("dev-a", "p1", 10);
+        assertTrue(tracker.isBoundaryCurrent(boundary));
+
+        assertFalse(tracker.isBoundaryCurrent(new RealtimeChangeTracker.SnapshotCursor("wrong-snapshot", boundary.configEpoch(), boundary.revision())));
+
+        tracker.invalidateConfiguration();
+        assertFalse(tracker.isBoundaryCurrent(boundary));
     }
 
     private ProcessResult result(Object value, int quality, long processingTime, long collectTime) {

@@ -426,25 +426,35 @@ public class RealtimeDataQueryApplicationService {
                                                                  String snapshotId,
                                                                  long configEpoch,
                                                                  long sinceRevision) {
-        long upperRevision = realtimeChangeTracker.currentRevision();
+        RealtimeChangeTracker.SnapshotCursor boundary = realtimeChangeTracker.capture();
         RealtimeChangeTracker.CursorValidation validation = realtimeChangeTracker.validateCursor(
+                boundary,
                 snapshotId,
                 configEpoch,
                 sinceRevision);
         if (!validation.valid()) {
-            return compactDeltaReset(scope, deviceId, sinceRevision, validation.currentRevision(), validation.resetReason());
+            return compactDeltaReset(scope, deviceId, sinceRevision, boundary, validation.resetReason());
         }
 
         List<RealtimeChangeTracker.PointKey> changedKeys = realtimeChangeTracker.findChangedKeys(
                 sinceRevision,
-                upperRevision,
+                boundary.revision(),
                 deviceId,
                 MAX_DELTA_ROWS + 1);
         if (changedKeys.size() > MAX_DELTA_ROWS) {
-            return compactDeltaReset(scope, deviceId, sinceRevision, upperRevision, "DELTA_TOO_LARGE");
+            return compactDeltaReset(scope, deviceId, sinceRevision, boundary, "DELTA_TOO_LARGE");
         }
         if (changedKeys.isEmpty()) {
-            return compactDeltaSuccess(scope, deviceId, sinceRevision, upperRevision, List.of());
+            CompactRealtimeDeltaResponse boundaryReset = resetIfBoundaryInvalid(scope, deviceId, sinceRevision, boundary);
+            if (boundaryReset != null) {
+                return boundaryReset;
+            }
+            return compactDeltaSuccess(scope, deviceId, sinceRevision, boundary, List.of());
+        }
+
+        CompactRealtimeDeltaResponse boundaryReset = resetIfBoundaryInvalid(scope, deviceId, sinceRevision, boundary);
+        if (boundaryReset != null) {
+            return boundaryReset;
         }
 
         Map<String, Map<String, DataPoint>> pointIndex = buildPointIndex(loadAffectedDevicePoints(changedKeys));
@@ -454,7 +464,11 @@ public class RealtimeDataQueryApplicationService {
         for (RealtimeChangeTracker.PointKey key : changedKeys) {
             DataPoint point = pointIndex.getOrDefault(key.deviceId(), Map.of()).get(key.pointId());
             if (point == null) {
-                return compactDeltaReset(scope, deviceId, sinceRevision, upperRevision, "ROW_IDENTITY_MISMATCH");
+                boundaryReset = resetIfBoundaryInvalid(scope, deviceId, sinceRevision, boundary);
+                if (boundaryReset != null) {
+                    return boundaryReset;
+                }
+                return compactDeltaReset(scope, deviceId, sinceRevision, boundary, "ROW_IDENTITY_MISMATCH");
             }
             cacheKeys.add(CacheKey.dataKey(key.deviceId(), key.pointId()));
             orderedPoints.add(point);
@@ -469,7 +483,11 @@ public class RealtimeDataQueryApplicationService {
             CacheKey cacheKey = CacheKey.dataKey(rowDeviceId, point.getPointId());
             rows.add(CompactRealtimePointPayload.from(point, rowDeviceId, values.get(cacheKey)));
         }
-        return compactDeltaSuccess(scope, deviceId, sinceRevision, upperRevision, rows);
+        boundaryReset = resetIfBoundaryInvalid(scope, deviceId, sinceRevision, boundary);
+        if (boundaryReset != null) {
+            return boundaryReset;
+        }
+        return compactDeltaSuccess(scope, deviceId, sinceRevision, boundary, rows);
     }
 
     private Map<String, List<DataPoint>> loadAffectedDevicePoints(List<RealtimeChangeTracker.PointKey> changedKeys) {
@@ -495,17 +513,17 @@ public class RealtimeDataQueryApplicationService {
     private CompactRealtimeDeltaResponse compactDeltaSuccess(String scope,
                                                              String deviceId,
                                                              long fromRevision,
-                                                             long revision,
+                                                             RealtimeChangeTracker.SnapshotCursor boundary,
                                                              List<CompactRealtimePointPayload> rows) {
         return CompactRealtimeDeltaResponse.builder()
                 .status(STATUS_SUCCESS)
                 .scope(scope)
                 .deviceId(deviceId)
                 .resetRequired(false)
-                .snapshotId(realtimeChangeTracker.snapshotId())
-                .configEpoch(realtimeChangeTracker.configEpoch())
+                .snapshotId(boundary.snapshotId())
+                .configEpoch(boundary.configEpoch())
                 .fromRevision(fromRevision)
-                .revision(revision)
+                .revision(boundary.revision())
                 .changedCount(rows.size())
                 .rows(rows)
                 .timestamp(System.currentTimeMillis())
@@ -515,7 +533,7 @@ public class RealtimeDataQueryApplicationService {
     private CompactRealtimeDeltaResponse compactDeltaReset(String scope,
                                                            String deviceId,
                                                            long fromRevision,
-                                                           long revision,
+                                                           RealtimeChangeTracker.SnapshotCursor cursor,
                                                            String resetReason) {
         return CompactRealtimeDeltaResponse.builder()
                 .status(STATUS_SUCCESS)
@@ -523,14 +541,25 @@ public class RealtimeDataQueryApplicationService {
                 .deviceId(deviceId)
                 .resetRequired(true)
                 .resetReason(resetReason)
-                .snapshotId(realtimeChangeTracker.snapshotId())
-                .configEpoch(realtimeChangeTracker.configEpoch())
+                .snapshotId(cursor.snapshotId())
+                .configEpoch(cursor.configEpoch())
                 .fromRevision(fromRevision)
-                .revision(revision)
+                .revision(cursor.revision())
                 .changedCount(0)
                 .rows(List.of())
                 .timestamp(System.currentTimeMillis())
                 .build();
+    }
+
+    private CompactRealtimeDeltaResponse resetIfBoundaryInvalid(String scope,
+                                                                String deviceId,
+                                                                long fromRevision,
+                                                                RealtimeChangeTracker.SnapshotCursor boundary) {
+        RealtimeChangeTracker.BoundaryValidation boundaryValidation = realtimeChangeTracker.validateBoundary(boundary);
+        if (boundaryValidation.valid()) {
+            return null;
+        }
+        return compactDeltaReset(scope, deviceId, fromRevision, realtimeChangeTracker.capture(), boundaryValidation.resetReason());
     }
 
     /**

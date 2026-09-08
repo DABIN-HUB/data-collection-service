@@ -134,17 +134,69 @@ public class RealtimeChangeTracker {
      * @return 校验结果
      */
     public CursorValidation validateCursor(String clientSnapshotId, long clientConfigEpoch, long sinceRevision) {
-        long currentRevision = revision.get();
-        if (!snapshotId.equals(clientSnapshotId)) {
-            return CursorValidation.reset("SNAPSHOT_MISMATCH", currentRevision);
+        return validateCursor(capture(), clientSnapshotId, clientConfigEpoch, sinceRevision);
+    }
+
+    /**
+     * 校验客户端游标是否可用于指定边界内的增量查询。
+     *
+     * @param boundary 固定快照边界
+     * @param clientSnapshotId 客户端快照标识
+     * @param clientConfigEpoch 客户端配置纪元
+     * @param sinceRevision 客户端已应用修订号
+     * @return 校验结果
+     */
+    public CursorValidation validateCursor(SnapshotCursor boundary,
+                                           String clientSnapshotId,
+                                           long clientConfigEpoch,
+                                           long sinceRevision) {
+        if (boundary == null) {
+            return CursorValidation.reset("SNAPSHOT_MISMATCH", 0L);
         }
-        if (clientConfigEpoch != configEpoch.get()) {
-            return CursorValidation.reset("CONFIG_CHANGED", currentRevision);
+        long upperRevision = boundary.revision();
+        if (!boundary.snapshotId().equals(clientSnapshotId)) {
+            return CursorValidation.reset("SNAPSHOT_MISMATCH", upperRevision);
         }
-        if (sinceRevision < 0 || sinceRevision > currentRevision) {
-            return CursorValidation.reset("CURSOR_INVALID", currentRevision);
+        if (clientConfigEpoch != boundary.configEpoch()) {
+            return CursorValidation.reset("CONFIG_CHANGED", upperRevision);
         }
-        return CursorValidation.valid(currentRevision);
+        if (sinceRevision < 0 || sinceRevision > upperRevision) {
+            return CursorValidation.reset("CURSOR_INVALID", upperRevision);
+        }
+        return CursorValidation.valid(upperRevision);
+    }
+
+    /**
+     * 校验固定边界在当前 tracker 中是否仍然有效，并返回失效原因。
+     *
+     * @param boundary 固定快照边界
+     * @return 边界校验结果
+     */
+    public BoundaryValidation validateBoundary(SnapshotCursor boundary) {
+        if (boundary == null) {
+            return BoundaryValidation.reset("SNAPSHOT_MISMATCH");
+        }
+        if (!snapshotId.equals(boundary.snapshotId())) {
+            return BoundaryValidation.reset("SNAPSHOT_MISMATCH");
+        }
+        if (configEpoch.get() != boundary.configEpoch()) {
+            return BoundaryValidation.reset("CONFIG_CHANGED");
+        }
+        return BoundaryValidation.current();
+    }
+
+    /**
+     * 校验固定边界在当前 tracker 中是否仍然有效。
+     *
+     * @param boundary 固定快照边界
+     * @return true 表示 snapshotId 和 configEpoch 仍然匹配
+     */
+    public boolean isBoundaryCurrent(SnapshotCursor boundary) {
+        if (boundary == null) {
+            return false;
+        }
+        return snapshotId.equals(boundary.snapshotId())
+                && configEpoch.get() == boundary.configEpoch();
     }
 
     /**
@@ -276,6 +328,22 @@ public class RealtimeChangeTracker {
 
         public static CursorValidation reset(String resetReason, long currentRevision) {
             return new CursorValidation(false, resetReason, currentRevision);
+        }
+    }
+
+    /**
+     * 边界校验结果。
+     *
+     * @param valid 边界是否仍然有效
+     * @param resetReason 边界失效时的回退原因
+     */
+    public record BoundaryValidation(boolean valid, String resetReason) {
+        public static BoundaryValidation current() {
+            return new BoundaryValidation(true, null);
+        }
+
+        public static BoundaryValidation reset(String resetReason) {
+            return new BoundaryValidation(false, resetReason);
         }
     }
 

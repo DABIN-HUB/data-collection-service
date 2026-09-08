@@ -447,10 +447,13 @@ class RealtimeDataQueryApplicationServiceTest {
 
     @Test
     void compactDeltaEmptyShouldNotReadCacheOrRuntimeSnapshot() {
-        when(realtimeChangeTracker.currentRevision()).thenReturn(7L);
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 5L))
-                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(7L));
-        when(realtimeChangeTracker.findChangedKeys(5L, 7L, null, 20_001)).thenReturn(List.of());
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 5L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 5L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(5L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
+        when(realtimeChangeTracker.findChangedKeys(5L, 5L, null, 20_001)).thenReturn(List.of());
 
         CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 5L);
 
@@ -459,18 +462,54 @@ class RealtimeDataQueryApplicationServiceTest {
         assertEquals(Boolean.FALSE, response.getResetRequired());
         assertEquals(0, response.getChangedCount());
         assertEquals(List.of(), response.getRows());
-        assertEquals(7L, response.getRevision());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(1L, response.getConfigEpoch());
+        assertEquals(5L, response.getRevision());
+        verify(realtimeChangeTracker, times(1)).capture();
+        verify(realtimeChangeTracker, never()).currentRevision();
+        verify(realtimeChangeTracker, never()).configEpoch();
+        verify(cacheManager, never()).getAll(anyList());
+        verify(pointRuntimeStateService, never()).snapshot(any(), any());
+    }
+
+    @Test
+    void compactDeltaEmptyShouldResetWhenBoundaryInvalidatesBeforeSuccess() {
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 10L);
+        RealtimeChangeTracker.SnapshotCursor current = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 2L, 11L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary, current);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 10L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(10L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.reset("CONFIG_CHANGED"));
+        when(realtimeChangeTracker.findChangedKeys(10L, 10L, null, 20_001)).thenReturn(List.of());
+
+        CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 10L);
+
+        assertEquals("success", response.getStatus());
+        assertEquals(Boolean.TRUE, response.getResetRequired());
+        assertEquals("CONFIG_CHANGED", response.getResetReason());
+        assertEquals(List.of(), response.getRows());
+        assertEquals(0, response.getChangedCount());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(2L, response.getConfigEpoch());
+        assertEquals(11L, response.getRevision());
+        verify(realtimeChangeTracker, times(2)).capture();
+        verify(realtimeChangeTracker, never()).currentRevision();
+        verify(realtimeChangeTracker, never()).configEpoch();
         verify(cacheManager, never()).getAll(anyList());
         verify(pointRuntimeStateService, never()).snapshot(any(), any());
     }
 
     @Test
     void compactDeltaSmallShouldReadOnlyChangedCacheKeysOnce() {
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 4L);
         DataPoint first = point("dev-a", "p1", "temperature");
         DataPoint second = point("dev-a", "p2", "humidity");
-        when(realtimeChangeTracker.currentRevision()).thenReturn(4L);
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 1L))
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 1L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.valid(4L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
         when(realtimeChangeTracker.findChangedKeys(1L, 4L, "dev-a", 20_001)).thenReturn(List.of(
                 new RealtimeChangeTracker.PointKey("dev-a", "p1"),
                 new RealtimeChangeTracker.PointKey("dev-a", "p2")));
@@ -482,11 +521,18 @@ class RealtimeDataQueryApplicationServiceTest {
 
         CompactRealtimeDeltaResponse response = service.getCompactDeviceRealtimeDelta("dev-a", "snapshot-test", 1L, 1L);
 
+        assertEquals("success", response.getStatus());
         assertEquals(Boolean.FALSE, response.getResetRequired());
         assertEquals("device", response.getScope());
         assertEquals("dev-a", response.getDeviceId());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(1L, response.getConfigEpoch());
+        assertEquals(4L, response.getRevision());
         assertEquals(2, response.getChangedCount());
         assertEquals(List.of("p1", "p2"), response.getRows().stream().map(CompactRealtimePointPayload::getPointId).toList());
+        verify(realtimeChangeTracker, times(1)).capture();
+        verify(realtimeChangeTracker, never()).currentRevision();
+        verify(realtimeChangeTracker, never()).configEpoch();
         verify(cacheManager, times(1)).getAll(argThat(keys -> keys.size() == 2
                 && "data:dev-a:p1".equals(keys.get(0).getFullKey())
                 && "data:dev-a:p2".equals(keys.get(1).getFullKey())));
@@ -494,38 +540,102 @@ class RealtimeDataQueryApplicationServiceTest {
     }
 
     @Test
-    void compactDeltaShouldResetWhenSnapshotConfigRevisionOrRowIdentityMismatch() {
-        when(realtimeChangeTracker.currentRevision()).thenReturn(4L);
-        when(realtimeChangeTracker.validateCursor("wrong", 1L, 1L))
+    void compactDeltaNonEmptyShouldDiscardBuiltRowsWhenBoundaryInvalidatesDuringCacheRead() {
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 10L);
+        RealtimeChangeTracker.SnapshotCursor current = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 2L, 11L);
+        DataPoint point = point("dev-a", "p1", "temperature");
+        when(realtimeChangeTracker.capture()).thenReturn(boundary, current);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 10L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(10L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current(), RealtimeChangeTracker.BoundaryValidation.reset("CONFIG_CHANGED"));
+        when(realtimeChangeTracker.findChangedKeys(10L, 10L, null, 20_001))
+                .thenReturn(List.of(new RealtimeChangeTracker.PointKey("dev-a", "p1")));
+        when(configManager.getDataPoints("dev-a")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-a", "p1"), "v1"));
+
+        CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 10L);
+
+        assertEquals("success", response.getStatus());
+        assertEquals(Boolean.TRUE, response.getResetRequired());
+        assertEquals("CONFIG_CHANGED", response.getResetReason());
+        assertEquals(List.of(), response.getRows());
+        assertEquals(0, response.getChangedCount());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(2L, response.getConfigEpoch());
+        assertEquals(11L, response.getRevision());
+        verify(realtimeChangeTracker, times(2)).capture();
+        verify(realtimeChangeTracker, never()).currentRevision();
+        verify(realtimeChangeTracker, never()).configEpoch();
+        verify(cacheManager, times(1)).getAll(argThat(keys -> keys.size() == 1
+                && "data:dev-a:p1".equals(keys.get(0).getFullKey())));
+        verify(pointRuntimeStateService, never()).snapshot(any(), any());
+    }
+
+    @Test
+    void compactDeltaShouldKeepBoundaryRevisionWhenCurrentRevisionAdvances() {
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 10L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.currentRevision()).thenReturn(11L);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 10L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(10L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
+        when(realtimeChangeTracker.findChangedKeys(10L, 10L, null, 20_001)).thenReturn(List.of());
+
+        CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 10L);
+
+        assertEquals("success", response.getStatus());
+        assertEquals(Boolean.FALSE, response.getResetRequired());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(1L, response.getConfigEpoch());
+        assertEquals(10L, response.getRevision());
+        assertEquals(0, response.getChangedCount());
+        assertEquals(List.of(), response.getRows());
+        verify(realtimeChangeTracker, times(1)).capture();
+        verify(realtimeChangeTracker, never()).configEpoch();
+        verify(realtimeChangeTracker, never()).currentRevision();
+        verify(cacheManager, never()).getAll(anyList());
+    }
+
+    @Test
+    void compactDeltaShouldResetWhenSnapshotConfigOrRowIdentityMismatch() {
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 4L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "wrong", 1L, 1L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.reset("SNAPSHOT_MISMATCH", 4L));
         CompactRealtimeDeltaResponse wrongSnapshot = service.getCompactAllRealtimeDelta("wrong", 1L, 1L);
         assertEquals(Boolean.TRUE, wrongSnapshot.getResetRequired());
         assertEquals("SNAPSHOT_MISMATCH", wrongSnapshot.getResetReason());
 
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 0L, 1L))
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 0L, 1L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.reset("CONFIG_CHANGED", 4L));
         CompactRealtimeDeltaResponse configChanged = service.getCompactAllRealtimeDelta("snapshot-test", 0L, 1L);
         assertEquals("CONFIG_CHANGED", configChanged.getResetReason());
 
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 9L))
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 9L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.reset("CURSOR_INVALID", 4L));
         CompactRealtimeDeltaResponse invalidRevision = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 9L);
         assertEquals("CURSOR_INVALID", invalidRevision.getResetReason());
 
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 1L))
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 1L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.valid(4L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
         when(realtimeChangeTracker.findChangedKeys(1L, 4L, null, 20_001))
                 .thenReturn(List.of(new RealtimeChangeTracker.PointKey("dev-a", "missing")));
         when(configManager.getDataPoints("dev-a")).thenReturn(List.of(point("dev-a", "p1", "temperature")));
         CompactRealtimeDeltaResponse missingConfig = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 1L);
         assertEquals("ROW_IDENTITY_MISMATCH", missingConfig.getResetReason());
         verify(cacheManager, never()).getAll(anyList());
+        verify(realtimeChangeTracker, never()).currentRevision();
     }
 
     @Test
     void compactDeltaTooLargeShouldResetBeforeBuildingPayload() {
-        when(realtimeChangeTracker.currentRevision()).thenReturn(30_000L);
-        when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 1L))
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 30_000L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 1L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.valid(30_000L));
         List<RealtimeChangeTracker.PointKey> tooMany = java.util.stream.IntStream.rangeClosed(1, 20_001)
                 .mapToObj(index -> new RealtimeChangeTracker.PointKey("dev-a", "p" + index))
@@ -534,10 +644,15 @@ class RealtimeDataQueryApplicationServiceTest {
 
         CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 1L);
 
+        assertEquals("success", response.getStatus());
         assertEquals(Boolean.TRUE, response.getResetRequired());
         assertEquals("DELTA_TOO_LARGE", response.getResetReason());
+        assertEquals("snapshot-test", response.getSnapshotId());
+        assertEquals(1L, response.getConfigEpoch());
+        assertEquals(30_000L, response.getRevision());
         verify(configManager, never()).getDataPoints(any());
         verify(cacheManager, never()).getAll(anyList());
+        verify(realtimeChangeTracker, never()).currentRevision();
     }
 
     @Test
