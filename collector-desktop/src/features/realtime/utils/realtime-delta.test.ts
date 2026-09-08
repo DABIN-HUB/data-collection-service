@@ -164,6 +164,27 @@ describe("realtime-delta", () => {
     expect(rows[99_999]).toBe(changedB);
     expect(index.size).toBe(100_000);
   });
+
+  it.each([1_000, 10_000, 20_000])("100k base + %i changed rows 按 index 合并且不重建行数组", (changedCount) => {
+    const rows: RealtimePointRow[] = Array.from({ length: 100_000 }, (_, index) => row("dev-a", `p${index}`, index));
+    const originalRows = rows;
+    const originalUntouched = rows[changedCount];
+    const index = buildRealtimeRowIdentityIndex(rows);
+    const changedRows = Array.from({ length: changedCount }, (_, changedIndex) => row("dev-a", `p${changedIndex}`, changedIndex + 1_000_000));
+
+    const result = applyRealtimeDelta(rows, {
+      cursor: { snapshotId: "snapshot-1", configEpoch: 1, revision: 10 },
+      successfulDeltaCycles: 0,
+      rowIdentityIndex: index
+    }, delta({ revision: 11, changedCount, rows: changedRows }), { deviceId: "dev-a" });
+
+    expect(result.needsFullResync).toBe(false);
+    expect(rows).toBe(originalRows);
+    expect(rows[0]).toBe(changedRows[0]);
+    expect(rows[changedCount - 1]).toBe(changedRows[changedCount - 1]);
+    expect(rows[changedCount]).toBe(originalUntouched);
+    expect(index.size).toBe(100_000);
+  });
 });
 
 function row(deviceId: string, pointId: string, value: number): RealtimePointRow {

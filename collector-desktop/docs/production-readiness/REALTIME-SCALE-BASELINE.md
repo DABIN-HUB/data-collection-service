@@ -927,3 +927,89 @@ The benchmark applies changes through the stable row identity `Map` and does not
 ### Verification note
 
 - `realtime-scale.bench.ts` reran after this fix; baseline benchmark behavior remained intact.
+
+## 22. Task 02.5 Final Scale Acceptance
+
+Task 02.5 performed realtime-specific large-scale acceptance on the current executable JAR and did not replace the historical synthetic baselines above.
+
+### Real JAR HTTP scale
+
+Command:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-realtime-scale-soak.ps1 -JarPath collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar -Points 100000 -Devices 100 -DurationSeconds 900 -Clients 3 -PollIntervalSeconds 5 -Port 19091 -Token ops-token
+```
+
+Result: `REALTIME SCALE SOAK PASSED`.
+
+Run output directory: `target/realtime-scale-soak/20260908-144231`.
+
+| Points | Devices | Real Full HTTP Size | Full Median | Full Max | Result |
+| -----: | ------: | ------------------: | ----------: | -------: | ------ |
+| 10k | 10 | 2,480,934 bytes / 2.366 MiB | 1,625.67 ms | 1,655.83 ms | PASS |
+| 50k | 50 | 12,403,934 bytes / 11.8293 MiB | 7,954.12 ms | 8,381.27 ms | PASS |
+| 100k | 100 | 24,807,687 bytes / 23.6585 MiB | 16,995.79 ms | 17,569.12 ms | PASS |
+
+The real fixture intentionally avoided `additionalConfig`, `metadata`, and `remark` inflation, so these real HTTP bytes are not used to overwrite the earlier synthetic compact/rich baseline numbers.
+
+### 100k soak summary
+
+| Item | Value |
+| ---- | ----: |
+| Configured points | 100,000 |
+| Devices | 100 |
+| Clients | 3 |
+| Duration | 900 seconds |
+| Poll interval | 5 seconds |
+| Poll cycles | 91 |
+| Full requests | 37 |
+| Delta requests | 255 |
+| Unexpected resets | 0 |
+| HTTP 5xx | 0 |
+| JSON failures | 0 |
+| Process crashes | 0 |
+
+Normal client delta responses were empty, stable cursor responses (`changedCount=0`, `rows=[]`, `resetRequired=false`) as expected because collectors were not started. Periodic full refresh still ran after 12 successful delta cycles.
+
+### Resource trend
+
+| Resource | Start | Peak | End | Interpretation |
+| -------- | ----: | ---: | --: | -------------- |
+| JVM heap used | 148,656,136 bytes | 411,313,664 bytes | 181,853,144 bytes | no obvious unbounded growth observed |
+| Live threads | 41 | 74 | 42 | no persistent thread growth observed |
+| GC pause count/time | 1 / 0.006s start | 46 / 0.242s before restart | restart sampled separately | no GC thrashing observed |
+
+### Backend delta scale harness
+
+`RealtimeScaleSoakIT` was run explicitly with `-Dtest=RealtimeScaleSoakIT`; it uses real `RealtimeChangeTracker` and `RealtimeDataQueryApplicationService` with deterministic config/cache doubles.
+
+| Change | Rows | Mode | Cache Keys | Response Size | Median | Result |
+| -----: | ---: | ---- | ---------: | ------------: | -----: | ------ |
+| 0% | 0 | delta | 0 | 198 bytes | 4 ms | PASS |
+| 1% | 1,000 | delta | 1,000 | 262,200 bytes | 5 ms | PASS |
+| 10% | 10,000 | delta | 10,000 | 2,620,201 bytes | 22 ms | PASS |
+| 20% | 20,000 | delta | 20,000 | 5,240,201 bytes | 20 ms | PASS |
+| 20,001 | 20,001 | full reset | 0 | 25,896,771 bytes full reference | 7 ms | PASS |
+| 50% | 50,000 | full reset | 0 | 25,896,771 bytes full reference | 11 ms | PASS |
+| 100% | 100,000 | full reset | 0 | 25,896,771 bytes full reference | 21 ms | PASS |
+
+Tracker acceptance:
+
+- `trackedPointCount=100000` after population.
+- 10 independent client cursors did not grow server tracker state.
+- Same-value repeated 100 cycles did not grow revision or tracked point count.
+- 20,001 / 50% / 100% changed rows correctly used `DELTA_TOO_LARGE` reset instead of building oversized delta payloads.
+
+### Recovery acceptance
+
+- Config update: old cursor returned `CONFIG_CHANGED`; full resync saw updated `pointName`.
+- Device delete: old cursor returned `CONFIG_CHANGED`; full resync returned `deviceCount=99`, `dataCount=99000`, and no rows for the deleted test device.
+- Server restart: old cursor returned `SNAPSHOT_MISMATCH`; subsequent full used a new `snapshotId`.
+
+### Task 02 final decision
+
+Task 02.5: `PASS / COMPLETE`.
+
+Task 02 — Realtime & Large Data Performance: `PASS / COMPLETE`.
+
+Realtime large-data path: `READY FOR FIELD TRIAL`.
