@@ -6,6 +6,7 @@ import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeltaResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
@@ -71,6 +72,21 @@ public class DataController {
     }
 
     /**
+     * 查询指定设备的实时表格紧凑增量。
+     */
+    @GetMapping("/device/{deviceId}/compact/delta")
+    public CompactRealtimeDeltaResponse getCompactDeviceRealtimeDelta(@PathVariable String deviceId,
+                                                                       @RequestParam String snapshotId,
+                                                                       @RequestParam long configEpoch,
+                                                                       @RequestParam long sinceRevision) {
+        return realtimeDataApplicationService.getCompactDeviceRealtimeDelta(
+                deviceId,
+                snapshotId,
+                configEpoch,
+                sinceRevision);
+    }
+
+    /**
      * 查询全部设备的实时点位数据。
      *
      * @return 全设备实时数据聚合响应
@@ -88,6 +104,16 @@ public class DataController {
     @GetMapping("/realtime/compact")
     public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
         return realtimeDataApplicationService.getCompactAllRealtimeData();
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑增量。
+     */
+    @GetMapping("/realtime/compact/delta")
+    public CompactRealtimeDeltaResponse getCompactAllRealtimeDelta(@RequestParam String snapshotId,
+                                                                    @RequestParam long configEpoch,
+                                                                    @RequestParam long sinceRevision) {
+        return realtimeDataApplicationService.getCompactAllRealtimeDelta(snapshotId, configEpoch, sinceRevision);
     }
 
     /**

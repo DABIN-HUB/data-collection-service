@@ -5,6 +5,7 @@ import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeltaResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
@@ -99,6 +100,29 @@ public class RealtimeDataApplicationService {
      */
     public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
         return realtimeDataQueryApplicationService.getCompactAllRealtimeData();
+    }
+
+    /**
+     * 查询全部设备实时表格紧凑增量。
+     */
+    public CompactRealtimeDeltaResponse getCompactAllRealtimeDelta(String snapshotId,
+                                                                    long configEpoch,
+                                                                    long sinceRevision) {
+        return realtimeDataQueryApplicationService.getCompactAllRealtimeDelta(snapshotId, configEpoch, sinceRevision);
+    }
+
+    /**
+     * 查询指定设备实时表格紧凑增量。
+     */
+    public CompactRealtimeDeltaResponse getCompactDeviceRealtimeDelta(String deviceId,
+                                                                       String snapshotId,
+                                                                       long configEpoch,
+                                                                       long sinceRevision) {
+        return realtimeDataQueryApplicationService.getCompactDeviceRealtimeDelta(
+                deviceId,
+                snapshotId,
+                configEpoch,
+                sinceRevision);
     }
 
     /**

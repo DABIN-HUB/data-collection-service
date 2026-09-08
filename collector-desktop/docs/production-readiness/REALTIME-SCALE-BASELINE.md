@@ -732,3 +732,166 @@ The raw 100k hourly model drops from `101.69 GiB/hour` to `29.46 GiB/hour`, whil
 - [x] row extraction returns original row references
 - [x] 02.2 filter, summary, lifecycle and render-window tests remain covered
 - [x] no delta, WebSocket or dependency change introduced
+
+## 20. Task 02.4 RESOLVED
+
+02.4 在 compact RAW contract 上继续保留 5 秒 HTTP polling，但将普通 timer refresh 改为 cursor-based delta 查询。full compact snapshot 仍是正确性权威，delta 只是低变化率场景下减少 network / JSON / frontend merge work 的优化。
+
+### Change-aware architecture
+
+```text
+first load / manual / device change / reset / periodic safety
+  -> FULL compact snapshot
+     capture(snapshotId, configEpoch, revision) before cache read
+     return rows[] + cursor
+
+normal timer with valid cursor
+  -> DELTA compact rows
+     validate snapshotId + configEpoch + sinceRevision
+     scan tracker point states
+     read changed cache keys only
+     merge by deviceId + pointId index
+```
+
+Tracker state:
+
+```text
+snapshotId: one UUID per Spring Boot process
+configEpoch: starts at 1, increments on ConfigUpdateEvent
+revision: global AtomicLong
+pointStates: PointKey(deviceId, pointId) -> latest semantic fingerprint + latestRevision
+```
+
+The tracker stores no `CompactRealtimePointPayload`, rich payload, `ProcessResult` clone, JSON snapshot, browser session state, Redis stream cursor, database changelog, or previous per-client response.
+
+### Fingerprint semantics
+
+Plain cached value:
+
+- includes Java value type and content
+- same value repeated does not increment revision
+- changed value increments revision
+- arrays, collections and maps use deterministic content-aware traversal rather than object identity hash
+
+`ProcessResult` cached value includes compact-visible dynamic fields:
+
+```text
+finalValue,
+quality,
+qualityDescription,
+qualityLevel,
+qualityAcceptable,
+success,
+processingTime,
+COLLECT_TIME
+```
+
+`COLLECT_TIME` is intentionally part of the fingerprint. If a collector writes a new `ProcessResult` with the same value but a changed collect time, the compact row changed semantically and the tracker increments revision. High-change/all-points-changing scenarios may therefore correctly fall back to full compact.
+
+### Delta endpoints
+
+| Endpoint | Params | Response |
+|---|---|---|
+| `GET /api/data/realtime/compact/delta` | `snapshotId`, `configEpoch`, `sinceRevision` | `CompactRealtimeDeltaResponse` RAW DTO |
+| `GET /api/data/device/{deviceId}/compact/delta` | `snapshotId`, `configEpoch`, `sinceRevision` | `CompactRealtimeDeltaResponse` RAW DTO |
+
+Reset conditions return HTTP 200 RAW DTO with `status=success`, `resetRequired=true`, and empty `rows[]`:
+
+```text
+SNAPSHOT_MISMATCH
+CONFIG_CHANGED
+CURSOR_INVALID
+DELTA_TOO_LARGE
+ROW_IDENTITY_MISMATCH
+```
+
+### Backend complexity after 02.4
+
+| Mode | Configured points | Tracker work | Cache read | Payload build | Runtime snapshot |
+|---|---:|---:|---:|---:|---:|
+| Full compact | P | capture O(1) | `1 × getAll(P keys)` | O(P) | 0 |
+| Delta C | P | scan O(P) point states | `1 × getAll(C keys)` | O(C) | 0 |
+
+Delta intentionally does not preserve revision history. Each point only keeps latest fingerprint/revision because the client only needs to know whether the row changed since its cursor. The current backend still scans O(P) tracker states to select changed keys; it no longer reads all cache values or builds all payload rows when `C` is small.
+
+### Frontend behavior after 02.4
+
+- initial load: full compact
+- timer with valid cursor: delta compact
+- manual refresh: full compact
+- device context change: clear cursor/index and full compact
+- periodic safety resync: full after 12 successful delta cycles, about 60 seconds at 5 seconds polling
+- empty delta: preserves `realtimeRows` array reference and row object references; advances cursor/cycle only
+- changed delta: uses stable `Map(deviceId + pointId -> index)` from the last full snapshot and replaces only changed array slots
+- unknown delta row: triggers full resync instead of `push()`
+- delta HTTP failure: keeps existing rows and cursor, shows refresh error, and retries from same cursor later
+- stale delta/reset/full race: latest-request-wins/context snapshot still protects commits and loading ownership
+- pagination: default 200 / max 500 unchanged
+
+### Post-02.4 delta benchmark
+
+100k compact full baseline remains:
+
+```text
+43,934,239 bytes
+41.90 MiB / refresh
+```
+
+Delta payload benchmark uses the same compact row fixture and a synthetic RAW delta DTO. Timing is Node/Vitest median ms and is not browser DOM time.
+
+| 100k scenario | Changed rows | Mode | Raw bytes | MiB | % of full compact | JSON stringify | JSON parse |
+|---:|---:|---|---:|---:|---:|---:|---:|
+| 0% | 0 | delta | 187 | 0.0002 | 0.0004% | 0.0008 ms | 0.0010 ms |
+| 1% | 1,000 | delta | 418,463 | 0.40 | 0.95% | 1.75 ms | 1.48 ms |
+| 10% | 10,000 | delta | 4,182,924 | 3.99 | 9.52% | 18.17 ms | 15.53 ms |
+| 20% | 20,000 | delta | 8,365,657 | 7.98 | 19.04% | 37.70 ms | 33.39 ms |
+| 50% | 50,000 | full fallback | 43,934,239 | 41.90 | 100.00% | full selected | full selected |
+| 100% | 100,000 | full fallback | 43,934,239 | 41.90 | 100.00% | full selected | full selected |
+
+The configured hard cap is `MAX_DELTA_ROWS=20,000`, so 50% and 100% 100k scenarios choose full compact rather than constructing an oversized delta.
+
+### Delta apply benchmark
+
+Index-based merge benchmark over a 100k base array:
+
+| Changed rows | Apply median |
+|---:|---:|
+| 100 | 0.47 ms |
+| 1,000 | 1.59 ms |
+| 10,000 | 8.29 ms |
+
+The benchmark applies changes through the stable row identity `Map` and does not rebuild a `Map(realtimeRows.map(...))` every delta cycle.
+
+### 02.4 verification targets
+
+- [x] full compact endpoints remain
+- [x] rich endpoints unchanged
+- [x] snapshotId/configEpoch/revision added to full compact responses
+- [x] tracker memory is O(P), not O(P × clients)
+- [x] no per-client server snapshot
+- [x] semantic fingerprint implemented and tested
+- [x] same plain value does not revision++
+- [x] changed plain value revision++
+- [x] `ProcessResult` compact-visible changes revision++
+- [x] `COLLECT_TIME` change revision++
+- [x] failed cache write does not mark revision delivered
+- [x] tracker failure cannot break telemetry cache stage
+- [x] config event invalidates epoch and clears point states
+- [x] full captures marker before cache read
+- [x] delta aggregate/device endpoints exist
+- [x] delta is RAW DTO
+- [x] snapshot/config/invalid revision reset paths covered
+- [x] small delta reads only changed cache keys and uses one bulk `getAll`
+- [x] delta runtime snapshot count is zero
+- [x] missing config forces full resync
+- [x] too-large delta forces full resync
+- [x] frontend first/manual/context/safety full paths covered
+- [x] timer delta path covered
+- [x] empty delta preserves rows and row object references
+- [x] changed delta replaces only changed slots through stable index Map
+- [x] unknown row triggers full resync
+- [x] delta failure retains old rows/cursor
+- [x] stale delta and reset/full race protected by request ownership
+- [x] render bound, filtering and summary semantics preserved
+- [x] 1% / 10% / 20% delta measured
+- [x] 50% / 100% full fallback recorded

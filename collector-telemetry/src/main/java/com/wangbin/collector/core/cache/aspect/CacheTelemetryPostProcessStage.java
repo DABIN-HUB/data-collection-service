@@ -3,8 +3,10 @@ package com.wangbin.collector.core.cache.aspect;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
-import lombok.RequiredArgsConstructor;
+import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,10 +14,25 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Order(10)
-@RequiredArgsConstructor
+@Slf4j
 class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     private final MultiLevelCacheManager multiLevelCacheManager;
+    private final RealtimeChangeTracker realtimeChangeTracker;
+
+    @Autowired
+    CacheTelemetryPostProcessStage(MultiLevelCacheManager multiLevelCacheManager,
+                                   RealtimeChangeTracker realtimeChangeTracker) {
+        this.multiLevelCacheManager = multiLevelCacheManager;
+        this.realtimeChangeTracker = realtimeChangeTracker;
+    }
+
+    /**
+     * 测试兼容构造器，用于不关注实时增量跟踪的历史管线单测。
+     */
+    CacheTelemetryPostProcessStage(MultiLevelCacheManager multiLevelCacheManager) {
+        this(multiLevelCacheManager, new RealtimeChangeTracker());
+    }
 
     /**
      * 执行当前业务逻辑。
@@ -48,7 +65,20 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
     public void process(TelemetryPostProcessContext context) {
         DataPoint point = context.point();
         CacheKey cacheKey = CacheKey.dataKey(context.deviceId(), point.getPointId());
-        multiLevelCacheManager.put(cacheKey, context.cacheValue(), getCacheExpireTime(point));
+        boolean success = multiLevelCacheManager.put(cacheKey, context.cacheValue(), getCacheExpireTime(point));
+        if (!success) {
+            return;
+        }
+        try {
+            realtimeChangeTracker.record(context.deviceId(), point.getPointId(), context.cacheValue());
+        } catch (Exception exception) {
+            log.warn("实时变更跟踪失败，设备={}，点位={}", context.deviceId(), point.getPointId(), exception);
+            try {
+                realtimeChangeTracker.invalidateSnapshot();
+            } catch (Exception invalidateException) {
+                log.warn("实时变更跟踪降级失败，设备={}，点位={}", context.deviceId(), point.getPointId(), invalidateException);
+            }
+        }
     }
 
     private long getCacheExpireTime(DataPoint point) {

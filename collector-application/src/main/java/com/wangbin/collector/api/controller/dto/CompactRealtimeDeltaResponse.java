@@ -7,12 +7,12 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 单设备实时表格紧凑快照响应。
+ * 实时表格紧凑增量响应。
  */
 @Data
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class CompactDeviceRealtimeDataResponse {
+public class CompactRealtimeDeltaResponse {
 
     /**
      * 业务状态。
@@ -25,6 +25,26 @@ public class CompactDeviceRealtimeDataResponse {
     private String message;
 
     /**
+     * 增量范围，取值为 all 或 device。
+     */
+    private String scope;
+
+    /**
+     * 单设备增量查询时的本地设备唯一标识。
+     */
+    private String deviceId;
+
+    /**
+     * 是否需要客户端重新请求完整紧凑快照。
+     */
+    private Boolean resetRequired;
+
+    /**
+     * 触发完整同步的原因。
+     */
+    private String resetReason;
+
+    /**
      * 当前服务进程快照标识。
      */
     private String snapshotId;
@@ -35,22 +55,22 @@ public class CompactDeviceRealtimeDataResponse {
     private Long configEpoch;
 
     /**
-     * 完整快照捕获时的全局修订号。
+     * 客户端请求携带的起始修订号。
+     */
+    private Long fromRevision;
+
+    /**
+     * 本轮增量查询上界修订号。
      */
     private Long revision;
 
     /**
-     * 本地设备唯一标识。
+     * 返回的变更行数。
      */
-    private String deviceId;
+    private Integer changedCount;
 
     /**
-     * 返回的点位行数。
-     */
-    private Integer dataCount;
-
-    /**
-     * 实时表格点位行。
+     * 变更的实时表格点位行。
      */
     private List<CompactRealtimePointPayload> rows;
 

@@ -95,6 +95,9 @@ export interface CompactRealtimeDeviceStatus {
 export interface CompactDeviceRealtimeDataResponse {
   status?: string;
   message?: string;
+  snapshotId?: string;
+  configEpoch?: number;
+  revision?: number;
   deviceId?: string;
   dataCount?: number;
   rows?: CompactRealtimePointPayload[];
@@ -105,10 +108,36 @@ export interface CompactDeviceRealtimeDataResponse {
 export interface CompactAllDeviceRealtimeDataResponse {
   status?: string;
   message?: string;
+  snapshotId?: string;
+  configEpoch?: number;
+  revision?: number;
   deviceCount?: number;
   dataCount?: number;
   rows?: CompactRealtimePointPayload[];
   devices?: CompactRealtimeDeviceStatus[];
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
+export interface RealtimeSnapshotCursor {
+  snapshotId: string;
+  configEpoch: number;
+  revision: number;
+}
+
+export interface CompactRealtimeDeltaResponse {
+  status?: string;
+  message?: string;
+  scope?: "all" | "device" | string;
+  deviceId?: string;
+  resetRequired?: boolean;
+  resetReason?: string;
+  snapshotId?: string;
+  configEpoch?: number;
+  fromRevision?: number;
+  revision?: number;
+  changedCount?: number;
+  rows?: CompactRealtimePointPayload[];
   timestamp?: number;
   [key: string]: unknown;
 }

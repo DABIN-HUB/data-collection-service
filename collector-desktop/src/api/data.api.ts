@@ -6,11 +6,13 @@ import type {
   AlarmRow,
   CompactAllDeviceRealtimeDataResponse,
   CompactDeviceRealtimeDataResponse,
+  CompactRealtimeDeltaResponse,
   DeviceListResponse,
   DevicePointListResponse,
   DeviceRealtimeDataResponse,
   HistoryDataResponse,
-  PointRealtimeResponse
+  PointRealtimeResponse,
+  RealtimeSnapshotCursor
 } from "@/types/monitor";
 
 type DataQueryParams = Record<string, string | number | undefined>;
@@ -37,6 +39,30 @@ export function getCompactAllDeviceRealtimeData(): Promise<CompactAllDeviceRealt
 
 export function getCompactDeviceRealtimeData(deviceId: string): Promise<CompactDeviceRealtimeDataResponse> {
   return requestRaw<CompactDeviceRealtimeDataResponse>({ url: `/api/data/device/${encodeURIComponent(deviceId)}/compact`, method: "GET" });
+}
+
+export function getCompactAllDeviceRealtimeDelta(cursor: RealtimeSnapshotCursor): Promise<CompactRealtimeDeltaResponse> {
+  return requestRaw<CompactRealtimeDeltaResponse>({
+    url: "/api/data/realtime/compact/delta",
+    method: "GET",
+    params: {
+      snapshotId: cursor.snapshotId,
+      configEpoch: cursor.configEpoch,
+      sinceRevision: cursor.revision
+    }
+  });
+}
+
+export function getCompactDeviceRealtimeDelta(deviceId: string, cursor: RealtimeSnapshotCursor): Promise<CompactRealtimeDeltaResponse> {
+  return requestRaw<CompactRealtimeDeltaResponse>({
+    url: `/api/data/device/${encodeURIComponent(deviceId)}/compact/delta`,
+    method: "GET",
+    params: {
+      snapshotId: cursor.snapshotId,
+      configEpoch: cursor.configEpoch,
+      sinceRevision: cursor.revision
+    }
+  });
 }
 
 export function getAllDeviceDataSummaries(): Promise<DeviceListResponse> {

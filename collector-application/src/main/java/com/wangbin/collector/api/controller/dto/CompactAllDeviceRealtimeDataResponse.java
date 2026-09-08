@@ -25,6 +25,21 @@ public class CompactAllDeviceRealtimeDataResponse {
     private String message;
 
     /**
+     * 当前服务进程快照标识。
+     */
+    private String snapshotId;
+
+    /**
+     * 当前配置纪元。
+     */
+    private Long configEpoch;
+
+    /**
+     * 完整快照捕获时的全局修订号。
+     */
+    private Long revision;
+
+    /**
      * 聚合涉及的设备数量。
      */
     private Integer deviceCount;

@@ -6,6 +6,7 @@ import type {
   AlarmHistoryDataResponse,
   CompactAllDeviceRealtimeDataResponse,
   CompactDeviceRealtimeDataResponse,
+  CompactRealtimeDeltaResponse,
   DeviceListResponse,
   DevicePointListResponse,
   DeviceRealtimeDataResponse,
@@ -27,7 +28,9 @@ import {
   getAllDeviceDataSummaries,
   getAllDeviceRealtimeData,
   getCompactAllDeviceRealtimeData,
+  getCompactAllDeviceRealtimeDelta,
   getCompactDeviceRealtimeData,
+  getCompactDeviceRealtimeDelta,
   getDeviceAlarmHistory,
   getDevicePointSummaries,
   getDeviceRealtimeData,
@@ -125,6 +128,58 @@ describe("data.api", () => {
     expect(httpMocks.requestRaw).toHaveBeenCalledWith({
       url: "/api/data/device/device-1/compact",
       method: "GET"
+    });
+    expect(httpMocks.request).not.toHaveBeenCalled();
+  });
+
+  it("全部设备紧凑实时增量接口走独立 RAW DTO 和 revision cursor", async () => {
+    const response: CompactRealtimeDeltaResponse = {
+      status: "success",
+      scope: "all",
+      resetRequired: false,
+      snapshotId: "snapshot-1",
+      configEpoch: 2,
+      fromRevision: 10,
+      revision: 12,
+      changedCount: 0,
+      rows: [],
+      timestamp: 123456
+    };
+    httpMocks.requestRaw.mockResolvedValue(response);
+
+    await expect(getCompactAllDeviceRealtimeDelta({ snapshotId: "snapshot-1", configEpoch: 2, revision: 10 })).resolves.toBe(response);
+
+    expect(httpMocks.requestRaw).toHaveBeenCalledWith({
+      url: "/api/data/realtime/compact/delta",
+      method: "GET",
+      params: { snapshotId: "snapshot-1", configEpoch: 2, sinceRevision: 10 }
+    });
+    expect(httpMocks.request).not.toHaveBeenCalled();
+  });
+
+  it("单设备紧凑实时增量接口走独立 RAW DTO 和 revision cursor", async () => {
+    const response: CompactRealtimeDeltaResponse = {
+      status: "success",
+      scope: "device",
+      deviceId: "device-1",
+      resetRequired: true,
+      resetReason: "CONFIG_CHANGED",
+      snapshotId: "snapshot-2",
+      configEpoch: 3,
+      fromRevision: 10,
+      revision: 12,
+      changedCount: 0,
+      rows: [],
+      timestamp: 123456
+    };
+    httpMocks.requestRaw.mockResolvedValue(response);
+
+    await expect(getCompactDeviceRealtimeDelta("device-1", { snapshotId: "snapshot-1", configEpoch: 2, revision: 10 })).resolves.toBe(response);
+
+    expect(httpMocks.requestRaw).toHaveBeenCalledWith({
+      url: "/api/data/device/device-1/compact/delta",
+      method: "GET",
+      params: { snapshotId: "snapshot-1", configEpoch: 2, sinceRevision: 10 }
     });
     expect(httpMocks.request).not.toHaveBeenCalled();
   });

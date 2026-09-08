@@ -7,6 +7,7 @@ import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactRealtimeDeviceStatus;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeltaResponse;
 import com.wangbin.collector.api.controller.dto.CompactRealtimePointPayload;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.HistoryDataResponse;
@@ -251,6 +252,81 @@ class DataControllerTest {
                 .andExpect(jsonPath("$.data.p-1.stableCount", is(2)));
 
         verify(realtimeDataApplicationService).getDeviceData("dev-1", null);
+    }
+
+    @Test
+    void shouldBindCompactAllRealtimeDeltaRouteAndSerializeRawDelta() throws Exception {
+        when(realtimeDataApplicationService.getCompactAllRealtimeDelta("snapshot-1", 2L, 10L))
+                .thenReturn(CompactRealtimeDeltaResponse.builder()
+                        .status("success")
+                        .scope("all")
+                        .resetRequired(false)
+                        .snapshotId("snapshot-1")
+                        .configEpoch(2L)
+                        .fromRevision(10L)
+                        .revision(12L)
+                        .changedCount(1)
+                        .rows(List.of(CompactRealtimePointPayload.builder()
+                                .deviceId("dev-1")
+                                .pointId("p-1")
+                                .value(12.3D)
+                                .build()))
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/realtime/compact/delta")
+                        .param("snapshotId", "snapshot-1")
+                        .param("configEpoch", "2")
+                        .param("sinceRevision", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.scope", is("all")))
+                .andExpect(jsonPath("$.resetRequired", is(false)))
+                .andExpect(jsonPath("$.snapshotId", is("snapshot-1")))
+                .andExpect(jsonPath("$.configEpoch", is(2)))
+                .andExpect(jsonPath("$.fromRevision", is(10)))
+                .andExpect(jsonPath("$.revision", is(12)))
+                .andExpect(jsonPath("$.changedCount", is(1)))
+                .andExpect(jsonPath("$.rows[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.rows[0].pointId", is("p-1")));
+
+        verify(realtimeDataApplicationService).getCompactAllRealtimeDelta("snapshot-1", 2L, 10L);
+    }
+
+    @Test
+    void shouldBindCompactDeviceRealtimeDeltaRouteAndSerializeReset() throws Exception {
+        when(realtimeDataApplicationService.getCompactDeviceRealtimeDelta("dev-1", "wrong", 1L, 5L))
+                .thenReturn(CompactRealtimeDeltaResponse.builder()
+                        .status("success")
+                        .scope("device")
+                        .deviceId("dev-1")
+                        .resetRequired(true)
+                        .resetReason("SNAPSHOT_MISMATCH")
+                        .snapshotId("snapshot-1")
+                        .configEpoch(1L)
+                        .fromRevision(5L)
+                        .revision(8L)
+                        .changedCount(0)
+                        .rows(List.of())
+                        .timestamp(1000L)
+                        .build());
+
+        mockMvc.perform(get("/api/data/device/dev-1/compact/delta")
+                        .param("snapshotId", "wrong")
+                        .param("configEpoch", "1")
+                        .param("sinceRevision", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.scope", is("device")))
+                .andExpect(jsonPath("$.deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.resetRequired", is(true)))
+                .andExpect(jsonPath("$.resetReason", is("SNAPSHOT_MISMATCH")))
+                .andExpect(jsonPath("$.changedCount", is(0)))
+                .andExpect(jsonPath("$.rows", is(List.of())));
+
+        verify(realtimeDataApplicationService).getCompactDeviceRealtimeDelta("dev-1", "wrong", 1L, 5L);
     }
 
     @Test

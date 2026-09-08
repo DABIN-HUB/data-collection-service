@@ -14,7 +14,7 @@ import * as shadowApi from "./shadow.api";
 const expectedExports = {
   configApi: ["getConfigSummary", "getConfigDevices", "createLocalDevice", "getLocalDevice", "updateLocalDevice", "deleteLocalDevice", "getDeviceConfig", "updateDeviceConfig", "getDevicePointsConfig", "updateDevicePointsConfig", "getDeviceConnection", "updateDeviceConnection", "getDeviceDiff", "refreshDeviceConfig", "clearDeviceConfig", "triggerFullConfigSync", "triggerPartialConfigSync", "getConfigSyncStatus", "exportConfigs", "importConfigs"],
   controlApi: ["writeDevicePoint", "writeDevicePoints", "executeDeviceCommand"],
-  dataApi: ["getPointRealtimeData", "getDeviceRealtimeData", "getCompactDeviceRealtimeData", "getAllDeviceDataSummaries", "getDevicePointSummaries", "getCompactAllDeviceRealtimeData", "resetAdaptiveConfig", "getPointHistory", "getRecentAlarms", "getDeviceAlarmHistory"],
+  dataApi: ["getPointRealtimeData", "getDeviceRealtimeData", "getCompactDeviceRealtimeData", "getCompactDeviceRealtimeDelta", "getAllDeviceDataSummaries", "getDevicePointSummaries", "getCompactAllDeviceRealtimeData", "getCompactAllDeviceRealtimeDelta", "resetAdaptiveConfig", "getPointHistory", "getRecentAlarms", "getDeviceAlarmHistory"],
   deviceApi: ["startDevice", "startLocalDevice", "stopDevice", "reloadDevices", "getDeviceStatus", "getAllDeviceStatistics", "getRunningDevices", "getDeviceRuntime", "isDeviceRunning"],
   edgeApi: ["ingestEdgeTelemetry"],
   monitorApi: ["getRuntimeStatus", "getCacheMetrics", "getDeviceConnectionMetrics", "getCollectorPerformance", "getSystemResources", "getExceptionStats", "getCloudReportMetrics", "getStorageMetrics", "getPerformanceDetail"],

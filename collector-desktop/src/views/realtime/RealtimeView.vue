@@ -140,7 +140,15 @@ import {
   realtimeScale,
   realtimeValueText
 } from "@/features/realtime/utils/realtime-utils";
-import { loadRealtimeRowsByContext } from "@/features/realtime/utils/realtime-load-strategy";
+import { loadRealtimeDeltaResponseByContext, loadRealtimeFullResponseByContext } from "@/features/realtime/utils/realtime-load-strategy";
+import {
+  applyFullRealtimeSnapshot,
+  applyRealtimeDelta,
+  emptyRealtimeDeltaState,
+  resetRealtimeDeltaState,
+  shouldRequestFullRealtimeSnapshot,
+  type RealtimeLoadSource
+} from "@/features/realtime/utils/realtime-delta";
 import {
   DEFAULT_REALTIME_PAGE_SIZE,
   REALTIME_PAGE_SIZE_OPTIONS,
@@ -176,11 +184,10 @@ const realtimeError = ref("");
 const singleRealtimeError = ref("");
 const pendingSingleRealtimeContext = ref<RealtimeRequestContext | null>(null);
 let realtimeTimer: number | null = null;
+let realtimeDeltaState = emptyRealtimeDeltaState();
 const realtimeRequestOwner = createLatestRealtimeRequestOwner();
 const singleRealtimeRequestOwner = createLatestRealtimeRequestOwner();
 const deviceDisplayNameLookup = computed(() => buildRealtimeDeviceNameLookup(deviceStore.devices));
-
-type RealtimeLoadSource = "init" | "manual" | "device-change" | "timer";
 
 const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
@@ -215,11 +222,47 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
   loading.value = true;
   realtimeError.value = "";
   try {
-    const rows = await loadRealtimeRowsByContext(requestContext);
+    if (shouldRequestFullRealtimeSnapshot(source, realtimeDeltaState)) {
+      const response = await loadRealtimeFullResponseByContext(requestContext);
+      if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+        return;
+      }
+      const nextState = applyFullRealtimeSnapshot(response, requestContext);
+      realtimeRows.value = nextState.rows;
+      realtimeDeltaState = {
+        cursor: nextState.cursor,
+        successfulDeltaCycles: nextState.successfulDeltaCycles,
+        rowIdentityIndex: nextState.rowIdentityIndex
+      };
+      return;
+    }
+
+    const cursor = realtimeDeltaState.cursor;
+    if (!cursor) {
+      return;
+    }
+    const deltaResponse = await loadRealtimeDeltaResponseByContext(requestContext, cursor);
     if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
       return;
     }
-    realtimeRows.value = rows;
+    const deltaResult = applyRealtimeDelta(realtimeRows.value, realtimeDeltaState, deltaResponse, requestContext);
+    if (!deltaResult.needsFullResync) {
+      realtimeDeltaState.cursor = deltaResult.cursor;
+      realtimeDeltaState.successfulDeltaCycles = deltaResult.successfulDeltaCycles;
+      return;
+    }
+
+    const fullResponse = await loadRealtimeFullResponseByContext(requestContext);
+    if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
+      return;
+    }
+    const nextState = applyFullRealtimeSnapshot(fullResponse, requestContext);
+    realtimeRows.value = nextState.rows;
+    realtimeDeltaState = {
+      cursor: nextState.cursor,
+      successfulDeltaCycles: nextState.successfulDeltaCycles,
+      rowIdentityIndex: nextState.rowIdentityIndex
+    };
   } catch (error) {
     if (!realtimeRequestOwner.isCurrent(requestTicket, currentMainRealtimeContext())) {
       return;
@@ -295,6 +338,7 @@ function refreshRealtime() {
 
 function handleRealtimeDeviceChange() {
   realtimePage.value = 1;
+  resetRealtimeDeltaState(realtimeDeltaState);
   void loadRealtime("device-change");
 }
 
@@ -395,6 +439,7 @@ async function initializeRealtimeView() {
 onBeforeUnmount(() => {
   realtimeRequestOwner.invalidate();
   singleRealtimeRequestOwner.invalidate();
+  resetRealtimeDeltaState(realtimeDeltaState);
   loading.value = false;
   singleLoading.value = false;
   pendingSingleRealtimeContext.value = null;

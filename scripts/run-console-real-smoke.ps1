@@ -345,6 +345,45 @@ function Assert-CompactAggregate($Response, [string]$Name) {
     Assert-True (-not (Has-JsonProperty $Response.Json "code")) $Name "RAW DTO must not be ApiResult envelope"
 }
 
+function Assert-CompactCursor($Response, [string]$Name) {
+    Assert-True (Has-JsonProperty $Response.Json "snapshotId") $Name "expected snapshotId"
+    Assert-True (Has-JsonProperty $Response.Json "configEpoch") $Name "expected configEpoch"
+    Assert-True (Has-JsonProperty $Response.Json "revision") $Name "expected revision"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string](Get-JsonProperty $Response.Json "snapshotId"))) $Name "snapshotId must not be blank"
+    Assert-True (([long](Get-JsonProperty $Response.Json "configEpoch")) -ge 1) $Name "configEpoch must be >= 1"
+    Assert-True (([long](Get-JsonProperty $Response.Json "revision")) -ge 0) $Name "revision must be >= 0"
+}
+
+function Build-DeltaPath([string]$BasePath, $Cursor) {
+    $snapshotId = [System.Uri]::EscapeDataString([string](Get-JsonProperty $Cursor "snapshotId"))
+    $configEpoch = [System.Uri]::EscapeDataString([string](Get-JsonProperty $Cursor "configEpoch"))
+    $revision = [System.Uri]::EscapeDataString([string](Get-JsonProperty $Cursor "revision"))
+    return "${BasePath}?snapshotId=$snapshotId&configEpoch=$configEpoch&sinceRevision=$revision"
+}
+
+function Assert-CompactDelta($Response, [string]$Name, [bool]$ExpectedReset, [string]$ExpectedReason = "") {
+    Assert-StatusCode $Response 200 $Name
+    Assert-Json $Response $Name
+    Assert-True (([string](Get-JsonProperty $Response.Json "status")) -eq "success") $Name "expected status=success"
+    Assert-True (-not (Has-JsonProperty $Response.Json "code")) $Name "RAW DTO must not be ApiResult envelope"
+    Assert-True (([bool](Get-JsonProperty $Response.Json "resetRequired")) -eq $ExpectedReset) $Name "unexpected resetRequired"
+    Assert-True (Has-JsonProperty $Response.Json "snapshotId") $Name "expected snapshotId"
+    Assert-True (Has-JsonProperty $Response.Json "configEpoch") $Name "expected configEpoch"
+    Assert-True (Has-JsonProperty $Response.Json "fromRevision") $Name "expected fromRevision"
+    Assert-True (Has-JsonProperty $Response.Json "revision") $Name "expected revision"
+    Assert-True (Has-JsonProperty $Response.Json "changedCount") $Name "expected changedCount"
+    Assert-True (Has-JsonProperty $Response.Json "rows") $Name "expected rows"
+    if ($ExpectedReset) {
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedReason)) {
+            Assert-True (([string](Get-JsonProperty $Response.Json "resetReason")) -eq $ExpectedReason) $Name "expected resetReason=$ExpectedReason"
+        }
+        Assert-True (([int](Get-JsonProperty $Response.Json "changedCount")) -eq 0) $Name "reset delta changedCount must be 0"
+        Assert-True ((Get-ArrayCount (Get-JsonProperty $Response.Json "rows")) -eq 0) $Name "reset delta rows must be empty"
+    } else {
+        Assert-True (([int](Get-JsonProperty $Response.Json "changedCount")) -eq (Get-ArrayCount (Get-JsonProperty $Response.Json "rows"))) $Name "changedCount must match rows count"
+    }
+}
+
 function Assert-CompactDeviceResponse($Response, [string]$Name) {
     Assert-StatusCode $Response 200 $Name
     Assert-Json $Response $Name
@@ -693,6 +732,7 @@ function Run-Smoke() {
     Write-Pass "RAW aggregate baseline" "status=$(Get-JsonProperty $aggregateBaseline.Json 'status') deviceCount=$baselineDeviceCount dataCount=$baselineDataCount devices=$baselineDevicesCount"
     $compactBaseline = Invoke-SmokeRequest "compact-aggregate-baseline" "/api/data/realtime/compact" "GET" $Token $null 15
     Assert-CompactAggregate $compactBaseline "compact aggregate baseline"
+    Assert-CompactCursor $compactBaseline "compact aggregate baseline cursor"
     $compactBaselineDeviceCount = [int](Get-JsonProperty $compactBaseline.Json "deviceCount")
     $compactBaselineDataCount = [int](Get-JsonProperty $compactBaseline.Json "dataCount")
     $compactBaselineRowsCount = Get-ArrayCount (Get-JsonProperty $compactBaseline.Json "rows")
@@ -762,6 +802,7 @@ function Run-Smoke() {
 
     $compactDeviceRealtime = Invoke-SmokeRequest "compact-device-realtime" "/api/data/device/$($script:SmokeDeviceId)/compact" "GET" $Token $null 15
     Assert-CompactDeviceResponse $compactDeviceRealtime "compact device realtime"
+    Assert-CompactCursor $compactDeviceRealtime "compact device realtime cursor"
     $compactDeviceRows = To-Array (Get-JsonProperty $compactDeviceRealtime.Json "rows")
     $compactDeviceRow = Find-CompactRow $compactDeviceRows $script:SmokeDeviceId $script:SmokePointId
     Assert-CompactRowFieldBoundary $compactDeviceRow "compact device field boundary"
@@ -793,14 +834,49 @@ function Run-Smoke() {
 
     $compactAggregateAfterCreate = Invoke-SmokeRequest "compact-aggregate-after-create" "/api/data/realtime/compact" "GET" $Token $null 15
     Assert-CompactAggregate $compactAggregateAfterCreate "compact aggregate after create"
+    Assert-CompactCursor $compactAggregateAfterCreate "compact aggregate after create cursor"
     $compactAggregateRows = To-Array (Get-JsonProperty $compactAggregateAfterCreate.Json "rows")
     $compactAggregateRow = Find-CompactRow $compactAggregateRows $script:SmokeDeviceId $script:SmokePointId
     Assert-CompactRowFieldBoundary $compactAggregateRow "compact aggregate field boundary"
     $compactAggregateDevice = Find-DeviceById (Get-JsonProperty $compactAggregateAfterCreate.Json "devices") $script:SmokeDeviceId
     Assert-True ($null -ne $compactAggregateDevice) "compact aggregate after create" "smoke device status missing"
     Assert-True (([string](Get-JsonProperty $compactAggregateDevice "status")) -eq "success") "compact aggregate after create" "inner device status must be success"
-    Assert-True (([int](Get-JsonProperty $compactAggregateDevice "dataCount")) -eq 1) "compact aggregate after create" "inner dataCount must be 1"
+    Assert-True (([int](Get-JsonProperty $compactAggregateDevice "dataCount")) -eq 1) "compact aggregate after create" "inner device dataCount must be 1"
     Write-Pass "compact aggregate after create" "rows contains smoke point and devices contains smoke status"
+
+    $aggregateEmptyDeltaPath = Build-DeltaPath "/api/data/realtime/compact/delta" $compactAggregateAfterCreate.Json
+    $aggregateEmptyDelta = Invoke-SmokeRequest "compact-aggregate-empty-delta" $aggregateEmptyDeltaPath "GET" $Token $null 15
+    Assert-CompactDelta $aggregateEmptyDelta "compact aggregate empty delta" $false
+    Assert-True (([int](Get-JsonProperty $aggregateEmptyDelta.Json "changedCount")) -eq 0) "compact aggregate empty delta" "expected changedCount=0"
+    Write-Pass "compact aggregate empty delta" "changedCount=0 resetRequired=false"
+
+    $deviceEmptyDeltaPath = Build-DeltaPath "/api/data/device/$($script:SmokeDeviceId)/compact/delta" $compactDeviceRealtime.Json
+    $deviceEmptyDelta = Invoke-SmokeRequest "compact-device-empty-delta" $deviceEmptyDeltaPath "GET" $Token $null 15
+    Assert-CompactDelta $deviceEmptyDelta "compact device empty delta" $false
+    Assert-True (([string](Get-JsonProperty $deviceEmptyDelta.Json "deviceId")) -eq $script:SmokeDeviceId) "compact device empty delta" "wrong deviceId"
+    Assert-True (([int](Get-JsonProperty $deviceEmptyDelta.Json "changedCount")) -eq 0) "compact device empty delta" "expected changedCount=0"
+    Write-Pass "compact device empty delta" "changedCount=0 resetRequired=false"
+
+    $wrongSnapshotDelta = Invoke-SmokeRequest "compact-wrong-snapshot-delta" "/api/data/realtime/compact/delta?snapshotId=invalid-smoke-snapshot&configEpoch=$([string](Get-JsonProperty $compactAggregateAfterCreate.Json 'configEpoch'))&sinceRevision=$([string](Get-JsonProperty $compactAggregateAfterCreate.Json 'revision'))" "GET" $Token $null 15
+    Assert-CompactDelta $wrongSnapshotDelta "compact wrong snapshot delta" $true "SNAPSHOT_MISMATCH"
+    Write-Pass "compact wrong snapshot delta" "resetRequired=true"
+
+    $updatePayload = Build-SmokePayload
+    $updatePayload.points[0].pointName = "Smoke Point Updated"
+    $update = Invoke-SmokeRequest "update-local-device" "/api/config/local/device/$($script:SmokeDeviceId)" "PUT" $Token $updatePayload 20
+    Assert-ApiResultSuccess $update "update local device" $true
+    Write-Pass "update local device" "pointName changed for config invalidation"
+
+    $configChangedDelta = Invoke-SmokeRequest "compact-config-changed-delta" $aggregateEmptyDeltaPath "GET" $Token $null 15
+    Assert-CompactDelta $configChangedDelta "compact config changed delta" $true "CONFIG_CHANGED"
+    Write-Pass "compact config changed delta" "resetRequired=true resetReason=CONFIG_CHANGED"
+
+    $fullAfterConfigChange = Invoke-SmokeRequest "compact-full-after-config-change" "/api/data/realtime/compact" "GET" $Token $null 15
+    Assert-CompactAggregate $fullAfterConfigChange "compact full after config change"
+    Assert-CompactCursor $fullAfterConfigChange "compact full after config change cursor"
+    $rowAfterConfigChange = Find-CompactRow (Get-JsonProperty $fullAfterConfigChange.Json "rows") $script:SmokeDeviceId $script:SmokePointId
+    Assert-True (([string](Get-JsonProperty $rowAfterConfigChange "pointName")) -eq "Smoke Point Updated") "compact full after config change" "updated pointName not visible"
+    Write-Pass "compact full after config change" "updated pointName visible"
 
     $summary = Invoke-SmokeRequest "device-summary" "/api/data/devices" "GET" $Token $null 15
     Assert-StatusCode $summary 200 "device summary"

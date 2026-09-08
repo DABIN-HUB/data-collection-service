@@ -4,6 +4,7 @@ import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.CompactRealtimeDeviceStatus;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeltaResponse;
 import com.wangbin.collector.api.controller.dto.CompactRealtimePointPayload;
 import com.wangbin.collector.api.controller.dto.DeviceBriefResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
@@ -14,6 +15,7 @@ import com.wangbin.collector.api.controller.dto.PointRealtimeResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
+import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -39,10 +41,12 @@ public class RealtimeDataQueryApplicationService {
     private static final String STATUS_SUCCESS = "success";
     private static final String STATUS_ERROR = "error";
     private static final String DEVICE_POINTS_MISSING_MESSAGE = "设备不存在或无数据点";
+    private static final int MAX_DELTA_ROWS = 20_000;
 
     private final MultiLevelCacheManager cacheManager;
     private final ConfigManager configManager;
     private final PointRuntimeStateService pointRuntimeStateService;
+    private final RealtimeChangeTracker realtimeChangeTracker;
 
     /**
      * 创建实时缓存数据查询应用服务。
@@ -50,10 +54,12 @@ public class RealtimeDataQueryApplicationService {
     public RealtimeDataQueryApplicationService(
             @Qualifier("multiLevelCacheManager") MultiLevelCacheManager cacheManager,
             ConfigManager configManager,
-            PointRuntimeStateService pointRuntimeStateService) {
+            PointRuntimeStateService pointRuntimeStateService,
+            RealtimeChangeTracker realtimeChangeTracker) {
         this.cacheManager = cacheManager;
         this.configManager = configManager;
         this.pointRuntimeStateService = pointRuntimeStateService;
+        this.realtimeChangeTracker = realtimeChangeTracker;
     }
 
     /**
@@ -201,11 +207,15 @@ public class RealtimeDataQueryApplicationService {
      */
     public CompactDeviceRealtimeDataResponse getCompactDeviceData(String deviceId) {
         try {
+            RealtimeChangeTracker.SnapshotCursor cursor = realtimeChangeTracker.capture();
             List<DataPoint> dataPoints = safeDataPoints(configManager.getDataPoints(deviceId));
             if (dataPoints.isEmpty()) {
                 return CompactDeviceRealtimeDataResponse.builder()
                         .status(STATUS_ERROR)
                         .message(DEVICE_POINTS_MISSING_MESSAGE)
+                        .snapshotId(cursor.snapshotId())
+                        .configEpoch(cursor.configEpoch())
+                        .revision(cursor.revision())
                         .deviceId(deviceId)
                         .dataCount(0)
                         .rows(List.of())
@@ -217,6 +227,9 @@ public class RealtimeDataQueryApplicationService {
             List<CompactRealtimePointPayload> rows = buildCompactRows(deviceId, dataPoints, values);
             return CompactDeviceRealtimeDataResponse.builder()
                     .status(STATUS_SUCCESS)
+                    .snapshotId(cursor.snapshotId())
+                    .configEpoch(cursor.configEpoch())
+                    .revision(cursor.revision())
                     .deviceId(deviceId)
                     .dataCount(rows.size())
                     .rows(rows)
@@ -227,6 +240,9 @@ public class RealtimeDataQueryApplicationService {
             return CompactDeviceRealtimeDataResponse.builder()
                     .status(STATUS_ERROR)
                     .message("查询失败: " + exception.getMessage())
+                    .snapshotId(realtimeChangeTracker.snapshotId())
+                    .configEpoch(realtimeChangeTracker.configEpoch())
+                    .revision(realtimeChangeTracker.currentRevision())
                     .deviceId(deviceId)
                     .dataCount(0)
                     .rows(List.of())
@@ -242,10 +258,14 @@ public class RealtimeDataQueryApplicationService {
      */
     public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
         try {
+            RealtimeChangeTracker.SnapshotCursor cursor = realtimeChangeTracker.capture();
             List<String> deviceIds = configManager.getAllDeviceIds();
             if (deviceIds.isEmpty()) {
                 return CompactAllDeviceRealtimeDataResponse.builder()
                         .status(STATUS_SUCCESS)
+                        .snapshotId(cursor.snapshotId())
+                        .configEpoch(cursor.configEpoch())
+                        .revision(cursor.revision())
                         .deviceCount(0)
                         .dataCount(0)
                         .rows(List.of())
@@ -283,6 +303,9 @@ public class RealtimeDataQueryApplicationService {
 
             return CompactAllDeviceRealtimeDataResponse.builder()
                     .status(STATUS_SUCCESS)
+                    .snapshotId(cursor.snapshotId())
+                    .configEpoch(cursor.configEpoch())
+                    .revision(cursor.revision())
                     .deviceCount(devices.size())
                     .dataCount(rows.size())
                     .rows(rows)
@@ -294,6 +317,9 @@ public class RealtimeDataQueryApplicationService {
             return CompactAllDeviceRealtimeDataResponse.builder()
                     .status(STATUS_ERROR)
                     .message("查询失败: " + exception.getMessage())
+                    .snapshotId(realtimeChangeTracker.snapshotId())
+                    .configEpoch(realtimeChangeTracker.configEpoch())
+                    .revision(realtimeChangeTracker.currentRevision())
                     .deviceCount(0)
                     .dataCount(0)
                     .rows(List.of())
@@ -301,6 +327,36 @@ public class RealtimeDataQueryApplicationService {
                     .timestamp(System.currentTimeMillis())
                     .build();
         }
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑增量。
+     *
+     * @param snapshotId 客户端快照标识
+     * @param configEpoch 客户端配置纪元
+     * @param sinceRevision 客户端已应用修订号
+     * @return 全设备实时表格紧凑增量
+     */
+    public CompactRealtimeDeltaResponse getCompactAllRealtimeDelta(String snapshotId,
+                                                                    long configEpoch,
+                                                                    long sinceRevision) {
+        return getCompactRealtimeDelta("all", null, snapshotId, configEpoch, sinceRevision);
+    }
+
+    /**
+     * 查询指定设备的实时表格紧凑增量。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @param snapshotId 客户端快照标识
+     * @param configEpoch 客户端配置纪元
+     * @param sinceRevision 客户端已应用修订号
+     * @return 单设备实时表格紧凑增量
+     */
+    public CompactRealtimeDeltaResponse getCompactDeviceRealtimeDelta(String deviceId,
+                                                                       String snapshotId,
+                                                                       long configEpoch,
+                                                                       long sinceRevision) {
+        return getCompactRealtimeDelta("device", deviceId, snapshotId, configEpoch, sinceRevision);
     }
 
     /**
@@ -363,6 +419,118 @@ public class RealtimeDataQueryApplicationService {
                     .timestamp(System.currentTimeMillis())
                     .build();
         }
+    }
+
+    private CompactRealtimeDeltaResponse getCompactRealtimeDelta(String scope,
+                                                                 String deviceId,
+                                                                 String snapshotId,
+                                                                 long configEpoch,
+                                                                 long sinceRevision) {
+        long upperRevision = realtimeChangeTracker.currentRevision();
+        RealtimeChangeTracker.CursorValidation validation = realtimeChangeTracker.validateCursor(
+                snapshotId,
+                configEpoch,
+                sinceRevision);
+        if (!validation.valid()) {
+            return compactDeltaReset(scope, deviceId, sinceRevision, validation.currentRevision(), validation.resetReason());
+        }
+
+        List<RealtimeChangeTracker.PointKey> changedKeys = realtimeChangeTracker.findChangedKeys(
+                sinceRevision,
+                upperRevision,
+                deviceId,
+                MAX_DELTA_ROWS + 1);
+        if (changedKeys.size() > MAX_DELTA_ROWS) {
+            return compactDeltaReset(scope, deviceId, sinceRevision, upperRevision, "DELTA_TOO_LARGE");
+        }
+        if (changedKeys.isEmpty()) {
+            return compactDeltaSuccess(scope, deviceId, sinceRevision, upperRevision, List.of());
+        }
+
+        Map<String, Map<String, DataPoint>> pointIndex = buildPointIndex(loadAffectedDevicePoints(changedKeys));
+        List<CacheKey> cacheKeys = new ArrayList<>();
+        List<DataPoint> orderedPoints = new ArrayList<>();
+        List<String> orderedDeviceIds = new ArrayList<>();
+        for (RealtimeChangeTracker.PointKey key : changedKeys) {
+            DataPoint point = pointIndex.getOrDefault(key.deviceId(), Map.of()).get(key.pointId());
+            if (point == null) {
+                return compactDeltaReset(scope, deviceId, sinceRevision, upperRevision, "ROW_IDENTITY_MISMATCH");
+            }
+            cacheKeys.add(CacheKey.dataKey(key.deviceId(), key.pointId()));
+            orderedPoints.add(point);
+            orderedDeviceIds.add(key.deviceId());
+        }
+
+        Map<CacheKey, Object> values = cacheManager.getAll(cacheKeys);
+        List<CompactRealtimePointPayload> rows = new ArrayList<>();
+        for (int index = 0; index < orderedPoints.size(); index += 1) {
+            String rowDeviceId = orderedDeviceIds.get(index);
+            DataPoint point = orderedPoints.get(index);
+            CacheKey cacheKey = CacheKey.dataKey(rowDeviceId, point.getPointId());
+            rows.add(CompactRealtimePointPayload.from(point, rowDeviceId, values.get(cacheKey)));
+        }
+        return compactDeltaSuccess(scope, deviceId, sinceRevision, upperRevision, rows);
+    }
+
+    private Map<String, List<DataPoint>> loadAffectedDevicePoints(List<RealtimeChangeTracker.PointKey> changedKeys) {
+        Map<String, List<DataPoint>> pointsByDevice = new LinkedHashMap<>();
+        for (RealtimeChangeTracker.PointKey key : changedKeys) {
+            pointsByDevice.computeIfAbsent(key.deviceId(), id -> safeDataPoints(configManager.getDataPoints(id)));
+        }
+        return pointsByDevice;
+    }
+
+    private Map<String, Map<String, DataPoint>> buildPointIndex(Map<String, List<DataPoint>> pointsByDevice) {
+        Map<String, Map<String, DataPoint>> index = new LinkedHashMap<>();
+        for (Map.Entry<String, List<DataPoint>> entry : pointsByDevice.entrySet()) {
+            Map<String, DataPoint> pointsById = new LinkedHashMap<>();
+            for (DataPoint point : entry.getValue()) {
+                pointsById.put(point.getPointId(), point);
+            }
+            index.put(entry.getKey(), pointsById);
+        }
+        return index;
+    }
+
+    private CompactRealtimeDeltaResponse compactDeltaSuccess(String scope,
+                                                             String deviceId,
+                                                             long fromRevision,
+                                                             long revision,
+                                                             List<CompactRealtimePointPayload> rows) {
+        return CompactRealtimeDeltaResponse.builder()
+                .status(STATUS_SUCCESS)
+                .scope(scope)
+                .deviceId(deviceId)
+                .resetRequired(false)
+                .snapshotId(realtimeChangeTracker.snapshotId())
+                .configEpoch(realtimeChangeTracker.configEpoch())
+                .fromRevision(fromRevision)
+                .revision(revision)
+                .changedCount(rows.size())
+                .rows(rows)
+                .timestamp(System.currentTimeMillis())
+                .build();
+    }
+
+    private CompactRealtimeDeltaResponse compactDeltaReset(String scope,
+                                                           String deviceId,
+                                                           long fromRevision,
+                                                           long revision,
+                                                           String resetReason) {
+        return CompactRealtimeDeltaResponse.builder()
+                .status(STATUS_SUCCESS)
+                .scope(scope)
+                .deviceId(deviceId)
+                .resetRequired(true)
+                .resetReason(resetReason)
+                .snapshotId(realtimeChangeTracker.snapshotId())
+                .configEpoch(realtimeChangeTracker.configEpoch())
+                .fromRevision(fromRevision)
+                .revision(revision)
+                .changedCount(0)
+                .rows(List.of())
+                .timestamp(System.currentTimeMillis())
+                .build();
     }
 
     /**
