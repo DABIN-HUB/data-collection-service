@@ -70,6 +70,15 @@
       </details>
       <details class="exact-json-panel" open>
         <summary>接入响应</summary>
+        <div v-if="attributedResult" class="edge-result-meta" :class="{ 'is-error': Boolean(attributedResult.error) }">
+          <span>网关：<strong>{{ attributedResult.target.gatewayId }}</strong></span>
+          <span>设备：<strong>{{ attributedResult.target.deviceId }}</strong></span>
+          <span>点位：<strong>{{ attributedResult.target.pointRef }}</strong></span>
+          <span>协议：<strong>{{ attributedResult.target.protocol }}</strong></span>
+          <span>提交时间：<strong>{{ formatTime(attributedResult.target.submittedAt) }}</strong></span>
+          <span>完成时间：<strong>{{ formatTime(attributedResult.completedAt) }}</strong></span>
+          <span v-if="attributedResult.error">错误：<strong>{{ attributedResult.error }}</strong></span>
+        </div>
         <pre class="json-view compact-result-view">{{ prettyJson(result) }}</pre>
       </details>
     </div>
@@ -82,7 +91,8 @@ import { ElMessage } from "element-plus";
 
 import { ingestEdgeTelemetry } from "@/api/edge.api";
 import type { DeviceInfo } from "@/types/device";
-import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryPayload, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson, type EdgeTelemetryQuickForm } from "@/features/network/utils/edge-telemetry-utils";
+import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryAttributedResult, buildEdgeTelemetryPayload, buildEdgeTelemetrySubmissionSnapshot, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson, type EdgeTelemetryAttributedResult, type EdgeTelemetryQuickForm } from "@/features/network/utils/edge-telemetry-utils";
+import type { EdgeTelemetryBatchRequest } from "@/types/edge";
 
 const props = defineProps<{
   devices: DeviceInfo[];
@@ -95,6 +105,7 @@ const emit = defineEmits<{
 const useRawJson = ref(false);
 const submitting = ref(false);
 const result = ref<unknown>({ message: "尚未提交边缘遥测" });
+const attributedResult = ref<EdgeTelemetryAttributedResult | null>(null);
 const now = Date.now();
 const form = reactive<EdgeTelemetryQuickForm>({
   gatewayId: "desktop-edge-debug",
@@ -119,7 +130,10 @@ const payloadPreview = computed(() => {
   }
 });
 const resultText = computed(() => {
-  const normalized = normalizeEdgeTelemetryResult(result.value);
+  const normalized = attributedResult.value?.result || normalizeEdgeTelemetryResult(result.value);
+  if (attributedResult.value?.error) {
+    return `提交失败：${attributedResult.value.error}`;
+  }
   if (!normalized.gatewayId && !normalized.message) {
     return "等待提交";
   }
@@ -127,20 +141,32 @@ const resultText = computed(() => {
 });
 
 async function submitTelemetry() {
+  let submittedPayload: EdgeTelemetryBatchRequest;
+  try {
+    submittedPayload = payload.value;
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "边缘遥测 Payload 生成失败";
+    result.value = { message };
+    ElMessage.error(message);
+    return;
+  }
+  const target = buildEdgeTelemetrySubmissionSnapshot(submittedPayload);
   submitting.value = true;
   try {
-    const response = await ingestEdgeTelemetry(payload.value);
-    result.value = response;
+    const response = await ingestEdgeTelemetry(submittedPayload);
     const normalized = normalizeEdgeTelemetryResult(response);
+    attributedResult.value = buildEdgeTelemetryAttributedResult(target, normalized);
+    result.value = { target: attributedResult.value.target, result: normalized };
     if (normalized.rejectedCount > 0 || normalized.errors.length > 0) {
-      ElMessage.warning(normalized.message || "边缘遥测部分拒绝");
+      ElMessage.warning(`网关 ${target.gatewayId} / 设备 ${target.deviceId} 边缘遥测部分拒绝`);
     } else {
-      ElMessage.success(normalized.message || "边缘遥测提交成功");
+      ElMessage.success(`网关 ${target.gatewayId} / 设备 ${target.deviceId} 边缘遥测提交成功`);
     }
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "边缘遥测提交失败";
-    result.value = { message };
-    ElMessage.error(message);
+    attributedResult.value = buildEdgeTelemetryAttributedResult(target, undefined, message);
+    result.value = { target: attributedResult.value.target, error: message };
+    ElMessage.error(`网关 ${target.gatewayId} / 设备 ${target.deviceId} 边缘遥测提交失败`);
   } finally {
     submitting.value = false;
   }
@@ -157,6 +183,10 @@ function resetTimestamp() {
 
 function prettyJson(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function formatTime(value: number): string {
+  return new Date(value).toLocaleString();
 }
 
 function deviceIdOf(device: DeviceInfo): string {
@@ -208,6 +238,28 @@ watch(() => [form.gatewayId, form.protocol, form.configVersion, form.deviceId, f
 .edge-action-row span {
   color: var(--exact-dim);
   font-size: 12px;
+}
+
+.edge-result-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin-bottom: 8px;
+  padding: 10px;
+  color: var(--exact-dim);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08);
+  font-size: 12px;
+}
+
+.edge-result-meta.is-error {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.15);
+}
+
+.edge-result-meta strong {
+  color: var(--exact-text);
 }
 
 .edge-form-grid textarea {

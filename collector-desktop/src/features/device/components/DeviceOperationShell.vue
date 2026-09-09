@@ -10,7 +10,7 @@
         <div class="local-editor-stats">
           <div class="local-editor-stat"><strong>{{ selectedOperationStatus }}</strong><span>运行状态</span></div>
           <div class="local-editor-stat"><strong>{{ deviceStore.selectedDevice?.collectionInterval || "-" }}</strong><span>采集周期 ms</span></div>
-          <div class="local-editor-stat"><strong>{{ realtimePreviewRows.length }}</strong><span>实时点位</span></div>
+          <div class="local-editor-stat"><strong>{{ realtimePreviewRows.length }}</strong><span>{{ previewStatusText }}</span></div>
         </div>
         <button type="button" @click="backToDeviceList">返回列表</button>
       </div>
@@ -38,7 +38,7 @@
         <ol class="local-checklist device-info-list">
           <li :class="selectedDeviceId ? 'is-ok' : 'is-error'"><span>设备已选择</span><strong>{{ selectedDeviceId || "请先选择设备" }}</strong></li>
           <li :class="selectedOperationStatus === 'ONLINE' ? 'is-ok' : 'is-warn'"><span>运行状态</span><strong>{{ selectedOperationStatus }}</strong></li>
-          <li :class="realtimePreviewRows.length > 0 ? 'is-ok' : 'is-warn'"><span>实时点位</span><strong>{{ realtimePreviewRows.length }} 个</strong></li>
+          <li :class="previewChecklistClass"><span>实时点位</span><strong>{{ previewStatusText }}</strong></li>
           <li :class="selectedConnectionOk ? 'is-ok' : 'is-warn'"><span>连接状态</span><strong>{{ selectedConnectionText }}</strong></li>
         </ol>
         <div class="device-operation-rail-actions">
@@ -66,6 +66,7 @@ import { getDeviceRealtimeData } from "@/api/data.api";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceRequestContext, isSameDeviceRequestContext } from "@/features/device/utils/device-request-lifecycle";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
+import { buildContextualReadStatus, hasLastGoodForContext, shouldClearLastGoodForRequest } from "@/features/request/utils/context-last-good";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { routePathForWorkbenchTab, type WorkbenchNavigationTab } from "@/router/route-names";
 import { useAppStore } from "@/stores/app.store";
@@ -81,6 +82,10 @@ const route = useRoute();
 const router = useRouter();
 
 const realtimePreviewRows = ref<RealtimePointRow[]>([]);
+const previewLoading = ref(false);
+const previewError = ref("");
+const lastSuccessfulPreviewContext = ref<ReturnType<typeof buildDeviceRequestContext> | null>(null);
+const previewLastSuccessAt = ref<number | null>(null);
 const deviceConfigOperatingId = ref("");
 
 const previewRequestOwner = createLatestRequestOwner(isSameDeviceRequestContext);
@@ -95,6 +100,30 @@ const selectedRuntimeSnapshot = computed<DeviceRuntimeSnapshot | undefined>(() =
 });
 const selectedConnectionOk = computed(() => Boolean(selectedRuntimeSnapshot.value?.connected || selectedRuntimeSnapshot.value?.running || realtimePreviewRows.value.length > 0));
 const selectedConnectionText = computed(() => selectedConnectionOk.value ? "正常" : "未知");
+const previewStatusMessage = computed(() => buildContextualReadStatus({
+  loading: previewLoading.value,
+  error: previewError.value,
+  lastSuccessfulContext: lastSuccessfulPreviewContext.value,
+  currentContext: currentPreviewRequestContext(),
+  isSameContext: isSameDeviceRequestContext,
+  loadingText: "实时预览加载中",
+  refreshingText: "实时预览刷新中 · 当前显示上次成功数据",
+  staleText: "实时预览暂不可用 · 当前显示上次成功数据",
+  initialErrorPrefix: "实时预览不可用",
+  lastSuccessAt: previewLastSuccessAt.value
+}));
+const previewStatusText = computed(() => {
+  if (previewStatusMessage.value) {
+    return previewStatusMessage.value;
+  }
+  return realtimePreviewRows.value.length > 0 ? `${realtimePreviewRows.value.length} 个` : "0 个";
+});
+const previewChecklistClass = computed(() => {
+  if (previewError.value && !hasLastGoodForContext(lastSuccessfulPreviewContext.value, currentPreviewRequestContext(), isSameDeviceRequestContext)) {
+    return "is-error";
+  }
+  return realtimePreviewRows.value.length > 0 || hasLastGoodForContext(lastSuccessfulPreviewContext.value, currentPreviewRequestContext(), isSameDeviceRequestContext) ? "is-ok" : "is-warn";
+});
 const selectedOperationStatus = computed(() => {
   const runtime = selectedRuntimeSnapshot.value;
   if (runtime?.running || runtime?.connected || realtimePreviewRows.value.length > 0) {
@@ -157,20 +186,43 @@ async function loadRealtimePreview() {
   if (!requestContext.deviceId) {
     previewRequestOwner.invalidate();
     realtimePreviewRows.value = [];
+    previewLoading.value = false;
+    previewError.value = "";
+    lastSuccessfulPreviewContext.value = null;
+    previewLastSuccessAt.value = null;
     return;
   }
+  if (shouldClearLastGoodForRequest(lastSuccessfulPreviewContext.value, requestContext, isSameDeviceRequestContext)) {
+    realtimePreviewRows.value = [];
+    previewError.value = "";
+    lastSuccessfulPreviewContext.value = null;
+    previewLastSuccessAt.value = null;
+  } else {
+    previewError.value = "";
+  }
   const ticket = previewRequestOwner.begin(requestContext);
+  previewLoading.value = true;
   try {
     const nextRows = normalizeRealtimeRows(await getDeviceRealtimeData(requestContext.deviceId), requestContext.deviceId);
     if (!previewRequestOwner.canCommit(ticket, currentPreviewRequestContext())) {
       return;
     }
     realtimePreviewRows.value = nextRows;
-  } catch {
+    previewError.value = "";
+    lastSuccessfulPreviewContext.value = requestContext;
+    previewLastSuccessAt.value = Date.now();
+  } catch (caught) {
     if (!previewRequestOwner.canCommit(ticket, currentPreviewRequestContext())) {
       return;
     }
-    realtimePreviewRows.value = [];
+    previewError.value = caught instanceof Error ? caught.message : "实时预览加载失败";
+    if (shouldClearLastGoodForRequest(lastSuccessfulPreviewContext.value, requestContext, isSameDeviceRequestContext)) {
+      realtimePreviewRows.value = [];
+    }
+  } finally {
+    if (previewRequestOwner.isLatest(ticket)) {
+      previewLoading.value = false;
+    }
   }
 }
 

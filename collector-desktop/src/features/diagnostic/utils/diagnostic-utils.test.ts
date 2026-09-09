@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDiagnosticAdvice,
   buildDiagnosticCards,
+  buildDiagnosticExportWarning,
   buildDiagnosticRaw,
   buildDiagnosticRows,
   buildDiagnosticRuntimeSummary,
@@ -99,5 +100,15 @@ describe("diagnostic-utils", () => {
     });
     expect(hasDiagnosticData({ status: "UP" })).toBe(true);
     expect(hasDiagnosticData({})).toBe(false);
+  });
+
+  it("optional sample 失败生成 degraded export warning", () => {
+    expect(buildDiagnosticExportWarning([
+      { label: "最近告警", value: [], failed: true },
+      { label: "最近日志", value: [{ message: "ok" }], failed: false }
+    ])).toBe("部分诊断样本不可用：最近告警");
+    expect(buildDiagnosticExportWarning([
+      { label: "最近告警", value: [], failed: false }
+    ])).toBe("");
   });
 });

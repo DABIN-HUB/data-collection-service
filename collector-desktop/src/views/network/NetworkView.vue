@@ -40,7 +40,7 @@
       <section class="exact-surface network-result-panel">
         <div class="exact-surface-head">
           <h2>检测结果</h2>
-          <span>{{ networkTarget }}{{ networkType === 'TCP' ? `:${networkPort || '-'}` : '' }}</span>
+          <span>{{ networkResult ? `${networkResult.target}${networkResult.port ? `:${networkResult.port}` : ''}` : `${networkTarget}${networkType === 'TCP' ? `:${networkPort || '-'}` : ''}` }}</span>
         </div>
         <div class="network-result-grid">
           <div v-for="row in networkResultRows" :key="row.label" class="exact-config-item">
@@ -107,7 +107,8 @@ import {
   buildNetworkDiagnosticPayload,
   buildNetworkExportText,
   buildNetworkResultRows,
-  normalizeNetworkDiagnosticResult,
+  buildNetworkSubmissionSnapshot,
+  normalizeNetworkDiagnosticResultForSubmission,
   resolveNetworkTargetFromDevice,
   type NetworkDiagnosticPayload,
   type NetworkDiagnosticType,
@@ -148,13 +149,14 @@ async function runNetwork() {
   }
 
   networkOperating.value = true;
+  const submission = buildNetworkSubmissionSnapshot(payload);
   try {
-    const result = normalizeNetworkDiagnosticResult(await diagnoseNetwork(payload));
+    const result = normalizeNetworkDiagnosticResultForSubmission(await diagnoseNetwork(payload), submission);
     networkResult.value = result;
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "网络检测失败";
-    const result = normalizeNetworkDiagnosticResult({
+    const result = normalizeNetworkDiagnosticResultForSubmission({
       type: payload.type,
       deviceId: payload.deviceId,
       target: payload.target,
@@ -163,7 +165,7 @@ async function runNetwork() {
       message,
       details: [],
       completedAt: Date.now()
-    });
+    }, submission);
     networkResult.value = result;
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
     ElMessage.error(message);

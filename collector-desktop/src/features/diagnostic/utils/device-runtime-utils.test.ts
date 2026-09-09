@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDeviceRuntimeSummary, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "./device-runtime-utils";
+import { buildDeviceRuntimeSummary, buildUnavailableRunningFlagDetail, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "./device-runtime-utils";
 
 describe("device-runtime-utils", () => {
   it("归一化运行设备 ID 列表", () => {
@@ -22,5 +22,15 @@ describe("device-runtime-utils", () => {
 
   it("统计运行态摘要", () => {
     expect(buildDeviceRuntimeSummary([{ deviceId: "a", running: true, connected: true }, { deviceId: "b", running: true, connected: false, consecutiveFailures: 2 }, { deviceId: "c", running: false }], 4)).toEqual({ total: 4, running: 2, connected: 1, abnormal: 1 });
+  });
+
+  it("运行标志检查失败不会被归一化成 stopped=false", () => {
+    expect(buildUnavailableRunningFlagDetail("dev-1", "接口失败")).toEqual(expect.objectContaining({
+      deviceId: "dev-1",
+      running: undefined,
+      isRunning: undefined,
+      message: "运行状态：暂不可用",
+      degradedReason: "接口失败"
+    }));
   });
 });

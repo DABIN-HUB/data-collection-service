@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLatestRequestOwner } from "../../request/utils/latest-request-owner";
+import { shouldClearLastGoodForRequest } from "../../request/utils/context-last-good";
 import {
   buildDeviceProtocolRequestContext,
   buildDeviceRequestContext,
@@ -34,6 +35,8 @@ interface DeviceDiffHarnessState {
 
 interface DevicePreviewHarnessState {
   rows: string[];
+  error: string | null;
+  lastSuccessfulContext: DeviceRequestContext | null;
 }
 
 function createDeferred<T>() {
@@ -203,23 +206,34 @@ function createDevicePreviewHarness(initialContext: DeviceRequestContext) {
   const owner = createLatestRequestOwner(isSameDeviceRequestContext);
   const live = { current: { ...initialContext } };
   const state: DevicePreviewHarnessState = {
-    rows: []
+    rows: [],
+    error: null,
+    lastSuccessfulContext: null
   };
 
   async function load(request: Promise<string[]>, snapshot: DeviceRequestContext) {
     const requestContext = buildDeviceRequestContext(snapshot.deviceId);
     const ticket = owner.begin(requestContext);
+    if (shouldClearLastGoodForRequest(state.lastSuccessfulContext, requestContext, isSameDeviceRequestContext)) {
+      state.rows = [];
+      state.lastSuccessfulContext = null;
+    }
+    state.error = null;
     try {
       const result = await request;
       if (!owner.canCommit(ticket, buildDeviceRequestContext(live.current.deviceId))) {
         return;
       }
       state.rows = result;
-    } catch {
+      state.lastSuccessfulContext = requestContext;
+    } catch (caught) {
       if (!owner.canCommit(ticket, buildDeviceRequestContext(live.current.deviceId))) {
         return;
       }
-      state.rows = [];
+      state.error = caught instanceof Error ? caught.message : "preview failed";
+      if (shouldClearLastGoodForRequest(state.lastSuccessfulContext, requestContext, isSameDeviceRequestContext)) {
+        state.rows = [];
+      }
     }
   }
 
@@ -381,5 +395,35 @@ describe("device-request-lifecycle", () => {
     await flushPromises();
 
     expect(harness.state.rows).toEqual(["preview-b"]);
+  });
+
+  it("preview same-device success 后 refresh 失败会保留 last-good rows 并标记 error", async () => {
+    const harness = createDevicePreviewHarness(buildDeviceRequestContext("device-a"));
+    const first = createDeferred<string[]>();
+    const second = createDeferred<string[]>();
+
+    void harness.load(first.promise, buildDeviceRequestContext("device-a"));
+    first.resolve(["preview-a"]);
+    await flushPromises();
+
+    void harness.load(second.promise, buildDeviceRequestContext("device-a"));
+    second.reject(new Error("preview unavailable"));
+    await flushPromises();
+
+    expect(harness.state.rows).toEqual(["preview-a"]);
+    expect(harness.state.error).toBe("preview unavailable");
+  });
+
+  it("preview initial failure 显示 unavailable 且不伪装成成功空结果", async () => {
+    const harness = createDevicePreviewHarness(buildDeviceRequestContext("device-a"));
+    const request = createDeferred<string[]>();
+
+    void harness.load(request.promise, buildDeviceRequestContext("device-a"));
+    request.reject(new Error("preview unavailable"));
+    await flushPromises();
+
+    expect(harness.state.rows).toEqual([]);
+    expect(harness.state.lastSuccessfulContext).toBeNull();
+    expect(harness.state.error).toBe("preview unavailable");
   });
 });

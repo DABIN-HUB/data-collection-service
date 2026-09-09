@@ -71,6 +71,17 @@ export interface DiagnosticRuntimeSummaryInput {
   reportMetrics: unknown;
 }
 
+export interface DiagnosticExportSource<T> {
+  label: string;
+  value: T;
+  failed: boolean;
+}
+
+export function buildDiagnosticExportWarning(sources: Array<DiagnosticExportSource<unknown>>): string {
+  const failedLabels = sources.filter((source) => source.failed).map((source) => source.label);
+  return failedLabels.length ? `部分诊断样本不可用：${Array.from(new Set(failedLabels)).join("、")}` : "";
+}
+
 export function buildResourceSummary(input: ResourceSummaryInput): ResourceSummary {
   const resource = asRecord(input.systemResource);
   const pools = asRecord(resource.threadPools);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryPayload, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson } from "./edge-telemetry-utils";
+import { EDGE_PROTOCOL_OPTIONS, buildEdgeTelemetryAttributedResult, buildEdgeTelemetryPayload, buildEdgeTelemetrySubmissionSnapshot, normalizeEdgeTelemetryResult, parseEdgeTelemetryJson } from "./edge-telemetry-utils";
 
 describe("edge-telemetry-utils", () => {
   it("提供后端支持的边缘协议类型", () => {
@@ -35,5 +35,27 @@ describe("edge-telemetry-utils", () => {
 
   it("归一化 ApiResult 包裹的接入结果", () => {
     expect(normalizeEdgeTelemetryResult({ code: 200, msg: "边缘遥测处理完成", data: { gatewayId: "gw", acceptedCount: 1, duplicateCount: 0, rejectedCount: 0, errors: [] } })).toEqual({ gatewayId: "gw", message: "边缘遥测处理完成", acceptedCount: 1, duplicateCount: 0, rejectedCount: 0, errors: [] });
+  });
+
+  it("边缘遥测响应归属使用提交时 gateway/device/point snapshot", () => {
+    const payload = buildEdgeTelemetryPayload({
+      gatewayId: "gw-a",
+      protocol: "GENERIC_EDGE",
+      configVersion: "v1",
+      deviceId: "device-a",
+      pointRef: "a-p1",
+      valueText: "12.5",
+      valueType: "number",
+      sequence: 1
+    });
+    const target = buildEdgeTelemetrySubmissionSnapshot(payload, 1700000000000);
+    payload.gatewayId = "gw-b";
+    payload.items[0].deviceId = "device-b";
+    payload.items[0].pointRef = "b-p1";
+
+    const result = buildEdgeTelemetryAttributedResult(target, normalizeEdgeTelemetryResult({ gatewayId: "gw-b", acceptedCount: 1 }), undefined, 1700000001000);
+
+    expect(result.target).toEqual(expect.objectContaining({ gatewayId: "gw-a", deviceId: "device-a", pointRef: "a-p1", submittedAt: 1700000000000 }));
+    expect(result.completedAt).toBe(1700000001000);
   });
 });

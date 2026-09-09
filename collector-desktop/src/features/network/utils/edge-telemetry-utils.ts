@@ -34,6 +34,22 @@ export interface EdgeTelemetryResultView {
   errors: string[];
 }
 
+export interface EdgeTelemetrySubmissionSnapshot {
+  gatewayId: string;
+  protocol: EdgeProtocolType;
+  configVersion: string;
+  deviceId: string;
+  pointRef: string;
+  submittedAt: number;
+}
+
+export interface EdgeTelemetryAttributedResult {
+  target: EdgeTelemetrySubmissionSnapshot;
+  result?: EdgeTelemetryResultView;
+  error?: string;
+  completedAt: number;
+}
+
 export const EDGE_PROTOCOL_OPTIONS: EdgeProtocolOption[] = [
   { value: "PROFINET", label: "PROFINET 边缘进程" },
   { value: "ETHERCAT", label: "EtherCAT 边缘进程" },
@@ -85,6 +101,32 @@ export function normalizeEdgeTelemetryResult(response: EdgeTelemetryIngressResul
     duplicateCount: toNumber(source.duplicateCount),
     rejectedCount: toNumber(source.rejectedCount),
     errors: Array.isArray(source.errors) ? source.errors.map((item) => String(item)) : []
+  };
+}
+
+export function buildEdgeTelemetrySubmissionSnapshot(payload: EdgeTelemetryBatchRequest, submittedAt = Date.now()): EdgeTelemetrySubmissionSnapshot {
+  const firstItem = payload.items[0];
+  return {
+    gatewayId: payload.gatewayId,
+    protocol: payload.protocol,
+    configVersion: payload.configVersion,
+    deviceId: firstItem?.deviceId || "-",
+    pointRef: firstItem?.pointRef || "-",
+    submittedAt
+  };
+}
+
+export function buildEdgeTelemetryAttributedResult(
+  target: EdgeTelemetrySubmissionSnapshot,
+  result: EdgeTelemetryResultView | undefined,
+  error?: string,
+  completedAt = Date.now()
+): EdgeTelemetryAttributedResult {
+  return {
+    target: { ...target },
+    result,
+    error,
+    completedAt
   };
 }
 

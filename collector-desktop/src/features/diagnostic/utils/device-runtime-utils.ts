@@ -68,6 +68,16 @@ export function normalizeDeviceRunningFlag(response: unknown): boolean {
   return Boolean(record.running ?? record.isRunning ?? false);
 }
 
+export function buildUnavailableRunningFlagDetail(deviceId: string, error: string): DeviceStatusDetail {
+  return {
+    deviceId,
+    running: undefined,
+    isRunning: undefined,
+    message: "运行状态：暂不可用",
+    degradedReason: error || "运行状态检查失败"
+  };
+}
+
 export function buildDeviceRuntimeSummary(rows: DeviceRuntimeSnapshot[], fallbackTotal?: number): DeviceRuntimeSummary {
   const total = typeof fallbackTotal === "number" && Number.isFinite(fallbackTotal) ? fallbackTotal : rows.length;
   const running = rows.filter((row) => row.running).length;

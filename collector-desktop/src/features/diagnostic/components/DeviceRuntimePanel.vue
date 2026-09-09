@@ -10,8 +10,8 @@
           <option value="">选择设备查看状态</option>
           <option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">{{ device.deviceName || deviceIdOf(device) }}</option>
         </select>
-        <button type="button" class="primary" :disabled="!statusDeviceId" @click="loadDeviceStatus">查询单设备状态</button>
-        <button type="button" :disabled="!statusDeviceId" @click="checkRunningFlag">检查是否运行</button>
+        <button type="button" class="primary" :disabled="!statusDeviceId || statusLoading" @click="loadDeviceStatus">{{ statusLoading ? `正在查询设备 ${statusCheckTargetId}` : '查询单设备状态' }}</button>
+        <button type="button" :disabled="!statusDeviceId || runningCheckLoading" @click="checkRunningFlag">{{ runningCheckLoading ? `正在检查设备 ${statusCheckTargetId}` : '检查是否运行' }}</button>
       </div>
       <div class="exact-toolbar-group">
         <button type="button" :disabled="loading" @click="loadRuntimeOverview">{{ loading ? '刷新中' : '刷新运行列表' }}</button>
@@ -44,7 +44,7 @@
       </table>
     </section>
     <details class="exact-json-panel" open>
-      <summary>单设备状态 JSON</summary>
+      <summary>单设备状态 JSON <span v-if="statusError" class="runtime-status-error">{{ statusError }}</span></summary>
       <pre class="json-view compact-result-view">{{ prettyJson(statusDetail) }}</pre>
     </details>
   </section>
@@ -55,8 +55,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getDeviceRuntime, getDeviceStatus, getRunningDevices, isDeviceRunning } from "@/api/device.api";
+import { buildDeviceRequestContext, isSameDeviceRequestContext } from "@/features/device/utils/device-request-lifecycle";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import type { DeviceInfo, DeviceRuntimeSnapshot } from "@/types/device";
-import { buildDeviceRuntimeSummary, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "../utils/device-runtime-utils";
+import { buildDeviceRuntimeSummary, buildUnavailableRunningFlagDetail, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "../utils/device-runtime-utils";
 
 const props = defineProps<{
   devices: DeviceInfo[];
@@ -71,6 +73,13 @@ const runtimeRows = ref<DeviceRuntimeSnapshot[]>([]);
 const runningDeviceIds = ref<string[]>([]);
 const statusDeviceId = ref(props.selectedDeviceId || "");
 const statusDetail = ref<unknown>({ message: "请选择设备后查询单设备运行状态" });
+const statusLoading = ref(false);
+const runningCheckLoading = ref(false);
+const statusCheckTargetId = ref("");
+const statusError = ref("");
+
+const statusRequestOwner = createLatestRequestOwner(isSameDeviceRequestContext);
+const runningFlagOwner = createLatestRequestOwner(isSameDeviceRequestContext);
 
 const runtimeSummary = computed(() => buildDeviceRuntimeSummary(runtimeRows.value, props.devices.length || runtimeRows.value.length));
 
@@ -91,15 +100,39 @@ async function loadDeviceStatus() {
     ElMessage.warning("请先选择设备");
     return;
   }
-  const [statusResult, runningResult] = await Promise.allSettled([getDeviceStatus(statusDeviceId.value), isDeviceRunning(statusDeviceId.value)]);
-  const detail = statusResult.status === "fulfilled"
-    ? normalizeDeviceStatusDetail(statusResult.value, statusDeviceId.value)
-    : normalizeDeviceStatusDetail({ message: "单设备状态查询失败" }, statusDeviceId.value);
-  if (runningResult.status === "fulfilled") {
-    detail.running = normalizeDeviceRunningFlag(runningResult.value);
-    detail.isRunning = detail.running;
+  const targetDeviceId = statusDeviceId.value;
+  const requestContext = buildDeviceRequestContext(targetDeviceId);
+  const ticket = statusRequestOwner.begin(requestContext);
+  statusLoading.value = true;
+  statusCheckTargetId.value = targetDeviceId;
+  statusError.value = "";
+  try {
+    const [statusResult, runningResult] = await Promise.allSettled([getDeviceStatus(targetDeviceId), isDeviceRunning(targetDeviceId)]);
+    if (!statusRequestOwner.canCommit(ticket, buildDeviceRequestContext(statusDeviceId.value))) {
+      return;
+    }
+    const detail = statusResult.status === "fulfilled"
+      ? normalizeDeviceStatusDetail(statusResult.value, targetDeviceId)
+      : normalizeDeviceStatusDetail({ message: "单设备状态查询失败" }, targetDeviceId);
+    if (runningResult.status === "fulfilled") {
+      detail.running = normalizeDeviceRunningFlag(runningResult.value);
+      detail.isRunning = detail.running;
+    } else {
+      detail.running = undefined;
+      detail.isRunning = undefined;
+      detail.message = "运行状态：暂不可用";
+      statusError.value = runningResult.reason instanceof Error ? runningResult.reason.message : "运行状态检查失败";
+    }
+    statusDetail.value = detail;
+    if (statusResult.status === "rejected") {
+      statusError.value = statusResult.reason instanceof Error ? statusResult.reason.message : "单设备状态查询失败";
+    }
+  } finally {
+    if (statusRequestOwner.isLatest(ticket)) {
+      statusLoading.value = false;
+      statusCheckTargetId.value = "";
+    }
   }
-  statusDetail.value = detail;
 }
 
 async function checkRunningFlag() {
@@ -107,8 +140,32 @@ async function checkRunningFlag() {
     ElMessage.warning("请先选择设备");
     return;
   }
-  const running = normalizeDeviceRunningFlag(await isDeviceRunning(statusDeviceId.value));
-  statusDetail.value = { deviceId: statusDeviceId.value, running, message: running ? "设备正在运行" : "设备未运行" };
+  const targetDeviceId = statusDeviceId.value;
+  const requestContext = buildDeviceRequestContext(targetDeviceId);
+  const ticket = runningFlagOwner.begin(requestContext);
+  runningCheckLoading.value = true;
+  statusCheckTargetId.value = targetDeviceId;
+  statusError.value = "";
+  try {
+    const running = normalizeDeviceRunningFlag(await isDeviceRunning(targetDeviceId));
+    if (!runningFlagOwner.canCommit(ticket, buildDeviceRequestContext(statusDeviceId.value))) {
+      return;
+    }
+    statusDetail.value = { deviceId: targetDeviceId, running, isRunning: running, message: running ? "设备正在运行" : "设备未运行" };
+  } catch (caught) {
+    if (!runningFlagOwner.canCommit(ticket, buildDeviceRequestContext(statusDeviceId.value))) {
+      return;
+    }
+    const message = caught instanceof Error ? caught.message : "运行状态检查失败";
+    statusError.value = message;
+    statusDetail.value = buildUnavailableRunningFlagDetail(targetDeviceId, message);
+    ElMessage.error(`设备 ${targetDeviceId} 运行状态检查失败`);
+  } finally {
+    if (runningFlagOwner.isLatest(ticket)) {
+      runningCheckLoading.value = false;
+      statusCheckTargetId.value = "";
+    }
+  }
 }
 
 function selectRuntimeDevice(deviceId: string) {
@@ -139,6 +196,12 @@ function prettyJson(value: unknown): string {
 
 watch(() => props.selectedDeviceId, (deviceId) => {
   if (deviceId) {
+    statusRequestOwner.invalidate();
+    runningFlagOwner.invalidate();
+    statusLoading.value = false;
+    runningCheckLoading.value = false;
+    statusCheckTargetId.value = "";
+    statusError.value = "";
     statusDeviceId.value = deviceId;
     void loadDeviceStatus();
   }
@@ -167,5 +230,11 @@ onMounted(() => {
 
 .runtime-device-table {
   margin-top: 14px;
+}
+
+.runtime-status-error {
+  margin-left: 8px;
+  color: #fecaca;
+  font-size: 12px;
 }
 </style>

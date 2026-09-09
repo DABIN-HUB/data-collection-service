@@ -3,7 +3,7 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>云平台配置</h1>
-        <span class="heading-online"><i></i>{{ reportState }}</span>
+        <span class="heading-online"><i></i>{{ cloudOperationalState.text }}</span>
       </div>
       <div class="heading-actions">
         <button type="button" class="primary" :disabled="loading" @click="refreshCloud">{{ loading ? '刷新中…' : '刷新链路' }}</button>
@@ -12,13 +12,15 @@
     </div>
 
     <div class="exact-page-body">
-      <div v-if="error" class="cloud-error">{{ error }}</div>
+      <div v-if="error" class="cloud-error">{{ cloudUnavailableText }}</div>
 
       <div class="exact-cloud-grid">
         <section class="exact-surface exact-cloud-status">
           <div class="exact-cloud-icon">云</div>
-          <strong>{{ cloudStatusTextValue }}</strong>
+          <strong>{{ cloudOperationalState.text }}</strong>
           <small>{{ cloudEnabledText }}</small>
+          <small>{{ cloudOperationalState.description }}</small>
+          <small v-if="cloudOperationalState.disabledEvidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
           <div class="cloud-stat-row">
             <span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span>
           </div>
@@ -27,7 +29,7 @@
         <section class="exact-surface">
           <div class="exact-surface-head">
             <h2>上报策略</h2>
-            <span>{{ reportState }}</span>
+            <span>{{ cloudOperationalState.status }}</span>
           </div>
           <div class="modao-property-grid">
             <div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
@@ -73,7 +75,7 @@ import {
   buildCloudRisks,
   buildCloudStrategyRows,
   buildCloudSummaryCards,
-  cloudStatusText
+  classifyCloudOperationalState
 } from "@/features/cloud/utils/cloud-report-utils";
 import { useAppStore } from "@/stores/app.store";
 import type { CloudReportMetricsResponse } from "@/types/monitor";
@@ -84,15 +86,16 @@ const loading = ref(false);
 const error = ref("");
 const lastRefresh = ref<Date | null>(null);
 
-const reportState = computed(() => reportMetrics.value ? "已加载" : "未知");
-const reportStatus = computed(() => String(reportMetrics.value?.status ?? reportMetrics.value?.state ?? "UNKNOWN"));
-const cloudStatusTextValue = computed(() => cloudStatusText(reportStatus.value));
+const cloudOperationalState = computed(() => classifyCloudOperationalState(reportMetrics.value, Boolean(error.value)));
 const cloudEnabledText = computed(() => buildCloudEnabledText(reportMetrics.value));
 const cloudSummaryCards = computed(() => buildCloudSummaryCards(reportMetrics.value));
 const cloudStrategyRows = computed(() => buildCloudStrategyRows(reportMetrics.value));
 const cloudOperationalRows = computed(() => buildCloudOperationalRows(reportMetrics.value));
 const cloudRisks = computed(() => buildCloudRisks(reportMetrics.value));
-const lastRefreshText = computed(() => lastRefresh.value ? `刷新于 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const lastRefreshText = computed(() => lastRefresh.value ? `最后成功 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const cloudUnavailableText = computed(() => reportMetrics.value
+  ? `${error.value}；当前保留最后一次成功指标（${lastRefreshText.value}）`
+  : error.value);
 
 onMounted(() => {
   void loadCloud();

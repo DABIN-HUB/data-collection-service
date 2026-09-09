@@ -6,7 +6,9 @@ import {
   buildNetworkDiagnosticPayload,
   buildNetworkExportText,
   buildNetworkResultRows,
+  buildNetworkSubmissionSnapshot,
   normalizeNetworkDiagnosticResult,
+  normalizeNetworkDiagnosticResultForSubmission,
   resolveNetworkTargetFromDevice
 } from "./network-utils";
 
@@ -53,5 +55,18 @@ describe("network-utils", () => {
     expect(buildNetworkResultRows(result).map((row) => row.label)).toContain("检测结论");
     expect(appendNetworkHistory([], result, 2)).toEqual([result]);
     expect(buildNetworkExportText([result])).toContain("检测方式：PING");
+  });
+
+  it("网络检测结果归属使用提交时 target snapshot，不受后续表单变化影响", () => {
+    const payload = buildNetworkDiagnosticPayload({ type: "TCP", deviceId: "device-a", target: "10.0.0.8", port: 502 });
+    const snapshot = buildNetworkSubmissionSnapshot(payload, 1700000000000);
+    payload.deviceId = "device-b";
+    payload.target = "10.0.0.9";
+    payload.port = 503;
+
+    const result = normalizeNetworkDiagnosticResultForSubmission({ target: "backend-target", reachable: true, message: "OK" }, snapshot, 1700000001000);
+
+    expect(result).toEqual(expect.objectContaining({ deviceId: "device-a", target: "10.0.0.8", port: 502, type: "TCP", completedAt: 1700000001000 }));
+    expect(buildNetworkResultRows(result)).toEqual(expect.arrayContaining([{ label: "提交设备", value: "device-a" }]));
   });
 });

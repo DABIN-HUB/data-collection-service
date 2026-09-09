@@ -13,6 +13,7 @@
     </div>
 
     <div class="exact-page-body">
+      <p v-if="exportMessage" class="diagnostic-message" :class="{ 'is-error': exportMessageType === 'error' }">{{ exportMessage }}</p>
       <p v-if="error" class="diagnostic-message is-error">{{ error }}</p>
       <p v-else-if="partialWarning" class="diagnostic-message">{{ partialWarning }}</p>
 
@@ -78,6 +79,7 @@ import DiagnosticDetailPanel from "@/features/diagnostic/components/DiagnosticDe
 import DeviceRuntimePanel from "@/features/diagnostic/components/DeviceRuntimePanel.vue";
 import {
   buildDiagnosticCards,
+  buildDiagnosticExportWarning,
   buildDiagnosticRaw,
   buildDiagnosticRows,
   buildDiagnosticRuntimeSummary,
@@ -108,6 +110,8 @@ const loading = ref(false);
 const exporting = ref(false);
 const error = ref("");
 const partialWarning = ref("");
+const exportMessage = ref("");
+const exportMessageType = ref<"success" | "warning" | "error">("success");
 const lastRefresh = ref<Date | null>(null);
 
 type DiagnosticSnapshotKey = "runtimeStatus" | "systemResource" | "reportMetrics" | "configSummary" | "cacheMetrics" | "deviceConnectionMetrics" | "collectorPerformance" | "exceptionStats" | "storageMetrics" | "performanceDetail";
@@ -202,15 +206,23 @@ async function runDiagnostic() {
 }
 
 async function downloadDiagnosticPackage() {
+  const targetDeviceId = deviceStore.selectedDeviceId || "all-devices";
   exporting.value = true;
+  exportMessage.value = "";
   try {
+    const [alarmSample, logSample] = await Promise.all([loadDiagnosticAlarmSample(), loadDiagnosticLogSample()]);
+    const sampleWarning = buildDiagnosticExportWarning([
+      { label: "最近告警", value: alarmSample.rows, failed: alarmSample.failed },
+      { label: "最近日志", value: logSample.rows, failed: logSample.failed }
+    ]);
     const payload = {
       generatedAt: new Date().toISOString(),
-      selectedDeviceId: deviceStore.selectedDeviceId,
+      selectedDeviceId: targetDeviceId,
       selectedDevice: deviceStore.selectedDevice || null,
       overview: diagnosticRaw.value,
-      alarms: await loadDiagnosticAlarmSample(),
-      logs: await loadDiagnosticLogSample(),
+      alarms: alarmSample.rows,
+      logs: logSample.rows,
+      warnings: sampleWarning ? [sampleWarning] : [],
       runtimeSummary: buildDiagnosticRuntimeSummary({
         devices: deviceStore.devices,
         onlineCount: deviceStore.onlineCount,
@@ -224,25 +236,36 @@ async function downloadDiagnosticPackage() {
     anchor.download = `collector-diagnostic-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    ElMessage.success("诊断包已生成");
+    exportMessageType.value = sampleWarning ? "warning" : "success";
+    exportMessage.value = sampleWarning ? `设备 ${targetDeviceId} 诊断包已生成；${sampleWarning}` : `设备 ${targetDeviceId} 诊断包已生成`;
+    if (sampleWarning) {
+      ElMessage.warning(exportMessage.value);
+    } else {
+      ElMessage.success(exportMessage.value);
+    }
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "诊断包导出失败";
+    exportMessageType.value = "error";
+    exportMessage.value = `设备 ${targetDeviceId} 诊断包导出失败：${message}`;
+    ElMessage.error(exportMessage.value);
   } finally {
     exporting.value = false;
   }
 }
 
-async function loadDiagnosticLogSample(): Promise<LogRow[]> {
+async function loadDiagnosticLogSample(): Promise<{ rows: LogRow[]; failed: boolean }> {
   try {
-    return normalizeLogRows(await getOpsLogs({ limit: 50 }));
+    return { rows: normalizeLogRows(await getOpsLogs({ limit: 50 })), failed: false };
   } catch {
-    return [];
+    return { rows: [], failed: true };
   }
 }
 
-async function loadDiagnosticAlarmSample(): Promise<AlarmRow[]> {
+async function loadDiagnosticAlarmSample(): Promise<{ rows: AlarmRow[]; failed: boolean }> {
   try {
-    return normalizeAlarmHistoryRows(await getRecentAlarms({ limit: 20 }));
+    return { rows: normalizeAlarmHistoryRows(await getRecentAlarms({ limit: 20 })), failed: false };
   } catch {
-    return [];
+    return { rows: [], failed: true };
   }
 }
 

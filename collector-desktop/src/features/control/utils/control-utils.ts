@@ -1,6 +1,8 @@
+import { buildActionExecutionTarget, summarizePayload, type ActionExecutionTarget } from "@/features/action/utils/action-result-context";
 import type { DeviceCommandRequest, PointWriteRequest } from "@/types/control";
 
 export type ControlDataType = "STRING" | "BOOLEAN" | "INT" | "FLOAT" | "DOUBLE";
+export type ControlActionKind = "single-write" | "batch-write" | "command";
 
 export interface ControlJsonParseResult<T = unknown> {
   payload: T;
@@ -22,6 +24,23 @@ export function buildSinglePointControlPayload(rawValue: string, dataType: strin
   return {
     value: parseControlValue(rawValue, dataType)
   };
+}
+
+export function buildControlActionTarget(input: {
+  deviceId: string;
+  action: ControlActionKind;
+  pointRef?: string;
+  payload?: unknown;
+  submittedAt?: number;
+}): ActionExecutionTarget {
+  return buildActionExecutionTarget({
+    target: input.deviceId,
+    deviceId: input.deviceId,
+    action: input.action,
+    pointRef: input.pointRef,
+    payloadSummary: input.payload === undefined ? undefined : summarizePayload(input.payload),
+    submittedAt: input.submittedAt
+  });
 }
 
 export function buildBatchControlTemplate(): PointWriteRequest {

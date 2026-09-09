@@ -35,10 +35,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Explicit realtime scale acceptance harness for Task 02.5.
+ * Task 02.5 显式实时规模验收桩。
  *
- * <p>This class intentionally ends with IT so it is not part of ordinary Maven test discovery.
- * Run explicitly with {@code -Dtest=RealtimeScaleSoakIT}.</p>
+ * <p>类名故意以 IT 结尾，避免进入普通 Maven test discovery。
+ * 需要时使用 {@code -Dtest=RealtimeScaleSoakIT} 显式运行。</p>
  */
 class RealtimeScaleSoakIT {
 

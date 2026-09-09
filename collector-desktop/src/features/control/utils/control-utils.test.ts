@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBatchControlTemplate,
+  buildControlActionTarget,
   buildCommandTemplate,
   buildSinglePointControlPayload,
   formatControlJson,
@@ -38,5 +39,26 @@ describe("control-utils", () => {
 
   it("格式化控制 JSON", () => {
     expect(formatControlJson({ command: "custom", params: {} })).toContain("custom");
+  });
+
+  it("单点写入 capture 设备、点位和提交 payload snapshot", () => {
+    const payload = buildSinglePointControlPayload("12", "INT");
+    const target = buildControlActionTarget({ deviceId: "device-a", action: "single-write", pointRef: "a-p1", payload, submittedAt: 1700000000000 });
+    payload.value = 13;
+
+    expect(target.deviceId).toBe("device-a");
+    expect(target.pointRef).toBe("a-p1");
+    expect(target.payloadSummary).toBe('{"value":12}');
+    expect(target.submittedAt).toBe(1700000000000);
+  });
+
+  it.each([
+    ["batch-write", { values: { "a-p1": 1 } }],
+    ["command", { command: "restart", params: { mode: "safe" } }]
+  ] as const)("%s capture target snapshot", (action, payload) => {
+    const target = buildControlActionTarget({ deviceId: "device-a", action, payload, submittedAt: 1700000000000 });
+
+    expect(target).toEqual(expect.objectContaining({ target: "device-a", deviceId: "device-a", action, submittedAt: 1700000000000 }));
+    expect(target.payloadSummary).toContain(action === "batch-write" ? "a-p1" : "restart");
   });
 });

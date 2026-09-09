@@ -13,6 +13,15 @@ export interface ReportSummary {
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
 }
 
+export type CloudOperationalStatus = "DISABLED" | "READY" | "DEGRADED" | "UNAVAILABLE";
+
+export interface CloudOperationalState {
+  status: CloudOperationalStatus;
+  text: string;
+  description: string;
+  disabledEvidence: string;
+}
+
 export function cloudStatusText(status: unknown): string {
   const key = String(status || "").toUpperCase();
   return ({
@@ -31,7 +40,14 @@ export function cloudStatusText(status: unknown): string {
 }
 
 export function buildCloudEnabledText(report: CloudReportMetricsResponse | null | undefined): string {
-  return asRecord(report).enabled ? "云端上报已启用" : "云端上报未启用";
+  const enabled = asRecord(report).enabled;
+  if (enabled === true) {
+    return "云端上报已启用";
+  }
+  if (enabled === false) {
+    return "云端上报未启用";
+  }
+  return "云端上报启用状态未知";
 }
 
 export function summarizeReportMetrics(report: CloudReportMetricsResponse | null | undefined): ReportSummary {
@@ -44,6 +60,69 @@ export function summarizeReportMetrics(report: CloudReportMetricsResponse | null
   const processors = Array.isArray(record.processors) ? record.processors.length : toNumber(record.processorCount);
   const riskLevel = isolated > 0 || pendingAck > 100 ? "HIGH" : pending > 0 || pendingAck > 0 ? "MEDIUM" : "LOW";
   return { pending, pendingAck, isolated, processors, riskLevel };
+}
+
+export function classifyCloudOperationalState(
+  report: CloudReportMetricsResponse | null | undefined,
+  unavailable = false
+): CloudOperationalState {
+  if (unavailable) {
+    return {
+      status: "UNAVAILABLE",
+      text: "状态不可用",
+      description: "云上报状态接口暂不可用，当前显示最后一次成功数据。",
+      disabledEvidence: ""
+    };
+  }
+  if (!report) {
+    return {
+      status: "UNAVAILABLE",
+      text: "状态未知",
+      description: "尚未获取云上报状态。",
+      disabledEvidence: ""
+    };
+  }
+  const record = asRecord(report);
+  if (record.enabled === false) {
+    return {
+      status: "DISABLED",
+      text: "功能已禁用",
+      description: "后端指标明确返回 enabled=false，云端上报功能未启用。",
+      disabledEvidence: "enabled=false"
+    };
+  }
+  const explicitStatus = String(record.status ?? record.state ?? "").toUpperCase();
+  if (explicitStatus === "DISABLED") {
+    return {
+      status: "DISABLED",
+      text: "功能已禁用",
+      description: "后端指标明确返回 DISABLED 状态，云端上报功能未启用。",
+      disabledEvidence: "status=DISABLED"
+    };
+  }
+  if (record.enabled !== true && !explicitStatus) {
+    return {
+      status: "UNAVAILABLE",
+      text: "状态未知",
+      description: "现有响应缺少 enabled 或 status/state 证据，无法可靠判断云上报是否启用。",
+      disabledEvidence: ""
+    };
+  }
+  const summary = summarizeReportMetrics(report);
+  if (["WARN", "WARNING", "DEGRADED", "ERROR", "FAILED", "DOWN"].includes(explicitStatus) || summary.riskLevel !== "LOW" || buildCloudRisks(report).some((risk) => risk !== "未发现已知上报风险")) {
+    return {
+      status: "DEGRADED",
+      text: "链路降级",
+      description: "云上报指标可读取，但 outbox / ACK / 风险项显示部分链路需要关注。",
+      disabledEvidence: ""
+    };
+  }
+  return {
+    status: "READY",
+    text: "链路就绪",
+    description: "云上报指标已加载，核心 reporting 链路未发现已知风险。",
+    disabledEvidence: ""
+  };
 }
 
 export function buildCloudSummaryCards(report: CloudReportMetricsResponse | null | undefined): CloudMetricRow[] {

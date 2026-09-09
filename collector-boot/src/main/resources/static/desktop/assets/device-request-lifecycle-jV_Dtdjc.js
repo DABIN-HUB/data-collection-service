@@ -1,0 +1,1 @@
+function i(e){return{deviceId:t(e)}}function c(e,o){return{deviceId:t(e),protocolKey:t(o)}}function r(e,o){return!e||!o?!1:t(e.deviceId)===t(o.deviceId)}function n(e,o){return!e||!o?!1:t(e.deviceId)===t(o.deviceId)&&t(e.protocolKey)===t(o.protocolKey)}function u(e,o){return n(e,o)}function t(e){return typeof e=="string"?e.trim():""}export{n as a,i as b,c,r as i,u as s};

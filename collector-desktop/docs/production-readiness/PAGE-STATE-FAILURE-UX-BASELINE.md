@@ -112,16 +112,16 @@ These terms are an audit language, not a requirement that every page must implem
 | Login | Form visible; `testing` drives button loading during test/login (`views/auth/LoginView.vue:88-102`). | Connected message stored inline via `message` (`:24`, `:93-95`). | N/A; login has no row data. | Same `testing` flag blocks submit/test while preserving form input. | N/A; no last-good read dataset. | N/A. | Inline `el-alert` with connection/server error (`:24`, `:96-100`). | Test connection/login button retries current URL/token. | `testing` guards both test and enter buttons; token field preserved. |
 | Dashboard | `dashboardLoading` with existing layout and per-source idle/default values (`views/dashboard/DashboardView.vue:17-18`, `:385-425`). | Multi-widget dashboard from successful source values. | Recent alarms/risk devices use distinct empty text (`:41`, `:61`, `:257-266`). | Per-source states go `loading` without clearing committed values (`features/dashboard/utils/dashboard-metric-state.ts:38-47`, `views/dashboard/DashboardView.vue:394-415`). | Source-level stale when `status=error && lastSuccessAt!=null` (`dashboard-metric-state.ts:54-59`). | PASS: failed source names become `dashboardPartialWarning` while successful cards remain (`DashboardView.vue:409-415`). | Fatal only when all sources fail or init fails (`:409-419`). | “刷新全部” retries latest cycle. | Open-local-editor save triggers reload; no broad write workflow in page body. |
 | Device List | Device cards area shows computed loading text only when list is empty (`features/device/utils/device-list-utils.ts:15-18`). | Device cards with filters/actions. | Distinguishes no config vs no filter match (`device-list-utils.ts:18`). | `deviceStore.refresh()` preserves existing `devices` on read failure (`stores/device.store.ts:37-75`); refresh button itself has no spinner. | Read failure preserves old store devices and `deviceStore.error`, but page mainly uses toast/actions; stale timestamp not surfaced. | Runtime metrics are optional inside store; runtime failure keeps previous runtime map (`device.store.ts:50-55`). | If no last-good devices, exact-empty shows error text (`DeviceListView.vue:39`, `device-list-utils.ts:7-14`). | Refresh list/manual sync available. | Store-level `operating` globally disables start/stop/sync; config action uses per-device id; import/export have own flags. |
-| Device Workbench | Shell shows selected-device prompt/stats; initial device refresh + realtime preview (`features/device/components/DeviceOperationShell.vue:106-112`). | Selected device panel and child config/control/shadow content. | No selected device is explicit in rail (`:7`, `:39`). | Realtime preview refresh has no visual loading; previous preview retained until failure/success. | Preview failure clears preview rows silently (`:155-174`); selected device itself remains. | Child panels independent; no page-level degraded banner. | Device refresh errors are inherited from store but shell has no persistent inline read error. | Back/list/tab nav; child panels own retry buttons. | Config refresh/clear guarded per `deviceConfigOperatingId`; start/stop in wrapper are not per-target guarded here. |
+| Device Workbench | Shell shows selected-device prompt/stats; initial device refresh + context-owned realtime preview. | Selected device panel and child config/control/shadow content. | No selected device is explicit in rail (`:7`, `:39`). | Same-device preview refresh keeps last-good rows and shows refreshing/stale text. | Initial preview failure shows unavailable instead of successful `0` points; A→B stale preview responses cannot commit. | Child panels independent; no page-level degraded banner. | Device refresh errors are inherited from store but shell has no persistent inline read error. | Back/list/tab nav; child panels own retry buttons. | Config refresh/clear guarded per `deviceConfigOperatingId`; start/stop in wrapper are not per-target guarded here. |
 | Collection | Overview stays visible; `collectionLoading` disables refresh button (`views/collection/CollectionView.vue:9`, `:115-127`). | Summary + protocol table + ConfigOpsPanel. | Protocol table has explicit empty state (`:39`). | Uses `Promise.allSettled`; successful sections remain available (`:115-127`). | Config summary failure sets `configSummary=null`; device/protocol store errors are shown via aggregate alert (`:90`, `:129-136`). | PASS for read split: device/protocol/summary failures are aggregated as warning. | Inline warning `el-alert` (`:14`). | “刷新概览” retries all reads. | ConfigOpsPanel has import/export/sync flags and toast feedback; initial sync hint is optional P2 (`features/collection/components/ConfigOpsPanel.vue:100`). |
-| Control | Wrapper shell selects device, then `ControlPanel` is idle with JSON forms (`views/control/ControlView.vue:1-12`, `features/control/components/ControlPanel.vue:72-82`). | Result JSON shows latest command result. | Not row-based; empty means no command yet. | N/A for read; write pending per command. | N/A. | N/A. | Write/parse failures persist in result JSON plus toast (`ControlPanel.vue:154-158`). | Manual resubmit only; no blind auto retry. | Per-action pending exists, but write results have no target-device commit guard if route/device changes while the write is in-flight (`ControlPanel.vue:91-97`, `:114-120`, `:137-143`) — P1. |
+| Control | Wrapper shell selects device, then `ControlPanel` is idle with device-scoped write forms. | Result panel shows latest completed action with submitted target/action/point/payload summary/timestamps. | Not row-based; empty means no command yet. | N/A for read; write pending per command. | N/A. | N/A. | Write/parse failures persist with target attribution plus toast. | Manual resubmit only; no blind auto retry. | P1 target feedback race closed in Task 03.4; A write completion can remain visible on B only with explicit A attribution. |
 | Realtime | Initial full uses `loading` and empty table prompt; table remains rendered (`views/realtime/RealtimeView.vue:9`, `:100-101`, `:216-276`). | Compact full/delta rows, summary, filter and paged table. | Empty table text is generic select-all/select-device prompt (`:100-101`), not context-specific success-empty. | Timer/manual set page-level `loading`; rows are not cleared before request, so last-good rows remain (`:216-276`). | On refresh failure rows remain and `realtimeError` is inline (`:31`, `:266-271`). | Reset/full resync is treated as refresh path, not separate UX. | Initial failure produces empty prompt + small inline error; no dedicated retry panel. | “立即刷新”; auto timer. | Single-point query has separate loading/error and owner (`:297-324`). |
 | History | Initial selected device/point loading clears current query data on context change (`views/history/HistoryView.vue`). | Chart/table/summary from main history. | Success-empty `historyRows=[]` remains “暂无历史数据”; initial failure uses error text. | Same-context query loading keeps current investigation snapshot and shows `REFRESHING`. | Same-context refresh failure keeps coherent last-good rows/compare/related alarms and shows `STALE`. | PASS for optional compare/related alarms: partial warning and unavailable marker remain success/degraded snapshot. | Persistent `el-alert` distinguishes initial error from stale failure. | Query/refresh button retries current context. | Export continues from displayed committed data; no destructive writes. |
 | Alarm | Initial list load has latest owner and inline table empty/error text (`views/alarm/AlarmView.vue`). | Alarm rows with acknowledgement state. | Success-empty rows remain “暂无符合条件的告警历史”. | Same-context refresh keeps rows/ack state and shows `REFRESHING`. | Same-context refresh failure keeps alarm rows and last-known acknowledgements with separate history stale alert. | PASS for acknowledgement status degradation: `ackStatusWarning` remains independent from history stale. | Persistent history alert/table text plus separate ack warning. | Refresh button; manual ack status retry. | Ack button guarded by `acknowledgingAlarmId`; bulk ack-status guarded by `ackStatusLoading`. |
-| Cloud | Initial load button shows “刷新中…”; layout remains with UNKNOWN defaults (`views/cloud/CloudView.vue:9`, `:81-112`). | Cloud metrics loaded and timestamp updated. | Empty/default computed rows show unknown/zero-like operational state; no explicit disabled/empty banner. | Existing `reportMetrics` is not cleared before refresh; last-good visible during request. | Refresh failure preserves last-good metrics and shows inline `cloud-error`, but no stale timestamp semantics (`:15`, `:101-112`). | Cloud utils show status/risk rows, but read source is single aggregate; disabled/degraded/error distinction depends on payload. | If initial failure, inline error plus unknown/default cards. | Refresh link retries aggregate metric. | No writes on this page. |
+| Cloud | Initial load button shows “刷新中…”; layout remains with UNKNOWN defaults. | Cloud metrics loaded and last-success timestamp updated. | Missing status evidence is not reported as disabled; disabled only from `enabled=false` or explicit `DISABLED`. | Existing `reportMetrics` is not cleared before refresh; last-good visible during request. | Refresh failure preserves last-good metrics and shows UNAVAILABLE/stale marker with last-success time. | Cloud utils show status/risk rows, but read source is single aggregate; disabled/degraded/error distinction depends on payload. | If initial failure, inline error plus unknown/default cards. | Refresh link retries aggregate metric. | No writes on this page. |
 | Diagnostic | Initial run sets `loading`, keeps default/raw panels visible (`views/diagnostic/DiagnosticView.vue:148-197`). | Diagnostic cards/rows/raw JSON from successful sources. | No explicit “no diagnostic rows” row, but rows are computed from defaults. | Re-run uses `Promise.allSettled`; successful source refs are updated, failures leave previous values. | Partial source failures preserve previous values implicitly, with `partialWarning`; source-level stale timestamps not shown. | PASS: one failed probe does not fail whole page (`:161-191`). | Fatal only if all metrics and device list fail (`:192-194`); persistent inline message. | “运行完整诊断” retries all probes. | Diagnostic package export has `exporting` guard; sample log/alarm failures are intentional best-effort empty arrays (`:233-247`). |
 | Log | Initial load uses `loading`; empty panel now distinguishes error from success-empty (`views/log/LogView.vue`). | Log rows, local filters and summary. | Success-empty shows “当前条件下没有可显示日志”. | Same server-context auto/manual refresh keeps current logs and shows `REFRESHING`. | Same server-context failure keeps last-good logs and shows `STALE`; server context change clears old logs. | Recent-exception lookup is optional; failure is toast-only and does not affect log rows. | Initial/new server-context failure is persistent through error text; stale error also appears above retained rows. | Query/refresh and auto-refresh. | Export and exception lookup have independent guards. |
-| Network | Page is idle by default; no automatic diagnostic request (`views/network/NetworkView.vue:123-130`). | Latest diagnostic result and history visible. | Explicit “尚未执行网络检测” and “暂无网络检测历史” (`:51`, `:76-77`). | Running a diagnostic keeps previous result until replaced by result/failure. | Failure is represented as a failed diagnostic result appended to history, not a separate page stale state (`:150-170`). | EdgeTelemetryPanel is independent operational subpanel. | Network diagnostic failures persist in result JSON/history plus toast (`:155-170`). | Manual “开始检测”. | PASS: diagnose and edge telemetry each have own pending flags; result is target-specific enough for manual diagnostics. |
+| Network | Page is idle by default; no automatic diagnostic request. | Latest diagnostic result and history visible with submitted target metadata. | Explicit “尚未执行网络检测” and “暂无网络检测历史”. | Running a diagnostic keeps previous result until replaced by result/failure. | Failure is represented as a failed diagnostic result appended to history with captured device/target/port. | EdgeTelemetryPanel is independent operational subpanel and now shows submitted gateway/device/point attribution. | Network diagnostic failures persist in result JSON/history plus toast. | Manual “开始检测”. | PASS: diagnose and edge telemetry each have own pending flags; result is target-specific enough for manual diagnostics. |
 | Shadow | Wrapper shell plus `ShadowPanel`; idle prompts for selected device (`views/shadow/ShadowView.vue:1-12`, `features/shadow/components/ShadowPanel.vue`). | Shadow/delta/history sections independently loaded with independent read owners. | History success `[]` remains “暂无影子历史”; initial failure shows read-failure text. | Section-level loading flags; stale request finally cannot clear newer section loading. | Same-context refresh failure keeps last-good shadow/delta/history and shows persistent stale/error status. | Bundle read still uses `Promise.allSettled`, so one section failure does not block others. | Section status text distinguishes initial error from stale last-good failure. | Per-section read buttons. | Desired save/clear capture target `deviceId`; write side effect completes, but stale response/error cannot overwrite another live device panel — P0 CLOSED. |
 
 ## 3. Failure matrix
@@ -346,23 +346,35 @@ Recommended task: closed for Shadow; History/Alarm/Log last-good work closed in 
 Page: Diagnostic  
 File: `collector-desktop/src/views/diagnostic/DiagnosticView.vue:161-197`, `:204-230`, `features/diagnostic/components/DeviceRuntimePanel.vue:105-112`  
 Operation: diagnostic export and single running-flag check  
-Current behavior: multi-source diagnostic read is good; export lacks catch; running-flag check lacks catch.  
-Failure scenario: browser download/build payload throws; or `isDeviceRunning` rejects.  
-User impact: action failure may be console-only or unhandled instead of persistent action result.  
-Severity: P2  
-Recommended change: add action-level failure result/toast where missing; do not change diagnostic multi-source model.  
-Recommended task: Task 03.4 — Operational & Action Failure UX.
+Current behavior after Task 03.4: multi-source diagnostic read remains unchanged; export has operation-specific success/warning/error feedback; optional alarm/log samples degrade into package warnings; running-flag failure becomes “运行状态：暂不可用” instead of stopped=false.
+User impact: Export/build package and status check failure may be console-only or indistinguishable from stopped/empty.
+User impact after Task 03.4: action failures are persistent/visible and retain submitted target attribution where device-scoped.
+Severity: P2 CLOSED in Task 03.4
+Resolved change: added export feedback, optional sample warnings, running-flag failure state, and context ownership for status/running checks without changing diagnostic multi-source model.
+Recommended task: closed; source-level stale timestamps remain deferred to final audit only if still desired.
 
 ### Finding 10
 Page: Control / Network  
 File: `collector-desktop/src/features/control/components/ControlPanel.vue:91-97`, `:114-120`, `:137-143`; `collector-desktop/src/views/network/NetworkView.vue:135-171`; `collector-desktop/src/features/network/components/EdgeTelemetryPanel.vue:129-145`  
 Operation: device/target-scoped action result commit  
-Current behavior: actions have pending flags, but response assignment uses the current component result panel without recording/displaying the submitted target snapshot.  
-Failure scenario: user submits A device/target, edits the form or navigates to B before A returns.  
-User impact: A response can be visually associated with B/current form. For Control this is device-scoped command feedback, so treat as P1; Network/EdgeTelemetry are diagnostic/debug actions, so P2 unless a real write duplication appears.  
-Severity: P1/P2  
-Recommended change: capture submitted target/payload and include operation/target/timestamp in committed result; for device-scoped writes, gate UI overwrite on target still matching current context.  
-Recommended task: Task 03.4 — Operational & Action Failure UX.
+Current behavior after Task 03.4: actions capture immutable submission snapshots and result/error panels show submitted device/target/action/point/payload summary/timestamps.
+User impact: Network/EdgeTelemetry result may appear under edited target/form and be misread as current inputs.
+User impact after Task 03.4: A response may remain visible after switching/editing to B, but it is explicitly labeled as A and cannot masquerade as B.
+Severity: P1 CLOSED for Control; P2 CLOSED for Network/EdgeTelemetry in Task 03.4
+Resolved change: Control single/batch/command capture submitted target/payload and reset device-scoped forms on device change; Network/EdgeTelemetry capture result attribution.
+Recommended task: closed; concurrent multi-device writes remain intentionally out of scope.
+
+## 9c. Task 03.4 RESOLVED — Operational & Action Failure UX
+
+Task 03.4 was frontend-only and limited to the remaining Task 03.1 operational/action failures:
+
+- Control P1 CLOSED: single write, batch write, and command now capture device/action/point/payload snapshot before `await`; result and error panels show submitted target and timestamps; device change resets device-scoped form drafts.
+- Device Workbench preview P2 CLOSED: preview keeps same-device last-good rows on refresh failure, shows unavailable/stale text, and rejects stale A→B commits with existing latest-owner semantics.
+- Cloud P2 PARTIAL/CLOSED for current contract: disabled is shown only when `enabled=false` or explicit `DISABLED` is returned; ready/degraded/unavailable labels are derived from existing metrics/status/risk fields; refresh failure preserves last-good metrics with last-success text. If backend omits enabled/status evidence, UI does not invent DISABLED and reports status unknown/unavailable.
+- Diagnostic P2 CLOSED/PARTIAL: export and running flag failures are surfaced; optional sample failures produce degraded export warnings instead of failing the entire package. Multi-source diagnostic model was not refactored.
+- Network/EdgeTelemetry P2 CLOSED: async diagnostic/telemetry results carry submitted target metadata, so changed form state after submit cannot relabel old results.
+
+No backend/API/Realtime architecture changes were made in Task 03.4. History, Alarm, Log, Shadow, and Realtime behavior were left unchanged.
 
 ## 10. Top priority
 
@@ -370,7 +382,7 @@ Priority 1: Shadow wrong-context read/write ownership — CLOSED in Task 03.2. S
 
 Priority 2: Last-good/stale semantics for read-heavy investigation pages — CLOSED in Task 03.3 for History, Alarm, and Log. Same-context refresh failure retains last-good data with STALE status; new query context clears old rows instead of presenting them as new results.
 
-Priority 3: Realtime 100k long-full UX copy plus device/action and operational P2/P1 polish: Realtime initial/resync text, Control target-result ownership, Device Workbench preview silent failure, per-target action pending clarity, Cloud disabled/degraded labels, Diagnostic action errors.
+Priority 3: Operational/action P2/P1 polish — CLOSED/PARTIAL in Task 03.4 for Control, Device Workbench preview, Cloud status labels, Diagnostic action errors, Network, and EdgeTelemetry. Realtime 100k long-full UX copy remains for Task 03.5 final audit/defer decision.
 
 ## 11. Pages already good enough for Task 03.1 baseline
 
@@ -387,12 +399,12 @@ Priority 3: Realtime 100k long-full UX copy plus device/action and operational P
 | --- | --- | --- |
 | 03.2 — Shadow Context Ownership & Last-Good State | RESOLVED: ShadowPanel P0 read/write target ownership is closed, and Shadow same-context refresh failure now retains last-good section data. | P0 wrong-context device shadow display/write feedback was the only Task 03.1 P0. |
 | 03.3 — Investigation Pages Last-Good & Stale UX | RESOLVED: History, Alarm, and Log now use context-aware last-good/stale semantics. | P1 refresh-failure data loss is closed without backend/API changes. |
-| 03.4 — Operational & Action Failure UX | Cloud disabled/degraded/error labels; Diagnostic action-level failures; DeviceRuntimePanel inline error; optional sample/export error presentation; target-scoped action result ownership where still open. | Operational/action panels already degrade partially but need clearer semantics. |
+| 03.4 — Operational & Action Failure UX | RESOLVED/PARTIAL: Control target ownership, Device preview unavailable/stale, Cloud existing-contract status labels, Diagnostic action failure feedback, Network/Edge target attribution. | Operational/action P1/P2 issues closed without backend/API changes; Cloud disabled remains limited to real contract evidence. |
 | 03.5 — Task 03 Regression & Final Audit | Frontend typecheck/test/verify, targeted regression tests only where production behavior changed, and final page-state audit. | Close Task 03 without broad production behavior drift. |
 
 ## 13. Regression baseline for this audit
 
-Commands run after Task 03.1 audit document creation, Task 03.2 Shadow closure, and Task 03.3 History/Alarm/Log closure:
+Commands run after Task 03.1 audit document creation, Task 03.2 Shadow closure, Task 03.3 History/Alarm/Log closure, and Task 03.4 operational/action UX closure:
 
 ```text
 npm --prefix collector-desktop run typecheck
@@ -407,12 +419,12 @@ Results:
 
 | Command | Result |
 | --- | --- |
-| `npm --prefix collector-desktop run typecheck` | PASS after Task 03.3 |
-| `npm --prefix collector-desktop test` | PASS after Task 03.3 |
-| `npm --prefix collector-desktop run build` | PASS after Task 03.3 |
-| `npm --prefix collector-desktop run build:web` | PASS after Task 03.3 |
-| `npm --prefix collector-desktop run verify` | PASS after Task 03.3 |
-| `git diff --check` | PASS after Task 03.3 |
+| `npm --prefix collector-desktop run typecheck` | PASS after Task 03.4 |
+| `npm --prefix collector-desktop test` | PASS after Task 03.4 |
+| `npm --prefix collector-desktop run build` | PASS after Task 03.4 |
+| `npm --prefix collector-desktop run build:web` | PASS after Task 03.4 |
+| `npm --prefix collector-desktop run verify` | PASS after Task 03.4 |
+| `git diff --check` | PASS after Task 03.4 |
 
 Build notes: Vite emitted existing large-chunk / Rollup annotation warnings only; the command exited `0`.
 
@@ -430,4 +442,26 @@ Build notes: Vite emitted existing large-chunk / Rollup annotation warnings only
 - `collector-desktop/src/features/alarm/utils/alarm-request-lifecycle.test.ts`
 - `collector-desktop/src/views/log/LogView.vue`
 - `collector-desktop/src/features/log/utils/log-request-lifecycle.test.ts`
+- `collector-desktop/src/features/action/utils/action-result-context.ts`
+- `collector-desktop/src/features/action/utils/action-result-context.test.ts`
+- `collector-desktop/src/features/control/components/ControlPanel.vue`
+- `collector-desktop/src/features/control/utils/control-utils.ts`
+- `collector-desktop/src/features/control/utils/control-utils.test.ts`
+- `collector-desktop/src/features/device/components/DeviceOperationShell.vue`
+- `collector-desktop/src/features/device/utils/device-request-lifecycle.test.ts`
+- `collector-desktop/src/views/cloud/CloudView.vue`
+- `collector-desktop/src/features/cloud/utils/cloud-report-utils.ts`
+- `collector-desktop/src/features/cloud/utils/cloud-report-utils.test.ts`
+- `collector-desktop/src/views/diagnostic/DiagnosticView.vue`
+- `collector-desktop/src/features/diagnostic/components/DeviceRuntimePanel.vue`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-utils.ts`
+- `collector-desktop/src/features/diagnostic/utils/diagnostic-utils.test.ts`
+- `collector-desktop/src/features/diagnostic/utils/device-runtime-utils.ts`
+- `collector-desktop/src/features/diagnostic/utils/device-runtime-utils.test.ts`
+- `collector-desktop/src/views/network/NetworkView.vue`
+- `collector-desktop/src/features/network/components/EdgeTelemetryPanel.vue`
+- `collector-desktop/src/features/network/utils/network-utils.ts`
+- `collector-desktop/src/features/network/utils/network-utils.test.ts`
+- `collector-desktop/src/features/network/utils/edge-telemetry-utils.ts`
+- `collector-desktop/src/features/network/utils/edge-telemetry-utils.test.ts`
 - `collector-boot/src/main/resources/static/desktop/**` — generated web-console assets refreshed by required `npm --prefix collector-desktop run build:web`; Java/backend API code unchanged.

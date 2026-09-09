@@ -52,6 +52,14 @@ export interface NormalizedNetworkDiagnosticResult {
   completedAt?: number;
 }
 
+export interface NetworkDiagnosticSubmissionSnapshot {
+  type: NetworkDiagnosticType;
+  deviceId?: string;
+  target: string;
+  port?: number;
+  submittedAt: number;
+}
+
 export interface NetworkResultRow {
   label: string;
   value: string;
@@ -120,9 +128,36 @@ export function normalizeNetworkDiagnosticResult(input: NetworkDiagnosticResult 
   };
 }
 
+export function buildNetworkSubmissionSnapshot(payload: NetworkDiagnosticPayload, submittedAt = Date.now()): NetworkDiagnosticSubmissionSnapshot {
+  return {
+    type: payload.type,
+    deviceId: payload.deviceId,
+    target: payload.target,
+    port: payload.port,
+    submittedAt
+  };
+}
+
+export function normalizeNetworkDiagnosticResultForSubmission(
+  input: NetworkDiagnosticResult | Partial<NetworkDiagnosticResult> | unknown,
+  snapshot: NetworkDiagnosticSubmissionSnapshot,
+  completedAt = Date.now()
+): NormalizedNetworkDiagnosticResult {
+  const result = normalizeNetworkDiagnosticResult(input);
+  return {
+    ...result,
+    type: snapshot.type,
+    deviceId: snapshot.deviceId,
+    target: snapshot.target,
+    port: snapshot.port,
+    completedAt
+  };
+}
+
 export function buildNetworkResultRows(result: NormalizedNetworkDiagnosticResult): NetworkResultRow[] {
   return [
     { label: "检测方式", value: String(result.type || "-") },
+    { label: "提交设备", value: result.deviceId || "-" },
     { label: "检测目标", value: result.target || "-" },
     { label: "解析地址", value: result.resolvedAddress || "-" },
     { label: "目标端口", value: result.port === undefined ? "-" : String(result.port) },

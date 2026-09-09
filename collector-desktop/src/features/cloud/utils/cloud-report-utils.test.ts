@@ -6,6 +6,7 @@ import {
   buildCloudRisks,
   buildCloudStrategyRows,
   buildCloudSummaryCards,
+  classifyCloudOperationalState,
   cloudStatusText,
   summarizeReportMetrics
 } from "./cloud-report-utils";
@@ -39,6 +40,15 @@ describe("cloud-report-utils", () => {
   it("归纳启用状态", () => {
     expect(buildCloudEnabledText({ enabled: true })).toBe("云端上报已启用");
     expect(buildCloudEnabledText({ enabled: false })).toBe("云端上报未启用");
+    expect(buildCloudEnabledText({})).toBe("云端上报启用状态未知");
+  });
+
+  it("只根据真实 contract 证据区分 disabled / ready / degraded / unavailable", () => {
+    expect(classifyCloudOperationalState({ enabled: false }).status).toBe("DISABLED");
+    expect(classifyCloudOperationalState({ enabled: true, status: "UP", risks: [] }).status).toBe("READY");
+    expect(classifyCloudOperationalState({ enabled: true, status: "UP", outbox: { pendingCount: 2 } }).status).toBe("DEGRADED");
+    expect(classifyCloudOperationalState({ enabled: true, status: "UP" }, true).status).toBe("UNAVAILABLE");
+    expect(classifyCloudOperationalState({}).status).toBe("UNAVAILABLE");
   });
 
   it("归纳云上报摘要卡片", () => {
