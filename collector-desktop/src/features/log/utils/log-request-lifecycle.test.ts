@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLatestRequestOwner } from "../../request/utils/latest-request-owner";
+import { hasLastGoodForContext, shouldClearLastGoodForRequest } from "../../request/utils/context-last-good";
 import {
   buildLogServerQueryContext,
   buildLogVisibleQueryContext,
@@ -118,6 +119,37 @@ function createExceptionHarness(initialContext: LogVisibleQueryContext) {
 }
 
 describe("log-request-lifecycle", () => {
+  it("same-server-context auto refresh failure preserves last-good logs", () => {
+    const context = buildLogServerQueryContext({ level: "ERROR", logger: "core", keyword: "timeout", limit: 100 });
+    const state = { logs: ["old-log"], error: "" };
+
+    if (hasLastGoodForContext(context, context, isSameLogServerQueryContext)) {
+      state.error = "network down";
+    }
+
+    expect(state.logs).toEqual(["old-log"]);
+    expect(state.error).toBe("network down");
+  });
+
+  it("server context changes clear old logs, visible-only context changes do not invalidate server last-good", () => {
+    const serverA = buildLogServerQueryContext({ level: "ERROR", logger: "core", keyword: "timeout", limit: 100 });
+    const serverB = buildLogServerQueryContext({ level: "WARN", logger: "core", keyword: "timeout", limit: 100 });
+    const visibleA = buildLogVisibleQueryContext({ ...serverA, deviceId: "device-a", thread: "thread-a" });
+    const visibleB = buildLogVisibleQueryContext({ ...serverA, deviceId: "device-b", thread: "thread-b" });
+
+    expect(shouldClearLastGoodForRequest(serverA, serverB, isSameLogServerQueryContext)).toBe(true);
+    expect(hasLastGoodForContext(serverA, buildLogServerQueryContext(visibleB), isSameLogServerQueryContext)).toBe(true);
+    expect(isSameLogVisibleQueryContext(visibleA, visibleB)).toBe(false);
+  });
+
+  it("Log success empty is a successful owned server context", () => {
+    const context = buildLogServerQueryContext({ level: "ERROR", logger: "core", keyword: "missing", limit: 100 });
+    const nextLogs: string[] = [];
+
+    expect(nextLogs).toEqual([]);
+    expect(hasLastGoodForContext(context, context, isSameLogServerQueryContext)).toBe(true);
+  });
+
   it("Q1 → Q2 stale response 不会覆盖最新日志", async () => {
     const q1 = buildLogServerQueryContext({ level: "ERROR", logger: "core", keyword: "timeout", limit: 100 });
     const q2 = buildLogServerQueryContext({ level: "WARN", logger: "report", keyword: "ack", limit: 80 });

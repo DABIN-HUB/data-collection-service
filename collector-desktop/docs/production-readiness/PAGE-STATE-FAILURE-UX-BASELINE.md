@@ -55,6 +55,41 @@ same-context refresh failure
 
 Success with `history=[]` remains the normal `EMPTY` state; failure with no last-good rows remains `ERROR` and no longer looks like success-empty.
 
+## Task 03.3 RESOLVED — Investigation Pages Last-Good & Stale UX
+
+- Date: 2026-09-09.
+- Scope: `collector-desktop/src/views/history/HistoryView.vue`, `collector-desktop/src/views/alarm/AlarmView.vue`, `collector-desktop/src/views/log/LogView.vue`, and a tiny pure request last-good helper/tests.
+- Production backend diff: `0`; HTTP endpoint/DTO/API contract unchanged.
+- History P1: CLOSED.
+- Alarm P1: CLOSED.
+- Log P1: CLOSED.
+
+### Before / After
+
+History:
+
+```text
+Before: same-context refresh failure → rows/compare/related alarms cleared
+After: same-context refresh failure → coherent last-good view retained + STALE
+After: new context query → old rows cleared before INITIAL_LOADING/ERROR
+```
+
+Alarm:
+
+```text
+Before: same-context refresh failure → alarms and acknowledgement map cleared
+After: same-context refresh failure → alarms and last-known acknowledgement state retained + STALE
+After: new context query → old alarms/ack state cleared and not reused
+```
+
+Log:
+
+```text
+Before: 5s/manual refresh failure → logs=[]
+After: same LogServerQueryContext failure → last-good logs retained + STALE
+After: server context change → old logs cleared; visible-only device/thread filters do not invalidate server last-good
+```
+
 ## 1. State vocabulary
 
 | State | UX meaning | Recommended presentation |
@@ -81,11 +116,11 @@ These terms are an audit language, not a requirement that every page must implem
 | Collection | Overview stays visible; `collectionLoading` disables refresh button (`views/collection/CollectionView.vue:9`, `:115-127`). | Summary + protocol table + ConfigOpsPanel. | Protocol table has explicit empty state (`:39`). | Uses `Promise.allSettled`; successful sections remain available (`:115-127`). | Config summary failure sets `configSummary=null`; device/protocol store errors are shown via aggregate alert (`:90`, `:129-136`). | PASS for read split: device/protocol/summary failures are aggregated as warning. | Inline warning `el-alert` (`:14`). | “刷新概览” retries all reads. | ConfigOpsPanel has import/export/sync flags and toast feedback; initial sync hint is optional P2 (`features/collection/components/ConfigOpsPanel.vue:100`). |
 | Control | Wrapper shell selects device, then `ControlPanel` is idle with JSON forms (`views/control/ControlView.vue:1-12`, `features/control/components/ControlPanel.vue:72-82`). | Result JSON shows latest command result. | Not row-based; empty means no command yet. | N/A for read; write pending per command. | N/A. | N/A. | Write/parse failures persist in result JSON plus toast (`ControlPanel.vue:154-158`). | Manual resubmit only; no blind auto retry. | Per-action pending exists, but write results have no target-device commit guard if route/device changes while the write is in-flight (`ControlPanel.vue:91-97`, `:114-120`, `:137-143`) — P1. |
 | Realtime | Initial full uses `loading` and empty table prompt; table remains rendered (`views/realtime/RealtimeView.vue:9`, `:100-101`, `:216-276`). | Compact full/delta rows, summary, filter and paged table. | Empty table text is generic select-all/select-device prompt (`:100-101`), not context-specific success-empty. | Timer/manual set page-level `loading`; rows are not cleared before request, so last-good rows remain (`:216-276`). | On refresh failure rows remain and `realtimeError` is inline (`:31`, `:266-271`). | Reset/full resync is treated as refresh path, not separate UX. | Initial failure produces empty prompt + small inline error; no dedicated retry panel. | “立即刷新”; auto timer. | Single-point query has separate loading/error and owner (`:297-324`). |
-| History | Initial selected device/point loading clears current query data on context change (`views/history/HistoryView.vue:301-337`). | Chart/table/summary from main history. | Main table says “暂无历史数据”; chart prompt says select device/point (`:91`, `:149`). | Query loading uses latest owner but replaces main state with current query result after settle (`:385-440`). | For same-context refresh failure, main failure state clears rows (`:465-476`); no last-good retention. | PASS for optional compare/related alarms: partial warning and unavailable marker (`:404-426`, `:448-455`). | Persistent `el-alert` for main error (`:61`, `:423-435`). | Query/refresh button retries current context. | Export disabled while loading or no series; no destructive writes. |
-| Alarm | Initial list load has latest owner and inline table empty/error text (`views/alarm/AlarmView.vue:202-246`). | Alarm rows with acknowledgement state. | Empty row text differentiates `error || '暂无符合条件的告警历史'` (`:66-67`). | Load sets `loading` but does not clear old rows until success-empty or failure (`:202-246`). | Refresh failure clears alarms (`:234-236`), so no last-good alarms after failed same-context refresh. | PASS for acknowledgement status degradation: `ackStatusWarning` + row presentation (`:380-421`). | Persistent table text via `error`, plus warning for ack status (`:40`, `:66-67`). | Refresh button; manual ack status retry. | Ack button guarded by `acknowledgingAlarmId`; bulk ack-status guarded by `ackStatusLoading`. |
+| History | Initial selected device/point loading clears current query data on context change (`views/history/HistoryView.vue`). | Chart/table/summary from main history. | Success-empty `historyRows=[]` remains “暂无历史数据”; initial failure uses error text. | Same-context query loading keeps current investigation snapshot and shows `REFRESHING`. | Same-context refresh failure keeps coherent last-good rows/compare/related alarms and shows `STALE`. | PASS for optional compare/related alarms: partial warning and unavailable marker remain success/degraded snapshot. | Persistent `el-alert` distinguishes initial error from stale failure. | Query/refresh button retries current context. | Export continues from displayed committed data; no destructive writes. |
+| Alarm | Initial list load has latest owner and inline table empty/error text (`views/alarm/AlarmView.vue`). | Alarm rows with acknowledgement state. | Success-empty rows remain “暂无符合条件的告警历史”. | Same-context refresh keeps rows/ack state and shows `REFRESHING`. | Same-context refresh failure keeps alarm rows and last-known acknowledgements with separate history stale alert. | PASS for acknowledgement status degradation: `ackStatusWarning` remains independent from history stale. | Persistent history alert/table text plus separate ack warning. | Refresh button; manual ack status retry. | Ack button guarded by `acknowledgingAlarmId`; bulk ack-status guarded by `ackStatusLoading`. |
 | Cloud | Initial load button shows “刷新中…”; layout remains with UNKNOWN defaults (`views/cloud/CloudView.vue:9`, `:81-112`). | Cloud metrics loaded and timestamp updated. | Empty/default computed rows show unknown/zero-like operational state; no explicit disabled/empty banner. | Existing `reportMetrics` is not cleared before refresh; last-good visible during request. | Refresh failure preserves last-good metrics and shows inline `cloud-error`, but no stale timestamp semantics (`:15`, `:101-112`). | Cloud utils show status/risk rows, but read source is single aggregate; disabled/degraded/error distinction depends on payload. | If initial failure, inline error plus unknown/default cards. | Refresh link retries aggregate metric. | No writes on this page. |
 | Diagnostic | Initial run sets `loading`, keeps default/raw panels visible (`views/diagnostic/DiagnosticView.vue:148-197`). | Diagnostic cards/rows/raw JSON from successful sources. | No explicit “no diagnostic rows” row, but rows are computed from defaults. | Re-run uses `Promise.allSettled`; successful source refs are updated, failures leave previous values. | Partial source failures preserve previous values implicitly, with `partialWarning`; source-level stale timestamps not shown. | PASS: one failed probe does not fail whole page (`:161-191`). | Fatal only if all metrics and device list fail (`:192-194`); persistent inline message. | “运行完整诊断” retries all probes. | Diagnostic package export has `exporting` guard; sample log/alarm failures are intentional best-effort empty arrays (`:233-247`). |
-| Log | Initial load uses `loading`; empty panel displays `error || no logs` (`views/log/LogView.vue:133-159`). | Log rows, local filters and summary. | Success-empty shows “当前条件下没有可显示日志” (`:55`). | Auto/manual refresh uses latest owner and timer overlap skip (`:133-159`, `:224-233`). | Refresh failure clears `logs` (`:148-153`), losing last-good logs. | Recent-exception lookup is optional; failure is toast-only and does not affect log rows (`:175-205`). | Initial failure is persistent through empty panel text, but visually shares empty-state component (`:55`, `:152-153`). | Query/refresh and auto-refresh. | Export and exception lookup have independent guards. |
+| Log | Initial load uses `loading`; empty panel now distinguishes error from success-empty (`views/log/LogView.vue`). | Log rows, local filters and summary. | Success-empty shows “当前条件下没有可显示日志”. | Same server-context auto/manual refresh keeps current logs and shows `REFRESHING`. | Same server-context failure keeps last-good logs and shows `STALE`; server context change clears old logs. | Recent-exception lookup is optional; failure is toast-only and does not affect log rows. | Initial/new server-context failure is persistent through error text; stale error also appears above retained rows. | Query/refresh and auto-refresh. | Export and exception lookup have independent guards. |
 | Network | Page is idle by default; no automatic diagnostic request (`views/network/NetworkView.vue:123-130`). | Latest diagnostic result and history visible. | Explicit “尚未执行网络检测” and “暂无网络检测历史” (`:51`, `:76-77`). | Running a diagnostic keeps previous result until replaced by result/failure. | Failure is represented as a failed diagnostic result appended to history, not a separate page stale state (`:150-170`). | EdgeTelemetryPanel is independent operational subpanel. | Network diagnostic failures persist in result JSON/history plus toast (`:155-170`). | Manual “开始检测”. | PASS: diagnose and edge telemetry each have own pending flags; result is target-specific enough for manual diagnostics. |
 | Shadow | Wrapper shell plus `ShadowPanel`; idle prompts for selected device (`views/shadow/ShadowView.vue:1-12`, `features/shadow/components/ShadowPanel.vue`). | Shadow/delta/history sections independently loaded with independent read owners. | History success `[]` remains “暂无影子历史”; initial failure shows read-failure text. | Section-level loading flags; stale request finally cannot clear newer section loading. | Same-context refresh failure keeps last-good shadow/delta/history and shows persistent stale/error status. | Bundle read still uses `Promise.allSettled`, so one section failure does not block others. | Section status text distinguishes initial error from stale last-good failure. | Per-section read buttons. | Desired save/clear capture target `deviceId`; write side effect completes, but stale response/error cannot overwrite another live device panel — P0 CLOSED. |
 
@@ -101,13 +136,13 @@ These terms are an audit language, not a requirement that every page must implem
 | Control | write single/batch/command | Result JSON becomes `{ error }`, toast error (`ControlPanel.vue:154-158`). | Inputs preserved. | Yes via result panel. | Yes. | Manual only. | PASS |
 | Realtime | main full/delta refresh | Catch only sets `realtimeError`, does not clear `realtimeRows` (`RealtimeView.vue:216-276`). | Yes. | Yes small inline. | No. | Immediate refresh/timer. | PASS/P2 |
 | Realtime | single-point read | Catch sets `singleRealtimeError`; previous single result remains (`RealtimeView.vue:297-324`). | Yes. | Yes. | Validation warning only. | Query button/pick row. | PASS |
-| History | main history query | Main failure state sets `historyRows=[]` (`HistoryView.vue:465-476`). | No. | Yes. | Yes. | Query/refresh. | P1 |
+| History | main history query | Same-context failure preserves coherent last-good rows/compare/related alarms; new/initial context failure applies empty error state. | Yes for same `HistoryQueryContext`. | Yes. | Yes. | Query/refresh. | CLOSED in Task 03.3 |
 | History | compare/related alarms | Optional failures become partial warning/unavailable (`HistoryView.vue:404-426`, `:448-455`). | Main preserved if main succeeds. | Yes. | Yes warning. | Query/refresh. | PASS |
-| Alarm | alarm history refresh | Catch clears `alarms=[]` and sets error (`AlarmView.vue:230-236`). | No. | Yes in table. | No for load. | Refresh. | P1 |
+| Alarm | alarm history refresh | Same-context failure preserves alarm rows and acknowledgement map; new/initial context failure clears rows and sets error. | Yes for same `AlarmQueryContext`. | Yes. | No for load. | Refresh. | CLOSED in Task 03.3 |
 | Alarm | acknowledgement-status refresh | Failure sets `ackStatusUnavailable`/warning without clearing alarm list (`AlarmView.vue:407-421`). | Yes. | Yes. | Manual warning. | Manual retry. | PASS |
 | Cloud | report metrics | Catch sets `error`; does not clear `reportMetrics` (`CloudView.vue:101-112`). | Yes. | Yes. | No. | Refresh. | P2 |
 | Diagnostic | metric probes | Failed probes collected in `failures`; successful refs retained/updated (`DiagnosticView.vue:161-197`). | Yes implicit. | Yes partial warning. | No. | Run diagnostic. | PASS/P2 |
-| Log | ops log query | Catch clears `logs=[]`, sets `error` (`LogView.vue:148-153`). | No. | Yes but same empty block. | No. | Query/auto refresh. | P1 |
+| Log | ops log query | Same-server-context failure preserves last-good logs; new server context failure clears logs and sets error. | Yes for same `LogServerQueryContext`. | Yes, above retained rows or empty error. | No. | Query/auto refresh. | CLOSED in Task 03.3 |
 | Network | diagnose | Failure normalized as negative diagnostic result and added to history (`NetworkView.vue:155-170`). | Previous history preserved; current result replaced with explicit failure. | Yes. | Yes. | Start diagnose. | PASS |
 | Shadow | shadow/delta/history read | Task 03.2 adds independent read owners plus captured target `deviceId`; stale read result/error cannot commit after device switch. | Yes for same-context refresh failure; last-good is context-scoped and reset on device change. | Yes, section-level stale/error status. | Yes. | Per-section read. | RESOLVED for Shadow wrong-context P0 and Shadow last-good loss. |
 
@@ -180,11 +215,11 @@ Toast-only or weak persistence items:
 
 | Page | Evidence | Classification |
 | --- | --- | --- |
-| Log | `catch` sets `logs.value=[]`; template renders `error || '当前条件下没有可显示日志'` in an empty-state block (`LogView.vue:55`, `:148-153`). | EMPTY/ERROR CONFLATION / P1: text differs, but failure destroys last-good logs and uses empty visual container. |
-| Alarm | Failure clears `alarms=[]`; table row uses `error || empty` (`AlarmView.vue:66-67`, `:230-236`). | LAST-GOOD LOSS / P1; error text visible, but refresh failure blanks table. |
-| History | Context change intentionally clears old context rows (`HistoryView.vue:301-312`, `:347-363`); main query failure applies empty failure state (`:465-476`). | Context clear is correct; same-context refresh failure last-good loss is P1. |
+| Log | Same-server-context refresh failure keeps logs and shows a stale alert; new server context failure clears logs. | CLOSED in Task 03.3. |
+| Alarm | Same-context refresh failure keeps alarms/ack state and shows a history stale alert independent from ack warning. | CLOSED in Task 03.3. |
+| History | Context change intentionally clears old context rows; same-context main failure preserves coherent last-good snapshot. | CLOSED in Task 03.3. |
 | Realtime | Refresh failure does not clear `realtimeRows`; initial empty prompt is generic (`RealtimeView.vue:216-276`, `:100-101`). | Last-good PASS; initial empty wording P2. |
-| Shadow history | Task 03.2 keeps last-good rows on same-context failure; success-empty `[]` remains “暂无影子历史”, initial failure shows read-failure text. | RESOLVED for Shadow; History/Alarm/Log remain P1. |
+| Shadow history | Task 03.2 keeps last-good rows on same-context failure; success-empty `[]` remains “暂无影子历史”, initial failure shows read-failure text. | RESOLVED for Shadow; History/Alarm/Log closed in Task 03.3. |
 | Device Store | Read failure sets `error` but does not clear `devices` (`device.store.ts:66-75`). | Last-good PASS. |
 
 ## 8. Realtime 100k long-full UX conclusion
@@ -209,37 +244,37 @@ Realtime severity: `P2` overall, not `P1`, because last-good 100k rows are prese
 ## 9. Findings
 
 ### Finding 1
-Page: History  
-File: `collector-desktop/src/views/history/HistoryView.vue:385-440`, `:465-476`  
-Operation: main history query / refresh  
-Current behavior: latest-request owner protects context, and partial optional compare/related alarms are handled, but main history failure applies a failure state with `historyRows: []`.  
-Failure scenario: user has a successful chart/table, then same-context refresh fails due network/backend timeout.  
-User impact: last-good trend disappears; page becomes error/empty instead of STALE.  
-Severity: P1  
-Recommended change: preserve last successful main history rows for same-context refresh failure; show persistent stale warning and retry. Keep context-change clearing behavior.  
-Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
+Page: History
+File: `collector-desktop/src/views/history/HistoryView.vue`
+Operation: main history query / refresh
+Current behavior after Task 03.3: latest-request owner protects context; last successful `HistoryQueryContext` and success time are recorded. Same-context main failure preserves the coherent previous rows/compare/related-alarm view and shows STALE; new context requests clear old investigation data before loading/error.
+Failure scenario: user has a successful chart/table, then same-context refresh fails due network/backend timeout.
+User impact: CLOSED — last-good trend remains visible with explicit stale state.
+Severity: P1 CLOSED in Task 03.3
+Resolved change: context-aware last-good, coherent main-failure commit handling, initial/new-context error vs same-context stale distinction.
+Recommended task: closed.
 
 ### Finding 2
-Page: Alarm  
-File: `collector-desktop/src/views/alarm/AlarmView.vue:202-246`  
-Operation: alarm history query / refresh  
-Current behavior: read is latest-owner safe, but catch clears `alarmAcknowledgements` and `alarms` and sets `error`.  
-Failure scenario: user has alarm history rows, then manual refresh or filter refresh fails.  
-User impact: last-good alarm list is lost; failure is not a stale state.  
-Severity: P1  
-Recommended change: preserve last-good alarm rows for same-context refresh failures; keep explicit error/stale banner and leave acknowledgement degradation separate.  
-Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
+Page: Alarm
+File: `collector-desktop/src/views/alarm/AlarmView.vue`
+Operation: alarm history query / refresh
+Current behavior after Task 03.3: read remains latest-owner safe; last successful `AlarmQueryContext` and success time are recorded. Same-context history failure preserves alarm rows and last-known acknowledgement state while history stale and acknowledgement degraded warnings remain separate.
+Failure scenario: user has alarm history rows, then manual refresh or filter refresh fails.
+User impact: CLOSED — last-good alarm list remains visible with explicit stale state.
+Severity: P1 CLOSED in Task 03.3
+Resolved change: context-aware alarm data clearing, stale alert, preserved acknowledgement state, success-empty ownership.
+Recommended task: closed.
 
 ### Finding 3
-Page: Log  
-File: `collector-desktop/src/views/log/LogView.vue:133-159`, `:55`  
-Operation: ops log query / auto refresh  
-Current behavior: latest-owner safe and timer overlap protected, but catch clears `logs=[]`; template renders error in an empty-state block.  
-Failure scenario: user has logs, auto-refresh fails once.  
-User impact: log stream blanks, losing investigative context.  
-Severity: P1  
-Recommended change: preserve last-good logs on refresh failure and show stale/last-updated banner; only show ERROR-empty when there was no successful result for current server query.  
-Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
+Page: Log
+File: `collector-desktop/src/views/log/LogView.vue`
+Operation: ops log query / auto refresh
+Current behavior after Task 03.3: latest-owner safe and timer overlap protected; last-good is keyed by `LogServerQueryContext` only. Same server-context refresh failure preserves logs and shows STALE; server-context change clears logs, while visible-only device/thread filters do not invalidate server last-good.
+Failure scenario: user has logs, auto-refresh fails once.
+User impact: CLOSED — log stream remains visible with explicit stale state.
+Severity: P1 CLOSED in Task 03.3
+Resolved change: context-aware log last-good, server-vs-visible context separation, initial/new-context error vs stale distinction.
+Recommended task: closed.
 
 ### Finding 4
 Page: Realtime  
@@ -261,7 +296,7 @@ Failure scenario: selected device preview request fails.
 User impact: rail says zero realtime points / unknown connection, indistinguishable from valid no-data.  
 Severity: P2  
 Recommended change: add lightweight preview unavailable/stale marker; do not block child panels.  
-Recommended task: Task 03.3 — Device / Action Failure UX.
+Recommended task: Task 03.4 — Operational & Action Failure UX.
 
 ### Finding 6
 Page: Device List / Device Workbench  
@@ -272,7 +307,7 @@ Failure scenario: one device start/stop request is pending while operator wants 
 User impact: conservative global lock is safe but coarse; target ownership/pending copy is weak.  
 Severity: P2  
 Recommended change: introduce per-target action pending where repeated-device double-submit risk exists; keep writes authoritative and no blind retry.  
-Recommended task: Task 03.3 — Device / Action Failure UX.
+Recommended task: Task 03.4 — Operational & Action Failure UX.
 
 ### Finding 7
 Page: Cloud  
@@ -283,7 +318,7 @@ Failure scenario: cloud backend disabled vs cloud metrics endpoint unavailable.
 User impact: operator may not distinguish intentionally disabled from degraded/unavailable quickly.  
 Severity: P2  
 Recommended change: add explicit disabled/degraded/unavailable labels after confirming payload semantics.  
-Recommended task: Task 03.4 — Operational Pages Degraded UX.
+Recommended task: Task 03.4 — Operational & Action Failure UX.
 
 ### Finding 8
 Page: Shadow  
@@ -305,7 +340,7 @@ Failure scenario: user has a successful shadow snapshot, then refreshes one sect
 User impact: last-good snapshot/history is lost or hidden; history failure can look like a successful empty history.  
 Severity: CLOSED for Shadow in Task 03.2
 Resolved change: preserve last-good data per source and show persistent stale/unavailable marker; keep bundle partial failures as degraded rather than empty.
-Recommended task: closed for Shadow; History/Alarm/Log last-good work moves to Task 03.3.
+Recommended task: closed for Shadow; History/Alarm/Log last-good work closed in Task 03.3.
 
 ### Finding 9
 Page: Diagnostic  
@@ -316,7 +351,7 @@ Failure scenario: browser download/build payload throws; or `isDeviceRunning` re
 User impact: action failure may be console-only or unhandled instead of persistent action result.  
 Severity: P2  
 Recommended change: add action-level failure result/toast where missing; do not change diagnostic multi-source model.  
-Recommended task: Task 03.4 — Operational Pages Degraded UX.
+Recommended task: Task 03.4 — Operational & Action Failure UX.
 
 ### Finding 10
 Page: Control / Network  
@@ -327,13 +362,13 @@ Failure scenario: user submits A device/target, edits the form or navigates to B
 User impact: A response can be visually associated with B/current form. For Control this is device-scoped command feedback, so treat as P1; Network/EdgeTelemetry are diagnostic/debug actions, so P2 unless a real write duplication appears.  
 Severity: P1/P2  
 Recommended change: capture submitted target/payload and include operation/target/timestamp in committed result; for device-scoped writes, gate UI overwrite on target still matching current context.  
-Recommended task: Task 03.3 — Device / Action Failure UX.
+Recommended task: Task 03.4 — Operational & Action Failure UX.
 
 ## 10. Top priority
 
 Priority 1: Shadow wrong-context read/write ownership — CLOSED in Task 03.2. ShadowPanel now captures target device, uses section-specific read owners, invalidates on device change, and guards write UI commits.
 
-Priority 2: Last-good/stale semantics for read-heavy investigation pages: History, Alarm, Log. These are P1 because refresh failure can destroy useful existing rows and are the next Task 03 scope.
+Priority 2: Last-good/stale semantics for read-heavy investigation pages — CLOSED in Task 03.3 for History, Alarm, and Log. Same-context refresh failure retains last-good data with STALE status; new query context clears old rows instead of presenting them as new results.
 
 Priority 3: Realtime 100k long-full UX copy plus device/action and operational P2/P1 polish: Realtime initial/resync text, Control target-result ownership, Device Workbench preview silent failure, per-target action pending clarity, Cloud disabled/degraded labels, Diagnostic action errors.
 
@@ -351,13 +386,13 @@ Priority 3: Realtime 100k long-full UX copy plus device/action and operational P
 | Task | Recommended scope | Reason |
 | --- | --- | --- |
 | 03.2 — Shadow Context Ownership & Last-Good State | RESOLVED: ShadowPanel P0 read/write target ownership is closed, and Shadow same-context refresh failure now retains last-good section data. | P0 wrong-context device shadow display/write feedback was the only Task 03.1 P0. |
-| 03.3 — Investigation Pages Last-Good & Stale UX | Apply the minimal last-good/stale pattern to History, Alarm, and Log only. | These read-heavy investigation pages still lose useful existing rows on refresh failure. |
-| 03.4 — Operational Pages Degraded UX | Cloud disabled/degraded/error labels; Diagnostic action-level failures; DeviceRuntimePanel inline error; optional sample/export error presentation. | Operational panels already degrade partially but need clearer semantics. |
+| 03.3 — Investigation Pages Last-Good & Stale UX | RESOLVED: History, Alarm, and Log now use context-aware last-good/stale semantics. | P1 refresh-failure data loss is closed without backend/API changes. |
+| 03.4 — Operational & Action Failure UX | Cloud disabled/degraded/error labels; Diagnostic action-level failures; DeviceRuntimePanel inline error; optional sample/export error presentation; target-scoped action result ownership where still open. | Operational/action panels already degrade partially but need clearer semantics. |
 | 03.5 — Task 03 Regression & Final Audit | Frontend typecheck/test/verify, targeted regression tests only where production behavior changed, and final page-state audit. | Close Task 03 without broad production behavior drift. |
 
 ## 13. Regression baseline for this audit
 
-Commands run after Task 03.1 audit document creation and Task 03.2 Shadow closure:
+Commands run after Task 03.1 audit document creation, Task 03.2 Shadow closure, and Task 03.3 History/Alarm/Log closure:
 
 ```text
 npm --prefix collector-desktop run typecheck
@@ -372,12 +407,12 @@ Results:
 
 | Command | Result |
 | --- | --- |
-| `npm --prefix collector-desktop run typecheck` | PASS |
-| `npm --prefix collector-desktop test` | PASS after Task 03.2 |
-| `npm --prefix collector-desktop run build` | PASS after Task 03.2 |
-| `npm --prefix collector-desktop run build:web` | PASS after Task 03.2 |
-| `npm --prefix collector-desktop run verify` | PASS after Task 03.2 |
-| `git diff --check` | PASS after Task 03.2 |
+| `npm --prefix collector-desktop run typecheck` | PASS after Task 03.3 |
+| `npm --prefix collector-desktop test` | PASS after Task 03.3 |
+| `npm --prefix collector-desktop run build` | PASS after Task 03.3 |
+| `npm --prefix collector-desktop run build:web` | PASS after Task 03.3 |
+| `npm --prefix collector-desktop run verify` | PASS after Task 03.3 |
+| `git diff --check` | PASS after Task 03.3 |
 
 Build notes: Vite emitted existing large-chunk / Rollup annotation warnings only; the command exited `0`.
 
@@ -387,4 +422,12 @@ Build notes: Vite emitted existing large-chunk / Rollup annotation warnings only
 - `collector-desktop/src/features/shadow/components/ShadowPanel.vue`
 - `collector-desktop/src/features/shadow/utils/shadow-request-state.ts`
 - `collector-desktop/src/features/shadow/utils/shadow-request-state.test.ts`
+- `collector-desktop/src/features/request/utils/context-last-good.ts`
+- `collector-desktop/src/features/request/utils/context-last-good.test.ts`
+- `collector-desktop/src/views/history/HistoryView.vue`
+- `collector-desktop/src/features/history/utils/history-request-lifecycle.test.ts`
+- `collector-desktop/src/views/alarm/AlarmView.vue`
+- `collector-desktop/src/features/alarm/utils/alarm-request-lifecycle.test.ts`
+- `collector-desktop/src/views/log/LogView.vue`
+- `collector-desktop/src/features/log/utils/log-request-lifecycle.test.ts`
 - `collector-boot/src/main/resources/static/desktop/**` — generated web-console assets refreshed by required `npm --prefix collector-desktop run build:web`; Java/backend API code unchanged.

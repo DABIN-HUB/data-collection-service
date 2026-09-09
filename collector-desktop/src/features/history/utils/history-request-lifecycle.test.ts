@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLatestRequestOwner } from "../../request/utils/latest-request-owner";
+import { hasLastGoodForContext, shouldClearLastGoodForRequest } from "../../request/utils/context-last-good";
 import {
   buildHistoryDataQueryParams,
   buildHistoryPointsRequestContext,
@@ -164,6 +165,43 @@ async function flushPromises() {
 }
 
 describe("history-request-lifecycle", () => {
+  it("same-context 主查询失败时保留 coherent last-good snapshot", () => {
+    const context = buildHistoryQueryContext({ deviceId: "device-a", pointRef: "point-1", comparePointRefs: ["point-2"], startTime: "2026-09-01T10:00", endTime: "2026-09-01T11:00", limit: 100 });
+    const state = {
+      rows: ["last-main"],
+      compareRows: { "point-2": ["last-compare"] },
+      alarms: ["last-alarm"],
+      error: ""
+    };
+
+    if (hasLastGoodForContext(context, context, isSameHistoryQueryContext)) {
+      state.error = "主历史查询失败：timeout";
+    }
+
+    expect(state.rows).toEqual(["last-main"]);
+    expect(state.compareRows).toEqual({ "point-2": ["last-compare"] });
+    expect(state.alarms).toEqual(["last-alarm"]);
+    expect(state.error).toContain("timeout");
+  });
+
+  it("new History context 请求开始时不能复用旧 context rows", () => {
+    const contextA = buildHistoryQueryContext({ deviceId: "device-a", pointRef: "point-1", comparePointRefs: [], startTime: "2026-09-01T10:00", endTime: "2026-09-01T11:00", limit: 100 });
+    const contextB = buildHistoryQueryContext({ deviceId: "device-a", pointRef: "point-1", comparePointRefs: [], startTime: "2026-09-01T12:00", endTime: "2026-09-01T13:00", limit: 100 });
+
+    expect(shouldClearLastGoodForRequest(contextA, contextB, isSameHistoryQueryContext)).toBe(true);
+  });
+
+  it("History success empty and partial degraded both remain successful context snapshots", () => {
+    const context = buildHistoryQueryContext({ deviceId: "device-a", pointRef: "point-1", comparePointRefs: ["point-2"], startTime: "2026-09-01T10:00", endTime: "2026-09-01T11:00", limit: 100 });
+    const emptyRows: string[] = [];
+    const partial = { mainRows: ["main"], partialWarning: "部分数据不可用：关联告警" };
+
+    expect(emptyRows).toEqual([]);
+    expect(hasLastGoodForContext(context, context, isSameHistoryQueryContext)).toBe(true);
+    expect(partial.mainRows).toEqual(["main"]);
+    expect(partial.partialWarning).toContain("部分数据不可用");
+  });
+
   it("points A → B 时，B 返回后 A 返回，最终 points 仍属于 B", async () => {
     const harness = createPointsHarness("device-a");
     const requestA = createDeferred<{ points: string[]; pointRef: string }>();

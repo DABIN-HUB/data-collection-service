@@ -43,6 +43,7 @@
         </div>
       </div>
       <p class="log-filter-note">设备和线程条件只在当前返回结果内本地过滤；服务端真实支持的查询参数只有级别、记录器、关键字和数量。</p>
+      <el-alert v-if="logReadStatusText" :title="logReadStatusText" :type="logReadStatusType" :closable="false" />
 
       <div class="exact-diagnostic-cards log-summary-cards">
         <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div>
@@ -52,7 +53,7 @@
       </div>
 
       <section class="exact-surface modao-log-panel">
-        <div v-if="filteredLogs.length === 0" class="empty-state compact">{{ error || '当前条件下没有可显示日志' }}</div>
+        <div v-if="filteredLogs.length === 0" class="empty-state compact">{{ logEmptyText }}</div>
         <div v-for="(log, index) in filteredLogs" :key="`${log.timestamp || log.time || index}-${log.logger || '-'}-${log.thread || '-'}`" class="modao-log-row">
           <span class="modao-log-time">{{ formatTime(log.timestamp || log.time) }}</span>
           <strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong>
@@ -90,6 +91,7 @@ import {
   shouldSkipLogTimerTick,
   type LogServerQueryContext
 } from "@/features/log/utils/log-request-lifecycle";
+import { buildContextualReadStatus, hasLastGoodForContext, shouldClearLastGoodForRequest } from "@/features/request/utils/context-last-good";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
@@ -111,6 +113,8 @@ const loading = ref(false);
 const error = ref("");
 const exceptionLoading = ref(false);
 const pendingLogQueryContext = ref<LogServerQueryContext | null>(null);
+const lastSuccessfulLogServerContext = ref<LogServerQueryContext | null>(null);
+const logLastSuccessAt = ref<number | null>(null);
 let logTimer: number | null = null;
 
 const logQueryOwner = createLatestRequestOwner(isSameLogServerQueryContext);
@@ -129,6 +133,21 @@ const logQueryDisabled = computed(() => shouldDisableLogSubmit(
   pendingLogQueryContext.value,
   currentLogServerQueryContext()
 ));
+const hasLogLastGoodForCurrentServerContext = computed(() => hasLastGoodForContext(lastSuccessfulLogServerContext.value, currentLogServerQueryContext(), isSameLogServerQueryContext));
+const logReadStatusText = computed(() => buildContextualReadStatus({
+  loading: loading.value,
+  error: error.value,
+  lastSuccessfulContext: lastSuccessfulLogServerContext.value,
+  currentContext: currentLogServerQueryContext(),
+  isSameContext: isSameLogServerQueryContext,
+  loadingText: "日志加载中...",
+  refreshingText: "日志刷新中 · 当前显示上次成功日志",
+  staleText: "日志刷新失败 · 当前显示上次成功日志",
+  initialErrorPrefix: "日志加载失败",
+  lastSuccessAt: logLastSuccessAt.value
+}));
+const logReadStatusType = computed(() => error.value && hasLogLastGoodForCurrentServerContext.value ? "warning" : "error");
+const logEmptyText = computed(() => error.value ? `日志加载失败：${error.value}` : "当前条件下没有可显示日志");
 
 async function loadLogs(options: { fromTimer?: boolean } = {}) {
   const requestContext = currentLogServerQueryContext();
@@ -136,6 +155,12 @@ async function loadLogs(options: { fromTimer?: boolean } = {}) {
     return;
   }
   const ticket = logQueryOwner.begin(requestContext);
+  const canPreserveLastGood = hasLastGoodForContext(lastSuccessfulLogServerContext.value, requestContext, isSameLogServerQueryContext);
+  if (shouldClearLastGoodForRequest(lastSuccessfulLogServerContext.value, requestContext, isSameLogServerQueryContext)) {
+    logs.value = [];
+    lastSuccessfulLogServerContext.value = null;
+    logLastSuccessAt.value = null;
+  }
   loading.value = true;
   error.value = "";
   pendingLogQueryContext.value = requestContext;
@@ -145,11 +170,15 @@ async function loadLogs(options: { fromTimer?: boolean } = {}) {
       return;
     }
     logs.value = nextLogs;
+    lastSuccessfulLogServerContext.value = requestContext;
+    logLastSuccessAt.value = Date.now();
   } catch (caught) {
     if (!logQueryOwner.canCommit(ticket, currentLogServerQueryContext())) {
       return;
     }
-    logs.value = [];
+    if (!canPreserveLastGood) {
+      logs.value = [];
+    }
     error.value = caught instanceof Error ? caught.message : "运行日志加载失败";
   } finally {
     if (logQueryOwner.isLatest(ticket)) {

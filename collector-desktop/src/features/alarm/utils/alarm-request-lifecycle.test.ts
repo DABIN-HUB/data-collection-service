@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLatestRequestOwner } from "../../request/utils/latest-request-owner";
+import { hasLastGoodForContext, shouldClearLastGoodForRequest } from "../../request/utils/context-last-good";
 import type { AlarmAcknowledgement } from "../../../types/ops";
 import type { AlarmRow } from "@/types/monitor";
 import {
@@ -225,6 +226,30 @@ async function flushPromises() {
 }
 
 describe("alarm-request-lifecycle", () => {
+  it("same-context alarm refresh failure preserves rows and acknowledgement state", () => {
+    const context = buildAlarmQueryContext({ deviceId: "device-a", level: "CRITICAL", keyword: "temp", hours: 24, limit: 50 });
+    const state = {
+      alarms: mergeAlarmAcknowledgementStates([alarmRow("alarm-a")], { "alarm-a": ack("alarm-a", { note: "已确认" }) }),
+      acknowledgements: { "alarm-a": ack("alarm-a", { note: "已确认" }) },
+      error: ""
+    };
+
+    if (hasLastGoodForContext(context, context, isSameAlarmQueryContext)) {
+      state.error = "告警历史加载失败：timeout";
+    }
+
+    expect(state.alarms[0]).toMatchObject({ alarmId: "alarm-a", acknowledged: true });
+    expect(state.acknowledgements["alarm-a"]).toMatchObject({ note: "已确认" });
+    expect(state.error).toContain("timeout");
+  });
+
+  it("new Alarm context request clears old rows instead of reusing last-good", () => {
+    const contextA = buildAlarmQueryContext({ deviceId: "device-a", level: "CRITICAL", keyword: "temp", hours: 24, limit: 50 });
+    const contextB = buildAlarmQueryContext({ deviceId: "device-a", level: "WARNING", keyword: "temp", hours: 24, limit: 50 });
+
+    expect(shouldClearLastGoodForRequest(contextA, contextB, isSameAlarmQueryContext)).toBe(true);
+  });
+
   it("filter A → B 时，旧 response 不会覆盖 B", async () => {
     const filterA = buildAlarmQueryContext({ deviceId: "device-a", level: "CRITICAL", keyword: "temp", hours: 24, limit: 50 });
     const filterB = buildAlarmQueryContext({ deviceId: "device-b", level: "WARNING", keyword: "pressure", hours: 72, limit: 60 });

@@ -37,6 +37,7 @@
         </div>
       </div>
 
+      <el-alert v-if="alarmReadStatusText" :title="alarmReadStatusText" :type="alarmReadStatusType" :closable="false" />
       <el-alert v-if="ackStatusWarning" :title="ackStatusWarning" type="warning" :closable="false" />
 
       <div class="exact-diagnostic-cards alarm-summary-cards">
@@ -64,7 +65,7 @@
           </thead>
           <tbody>
             <tr v-if="alarms.length === 0">
-              <td colspan="9" class="exact-empty">{{ error || '暂无符合条件的告警历史' }}</td>
+              <td colspan="9" class="exact-empty">{{ alarmEmptyText }}</td>
             </tr>
             <tr v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)">
               <td>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</td>
@@ -151,6 +152,7 @@ import {
   normalizeAlarmAcknowledgementMap
 } from "@/features/alarm/utils/alarm-utils";
 import { buildAlarmHistoryQuery, normalizeAlarmHistoryRows, summarizeAlarmHistory } from "@/features/alarm/utils/alarm-history-utils";
+import { buildContextualReadStatus, hasLastGoodForContext, shouldClearLastGoodForRequest } from "@/features/request/utils/context-last-good";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
@@ -180,6 +182,8 @@ const ackStatusWarning = ref("");
 const ackStatusInitialized = ref(false);
 const error = ref("");
 const pendingAlarmQueryContext = ref<AlarmQueryContext | null>(null);
+const lastSuccessfulAlarmQueryContext = ref<AlarmQueryContext | null>(null);
+const alarmLastSuccessAt = ref<number | null>(null);
 
 const alarmQueryOwner = createLatestRequestOwner(isSameAlarmQueryContext);
 const alarmAckRefreshOwner = createLatestRequestOwner(isSameAlarmAcknowledgementRefreshContext);
@@ -198,17 +202,39 @@ const alarmQueryDisabled = computed(() => shouldDisableAlarmSubmit(
   pendingAlarmQueryContext.value,
   currentAlarmQueryContext()
 ));
+const hasAlarmLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, currentAlarmQueryContext(), isSameAlarmQueryContext));
+const alarmReadStatusText = computed(() => buildContextualReadStatus({
+  loading: loading.value,
+  error: error.value,
+  lastSuccessfulContext: lastSuccessfulAlarmQueryContext.value,
+  currentContext: currentAlarmQueryContext(),
+  isSameContext: isSameAlarmQueryContext,
+  loadingText: "告警历史加载中...",
+  refreshingText: "告警历史刷新中 · 当前显示上次成功数据",
+  staleText: "告警历史刷新失败 · 当前显示上次成功数据",
+  initialErrorPrefix: "告警历史加载失败",
+  lastSuccessAt: alarmLastSuccessAt.value
+}));
+const alarmReadStatusType = computed(() => error.value && hasAlarmLastGoodForCurrentContext.value ? "warning" : "error");
+const alarmEmptyText = computed(() => error.value ? error.value : "暂无符合条件的告警历史");
 
 async function loadAlarms() {
   const requestContext = currentAlarmQueryContext();
   const ticket = alarmQueryOwner.begin(requestContext);
+  const canPreserveLastGood = hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, requestContext, isSameAlarmQueryContext);
   alarmAckRefreshOwner.invalidate();
+  if (shouldClearLastGoodForRequest(lastSuccessfulAlarmQueryContext.value, requestContext, isSameAlarmQueryContext)) {
+    alarms.value = [];
+    alarmAcknowledgements.value = {};
+    lastSuccessfulAlarmQueryContext.value = null;
+    alarmLastSuccessAt.value = null;
+    ackStatusUnavailable.value = false;
+    ackStatusWarning.value = "";
+    ackStatusInitialized.value = false;
+  }
   loading.value = true;
   ackStatusLoading.value = false;
   error.value = "";
-  ackStatusUnavailable.value = false;
-  ackStatusWarning.value = "";
-  ackStatusInitialized.value = false;
   pendingAlarmQueryContext.value = requestContext;
   try {
     const params = buildAlarmHistoryQuery(requestContext);
@@ -223,20 +249,26 @@ async function loadAlarms() {
       ackStatusUnavailable.value = false;
       ackStatusWarning.value = "";
       ackStatusInitialized.value = true;
+      lastSuccessfulAlarmQueryContext.value = requestContext;
+      alarmLastSuccessAt.value = Date.now();
       return;
     }
     alarms.value = mergeAlarmAcknowledgementStates(rows, alarmAcknowledgements.value);
+    lastSuccessfulAlarmQueryContext.value = requestContext;
+    alarmLastSuccessAt.value = Date.now();
     void refreshAlarmAcknowledgementsInternal("automatic", [...alarms.value]);
   } catch (caught) {
     if (!alarmQueryOwner.canCommit(ticket, currentAlarmQueryContext())) {
       return;
     }
-    alarmAcknowledgements.value = {};
-    alarms.value = [];
+    if (!canPreserveLastGood) {
+      alarmAcknowledgements.value = {};
+      alarms.value = [];
+      ackStatusUnavailable.value = false;
+      ackStatusWarning.value = "";
+      ackStatusInitialized.value = false;
+    }
     error.value = buildAlarmHistoryErrorMessage(caught);
-    ackStatusUnavailable.value = false;
-    ackStatusWarning.value = "";
-    ackStatusInitialized.value = false;
   } finally {
     if (alarmQueryOwner.isLatest(ticket)) {
       loading.value = false;

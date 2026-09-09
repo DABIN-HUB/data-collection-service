@@ -58,7 +58,7 @@
         </div>
       </section>
 
-      <el-alert v-if="historyError" :title="historyError" type="error" :closable="false" />
+      <el-alert v-if="historyReadStatusText" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
       <el-alert v-if="historyPartialWarning" :title="historyPartialWarning" type="warning" :closable="false" />
 
       <div v-if="historySummaryCards.length" class="exact-diagnostic-cards history-summary-cards">
@@ -146,7 +146,7 @@
             <tr><th>时间</th><th>值</th><th>质量</th><th>原始记录</th></tr>
           </thead>
           <tbody>
-            <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">暂无历史数据</td></tr>
+            <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">{{ historyEmptyText }}</td></tr>
             <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
               <td>{{ formatHistoryTime(row) }}</td>
               <td>{{ displayValue(row) }}</td>
@@ -182,6 +182,7 @@ import {
   type HistoryQueryContext
 } from "@/features/history/utils/history-request-lifecycle";
 import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "@/features/history/utils/history-trend-utils";
+import { buildContextualReadStatus, hasLastGoodForContext, shouldClearLastGoodForRequest } from "@/features/request/utils/context-last-good";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
@@ -211,6 +212,8 @@ const endTime = ref(defaultDateTimeLocal(0));
 const initialized = ref(false);
 const lastAppliedRouteKey = ref("__initial__");
 const pendingHistoryQueryContext = ref<HistoryQueryContext | null>(null);
+const lastSuccessfulHistoryContext = ref<HistoryQueryContext | null>(null);
+const historyLastSuccessAt = ref<number | null>(null);
 
 const historyPointsOwner = createLatestRequestOwner(isSameHistoryPointsRequestContext);
 const historyQueryOwner = createLatestRequestOwner(isSameHistoryQueryContext);
@@ -266,6 +269,21 @@ const historyExportText = computed(() => buildHistoryTrendExportText({
 }));
 const relatedAlarmsSummaryText = computed(() => relatedAlarmsUnavailable.value ? "暂不可用" : `${relatedAlarms.value.length} 条`);
 const relatedAlarmsEmptyText = computed(() => relatedAlarmsUnavailable.value ? "关联告警暂不可用" : "暂无相关告警");
+const hasHistoryLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulHistoryContext.value, currentHistoryQueryContext(), isSameHistoryQueryContext));
+const historyReadStatusText = computed(() => buildContextualReadStatus({
+  loading: loading.value,
+  error: historyError.value,
+  lastSuccessfulContext: lastSuccessfulHistoryContext.value,
+  currentContext: currentHistoryQueryContext(),
+  isSameContext: isSameHistoryQueryContext,
+  loadingText: "历史数据加载中...",
+  refreshingText: "刷新中 · 当前显示上次成功历史数据",
+  staleText: "刷新失败 · 当前显示上次成功历史数据",
+  initialErrorPrefix: "历史数据加载失败",
+  lastSuccessAt: historyLastSuccessAt.value
+}));
+const historyReadStatusType = computed(() => historyError.value && hasHistoryLastGoodForCurrentContext.value ? "warning" : "error");
+const historyEmptyText = computed(() => historyError.value ? `历史数据加载失败：${historyError.value}` : "暂无历史数据");
 const historyQueryDisabled = computed(() => shouldDisableHistorySubmit(
   loading.value,
   pendingHistoryQueryContext.value,
@@ -309,6 +327,7 @@ async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boo
   historyRows.value = [];
   comparePointRows.value = {};
   relatedAlarms.value = [];
+  clearHistoryLastGoodState();
   clearHistoryFeedbackState();
   if (!snapshot.deviceId) {
     historyPointsOwner.invalidate();
@@ -359,6 +378,7 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
     historyRows.value = [];
     comparePointRows.value = {};
     relatedAlarms.value = [];
+    clearHistoryLastGoodState();
     clearHistoryFeedbackState();
     return;
   }
@@ -389,9 +409,18 @@ async function loadHistory() {
     return;
   }
   const ticket = historyQueryOwner.begin(requestContext);
+  const canPreserveLastGood = hasLastGoodForContext(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext);
+  if (shouldClearLastGoodForRequest(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext)) {
+    clearHistoryInvestigationState();
+    clearHistoryLastGoodState();
+  }
   loading.value = true;
   pendingHistoryQueryContext.value = requestContext;
-  clearHistoryFeedbackState();
+  if (canPreserveLastGood) {
+    historyError.value = "";
+  } else {
+    clearHistoryFeedbackState();
+  }
   try {
     const params = buildHistoryDataQueryParams(requestContext);
     const mainRequest = getPointHistory(requestContext.deviceId, requestContext.pointRef, params)
@@ -419,7 +448,13 @@ async function loadHistory() {
     if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
       return;
     }
-    applyHistoryPartialState(nextState);
+    if (nextState.historyError) {
+      applyHistoryMainFailureState(nextState, canPreserveLastGood);
+    } else {
+      applyHistoryPartialState(nextState);
+      lastSuccessfulHistoryContext.value = requestContext;
+      historyLastSuccessAt.value = Date.now();
+    }
     if (nextState.historyError) {
       ElMessage.error(nextState.historyError);
     } else if (nextState.historyPartialWarning) {
@@ -430,7 +465,7 @@ async function loadHistory() {
       return;
     }
     const nextState = buildUnexpectedHistoryFailureState(error);
-    applyHistoryPartialState(nextState);
+    applyHistoryMainFailureState(nextState, canPreserveLastGood);
     ElMessage.error(nextState.historyError);
   } finally {
     if (historyQueryOwner.isLatest(ticket)) {
@@ -453,6 +488,27 @@ function applyHistoryPartialState(state: HistoryPartialFailureState) {
   relatedAlarmsUnavailable.value = state.relatedAlarmsUnavailable;
   historyError.value = state.historyError;
   historyPartialWarning.value = state.historyPartialWarning;
+}
+
+function applyHistoryMainFailureState(state: HistoryPartialFailureState, preserveLastGood: boolean) {
+  if (preserveLastGood) {
+    historyError.value = state.historyError;
+    return;
+  }
+  applyHistoryPartialState(state);
+}
+
+function clearHistoryInvestigationState() {
+  historyRows.value = [];
+  comparePointRows.value = {};
+  relatedAlarms.value = [];
+  failedComparePointRefs.value = [];
+  relatedAlarmsUnavailable.value = false;
+}
+
+function clearHistoryLastGoodState() {
+  lastSuccessfulHistoryContext.value = null;
+  historyLastSuccessAt.value = null;
 }
 
 function clearHistoryFeedbackState() {
