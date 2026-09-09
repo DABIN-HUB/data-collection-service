@@ -7,6 +7,54 @@ Scope: frontend routed-page audit/inventory only. Production Vue/TS/Java behavio
 
 Task 01 and Task 02 are treated as accepted baselines. This document does not redesign request ownership, realtime cursor/delta, compact realtime contract, realtime pagination, or Task 01.5 History/Alarm/Dashboard correctness. It records current page-state/failure UX and prioritizes Task 03 follow-up work.
 
+## Task 03.2 RESOLVED — Shadow Context Ownership & Last-Good State
+
+- Date: 2026-09-09.
+- Scope: `collector-desktop/src/features/shadow/components/ShadowPanel.vue` and Shadow-only lifecycle helpers/tests.
+- Production backend diff: `0`; HTTP path/DTO/API contract unchanged.
+- Shadow wrong-context P0: CLOSED.
+
+### Before / After
+
+Before:
+
+```text
+A request starts
+→ user switches to B
+→ A response overwrites B ShadowPanel state
+```
+
+After:
+
+```text
+request captured A
+live context=B
+canCommit=false
+A response is discarded from B UI
+```
+
+Write side effects are not cancelled or retried. Only the returned write response/error/post-state is guarded from committing into a different live device panel.
+
+### Last-Good behavior
+
+Before:
+
+```text
+shadow refresh failure → shadow={error}
+delta refresh failure → delta={error}
+history refresh failure → rows=[]
+```
+
+After:
+
+```text
+same-context refresh failure
+→ last-good shadow/delta/history rows retained
+→ persistent section error/stale marker shown
+```
+
+Success with `history=[]` remains the normal `EMPTY` state; failure with no last-good rows remains `ERROR` and no longer looks like success-empty.
+
 ## 1. State vocabulary
 
 | State | UX meaning | Recommended presentation |
@@ -39,7 +87,7 @@ These terms are an audit language, not a requirement that every page must implem
 | Diagnostic | Initial run sets `loading`, keeps default/raw panels visible (`views/diagnostic/DiagnosticView.vue:148-197`). | Diagnostic cards/rows/raw JSON from successful sources. | No explicit “no diagnostic rows” row, but rows are computed from defaults. | Re-run uses `Promise.allSettled`; successful source refs are updated, failures leave previous values. | Partial source failures preserve previous values implicitly, with `partialWarning`; source-level stale timestamps not shown. | PASS: one failed probe does not fail whole page (`:161-191`). | Fatal only if all metrics and device list fail (`:192-194`); persistent inline message. | “运行完整诊断” retries all probes. | Diagnostic package export has `exporting` guard; sample log/alarm failures are intentional best-effort empty arrays (`:233-247`). |
 | Log | Initial load uses `loading`; empty panel displays `error || no logs` (`views/log/LogView.vue:133-159`). | Log rows, local filters and summary. | Success-empty shows “当前条件下没有可显示日志” (`:55`). | Auto/manual refresh uses latest owner and timer overlap skip (`:133-159`, `:224-233`). | Refresh failure clears `logs` (`:148-153`), losing last-good logs. | Recent-exception lookup is optional; failure is toast-only and does not affect log rows (`:175-205`). | Initial failure is persistent through empty panel text, but visually shares empty-state component (`:55`, `:152-153`). | Query/refresh and auto-refresh. | Export and exception lookup have independent guards. |
 | Network | Page is idle by default; no automatic diagnostic request (`views/network/NetworkView.vue:123-130`). | Latest diagnostic result and history visible. | Explicit “尚未执行网络检测” and “暂无网络检测历史” (`:51`, `:76-77`). | Running a diagnostic keeps previous result until replaced by result/failure. | Failure is represented as a failed diagnostic result appended to history, not a separate page stale state (`:150-170`). | EdgeTelemetryPanel is independent operational subpanel. | Network diagnostic failures persist in result JSON/history plus toast (`:155-170`). | Manual “开始检测”. | PASS: diagnose and edge telemetry each have own pending flags; result is target-specific enough for manual diagnostics. |
-| Shadow | Wrapper shell plus `ShadowPanel`; idle prompts for selected device (`views/shadow/ShadowView.vue:1-12`, `features/shadow/components/ShadowPanel.vue:88-100`). | Shadow/delta/history sections independently loaded. | History table says “暂无影子历史” (`ShadowPanel.vue:52`). | Section-level loading flags; old shadow/delta values not cleared before read. | Shadow/delta read failures replace that section with `{ error }`; history failure clears rows (`:108-153`). | Bundle read uses `Promise.allSettled`, so one section failure does not block others (`:155-157`). | Persistent JSON error for shadow/delta, toast; history failure is toast-only + empty history. | Per-section read buttons. | Desired save/clear guarded by `savingDesired`; however read/write requests have no `deviceId` snapshot/generation guard, so A result can commit after switching to B (`:102-156`, `:173-213`) — P0. |
+| Shadow | Wrapper shell plus `ShadowPanel`; idle prompts for selected device (`views/shadow/ShadowView.vue:1-12`, `features/shadow/components/ShadowPanel.vue`). | Shadow/delta/history sections independently loaded with independent read owners. | History success `[]` remains “暂无影子历史”; initial failure shows read-failure text. | Section-level loading flags; stale request finally cannot clear newer section loading. | Same-context refresh failure keeps last-good shadow/delta/history and shows persistent stale/error status. | Bundle read still uses `Promise.allSettled`, so one section failure does not block others. | Section status text distinguishes initial error from stale last-good failure. | Per-section read buttons. | Desired save/clear capture target `deviceId`; write side effect completes, but stale response/error cannot overwrite another live device panel — P0 CLOSED. |
 
 ## 3. Failure matrix
 
@@ -61,7 +109,7 @@ These terms are an audit language, not a requirement that every page must implem
 | Diagnostic | metric probes | Failed probes collected in `failures`; successful refs retained/updated (`DiagnosticView.vue:161-197`). | Yes implicit. | Yes partial warning. | No. | Run diagnostic. | PASS/P2 |
 | Log | ops log query | Catch clears `logs=[]`, sets `error` (`LogView.vue:148-153`). | No. | Yes but same empty block. | No. | Query/auto refresh. | P1 |
 | Network | diagnose | Failure normalized as negative diagnostic result and added to history (`NetworkView.vue:155-170`). | Previous history preserved; current result replaced with explicit failure. | Yes. | Yes. | Start diagnose. | PASS |
-| Shadow | shadow/delta/history read | No request owner or device snapshot; read result/error can commit after `props.deviceId` changes (`ShadowPanel.vue:102-156`). | No for failed refresh. | Shadow/delta yes; history no dedicated error. | Yes. | Per-section read. | P0 for wrong-context commit; P1/P2 for last-good loss by section. |
+| Shadow | shadow/delta/history read | Task 03.2 adds independent read owners plus captured target `deviceId`; stale read result/error cannot commit after device switch. | Yes for same-context refresh failure; last-good is context-scoped and reset on device change. | Yes, section-level stale/error status. | Yes. | Per-section read. | RESOLVED for Shadow wrong-context P0 and Shadow last-good loss. |
 
 ## 4. Write/action matrix
 
@@ -80,7 +128,7 @@ These terms are an audit language, not a requirement that every page must implem
 | Diagnostic | export package | `exporting` (`DiagnosticView.vue:204-230`). | Guarded. | Toast/download. | No explicit catch; failure would bubble to console/runtime. | N/A. |
 | Network | diagnose | `networkOperating` (`NetworkView.vue:135-172`). | Guarded. | Result panel/history. | Result panel/history + toast. | N/A. |
 | Network | edge telemetry submit | `submitting` (`EdgeTelemetryPanel.vue:129-146`). | Guarded. | Toast + response JSON. | Toast + response JSON. | N/A. |
-| Shadow | save/clear desired | `savingDesired` (`ShadowPanel.vue:173-213`). | Guarded for repeated desired action. | Toast + shadow response. | Toast + section error. | Response becomes current shadow, but without target snapshot; route/device change can write A response/error into B panel — P0. |
+| Shadow | save/clear desired | `savingDesired` plus captured `savingDesiredDeviceId`; write side effect is allowed to finish. | Guarded globally for this panel; concurrent multi-device writes remain deferred. | Target-specific toast identifies submitted device; current panel updates only if live device still matches target. | Target-specific toast; stale write failure cannot overwrite current device read state. | Response commits to `shadow` only for the same live device; `clearDesired` cannot clear another device form. |
 
 ## 5. Silent catch audit
 
@@ -106,7 +154,7 @@ Additional `catch {}` blocks:
 | `features/device/components/DeviceOperationShell.vue` | `137-139`, `169-174` | Confirm cancel intentional; preview failure is BAD SILENT FAILURE / P2 | Preview failure clears rows with no inline/toast. |
 | `features/network/components/EdgeTelemetryPanel.vue` | `171-178` | INTENTIONAL BEST-EFFORT | Raw JSON preview not overwritten while input incomplete. |
 | `views/alarm/AlarmView.vue` | `407-416` | HANDLED DEGRADED | Ack-status failure becomes persistent warning. |
-| `features/shadow/components/ShadowPanel.vue` | `147-150` | PROBLEMATIC MINOR / P2 | Shadow history failure clears rows and only toast; no persistent section error. |
+| `features/shadow/components/ShadowPanel.vue` | Task 03.2 updated read/write handlers | RESOLVED | Shadow history failures now keep last-good rows and set persistent section error/stale status. |
 
 No `catch (_` or `.catch(() => null)` occurrences were found in the audited frontend scope.
 
@@ -126,7 +174,7 @@ Toast-only or weak persistence items:
 - Device Workbench realtime preview failure is silently swallowed and preview rows are cleared (`DeviceOperationShell.vue:169-174`) — P2.
 - `DeviceRuntimePanel.checkRunningFlag()` has no catch; failure is not converted to persistent UI (`features/diagnostic/components/DeviceRuntimePanel.vue:105-112`) — P2.
 - Diagnostic package export has `finally` but no catch; export/sample failures can leave no inline explanation (`DiagnosticView.vue:204-230`) — P2.
-- Shadow history failure clears rows and uses toast via `handleShadowError()` without section error (`ShadowPanel.vue:140-153`, `:215-219`) — P2.
+- Shadow history failure toast-only/stale-row loss — RESOLVED in Task 03.2 with persistent section error/stale status and last-good row retention.
 
 ## 7. Empty/error and clear-before-load findings
 
@@ -136,7 +184,7 @@ Toast-only or weak persistence items:
 | Alarm | Failure clears `alarms=[]`; table row uses `error || empty` (`AlarmView.vue:66-67`, `:230-236`). | LAST-GOOD LOSS / P1; error text visible, but refresh failure blanks table. |
 | History | Context change intentionally clears old context rows (`HistoryView.vue:301-312`, `:347-363`); main query failure applies empty failure state (`:465-476`). | Context clear is correct; same-context refresh failure last-good loss is P1. |
 | Realtime | Refresh failure does not clear `realtimeRows`; initial empty prompt is generic (`RealtimeView.vue:216-276`, `:100-101`). | Last-good PASS; initial empty wording P2. |
-| Shadow history | Failure clears `shadowHistoryRows=[]`; table says “暂无影子历史” (`ShadowPanel.vue:52`, `:140-153`). | EMPTY/ERROR CONFLATION / P2. |
+| Shadow history | Task 03.2 keeps last-good rows on same-context failure; success-empty `[]` remains “暂无影子历史”, initial failure shows read-failure text. | RESOLVED for Shadow; History/Alarm/Log remain P1. |
 | Device Store | Read failure sets `error` but does not clear `devices` (`device.store.ts:66-75`). | Last-good PASS. |
 
 ## 8. Realtime 100k long-full UX conclusion
@@ -169,7 +217,7 @@ Failure scenario: user has a successful chart/table, then same-context refresh f
 User impact: last-good trend disappears; page becomes error/empty instead of STALE.  
 Severity: P1  
 Recommended change: preserve last successful main history rows for same-context refresh failure; show persistent stale warning and retry. Keep context-change clearing behavior.  
-Recommended task: Task 03.2 — Shared Read-State & Last-Good UX.
+Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
 
 ### Finding 2
 Page: Alarm  
@@ -180,7 +228,7 @@ Failure scenario: user has alarm history rows, then manual refresh or filter ref
 User impact: last-good alarm list is lost; failure is not a stale state.  
 Severity: P1  
 Recommended change: preserve last-good alarm rows for same-context refresh failures; keep explicit error/stale banner and leave acknowledgement degradation separate.  
-Recommended task: Task 03.2 — Shared Read-State & Last-Good UX.
+Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
 
 ### Finding 3
 Page: Log  
@@ -191,7 +239,7 @@ Failure scenario: user has logs, auto-refresh fails once.
 User impact: log stream blanks, losing investigative context.  
 Severity: P1  
 Recommended change: preserve last-good logs on refresh failure and show stale/last-updated banner; only show ERROR-empty when there was no successful result for current server query.  
-Recommended task: Task 03.2 — Shared Read-State & Last-Good UX.
+Recommended task: Task 03.3 — Investigation Pages Last-Good & Stale UX.
 
 ### Finding 4
 Page: Realtime  
@@ -202,7 +250,7 @@ Failure scenario: first 100k full takes about 17 seconds.
 User impact: not data loss, but user may confuse long initial loading with empty/unselected state.  
 Severity: P2  
 Recommended change: add explicit initial-full loading/resync/stale copy; preserve existing full/delta architecture and 5s polling.  
-Recommended task: Task 03.2 — Shared Read-State & Last-Good UX.
+Recommended task: Task 03.5 — Task 03 Regression & Final Audit or later scoped UX copy pass.
 
 ### Finding 5
 Page: Device Workbench  
@@ -241,23 +289,23 @@ Recommended task: Task 03.4 — Operational Pages Degraded UX.
 Page: Shadow  
 File: `collector-desktop/src/features/shadow/components/ShadowPanel.vue:102-156`, `:173-213`  
 Operation: shadow/delta/history reads; save/clear desired writes  
-Current behavior: `watch(() => props.deviceId)` resets local state, but in-flight read/write requests do not capture target `deviceId` and have no generation/commit guard before assigning `shadow`, `shadowDelta`, `shadowHistoryRows`, or `desiredPayload`.  
+Current behavior after Task 03.2: `watch(() => props.deviceId)` invalidates all three read owners, resets context-scoped UI state, and all read/write requests capture target `deviceId` before `await`; stale read/write responses cannot commit to another live device panel.
 Failure scenario: user starts read-all or desired save/clear for device A, then route/shell changes to device B before A request resolves.  
 User impact: B Shadow panel can display A shadow/delta/history or A write result/error; this is wrong-context display for device-scoped operational data.  
-Severity: P0  
-Recommended change: add per-source read owners or keyed generation; capture `deviceId`/limit/payload before `await`; allow backend writes to finish, but commit UI only if live `props.deviceId` still matches target, otherwise show target-specific toast without overwriting current panel. Also persist history section error/stale and add destructive clear confirmation in the later action pass.  
-Recommended task: Task 03.3 — Device / Action Failure UX.
+Severity: P0 CLOSED in Task 03.2
+Resolved change: added per-section read owners, captured `deviceId`/payload before `await`, guarded read commits/loading finalization, and guarded write UI commits while keeping backend side effects authoritative with target-specific toast feedback.
+Recommended task: closed; residual multi-device concurrent write support is P2 deferred, not Task 03.2 scope.
 
 ### Finding 8b
 Page: Shadow  
 File: `collector-desktop/src/features/shadow/components/ShadowPanel.vue:115-153`  
 Operation: shadow/delta/history refresh failure  
-Current behavior: shadow/delta failures replace last-good section data with `{ error }`; history failure clears `shadowHistoryRows=[]` and relies on toast.  
+Current behavior after Task 03.2: same-context shadow/delta/history refresh failures keep last-good section data/rows and set persistent section error/stale text; context change still clears context-scoped last-good data.
 Failure scenario: user has a successful shadow snapshot, then refreshes one section and that request fails.  
 User impact: last-good snapshot/history is lost or hidden; history failure can look like a successful empty history.  
-Severity: P1/P2  
-Recommended change: preserve last-good data per source and show persistent stale/unavailable marker; keep bundle partial failures as degraded rather than empty.  
-Recommended task: Task 03.3 — Device / Action Failure UX.
+Severity: CLOSED for Shadow in Task 03.2
+Resolved change: preserve last-good data per source and show persistent stale/unavailable marker; keep bundle partial failures as degraded rather than empty.
+Recommended task: closed for Shadow; History/Alarm/Log last-good work moves to Task 03.3.
 
 ### Finding 9
 Page: Diagnostic  
@@ -283,9 +331,9 @@ Recommended task: Task 03.3 — Device / Action Failure UX.
 
 ## 10. Top priority
 
-Priority 1: Shadow wrong-context read/write ownership. This is the only P0 found after reconciling the parallel audit results: ShadowPanel can commit device A read/write results after switching to device B.
+Priority 1: Shadow wrong-context read/write ownership — CLOSED in Task 03.2. ShadowPanel now captures target device, uses section-specific read owners, invalidates on device change, and guards write UI commits.
 
-Priority 2: Last-good/stale semantics for read-heavy investigation pages: History, Alarm, Log. These are P1 because refresh failure can destroy useful existing rows.
+Priority 2: Last-good/stale semantics for read-heavy investigation pages: History, Alarm, Log. These are P1 because refresh failure can destroy useful existing rows and are the next Task 03 scope.
 
 Priority 3: Realtime 100k long-full UX copy plus device/action and operational P2/P1 polish: Realtime initial/resync text, Control target-result ownership, Device Workbench preview silent failure, per-target action pending clarity, Cloud disabled/degraded labels, Diagnostic action errors.
 
@@ -302,18 +350,20 @@ Priority 3: Realtime 100k long-full UX copy plus device/action and operational P
 
 | Task | Recommended scope | Reason |
 | --- | --- | --- |
-| 03.2 — Shadow Context Ownership + Shared Read-State | First close ShadowPanel P0 read/write target ownership, then apply the minimal last-good/stale pattern to History, Alarm, Log if scope permits. Candidate shape: `{ data, lastGoodData, loading, refreshing, error, lastSuccessAt }`, not a generic enterprise framework. | P0 wrong-context device shadow display/write feedback must precede P1 stale-data loss. |
-| 03.3 — Device / Action Failure UX | Control target-result ownership; Device List/Workbench per-target pending clarity; preview unavailable marker; Shadow history persistent error and destructive clear confirmation if not already completed in 03.2. | Device/action states are mostly safe but have target attribution and granularity gaps. |
+| 03.2 — Shadow Context Ownership & Last-Good State | RESOLVED: ShadowPanel P0 read/write target ownership is closed, and Shadow same-context refresh failure now retains last-good section data. | P0 wrong-context device shadow display/write feedback was the only Task 03.1 P0. |
+| 03.3 — Investigation Pages Last-Good & Stale UX | Apply the minimal last-good/stale pattern to History, Alarm, and Log only. | These read-heavy investigation pages still lose useful existing rows on refresh failure. |
 | 03.4 — Operational Pages Degraded UX | Cloud disabled/degraded/error labels; Diagnostic action-level failures; DeviceRuntimePanel inline error; optional sample/export error presentation. | Operational panels already degrade partially but need clearer semantics. |
 | 03.5 — Task 03 Regression & Final Audit | Frontend typecheck/test/verify, targeted regression tests only where production behavior changed, and final page-state audit. | Close Task 03 without broad production behavior drift. |
 
 ## 13. Regression baseline for this audit
 
-Commands run after writing this audit document:
+Commands run after Task 03.1 audit document creation and Task 03.2 Shadow closure:
 
 ```text
 npm --prefix collector-desktop run typecheck
 npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
 npm --prefix collector-desktop run verify
 git diff --check
 ```
@@ -323,12 +373,18 @@ Results:
 | Command | Result |
 | --- | --- |
 | `npm --prefix collector-desktop run typecheck` | PASS |
-| `npm --prefix collector-desktop test` | PASS — 67 files / 472 tests |
-| `npm --prefix collector-desktop run verify` | PASS — lint, stylelint, tests, typecheck, build, build:web |
-| `git diff --check` | PASS |
+| `npm --prefix collector-desktop test` | PASS after Task 03.2 |
+| `npm --prefix collector-desktop run build` | PASS after Task 03.2 |
+| `npm --prefix collector-desktop run build:web` | PASS after Task 03.2 |
+| `npm --prefix collector-desktop run verify` | PASS after Task 03.2 |
+| `git diff --check` | PASS after Task 03.2 |
 
 Build notes: Vite emitted existing large-chunk / Rollup annotation warnings only; the command exited `0`.
 
 ## 14. Changed files
 
 - `collector-desktop/docs/production-readiness/PAGE-STATE-FAILURE-UX-BASELINE.md`
+- `collector-desktop/src/features/shadow/components/ShadowPanel.vue`
+- `collector-desktop/src/features/shadow/utils/shadow-request-state.ts`
+- `collector-desktop/src/features/shadow/utils/shadow-request-state.test.ts`
+- `collector-boot/src/main/resources/static/desktop/**` — generated web-console assets refreshed by required `npm --prefix collector-desktop run build:web`; Java/backend API code unchanged.
