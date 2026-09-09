@@ -124,6 +124,27 @@ These terms are an audit language, not a requirement that every page must implem
 | Network | Page is idle by default; no automatic diagnostic request. | Latest diagnostic result and history visible with submitted target metadata. | Explicit “尚未执行网络检测” and “暂无网络检测历史”. | Running a diagnostic keeps previous result until replaced by result/failure. | Failure is represented as a failed diagnostic result appended to history with captured device/target/port. | EdgeTelemetryPanel is independent operational subpanel and now shows submitted gateway/device/point attribution. | Network diagnostic failures persist in result JSON/history plus toast. | Manual “开始检测”. | PASS: diagnose and edge telemetry each have own pending flags; result is target-specific enough for manual diagnostics. |
 | Shadow | Wrapper shell plus `ShadowPanel`; idle prompts for selected device (`views/shadow/ShadowView.vue:1-12`, `features/shadow/components/ShadowPanel.vue`). | Shadow/delta/history sections independently loaded with independent read owners. | History success `[]` remains “暂无影子历史”; initial failure shows read-failure text. | Section-level loading flags; stale request finally cannot clear newer section loading. | Same-context refresh failure keeps last-good shadow/delta/history and shows persistent stale/error status. | Bundle read still uses `Promise.allSettled`, so one section failure does not block others. | Section status text distinguishes initial error from stale last-good failure. | Per-section read buttons. | Desired save/clear capture target `deviceId`; write side effect completes, but stale response/error cannot overwrite another live device panel — P0 CLOSED. |
 
+## 2b. Task 03.5 final page state matrix
+
+| Page | Initial Loading | Ready | Empty | Refreshing | Stale | Degraded | Error | Action Pending | Final |
+| ---- | --------------- | ----- | ----- | ---------- | ----- | -------- | ----- | -------------- | ----- |
+| Login | PASS | PASS | N/A | PASS | N/A | N/A | PASS | PASS | PASS |
+| Dashboard | PASS | PASS | PASS | PASS | PASS | PASS | PASS | N/A | PASS |
+| Device List | PASS | PASS | PASS | PASS | PASS WITH P2 | N/A | PASS | PASS WITH P2 | PASS WITH P2 |
+| Device Workbench | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS WITH P2 | PASS WITH P2 |
+| Collection | PASS | PASS | PASS | PASS | PASS WITH P2 | PASS | PASS | PASS | PASS WITH P2 |
+| Control | PASS | PASS | N/A | N/A | N/A | N/A | PASS | PASS | PASS |
+| Realtime | PASS WITH P2 | PASS | PASS WITH P2 | PASS | PASS | PASS | PASS | PASS | PASS WITH P2 |
+| History | PASS | PASS | PASS | PASS | PASS | PASS | PASS | N/A | PASS |
+| Alarm | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| Cloud | PASS | PASS | PASS | PASS | PASS | PASS | PASS | N/A | PASS |
+| Diagnostic | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| Log | PASS | PASS | PASS | PASS | PASS | PASS | PASS | N/A | PASS |
+| Network | PASS | PASS | PASS | PASS | N/A | PASS | PASS | PASS | PASS |
+| Shadow | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+
+Task 03.5 final decision: Open P0 = 0, Open P1 = 0. See `TASK-03-FINAL-AUDIT.md` for final evidence, deferred P2 rationale, and regression commands.
+
 ## 3. Failure matrix
 
 | Page | Operation | Failure Today | Last-Good Preserved | Inline Error | Toast | Retry | Severity |
