@@ -3,6 +3,7 @@ package com.wangbin.collector.monitor.metrics;
 import com.wangbin.collector.common.config.ObservedRejectedExecutionHandler;
 import com.wangbin.collector.core.port.SystemResourceProbe;
 import com.wangbin.collector.core.report.outbox.CloudOutboxService;
+import com.wangbin.collector.core.report.outbox.CloudOutboxSnapshot;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.BeanFactory;
@@ -59,6 +60,7 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
 
     public SystemResourceSnapshot getResources() {
         Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> threadPools = collectThreadPoolStats();
+        CloudOutboxSnapshot cloudOutboxSnapshot = cloudOutboxService.snapshot();
         return SystemResourceSnapshot.builder()
                 .heapUsed(memoryMXBean != null ? memoryMXBean.getHeapMemoryUsage().getUsed() : -1L)
                 .heapCommitted(memoryMXBean != null ? memoryMXBean.getHeapMemoryUsage().getCommitted() : -1L)
@@ -71,11 +73,18 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
                 .systemCpuLoad(readCpuLoad(com.sun.management.OperatingSystemMXBean::getSystemCpuLoad))
                 .threadCount(threadMXBean != null ? threadMXBean.getThreadCount() : -1)
                 .daemonThreadCount(threadMXBean != null ? threadMXBean.getDaemonThreadCount() : -1)
-                .outboxPendingCount(cloudOutboxService.getPendingCount())
-                .outboxIsolatedCount(cloudOutboxService.getIsolatedCount())
-                .outboxOldestMessageAgeMillis(cloudOutboxService.getOldestMessageAgeMillis())
+                .outboxPendingCount(cloudOutboxSnapshot.pending())
+                .outboxIsolatedCount(cloudOutboxSnapshot.isolated())
+                .outboxOldestMessageAgeMillis(cloudOutboxSnapshot.oldestMessageAgeMillis())
                 .threadPools(threadPools)
                 .build();
+    }
+
+    /**
+     * 查询线程池资源快照，不读取 CPU、内存或云端发件箱等其它监控源。
+     */
+    public Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> getThreadPools() {
+        return collectThreadPoolStats();
     }
 
     @Override

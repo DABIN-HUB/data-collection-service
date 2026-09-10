@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.SynchronousQueue;
@@ -13,6 +14,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class SystemResourceMonitorServiceTest {
@@ -106,11 +110,44 @@ class SystemResourceMonitorServiceTest {
         assertThat(snapshot.getQueueUtilization()).isEqualTo(-1D);
     }
 
+    @Test
+    void threadPoolOnlyAccessorShouldNotReadCloudOutbox() {
+        StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        beanFactory.addBean("telemetryCacheStageExecutor", executor(new ArrayBlockingQueue<>(10)));
+        CloudOutboxService outboxService = mock(CloudOutboxService.class);
+        SystemResourceMonitorService service = new SystemResourceMonitorService(beanFactory, outboxService);
+        service.init();
+
+        Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> threadPools = service.getThreadPools();
+
+        assertThat(threadPools).containsKey("telemetryCacheStageExecutor");
+        verifyNoInteractions(outboxService);
+    }
+
+    @Test
+    void getResourcesShouldUseSingleCoherentCloudSnapshot() {
+        StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        CloudOutboxService outboxService = mock(CloudOutboxService.class);
+        when(outboxService.snapshot()).thenReturn(new com.wangbin.collector.core.report.outbox.CloudOutboxSnapshot(
+                true, 11L, 2L, 3000L));
+        SystemResourceMonitorService service = new SystemResourceMonitorService(beanFactory, outboxService);
+        service.init();
+
+        SystemResourceSnapshot snapshot = service.getResources();
+
+        assertThat(snapshot.getOutboxPendingCount()).isEqualTo(11L);
+        assertThat(snapshot.getOutboxIsolatedCount()).isEqualTo(2L);
+        assertThat(snapshot.getOutboxOldestMessageAgeMillis()).isEqualTo(3000L);
+        verify(outboxService).snapshot();
+        verify(outboxService, never()).getPendingCount();
+        verify(outboxService, never()).getIsolatedCount();
+        verify(outboxService, never()).getOldestMessageAgeMillis();
+    }
+
     private SystemResourceMonitorService service(StaticListableBeanFactory beanFactory) {
         CloudOutboxService outboxService = mock(CloudOutboxService.class);
-        when(outboxService.getPendingCount()).thenReturn(0L);
-        when(outboxService.getIsolatedCount()).thenReturn(0L);
-        when(outboxService.getOldestMessageAgeMillis()).thenReturn(0L);
+        when(outboxService.snapshot()).thenReturn(new com.wangbin.collector.core.report.outbox.CloudOutboxSnapshot(
+                true, 0L, 0L, 0L));
         SystemResourceMonitorService service = new SystemResourceMonitorService(beanFactory, outboxService);
         service.init();
         return service;

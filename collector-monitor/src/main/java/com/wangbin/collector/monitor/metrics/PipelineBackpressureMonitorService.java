@@ -273,8 +273,7 @@ public class PipelineBackpressureMonitorService {
     private Map<String, PipelineBackpressureSnapshot.ExecutorSnapshot> collectExecutors(List<String> risks) {
         Map<String, PipelineBackpressureSnapshot.ExecutorSnapshot> result = new LinkedHashMap<>();
         try {
-            SystemResourceSnapshot resources = systemResourceMonitorService.getResources();
-            Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> pools = resources.getThreadPools();
+            Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> pools = systemResourceMonitorService.getThreadPools();
             putExecutor(result, risks, "cache", TelemetryExecutorNames.CACHE_STAGE, pools);
             putExecutor(result, risks, "stream", TelemetryExecutorNames.STREAM_STAGE, pools);
             putExecutor(result, risks, "streamWriter", TelemetryExecutorNames.STREAM_WRITE, pools);

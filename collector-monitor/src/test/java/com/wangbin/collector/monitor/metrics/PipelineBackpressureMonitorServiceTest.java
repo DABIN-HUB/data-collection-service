@@ -21,11 +21,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PipelineBackpressureMonitorServiceTest {
@@ -135,6 +140,79 @@ class PipelineBackpressureMonitorServiceTest {
         assertThat(context.ingressCalls).hasValue(1);
         assertThat(context.streamCalls).hasValue(1);
         assertThat(context.historyCalls).hasValue(1);
+        assertThat(context.cloudCalls).hasValue(1);
+        verify(context.resources, times(1)).getThreadPools();
+        verify(context.resources, never()).getResources();
+    }
+
+    @Test
+    void pipelineRefreshShouldReadCloudOnlyOnceThroughDedicatedCloudSource() {
+        TestContext context = new TestContext();
+
+        PipelineBackpressureSnapshot snapshot = context.service().getSnapshot();
+
+        assertThat(snapshot.cloud().status()).isEqualTo(PipelineStatus.HEALTHY);
+        assertThat(context.cloudCalls).hasValue(1);
+        verify(context.resources, times(1)).getThreadPools();
+        verify(context.resources, never()).getResources();
+        verify(context.cloud, never()).getPendingCount();
+        verify(context.cloud, never()).getIsolatedCount();
+        verify(context.cloud, never()).getOldestMessageAgeMillis();
+    }
+
+    @Test
+    void cachedReadsInsideTtlShouldKeepSingleCloudSnapshotCall() {
+        TestContext context = new TestContext();
+        PipelineBackpressureMonitorService service = context.service();
+
+        service.getSnapshot();
+        service.getSnapshot();
+        service.getSnapshot();
+
+        assertThat(context.cloudCalls).hasValue(1);
+        verify(context.resources, times(1)).getThreadPools();
+    }
+
+    @Test
+    void ttlExpiryShouldPermitExactlyOneAdditionalCloudSnapshotPerRefresh() {
+        TestContext context = new TestContext();
+        PipelineBackpressureMonitorService service = context.service();
+
+        service.getSnapshot();
+        context.clock.advance(Duration.ofSeconds(6));
+        service.getSnapshot();
+
+        assertThat(context.cloudCalls).hasValue(2);
+        verify(context.resources, times(2)).getThreadPools();
+    }
+
+    @Test
+    void cloudFailureShouldNotBeRetriedThroughExecutorObservation() {
+        TestContext context = new TestContext();
+        context.cloudThrows = true;
+
+        PipelineBackpressureSnapshot snapshot = context.service().getSnapshot();
+
+        assertThat(snapshot.cloud().status()).isEqualTo(PipelineStatus.UNKNOWN);
+        assertThat(snapshot.risks()).contains("CLOUD_SOURCE_FAILURE");
+        assertThat(context.cloudCalls).hasValue(1);
+        verify(context.resources, times(1)).getThreadPools();
+        verify(context.resources, never()).getResources();
+    }
+
+    @Test
+    void executorSourceFailureShouldNotAlterCloudSnapshotResult() {
+        TestContext context = new TestContext();
+        PipelineBackpressureMonitorService service = context.service();
+        doThrow(new IllegalStateException("executor boom")).when(context.resources).getThreadPools();
+
+        PipelineBackpressureSnapshot snapshot = service.getSnapshot();
+
+        assertThat(snapshot.cloud().status()).isEqualTo(PipelineStatus.HEALTHY);
+        assertThat(snapshot.executors().values()).allSatisfy(executor ->
+                assertThat(executor.status()).isEqualTo(PipelineStatus.UNKNOWN));
+        assertThat(snapshot.risks()).contains("EXECUTOR_SOURCE_FAILURE");
+        assertThat(context.cloudCalls).hasValue(1);
     }
 
     private static class TestContext {
@@ -146,12 +224,15 @@ class PipelineBackpressureMonitorServiceTest {
         final AtomicInteger ingressCalls = new AtomicInteger();
         final AtomicInteger streamCalls = new AtomicInteger();
         final AtomicInteger historyCalls = new AtomicInteger();
+        final AtomicInteger cloudCalls = new AtomicInteger();
+        final MutableClock clock = new MutableClock(Instant.ofEpochMilli(1788998400000L));
         TelemetryIngressBufferMetrics ingressMetrics = new TelemetryIngressBufferMetrics(0L, 0L, 0L, 1, 100,
                 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
         StreamWriteBufferMetrics streamMetrics = StreamWriteBufferMetrics.empty();
         HistoryBufferMetrics historyMetrics = new HistoryBufferMetrics(0L, 0L, 0L, 0, 100);
         CloudOutboxSnapshot cloudSnapshot = new CloudOutboxSnapshot(true, 0L, 0L, 0L);
         boolean ingressThrows;
+        boolean cloudThrows;
 
         PipelineBackpressureMonitorService service() {
             when(ingress.metrics()).thenAnswer(invocation -> {
@@ -169,12 +250,18 @@ class PipelineBackpressureMonitorServiceTest {
                 historyCalls.incrementAndGet();
                 return historyMetrics;
             });
-            when(cloud.snapshot()).thenAnswer(invocation -> cloudSnapshot);
-            when(resources.getResources()).thenReturn(resourcesSnapshot());
+            when(cloud.snapshot()).thenAnswer(invocation -> {
+                cloudCalls.incrementAndGet();
+                if (cloudThrows) {
+                    throw new IllegalStateException("cloud boom");
+                }
+                return cloudSnapshot;
+            });
+            when(resources.getThreadPools()).thenReturn(threadPools());
             return new PipelineBackpressureMonitorService(provider(ingress), provider(stream), provider(history), provider(cloud),
                     resources, new TelemetryIngressBufferProperties(), new TelemetryStreamProperties(),
                     historyProperties(), tdengineProperties(), new ReportProperties(),
-                    Clock.fixed(Instant.ofEpochMilli(1788998400000L), ZoneId.of("UTC")), Duration.ofSeconds(5));
+                    clock, Duration.ofSeconds(5));
         }
 
         private HistoryBufferProperties historyProperties() {
@@ -189,7 +276,7 @@ class PipelineBackpressureMonitorServiceTest {
             return properties;
         }
 
-        private SystemResourceSnapshot resourcesSnapshot() {
+        private Map<String, SystemResourceSnapshot.ThreadPoolSnapshot> threadPools() {
             SystemResourceSnapshot.ThreadPoolSnapshot pool = SystemResourceSnapshot.ThreadPoolSnapshot.builder()
                     .corePoolSize(1)
                     .maxPoolSize(1)
@@ -200,14 +287,12 @@ class PipelineBackpressureMonitorServiceTest {
                     .completedTaskCount(0L)
                     .rejectedCount(0L)
                     .build();
-            return SystemResourceSnapshot.builder()
-                    .threadPools(Map.of(
-                            "telemetryCacheStageExecutor", pool,
-                            "telemetryStreamStageExecutor", pool,
-                            "telemetryStreamWriteExecutor", pool,
-                            "telemetryHistoryStageExecutor", pool,
-                            "telemetryReportStageExecutor", pool))
-                    .build();
+            return Map.of(
+                    "telemetryCacheStageExecutor", pool,
+                    "telemetryStreamStageExecutor", pool,
+                    "telemetryStreamWriteExecutor", pool,
+                    "telemetryHistoryStageExecutor", pool,
+                    "telemetryReportStageExecutor", pool);
         }
 
         @SuppressWarnings("unchecked")
@@ -215,6 +300,33 @@ class PipelineBackpressureMonitorServiceTest {
             ObjectProvider<T> provider = mock(ObjectProvider.class);
             when(provider.getIfAvailable()).thenReturn(value);
             return provider;
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
         }
     }
 }

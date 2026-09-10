@@ -665,7 +665,7 @@ status, generatedAt, ingress, stream, history, cloud, executors, risks
 
 Status vocabulary is fixed: `HEALTHY`, `WARNING`, `DANGER`, `UNKNOWN`, `DISABLED`. Current queue pressure thresholds are `<70% HEALTHY`, `>=70% WARNING`, `>=90% DANGER`. Redis `-1` values remain `UNKNOWN`, not zero. Dead-letter and cloud isolation are `DANGER` risks. Historical cumulative counters such as dropped/rejected/failures are displayed as evidence but do not permanently force current DANGER by themselves.
 
-Snapshot refresh uses a bounded TTL cache (`5s`). One refresh calls each source at most once: ingress metrics, stream metrics, history metrics, cloud snapshot, and system resource snapshot. Prometheus gauges read only the cached immutable snapshot; per-gauge Redis/percentile/runtime calls are avoided. Source failures are isolated to `UNKNOWN` stage snapshots and do not make `/monitor/pipeline` return 500 or affect telemetry runtime behavior.
+Snapshot refresh uses a bounded TTL cache (`5s`). One refresh calls each source at most once: ingress metrics, stream metrics, history metrics, cloud snapshot, and the thread-pool-only system resource accessor. Prometheus gauges read only the cached immutable snapshot; per-gauge Redis/percentile/runtime calls are avoided. Source failures are isolated to `UNKNOWN` stage snapshots and do not make `/monitor/pipeline` return 500 or affect telemetry runtime behavior.
 
 ### Prometheus Metric Contract
 
@@ -721,3 +721,61 @@ Allowed tag keys are `stage` and `type`. Stage values are fixed: `ingress`, `str
 | OBS-P2-02 | OPEN | deferred to Task 05.4 Operational Diagnostic Surface |
 
 Task 05.3 is PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.4 and Task 05.5 are complete.
+
+## 26. Task 05.3-R1 — Cloud Snapshot Read Boundary Closure
+
+Task 05.3-R1 closes the duplicate Cloud Outbox read boundary discovered after the main Task 05.3 implementation.
+
+### Previous duplicate path
+
+```text
+PipelineBackpressureMonitorService.refresh()
+├─ collectCloud()
+│  └─ CloudOutboxService.snapshot()
+└─ collectExecutors()
+   └─ SystemResourceMonitorService.getResources()
+      ├─ CloudOutboxService.getPendingCount()
+      ├─ CloudOutboxService.getIsolatedCount()
+      └─ CloudOutboxService.getOldestMessageAgeMillis()
+```
+
+The earlier cache tests mocked `SystemResourceMonitorService`, so they proved direct cloud snapshot reads were cached but did not cover the full production boundary where executor observation indirectly re-read cloud outbox state.
+
+### Repair
+
+- `SystemResourceMonitorService.getThreadPools()` was added as a thread-pool-only accessor. It only calls the existing thread-pool collector and does not read Cloud Outbox, CPU, memory, physical memory, or thread MXBean sources.
+- `PipelineBackpressureMonitorService.collectExecutors()` now uses `getThreadPools()` instead of `getResources()`.
+- `SystemResourceMonitorService.getResources()` now reads one coherent `CloudOutboxSnapshot` and populates `outboxPendingCount`, `outboxIsolatedCount`, and `outboxOldestMessageAgeMillis` from that immutable snapshot instead of calling three separate cloud getters.
+
+### One-source-call boundary
+
+```text
+refresh()
+├─ ingressBuffer.metrics()          <= 1
+├─ streamWriteBuffer.metrics()      <= 1
+├─ historyWriteBuffer.metrics()     <= 1
+├─ cloudOutboxService.snapshot()    <= 1
+└─ systemResourceMonitorService.getThreadPools() <= 1
+```
+
+Pipeline TTL remains 5 seconds. Pipeline statuses, thresholds, Prometheus metric names, and Prometheus tags are unchanged.
+
+### Test evidence
+
+- `SystemResourceMonitorServiceTest` verifies `getThreadPools()` returns thread-pool snapshots without Cloud Outbox interaction.
+- `SystemResourceMonitorServiceTest` verifies `getResources()` calls `CloudOutboxService.snapshot()` once and does not call `getPendingCount()`, `getIsolatedCount()`, or `getOldestMessageAgeMillis()`.
+- `PipelineBackpressureMonitorServiceTest` verifies a full cache-miss refresh reads cloud snapshot exactly once, does not call `SystemResourceMonitorService.getResources()`, and does not call legacy cloud monitoring getters.
+- `PipelineBackpressureMonitorServiceTest` verifies repeated `getSnapshot()` calls inside TTL keep total cloud snapshot calls at one.
+- `PipelineBackpressureMonitorServiceTest` verifies TTL expiry permits exactly one additional cloud snapshot call for the new refresh.
+- `PipelineBackpressureMonitorServiceTest` verifies cloud failure becomes `UNKNOWN` without an indirect retry through executor observation.
+- `PipelineBackpressureMonitorServiceTest` verifies executor source failure keeps the independently collected cloud result.
+- `PipelineMetricsBinderTest` remains compatible; multiple gauge reads continue to use the cached pipeline snapshot and do not change metric contract/cardinality.
+
+### Runtime evidence
+
+- `/monitor/system` contract remains unchanged: `outboxPendingCount`, `outboxIsolatedCount`, `outboxOldestMessageAgeMillis`, and `threadPools` are still present.
+- `/monitor/pipeline` contract remains unchanged: `status`, `generatedAt`, `ingress`, `stream`, `history`, `cloud`, `executors`, and `risks` are still present.
+- `collector_pipeline_*` Prometheus metrics remain compatible; no metric names or tags changed.
+- Actuator health/metrics/prometheus security remains unchanged from Task 05.3.
+
+Task 05.3-R1 is PASS / COMPLETE. Task 05.3 remains PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.4 and Task 05.5 are complete.
