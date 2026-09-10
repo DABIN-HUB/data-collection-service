@@ -40,6 +40,7 @@
         :performance-metrics="performanceDetail"
         :exception-stats="exceptionStats"
         :storage-metrics="storageMetrics"
+        :pipeline-metrics="pipelineMetrics"
       />
 
       <DeviceRuntimePanel
@@ -70,6 +71,7 @@ import {
   getDeviceConnectionMetrics,
   getExceptionStats,
   getPerformanceDetail,
+  getPipelineBackpressure,
   getRuntimeStatus,
   getStorageMetrics,
   getSystemResources
@@ -80,6 +82,7 @@ import DeviceRuntimePanel from "@/features/diagnostic/components/DeviceRuntimePa
 import {
   buildDiagnosticCards,
   buildDiagnosticExportWarning,
+  buildDiagnosticPartialWarning,
   buildDiagnosticRaw,
   buildDiagnosticRows,
   buildDiagnosticRuntimeSummary,
@@ -105,6 +108,7 @@ const collectorPerformance = ref<unknown>({});
 const exceptionStats = ref<unknown>({});
 const storageMetrics = ref<unknown>({});
 const performanceDetail = ref<unknown>({});
+const pipelineMetrics = ref<unknown>({});
 const diagnosticRaw = ref<unknown>({});
 const loading = ref(false);
 const exporting = ref(false);
@@ -114,7 +118,7 @@ const exportMessage = ref("");
 const exportMessageType = ref<"success" | "warning" | "error">("success");
 const lastRefresh = ref<Date | null>(null);
 
-type DiagnosticSnapshotKey = "runtimeStatus" | "systemResource" | "reportMetrics" | "configSummary" | "cacheMetrics" | "deviceConnectionMetrics" | "collectorPerformance" | "exceptionStats" | "storageMetrics" | "performanceDetail";
+type DiagnosticSnapshotKey = "runtimeStatus" | "systemResource" | "reportMetrics" | "configSummary" | "cacheMetrics" | "deviceConnectionMetrics" | "collectorPerformance" | "exceptionStats" | "storageMetrics" | "performanceDetail" | "pipelineMetrics";
 
 const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
 const resourceSummary = computed(() => buildResourceSummary({
@@ -129,6 +133,7 @@ const diagnosticCards = computed(() => buildDiagnosticCards({
   cacheMetrics: cacheMetrics.value,
   runtimeStatus: runtimeStatus.value,
   exceptionStats: exceptionStats.value,
+  pipelineMetrics: pipelineMetrics.value,
   devices: deviceStore.devices,
   onlineCount: deviceStore.onlineCount,
   totalPointCount: deviceStore.totalPointCount
@@ -144,6 +149,7 @@ const diagnosticRows = computed(() => buildDiagnosticRows({
   storageMetrics: storageMetrics.value,
   exceptionStats: exceptionStats.value,
   reportMetrics: reportMetrics.value,
+  pipelineMetrics: pipelineMetrics.value,
   devices: deviceStore.devices,
   onlineCount: deviceStore.onlineCount
 }));
@@ -172,7 +178,8 @@ async function loadDiagnostic() {
       { key: "collectorPerformance", label: "采集性能", run: getCollectorPerformance },
       { key: "exceptionStats", label: "异常统计", run: getExceptionStats },
       { key: "storageMetrics", label: "历史存储", run: getStorageMetrics },
-      { key: "performanceDetail", label: "性能详情", run: getPerformanceDetail }
+      { key: "performanceDetail", label: "性能详情", run: getPerformanceDetail },
+      { key: "pipelineMetrics", label: "Pipeline", run: getPipelineBackpressure }
     ];
     const [deviceResult, ...metricResults] = await Promise.allSettled([deviceStore.refresh(), ...requests.map((request) => request.run())]);
 
@@ -191,7 +198,7 @@ async function loadDiagnostic() {
     diagnosticRaw.value = buildCurrentDiagnosticRaw();
     lastRefresh.value = new Date();
     if (failures.length) {
-      partialWarning.value = `部分诊断数据不可用：${Array.from(new Set(failures)).join("、")}`;
+      partialWarning.value = buildDiagnosticPartialWarning(failures);
     }
     if (metricResults.every((result) => result.status === "rejected") && deviceStore.error) {
       error.value = "无法连接采集服务，请检查服务地址和后端是否已启动";
@@ -280,6 +287,7 @@ function buildCurrentDiagnosticRaw(): Record<string, unknown> {
     exceptionStats: exceptionStats.value,
     storageMetrics: storageMetrics.value,
     reportMetrics: reportMetrics.value,
+    pipelineMetrics: pipelineMetrics.value,
     configSummary: configSummary.value
   });
 }
@@ -295,7 +303,8 @@ function applyDiagnosticValue(key: DiagnosticSnapshotKey, value: unknown) {
     collectorPerformance: (nextValue) => { collectorPerformance.value = nextValue; },
     exceptionStats: (nextValue) => { exceptionStats.value = nextValue; },
     storageMetrics: (nextValue) => { storageMetrics.value = nextValue; },
-    performanceDetail: (nextValue) => { performanceDetail.value = nextValue; }
+    performanceDetail: (nextValue) => { performanceDetail.value = nextValue; },
+    pipelineMetrics: (nextValue) => { pipelineMetrics.value = nextValue; }
   };
   setters[key](value);
 }

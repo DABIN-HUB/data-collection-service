@@ -4,7 +4,9 @@ import {
   buildCacheDetail,
   buildDeviceConnectionRows,
   buildExceptionDetail,
+  buildLogRouteForRequestId,
   buildPerformanceDetail,
+  buildPipelineDetail,
   buildStorageDetail
 } from "./diagnostic-detail-utils";
 
@@ -74,13 +76,40 @@ describe("diagnostic-detail-utils", () => {
       totalExceptions: 4,
       byCategory: { TimeoutException: 3, ProtocolException: 1 },
       byDevice: { devA: 2 },
-      recent: [{ deviceId: "devA", pointId: "p1", category: "TimeoutException", message: "超时", timestamp: 1700000000000 }]
+      otherDeviceExceptions: 7,
+      otherCategoryExceptions: 2,
+      recent: [{ deviceId: "devA", pointId: "p1", category: "TimeoutException", exceptionType: "SocketTimeoutException", requestId: "obs-req-1", message: "超时", timestamp: 1700000000000 }]
     })).toEqual(expect.objectContaining({
       totalText: "4 次",
       topCategories: [{ name: "TimeoutException", count: 3 }, { name: "ProtocolException", count: 1 }],
       topDevices: [{ name: "devA", count: 2 }],
-      recent: [expect.objectContaining({ deviceId: "devA", pointId: "p1", category: "TimeoutException", message: "超时" })]
+      categoryOverflowText: "另有未单独跟踪分类异常 2 次",
+      deviceOverflowText: "另有未单独跟踪设备异常 7 次",
+      recent: [expect.objectContaining({ deviceId: "devA", pointId: "p1", category: "TimeoutException", exceptionType: "SocketTimeoutException", requestId: "obs-req-1", message: "超时" })]
     }));
+  });
+
+  it("归一化 Pipeline 状态、风险和队列使用率", () => {
+    const detail = buildPipelineDetail({
+      status: "WARNING",
+      ingress: { enabled: true, status: "HEALTHY", localQueueSize: 1, queueCapacity: 10, queueUtilization: 0.1, redisPendingCount: 0 },
+      stream: { enabled: true, status: "WARNING", queueSize: 7, queueCapacity: 10, queueUtilization: 0.7, redisPendingCount: 3 },
+      history: { enabled: true, status: "DANGER", queueSize: 9, queueCapacity: 10, queueUtilization: 0.9, deadLetterCount: 2 },
+      cloud: { enabled: false, status: "DISABLED", pendingCount: 0, queueUtilization: 0 },
+      executors: { cache: { status: "UNKNOWN", queueSize: 2, queueCapacity: 4, queueUtilization: 0.5, rejectedCount: 1 } },
+      risks: ["HISTORY_DEAD_LETTER", "EXECUTOR_QUEUE_HIGH", "CUSTOM_RISK"]
+    });
+
+    expect(detail.statusText).toBe("预警");
+    expect(detail.stages.map((stage) => stage.statusText)).toEqual(["正常", "预警", "危险", "未启用"]);
+    expect(detail.stages[1].utilizationText).toBe("70%");
+    expect(detail.risks).toEqual(["历史写入存在死信积压", "线程池队列压力偏高", "CUSTOM RISK"]);
+    expect(detail.executors[0]).toEqual(expect.objectContaining({ name: "cache", statusText: "未知", utilizationText: "50%", rejectedText: "1" }));
+  });
+
+  it("requestId 构建日志 keyword 路由", () => {
+    expect(buildLogRouteForRequestId("obs-054-request-001")).toEqual({ name: "log", query: { keyword: "obs-054-request-001" } });
+    expect(buildLogRouteForRequestId(" ")).toBeNull();
   });
 
   it("归一化历史存储状态", () => {

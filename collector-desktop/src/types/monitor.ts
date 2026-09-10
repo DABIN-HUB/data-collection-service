@@ -328,8 +328,57 @@ export interface ThreadPoolSnapshot {
   maxPoolSize?: number;
   activeCount?: number;
   queueSize?: number;
+  queueCapacity?: number;
+  queueUtilization?: number;
   completedTaskCount?: number;
   rejectedCount?: number;
+  [key: string]: unknown;
+}
+
+export type PipelineStatus = "HEALTHY" | "WARNING" | "DANGER" | "UNKNOWN" | "DISABLED" | string;
+
+export interface PipelineStageSnapshot {
+  enabled?: boolean;
+  status?: PipelineStatus;
+  queueSize?: number;
+  localQueueSize?: number;
+  redisPendingCount?: number;
+  processingCount?: number;
+  deadLetterCount?: number;
+  queueCapacity?: number;
+  queueUtilization?: number;
+  rejectedCount?: number;
+  droppedCount?: number;
+  failureCount?: number;
+  oldestMessageAgeMillis?: number;
+  pendingCount?: number;
+  isolatedCount?: number;
+  [key: string]: unknown;
+}
+
+export interface PipelineExecutorSnapshot {
+  name?: string;
+  status?: PipelineStatus;
+  corePoolSize?: number;
+  maxPoolSize?: number;
+  activeCount?: number;
+  queueSize?: number;
+  queueCapacity?: number;
+  queueUtilization?: number;
+  completedTaskCount?: number;
+  rejectedCount?: number;
+  [key: string]: unknown;
+}
+
+export interface PipelineBackpressureSnapshot {
+  status?: PipelineStatus;
+  generatedAt?: number;
+  ingress?: PipelineStageSnapshot;
+  stream?: PipelineStageSnapshot;
+  history?: PipelineStageSnapshot;
+  cloud?: PipelineStageSnapshot;
+  executors?: Record<string, PipelineExecutorSnapshot>;
+  risks?: string[];
   [key: string]: unknown;
 }
 
@@ -337,7 +386,9 @@ export interface ExceptionSummary {
   deviceId?: string;
   pointId?: string;
   category?: string;
+  exceptionType?: string;
   message?: string;
+  requestId?: string;
   timestamp?: number;
   [key: string]: unknown;
 }
@@ -347,6 +398,12 @@ export interface ExceptionStatsSnapshot {
   byCategory?: Record<string, number>;
   byDevice?: Record<string, number>;
   recent?: ExceptionSummary[];
+  trackedCategoryCount?: number;
+  categoryCapacity?: number;
+  otherCategoryExceptions?: number;
+  trackedDeviceCount?: number;
+  deviceCapacity?: number;
+  otherDeviceExceptions?: number;
   generatedAt?: number;
   [key: string]: unknown;
 }

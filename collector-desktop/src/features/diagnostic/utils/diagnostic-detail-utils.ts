@@ -1,3 +1,5 @@
+import { RouteNames } from "@/router/route-names";
+
 export interface CacheDetail {
   status: string;
   tone: string;
@@ -34,7 +36,9 @@ export interface ExceptionDetail {
   totalText: string;
   topCategories: Array<{ name: string; count: number }>;
   topDevices: Array<{ name: string; count: number }>;
-  recent: Array<{ deviceId: string; pointId: string; category: string; message: string; timestamp?: number }>;
+  categoryOverflowText: string;
+  deviceOverflowText: string;
+  recent: Array<{ deviceId: string; pointId: string; category: string; exceptionType: string; message: string; requestId: string; timestamp?: number }>;
 }
 
 export interface StorageDetail {
@@ -43,6 +47,38 @@ export interface StorageDetail {
   tone: string;
   responseTimeText: string;
   message: string;
+}
+
+export interface PipelineStageDetail {
+  name: string;
+  status: string;
+  statusText: string;
+  tone: string;
+  enabledText: string;
+  queueText: string;
+  utilizationText: string;
+}
+
+export interface PipelineExecutorDetail {
+  name: string;
+  status: string;
+  statusText: string;
+  tone: string;
+  queueText: string;
+  capacityText: string;
+  utilizationText: string;
+  rejectedText: string;
+}
+
+export interface PipelineDetail {
+  status: string;
+  statusText: string;
+  tone: string;
+  riskCount: number;
+  risks: string[];
+  hiddenRiskCount: number;
+  stages: PipelineStageDetail[];
+  executors: PipelineExecutorDetail[];
 }
 
 export function buildCacheDetail(input: unknown): CacheDetail {
@@ -95,21 +131,54 @@ export function buildPerformanceDetail(input: unknown): PerformanceDetail {
 
 export function buildExceptionDetail(input: unknown): ExceptionDetail {
   const data = unwrapData(input);
+  const otherCategoryExceptions = numberValue(data.otherCategoryExceptions, 0);
+  const otherDeviceExceptions = numberValue(data.otherDeviceExceptions, 0);
   return {
     totalText: `${numberValue(data.totalExceptions ?? data.totalCount ?? data.errorCount, 0)} 次`,
     topCategories: entriesByCount(data.byCategory),
     topDevices: entriesByCount(data.byDevice),
+    categoryOverflowText: otherCategoryExceptions > 0 ? `另有未单独跟踪分类异常 ${otherCategoryExceptions} 次` : "",
+    deviceOverflowText: otherDeviceExceptions > 0 ? `另有未单独跟踪设备异常 ${otherDeviceExceptions} 次` : "",
     recent: arrayValue(data.recent).map((item) => {
       const row = asRecord(item);
       return {
         deviceId: String(row.deviceId || "-"),
         pointId: String(row.pointId || "-"),
         category: String(row.category || row.type || "UNKNOWN"),
+        exceptionType: String(row.exceptionType || "-"),
         message: String(row.message || row.error || "-"),
+        requestId: String(row.requestId || ""),
         timestamp: optionalNumber(row.timestamp)
       };
     })
   };
+}
+
+export function buildPipelineDetail(input: unknown): PipelineDetail {
+  const data = unwrapData(input);
+  const status = String(data.status || "UNKNOWN").toUpperCase();
+  const riskItems = arrayValue(data.risks).map(readableRisk).filter(Boolean);
+  const visibleRisks = riskItems.slice(0, 8);
+  return {
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    riskCount: riskItems.length,
+    risks: visibleRisks,
+    hiddenRiskCount: Math.max(0, riskItems.length - visibleRisks.length),
+    stages: [
+      pipelineStage("Ingress", asRecord(data.ingress)),
+      pipelineStage("Stream", asRecord(data.stream)),
+      pipelineStage("History", asRecord(data.history)),
+      pipelineStage("Cloud", asRecord(data.cloud))
+    ],
+    executors: Object.entries(asRecord(data.executors)).map(([name, value]) => pipelineExecutor(name, asRecord(value)))
+  };
+}
+
+export function buildLogRouteForRequestId(requestId: string): { name: string; query: { keyword: string } } | null {
+  const keyword = requestId.trim();
+  return keyword ? { name: RouteNames.LOG, query: { keyword } } : null;
 }
 
 export function buildStorageDetail(input: unknown): StorageDetail {
@@ -144,6 +213,36 @@ function normalizeConnectionRow(record: Record<string, unknown>, missingIds: Set
   };
 }
 
+function pipelineStage(name: string, data: Record<string, unknown>): PipelineStageDetail {
+  const status = String(data.status || "UNKNOWN").toUpperCase();
+  const queueSize = numberValue(data.queueSize ?? data.localQueueSize, 0);
+  const backlog = numberValue(data.redisPendingCount ?? data.pendingCount ?? data.deadLetterCount, 0);
+  const capacity = optionalNumber(data.queueCapacity);
+  return {
+    name,
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    enabledText: data.enabled === false ? "未启用" : "已启用",
+    queueText: `队列 ${queueSize}${capacity !== undefined && capacity >= 0 ? `/${capacity}` : ""}，积压 ${backlog}`,
+    utilizationText: percentText(data.queueUtilization)
+  };
+}
+
+function pipelineExecutor(name: string, data: Record<string, unknown>): PipelineExecutorDetail {
+  const status = String(data.status || "UNKNOWN").toUpperCase();
+  return {
+    name,
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    queueText: String(numberValue(data.queueSize, 0)),
+    capacityText: String(numberValue(data.queueCapacity, -1)),
+    utilizationText: percentText(data.queueUtilization),
+    rejectedText: String(numberValue(data.rejectedCount, 0))
+  };
+}
+
 function entriesByCount(value: unknown): Array<{ name: string; count: number }> {
   return Object.entries(asRecord(value))
     .map(([name, count]) => ({ name, count: numberValue(count, 0) }))
@@ -152,6 +251,29 @@ function entriesByCount(value: unknown): Array<{ name: string; count: number }> 
 
 function storageStatusText(status: string): string {
   return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", ERROR: "异常", DISABLED: "未启用", UNKNOWN: "未知" } as Record<string, string>)[status] || status;
+}
+
+function pipelineStatusText(status: string): string {
+  return ({ HEALTHY: "正常", WARNING: "预警", DANGER: "危险", UNKNOWN: "未知", DISABLED: "未启用" } as Record<string, string>)[status] || status;
+}
+
+function pipelineTone(status: string): string {
+  return ({ HEALTHY: "is-online", WARNING: "is-warning", DANGER: "is-error", UNKNOWN: "", DISABLED: "is-dim" } as Record<string, string>)[status] || "";
+}
+
+function readableRisk(code: unknown): string {
+  const text = String(code || "");
+  const translated = ({
+    HISTORY_DEAD_LETTER: "历史写入存在死信积压",
+    INGRESS_REDIS_UNAVAILABLE: "Ingress Redis 指标不可用",
+    EXECUTOR_QUEUE_HIGH: "线程池队列压力偏高",
+    CLOUD_OUTBOX_BACKLOG: "云端 Outbox 积压",
+    CLOUD_SOURCE_FAILURE: "云端监控源读取失败",
+    EXECUTOR_SOURCE_FAILURE: "线程池监控源读取失败",
+    STREAM_REDIS_FAILURE: "Stream Redis 写入失败",
+    HISTORY_REPLAY_FAILURE: "历史回放失败"
+  } as Record<string, string>)[text];
+  return translated || text.replace(/_/g, " ");
 }
 
 function percentText(value: unknown): string {

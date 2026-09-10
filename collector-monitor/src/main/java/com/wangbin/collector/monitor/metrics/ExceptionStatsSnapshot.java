@@ -27,5 +27,23 @@ public class ExceptionStatsSnapshot {
     private final List<ExceptionSummary> recent = Collections.emptyList();
 
     @Builder.Default
+    private final int trackedCategoryCount = 0;
+
+    @Builder.Default
+    private final int categoryCapacity = 0;
+
+    @Builder.Default
+    private final long otherCategoryExceptions = 0L;
+
+    @Builder.Default
+    private final int trackedDeviceCount = 0;
+
+    @Builder.Default
+    private final int deviceCapacity = 0;
+
+    @Builder.Default
+    private final long otherDeviceExceptions = 0L;
+
+    @Builder.Default
     private final long generatedAt = Instant.now().toEpochMilli();
 }

@@ -2,13 +2,18 @@
   <section class="exact-surface diagnostic-detail-panel">
     <div class="exact-surface-head">
       <h2>诊断详情增强</h2>
-      <span>缓存 · 连接 · 性能 · 异常 · 存储</span>
+      <span>缓存 · Pipeline · 连接 · 性能 · 异常 · 存储</span>
     </div>
     <div class="exact-diagnostic-cards diagnostic-detail-cards">
       <div class="exact-diagnostic-card">
         <span>缓存命中率</span>
         <strong>{{ cacheDetail.hitRateText }}</strong>
         <small>L1 {{ cacheDetail.level1Text }} / L2 {{ cacheDetail.level2Text }} / Miss {{ cacheDetail.missRateText }}</small>
+      </div>
+      <div class="exact-diagnostic-card">
+        <span>Pipeline 状态</span>
+        <strong><span class="status-badge" :class="pipelineDetail.tone">{{ pipelineDetail.statusText }}</span></strong>
+        <small>风险 {{ pipelineDetail.riskCount }} 条</small>
       </div>
       <div class="exact-diagnostic-card">
         <span>设备连接</span>
@@ -31,6 +36,41 @@
         <small>{{ storageDetail.message }}</small>
       </div>
     </div>
+
+    <section class="exact-table-card diagnostic-pipeline-card">
+      <div class="exact-table-title"><h2>Pipeline Backpressure</h2><span>{{ pipelineDetail.statusText }}</span></div>
+      <div class="diagnostic-detail-grid compact-grid">
+        <div v-for="stage in pipelineDetail.stages" :key="stage.name" class="modao-property-item pipeline-stage-card">
+          <span>{{ stage.name }}</span>
+          <strong><span class="status-badge" :class="stage.tone">{{ stage.statusText }}</span></strong>
+          <small>{{ stage.enabledText }} · {{ stage.queueText }} · 使用率 {{ stage.utilizationText }}</small>
+        </div>
+      </div>
+      <div class="modao-risk-list pipeline-risk-list">
+        <div v-if="pipelineDetail.risks.length === 0" class="empty-state compact">暂无 Pipeline 风险</div>
+        <div v-for="risk in pipelineDetail.risks" :key="risk" class="modao-risk-item"><strong>{{ risk }}</strong><small>Pipeline 风险</small></div>
+        <div v-if="pipelineDetail.hiddenRiskCount > 0" class="modao-risk-item"><strong>另有 {{ pipelineDetail.hiddenRiskCount }} 条</strong><small>请查看原始诊断 JSON</small></div>
+      </div>
+    </section>
+
+    <section class="exact-table-card diagnostic-executor-table">
+      <div class="exact-table-title"><h2>Telemetry Executor Pressure</h2><span>{{ pipelineDetail.executors.length }} 个线程池</span></div>
+      <table>
+        <thead><tr><th>Executor</th><th>状态</th><th>Queue</th><th>Capacity</th><th>Utilization</th><th>Rejected</th></tr></thead>
+        <tbody>
+          <tr v-if="pipelineDetail.executors.length === 0"><td colspan="6" class="exact-empty">暂无 Pipeline 线程池指标</td></tr>
+          <tr v-for="executor in pipelineDetail.executors" :key="executor.name">
+            <td><code>{{ executor.name }}</code></td>
+            <td><span class="status-badge" :class="executor.tone">{{ executor.statusText }}</span></td>
+            <td>{{ executor.queueText }}</td>
+            <td>{{ executor.capacityText }}</td>
+            <td>{{ executor.utilizationText }}</td>
+            <td>{{ executor.rejectedText }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <div class="diagnostic-detail-grid">
       <section class="exact-table-card diagnostic-sub-card">
         <div class="exact-table-title"><h2>缓存服务明细</h2><span>{{ cacheDetail.status }}</span></div>
@@ -75,27 +115,34 @@
         <div class="modao-risk-list">
           <div v-if="exceptionDetail.topCategories.length === 0" class="empty-state compact">暂无异常分类统计</div>
           <div v-for="item in exceptionDetail.topCategories.slice(0, 5)" :key="item.name" class="modao-risk-item"><strong>{{ item.name }}</strong><small>{{ item.count }} 次</small></div>
+          <div v-if="exceptionDetail.categoryOverflowText" class="modao-risk-item"><strong>{{ exceptionDetail.categoryOverflowText }}</strong><small>分类溢出</small></div>
         </div>
       </section>
       <section class="exact-table-card diagnostic-sub-card">
-        <div class="exact-table-title"><h2>最慢设备 Top</h2><span>采集耗时排行</span></div>
+        <div class="exact-table-title"><h2>异常设备 Top</h2><span>设备异常排行</span></div>
         <div class="modao-risk-list">
-          <div v-if="performanceDetail.slowestDevices.length === 0" class="empty-state compact">暂无慢设备统计</div>
-          <div v-for="item in performanceDetail.slowestDevices.slice(0, 5)" :key="item.deviceId" class="modao-risk-item"><strong>{{ item.deviceId }}</strong><small>{{ item.costMs }} ms</small></div>
+          <div v-if="exceptionDetail.topDevices.length === 0" class="empty-state compact">暂无设备异常统计</div>
+          <div v-for="item in exceptionDetail.topDevices.slice(0, 5)" :key="item.name" class="modao-risk-item"><strong>{{ item.name }}</strong><small>{{ item.count }} 次</small></div>
+          <div v-if="exceptionDetail.deviceOverflowText" class="modao-risk-item"><strong>{{ exceptionDetail.deviceOverflowText }}</strong><small>设备溢出</small></div>
         </div>
       </section>
     </div>
     <section class="exact-table-card diagnostic-exception-table">
       <div class="exact-table-title"><h2>最近异常</h2><span>{{ exceptionDetail.totalText }}</span></div>
       <table>
-        <thead><tr><th>时间</th><th>设备</th><th>点位</th><th>分类</th><th>消息</th></tr></thead>
+        <thead><tr><th>时间</th><th>设备</th><th>点位</th><th>分类</th><th>类型</th><th>Request ID</th><th>消息</th></tr></thead>
         <tbody>
-          <tr v-if="exceptionDetail.recent.length === 0"><td colspan="5" class="exact-empty">暂无最近异常</td></tr>
+          <tr v-if="exceptionDetail.recent.length === 0"><td colspan="7" class="exact-empty">暂无最近异常</td></tr>
           <tr v-for="item in exceptionDetail.recent.slice(0, 8)" :key="`${item.timestamp || '-'}-${item.deviceId}-${item.pointId}-${item.category}`">
             <td>{{ formatTime(item.timestamp) }}</td>
             <td>{{ item.deviceId }}</td>
             <td>{{ item.pointId }}</td>
             <td>{{ item.category }}</td>
+            <td>{{ item.exceptionType }}</td>
+            <td>
+              <button v-if="item.requestId" type="button" class="link-button" @click="goToRequestLog(item.requestId)">{{ item.requestId }}</button>
+              <span v-else>-</span>
+            </td>
             <td>{{ item.message }}</td>
           </tr>
         </tbody>
@@ -106,8 +153,9 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useRouter } from "vue-router";
 
-import { buildCacheDetail, buildDeviceConnectionRows, buildExceptionDetail, buildPerformanceDetail, buildStorageDetail } from "../utils/diagnostic-detail-utils";
+import { buildCacheDetail, buildDeviceConnectionRows, buildExceptionDetail, buildLogRouteForRequestId, buildPerformanceDetail, buildPipelineDetail, buildStorageDetail } from "../utils/diagnostic-detail-utils";
 
 const props = defineProps<{
   cacheMetrics: unknown;
@@ -115,15 +163,25 @@ const props = defineProps<{
   performanceMetrics: unknown;
   exceptionStats: unknown;
   storageMetrics: unknown;
+  pipelineMetrics: unknown;
 }>();
 
+const router = useRouter();
 const cacheDetail = computed(() => buildCacheDetail(props.cacheMetrics));
 const connectionRows = computed(() => buildDeviceConnectionRows(props.deviceMetrics));
 const performanceDetail = computed(() => buildPerformanceDetail(props.performanceMetrics));
 const exceptionDetail = computed(() => buildExceptionDetail(props.exceptionStats));
 const storageDetail = computed(() => buildStorageDetail(props.storageMetrics));
+const pipelineDetail = computed(() => buildPipelineDetail(props.pipelineMetrics));
 const connectedCount = computed(() => connectionRows.value.filter((row) => row.connectedText === "已连接").length);
 const missingCount = computed(() => connectionRows.value.filter((row) => row.missing).length);
+
+function goToRequestLog(requestId: string) {
+  const route = buildLogRouteForRequestId(requestId);
+  if (route) {
+    void router.push(route);
+  }
+}
 
 function formatTime(value: unknown): string {
   if (!value) {
@@ -146,11 +204,16 @@ function formatTime(value: unknown): string {
   margin-top: 14px;
 }
 
+.diagnostic-detail-grid.compact-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .diagnostic-detail-cards {
   padding: 16px;
 }
 
-.diagnostic-detail-cards small {
+.diagnostic-detail-cards small,
+.pipeline-stage-card small {
   display: block;
   margin-top: 6px;
   color: var(--exact-dim);
@@ -159,12 +222,36 @@ function formatTime(value: unknown): string {
 
 .diagnostic-sub-card,
 .diagnostic-connection-table,
-.diagnostic-exception-table {
+.diagnostic-exception-table,
+.diagnostic-pipeline-card,
+.diagnostic-executor-table {
   margin-top: 14px;
 }
 
+.pipeline-risk-list {
+  margin-top: 12px;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--exact-accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.is-dim {
+  opacity: 0.65;
+}
+
 @media (max-width: 1100px) {
-  .diagnostic-detail-grid {
+  .diagnostic-detail-grid,
+  .diagnostic-detail-grid.compact-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -29,6 +29,7 @@ export interface DiagnosticRawInput {
   exceptionStats: unknown;
   storageMetrics: unknown;
   reportMetrics: unknown;
+  pipelineMetrics: unknown;
   configSummary: unknown;
 }
 
@@ -45,6 +46,7 @@ export interface DiagnosticCardsInput {
   cacheMetrics: unknown;
   runtimeStatus: unknown;
   exceptionStats: unknown;
+  pipelineMetrics: unknown;
   devices: Array<Record<string, unknown>>;
   onlineCount: number;
   totalPointCount: number;
@@ -61,6 +63,7 @@ export interface DiagnosticRowsInput {
   storageMetrics: unknown;
   exceptionStats: unknown;
   reportMetrics: unknown;
+  pipelineMetrics: unknown;
   devices: Array<Record<string, unknown>>;
   onlineCount: number;
 }
@@ -80,6 +83,11 @@ export interface DiagnosticExportSource<T> {
 export function buildDiagnosticExportWarning(sources: Array<DiagnosticExportSource<unknown>>): string {
   const failedLabels = sources.filter((source) => source.failed).map((source) => source.label);
   return failedLabels.length ? `部分诊断样本不可用：${Array.from(new Set(failedLabels)).join("、")}` : "";
+}
+
+export function buildDiagnosticPartialWarning(labels: string[]): string {
+  const uniqueLabels = Array.from(new Set(labels.filter(Boolean)));
+  return uniqueLabels.length ? `部分诊断数据不可用：${uniqueLabels.join("、")}` : "";
 }
 
 export function buildResourceSummary(input: ResourceSummaryInput): ResourceSummary {
@@ -137,7 +145,7 @@ export function buildDiagnosticCards(input: DiagnosticCardsInput): DiagnosticCar
     { label: "点位总数", value: `${valueOf(stats, ["pointCount"], input.totalPointCount)} 个` },
     { label: "活跃连接", value: `${activeConnections} 个` },
     { label: "缓存命中率", value: percentText(cacheRate) },
-    { label: "异常统计", value: `${valueOf(input.exceptionStats, ["totalCount", "exceptionCount", "errorCount"], 0)} 次` }
+    { label: "异常统计", value: `${valueOf(input.exceptionStats, ["totalExceptions", "totalCount", "exceptionCount", "errorCount"], 0)} 次` }
   ];
 }
 
@@ -153,7 +161,9 @@ export function buildDiagnosticRows(input: DiagnosticRowsInput): DiagnosticRow[]
   const missing = Math.max(0, expectedConnections - activeConnections);
   const storageStatus = String(valueOf(input.storageMetrics, ["status", "state"], Object.keys(asRecord(input.storageMetrics)).length ? "UP" : "UNKNOWN")).toUpperCase();
   const storageKnown = Object.keys(asRecord(input.storageMetrics)).length > 0;
-  const exceptionCount = numberValue(valueOf(input.exceptionStats, ["totalCount", "exceptionCount", "errorCount"], 0), 0);
+  const exceptionCount = numberValue(valueOf(input.exceptionStats, ["totalExceptions", "totalCount", "exceptionCount", "errorCount"], 0), 0);
+  const pipelineStatus = String(valueOf(input.pipelineMetrics, ["status"], "UNKNOWN")).toUpperCase();
+  const pipelineRiskCount = Array.isArray(asRecord(input.pipelineMetrics).risks) ? (asRecord(input.pipelineMetrics).risks as unknown[]).length : 0;
   const rows = [
     { name: "应用服务", status: input.appInitialized ? "正常" : "异常", current: input.systemStatusText, suggestion: input.appInitialized ? "无需处理" : "检查应用健康检查明细" },
     { name: "设备连接", status: missing === 0 ? "正常" : "警告", current: `${activeConnections}/${expectedConnections}`, suggestion: "检查缺失连接和设备网络" },
@@ -161,7 +171,8 @@ export function buildDiagnosticRows(input: DiagnosticRowsInput): DiagnosticRow[]
     { name: "线程池拒绝", status: queued === 0 && rejected === 0 ? "正常" : "异常", current: `${input.resourceSummary.title}，队列 ${queued}，拒绝 ${rejected}`, suggestion: "检查队列容量、任务耗时和拒绝策略" },
     { name: "异常统计", status: exceptionCount === 0 ? "正常" : "警告", current: `${exceptionCount} 次`, suggestion: "查看异常统计明细和应用日志" },
     { name: "历史存储", status: storageKnown && ["UP", "OK", "ONLINE", "SUCCESS"].includes(storageStatus) ? "正常" : "警告", current: storageKnown ? diagnosticStatusText(storageStatus) : "指标不可用", suggestion: "检查 TDengine 或历史存储配置" },
-    { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: diagnosticStatusText(reportStatus), suggestion: "检查处理器、Outbox 和 ACK 状态" }
+    { name: "云端上报", status: ["UP", "ONLINE", "OK", "SUCCESS"].includes(reportStatus) ? "正常" : "警告", current: diagnosticStatusText(reportStatus), suggestion: "检查处理器、Outbox 和 ACK 状态" },
+    { name: "Pipeline Backpressure", status: pipelineRowStatus(pipelineStatus), current: `${diagnosticStatusText(pipelineStatus)}，风险 ${pipelineRiskCount} 条`, suggestion: "查看 Pipeline 队列、积压、死信和线程池压力" }
   ] satisfies Array<Omit<DiagnosticRow, "tone">>;
 
   return rows.map((row) => ({ ...row, tone: row.status === "正常" ? "is-online" : row.status === "异常" ? "is-error" : "" }));
@@ -178,6 +189,7 @@ export function buildDiagnosticRaw(input: DiagnosticRawInput): Record<string, un
     exceptions: input.exceptionStats,
     storage: input.storageMetrics,
     report: input.reportMetrics,
+    pipeline: input.pipelineMetrics,
     summary: input.configSummary
   };
 }
@@ -222,7 +234,17 @@ function diagnosticName(key: string): string {
 }
 
 function diagnosticStatusText(status: string): string {
-  return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", WARN: "存在风险", WARNING: "存在风险", ERROR: "异常", FAILED: "异常", DOWN: "异常", DISABLED: "未启用", UNKNOWN: "未知" } as Record<string, string>)[status] || status;
+  return ({ OK: "正常", UP: "正常", ONLINE: "正常", SUCCESS: "正常", HEALTHY: "正常", WARN: "存在风险", WARNING: "存在风险", DANGER: "异常", ERROR: "异常", FAILED: "异常", DOWN: "异常", DISABLED: "未启用", UNKNOWN: "未知" } as Record<string, string>)[status] || status;
+}
+
+function pipelineRowStatus(status: string): "正常" | "警告" | "异常" {
+  if (status === "HEALTHY" || status === "DISABLED") {
+    return "正常";
+  }
+  if (status === "DANGER") {
+    return "异常";
+  }
+  return "警告";
 }
 
 function valueOf(value: unknown, keys: string[], fallback: unknown): unknown {

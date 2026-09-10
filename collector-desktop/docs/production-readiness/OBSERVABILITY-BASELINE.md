@@ -779,3 +779,107 @@ Pipeline TTL remains 5 seconds. Pipeline statuses, thresholds, Prometheus metric
 - Actuator health/metrics/prometheus security remains unchanged from Task 05.3.
 
 Task 05.3-R1 is PASS / COMPLETE. Task 05.3 remains PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.4 and Task 05.5 are complete.
+
+## 27. Task 05.4 RESOLVED — Operational Diagnostic Surface
+
+Task 05.4 closes `OBS-P2-02 — ExceptionMonitor boundedness / safety` and connects the existing Task 05.3 pipeline snapshot to the Desktop Diagnostic operator surface. The change remains read-only for backend observability paths and does not alter telemetry collection, cache write, stream write, history write, cloud publish, or device-control behavior.
+
+### Exception monitor contract
+
+| Field                   |         Bound | Meaning                         |
+| ----------------------- | ------------: | ------------------------------- |
+| recent                  |           100 | latest exception summaries      |
+| byDevice                |   <= capacity | tracked device counters         |
+| otherDeviceExceptions   |          long | overflow                        |
+| byCategory              |   <= capacity | tracked categories              |
+| otherCategoryExceptions |          long | overflow                        |
+| message                 | <= max length | sanitized                       |
+| requestId               |         <=128 | HTTP correlation when available |
+
+Additional fixed bounds:
+
+- `deviceCapacity = 4096`; new device IDs beyond this hard bound increment `otherDeviceExceptions` while already tracked device IDs continue incrementing.
+- `categoryCapacity = 64`; new categories beyond this hard bound increment `otherCategoryExceptions` while already tracked categories continue incrementing.
+- `message` is sanitized before truncation; the max retained monitoring message length is `1024` characters.
+- monitoring-only `deviceId` and `pointId` are bounded to `256` characters.
+- recent summaries add `exceptionType` and `requestId` without exposing stack traces or Throwable objects.
+- background exceptions do not invent request IDs; empty request ID is expected when no HTTP MDC exists.
+
+### Message safety
+
+The ExceptionMonitor read model redacts assignment-style and bearer secrets from exception messages before they are exposed through `/monitor/errors`, Desktop Diagnostic, or diagnostic export JSON. Covered keywords include `password`, `passwd`, `pwd`, `token`, `secret`, `deviceKey`, `accessKey`, `authorization`, `Bearer`, `credential`, `apiKey` / `api-key`, and `signature` with case-insensitive matching.
+
+### ExceptionReporter coverage matrix
+
+| Area | Existing Signal | ExceptionReporter | Dedicated Metric | Action |
+| ---- | --------------- | ----------------- | ---------------- | ------ |
+| Connection | connection lifecycle logs, connection status, health/runtime device status | Present in `ConnectionManager` create/connect/disconnect/reconnect/send/receive/heartbeat failures | device connection monitor metrics | Keep existing reporting; no new noisy duplicate |
+| Collector Read | collector error counters, last error, protocol logs | Present in `BaseCollector` read/write/batch/subscription paths and protocol subclass failures | collector performance metrics | Keep existing reporting and rely on sanitizer/bounds |
+| Cache | cache hit/miss/read/write counters, cache health | Present through `MultiLevelCacheManager` cache warnings/failures | cache monitor metrics | Keep existing reporting; no taxonomy rewrite |
+| Ingress | accepted/local/redis/dead-letter/drop/rejected metrics | Not added | `TelemetryIngressBufferMetrics`, Task 05.3 pipeline stage | No duplicate ExceptionMonitor spam |
+| Stream | Redis stream backlog/write/reject/failure metrics | Not added | `StreamWriteBufferMetrics`, Task 05.3 pipeline stage | No duplicate ExceptionMonitor spam |
+| History | history buffer/backlog/drop/replay/dead-letter metrics | Not added | `HistoryBufferMetrics`, storage monitor, Task 05.3 pipeline stage | No duplicate ExceptionMonitor spam |
+| Cloud | outbox pending/isolated/oldest and report handler metrics | Not added | `CloudReportMonitorService`, `CloudOutboxSnapshot`, Task 05.3 pipeline stage | No Cloud publishing behavior change |
+| Protocol | protocol collector logs/counters and BaseCollector exception reporting | Present via protocol subclasses using `recordException(...)` | protocol/collector metrics where available | Keep existing signal |
+| HTTP | requestId, response status, access log, OperationLogger query | Not added for generic 4xx/validation | access log / OperationLogger | Avoid double counting HTTP validation/user errors |
+
+Monitoring-source failures, including pipeline source failures, remain represented as `UNKNOWN`/risk entries plus WARN logs and are not recursively reported into ExceptionMonitor.
+
+### Incident workflow
+
+```text
+设备采集异常
+↓
+Diagnostic
+↓
+Recent Exception
+↓
+deviceId / pointId / category / exceptionType
+↓
+如果有 requestId
+→ Log 页面按 requestId 查
+↓
+同时看 Pipeline
+→ queue/backlog/dead-letter/executor pressure/cloud outbox
+```
+
+Only HTTP-correlated exceptions can link directly to request logs through `requestId`. Background collector, scheduler, subscription, and cloud retry exceptions normally have an empty request ID.
+
+### Desktop Diagnostic surface
+
+- Diagnostic now loads `/monitor/pipeline` through `monitor.api.ts` instead of direct Axios calls.
+- `/monitor/pipeline` failures are partial/degraded: existing diagnostic data remains visible and last-good pipeline data is preserved if present.
+- The Diagnostic detail panel displays overall pipeline status, Ingress/Stream/History/Cloud stage cards, executor pressure table, and bounded translated risk list.
+- The exception panel now displays Top Categories, Top Devices, overflow information, recent `exceptionType`, `requestId`, and a request-ID action that navigates to the Log page keyword search.
+- Diagnostic raw JSON/export includes the pipeline snapshot and does not include Prometheus scrape data.
+
+### 05.4 verification evidence
+
+| Check | Result |
+| --- | --- |
+| ExceptionMonitor boundedness/safety tests | PASS — recent/device/category/concurrency/sanitizer/context/requestId/null throwable covered |
+| `/monitor/errors` compatibility test | PASS — legacy fields and additive bounds/overflow/recent metadata serialized |
+| Diagnostic frontend helpers | PASS — pipeline statuses, risks, utilization, top devices, overflow, exception type, requestId route, partial warning covered |
+| Backend regression | PASS — collector-monitor and collector-web with dependencies |
+| Frontend regression | PASS — typecheck, test, build, build:web, verify |
+| Runtime `/monitor/errors` | PASS — no token 401, VIEW token 200 with legacy and additive fields |
+| Runtime `/monitor/pipeline` | PASS — VIEW 200 with unchanged contract |
+| Smoke regressions | PASS — correlation smoke, pipeline smoke, real backend smoke |
+| Source audit | PASS — changed source files are UTF-8 and source-like |
+| Secret scan | PASS — no credential values in production/config/docs; sanitizer sentinel values only in tests |
+| Diff check | PASS — `git diff --check` exit 0 |
+
+### 05.4 Findings Status
+
+| Finding | Status | Resolution |
+| --- | --- | --- |
+| OBS-P1-01 | CLOSED | request correlation remains verified |
+| OBS-P1-02 | CLOSED | access logging remains verified |
+| OBS-P1-03 | CLOSED | rolling file logging remains verified |
+| OBS-P1-04 | CLOSED | actuator metrics/prometheus protection unchanged |
+| OBS-P1-05 | CLOSED | pipeline observability unchanged and surfaced in Diagnostic |
+| OBS-P2-01 | CLOSED | liveness/readiness/business health unchanged |
+| OBS-P2-02 | CLOSED | ExceptionMonitor boundedness, overflow, message safety, requestId, and Desktop operator actions implemented |
+| OBS-P2-03 | CLOSED | Prometheus contract unchanged; no high-cardinality exception metrics added |
+
+Task 05.4 is PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.5 is complete.

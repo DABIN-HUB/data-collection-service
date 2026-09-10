@@ -6,6 +6,8 @@ import com.wangbin.collector.monitor.metrics.CacheMonitorService;
 import com.wangbin.collector.monitor.metrics.CloudReportMonitorService;
 import com.wangbin.collector.monitor.metrics.DeviceMonitorService;
 import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
+import com.wangbin.collector.monitor.metrics.ExceptionStatsSnapshot;
+import com.wangbin.collector.monitor.metrics.ExceptionSummary;
 import com.wangbin.collector.monitor.metrics.PerformanceMonitorService;
 import com.wangbin.collector.monitor.metrics.PipelineBackpressureMonitorService;
 import com.wangbin.collector.monitor.metrics.PipelineBackpressureSnapshot;
@@ -89,6 +91,57 @@ class MonitorControllerTest {
                 .andExpect(jsonPath("$.cloud.status", is("DISABLED")))
                 .andExpect(jsonPath("$.executors.cache.queueCapacity", is(100)))
                 .andExpect(jsonPath("$.risks[0]", is("INGRESS_LOCAL_QUEUE_HIGH")));
+    }
+
+    @Test
+    void shouldReturnExceptionStatsWithBackwardCompatibleAndAdditiveSafetyFields() throws Exception {
+        ExceptionMonitorService exceptionMonitorService = mock(ExceptionMonitorService.class);
+        when(exceptionMonitorService.getStats()).thenReturn(ExceptionStatsSnapshot.builder()
+                .totalExceptions(2L)
+                .byCategory(Map.of("TIMEOUT", 1L))
+                .byDevice(Map.of("dev-1", 1L))
+                .trackedCategoryCount(1)
+                .categoryCapacity(64)
+                .otherCategoryExceptions(3L)
+                .trackedDeviceCount(1)
+                .deviceCapacity(4096)
+                .otherDeviceExceptions(4L)
+                .recent(List.of(ExceptionSummary.builder()
+                        .deviceId("dev-1")
+                        .pointId("p1")
+                        .category("TIMEOUT")
+                        .exceptionType("SocketTimeoutException")
+                        .requestId("obs-request-1")
+                        .message("token=***")
+                        .timestamp(1788998400000L)
+                        .build()))
+                .build());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new MonitorController(
+                mock(CacheMonitorService.class),
+                mock(DeviceMonitorService.class),
+                mock(PerformanceMonitorService.class),
+                mock(SystemResourceMonitorService.class),
+                exceptionMonitorService,
+                mock(CloudReportMonitorService.class),
+                mock(PipelineBackpressureMonitorService.class),
+                mock(TdengineMonitorService.class),
+                mock(CollectionScheduler.class),
+                mock(ConsoleRuntimeStatusApplicationService.class))).build();
+
+        mockMvc.perform(get("/monitor/errors"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalExceptions", is(2)))
+                .andExpect(jsonPath("$.byCategory.TIMEOUT", is(1)))
+                .andExpect(jsonPath("$.byDevice.dev-1", is(1)))
+                .andExpect(jsonPath("$.trackedCategoryCount", is(1)))
+                .andExpect(jsonPath("$.categoryCapacity", is(64)))
+                .andExpect(jsonPath("$.otherCategoryExceptions", is(3)))
+                .andExpect(jsonPath("$.trackedDeviceCount", is(1)))
+                .andExpect(jsonPath("$.deviceCapacity", is(4096)))
+                .andExpect(jsonPath("$.otherDeviceExceptions", is(4)))
+                .andExpect(jsonPath("$.recent[0].exceptionType", is("SocketTimeoutException")))
+                .andExpect(jsonPath("$.recent[0].requestId", is("obs-request-1")))
+                .andExpect(jsonPath("$.recent[0].message", is("token=***")));
     }
 
     private PipelineBackpressureSnapshot pipelineSnapshot() {

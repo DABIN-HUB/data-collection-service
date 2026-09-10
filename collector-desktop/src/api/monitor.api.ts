@@ -7,6 +7,7 @@ import type {
   DeviceStatusSnapshot,
   ExceptionStatsSnapshot,
   PerformanceStatsSnapshot,
+  PipelineBackpressureSnapshot,
   StorageMetricsSnapshot,
   SystemResourceSnapshot
 } from "@/types/monitor";
@@ -37,6 +38,10 @@ export function getExceptionStats(): Promise<ExceptionStatsSnapshot> {
 
 export function getCloudReportMetrics(): Promise<CloudReportMetricsResponse> {
   return requestRaw<CloudReportMetricsResponse>({ url: "/monitor/report", method: "GET" });
+}
+
+export function getPipelineBackpressure(): Promise<PipelineBackpressureSnapshot> {
+  return requestRaw<PipelineBackpressureSnapshot>({ url: "/monitor/pipeline", method: "GET" });
 }
 
 export function getStorageMetrics(): Promise<StorageMetricsSnapshot> {

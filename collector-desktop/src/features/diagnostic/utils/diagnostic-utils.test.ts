@@ -4,6 +4,7 @@ import {
   buildDiagnosticAdvice,
   buildDiagnosticCards,
   buildDiagnosticExportWarning,
+  buildDiagnosticPartialWarning,
   buildDiagnosticRaw,
   buildDiagnosticRows,
   buildDiagnosticRuntimeSummary,
@@ -38,7 +39,8 @@ describe("diagnostic-utils", () => {
       deviceConnectionMetrics: { activeConnections: 1 },
       cacheMetrics: { totalHitRate: 0.92 },
       runtimeStatus: {},
-      exceptionStats: { totalCount: 4 },
+      exceptionStats: { totalExceptions: 4 },
+      pipelineMetrics: { status: "HEALTHY" },
       devices: [{ deviceId: "dev-1" }, { deviceId: "dev-2" }],
       onlineCount: 1,
       totalPointCount: 5
@@ -62,8 +64,9 @@ describe("diagnostic-utils", () => {
       deviceConnectionMetrics: { expectedConnections: 2, activeConnections: 1 },
       performanceDetail: { rejectedCount: 1 },
       storageMetrics: { status: "DISABLED" },
-      exceptionStats: { totalCount: 3 },
+      exceptionStats: { totalExceptions: 3 },
       reportMetrics: { status: "ERROR" },
+      pipelineMetrics: { status: "DANGER", risks: ["EXECUTOR_QUEUE_HIGH"] },
       devices: [{ deviceId: "dev-1" }, { deviceId: "dev-2" }],
       onlineCount: 1
     });
@@ -73,7 +76,8 @@ describe("diagnostic-utils", () => {
       expect.objectContaining({ name: "设备连接", status: "警告", current: "1/2" }),
       expect.objectContaining({ name: "缓存服务", status: "警告", current: "50%" }),
       expect.objectContaining({ name: "线程池拒绝", status: "异常", tone: "is-error" }),
-      expect.objectContaining({ name: "云端上报", status: "警告", current: "异常" })
+      expect.objectContaining({ name: "云端上报", status: "警告", current: "异常" }),
+      expect.objectContaining({ name: "Pipeline Backpressure", status: "异常", current: "异常，风险 1 条" })
     ]));
   });
 
@@ -88,10 +92,11 @@ describe("diagnostic-utils", () => {
       exceptionStats: { totalCount: 0 },
       storageMetrics: { status: "UP" },
       reportMetrics: { status: "UP" },
+      pipelineMetrics: { status: "HEALTHY" },
       configSummary: { cacheStats: { deviceCount: 1 } }
     });
 
-    expect(raw).toMatchObject({ runtime: { status: "UP" }, report: { status: "UP" }, summary: { cacheStats: { deviceCount: 1 } } });
+    expect(raw).toMatchObject({ runtime: { status: "UP" }, report: { status: "UP" }, pipeline: { status: "HEALTHY" }, summary: { cacheStats: { deviceCount: 1 } } });
     expect(buildDiagnosticRuntimeSummary({ devices: [{ status: "ONLINE" }, { status: "ERROR" }], onlineCount: 1, reportMetrics: raw.report })).toEqual({
       totalDevices: 2,
       onlineCount: 1,
@@ -110,5 +115,6 @@ describe("diagnostic-utils", () => {
     expect(buildDiagnosticExportWarning([
       { label: "最近告警", value: [], failed: false }
     ])).toBe("");
+    expect(buildDiagnosticPartialWarning(["Pipeline", "Pipeline", "异常统计"])).toBe("部分诊断数据不可用：Pipeline、异常统计");
   });
 });

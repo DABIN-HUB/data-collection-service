@@ -12,6 +12,8 @@ public class ExceptionSummary {
     private final String deviceId;
     private final String pointId;
     private final String category;
+    private final String exceptionType;
     private final String message;
+    private final String requestId;
     private final long timestamp;
 }
