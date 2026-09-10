@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,13 +53,30 @@ class OperationLoggerTest {
                 .containsExactly("第二条");
     }
 
+    @Test
+    void shouldCaptureRequestIdFromMdcAndSearchByRequestId() {
+        operationLogger.doAppend(event(Level.INFO, "test", "普通运行日志", Map.of("requestId", "obs-052-001")));
+        operationLogger.doAppend(event(Level.INFO, "test", "其它运行日志", Map.of("requestId", "other-request")));
+
+        List<OperationLogger.OperationLogEntry> entries = operationLogger.query(null, null, "obs-052-001", 20);
+
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).requestId()).isEqualTo("obs-052-001");
+        assertThat(entries.get(0).message()).isEqualTo("普通运行日志");
+    }
+
     private LoggingEvent event(Level level, String logger, String message) {
+        return event(level, logger, message, Map.of());
+    }
+
+    private LoggingEvent event(Level level, String logger, String message, Map<String, String> mdc) {
         LoggingEvent event = new LoggingEvent();
         event.setLevel(level);
         event.setLoggerName(logger);
         event.setThreadName("测试线程");
         event.setMessage(message);
         event.setTimeStamp(System.currentTimeMillis());
+        event.setMDCPropertyMap(mdc);
         return event;
     }
 }

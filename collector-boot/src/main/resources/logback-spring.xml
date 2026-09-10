@@ -1,23 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-  <!-- 简单的彩色日志模式 -->
-  <property name="COLOR_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) %cyan(%logger{36}) - %msg%n" disableAnsi="false"/>
+  <springProperty scope="context" name="LOG_FILE" source="logging.file.name" defaultValue="logs/collector.log"/>
+  <springProperty scope="context" name="LOG_MAX_SIZE" source="logging.file.max-size" defaultValue="10MB"/>
+  <springProperty scope="context" name="LOG_MAX_HISTORY" source="logging.file.max-history" defaultValue="30"/>
+  <springProperty scope="context" name="LOG_TOTAL_SIZE_CAP" source="logging.file.total-size-cap" defaultValue="300MB"/>
 
-  <!-- 控制台输出 -->
+  <!-- 控制台保留彩色级别，供 Docker/Kubernetes 标准输出采集。 -->
+  <property name="CONSOLE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] [req:%X{requestId:-}] %cyan(%logger{36}) - %msg%n" disableAnsi="false"/>
+  <!-- 文件日志不使用 ANSI 颜色，便于检索和归档。 -->
+  <property name="FILE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [req:%X{requestId:-}] %logger{36} - %msg%n"/>
+
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>${COLOR_PATTERN}</pattern>
+      <pattern>${CONSOLE_PATTERN}</pattern>
       <charset>UTF-8</charset>
     </encoder>
   </appender>
 
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_FILE}</file>
+    <encoder>
+      <pattern>${FILE_PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <maxFileSize>${LOG_MAX_SIZE}</maxFileSize>
+      <maxHistory>${LOG_MAX_HISTORY}</maxHistory>
+      <totalSizeCap>${LOG_TOTAL_SIZE_CAP}</totalSizeCap>
+    </rollingPolicy>
+  </appender>
+
   <root level="INFO">
     <appender-ref ref="STDOUT"/>
+    <appender-ref ref="FILE"/>
   </root>
 
   <!-- 业务包默认只输出告警和错误，避免采集、处理、SQL、上报成功路径刷屏。 -->
   <logger name="com.wangbin.collector" level="WARN"/>
+  <!-- 访问日志使用独立记录器，避免受业务包 WARN 策略影响。 -->
+  <logger name="collector.access" level="INFO" additivity="true"/>
   <!-- SQL 明细默认只在错误时输出；需要排查 SQL 时临时通过配置打开 DEBUG。 -->
   <logger name="com.wangbin.collector.mapper" level="ERROR"/>
   <logger name="com.wangbin.collector.storage.repository" level="ERROR"/>

@@ -53,7 +53,7 @@ class OpsControllerTest {
     void shouldQuerySanitizedOperationLogs() throws Exception {
         when(operationLogger.query("ERROR", null, "连接", 20))
                 .thenReturn(List.of(new OperationLogger.OperationLogEntry(
-                        1_000L, "ERROR", "测试日志", "测试线程", "设备连接失败")));
+                        1_000L, "ERROR", "测试日志", "测试线程", "obs-052-controller", "设备连接失败")));
         when(operationLogger.size()).thenReturn(1);
 
         mockMvc.perform(get("/api/ops/logs")
@@ -64,6 +64,7 @@ class OpsControllerTest {
                 .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.count", is(1)))
+                .andExpect(jsonPath("$.data.items[0].requestId", is("obs-052-controller")))
                 .andExpect(jsonPath("$.data.items[0].message", is("设备连接失败")));
     }
 
