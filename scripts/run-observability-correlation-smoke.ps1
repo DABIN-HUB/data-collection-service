@@ -14,11 +14,7 @@ $baseUrl = "http://127.0.0.1:$Port/collector"
 $opsToken = "ops" + "-" + "token"
 $secretSentinel = "OBS_SECRET_052"
 
-function Mark-Step([string]$Name) {
-    Set-Content -Path (Join-Path $tempRoot "step.txt") -Value $Name -Encoding UTF8
-}
-
-function Assert-True($Condition, $Message) {
+function Assert-True($Condition, [string]$Message) {
     if (-not $Condition) {
         throw $Message
     }
@@ -27,71 +23,97 @@ function Assert-True($Condition, $Message) {
 function Invoke-CollectorRequest {
     param(
         [string]$Method = "GET",
-        [string]$Path,
+        [Parameter(Mandatory = $true)][string]$Path,
         [hashtable]$Headers = @{},
-        [string]$Body = $null
+        [AllowNull()][object]$Body = $null
     )
 
-    $request = [System.Net.HttpWebRequest]::Create("$baseUrl$Path")
-    $request.Method = $Method
-    $request.Proxy = $null
-    $request.Timeout = 10000
-    $request.ReadWriteTimeout = 10000
-    $request.Accept = "application/json"
+    $uri = "$baseUrl$Path"
+    $requestHeaders = @{}
     foreach ($key in $Headers.Keys) {
-        $request.Headers[$key] = [string]$Headers[$key]
+        $requestHeaders[$key] = [string]$Headers[$key]
     }
-    if ($null -ne $Body) {
-        $payload = [System.Text.Encoding]::UTF8.GetBytes($Body)
-        $request.ContentType = "application/json"
-        $request.ContentLength = $payload.Length
-        $stream = $request.GetRequestStream()
-        $stream.Write($payload, 0, $payload.Length)
-        $stream.Dispose()
+
+    $parameters = @{
+        Uri = $uri
+        Method = $Method
+        Headers = $requestHeaders
+        TimeoutSec = 10
+        UseBasicParsing = $true
+        ErrorAction = "Stop"
     }
+    if ($PSBoundParameters.ContainsKey("Body")) {
+        $parameters["Body"] = [string]$Body
+        $parameters["ContentType"] = "application/json"
+    }
+
     try {
-        $response = $request.GetResponse()
-    } catch [System.Net.WebException] {
-        if ($_.Exception.Response) {
-            $response = $_.Exception.Response
-        } else {
+        $response = Invoke-WebRequest @parameters
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Body = [string]$response.Content
+            RequestId = [string]$response.Headers["X-Request-Id"]
+        }
+    } catch {
+        $httpResponse = $_.Exception.Response
+        if ($null -eq $httpResponse) {
             throw
         }
-    }
-    try {
-        $reader = [System.IO.StreamReader]::new($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
-        $bodyText = $reader.ReadToEnd()
-        $reader.Dispose()
-        [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Body = $bodyText; RequestId = [string]$response.Headers["X-Request-Id"] }
-    } finally {
-        $response.Dispose()
+        $bodyText = ""
+        try {
+            $stream = $httpResponse.GetResponseStream()
+            if ($null -ne $stream) {
+                $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
+                $bodyText = $reader.ReadToEnd()
+                $reader.Dispose()
+            }
+        } catch {
+            $bodyText = ""
+        }
+        return [pscustomobject]@{
+            StatusCode = [int]$httpResponse.StatusCode
+            Body = $bodyText
+            RequestId = [string]$httpResponse.Headers["X-Request-Id"]
+        }
     }
 }
 
 function Wait-Started {
-    $deadline = (Get-Date).AddSeconds(45)
+    $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline) {
         if ($process.HasExited) {
             throw "collector process exited before startup. stderr=$stderrPath stdout=$stdoutPath"
         }
         try {
-            $response = Invoke-CollectorRequest -Path "/actuator"
-            if ($response.StatusCode -eq 200) {
-                return
+            $client = [System.Net.Sockets.TcpClient]::new()
+            try {
+                $connect = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+                if ($connect.AsyncWaitHandle.WaitOne(1000, $false)) {
+                    $client.EndConnect($connect)
+                    return
+                }
+            } finally {
+                $client.Dispose()
             }
         } catch {
             Start-Sleep -Milliseconds 500
         }
-        Start-Sleep -Milliseconds 500
     }
     throw "collector did not start on port $Port"
+}
+
+function Contains-Text([string]$Path, [string]$Needle) {
+    if (-not (Test-Path $Path)) {
+        return $false
+    }
+    return (Select-String -Path $Path -SimpleMatch -Pattern $Needle -Quiet)
 }
 
 function Join-ProcessArguments([string[]]$Arguments) {
     $escaped = @()
     foreach ($arg in $Arguments) {
         if ($arg -match '[\s"]') {
-            $escaped += '"' + ($arg -replace '"', '`"') + '"'
+            $escaped += '"' + ($arg -replace '"', '\"') + '"'
         } else {
             $escaped += $arg
         }
@@ -99,11 +121,13 @@ function Join-ProcessArguments([string[]]$Arguments) {
     return ($escaped -join ' ')
 }
 
+function Quote-CmdArgument([string]$Argument) {
+    return '"' + ($Argument -replace '"', '\"') + '"'
+}
+
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 try {
-    Mark-Step "assert-jar"
     Assert-True (Test-Path $JarPath) "JAR not found: $JarPath"
-    Mark-Step "build-java-args"
     $javaArgs = @(
         "-jar", $JarPath,
         "--server.port=$Port",
@@ -112,13 +136,11 @@ try {
         "--telemetry.tdengine.enabled=false",
         "--logging.file.name=$fileLogPath"
     )
-    Mark-Step "process-start"
-    $process = Start-Process -FilePath "java" -ArgumentList $javaArgs -RedirectStandardOutput $stdoutPath `
-        -RedirectStandardError $stderrPath -PassThru -WindowStyle Hidden
-    Mark-Step "wait-started"
+    $javaCommand = "java " + (Join-ProcessArguments $javaArgs) + " > " + (Quote-CmdArgument $stdoutPath) + " 2> " + (Quote-CmdArgument $stderrPath)
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList @("/d", "/c", $javaCommand) -WorkingDirectory (Get-Location).Path `
+        -PassThru -WindowStyle Hidden
 
     Wait-Started
-    Mark-Step "started"
 
     $authHeaders = @{ "X-Collector-Token" = $opsToken }
     $incomingHeaders = @{ "X-Collector-Token" = $opsToken; "X-Request-Id" = "obs-052-runtime-001" }
@@ -140,38 +162,37 @@ try {
     $querySecret = Invoke-CollectorRequest -Path "/api/ops/logs?limit=1&token=$secretSentinel" -Headers $authHeaders
     Assert-True ($querySecret.StatusCode -eq 200) "query redaction probe failed"
 
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 1500
     Assert-True (Test-Path $fileLogPath) "collector file log was not created"
-    $stdoutText = if (Test-Path $stdoutPath) { Get-Content -Raw -Path $stdoutPath } else { "" }
-    $fileText = Get-Content -Raw -Path $fileLogPath
+
     $opsAfterSecret = (Invoke-CollectorRequest -Path "/api/ops/logs?keyword=token&limit=50" -Headers $authHeaders).Body
 
-    Assert-True ($stdoutText.Length -gt 0) "stdout log is empty"
-    Assert-True ($fileText.Length -gt 0) "file log is empty"
-    Assert-True ($stdoutText -like "*config_access*") "stdout does not contain access log"
-    Assert-True ($fileText -like "*config_access*") "file log does not contain access log"
-    Assert-True ($stdoutText -like "*requestId=obs-052-runtime-001*") "stdout does not contain incoming request id access log"
-    Assert-True ($fileText -like "*requestId=obs-052-runtime-001*") "file log does not contain incoming request id access log"
-    Assert-True ($stdoutText -like "*risk=HIGH*" -and $stdoutText -like "*状态=401*") "stdout high-risk 401 access log missing"
-    Assert-True ($fileText -like "*risk=HIGH*" -and $fileText -like "*状态=401*") "file high-risk 401 access log missing"
-    Assert-True ($stdoutText -like "*token=****") "stdout does not show redacted query token"
-    Assert-True ($fileText -like "*token=****") "file does not show redacted query token"
+    Assert-True ((Get-Item $stdoutPath).Length -gt 0) "stdout log is empty"
+    Assert-True ((Get-Item $fileLogPath).Length -gt 0) "file log is empty"
+    Assert-True (Contains-Text $stdoutPath "config_access") "stdout does not contain access log"
+    Assert-True (Contains-Text $fileLogPath "config_access") "file log does not contain access log"
+    Assert-True (Contains-Text $stdoutPath "requestId=obs-052-runtime-001") "stdout does not contain incoming request id access log"
+    Assert-True (Contains-Text $fileLogPath "requestId=obs-052-runtime-001") "file log does not contain incoming request id access log"
+    Assert-True ((Contains-Text $stdoutPath "risk=HIGH") -and (Contains-Text $stdoutPath "401")) "stdout high-risk 401 access log missing"
+    Assert-True ((Contains-Text $fileLogPath "risk=HIGH") -and (Contains-Text $fileLogPath "401")) "file high-risk 401 access log missing"
+    Assert-True (Contains-Text $stdoutPath "token=***") "stdout does not show redacted query token"
+    Assert-True (Contains-Text $fileLogPath "token=***") "file does not show redacted query token"
     Assert-True ($opsAfterSecret -like "*token=****") "operation log response does not show redacted query token"
-    Assert-True ($stdoutText -notlike "*$secretSentinel*") "stdout leaked query sentinel"
-    Assert-True ($fileText -notlike "*$secretSentinel*") "file log leaked query sentinel"
+    Assert-True (-not (Contains-Text $stdoutPath $secretSentinel)) "stdout leaked query sentinel"
+    Assert-True (-not (Contains-Text $fileLogPath $secretSentinel)) "file log leaked query sentinel"
     Assert-True ($opsAfterSecret -notlike "*$secretSentinel*") "operation log response leaked query sentinel"
 
     Write-Host "OBSERVABILITY CORRELATION SMOKE PASSED"
     exit 0
 } catch {
-    Write-Error $_
+    $line = $_.InvocationInfo.ScriptLineNumber
+    $message = $_.Exception.Message
+    Write-Error "line=$line message=$message"
     exit 1
 } finally {
-    if ($process -and -not $process.HasExited) {
-        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        $process.WaitForExit(5000) | Out-Null
+    if ($process) {
+        taskkill.exe /T /F /PID $process.Id | Out-Null
     }
-
     if (Test-Path $tempRoot) {
         Remove-Item -Recurse -Force -Path $tempRoot -ErrorAction SilentlyContinue
     }

@@ -1,32 +1,37 @@
 # Task 05.1 — Observability Baseline & Gap Audit
 
-Date: 2026-09-09
+Date: 2026-09-09; Task 05.2 update: 2026-09-10
 Branch: feature_2.0
-Revision observed: ca98a0d
-Scope: inventory + runtime verification + gap analysis + prioritization only.
+Revision observed: ca98a0d; Task 05.2 verification revision observed: 63dd1fa
+Scope: 05.1 inventory + runtime verification + gap analysis + prioritization; 05.2 request correlation/access/file logging resolution notes.
 
 ## 1. Scope Decision
 
-Production Java diff: 0
-Production Vue/TS diff: 0
-API diff: 0
+Task 05.1 production Java diff: 0
+Task 05.1 production Vue/TS diff: 0
+Task 05.2 backend production diff: request correlation filter/config, access logging, OperationLogger requestId, and Logback/file logging configuration.
+Task 05.2 frontend production diff: 0
 Dependency diff: 0
 
-Task 05.1 only adds this baseline document. It does not introduce OpenTelemetry, Zipkin, Jaeger, Tempo, Loki, ELK, Sentry, SkyWalking, a new Prometheus client, or a new dashboard framework.
+Task 05.1 only added this baseline document. Task 05.2 updated backend HTTP correlation/access/file logging and this document. Neither task introduces OpenTelemetry, Zipkin, Jaeger, Tempo, Loki, ELK, Sentry, SkyWalking, a new Prometheus client, or a new dashboard framework.
 
 ## 2. Current Architecture Map
 
 ```text
 HTTP request
+├── RequestCorrelationFilter
+│   ├── resolve/preserve/generate X-Request-Id
+│   ├── request attribute + response header
+│   └── MDC requestId with scoped restore/remove cleanup
+├── LogFilter
+│   ├── configured include: /api/** after context-path normalization
+│   ├── configured exclude: /health, /actuator/** after context-path normalization
+│   ├── access log message: config_access ... requestId/method/path/query/status/duration/ip/principal/device/risk
+│   └── dedicated logger: collector.access INFO/WARN, independent of com.wangbin.collector WARN
 ├── AuthFilter
 │   ├── permitAll: /health, /actuator/**, /desktop/**, swagger docs
 │   ├── token/signature/IP authorization for /api/** and /monitor/**
 │   └── Micrometer counter: collector.auth.requests(result,type)
-├── LogFilter
-│   ├── configured include: /api/**
-│   ├── configured exclude: /health, /actuator/**
-│   ├── access log message: config_access ... requestId/method/path/query/status/duration/ip/principal/device
-│   └── runtime gap: with context path /collector, /collector/api/** does not match /api/**, so access logs were not emitted
 ├── Controller
 │   ├── /health -> SystemHealthService
 │   ├── /monitor/** -> monitor services + runtime application aggregator
@@ -82,8 +87,8 @@ Console/Human-facing:
 | Actuator exposure | `collector-boot/src/main/resources/application.yml` | includes `health,info,metrics,prometheus`; base path `/actuator` |
 | Health details | `application.yml` | `show-details: ${MANAGEMENT_HEALTH_DETAILS:never}` |
 | Probes | runtime + config | `/actuator/health/liveness` and `/actuator/health/readiness` returned 404; no probes config found |
-| File logging intent | `application.yml` | `logging.file.name: logs/collector.log`; max size/history configured |
-| Effective Logback | `logback-spring.xml` | console appender only; no `FileAppender` / `RollingFileAppender` |
+| File logging intent | `application.yml` | `logging.file.name: logs/collector.log`; max size/history/total-size-cap configured |
+| Effective Logback | `logback-spring.xml` | STDOUT retained; bounded `RollingFileAppender` writes `${logging.file.name}` |
 | Tracing dependencies | POM search | no OpenTelemetry / Zipkin / Jaeger / SkyWalking / Sentry / Loki dependency found |
 
 ## 4. Runtime Verification Setup
@@ -267,22 +272,22 @@ Static regex also covers sensitive field names such as password/passwd/pwd/token
 
 | Layer | Request ID | Device ID | Point ID | Operation ID |
 | --- | --- | --- | --- | --- |
-| HTTP access | intended in `LogFilter`, but runtime not emitted under `/collector` context path | intended from query/path | no generic point parsing | none |
-| Controller | not generally passed | method params include device/point in many controllers | method params where present | none |
-| Application | no MDC; explicit params only | explicit business params | explicit business params | no cross-layer operation id |
+| HTTP access | supported after Task 05.2 via `RequestCorrelationFilter` attribute/MDC and `collector.access` log entries | intended from query/path | no generic point parsing | none |
+| Controller | synchronous web-filter-chain requests can see MDC `requestId`; explicit method params unchanged | method params include device/point in many controllers | method params where present | none |
+| Application | synchronous HTTP call stack inherits MDC `requestId`; explicit params unchanged | explicit business params | explicit business params | no cross-layer operation id |
 | Collection | no request id | device id common in logs/metrics | point id in collector exceptions | no HTTP operation id |
 | Protocol | no request id | device id in many logs | point id/address in many logs | no HTTP operation id |
 | Cache | no request id | exceptionReporter resourceId/device-ish key | no general point id | none |
 | History | no request id | buffer metrics and logs include device in some paths | point id in some paths | none |
 | Cloud | no request id | target/device visible in logs/outbox/report | point code visible in logs/handler stats | message id/outbox id exists in cloud semantics, not HTTP request id |
 
-Runtime checks:
-- incoming `X-Request-Id: obs-audit-001` did not appear in response headers.
-- generated request ID was not returned to the client.
-- `MDC.put/get/remove/clear` search returned no production files.
-- `obs-audit-001` did not appear in `/api/ops/logs` after safe monitor calls because access logs were not emitted and business logs do not propagate request ID.
+Task 05.2 runtime checks:
+- incoming `X-Request-Id: obs-052-runtime-001` was preserved in the response header.
+- missing request ID generated a non-empty response `X-Request-Id`.
+- `/api/ops/logs?keyword=obs-052-runtime-001` found the correlated OperationLogger entry.
+- access logs emitted `requestId=obs-052-runtime-001` in both stdout and bounded file output.
 
-Conclusion: request correlation is currently not end-to-end. A user with a failing API call has no reliable server correlation ID unless the specific access log path starts working and the user already supplied the request ID.
+Conclusion: HTTP synchronous request correlation is now supported for requests that pass through the web filter chain. Long-running background collection remains correlated by deviceId/pointId/protocol/outbox identifiers; generic async MDC propagation and distributed tracing are not implemented in Task 05.2.
 
 ## 13. Exception Monitoring
 
@@ -381,30 +386,30 @@ None found.
 
 Finding ID: OBS-P1-01
 Area: Request correlation
-Current behavior: `X-Request-Id` is generated/used inside `LogFilter` only; no response header, no MDC, no business-log propagation.
-Evidence: runtime response header check returned no `X-Request-Id`; `MDC.*` production search returned no files; `/api/ops/logs` did not contain `obs-audit-001` after safe requests.
-Operational impact: field user cannot take an API/UI error and trace it across controller/application/runtime/cache/history/cloud logs.
+Status: CLOSED in Task 05.2
+Current behavior: dedicated `RequestCorrelationFilter` resolves incoming/generated `X-Request-Id` before access/auth/controller execution, stores it in a stable request attribute, writes response header, sets MDC key `requestId`, and restores/removes only that MDC key in `finally`.
+Evidence: `scripts/run-observability-correlation-smoke.ps1` against the current executable JAR preserved `obs-052-runtime-001` in the response header, generated a non-empty ID when absent, and found the request ID through `/api/ops/logs?keyword=obs-052-runtime-001`; backend regression includes incoming/generated/invalid/exception/MDC cleanup cases.
+Operational impact: HTTP synchronous controller/application/access logs are now correlatable by requestId; this is HTTP request correlation, not distributed tracing or generic async MDC propagation.
 Severity: P1
-Recommended repair: propagate or generate requestId in a dedicated filter, set response header, put it in MDC, and clear MDC safely.
-Recommended Task: 05.2 — Request Correlation & Access Logging
+Resolution Task: 05.2 — Request Correlation & Access Logging
 
 Finding ID: OBS-P1-02
 Area: Access logging
-Current behavior: `logging.access.enabled=true` and include path `/api/**`, but runtime context path is `/collector`; `LogFilter` matches `request.getRequestURI()` against `/api/**`, so `/collector/api/**` was not logged. Normal INFO access logs are also filtered by `com.wangbin.collector=WARN` if they ever match.
-Evidence: runtime safe `/collector/api/ops/logs` and invalid high-risk `/collector/api/config/import` produced no `config_access` in stdout or `/api/ops/logs`; `LogFilterTest` covers `/api/...` without context path only; `logback-spring.xml` sets collector package WARN.
-Operational impact: HTTP access audit trail is silently absent despite configuration saying it is enabled; high-risk request audit also absent.
+Status: CLOSED in Task 05.2
+Current behavior: `LogFilter` normalizes `requestURI - contextPath` to application path before include/exclude/high-risk matching; `/collector/api/**` is logged as `/api/**`, while `/health` and `/actuator/**` remain excluded. Access logging uses dedicated logger `collector.access` at INFO, independent of business package WARN.
+Evidence: runtime smoke emitted normal `config_access` for `/api/ops/logs`, emitted WARN/high-risk `config_access` for unauthenticated `POST /api/config/import` with status 401 before controller side effects, and verified query/header redaction; regression covers `/collector` context-path normalization, high-risk matching, denied auth, principal capture, and redaction.
+Operational impact: HTTP access audit trail is present for normal and denied/high-risk API requests without lowering `com.wangbin.collector` package logging below WARN.
 Severity: P1
-Recommended repair: normalize path by context path before matching, add context-path regression coverage, and set a specific access logger level/appender policy.
-Recommended Task: 05.2 — Request Correlation & Access Logging
+Resolution Task: 05.2 — Request Correlation & Access Logging
 
 Finding ID: OBS-P1-03
 Area: File logging
-Current behavior: `application.yml` configures `logging.file.name`, max-size, max-history, but custom `logback-spring.xml` only defines STDOUT; no file/rolling appender.
-Evidence: runtime generated WARN/ERROR but no `logs/collector.log` in repo root or boot target; static Logback file has only `ConsoleAppender`.
-Operational impact: local/Electron or non-centralized deployments lose logs after process/window/container restart. Docker can rely on stdout if the deployment actually collects stdout, but repository has no explicit centralized log collector contract.
+Status: CLOSED in Task 05.2
+Current behavior: console logging is retained and a bounded `RollingFileAppender` writes to `logging.file.name` (`logs/collector.log` by default), with `logging.file.max-size`, `logging.file.max-history`, and `logging.file.total-size-cap` controlling retention.
+Evidence: runtime smoke started the current executable JAR with `--logging.file.name=<temporary>/collector.log`, generated normal and high-risk access events, confirmed stdout was non-empty, confirmed `collector.log` existed with size > 0, and confirmed access/requestId/redacted query entries in both stdout and file.
+Operational impact: server/local standalone deployments now have both stdout collection and bounded on-disk logs. Electron final writable log directory remains a Task 06 delivery concern.
 Severity: P1
-Recommended repair: decide stdout-only deployment contract vs rolling file appender; document and implement one consistent model.
-Recommended Task: 05.2 — Request Correlation & Access Logging
+Resolution Task: 05.2 — Request Correlation & Access Logging
 
 Finding ID: OBS-P1-04
 Area: Actuator production exposure
@@ -471,15 +476,15 @@ Recommended Task: Task 06 Security or 05.2 if bundled with access logging.
 - `/monitor/system` already enumerates many named thread pools including telemetry cache/stream/history/report executors.
 - `/monitor/report` has relatively strong cloud/outbox/executor/config coverage.
 - OperationLogger is bounded, queryable, and sanitizes key sensitive message patterns.
+- Task 05.2 adds `requestId` to OperationLogger entries and keyword search, while retaining entry/message/query bounds and sensitive message sanitization.
 - Custom `/health` exposes business components better than default Actuator health.
 
 ## 20. Top Priorities
 
-Priority 1: 05.2 — Request Correlation & Access Logging
-- Fix request ID response/MDC/business-log propagation.
-- Fix access log context-path matching.
-- Resolve access log INFO-vs-WARN default visibility.
-- Decide file logging vs stdout-only contract.
+Priority 1: 05.2 — Request Correlation & Access Logging — COMPLETE
+- HTTP request ID response/MDC/business-log propagation is implemented for synchronous web-filter-chain requests.
+- Access log context-path matching and dedicated access logger visibility are implemented.
+- Console + bounded rolling file logging is implemented and runtime-verified.
 
 Priority 2: 05.3 — Core Pipeline Metrics & Health
 - Harden actuator metrics/prometheus exposure or document internal-only deployment.
@@ -493,11 +498,11 @@ Priority 3: 05.4 — Operational Diagnostic Surface
 
 ## 21. Recommended Task 05 Roadmap
 
-05.2 — Request Correlation & Access Logging
-- Request ID response header + MDC.
-- Access log context path fix.
-- Access logger level/appender policy.
-- File logging/stdout deployment decision.
+05.2 — Request Correlation & Access Logging — RESOLVED
+- Request ID response header + MDC + request attribute.
+- Access log context path fix and high-risk/denied-auth coverage.
+- Dedicated `collector.access` logger policy.
+- Console + bounded rolling file logging.
 - Query/header redaction policy for access logs.
 
 05.3 — Core Pipeline Metrics & Health
@@ -534,10 +539,10 @@ Priority 3: 05.4 — Operational Diagnostic Surface
 | --- | --- |
 | 现在有哪些监控能力已经很好？ | Actuator/Micrometer baseline, JVM/HTTP/Hikari/Lettuce metrics, auth counter, `/monitor/runtime`, `/monitor/system`, `/monitor/report`, bounded OperationLogger |
 | 哪些 critical pipeline 已经有指标？ | collection throughput/latency/success, cache hit/miss/errors, report executor/outbox, TDengine status, named executor queue/rejected |
-| 哪些 critical pipeline 完全看不到？ | no complete unified stream/history buffer/backpressure endpoint; no end-to-end request correlation; Redis stream backlog not in main monitor DTO |
-| 日志是否真正落盘？ | No. Runtime WARN/ERROR did not create `logs/collector.log`; Logback has console appender only |
-| access log 默认是否真正输出？ | No for runtime `/collector/api/**`; include pattern/context-path mismatch prevents `config_access` emission, and normal INFO would be filtered by package WARN |
-| requestId 能不能端到端关联？ | No. Not returned in response, not in MDC, not in business logs; only intended inside currently-non-emitting access log |
+| 哪些 critical pipeline 完全看不到？ | no complete unified stream/history buffer/backpressure endpoint; Redis stream backlog not in main monitor DTO |
+| 日志是否真正落盘？ | Yes after Task 05.2. STDOUT remains enabled and bounded rolling file logging writes `logging.file.name`; runtime file creation was verified with the current JAR. Electron final writable log directory is deferred to Task 06 delivery. |
+| access log 默认是否真正输出？ | Yes after Task 05.2. `/collector/api/**` is normalized to `/api/**`, `collector.access` logs INFO independently of business package WARN, and high-risk 401 access audit is runtime-verified. |
+| requestId 能不能端到端关联？ | HTTP synchronous request correlation is supported after Task 05.2: response header, request attribute, MDC, access log, and OperationLogger keyword search. Generic async/background correlation and distributed tracing are not implemented. |
 | Prometheus 有哪些 custom metric？ | `collector_auth_requests_total` from `collector.auth.requests`; other observed metrics are Spring/JVM/Tomcat/Hikari/Lettuce/Logback/executor defaults |
 | health 是否能区分 liveness/readiness/business degraded？ | Business degraded exists in custom `/health` and `/monitor/runtime`; liveness can use actuator basic health; readiness is missing |
 | monitor endpoint 和 actuator 应如何分工？ | Actuator for machine health/metrics/prometheus; `/health` + `/monitor/**` + `/api/ops/logs` for console/human diagnosis |
@@ -594,11 +599,11 @@ Verification results:
 | Current JAR build | PASS — Maven reactor package with skipped tests completed BUILD SUCCESS |
 | Frontend typecheck | PASS — `npm --prefix collector-desktop run typecheck` |
 | Frontend tests | PASS — `70 files / 504 tests` |
-| Monitor/web targeted tests | PASS — monitor module `8 tests`, web module `16 tests` |
+| Monitor/web targeted tests | PASS after Task 05.2 — `collector-monitor,collector-web -am test` ran 68 tests with BUILD SUCCESS |
 | Runtime endpoint smoke | PASS — endpoints in the runtime matrix were exercised against port `19092` |
 | Runtime auth smoke | PASS — no-token `/monitor/**` returned 401; valid VIEW token returned 200 |
-| Runtime request-id check | GAP CONFIRMED — no response `X-Request-Id`; no MDC/business propagation observed |
-| Runtime file-log check | GAP CONFIRMED — no `logs/collector.log` created despite WARN/ERROR events |
+| Runtime request-id check | PASS after Task 05.2 — incoming ID preserved, generated ID returned, MDC-backed access log and OperationLogger search verified |
+| Runtime file-log check | PASS after Task 05.2 — `--logging.file.name=<temporary>/collector.log` created a non-empty bounded rolling file with access entries |
 | Source language audit | PASS — `{ ok: true, count: 0 }` |
 | Production config secret scan | PASS |
 | Whitespace diff check | PASS — `git diff --check` |
