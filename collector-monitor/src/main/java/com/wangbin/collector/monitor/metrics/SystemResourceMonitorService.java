@@ -16,6 +16,7 @@ import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.ThreadMXBean;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToLongFunction;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -111,7 +112,7 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
                     executor.getCorePoolSize(),
                     executor.getMaxPoolSize(),
                     executor.getActiveCount(),
-                    threadPoolExecutor.getQueue().size(),
+                    threadPoolExecutor.getQueue(),
                     threadPoolExecutor.getCompletedTaskCount(),
                     rejectedCount(threadPoolExecutor)
             );
@@ -122,7 +123,7 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
                     executor.getCorePoolSize(),
                     executor.getMaximumPoolSize(),
                     executor.getActiveCount(),
-                    executor.getQueue().size(),
+                    executor.getQueue(),
                     executor.getCompletedTaskCount(),
                     rejectedCount(executor)
             );
@@ -137,7 +138,7 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
                     executor.getCorePoolSize(),
                     executor.getMaximumPoolSize(),
                     executor.getActiveCount(),
-                    executor.getQueue().size(),
+                    executor.getQueue(),
                     executor.getCompletedTaskCount(),
                     rejectedCount(executor)
             );
@@ -152,17 +153,43 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
     private SystemResourceSnapshot.ThreadPoolSnapshot buildSnapshot(int core,
                                                                     int max,
                                                                     int active,
-                                                                    int queue,
+                                                                    BlockingQueue<?> queue,
                                                                     long completed,
                                                                     long rejected) {
+        int queueSize = queue == null ? -1 : queue.size();
+        int queueCapacity = queueCapacity(queue, queueSize);
         return SystemResourceSnapshot.ThreadPoolSnapshot.builder()
                 .corePoolSize(core)
                 .maxPoolSize(max)
                 .activeCount(active)
-                .queueSize(queue)
+                .queueSize(queueSize)
+                .queueCapacity(queueCapacity)
+                .queueUtilization(queueUtilization(queueSize, queueCapacity))
                 .completedTaskCount(completed)
                 .rejectedCount(rejected)
                 .build();
+    }
+
+    private int queueCapacity(BlockingQueue<?> queue, int queueSize) {
+        if (queue == null || queueSize < 0) {
+            return -1;
+        }
+        int remainingCapacity = queue.remainingCapacity();
+        if (remainingCapacity < 0 || remainingCapacity == Integer.MAX_VALUE) {
+            return -1;
+        }
+        long capacity = (long) queueSize + remainingCapacity;
+        return capacity > Integer.MAX_VALUE ? -1 : (int) capacity;
+    }
+
+    private double queueUtilization(int queueSize, int queueCapacity) {
+        if (queueSize < 0 || queueCapacity < 0) {
+            return -1D;
+        }
+        if (queueCapacity == 0) {
+            return 0D;
+        }
+        return Math.min(1D, Math.max(0D, (double) queueSize / queueCapacity));
     }
 
     /**
@@ -174,6 +201,8 @@ public class SystemResourceMonitorService implements SystemResourceProbe {
                 .maxPoolSize(-1)
                 .activeCount(-1)
                 .queueSize(-1)
+                .queueCapacity(-1)
+                .queueUtilization(-1D)
                 .completedTaskCount(-1)
                 .rejectedCount(-1)
                 .build();

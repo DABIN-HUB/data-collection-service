@@ -1,9 +1,9 @@
 # Task 05.1 — Observability Baseline & Gap Audit
 
-Date: 2026-09-09; Task 05.2 update: 2026-09-10
+Date: 2026-09-09; Task 05.2 update: 2026-09-10; Task 05.3 update: 2026-09-10
 Branch: feature_2.0
-Revision observed: ca98a0d; Task 05.2 verification revision observed: 63dd1fa
-Scope: 05.1 inventory + runtime verification + gap analysis + prioritization; 05.2 request correlation/access/file logging resolution notes.
+Revision observed: ca98a0d; Task 05.2 verification revision observed: 63dd1fa; Task 05.3 verification revision observed: working tree on feature_2.0
+Scope: 05.1 inventory + runtime verification + gap analysis + prioritization; 05.2 request correlation/access/file logging resolution notes; 05.3 actuator exposure hardening, probes, pipeline backpressure snapshot, and alert-grade Prometheus metrics.
 
 ## 1. Scope Decision
 
@@ -11,6 +11,8 @@ Task 05.1 production Java diff: 0
 Task 05.1 production Vue/TS diff: 0
 Task 05.2 backend production diff: request correlation filter/config, access logging, OperationLogger requestId, and Logback/file logging configuration.
 Task 05.2 frontend production diff: 0
+Task 05.3 backend production diff: actuator exposure/probe config, auth permit/access rules, `/monitor/pipeline`, pipeline snapshot cache, queue capacity/utilization, cloud outbox snapshot, low-cardinality `collector.pipeline.*` metrics.
+Task 05.3 frontend production diff: 0
 Dependency diff: 0
 
 Task 05.1 only added this baseline document. Task 05.2 updated backend HTTP correlation/access/file logging and this document. Neither task introduces OpenTelemetry, Zipkin, Jaeger, Tempo, Loki, ELK, Sentry, SkyWalking, a new Prometheus client, or a new dashboard framework.
@@ -29,7 +31,7 @@ HTTP request
 │   ├── access log message: config_access ... requestId/method/path/query/status/duration/ip/principal/device/risk
 │   └── dedicated logger: collector.access INFO/WARN, independent of com.wangbin.collector WARN
 ├── AuthFilter
-│   ├── permitAll: /health, /actuator/**, /desktop/**, swagger docs
+│   ├── permitAll: /health, /actuator/health, /actuator/health/**, /desktop/**, swagger docs
 │   ├── token/signature/IP authorization for /api/** and /monitor/**
 │   └── Micrometer counter: collector.auth.requests(result,type)
 ├── Controller
@@ -607,3 +609,115 @@ Verification results:
 | Source language audit | PASS — `{ ok: true, count: 0 }` |
 | Production config secret scan | PASS |
 | Whitespace diff check | PASS — `git diff --check` |
+
+## 25. Task 05.3 RESOLVED — Core Pipeline Metrics & Health
+
+Task 05.3 closes OBS-P1-04, OBS-P1-05, OBS-P2-01, and OBS-P2-03. It does not modify ExceptionMonitor boundedness/message coverage, which remains deferred to Task 05.4.
+
+### Exposure Contract
+
+| Endpoint | Anonymous | VIEW | Intended Consumer |
+| --- | ---: | ---: | --- |
+| `/health` | 200 | 200 | Desktop/user business health |
+| `/actuator/health` | 200 | 200 | machine aggregate health |
+| `/actuator/health/liveness` | 200 | 200 | K8s/process liveness |
+| `/actuator/health/readiness` | 200 | 200 | K8s/load balancer readiness |
+| `/actuator/metrics` | 401 | 200 | operator metric discovery |
+| `/actuator/metrics/**` | 401 | 200 | operator metric detail |
+| `/actuator/prometheus` | 401 | 200 | protected Prometheus scraper |
+| `/monitor/pipeline` | 401 | 200 | console/operator diagnostic detail |
+
+Public health is intentionally limited to `/health`, `/actuator/health`, and `/actuator/health/**`. `/actuator`, `/actuator/info`, `/actuator/metrics`, and `/actuator/prometheus` are no longer covered by a broad `/actuator/**` permit-all rule. Actuator metrics/prometheus access is explicitly mapped to VIEW so a future default-scope change does not silently weaken exposure semantics.
+
+### Health Contract
+
+| Surface | Meaning | Components | Disabled Integration Behavior |
+| --- | --- | --- | --- |
+| Liveness | Process/JVM/Spring application is alive | `livenessState` only | Redis/TDengine/cloud/config sync/device availability do not participate |
+| Readiness | Spring application can receive HTTP traffic | `readinessState` only | optional disabled integrations do not make readiness DOWN |
+| Actuator aggregate | Spring Boot aggregate health for machine visibility | existing HealthIndicators as Spring aggregates them | HTTP status is mapped to 200 so public aggregate health remains queryable even when business dependencies are DOWN |
+| Business health | Console/user component state | `/health` and `/monitor/runtime` | degraded/disabled/unknown external components remain visible here |
+| Pipeline health | Current queue/backpressure status | `/monitor/pipeline` and `collector.pipeline.*` | optional disabled stages are `DISABLED`, not `DANGER` |
+
+### Pipeline Matrix
+
+| Stage | Queue | Capacity | Utilization | Reject | Drop | Backlog | Health |
+| --- | --- | ---: | ---: | --- | --- | --- | --- |
+| Ingress | local ingress queue | `localCapacity` | `localUtilization` | `rejectedTasks`, `rejectedItems` | `droppedItems` | Redis pending/processing/dead-letter | `HEALTHY/WARNING/DANGER/UNKNOWN/DISABLED` |
+| Stream | stream write buffer | `bufferCapacity` | `bufferUtilization` | `admissionRejected` | `admissionDropped`, `shutdownDroppedRows` | buffer size / Redis write evidence | same vocabulary |
+| History | history local queue + live flush | `localCapacity` | `localUtilization`, `liveFlushQueueUtilization` | rejected buffered counters | write/rejected/batch fallback dropped rows | Redis pending/processing/dead-letter | same vocabulary |
+| Cloud | cloud outbox | repository-dependent | n/a | n/a | n/a | pending, isolated, oldest age | same vocabulary |
+| cache executor | `telemetryCacheStageExecutor` | actual queue size + remaining capacity | 0.0-1.0 or -1 | `rejectedCount` | n/a | queue size | same vocabulary |
+| stream executor | `telemetryStreamStageExecutor` | actual queue size + remaining capacity | 0.0-1.0 or -1 | `rejectedCount` | n/a | queue size | same vocabulary |
+| stream writer executor | `telemetryStreamWriteExecutor` | actual queue size + remaining capacity | 0.0-1.0 or -1 | `rejectedCount` | n/a | queue size | same vocabulary |
+| history executor | `telemetryHistoryStageExecutor` | actual queue size + remaining capacity | 0.0-1.0 or -1 | `rejectedCount` | n/a | queue size | same vocabulary |
+| report executor | `telemetryReportStageExecutor` | actual queue size + remaining capacity | 0.0-1.0 or -1 | `rejectedCount` | n/a | queue size | same vocabulary |
+
+Queue capacity is computed from `ThreadPoolExecutor.getQueue().size() + remainingCapacity()`. Unbounded, unknown, or unsupported queues use `queueCapacity=-1` and `queueUtilization=-1`; zero-capacity queues do not divide by zero.
+
+### Pipeline Snapshot Contract
+
+`GET /monitor/pipeline` returns a human/operator DTO with:
+
+```text
+status, generatedAt, ingress, stream, history, cloud, executors, risks
+```
+
+Status vocabulary is fixed: `HEALTHY`, `WARNING`, `DANGER`, `UNKNOWN`, `DISABLED`. Current queue pressure thresholds are `<70% HEALTHY`, `>=70% WARNING`, `>=90% DANGER`. Redis `-1` values remain `UNKNOWN`, not zero. Dead-letter and cloud isolation are `DANGER` risks. Historical cumulative counters such as dropped/rejected/failures are displayed as evidence but do not permanently force current DANGER by themselves.
+
+Snapshot refresh uses a bounded TTL cache (`5s`). One refresh calls each source at most once: ingress metrics, stream metrics, history metrics, cloud snapshot, and system resource snapshot. Prometheus gauges read only the cached immutable snapshot; per-gauge Redis/percentile/runtime calls are avoided. Source failures are isolated to `UNKNOWN` stage snapshots and do not make `/monitor/pipeline` return 500 or affect telemetry runtime behavior.
+
+### Prometheus Metric Contract
+
+| Metric | Type | Tags | Meaning | Cardinality |
+| --- | --- | --- | --- | --- |
+| `collector.pipeline.enabled` | Gauge | `stage`, `type` | stage/executor enabled as 1/0 | fixed stage/type enums |
+| `collector.pipeline.status` | Gauge | `stage`, `type` | one-hot status by `HEALTHY/WARNING/DANGER/UNKNOWN/DISABLED` | fixed stage/status enums |
+| `collector.pipeline.queue.size` | Gauge | `stage`, `type` | current pipeline/executor queue size | fixed stage/queue enums |
+| `collector.pipeline.queue.capacity` | Gauge | `stage`, `type` | bounded queue capacity or -1 unknown | fixed stage/queue enums |
+| `collector.pipeline.queue.utilization` | Gauge | `stage`, `type` | 0.0-1.0 utilization or -1 unknown | fixed stage/queue enums |
+| `collector.pipeline.backlog` | Gauge | `stage`, `type` | current backlog such as Redis pending/cloud pending | fixed stage/type enums |
+| `collector.pipeline.rejected` | Gauge | `stage`, `type` | rejected evidence snapshot value | fixed stage/type enums |
+| `collector.pipeline.dropped` | Gauge | `stage`, `type` | dropped evidence snapshot value | fixed stage/type enums |
+| `collector.pipeline.failures` | Gauge | `stage`, `type` | write/loop/dead-letter/replay failure evidence | fixed stage/type enums |
+| `collector.pipeline.oldest.age` | Gauge | `stage`, `type` | cloud oldest outbox age in milliseconds | fixed stage/type enums |
+
+Allowed tag keys are `stage` and `type`. Stage values are fixed: `ingress`, `stream`, `history`, `cloud`, `cache_executor`, `stream_executor`, `stream_writer_executor`, `history_executor`, `report_executor`. Forbidden dynamic labels remain prohibited: `deviceId`, `pointId`, `requestId`, `messageId`, exception message, full URL, dynamic queue key, dynamic logger.
+
+### 05.3 Verification Results
+
+| Check | Result |
+| --- | --- |
+| Backend monitor/web tests | PASS — `mvn -DforkCount=0 -pl collector-monitor,collector-web -am test`, 71 tests, BUILD SUCCESS |
+| Frontend typecheck | PASS — `npm --prefix collector-desktop run typecheck` |
+| Frontend tests | PASS — `npm --prefix collector-desktop test` |
+| Frontend verify | PASS — `npm --prefix collector-desktop run verify` |
+| Current executable JAR package | PASS — `mvn -DskipTests package`, BUILD SUCCESS |
+| Original real smoke | PASS — `REAL BACKEND SMOKE PASSED` |
+| Correlation smoke | PASS — `OBSERVABILITY CORRELATION SMOKE PASSED`; startup probe now uses `/actuator/health/liveness` |
+| Pipeline smoke | PASS — `OBSERVABILITY PIPELINE SMOKE PASSED` |
+| Runtime public health | PASS — no-auth `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` returned HTTP 200 |
+| Runtime protected metrics | PASS — no-auth `/actuator/metrics`, `/actuator/metrics/jvm.memory.used`, `/actuator/prometheus` returned 401 with `X-Request-Id`; valid VIEW returned 200 |
+| Runtime pipeline endpoint | PASS — no-auth `/monitor/pipeline` returned 401; valid VIEW returned 200 with all required sections |
+| Runtime isolated dependencies | PASS — TDengine/cloud disabled while liveness/readiness remained UP; pipeline history/cloud reported `DISABLED` |
+| Runtime Prometheus custom metrics | PASS — protected scrape contained `collector_pipeline_*` metrics |
+| High-cardinality label check | PASS — `collector_pipeline_*` scrape contained no `deviceId`, `pointId`, `requestId`, or `messageId` labels |
+| Monitoring storm | PASS — 20 authenticated Prometheus scrapes returned 200 without 5xx |
+| Source language audit | PASS — changed/untracked source files UTF-8 and no debug markers |
+| Secret scan | PASS — changed/untracked source files scan found no credentials/secrets; fake smoke sentinel remains non-secret test input |
+| Diff check | PASS — `git diff --check` exit 0 |
+
+### 05.3 Findings Status
+
+| Finding | Status | Resolution |
+| --- | --- | --- |
+| OBS-P1-01 | CLOSED | 05.2 request correlation remains verified by correlation smoke |
+| OBS-P1-02 | CLOSED | 05.2 access logging remains verified by correlation smoke |
+| OBS-P1-03 | CLOSED | 05.2 rolling file logging remains verified by correlation smoke |
+| OBS-P1-04 | CLOSED | metrics/prometheus no longer public; public health remains public |
+| OBS-P1-05 | CLOSED | `/monitor/pipeline`, queue utilization/capacity, cloud/ingress/stream/history/executor snapshots, cache-backed Prometheus subset implemented and verified |
+| OBS-P2-01 | CLOSED | liveness/readiness/business/pipeline health contracts split and verified |
+| OBS-P2-03 | CLOSED | rich human DTO plus small low-cardinality Prometheus subset implemented |
+| OBS-P2-02 | OPEN | deferred to Task 05.4 Operational Diagnostic Surface |
+
+Task 05.3 is PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.4 and Task 05.5 are complete.

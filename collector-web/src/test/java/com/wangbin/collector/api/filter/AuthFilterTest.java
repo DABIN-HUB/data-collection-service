@@ -2,6 +2,7 @@ package com.wangbin.collector.api.filter;
 
 import com.wangbin.collector.api.filter.config.AuthProperties;
 import com.wangbin.collector.api.filter.config.AuthScope;
+import com.wangbin.collector.api.filter.config.AccessLogProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -217,6 +218,62 @@ class AuthFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
         assertThat(response.getContentAsString(StandardCharsets.UTF_8)).contains("权限不足");
+    }
+
+
+    @Test
+    void shouldHardenActuatorExposureAndKeepHealthPublic() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.getOpsTokens().put("view-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        AuthProperties.AccessRule rule = new AuthProperties.AccessRule();
+        rule.setMethods(List.of("GET"));
+        rule.setPaths(List.of("/actuator/metrics", "/actuator/metrics/**", "/actuator/prometheus", "/monitor/pipeline"));
+        rule.setRequiredScope(AuthScope.VIEW);
+        properties.setAccessRules(List.of(rule));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("GET", "/actuator/health", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/health/liveness", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/health/readiness", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/metrics", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/metrics/jvm.memory.used", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/prometheus", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/monitor/pipeline", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/metrics", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/prometheus", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/monitor/pipeline", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void rejectedActuatorRequestShouldStillHaveRequestIdWhenCorrelationFilterRunsFirst() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AccessLogProperties accessLogProperties = new AccessLogProperties();
+        RequestCorrelationFilter correlationFilter = new RequestCorrelationFilter(accessLogProperties);
+        AuthFilter authFilter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/prometheus");
+        request.addHeader("X-Request-Id", "obs-053-denied");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        correlationFilter.doFilter(request, response, (servletRequest, servletResponse) ->
+                authFilter.doFilter(servletRequest, servletResponse, new MockFilterChain()));
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(response.getHeader("X-Request-Id")).isEqualTo("obs-053-denied");
+    }
+
+    private MockHttpServletRequest request(String method, String path, String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        if (token != null) {
+            request.addHeader("X-Collector-Token", token);
+        }
+        return request;
+    }
+
+    private int status(AuthFilter filter, MockHttpServletRequest request) throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response.getStatus();
     }
 
     private MockHttpServletRequest signedRequest(String timestamp,

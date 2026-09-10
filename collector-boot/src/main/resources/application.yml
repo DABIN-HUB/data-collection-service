@@ -25,7 +25,18 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: ${MANAGEMENT_HEALTH_DETAILS:never}
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:when_authorized}
+      probes:
+        enabled: true
+      status:
+        http-mapping:
+          down: 200
+          out-of-service: 200
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
   prometheus:
     metrics:
       export:
@@ -177,7 +188,8 @@ collector:
   auth:
     permit-all-paths:
       - /health
-      - /actuator/**
+      - /actuator/health
+      - /actuator/health/**
       - /desktop/**
       - /v3/api-docs/**
       - /swagger-ui/**
@@ -187,6 +199,9 @@ collector:
     default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE]
     ops-scopes: {}
     access-rules:
+      - methods: [GET]
+        paths: [/actuator/metrics, /actuator/metrics/**, /actuator/prometheus]
+        required-scope: VIEW
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/device/**, /api/data/device/*/reset-adaptive]
         required-scope: DEVICE_CONTROL

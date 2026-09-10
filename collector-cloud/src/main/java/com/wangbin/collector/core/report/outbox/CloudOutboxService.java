@@ -183,6 +183,17 @@ public class CloudOutboxService {
         return enabled();
     }
 
+    /**
+     * 返回发件箱轻量监控快照，一次调用内完成 enabled/backlog/isolation/oldest 读取。
+     */
+    public CloudOutboxSnapshot snapshot() {
+        boolean currentEnabled = enabled();
+        if (!currentEnabled) {
+            return new CloudOutboxSnapshot(false, 0L, 0L, 0L);
+        }
+        return new CloudOutboxSnapshot(true, getPendingCount(), getIsolatedCount(), getOldestMessageAgeMillis());
+    }
+
     @Scheduled(fixedDelayString = "${collector.report.outbox.poll-interval-ms:1000}",
             initialDelayString = "${collector.report.outbox.poll-interval-ms:1000}")
     /**

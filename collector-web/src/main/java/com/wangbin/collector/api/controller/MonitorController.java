@@ -14,6 +14,8 @@ import com.wangbin.collector.monitor.metrics.DeviceStatusSnapshot;
 import com.wangbin.collector.monitor.metrics.ExceptionMonitorService;
 import com.wangbin.collector.monitor.metrics.ExceptionStatsSnapshot;
 import com.wangbin.collector.monitor.metrics.PerformanceMonitorService;
+import com.wangbin.collector.monitor.metrics.PipelineBackpressureMonitorService;
+import com.wangbin.collector.monitor.metrics.PipelineBackpressureSnapshot;
 import com.wangbin.collector.monitor.metrics.StorageMetricsSnapshot;
 import com.wangbin.collector.monitor.metrics.SystemResourceMonitorService;
 import com.wangbin.collector.monitor.metrics.SystemResourceSnapshot;
@@ -40,6 +42,7 @@ public class MonitorController {
     private final SystemResourceMonitorService systemResourceMonitorService;
     private final ExceptionMonitorService exceptionMonitorService;
     private final CloudReportMonitorService cloudReportMonitorService;
+    private final PipelineBackpressureMonitorService pipelineBackpressureMonitorService;
     private final TdengineMonitorService tdengineMonitorService;
     private final CollectionScheduler collectionScheduler;
     private final ConsoleRuntimeStatusApplicationService consoleRuntimeStatusApplicationService;
@@ -112,6 +115,16 @@ public class MonitorController {
     @GetMapping("/report")
     public CloudReportMetricsResponse cloudReportMetrics() {
         return CloudReportMetricsResponse.from(cloudReportMonitorService.getCloudReportMetrics());
+    }
+
+    /**
+     * 查询遥测 pipeline 队列、积压与线程池压力统一快照。
+     *
+     * @return pipeline backpressure 快照
+     */
+    @GetMapping("/pipeline")
+    public PipelineBackpressureSnapshot pipelineBackpressure() {
+        return pipelineBackpressureMonitorService.getSnapshot();
     }
 
     /**

@@ -232,7 +232,7 @@ function Invoke-Delta($ClientName, $Cursor, [bool]$ExpectReset, [string]$Expecte
 }
 function Sample-Resources([string]$Phase) {
     $raw = ""
-    try { $raw = [string](Invoke-PublicGet "/actuator/prometheus" 10).Content } catch { $raw = "" }
+    try { $raw = [string](Invoke-ScaleRequest "prometheus-$Phase" "/actuator/prometheus" "GET" $null 10 $false).BodyText } catch { $raw = "" }
     $script:PrometheusIndex += 1
     $path = Join-Path $script:OutputDir ("prometheus-$($script:PrometheusIndex.ToString('0000'))-$Phase.txt")
     Set-Content -Path $path -Value $raw -Encoding UTF8

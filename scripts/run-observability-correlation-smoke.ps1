@@ -85,15 +85,9 @@ function Wait-Started {
             throw "collector process exited before startup. stderr=$stderrPath stdout=$stdoutPath"
         }
         try {
-            $client = [System.Net.Sockets.TcpClient]::new()
-            try {
-                $connect = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
-                if ($connect.AsyncWaitHandle.WaitOne(1000, $false)) {
-                    $client.EndConnect($connect)
-                    return
-                }
-            } finally {
-                $client.Dispose()
+            $response = Invoke-WebRequest -Uri "$baseUrl/actuator/health/liveness" -Method GET -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            if ([int]$response.StatusCode -eq 200) {
+                return
             }
         } catch {
             Start-Sleep -Milliseconds 500
