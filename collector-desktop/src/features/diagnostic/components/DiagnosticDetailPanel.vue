@@ -44,6 +44,7 @@
           <span>{{ stage.name }}</span>
           <strong><span class="status-badge" :class="stage.tone">{{ stage.statusText }}</span></strong>
           <small>{{ stage.enabledText }} · {{ stage.queueText }} · 使用率 {{ stage.utilizationText }}</small>
+          <small>{{ stage.secondaryText }}</small>
         </div>
       </div>
       <div class="modao-risk-list pipeline-risk-list">
@@ -60,7 +61,7 @@
         <tbody>
           <tr v-if="pipelineDetail.executors.length === 0"><td colspan="6" class="exact-empty">暂无 Pipeline 线程池指标</td></tr>
           <tr v-for="executor in pipelineDetail.executors" :key="executor.name">
-            <td><code>{{ executor.name }}</code></td>
+            <td><code :title="executor.beanNameText">{{ executor.name }}</code></td>
             <td><span class="status-badge" :class="executor.tone">{{ executor.statusText }}</span></td>
             <td>{{ executor.queueText }}</td>
             <td>{{ executor.capacityText }}</td>

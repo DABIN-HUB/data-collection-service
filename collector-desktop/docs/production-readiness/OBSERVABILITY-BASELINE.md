@@ -883,3 +883,34 @@ Only HTTP-correlated exceptions can link directly to request logs through `reque
 | OBS-P2-03 | CLOSED | Prometheus contract unchanged; no high-cardinality exception metrics added |
 
 Task 05.4 is PASS / COMPLETE. Task 05 overall remains NOT COMPLETE until Task 05.5 is complete.
+
+## 28. Task 05.4-R1 — Desktop Pipeline Contract Alignment
+
+Problem: Task 05.4 initially modeled Desktop pipeline stages with a generic `PipelineStageSnapshot` and frontend-only alias fields. The Java source of truth is `PipelineBackpressureSnapshot`, whose Ingress, Stream, History, Cloud, and Executor records have distinct fields.
+
+Impact: stage status could render correctly, but queue/backlog/utilization values could appear as false `0` or `-` when the real `/monitor/pipeline` response used `localPending`, `bufferSize`, `redisPending`, `pending`, `isolated`, or `oldestMessageAgeMillis`.
+
+Repair: Desktop now mirrors the Java DTO with exact TypeScript interfaces: `PipelineIngressSnapshot`, `PipelineStreamSnapshot`, `PipelineHistorySnapshot`, `PipelineCloudSnapshot`, `PipelineExecutorSnapshot`, and `PipelineBackpressureSnapshot`. Stage mapping is split by backend record shape instead of using a single generic stage mapper.
+
+### Desktop pipeline field contract
+
+| Stage | Queue / buffer | Utilization | Backlog / dead-letter | Other displayed signal |
+| --- | --- | --- | --- | --- |
+| Ingress | `localPending / localCapacity` | `localUtilization` | `redisPending`, `redisDeadLetter` | `redisProcessing`, rejects, dropped items |
+| Stream | `bufferSize / bufferCapacity` | `bufferUtilization` | no Redis backlog field is invented | `admissionRejected`, `admissionDropped + shutdownDroppedRows`, `redisXaddFailures + writerLoopFailures` |
+| History | `localPending / localCapacity` | `localUtilization` | `redisPending`, `redisDeadLetter` | `redisProcessing`, `replayFailedRows`, `liveFlushQueueUtilization` |
+| Cloud | no queue utilization field | `-` | `pending`, `isolated` | `oldestMessageAgeMillis` |
+| Executor | `queueSize / queueCapacity` | `queueUtilization` | `rejectedCount` | logical map key plus `beanName` |
+
+### Unknown and disabled semantics
+
+- Pipeline utilization values `< 0` are treated as unknown and rendered as `-`, never `-100%`.
+- Redis backlog/dead-letter values `< 0` are rendered as `-`, not coerced to `0`.
+- Cloud `DISABLED` renders as `未启用`; Desktop does not invent Cloud queue utilization.
+- Executor `queueCapacity=-1` and `queueUtilization=-1` render as `-`.
+
+### Contract regression gate
+
+Frontend tests use a backend-shaped `PipelineBackpressureSnapshot` fixture with real Java record field names. The fixture intentionally does not use removed stage aliases such as `localQueueSize`, `redisPendingCount`, `pendingCount`, or `deadLetterCount`. Assertions cover concrete values for Ingress queue/backlog/dead-letter, Stream buffer/rejected/dropped/failures, History queue/backlog/dead-letter/live flush, and Cloud pending/isolated/oldest age.
+
+Backend production DTOs were not changed in this R1. ExceptionMonitor, requestId log navigation, Diagnostic partial failure behavior, diagnostic export, and Prometheus contracts remain unchanged.

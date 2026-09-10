@@ -337,27 +337,97 @@ export interface ThreadPoolSnapshot {
 
 export type PipelineStatus = "HEALTHY" | "WARNING" | "DANGER" | "UNKNOWN" | "DISABLED" | string;
 
-export interface PipelineStageSnapshot {
+export interface PipelineIngressSnapshot {
   enabled?: boolean;
   status?: PipelineStatus;
-  queueSize?: number;
-  localQueueSize?: number;
-  redisPendingCount?: number;
-  processingCount?: number;
-  deadLetterCount?: number;
-  queueCapacity?: number;
-  queueUtilization?: number;
-  rejectedCount?: number;
-  droppedCount?: number;
-  failureCount?: number;
+
+  redisPending?: number;
+  redisProcessing?: number;
+  redisDeadLetter?: number;
+
+  localPending?: number;
+  localCapacity?: number;
+  localUtilization?: number;
+
+  rejectedTasks?: number;
+  rejectedItems?: number;
+
+  redisBufferedItems?: number;
+  localBufferedItems?: number;
+  droppedItems?: number;
+
+  replayCompletedItems?: number;
+  pendingRemoveFailures?: number;
+  poisonDeadLetterItems?: number;
+  staleSameRuntimeDroppedItems?: number;
+  crossRuntimeRecoveredItems?: number;
+  legacyEnvelopeRecoveredItems?: number;
+}
+
+export interface PipelineStreamSnapshot {
+  enabled?: boolean;
+  status?: PipelineStatus;
+
+  bufferSize?: number;
+  bufferPeak?: number;
+  bufferCapacity?: number;
+  bufferUtilization?: number;
+
+  admissionAccepted?: number;
+  admissionRejected?: number;
+  admissionDropped?: number;
+
+  writerBatchCount?: number;
+  writerRows?: number;
+
+  redisPipelineCalls?: number;
+  redisXaddRows?: number;
+  redisXaddFailures?: number;
+
+  shutdownDroppedRows?: number;
+  writerLoopFailures?: number;
+}
+
+export interface PipelineHistorySnapshot {
+  enabled?: boolean;
+  status?: PipelineStatus;
+
+  redisPending?: number;
+  redisProcessing?: number;
+  redisDeadLetter?: number;
+
+  localPending?: number;
+  localCapacity?: number;
+  localUtilization?: number;
+
+  writeFailureRedisBuffered?: number;
+  rejectedRedisBuffered?: number;
+
+  writeFailureLocalBuffered?: number;
+  rejectedLocalBuffered?: number;
+
+  writeFailureDropped?: number;
+  rejectedDropped?: number;
+
+  replayFailedRows?: number;
+  replayProcessingRows?: number;
+
+  batchFallbackDroppedRows?: number;
+
+  liveFlushQueueUtilization?: number;
+}
+
+export interface PipelineCloudSnapshot {
+  enabled?: boolean;
+  status?: PipelineStatus;
+
+  pending?: number;
+  isolated?: number;
   oldestMessageAgeMillis?: number;
-  pendingCount?: number;
-  isolatedCount?: number;
-  [key: string]: unknown;
 }
 
 export interface PipelineExecutorSnapshot {
-  name?: string;
+  beanName?: string;
   status?: PipelineStatus;
   corePoolSize?: number;
   maxPoolSize?: number;
@@ -367,19 +437,17 @@ export interface PipelineExecutorSnapshot {
   queueUtilization?: number;
   completedTaskCount?: number;
   rejectedCount?: number;
-  [key: string]: unknown;
 }
 
 export interface PipelineBackpressureSnapshot {
   status?: PipelineStatus;
   generatedAt?: number;
-  ingress?: PipelineStageSnapshot;
-  stream?: PipelineStageSnapshot;
-  history?: PipelineStageSnapshot;
-  cloud?: PipelineStageSnapshot;
+  ingress?: PipelineIngressSnapshot;
+  stream?: PipelineStreamSnapshot;
+  history?: PipelineHistorySnapshot;
+  cloud?: PipelineCloudSnapshot;
   executors?: Record<string, PipelineExecutorSnapshot>;
   risks?: string[];
-  [key: string]: unknown;
 }
 
 export interface ExceptionSummary {

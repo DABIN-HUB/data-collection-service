@@ -9,6 +9,7 @@ import {
   buildPipelineDetail,
   buildStorageDetail
 } from "./diagnostic-detail-utils";
+import type { PipelineBackpressureSnapshot } from "@/types/monitor";
 
 describe("diagnostic-detail-utils", () => {
   it("归一化缓存命中率和分层缓存摘要", () => {
@@ -89,22 +90,83 @@ describe("diagnostic-detail-utils", () => {
     }));
   });
 
-  it("归一化 Pipeline 状态、风险和队列使用率", () => {
-    const detail = buildPipelineDetail({
+  it("按真实后端 PipelineBackpressureSnapshot 字段归一化 Pipeline 数值", () => {
+    const backendPayload: PipelineBackpressureSnapshot = {
       status: "WARNING",
-      ingress: { enabled: true, status: "HEALTHY", localQueueSize: 1, queueCapacity: 10, queueUtilization: 0.1, redisPendingCount: 0 },
-      stream: { enabled: true, status: "WARNING", queueSize: 7, queueCapacity: 10, queueUtilization: 0.7, redisPendingCount: 3 },
-      history: { enabled: true, status: "DANGER", queueSize: 9, queueCapacity: 10, queueUtilization: 0.9, deadLetterCount: 2 },
-      cloud: { enabled: false, status: "DISABLED", pendingCount: 0, queueUtilization: 0 },
-      executors: { cache: { status: "UNKNOWN", queueSize: 2, queueCapacity: 4, queueUtilization: 0.5, rejectedCount: 1 } },
+      ingress: {
+        enabled: true,
+        status: "WARNING",
+        redisPending: 17,
+        redisProcessing: 2,
+        redisDeadLetter: 1,
+        localPending: 7,
+        localCapacity: 100,
+        localUtilization: 0.07,
+        rejectedTasks: 3,
+        rejectedItems: 4,
+        droppedItems: 5
+      },
+      stream: {
+        enabled: true,
+        status: "HEALTHY",
+        bufferSize: 11,
+        bufferPeak: 30,
+        bufferCapacity: 100,
+        bufferUtilization: 0.11,
+        admissionRejected: 2,
+        admissionDropped: 3,
+        redisXaddFailures: 4,
+        shutdownDroppedRows: 5,
+        writerLoopFailures: 6
+      },
+      history: {
+        enabled: true,
+        status: "DANGER",
+        redisPending: 23,
+        redisProcessing: 4,
+        redisDeadLetter: 2,
+        localPending: 41,
+        localCapacity: 500,
+        localUtilization: 0.082,
+        replayFailedRows: 7,
+        liveFlushQueueUtilization: 0.5
+      },
+      cloud: {
+        enabled: true,
+        status: "WARNING",
+        pending: 12,
+        isolated: 2,
+        oldestMessageAgeMillis: 35000
+      },
+      executors: { cache: { beanName: "telemetryCacheStageExecutor", status: "UNKNOWN", queueSize: 3, queueCapacity: 2000, queueUtilization: 0.0015, rejectedCount: 1 } },
       risks: ["HISTORY_DEAD_LETTER", "EXECUTOR_QUEUE_HIGH", "CUSTOM_RISK"]
-    });
+    };
+    const detail = buildPipelineDetail(backendPayload);
 
     expect(detail.statusText).toBe("预警");
-    expect(detail.stages.map((stage) => stage.statusText)).toEqual(["正常", "预警", "危险", "未启用"]);
-    expect(detail.stages[1].utilizationText).toBe("70%");
+    expect(detail.stages.map((stage) => stage.statusText)).toEqual(["预警", "正常", "危险", "预警"]);
+    expect(detail.stages[0]).toEqual(expect.objectContaining({ queueText: "本地队列 7/100，Redis 积压 17", utilizationText: "7%", secondaryText: expect.stringContaining("死信 1") }));
+    expect(detail.stages[1]).toEqual(expect.objectContaining({ queueText: "缓冲 11/100，峰值 30", utilizationText: "11%", secondaryText: "拒绝 2，丢弃 8，失败 10" }));
+    expect(detail.stages[2]).toEqual(expect.objectContaining({ queueText: "本地队列 41/500，Redis 积压 23", utilizationText: "8%", secondaryText: expect.stringContaining("Live Flush 50%") }));
+    expect(detail.stages[3]).toEqual(expect.objectContaining({ queueText: "积压 12，隔离 2，最老 35 s", utilizationText: "-" }));
     expect(detail.risks).toEqual(["历史写入存在死信积压", "线程池队列压力偏高", "CUSTOM RISK"]);
-    expect(detail.executors[0]).toEqual(expect.objectContaining({ name: "cache", statusText: "未知", utilizationText: "50%", rejectedText: "1" }));
+    expect(detail.executors[0]).toEqual(expect.objectContaining({ name: "cache", beanNameText: "telemetryCacheStageExecutor", statusText: "未知", queueText: "3", capacityText: "2000", utilizationText: "0%", rejectedText: "1" }));
+  });
+
+  it("Pipeline unknown 和 disabled 不把 -1 显示成 0 或 -100%", () => {
+    const detail = buildPipelineDetail({
+      status: "UNKNOWN",
+      ingress: { enabled: true, status: "UNKNOWN", redisPending: -1, redisProcessing: -1, redisDeadLetter: -1, localPending: -1, localCapacity: -1, localUtilization: -1 },
+      stream: { enabled: true, status: "UNKNOWN", bufferSize: -1, bufferCapacity: -1, bufferUtilization: -1 },
+      history: { enabled: true, status: "UNKNOWN", redisPending: -1, redisProcessing: -1, redisDeadLetter: -1, localPending: -1, localCapacity: -1, localUtilization: -1, liveFlushQueueUtilization: -1 },
+      cloud: { enabled: false, status: "DISABLED", pending: 0, isolated: 0, oldestMessageAgeMillis: 0 },
+      executors: { cache: { beanName: "telemetryCacheStageExecutor", status: "UNKNOWN", queueSize: -1, queueCapacity: -1, queueUtilization: -1, rejectedCount: -1 } }
+    } satisfies PipelineBackpressureSnapshot);
+
+    expect(detail.stages[0].queueText).toBe("本地队列 -/-，Redis 积压 -");
+    expect(detail.stages[0].utilizationText).toBe("-");
+    expect(detail.stages[3]).toEqual(expect.objectContaining({ enabledText: "未启用", queueText: "未启用", utilizationText: "-" }));
+    expect(detail.executors[0]).toEqual(expect.objectContaining({ capacityText: "-", utilizationText: "-" }));
   });
 
   it("requestId 构建日志 keyword 路由", () => {

@@ -1,4 +1,5 @@
 import { RouteNames } from "@/router/route-names";
+import type { PipelineBackpressureSnapshot } from "@/types/monitor";
 
 export interface CacheDetail {
   status: string;
@@ -57,6 +58,7 @@ export interface PipelineStageDetail {
   enabledText: string;
   queueText: string;
   utilizationText: string;
+  secondaryText: string;
 }
 
 export interface PipelineExecutorDetail {
@@ -68,6 +70,7 @@ export interface PipelineExecutorDetail {
   capacityText: string;
   utilizationText: string;
   rejectedText: string;
+  beanNameText: string;
 }
 
 export interface PipelineDetail {
@@ -155,7 +158,7 @@ export function buildExceptionDetail(input: unknown): ExceptionDetail {
 }
 
 export function buildPipelineDetail(input: unknown): PipelineDetail {
-  const data = unwrapData(input);
+  const data = unwrapData(input) as PipelineBackpressureSnapshot;
   const status = String(data.status || "UNKNOWN").toUpperCase();
   const riskItems = arrayValue(data.risks).map(readableRisk).filter(Boolean);
   const visibleRisks = riskItems.slice(0, 8);
@@ -167,10 +170,10 @@ export function buildPipelineDetail(input: unknown): PipelineDetail {
     risks: visibleRisks,
     hiddenRiskCount: Math.max(0, riskItems.length - visibleRisks.length),
     stages: [
-      pipelineStage("Ingress", asRecord(data.ingress)),
-      pipelineStage("Stream", asRecord(data.stream)),
-      pipelineStage("History", asRecord(data.history)),
-      pipelineStage("Cloud", asRecord(data.cloud))
+      pipelineIngressStage(data.ingress),
+      pipelineStreamStage(data.stream),
+      pipelineHistoryStage(data.history),
+      pipelineCloudStage(data.cloud)
     ],
     executors: Object.entries(asRecord(data.executors)).map(([name, value]) => pipelineExecutor(name, asRecord(value)))
   };
@@ -213,19 +216,77 @@ function normalizeConnectionRow(record: Record<string, unknown>, missingIds: Set
   };
 }
 
-function pipelineStage(name: string, data: Record<string, unknown>): PipelineStageDetail {
-  const status = String(data.status || "UNKNOWN").toUpperCase();
-  const queueSize = numberValue(data.queueSize ?? data.localQueueSize, 0);
-  const backlog = numberValue(data.redisPendingCount ?? data.pendingCount ?? data.deadLetterCount, 0);
-  const capacity = optionalNumber(data.queueCapacity);
+function pipelineIngressStage(data: PipelineBackpressureSnapshot["ingress"]): PipelineStageDetail {
+  const record = data || {};
+  const status = String(record.status || "UNKNOWN").toUpperCase();
   return {
-    name,
+    name: "Ingress",
     status,
     statusText: pipelineStatusText(status),
     tone: pipelineTone(status),
-    enabledText: data.enabled === false ? "未启用" : "已启用",
-    queueText: `队列 ${queueSize}${capacity !== undefined && capacity >= 0 ? `/${capacity}` : ""}，积压 ${backlog}`,
-    utilizationText: percentText(data.queueUtilization)
+    enabledText: record.enabled === false ? "未启用" : "已启用",
+    queueText: `本地队列 ${countText(record.localPending)}/${capacityText(record.localCapacity)}，Redis 积压 ${countText(record.redisPending)}`,
+    utilizationText: pipelineUtilizationText(record.localUtilization),
+    secondaryText: `处理中 ${countText(record.redisProcessing)}，死信 ${countText(record.redisDeadLetter)}，拒绝 ${countText(record.rejectedTasks)} / ${countText(record.rejectedItems)}，丢弃 ${countText(record.droppedItems)}`
+  };
+}
+
+function pipelineStreamStage(data: PipelineBackpressureSnapshot["stream"]): PipelineStageDetail {
+  const record = data || {};
+  const status = String(record.status || "UNKNOWN").toUpperCase();
+  const dropped = sumKnown(record.admissionDropped, record.shutdownDroppedRows);
+  const failures = sumKnown(record.redisXaddFailures, record.writerLoopFailures);
+  return {
+    name: "Stream",
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    enabledText: record.enabled === false ? "未启用" : "已启用",
+    queueText: `缓冲 ${countText(record.bufferSize)}/${capacityText(record.bufferCapacity)}，峰值 ${countText(record.bufferPeak)}`,
+    utilizationText: pipelineUtilizationText(record.bufferUtilization),
+    secondaryText: `拒绝 ${countText(record.admissionRejected)}，丢弃 ${knownNumberText(dropped)}，失败 ${knownNumberText(failures)}`
+  };
+}
+
+function pipelineHistoryStage(data: PipelineBackpressureSnapshot["history"]): PipelineStageDetail {
+  const record = data || {};
+  const status = String(record.status || "UNKNOWN").toUpperCase();
+  return {
+    name: "History",
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    enabledText: record.enabled === false ? "未启用" : "已启用",
+    queueText: `本地队列 ${countText(record.localPending)}/${capacityText(record.localCapacity)}，Redis 积压 ${countText(record.redisPending)}`,
+    utilizationText: pipelineUtilizationText(record.localUtilization),
+    secondaryText: `处理中 ${countText(record.redisProcessing)}，死信 ${countText(record.redisDeadLetter)}，回放失败 ${countText(record.replayFailedRows)}，Live Flush ${pipelineUtilizationText(record.liveFlushQueueUtilization)}`
+  };
+}
+
+function pipelineCloudStage(data: PipelineBackpressureSnapshot["cloud"]): PipelineStageDetail {
+  const record = data || {};
+  const status = String(record.status || "UNKNOWN").toUpperCase();
+  if (record.enabled === false) {
+    return {
+      name: "Cloud",
+      status,
+      statusText: pipelineStatusText(status),
+      tone: pipelineTone(status),
+      enabledText: "未启用",
+      queueText: "未启用",
+      utilizationText: "-",
+      secondaryText: `积压 ${countText(record.pending)}，隔离 ${countText(record.isolated)}，最老 ${durationText(record.oldestMessageAgeMillis)}`
+    };
+  }
+  return {
+    name: "Cloud",
+    status,
+    statusText: pipelineStatusText(status),
+    tone: pipelineTone(status),
+    enabledText: "已启用",
+    queueText: `积压 ${countText(record.pending)}，隔离 ${countText(record.isolated)}，最老 ${durationText(record.oldestMessageAgeMillis)}`,
+    utilizationText: "-",
+    secondaryText: "Cloud Outbox 无队列使用率字段"
   };
 }
 
@@ -236,10 +297,11 @@ function pipelineExecutor(name: string, data: Record<string, unknown>): Pipeline
     status,
     statusText: pipelineStatusText(status),
     tone: pipelineTone(status),
-    queueText: String(numberValue(data.queueSize, 0)),
-    capacityText: String(numberValue(data.queueCapacity, -1)),
-    utilizationText: percentText(data.queueUtilization),
-    rejectedText: String(numberValue(data.rejectedCount, 0))
+    queueText: countText(data.queueSize),
+    capacityText: capacityText(data.queueCapacity),
+    utilizationText: pipelineUtilizationText(data.queueUtilization),
+    rejectedText: countText(data.rejectedCount),
+    beanNameText: String(data.beanName || "-")
   };
 }
 
@@ -283,6 +345,41 @@ function percentText(value: unknown): string {
   }
   const ratio = number > 1 && number <= 100 ? number / 100 : number;
   return `${Math.round(ratio * 100)}%`;
+}
+
+function pipelineUtilizationText(value: unknown): string {
+  const number = optionalNumber(value);
+  if (number === undefined || number < 0) {
+    return "-";
+  }
+  const ratio = number > 1 && number <= 100 ? number / 100 : number;
+  return `${Math.round(ratio * 100)}%`;
+}
+
+function countText(value: unknown): string {
+  const number = optionalNumber(value);
+  return number === undefined || number < 0 ? "-" : String(number);
+}
+
+function capacityText(value: unknown): string {
+  return countText(value);
+}
+
+function knownNumberText(value: number | undefined): string {
+  return value === undefined || value < 0 ? "-" : String(value);
+}
+
+function sumKnown(...values: unknown[]): number | undefined {
+  let total = 0;
+  let hasKnown = false;
+  for (const value of values) {
+    const number = optionalNumber(value);
+    if (number !== undefined && number >= 0) {
+      total += number;
+      hasKnown = true;
+    }
+  }
+  return hasKnown ? total : undefined;
 }
 
 function durationText(value: unknown): string {
