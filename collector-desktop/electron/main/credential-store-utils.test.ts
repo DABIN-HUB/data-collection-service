@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MainCredentialStore, normalizePersistedCredentialFile, type SafeStorageLike } from "./credential-store-utils.js";
+import { MainCredentialStore, normalizePersistedCredentialFile, type CredentialFileOps, type SafeStorageLike } from "./credential-store-utils.js";
 
 const PLAINTEXT = "[REDACTED]";
 
@@ -112,6 +112,70 @@ describe("MainCredentialStore", () => {
     expect(status.hasCredential).toBe(false);
     expect(store.getToken()).toBe("");
     expect(existsSync(credentialPath)).toBe(false);
+    rmSync(join(credentialPath, ".."), { recursive: true, force: true });
+  });
+
+  it("clear 删除失败时可通过 rename disarm canonical credential，防止重启恢复旧 token", () => {
+    const credentialPath = tempCredentialPath();
+    const fileOps: CredentialFileOps = {
+      exists: existsSync,
+      remove: vi.fn((path: string) => {
+        if (path === credentialPath) {
+          throw new Error("remove denied");
+        }
+        rmSync(path, { force: true });
+      }),
+      rename: vi.fn((sourcePath: string, targetPath: string) => renameSync(sourcePath, targetPath))
+    };
+    const store = new MainCredentialStore(credentialPath, fakeSafeStorage(), process.platform, fileOps);
+    store.setCredential(PLAINTEXT, true);
+
+    const status = store.clearCredential();
+
+    expect(status).toMatchObject({ hasCredential: false, remembered: false });
+    expect(store.getToken()).toBe("");
+    expect(existsSync(credentialPath)).toBe(false);
+    expect(fileOps.rename).toHaveBeenCalledWith(credentialPath, expect.stringContaining(".deleted-"));
+    rmSync(join(credentialPath, ".."), { recursive: true, force: true });
+  });
+
+  it("clear 删除且 disarm 均失败时抛出错误，但当前 Main memory 已清空", () => {
+    const credentialPath = tempCredentialPath();
+    const fileOps: CredentialFileOps = {
+      exists: existsSync,
+      remove: vi.fn(() => {
+        throw new Error("remove denied");
+      }),
+      rename: vi.fn(() => {
+        throw new Error("rename denied");
+      })
+    };
+    const store = new MainCredentialStore(credentialPath, fakeSafeStorage(), process.platform, fileOps);
+    store.setCredential(PLAINTEXT, true);
+
+    expect(() => store.clearCredential()).toThrow("无法清除已保存凭据");
+    expect(store.getToken()).toBe("");
+    expect(existsSync(credentialPath)).toBe(true);
+    rmSync(join(credentialPath, ".."), { recursive: true, force: true });
+  });
+
+  it("remember=false 覆盖旧 remembered credential 时若无法 disarm 旧文件则抛错且当前 session 使用 memory token", () => {
+    const credentialPath = tempCredentialPath();
+    new MainCredentialStore(credentialPath, fakeSafeStorage()).setCredential("[REDACTED]-old", true);
+    const fileOps: CredentialFileOps = {
+      exists: existsSync,
+      remove: vi.fn(() => {
+        throw new Error("remove denied");
+      }),
+      rename: vi.fn(() => {
+        throw new Error("rename denied");
+      })
+    };
+    const store = new MainCredentialStore(credentialPath, fakeSafeStorage(), process.platform, fileOps);
+
+    expect(() => store.setCredential(PLAINTEXT, false)).toThrow("无法清除已保存凭据");
+    expect(store.getToken()).toBe(PLAINTEXT);
+    expect(existsSync(credentialPath)).toBe(true);
     rmSync(join(credentialPath, ".."), { recursive: true, force: true });
   });
 

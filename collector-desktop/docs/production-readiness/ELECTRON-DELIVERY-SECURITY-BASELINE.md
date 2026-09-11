@@ -1218,3 +1218,55 @@ Focused tests cover:
 16. Task 06.2-R1 destination confirmation tests remain in the full suite.
 
 Full command evidence is recorded in the final Task 06.3 report.
+---
+
+# Task 06.3-R1 — Credential Clear & Persistence Failure Semantics
+
+Date: 2026-09-11
+Branch: feature_2.0
+Remote baseline before Task 06.3-R1: 4a641caa1dddca905886a9889a19070a7a6da23c
+Scope: focused repair for credential clear / memory-only persistence failure semantics; no Task 06.4 work is started.
+
+Task 06.3-R1 keeps the Main-owned safeStorage credential architecture intact and tightens only the stale credential resurrection edge case.
+
+Before R1, clear paths removed Main memory first, but a failed `rmSync()` of `collector-desktop-credentials.json` could be swallowed. That meant Main could report `hasCredential=false` for the current session while the canonical credential file still existed and could be restored on the next startup.
+
+R1 changes the clear invariant to:
+
+```text
+clearCredential() success
+= current Main memory credential is empty
++ canonical credential persistence cannot restore the cleared token on next startup
+```
+
+The same reliable clear/disarm path is now used by:
+
+```text
+clearCredential()
+setCredential("", false)
+setCredential(token, false) when a previous remembered credential may exist
+safeStorage unavailable / Linux basic_text downgrade before returning memory-only status
+```
+
+Clear first empties Main memory so the current process stops injecting the old `X-Collector-Token`. It then tries to remove the canonical credential file. If direct remove fails but the canonical path still exists, Main attempts to rename it to a non-startup path:
+
+```text
+collector-desktop-credentials.json.deleted-<timestamp>
+```
+
+If rename succeeds, the canonical path is disarmed and the next `initialize()` cannot restore the old token; deletion of the renamed orphan is best-effort. If both delete and disarm fail and the canonical credential file remains, Main throws an explicit error instead of returning a false-success `hasCredential=false` status.
+
+Focused R1 tests cover:
+
+1. delete failure + rename/disarm success prevents canonical startup restoration;
+2. delete failure + disarm failure throws while Main memory is already empty;
+3. `remember=false` replacing a previously remembered credential throws if old canonical persistence cannot be disarmed while current session memory switches to the new memory-only token.
+
+Finding update:
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P1-02 | CLOSED / R1 PASS | clear/logout and memory-only downgrade no longer silently leave restart-restorable stale credentials at the canonical path |
+| EDS-P2-05 | CLOSED / R1 PASS | credential persistence failure semantics now fail closed for canonical clear/disarm, while preserving current-session memory clearing |
+
+Full command evidence is recorded in the final Task 06.3-R1 report.

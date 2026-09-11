@@ -24,11 +24,23 @@ interface PersistedCredentialFile {
   updatedAt: string;
 }
 
+export interface CredentialFileOps {
+  exists(path: string): boolean;
+  remove(path: string): void;
+  rename(sourcePath: string, targetPath: string): void;
+}
+
 const DEFAULT_STATUS: CredentialStatus = {
   hasCredential: false,
   remembered: false,
   storageAvailable: false,
   rememberUnavailable: false
+};
+
+const DEFAULT_CREDENTIAL_FILE_OPS: CredentialFileOps = {
+  exists: existsSync,
+  remove: (path: string) => rmSync(path, { force: true }),
+  rename: renameSync
 };
 
 export class MainCredentialStore {
@@ -39,14 +51,15 @@ export class MainCredentialStore {
   constructor(
     private readonly credentialPath: string,
     private readonly safeStorage: SafeStorageLike,
-    private readonly platform: NodeJS.Platform = process.platform
+    private readonly platform: NodeJS.Platform = process.platform,
+    private readonly fileOps: CredentialFileOps = DEFAULT_CREDENTIAL_FILE_OPS
   ) {}
 
   initialize(): CredentialStatus {
     this.memoryToken = "";
     this.remembered = false;
     this.recovery = undefined;
-    if (!existsSync(this.credentialPath)) {
+    if (!this.fileOps.exists(this.credentialPath)) {
       return this.getStatus();
     }
     if (!this.isProtectedPersistenceAvailable()) {
@@ -131,20 +144,42 @@ export class MainCredentialStore {
   }
 
   private clearPersistedOnly(): void {
+    if (!this.fileOps.exists(this.credentialPath)) {
+      return;
+    }
+    let removeError: unknown;
     try {
-      rmSync(this.credentialPath, { force: true });
+      this.fileOps.remove(this.credentialPath);
+    } catch (error) {
+      removeError = error;
+    }
+    if (!this.fileOps.exists(this.credentialPath)) {
+      return;
+    }
+    const disarmedPath = `${this.credentialPath}.deleted-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    try {
+      this.fileOps.rename(this.credentialPath, disarmedPath);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || removeError || "credential clear failed");
+      throw new Error(`无法清除已保存凭据，旧凭据可能在重启后恢复：${reason}`, { cause: error });
+    }
+    if (this.fileOps.exists(this.credentialPath)) {
+      throw new Error("无法清除已保存凭据，旧凭据可能在重启后恢复");
+    }
+    try {
+      this.fileOps.remove(disarmedPath);
     } catch {
-      // Clearing credentials is best-effort; memory state is still authoritative for the current request boundary.
+      // The canonical credential path has already been disarmed, so startup cannot restore the old token.
     }
   }
 
   private quarantinePersistedCredential(): string | undefined {
-    if (!existsSync(this.credentialPath)) {
+    if (!this.fileOps.exists(this.credentialPath)) {
       return undefined;
     }
     const quarantinePath = `${this.credentialPath}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
     try {
-      renameSync(this.credentialPath, quarantinePath);
+      this.fileOps.rename(this.credentialPath, quarantinePath);
       return quarantinePath;
     } catch {
       return undefined;
