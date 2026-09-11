@@ -914,3 +914,48 @@ Repair: Desktop now mirrors the Java DTO with exact TypeScript interfaces: `Pipe
 Frontend tests use a backend-shaped `PipelineBackpressureSnapshot` fixture with real Java record field names. The fixture intentionally does not use removed stage aliases such as `localQueueSize`, `redisPendingCount`, `pendingCount`, or `deadLetterCount`. Assertions cover concrete values for Ingress queue/backlog/dead-letter, Stream buffer/rejected/dropped/failures, History queue/backlog/dead-letter/live flush, and Cloud pending/isolated/oldest age.
 
 Backend production DTOs were not changed in this R1. ExceptionMonitor, requestId log navigation, Diagnostic partial failure behavior, diagnostic export, and Prometheus contracts remain unchanged.
+
+## 29. Task 05.5 FINAL STATUS
+
+Task 05.5 performed the final observability acceptance sequence: AUDIT → CONTRACT VERIFICATION → RUNTIME REGRESSION → INCIDENT WALKTHROUGH → FINAL DECISION.
+
+Detailed evidence is recorded in `collector-desktop/docs/production-readiness/TASK-05-FINAL-AUDIT.md`.
+
+### Final task matrix
+
+| Task | Purpose | Status |
+| --- | --- | --- |
+| 05.1 | Baseline & gap audit | PASS |
+| 05.2 | Correlation/access/file logs | PASS |
+| 05.3 | Pipeline metrics/health/security | PASS |
+| 05.3-R1 | Cloud snapshot read boundary | PASS |
+| 05.4 | Operational diagnostic surface | PASS |
+| 05.4-R1 | Desktop pipeline contract | PASS |
+| 05.5 | Final audit | PASS |
+
+### Final severity gate
+
+| Severity | Open | Closed | Deferred |
+| --- | ---: | ---: | ---: |
+| P0 | 0 | 0 | 0 |
+| P1 | 0 | 5 | 0 |
+| P2 | 0 | 3 | 3 |
+
+### Final finding matrix
+
+| Finding | Original Severity | Status | Evidence |
+| --- | --- | --- | --- |
+| OBS-P1-01 | P1 | CLOSED | Request correlation chain verified by tests and runtime request-id checks |
+| OBS-P1-02 | P1 | CLOSED | Access log verified for normal and denied protected requests with query redaction |
+| OBS-P1-03 | P1 | CLOSED | Executable JAR writes bounded rolling file logs |
+| OBS-P1-04 | P1 | CLOSED | Health endpoints public; metrics/prometheus protected and VIEW-authorized |
+| OBS-P1-05 | P1 | CLOSED | Pipeline endpoint, cached Prometheus metrics, low-cardinality labels, and smokes passed |
+| OBS-P2-01 | P2 | CLOSED | Health model separates liveness/readiness/business/operator diagnostics |
+| OBS-P2-02 | P2 | CLOSED | ExceptionMonitor is bounded, sanitized, request-correlated, and Desktop-actionable |
+| OBS-P2-03 | P2 | CLOSED | Human diagnostics and machine metrics remain separated |
+
+### Final decision
+
+Task 05.5 is PASS / COMPLETE. Task 05 — Observability is PASS / COMPLETE.
+
+The service has no known open P0/P1 observability blocker for field deployment. Remaining trusted-proxy client IP, generic async MDC propagation, and Electron packaged writable log path work is P2-deferred to later security/delivery phases.
