@@ -869,3 +869,145 @@ Remaining findings are outside this task or intentionally deferred:
 | EDS-P2-10 | OPEN | Task 06.4 startup-critical failure surfacing |
 
 Task 06.2 does not start Task 06.3.
+
+
+---
+
+# Task 06.2-R1 — Close Main Proxy Destination Reconfiguration Bypass
+
+Date: 2026-09-11
+Branch: feature_2.0
+Remote baseline before R1: fc38f10012dfdc158813eab7c4161089cf6f9449
+Scope: focused repair for `EDS-P1-01`; no Task 06.3 credential/config-storage migration is started.
+
+## 26. R1 Root Cause
+
+Task 06.2 closed the direct per-request `serverUrl` override on `collector:http-request`, but `window.collectorDesktop.setServerConfig(...)` still allowed a trusted top-frame renderer to request a backend URL change and have Main persist it immediately.
+
+The missing boundary was not IPC sender identity. The bypass attacker is already inside the trusted renderer URL/top frame through XSS or renderer compromise, so `assertTrustedSender(...)` correctly allows the sender but does not prove user intent for changing Main's authoritative network destination.
+
+Original bypass chain:
+
+```text
+compromised trusted Renderer / XSS
+→ collector:set-server-config({ serverUrl: attacker-controlled localhost/LAN URL })
+→ Main writeServerConfig(...)
+→ collector:http-request
+→ Main readServerConfig()
+→ Main fetch attacker-selected destination
+```
+
+## 27. R1 Boundary Change
+
+A renderer may now request a backend address change, but Main owns final authorization.
+
+Final behavior:
+
+```text
+Renderer
+→ collector:set-server-config(candidate)
+→ assertTrustedSender(event)
+→ Main strict candidate URL validation
+→ compare current Main config vs candidate
+→ if unchanged: return current config, no dialog, no write
+→ if changed: show Main-owned native Electron confirmation
+→ cancel: return current config, no write
+→ approve: persist candidate, return persisted config
+```
+
+The native confirmation is implemented in Main with `dialog.showMessageBox(...)`, not renderer UI. The dialog explicitly shows:
+
+```text
+当前采集服务：
+<current URL>
+
+准备切换到：
+<candidate URL>
+
+修改后，桌面端的后台请求将发送到新的采集服务地址。请确认该地址是可信的采集服务。
+```
+
+Buttons:
+
+```text
+取消
+确认切换
+```
+
+Safe default/cancel behavior:
+
+```text
+defaultId = 0
+cancelId = 0
+```
+
+## 28. R1 Server URL Minimal Validation
+
+For candidate backend URL changes, Main now enforces the minimal destination boundary required to close `EDS-P1-01`:
+
+| Check | Result |
+| --- | --- |
+| protocol | must be `http:` or `https:` |
+| username/password | rejected |
+| fragment | rejected |
+| query | rejected because backend base URL has no current business need for query parameters |
+| `127.0.0.1:9090` root | still normalized to `/collector` |
+| LAN collector URL | allowed after native approval |
+| remote HTTPS collector URL | allowed after native approval |
+
+This R1 intentionally does not implement config atomic write, corrupt config diagnostics, token migration, `safeStorage`, DPAPI, or keytar. Those remain Task 06.3 scope.
+
+## 29. R1 Renderer/Main Source-of-Truth Alignment
+
+Electron initialization now treats Main config as authoritative:
+
+```text
+window.collectorDesktop.getServerConfig()
+→ renderer display state
+→ configureHttp(...)
+```
+
+Stale renderer `localStorage["collector-desktop-server-url"]` no longer overrides Main config in Electron mode.
+
+Browser/Web mode still keeps the existing browser/localStorage behavior.
+
+`updateServerUrl(...)` is now Main-first in Electron mode:
+
+```text
+candidate
+→ await window.collectorDesktop.setServerConfig(candidate)
+→ Main native confirmation / validation
+→ Main returns actual final config
+→ renderer commits serverUrl/localStorage/configureHttp only after Main success
+```
+
+If Main rejects, validation fails, or the user cancels in the native confirmation, renderer state, localStorage, and HTTP config remain at the previous value.
+
+## 30. R1 Finding Status
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P1-01 | CLOSED | direct per-request override remains closed; indirect `setServerConfig` reconfiguration now requires Main native approval; cancel keeps Main and renderer config unchanged |
+| EDS-P1-03 | CLOSED / REGRESSION PASS | URL/navigation boundary from 06.2 unchanged |
+| EDS-P1-04 | CLOSED / REGRESSION PASS | CSP remains in source/built renderer, no `unsafe-eval` |
+| EDS-P2-01 | CLOSED / REGRESSION PASS | `sandbox: true` retained |
+| EDS-P2-02 | CLOSED / REGRESSION PASS | IPC sender/top-frame/trusted URL validation retained |
+| EDS-P2-03 | CLOSED / REGRESSION PASS | 64 MiB response streaming bound retained |
+| EDS-P2-06 | PARTIAL / REGRESSION PASS | production DevTools/forceReload removal retained; ordinary reload pending-write safety remains deferred |
+| EDS-P1-02 | DEFERRED | token ownership remains renderer memory + optional localStorage by explicit scope guard; Task 06.3 owner |
+
+## 31. R1 Verification Notes
+
+Targeted tests added for:
+
+1. same URL returns current config with no confirmation;
+2. different URL + native cancel leaves Main config unchanged;
+3. different URL + native approval writes Main config;
+4. renderer cannot silently switch localhost/LAN destination;
+5. `file:`, `javascript:`, `ftp:` and URL credentials are rejected;
+6. legacy `http-request.serverUrl` remains ignored by Main proxy helper;
+7. Electron initialization uses Main config over stale localStorage;
+8. Electron `updateServerUrl` does not pre-commit on Main cancel/reject;
+9. Browser/Web localStorage server URL behavior remains intact.
+
+Full command evidence is recorded in the final Task 06.2-R1 report.

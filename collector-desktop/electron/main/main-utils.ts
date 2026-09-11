@@ -46,6 +46,12 @@ export function normalizeServerConfig(config: Partial<ServerConfig> = {}): Serve
   };
 }
 
+export function normalizeServerConfigCandidate(config: Partial<ServerConfig> = {}): ServerConfig {
+  return {
+    serverUrl: normalizeServerUrlStrict(config.serverUrl || "")
+  };
+}
+
 export function normalizeWindowState(state: WindowState = {}): NormalizedWindowState {
   return {
     width: Math.max(MIN_WINDOW_WIDTH, Math.floor(Number(state.width) || DEFAULT_WINDOW_WIDTH)),
@@ -123,6 +129,35 @@ function normalizeServerUrl(serverUrl: string): string {
     return DEFAULT_SERVER_URL;
   }
   return trimmed;
+}
+
+function normalizeServerUrlStrict(serverUrl: string): string {
+  const trimmed = serverUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new Error("采集服务地址不能为空");
+  }
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch (error) {
+    throw new Error("采集服务地址格式无效", { cause: error });
+  }
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("采集服务地址只允许 HTTP/HTTPS 协议");
+  }
+  if (url.username || url.password) {
+    throw new Error("采集服务地址不能包含用户名或密码");
+  }
+  if (url.hash) {
+    throw new Error("采集服务地址不能包含片段标识");
+  }
+  if (url.search) {
+    throw new Error("采集服务地址不能包含查询参数");
+  }
+  if (url.hostname === "127.0.0.1" && url.port === "9090" && (url.pathname === "" || url.pathname === "/")) {
+    url.pathname = "/collector";
+  }
+  return url.toString().replace(/\/+$/, "");
 }
 
 function normalizeFilePath(path: string): string {

@@ -3,12 +3,23 @@ import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { buildAboutInfo, buildWindowChromeOptions, isExternalNavigationUrl, isSafeExternalUrl, isTrustedRendererUrl, normalizeServerConfig, normalizeWindowState } from "./main-utils.js";
+import { buildAboutInfo, buildWindowChromeOptions, isExternalNavigationUrl, isSafeExternalUrl, isTrustedRendererUrl, normalizeServerConfig, normalizeServerConfigCandidate, normalizeWindowState } from "./main-utils.js";
 
 describe("main-utils", () => {
   it("归一化服务地址并补齐 collector context-path", () => {
     expect(normalizeServerConfig({ serverUrl: "http://127.0.0.1:9090/" })).toEqual({ serverUrl: "http://127.0.0.1:9090/collector" });
     expect(normalizeServerConfig({ serverUrl: "http://127.0.0.1:9090/collector/" })).toEqual({ serverUrl: "http://127.0.0.1:9090/collector" });
+  });
+
+  it("严格校验待切换的采集服务地址", () => {
+    expect(normalizeServerConfigCandidate({ serverUrl: "http://192.168.1.10:9090/collector/" })).toEqual({ serverUrl: "http://192.168.1.10:9090/collector" });
+    expect(normalizeServerConfigCandidate({ serverUrl: "https://collector.example/collector" })).toEqual({ serverUrl: "https://collector.example/collector" });
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "file:///C:/collector" })).toThrow("HTTP/HTTPS");
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "javascript:alert(1)" })).toThrow("HTTP/HTTPS");
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "ftp://127.0.0.1/collector" })).toThrow("HTTP/HTTPS");
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "http://user:password@host/collector" })).toThrow("用户名或密码");
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "http://127.0.0.1:9090/collector#debug" })).toThrow("片段标识");
+    expect(() => normalizeServerConfigCandidate({ serverUrl: "http://127.0.0.1:9090/collector?target=evil" })).toThrow("查询参数");
   });
 
   it("窗口尺寸不小于工业工作台最小尺寸", () => {

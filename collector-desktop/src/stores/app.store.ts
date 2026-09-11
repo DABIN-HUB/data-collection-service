@@ -36,7 +36,6 @@ export const useAppStore = defineStore("app", {
       if (this.initialized) {
         return;
       }
-      const savedServerUrl = localStorage.getItem(SERVER_KEY);
       const savedToken = localStorage.getItem(TOKEN_KEY);
       if (window.collectorDesktop) {
         const [appInfo, serverConfig] = await Promise.all([
@@ -48,8 +47,9 @@ export const useAppStore = defineStore("app", {
         this.platform = appInfo.platform || this.platform;
         this.configPath = appInfo.configPath || "";
         this.backendManaged = Boolean(appInfo.backendManaged);
-        this.serverUrl = normalizeServerUrl(savedServerUrl || serverConfig.serverUrl || this.serverUrl);
+        this.serverUrl = normalizeServerUrl(serverConfig.serverUrl || this.serverUrl);
       } else {
+        const savedServerUrl = localStorage.getItem(SERVER_KEY);
         this.serverUrl = normalizeServerUrl(savedServerUrl || resolveBrowserServerUrl() || this.serverUrl);
       }
       if (savedToken) {
@@ -60,12 +60,15 @@ export const useAppStore = defineStore("app", {
       this.initialized = true;
     },
     async updateServerUrl(serverUrl: string) {
-      this.serverUrl = normalizeServerUrl(serverUrl);
+      const candidate = normalizeServerUrl(serverUrl);
+      if (window.collectorDesktop) {
+        const persisted = await window.collectorDesktop.setServerConfig({ serverUrl: candidate });
+        this.serverUrl = normalizeServerUrl(persisted.serverUrl || this.serverUrl);
+      } else {
+        this.serverUrl = candidate;
+      }
       localStorage.setItem(SERVER_KEY, this.serverUrl);
       configureHttp({ serverUrl: this.serverUrl });
-      if (window.collectorDesktop) {
-        await window.collectorDesktop.setServerConfig({ serverUrl: this.serverUrl });
-      }
     },
     setToken(token: string, remember: boolean) {
       this.token = token.trim();

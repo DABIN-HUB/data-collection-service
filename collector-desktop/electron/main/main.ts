@@ -22,6 +22,7 @@ import {
   type ServerConfig,
   type WindowState
 } from "./main-utils.js";
+import { applyServerConfigChange } from "./server-config-change-utils.js";
 
 interface DesktopConfig extends ServerConfig {
   windowState?: WindowState;
@@ -84,6 +85,31 @@ function readServerConfig(): ServerConfig {
 
 function writeServerConfig(config: ServerConfig): ServerConfig {
   return normalizeServerConfig(writeDesktopConfig(config));
+}
+
+async function confirmServerConfigChange(current: ServerConfig, candidate: ServerConfig): Promise<boolean> {
+  const options: MessageBoxOptions = {
+    type: "warning",
+    title: "确认切换采集服务地址",
+    message: "确认切换采集服务地址？",
+    detail: [
+      "当前采集服务：",
+      current.serverUrl,
+      "",
+      "准备切换到：",
+      candidate.serverUrl,
+      "",
+      "修改后，桌面端的后台请求将发送到新的采集服务地址。请确认该地址是可信的采集服务。"
+    ].join("\n"),
+    buttons: ["取消", "确认切换"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  };
+  const result = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
 }
 
 function persistWindowState(window: BrowserWindow): void {
@@ -263,9 +289,13 @@ ipcMain.handle("collector:get-server-config", (event) => {
   return readServerConfig();
 });
 
-ipcMain.handle("collector:set-server-config", (event, config: ServerConfig) => {
+ipcMain.handle("collector:set-server-config", async (event, config: ServerConfig) => {
   assertTrustedSender(event);
-  return writeServerConfig(config);
+  return applyServerConfigChange(config, {
+    readCurrent: readServerConfig,
+    write: writeServerConfig,
+    confirmChange: confirmServerConfigChange
+  });
 });
 
 ipcMain.handle("collector:open-external", (event, url: string) => {
