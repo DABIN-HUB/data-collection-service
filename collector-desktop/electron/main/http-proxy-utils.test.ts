@@ -38,23 +38,49 @@ describe("http-proxy-utils", () => {
     expect(serializeQueryParams({ level: "WARN", empty: "", limit: 50, missing: undefined })).toBe("level=WARN&limit=50");
   });
 
-  it("只透传安全请求头并注入运维令牌", () => {
-    expect(normalizeProxyHeaders({ Cookie: "bad", "Content-Type": "application/json", Accept: "application/json", Authorization: "bad" }, "token-value")).toEqual({
+  it("只透传安全请求头并由 Main-held credential 注入运维令牌", () => {
+    expect(normalizeProxyHeaders({ Cookie: "bad", "Content-Type": "application/json", Accept: "application/json", Authorization: "bad" }, "[REDACTED]")).toEqual({
       "Accept": "application/json",
       "Content-Type": "application/json",
-      "X-Collector-Token": "token-value"
+      "X-Collector-Token": "[REDACTED]"
     });
   });
 
   it("忽略 renderer 提供的 serverUrl，强制使用 Main authoritative serverUrl", () => {
     const request = withAuthoritativeProxyServerUrl({
       serverUrl: "http://127.0.0.1:1/collector",
+      token: "[REDACTED]",
       url: "/api/protocols",
       method: "GET"
     }, "http://127.0.0.1:9090/collector");
 
     expect(request.serverUrl).toBe("http://127.0.0.1:9090/collector");
+    expect(request.token).toBeUndefined();
     expect(buildCollectorProxyUrl(request.serverUrl, request.url).toString()).toBe("http://127.0.0.1:9090/collector/api/protocols");
+  });
+
+  it("主进程代理用 Main 注入的 token 发起 fetch，忽略 renderer token/header 绕过", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: new Headers({ "content-type": "application/json" }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ status: "success" }))
+    }) as unknown as typeof fetch;
+
+    await executeCollectorProxyRequest({
+      serverUrl: "http://127.0.0.1:9090/collector",
+      token: "[REDACTED]",
+      url: "/api/protocols",
+      method: "GET",
+      headers: { Authorization: "bad", Cookie: "bad", "Content-Type": "application/json" }
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({
+      headers: {
+        "Content-Type": "application/json",
+        "X-Collector-Token": "[REDACTED]"
+      }
+    }));
   });
 
   it("主进程代理保留包含 data 字段的 RAW DTO 响应体", async () => {

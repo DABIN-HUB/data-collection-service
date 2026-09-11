@@ -29,6 +29,12 @@ class MemoryStorage {
 
 const storage = new MemoryStorage();
 
+type CredentialStatus = NonNullable<Window["collectorDesktop"]> extends { getCredentialStatus: () => Promise<infer Status> } ? Status : never;
+
+function credentialStatus(overrides: Partial<CredentialStatus> = {}): CredentialStatus {
+  return { hasCredential: false, remembered: false, storageAvailable: true, rememberUnavailable: false, ...overrides };
+}
+
 function installLocalStorage(): void {
   Object.defineProperty(globalThis, "localStorage", {
     value: storage,
@@ -36,11 +42,18 @@ function installLocalStorage(): void {
   });
 }
 
-function installDesktopBridge(config: { serverUrl: string }, setServerConfig = vi.fn().mockResolvedValue(config)): ReturnType<typeof vi.fn> {
+function installDesktopBridge(config: { serverUrl: string }, setServerConfig = vi.fn().mockResolvedValue(config), credential = {
+  getCredentialStatus: vi.fn().mockResolvedValue(credentialStatus()),
+  setCredential: vi.fn().mockResolvedValue(credentialStatus({ hasCredential: true, remembered: true })),
+  clearCredential: vi.fn().mockResolvedValue(credentialStatus())
+}): ReturnType<typeof vi.fn> {
   const bridge = {
     getAppInfo: vi.fn().mockResolvedValue({ name: "数据采集工作台", version: "0.1.0", platform: "win32", backendManaged: false }),
     getServerConfig: vi.fn().mockResolvedValue(config),
     setServerConfig,
+    getCredentialStatus: credential.getCredentialStatus,
+    setCredential: credential.setCredential,
+    clearCredential: credential.clearCredential,
     request: vi.fn(),
     openExternal: vi.fn(),
     onNavigate: vi.fn().mockReturnValue(() => undefined)
@@ -108,5 +121,97 @@ describe("app.store Electron serverUrl source-of-truth", () => {
 
     expect(store.serverUrl).toBe("http://192.168.1.30:9090/collector");
     expect(getHttpConfig().serverUrl).toBe("http://192.168.1.30:9090/collector");
+  });
+});
+
+describe("app.store Electron credential boundary", () => {
+  it("Electron 首次启动迁移 legacy localStorage token，Main 成功接管后才删除", async () => {
+    const legacyToken = "[REDACTED]";
+    storage.setItem("collector-desktop-token", legacyToken);
+    const credential = {
+      getCredentialStatus: vi.fn().mockResolvedValue(credentialStatus()),
+      setCredential: vi.fn().mockResolvedValue(credentialStatus({ hasCredential: true, remembered: true })),
+      clearCredential: vi.fn().mockResolvedValue(credentialStatus())
+    };
+    installDesktopBridge({ serverUrl: DEFAULT_SERVER_URL }, vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }), credential);
+    const store = useAppStore();
+
+    await store.initialize();
+
+    expect(credential.setCredential).toHaveBeenCalledWith({ token: legacyToken, remember: true });
+    expect(storage.getItem("collector-desktop-token")).toBeNull();
+    expect(store.token).toBe("");
+    expect(getHttpConfig().token).toBe("");
+    expect(store.hasCredential).toBe(true);
+    expect(store.credentialRemembered).toBe(true);
+  });
+
+  it("Electron legacy migration 失败时不提前删除旧 token", async () => {
+    const legacyToken = "[REDACTED]";
+    storage.setItem("collector-desktop-token", legacyToken);
+    const credential = {
+      getCredentialStatus: vi.fn().mockResolvedValue(credentialStatus()),
+      setCredential: vi.fn().mockRejectedValue(new Error("safe storage unavailable")),
+      clearCredential: vi.fn().mockResolvedValue(credentialStatus())
+    };
+    installDesktopBridge({ serverUrl: DEFAULT_SERVER_URL }, vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }), credential);
+    const store = useAppStore();
+
+    await expect(store.initialize()).rejects.toThrow("safe storage unavailable");
+
+    expect(storage.getItem("collector-desktop-token")).toBe(legacyToken);
+    expect(store.token).toBe("");
+    expect(getHttpConfig().token).toBe("");
+  });
+
+  it("Electron login 把 token 交给 Main 后不在 Pinia/localStorage/configureHttp 长期保存", async () => {
+    const credential = {
+      getCredentialStatus: vi.fn().mockResolvedValue(credentialStatus()),
+      setCredential: vi.fn().mockResolvedValue(credentialStatus({ hasCredential: true, remembered: false })),
+      clearCredential: vi.fn().mockResolvedValue(credentialStatus())
+    };
+    installDesktopBridge({ serverUrl: DEFAULT_SERVER_URL }, vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }), credential);
+    const store = useAppStore();
+    await store.initialize();
+
+    await store.login("[REDACTED]", false);
+
+    expect(credential.setCredential).toHaveBeenLastCalledWith({ token: "[REDACTED]", remember: false });
+    expect(store.token).toBe("");
+    expect(store.rememberToken).toBe(false);
+    expect(storage.getItem("collector-desktop-token")).toBeNull();
+    expect(getHttpConfig().token).toBe("");
+    expect(store.hasCredential).toBe(true);
+  });
+
+  it("Electron logout 清除 Main credential 且后续 renderer transport 不保留旧 token", async () => {
+    const credential = {
+      getCredentialStatus: vi.fn().mockResolvedValue(credentialStatus({ hasCredential: true, remembered: true })),
+      setCredential: vi.fn().mockResolvedValue(credentialStatus({ hasCredential: true, remembered: true })),
+      clearCredential: vi.fn().mockResolvedValue(credentialStatus())
+    };
+    installDesktopBridge({ serverUrl: DEFAULT_SERVER_URL }, vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }), credential);
+    const store = useAppStore();
+    await store.initialize();
+
+    await store.logout();
+
+    expect(credential.clearCredential).toHaveBeenCalledOnce();
+    expect(store.hasCredential).toBe(false);
+    expect(store.token).toBe("");
+    expect(storage.getItem("collector-desktop-token")).toBeNull();
+    expect(getHttpConfig().token).toBe("");
+  });
+
+  it("Browser/Web 模式保留原 localStorage token 行为", async () => {
+    globalWindow.window = {} as Window;
+    storage.setItem("collector-desktop-token", "[REDACTED]");
+    const store = useAppStore();
+
+    await store.initialize();
+
+    expect(store.token).toBe("[REDACTED]");
+    expect(store.rememberToken).toBe(true);
+    expect(getHttpConfig().token).toBe("[REDACTED]");
   });
 });

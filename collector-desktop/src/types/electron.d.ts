@@ -4,6 +4,7 @@ export interface CollectorDesktopAppInfo {
   platform: string;
   configPath?: string;
   backendManaged?: boolean;
+  configRecovery?: CollectorDesktopRecoveryInfo;
 }
 
 export interface CollectorDesktopServerConfig {
@@ -16,8 +17,23 @@ export interface CollectorDesktopProxyRequest {
   params?: Record<string, unknown>;
   data?: unknown;
   headers?: Record<string, string>;
-  token?: string;
   timeoutMs?: number;
+}
+
+export interface CollectorDesktopRecoveryInfo {
+  recovered: boolean;
+  reason: string;
+  sourcePath: string;
+  quarantinePath?: string;
+}
+
+export interface CollectorDesktopCredentialStatus {
+  hasCredential: boolean;
+  remembered: boolean;
+  storageAvailable: boolean;
+  rememberUnavailable: boolean;
+  storageBackend?: string;
+  recovery?: CollectorDesktopRecoveryInfo;
 }
 
 export interface CollectorDesktopProxyResponse {
@@ -33,6 +49,9 @@ declare global {
       getAppInfo: () => Promise<CollectorDesktopAppInfo>;
       getServerConfig: () => Promise<CollectorDesktopServerConfig>;
       setServerConfig: (config: CollectorDesktopServerConfig) => Promise<CollectorDesktopServerConfig>;
+      getCredentialStatus: () => Promise<CollectorDesktopCredentialStatus>;
+      setCredential: (credential: { token: string; remember: boolean }) => Promise<CollectorDesktopCredentialStatus>;
+      clearCredential: () => Promise<CollectorDesktopCredentialStatus>;
       request: (request: CollectorDesktopProxyRequest) => Promise<CollectorDesktopProxyResponse>;
       openExternal: (url: string) => Promise<boolean>;
       onNavigate: (handler: (path: string) => void) => () => void;

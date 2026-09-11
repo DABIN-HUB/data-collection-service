@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 
-import { configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
+import { configureHttp, DEFAULT_SERVER_URL, isDesktopRuntime, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
 
 interface AppState {
   appName: string;
@@ -8,6 +8,10 @@ interface AppState {
   serverUrl: string;
   token: string;
   rememberToken: boolean;
+  hasCredential: boolean;
+  credentialRemembered: boolean;
+  credentialStorageAvailable: boolean;
+  credentialRememberUnavailable: boolean;
   currentUser: string;
   platform: string;
   configPath: string;
@@ -25,6 +29,10 @@ export const useAppStore = defineStore("app", {
     serverUrl: DEFAULT_SERVER_URL,
     token: "",
     rememberToken: false,
+    hasCredential: false,
+    credentialRemembered: false,
+    credentialStorageAvailable: false,
+    credentialRememberUnavailable: false,
     currentUser: "admin",
     platform: "browser",
     configPath: "",
@@ -37,10 +45,11 @@ export const useAppStore = defineStore("app", {
         return;
       }
       const savedToken = localStorage.getItem(TOKEN_KEY);
-      if (window.collectorDesktop) {
-        const [appInfo, serverConfig] = await Promise.all([
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const [appInfo, serverConfig, credentialStatus] = await Promise.all([
           window.collectorDesktop.getAppInfo(),
-          window.collectorDesktop.getServerConfig()
+          window.collectorDesktop.getServerConfig(),
+          window.collectorDesktop.getCredentialStatus()
         ]);
         this.appName = appInfo.name || this.appName;
         this.appVersion = appInfo.version || this.appVersion;
@@ -48,20 +57,36 @@ export const useAppStore = defineStore("app", {
         this.configPath = appInfo.configPath || "";
         this.backendManaged = Boolean(appInfo.backendManaged);
         this.serverUrl = normalizeServerUrl(serverConfig.serverUrl || this.serverUrl);
+        this.applyCredentialStatus(credentialStatus);
+        if (savedToken) {
+          if (credentialStatus.hasCredential) {
+            localStorage.removeItem(TOKEN_KEY);
+          } else {
+            const migrated = await window.collectorDesktop.setCredential({ token: savedToken, remember: true });
+            this.applyCredentialStatus(migrated);
+            if (migrated.hasCredential) {
+              localStorage.removeItem(TOKEN_KEY);
+            }
+          }
+        }
+        this.token = "";
+        this.rememberToken = this.credentialRemembered;
       } else {
         const savedServerUrl = localStorage.getItem(SERVER_KEY);
         this.serverUrl = normalizeServerUrl(savedServerUrl || resolveBrowserServerUrl() || this.serverUrl);
-      }
-      if (savedToken) {
-        this.token = savedToken;
-        this.rememberToken = true;
+        if (savedToken) {
+          this.token = savedToken;
+          this.rememberToken = true;
+          this.hasCredential = true;
+          this.credentialRemembered = true;
+        }
       }
       configureHttp({ serverUrl: this.serverUrl, token: this.token });
       this.initialized = true;
     },
     async updateServerUrl(serverUrl: string) {
       const candidate = normalizeServerUrl(serverUrl);
-      if (window.collectorDesktop) {
+      if (isDesktopRuntime() && window.collectorDesktop) {
         const persisted = await window.collectorDesktop.setServerConfig({ serverUrl: candidate });
         this.serverUrl = normalizeServerUrl(persisted.serverUrl || this.serverUrl);
       } else {
@@ -70,9 +95,23 @@ export const useAppStore = defineStore("app", {
       localStorage.setItem(SERVER_KEY, this.serverUrl);
       configureHttp({ serverUrl: this.serverUrl });
     },
-    setToken(token: string, remember: boolean) {
-      this.token = token.trim();
+    async setToken(token: string, remember: boolean) {
+      const normalizedToken = token.trim();
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const status = await window.collectorDesktop.setCredential({ token: normalizedToken, remember });
+        this.applyCredentialStatus(status);
+        this.token = "";
+        this.rememberToken = status.remembered;
+        configureHttp({ token: "" });
+        if (status.hasCredential) {
+          localStorage.removeItem(TOKEN_KEY);
+        }
+        return;
+      }
+      this.token = normalizedToken;
       this.rememberToken = remember;
+      this.hasCredential = Boolean(this.token);
+      this.credentialRemembered = Boolean(remember && this.token);
       configureHttp({ token: this.token });
       if (remember && this.token) {
         localStorage.setItem(TOKEN_KEY, this.token);
@@ -80,12 +119,27 @@ export const useAppStore = defineStore("app", {
         localStorage.removeItem(TOKEN_KEY);
       }
     },
-    login(token: string, remember: boolean) {
-      this.setToken(token, remember);
+    async login(token: string, remember: boolean) {
+      await this.setToken(token, remember);
       this.currentUser = "admin";
     },
-    logout() {
-      this.setToken("", false);
+    async logout() {
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const status = await window.collectorDesktop.clearCredential();
+        this.applyCredentialStatus(status);
+        this.token = "";
+        this.rememberToken = false;
+        configureHttp({ token: "" });
+        localStorage.removeItem(TOKEN_KEY);
+        return;
+      }
+      await this.setToken("", false);
+    },
+    applyCredentialStatus(status: { hasCredential: boolean; remembered: boolean; storageAvailable: boolean; rememberUnavailable: boolean }) {
+      this.hasCredential = Boolean(status.hasCredential);
+      this.credentialRemembered = Boolean(status.remembered);
+      this.credentialStorageAvailable = Boolean(status.storageAvailable);
+      this.credentialRememberUnavailable = Boolean(status.rememberUnavailable);
     }
   }
 });

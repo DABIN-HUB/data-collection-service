@@ -22,6 +22,12 @@
             <el-button type="primary" link :loading="testing" @click="testConnection">测试连接</el-button>
           </div>
           <el-alert v-if="message" :title="message" :type="messageType" :closable="false" />
+          <el-alert
+            v-if="appStore.credentialRememberUnavailable"
+            title="当前系统安全存储不可用，本次令牌仅保存在当前桌面端进程内，退出后需要重新输入。"
+            type="warning"
+            :closable="false"
+          />
           <el-alert class="desktop-mode-alert" type="info" :closable="false">
             <template #title>
               Electron 平台：{{ appStore.platform }}；后端由用户手动启动，桌面端不会自动拉起 Spring Boot jar。
@@ -82,7 +88,7 @@ onMounted(async () => {
 
 async function applyConfig() {
   await appStore.updateServerUrl(serverUrl.value);
-  appStore.login(token.value, rememberToken.value);
+  await appStore.login(token.value, rememberToken.value);
 }
 
 async function testConnection() {

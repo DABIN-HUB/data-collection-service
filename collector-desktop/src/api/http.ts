@@ -7,6 +7,10 @@ export const DEFAULT_SERVER_URL = "http://127.0.0.1:9090/collector";
 let currentServerUrl = DEFAULT_SERVER_URL;
 let currentToken = "";
 
+export function isDesktopRuntime(): boolean {
+  return typeof window !== "undefined" && typeof window.collectorDesktop?.request === "function";
+}
+
 export class ApiRequestError extends Error {
   httpStatus?: number;
   code?: number;
@@ -143,7 +147,6 @@ export function requestEnvelope<T>(config: AxiosRequestConfig): Promise<ApiResul
 async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig, responseMode: ResponseMode): Promise<T> {
   try {
     const response = await desktopProxy({
-      token: currentToken,
       url: String(config.url || ""),
       method: String(config.method || "GET").toUpperCase(),
       params: normalizeProxyParams(config.params),
@@ -176,10 +179,7 @@ function resolveHttpErrorMessage(body: unknown, httpStatus: number): string {
 }
 
 function resolveDesktopProxy(): NonNullable<Window["collectorDesktop"]>["request"] | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return typeof window.collectorDesktop?.request === "function" ? window.collectorDesktop.request : null;
+  return isDesktopRuntime() ? window.collectorDesktop?.request || null : null;
 }
 
 function normalizeProxyParams(params: unknown): Record<string, unknown> | undefined {
@@ -232,7 +232,7 @@ function assertSuccessfulResponseBody(body: unknown, httpStatus?: number): void 
 
 export async function testServerConnection(): Promise<ConnectionTestResult> {
   const health = await requestRaw<unknown>({ url: "/health", method: "GET" });
-  if (!currentToken) {
+  if (!currentToken && !isDesktopRuntime()) {
     return {
       healthOk: Boolean(health),
       authOk: false,

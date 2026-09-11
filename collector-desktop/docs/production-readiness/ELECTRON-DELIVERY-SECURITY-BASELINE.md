@@ -1011,3 +1011,210 @@ Targeted tests added for:
 9. Browser/Web localStorage server URL behavior remains intact.
 
 Full command evidence is recorded in the final Task 06.2-R1 report.
+
+---
+
+# Task 06.3 — Credential / Config Storage Hardening
+
+Date: 2026-09-11
+Branch: feature_2.0
+Remote baseline before Task 06.3: 879be6f38cd93d2484f4da59d722567fe4e53688
+Scope: close `EDS-P1-02`, `EDS-P2-04`, and `EDS-P2-05`; no Task 06.4 work is started.
+
+## 32. Credential Boundary Change
+
+Before Task 06.3, the Electron credential lifecycle was renderer-owned:
+
+```text
+login(token, remember)
+→ Pinia `appStore.token`
+→ optional localStorage[`collector-desktop-token`]
+→ each `collector:http-request` IPC payload included `token`
+→ Main copied that renderer-provided token into `X-Collector-Token`
+```
+
+Task 06.3 changes the desktop boundary to Main-owned credentials:
+
+```text
+Renderer
+→ only sends business HTTP request payload
+→ Electron Main
+→ Main-held credential state
+→ Main injects `X-Collector-Token`
+→ configured trusted collector backend
+```
+
+Renderer compromise can still ride the already-exposed application request capability while the user is authenticated, but it no longer owns or can read a remembered plaintext credential and the normal HTTP IPC payload no longer carries a token.
+
+## 33. Main-owned Credential Storage
+
+Main now owns a separate credential file:
+
+```text
+userData/collector-desktop-credentials.json
+```
+
+The file contains only:
+
+```text
+schemaVersion
+encryptedToken
+updatedAt
+```
+
+`encryptedToken` is `safeStorage.encryptString(...).toString("base64")`. The plaintext credential is not written to `collector-desktop-config.json`, localStorage, or any other ordinary JSON/plaintext file.
+
+Current supported Electron API is synchronous:
+
+```text
+safeStorage.isEncryptionAvailable()
+safeStorage.encryptString()
+safeStorage.decryptString()
+```
+
+The store is initialized after `app.whenReady()`, before window creation and before renderer IPC can use it.
+
+If `safeStorage.isEncryptionAvailable()` is false, or Linux reports `basic_text`, Task 06.3 forbids plaintext fallback. The credential becomes memory-only for the current application lifecycle and UI-visible status sets `rememberUnavailable=true` without exposing the token content.
+
+## 34. Credential IPC Contract
+
+The preload bridge exposes status/change/clear operations only:
+
+```text
+collector:get-credential-status
+collector:set-credential
+collector:clear-credential
+```
+
+Renderer-visible status is limited to:
+
+```text
+hasCredential
+remembered
+storageAvailable
+rememberUnavailable
+storageBackend
+recovery
+```
+
+There is intentionally no renderer API such as `getToken()`, `getCredentialPlaintext()`, or `decryptCredential()`.
+
+`collector:http-request` payload now excludes `token`. Main ignores any legacy/hostile `request.token`, reads the Main credential store, and injects `X-Collector-Token` itself. Existing request header allowlist still only permits `Accept` and `Content-Type`; `Authorization`, `Cookie`, and renderer-provided `X-Collector-Token` are not forwarded.
+
+## 35. Legacy localStorage Token Migration
+
+Electron renderer startup performs one safe migration from legacy `localStorage["collector-desktop-token"]`:
+
+```text
+Renderer detects legacy key
+→ calls Main `setCredential(legacyToken, remember=true)`
+→ only if Main returns `hasCredential=true`
+→ removes the legacy localStorage key
+```
+
+If Main rejects or persistence fails, the legacy key is not removed, preventing accidental credential loss. After successful migration, future Electron startup uses Main credential status and never restores a plaintext token into Pinia or HTTP transport state.
+
+Browser/Web mode remains separate and keeps the existing browser-only localStorage token behavior.
+
+## 36. remember / clear Semantics
+
+```text
+remember=false
+→ Main memory credential only
+→ no credential JSON file
+→ exits with the app process
+```
+
+```text
+remember=true + protected safeStorage available
+→ Main memory credential
+→ encrypted credential JSON
+→ next startup decrypts into Main memory
+```
+
+```text
+remember=true + protected safeStorage unavailable
+→ Main memory credential only
+→ `rememberUnavailable=true`
+→ no plaintext fallback file/localStorage
+```
+
+Logout currently means forgetting the credential for this desktop client:
+
+```text
+logout
+→ collector:clear-credential
+→ clear Main memory credential
+→ delete persisted credential file
+→ remove legacy localStorage token if present
+```
+
+After clear, subsequent Main proxy requests no longer inject the previous `X-Collector-Token`.
+
+## 37. Server Config Strictness and Recovery
+
+Task 06.2-R1 strict candidate URL validation is reused for persisted config reads. Main-authoritative config loaded from disk now rejects legacy dirty values including:
+
+```text
+file:
+ftp:
+javascript:
+URL username/password
+fragment
+query
+```
+
+Normal localhost, LAN, and HTTPS collector URLs remain valid. Invalid/corrupt config no longer silently becomes authoritative; it is quarantined to a `.corrupt-...` file when possible, Main recovers to the safe default collector URL, and `getAppInfo()` exposes recovery metadata for UI/Main diagnostics.
+
+## 38. Atomic Persistence
+
+Desktop config and credential persistence now use the same atomic-style write helper:
+
+```text
+serialize JSON
+→ write temp file in the same directory
+→ fsync temp file
+→ rename temp file over target
+→ best-effort parent directory fsync
+```
+
+If the write path fails before rename, the previous valid target file remains intact and the temporary file is removed best-effort. Directory fsync is best-effort because Windows support is inconsistent; same-directory temp file + fsync + rename is the practical Windows boundary.
+
+Corrupt config or credential JSON is quarantined and recovered to a safe state rather than causing permanent startup failure.
+
+## 39. Task 06.3 Finding Status
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P1-02 | CLOSED | Renderer no longer stores remembered plaintext token; HTTP IPC payload no longer carries token; Main owns memory/encrypted credential and injects `X-Collector-Token` |
+| EDS-P2-04 | CLOSED | persisted Main server config uses strict HTTP/HTTPS/no credentials/no query/no fragment validation plus recovery/quarantine |
+| EDS-P2-05 | CLOSED | config and credential writes use same-directory temp file, fsync, rename, cleanup on failure, and corrupt-file recovery |
+| EDS-P1-01 | CLOSED / REGRESSION PASS | Main authoritative destination and Main-native server config confirmation retained |
+| EDS-P1-03 | CLOSED / REGRESSION PASS | trusted renderer navigation / external URL boundary retained |
+| EDS-P1-04 | CLOSED / REGRESSION PASS | CSP and `unsafe-eval` guard retained |
+| EDS-P2-01 | CLOSED / REGRESSION PASS | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false` retained |
+| EDS-P2-02 | CLOSED / REGRESSION PASS | trusted sender/top-frame validation retained |
+| EDS-P2-03 | CLOSED / REGRESSION PASS | proxy URL/request/response bounds retained |
+
+## 40. Task 06.3 Targeted Verification Notes
+
+Focused tests cover:
+
+1. Electron remembered token is not retained in localStorage/Pinia/renderer HTTP config after Main accepts it;
+2. Electron HTTP IPC payload does not include `token` or `serverUrl`;
+3. Main proxy injects `X-Collector-Token` from Main-owned state and ignores renderer credential/header bypasses;
+4. no renderer API returns plaintext credentials;
+5. `remember=false` is Main memory-only;
+6. `remember=true` persists only safeStorage ciphertext;
+7. safeStorage unavailable and Linux `basic_text` become memory-only with no plaintext fallback;
+8. legacy localStorage token is removed only after Main returns `hasCredential=true`;
+9. legacy migration failure preserves the legacy key;
+10. restart/load decrypts remembered credential into Main memory;
+11. corrupt credential/config recovery does not crash and does not return garbage credential;
+12. logout/clear removes Main memory and persisted credential;
+13. persisted dirty server URL cannot become authoritative config;
+14. atomic write failure before rename does not damage the original config;
+15. Browser/Web localStorage token behavior remains intact;
+16. Task 06.2-R1 destination confirmation tests remain in the full suite.
+
+Full command evidence is recorded in the final Task 06.3 report.

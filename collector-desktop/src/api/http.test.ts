@@ -17,7 +17,10 @@ function installDesktopProxy(proxyRequest: DesktopBridge["request"]): void {
       setServerConfig: vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }),
       request: proxyRequest,
       openExternal: vi.fn().mockResolvedValue(true),
-      onNavigate: vi.fn().mockReturnValue(() => undefined)
+      onNavigate: vi.fn().mockReturnValue(() => undefined),
+      getCredentialStatus: vi.fn().mockResolvedValue({ hasCredential: false, remembered: false, storageAvailable: true, rememberUnavailable: false }),
+      setCredential: vi.fn().mockResolvedValue({ hasCredential: true, remembered: false, storageAvailable: true, rememberUnavailable: false }),
+      clearCredential: vi.fn().mockResolvedValue({ hasCredential: false, remembered: false, storageAvailable: true, rememberUnavailable: false })
     }
   };
 }
@@ -115,7 +118,7 @@ describe("http", () => {
     }
   });
 
-  it("Electron 环境优先通过 preload 代理请求后端，避免 file 协议跨域问题", async () => {
+  it("Electron 环境优先通过 preload 代理请求后端，且 HTTP IPC payload 不携带 token/serverUrl", async () => {
     const proxyRequest = vi.fn().mockResolvedValue({
       status: 200,
       statusText: "OK",
@@ -123,17 +126,19 @@ describe("http", () => {
       body: { status: "success", data: { ok: true } }
     });
     installDesktopProxy(proxyRequest);
-    configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "token-value" });
+    configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "[REDACTED]" });
 
     await expect(request<{ ok: boolean }>({ url: "/api/protocols", method: "GET", params: { limit: 1 } })).resolves.toEqual({ ok: true });
     expect(proxyRequest).toHaveBeenCalledWith(expect.objectContaining({
-      token: "token-value",
       url: "/api/protocols",
       method: "GET",
       params: { limit: 1 }
     }));
     expect(proxyRequest).toHaveBeenCalledWith(expect.not.objectContaining({
       serverUrl: expect.any(String)
+    }));
+    expect(proxyRequest).toHaveBeenCalledWith(expect.not.objectContaining({
+      token: expect.any(String)
     }));
   });
 

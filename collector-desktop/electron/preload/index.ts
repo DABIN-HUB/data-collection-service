@@ -18,8 +18,16 @@ interface ProxyRequest {
   params?: Record<string, unknown>;
   data?: unknown;
   headers?: Record<string, string>;
-  token?: string;
   timeoutMs?: number;
+}
+
+interface CredentialStatus {
+  hasCredential: boolean;
+  remembered: boolean;
+  storageAvailable: boolean;
+  rememberUnavailable: boolean;
+  storageBackend?: string;
+  recovery?: unknown;
 }
 
 interface ProxyResponse {
@@ -33,6 +41,9 @@ contextBridge.exposeInMainWorld("collectorDesktop", {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke("collector:get-app-info"),
   getServerConfig: (): Promise<ServerConfig> => ipcRenderer.invoke("collector:get-server-config"),
   setServerConfig: (config: ServerConfig): Promise<ServerConfig> => ipcRenderer.invoke("collector:set-server-config", config),
+  getCredentialStatus: (): Promise<CredentialStatus> => ipcRenderer.invoke("collector:get-credential-status"),
+  setCredential: (credential: { token: string; remember: boolean }): Promise<CredentialStatus> => ipcRenderer.invoke("collector:set-credential", credential),
+  clearCredential: (): Promise<CredentialStatus> => ipcRenderer.invoke("collector:clear-credential"),
   request: (request: ProxyRequest): Promise<ProxyResponse> => ipcRenderer.invoke("collector:http-request", request),
   openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke("collector:open-external", url),
   onNavigate: (handler: (path: string) => void): (() => void) => {

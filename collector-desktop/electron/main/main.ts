@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { MainCredentialStore, createEmptyCredentialStatus, type CredentialStatus } from "./credential-store-utils.js";
+import { readJsonWithRecovery, writeJsonAtomic, type RecoveryInfo } from "./desktop-persistence-utils.js";
 import { executeCollectorProxyRequest, withAuthoritativeProxyServerUrl, type RendererCollectorProxyRequest } from "./http-proxy-utils.js";
 import { assertTrustedIpcSender } from "./ipc-security-utils.js";
 import {
@@ -17,6 +18,7 @@ import {
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
   normalizeServerConfig,
+  normalizeServerConfigCandidate,
   normalizeWindowState,
   type NormalizedWindowState,
   type ServerConfig,
@@ -41,6 +43,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 let mainWindow: BrowserWindow | null = null;
+let configRecovery: RecoveryInfo | undefined;
+let credentialStore: MainCredentialStore | null = null;
 
 function getRendererIndexPath(): string {
   return resolve(__dirname, "../../renderer/index.html");
@@ -50,20 +54,15 @@ function getConfigPath(): string {
   return join(app.getPath("userData"), "collector-desktop-config.json");
 }
 
+function getCredentialPath(): string {
+  return join(app.getPath("userData"), "collector-desktop-credentials.json");
+}
+
 function readDesktopConfig(): DesktopConfig {
   const configPath = getConfigPath();
-  if (!existsSync(configPath)) {
-    return DEFAULT_DESKTOP_CONFIG;
-  }
-  try {
-    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Partial<DesktopConfig>;
-    return {
-      ...normalizeServerConfig(raw),
-      windowState: normalizeWindowState(raw.windowState)
-    };
-  } catch {
-    return DEFAULT_DESKTOP_CONFIG;
-  }
+  const result = readJsonWithRecovery(configPath, DEFAULT_DESKTOP_CONFIG, normalizePersistedDesktopConfig);
+  configRecovery = result.recovery;
+  return result.value;
 }
 
 function writeDesktopConfig(config: Partial<DesktopConfig>): DesktopConfig {
@@ -74,9 +73,19 @@ function writeDesktopConfig(config: Partial<DesktopConfig>): DesktopConfig {
     windowState: normalizeWindowState(config.windowState || current.windowState)
   };
   const configPath = getConfigPath();
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(normalized, null, 2), "utf8");
+  writeJsonAtomic(configPath, normalized);
   return normalized;
+}
+
+function normalizePersistedDesktopConfig(raw: unknown): DesktopConfig {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("桌面配置文件格式无效");
+  }
+  const config = raw as Partial<DesktopConfig>;
+  return {
+    ...normalizeServerConfigCandidate({ serverUrl: config.serverUrl || DEFAULT_SERVER_URL }),
+    windowState: normalizeWindowState(config.windowState)
+  };
 }
 
 function readServerConfig(): ServerConfig {
@@ -85,6 +94,18 @@ function readServerConfig(): ServerConfig {
 
 function writeServerConfig(config: ServerConfig): ServerConfig {
   return normalizeServerConfig(writeDesktopConfig(config));
+}
+
+function getCredentialStore(): MainCredentialStore {
+  if (!credentialStore) {
+    credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
+    credentialStore.initialize();
+  }
+  return credentialStore;
+}
+
+function readCredentialStatus(): CredentialStatus {
+  return credentialStore?.getStatus() || createEmptyCredentialStatus();
 }
 
 async function confirmServerConfigChange(current: ServerConfig, candidate: ServerConfig): Promise<boolean> {
@@ -280,7 +301,8 @@ ipcMain.handle("collector:get-app-info", (event) => {
     version: app.getVersion(),
     platform: process.platform,
     configPath: getConfigPath(),
-    backendManaged: false
+    backendManaged: false,
+    configRecovery
   };
 });
 
@@ -298,6 +320,21 @@ ipcMain.handle("collector:set-server-config", async (event, config: ServerConfig
   });
 });
 
+ipcMain.handle("collector:get-credential-status", (event) => {
+  assertTrustedSender(event);
+  return readCredentialStatus();
+});
+
+ipcMain.handle("collector:set-credential", (event, credential: { token?: string; remember?: boolean }) => {
+  assertTrustedSender(event);
+  return getCredentialStore().setCredential(credential.token || "", Boolean(credential.remember));
+});
+
+ipcMain.handle("collector:clear-credential", (event) => {
+  assertTrustedSender(event);
+  return getCredentialStore().clearCredential();
+});
+
 ipcMain.handle("collector:open-external", (event, url: string) => {
   assertTrustedSender(event);
   return openExternalUrl(url);
@@ -305,12 +342,17 @@ ipcMain.handle("collector:open-external", (event, url: string) => {
 
 ipcMain.handle("collector:http-request", (event, request: RendererCollectorProxyRequest) => {
   assertTrustedSender(event);
-  return executeCollectorProxyRequest(withAuthoritativeProxyServerUrl(request, readServerConfig().serverUrl));
+  return executeCollectorProxyRequest({
+    ...withAuthoritativeProxyServerUrl(request, readServerConfig().serverUrl),
+    token: getCredentialStore().getToken()
+  });
 });
 
 app.setAppUserModelId("com.wangbin.collector.desktop");
 
 app.whenReady().then(() => {
+  credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
+  credentialStore.initialize();
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate()));
   createWindow();
 

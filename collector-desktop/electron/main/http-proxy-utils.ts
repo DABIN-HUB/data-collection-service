@@ -18,8 +18,9 @@ export interface CollectorProxyResponse {
   body: unknown;
 }
 
-export type RendererCollectorProxyRequest = Omit<CollectorProxyRequest, "serverUrl"> & {
+export type RendererCollectorProxyRequest = Omit<CollectorProxyRequest, "serverUrl" | "token"> & {
   serverUrl?: unknown;
+  token?: unknown;
 };
 
 const ALLOWED_REQUEST_HEADERS = new Set(["accept", "content-type"]);
@@ -104,9 +105,13 @@ export function serializeQueryParams(params: Record<string, unknown> = {}): stri
 }
 
 export function withAuthoritativeProxyServerUrl(request: RendererCollectorProxyRequest, serverUrl: string): CollectorProxyRequest {
-  const { serverUrl: _ignoredRendererServerUrl, ...safeRequest } = request;
   return {
-    ...safeRequest,
+    url: request.url,
+    method: request.method,
+    params: request.params,
+    data: request.data,
+    headers: request.headers,
+    timeoutMs: request.timeoutMs,
     serverUrl
   };
 }
