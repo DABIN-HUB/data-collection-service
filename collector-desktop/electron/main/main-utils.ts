@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export interface ServerConfig {
   serverUrl: string;
 }
@@ -22,6 +25,12 @@ export interface WindowChromeOptions {
   autoHideMenuBar: boolean;
   menuBarVisible: boolean;
   backgroundColor: string;
+}
+
+export interface TrustedRendererUrlOptions {
+  isDev: boolean;
+  devServerUrl?: string;
+  rendererIndexPath?: string;
 }
 
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:9090/collector";
@@ -58,10 +67,36 @@ export function buildWindowChromeOptions(): WindowChromeOptions {
 export function isSafeExternalUrl(url: string): boolean {
   try {
     const protocol = new URL(url).protocol;
-    return ["http:", "https:", "file:"].includes(protocol);
+    return ["http:", "https:"].includes(protocol);
   } catch {
     return false;
   }
+}
+
+export function isTrustedRendererUrl(url: string, options: TrustedRendererUrlOptions): boolean {
+  try {
+    const parsed = new URL(url);
+    if (options.isDev) {
+      if (!options.devServerUrl) {
+        return false;
+      }
+      const devServer = new URL(options.devServerUrl);
+      return ["http:", "https:"].includes(parsed.protocol)
+        && parsed.protocol === devServer.protocol
+        && parsed.hostname === devServer.hostname
+        && parsed.port === devServer.port;
+    }
+    if (parsed.protocol !== "file:" || !options.rendererIndexPath) {
+      return false;
+    }
+    return normalizeFilePath(fileURLToPath(parsed)) === normalizeFilePath(options.rendererIndexPath);
+  } catch {
+    return false;
+  }
+}
+
+export function isExternalNavigationUrl(url: string, options: TrustedRendererUrlOptions): boolean {
+  return !isTrustedRendererUrl(url, options);
 }
 
 export function buildAboutInfo(version: string, platform: string): string {
@@ -88,4 +123,8 @@ function normalizeServerUrl(serverUrl: string): string {
     return DEFAULT_SERVER_URL;
   }
   return trimmed;
+}
+
+function normalizeFilePath(path: string): string {
+  return resolve(path).replace(/\\/g, "/").toLowerCase();
 }

@@ -1,16 +1,19 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { executeCollectorProxyRequest, type CollectorProxyRequest } from "./http-proxy-utils.js";
+import { executeCollectorProxyRequest, withAuthoritativeProxyServerUrl, type RendererCollectorProxyRequest } from "./http-proxy-utils.js";
+import { assertTrustedIpcSender } from "./ipc-security-utils.js";
 import {
   buildAboutInfo,
   buildWindowChromeOptions,
   DEFAULT_SERVER_URL,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
+  isExternalNavigationUrl,
   isSafeExternalUrl,
+  isTrustedRendererUrl,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
   normalizeServerConfig,
@@ -37,6 +40,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 let mainWindow: BrowserWindow | null = null;
+
+function getRendererIndexPath(): string {
+  return resolve(__dirname, "../../renderer/index.html");
+}
 
 function getConfigPath(): string {
   return join(app.getPath("userData"), "collector-desktop-config.json");
@@ -110,7 +117,7 @@ function createWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       preload: resolve(__dirname, "../preload/index.cjs")
     }
   });
@@ -147,15 +154,28 @@ function createWindow(): void {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch(() => undefined);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    mainWindow.loadFile(resolve(__dirname, "../../renderer/index.html")).catch(() => undefined);
+    mainWindow.loadFile(getRendererIndexPath()).catch(() => undefined);
   }
 }
 
 function isExternalNavigation(url: string): boolean {
-  if (isDev && process.env.VITE_DEV_SERVER_URL && url.startsWith(process.env.VITE_DEV_SERVER_URL)) {
-    return false;
-  }
-  return !url.startsWith("file://");
+  return isExternalNavigationUrl(url, {
+    isDev,
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    rendererIndexPath: getRendererIndexPath()
+  });
+}
+
+function isTrustedRendererNavigation(url: string): boolean {
+  return isTrustedRendererUrl(url, {
+    isDev,
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    rendererIndexPath: getRendererIndexPath()
+  });
+}
+
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  assertTrustedIpcSender(event, mainWindow?.webContents.id, isTrustedRendererNavigation);
 }
 
 async function openExternalUrl(url: string): Promise<boolean> {
@@ -180,8 +200,10 @@ function buildMenuTemplate(): MenuItemConstructorOptions[] {
       label: "视图",
       submenu: [
         { label: "重新加载", role: "reload" },
-        { label: "强制重新加载", role: "forceReload" },
-        { label: "开发者工具", role: "toggleDevTools" },
+        ...(isDev ? [
+          { label: "强制重新加载", role: "forceReload" as const },
+          { label: "开发者工具", role: "toggleDevTools" as const }
+        ] : []),
         { type: "separator" },
         { label: "重置缩放", role: "resetZoom" },
         { label: "放大", role: "zoomIn" },
@@ -225,24 +247,36 @@ function buildMenuTemplate(): MenuItemConstructorOptions[] {
   ];
 }
 
-ipcMain.handle("collector:get-app-info", () => ({
-  name: "数据采集工作台",
-  version: app.getVersion(),
-  platform: process.platform,
-  configPath: getConfigPath(),
-  backendManaged: false
-}));
+ipcMain.handle("collector:get-app-info", (event) => {
+  assertTrustedSender(event);
+  return {
+    name: "数据采集工作台",
+    version: app.getVersion(),
+    platform: process.platform,
+    configPath: getConfigPath(),
+    backendManaged: false
+  };
+});
 
-ipcMain.handle("collector:get-server-config", () => readServerConfig());
+ipcMain.handle("collector:get-server-config", (event) => {
+  assertTrustedSender(event);
+  return readServerConfig();
+});
 
-ipcMain.handle("collector:set-server-config", (_event, config: ServerConfig) => writeServerConfig(config));
+ipcMain.handle("collector:set-server-config", (event, config: ServerConfig) => {
+  assertTrustedSender(event);
+  return writeServerConfig(config);
+});
 
-ipcMain.handle("collector:open-external", (_event, url: string) => openExternalUrl(url));
+ipcMain.handle("collector:open-external", (event, url: string) => {
+  assertTrustedSender(event);
+  return openExternalUrl(url);
+});
 
-ipcMain.handle("collector:http-request", (_event, request: CollectorProxyRequest) => executeCollectorProxyRequest({
-  ...request,
-  serverUrl: request.serverUrl || readServerConfig().serverUrl
-}));
+ipcMain.handle("collector:http-request", (event, request: RendererCollectorProxyRequest) => {
+  assertTrustedSender(event);
+  return executeCollectorProxyRequest(withAuthoritativeProxyServerUrl(request, readServerConfig().serverUrl));
+});
 
 app.setAppUserModelId("com.wangbin.collector.desktop");
 

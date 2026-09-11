@@ -127,11 +127,13 @@ describe("http", () => {
 
     await expect(request<{ ok: boolean }>({ url: "/api/protocols", method: "GET", params: { limit: 1 } })).resolves.toEqual({ ok: true });
     expect(proxyRequest).toHaveBeenCalledWith(expect.objectContaining({
-      serverUrl: DEFAULT_SERVER_URL,
       token: "token-value",
       url: "/api/protocols",
       method: "GET",
       params: { limit: 1 }
+    }));
+    expect(proxyRequest).toHaveBeenCalledWith(expect.not.objectContaining({
+      serverUrl: expect.any(String)
     }));
   });
 

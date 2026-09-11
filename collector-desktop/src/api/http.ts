@@ -143,7 +143,6 @@ export function requestEnvelope<T>(config: AxiosRequestConfig): Promise<ApiResul
 async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig, responseMode: ResponseMode): Promise<T> {
   try {
     const response = await desktopProxy({
-      serverUrl: currentServerUrl,
       token: currentToken,
       url: String(config.url || ""),
       method: String(config.method || "GET").toUpperCase(),

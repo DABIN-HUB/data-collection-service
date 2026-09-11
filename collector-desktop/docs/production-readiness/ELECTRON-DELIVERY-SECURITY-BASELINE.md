@@ -699,3 +699,173 @@ Task 06.1 can pass because its purpose is to establish the baseline and prioriti
    - rerun BrowserWindow/preload/IPC/proxy/navigation/CSP/token/package/startup regression and final Task 06 severity gate.
 
 Do not add a “bundle Java backend” task unless product requirements change to explicitly require Electron-managed backend lifecycle.
+
+
+---
+
+# Task 06.2 — Electron IPC & Navigation Security Hardening Acceptance
+
+Date: 2026-09-11
+Branch: feature_2.0
+Verified baseline before Task 06.2: 69f017c2c845c5d4c250f5341a34f5c5f91996f8
+Scope: Electron IPC, Main HTTP Proxy, Navigation, External URL, Renderer CSP, BrowserWindow sandbox, and directly related boundary hardening.
+
+Task 06.2 preserves the product lifecycle model:
+
+```text
+Electron = operator console / UI
+Spring Boot = independent long-running collector backend
+backendManaged = false
+```
+
+No Java backend lifecycle ownership, bundled JRE, backend auto-start, code signing, autoUpdater, credential vault, safeStorage, DPAPI, keytar, or installer overhaul is introduced in this task.
+
+## 21. Task 06.2 Scope Result
+
+| Area | Result |
+| --- | --- |
+| Electron IPC / Main process security | Updated |
+| Electron preload contract | Updated to remove per-request `serverUrl` |
+| Renderer HTTP desktop proxy payload | Updated to stop sending per-request `serverUrl` |
+| Renderer CSP | Updated in source HTML and verified in built artifact |
+| Main HTTP proxy destination boundary | Main persisted config is authoritative |
+| Main HTTP proxy payload bounds | Added URL/request/response byte bounds |
+| BrowserWindow sandbox | Enabled (`sandbox: true`) |
+| Production DevTools / forceReload menu | Removed from production menu |
+| Credential ownership / safeStorage | Deferred to Task 06.3 |
+| Backend lifecycle / Java code | Not changed by design |
+
+## 22. Task 06.2 Boundary Changes
+
+### 22.1 Main HTTP proxy authoritative destination
+
+`collector:http-request` no longer uses renderer-provided `serverUrl` as a fallback or override. The handler now derives the destination base from `readServerConfig().serverUrl` and applies it through `withAuthoritativeProxyServerUrl(...)` before calling `executeCollectorProxyRequest(...)`.
+
+Final boundary:
+
+```text
+Renderer
+→ IPC request: url, method, params, data, safe headers, token, timeout
+Main
+→ readServerConfig().serverUrl
+→ withAuthoritativeProxyServerUrl(...)
+→ executeCollectorProxyRequest(...)
+```
+
+The preload and renderer desktop proxy request type no longer expose `serverUrl` in the normal contract. A compatibility guard in Main ignores any malicious/legacy `serverUrl` field if present.
+
+### 22.2 Trusted renderer navigation
+
+External URL policy is reduced to `http:` and `https:` only. `file:`, `javascript:`, `data:`, `vbscript:`, `shell:`, `cmd:`, `powershell:`, and `ftp:` are not accepted by `isSafeExternalUrl(...)`.
+
+Internal renderer URL policy is now structural rather than prefix-based:
+
+- production allows only `file:` URLs resolving to the exact packaged `dist/renderer/index.html` path;
+- production hash routes remain allowed because the file path is still the same `index.html`;
+- arbitrary local files such as `file:///C:/Windows/...` are treated as external and then rejected by external URL policy;
+- development allows only the configured `VITE_DEV_SERVER_URL` protocol/host/port boundary and rejects prefix spoofing such as `localhost:5173.evil.com`.
+
+### 22.3 IPC sender/frame validation
+
+Privileged IPC handlers now call `assertTrustedSender(event)` before serving requests:
+
+- `collector:get-app-info`
+- `collector:get-server-config`
+- `collector:set-server-config`
+- `collector:open-external`
+- `collector:http-request`
+
+The validation requires:
+
+1. `event.sender.id` equals the current `mainWindow.webContents.id`;
+2. `event.senderFrame` exists;
+3. the request comes from the top/main frame;
+4. `senderFrame.url` is a trusted renderer URL according to the same development/production renderer boundary.
+
+Unexpected sender or unexpected frame is rejected with an explicit error. `collector:navigate` remains Main-to-Renderer and is not broken by the new inbound validation.
+
+### 22.4 Renderer CSP
+
+`collector-desktop/index.html` now includes a CSP meta tag. The built `dist/renderer/index.html` was checked after production build to confirm the policy is present in the real artifact.
+
+Final CSP policy:
+
+```text
+default-src 'self';
+script-src 'self';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:;
+font-src 'self' data:;
+connect-src 'self' http: https: ws: wss:;
+object-src 'none';
+frame-src 'none';
+base-uri 'none'
+```
+
+`unsafe-eval` is intentionally not used.
+
+### 22.5 BrowserWindow sandbox
+
+`BrowserWindow.webPreferences.sandbox` is now `true`. The existing preload only needs Electron preload-safe `contextBridge` and `ipcRenderer` and does not expose Node filesystem/process APIs to the renderer. Typecheck, tests, build, package smoke, and packaged bridge smoke are used as compatibility evidence.
+
+### 22.6 Main proxy size bounds
+
+Hard bounds added in `electron/main/http-proxy-utils.ts`:
+
+| Bound | Value | Rationale |
+| --- | ---: | --- |
+| URL/query bytes | 64 KiB | Prevents abusive query growth while allowing normal filters |
+| request body bytes | 4 MiB | Sufficient for desktop control/config requests; large realtime is read path, not request upload |
+| response body bytes | 64 MiB | Above the previously verified ~23.66 MiB 100k realtime compact full snapshot |
+
+Response enforcement is streaming-aware:
+
+- `Content-Length` is checked before body read when present;
+- `ReadableStream` is read chunk-by-chunk with cumulative byte count;
+- oversized chunked/missing/incorrect length responses are rejected before full buffering;
+- request string/JSON body byte size is checked before fetch.
+
+## 23. Task 06.2 Finding Status
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P1-01 | CLOSED | Main ignores renderer `serverUrl`; preload/renderer request contract no longer carries destination base; targeted test verifies authoritative server URL |
+| EDS-P1-03 | CLOSED | external URL allowlist is only HTTP/HTTPS; trusted renderer navigation only accepts exact packaged `index.html` or exact dev origin; tests cover hash route, unrelated `file://`, unsafe protocols, prefix spoofing |
+| EDS-P1-04 | CLOSED | CSP added to source HTML and verified in built `dist/renderer/index.html`; no `unsafe-eval` |
+| EDS-P2-01 | CLOSED | `sandbox: true` enabled and verified by typecheck/build/package/preload bridge smoke |
+| EDS-P2-02 | CLOSED | IPC handler sender, top-frame, and renderer URL validation added and tested |
+| EDS-P2-03 | CLOSED | URL, request body, Content-Length, and streaming response byte bounds added and tested |
+| EDS-P2-06 | PARTIAL | production DevTools and forceReload removed; normal reload remains; pending-write/reload operator-safety is deferred to 06.4 to avoid a broad write manager |
+| EDS-P1-02 | DEFERRED | credential/token ownership remains renderer memory + optional localStorage; safeStorage/DPAPI/keytar belongs to Task 06.3 |
+
+## 24. Task 06.2 Verification Evidence
+
+Commands executed after code changes:
+
+```text
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test -- electron/main/main-utils electron/main/http-proxy-utils electron/main/ipc-security-utils src/api/http
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
+npm --prefix collector-desktop run verify
+```
+
+Additional required package/runtime/security verification is recorded in the Task 06.2 final report.
+
+## 25. Task 06.2 Remaining Scope
+
+Remaining findings are outside this task or intentionally deferred:
+
+| Finding | Status | Owner |
+| --- | --- | --- |
+| EDS-P1-02 | DEFERRED | Task 06.3 Credential / Config Storage Hardening |
+| EDS-P2-04 | OPEN | Task 06.3 strict config URL / credential URL handling |
+| EDS-P2-05 | OPEN | Task 06.3 config atomic write / corrupt file diagnostics |
+| EDS-P2-06 reload pending-write part | PARTIAL / DEFERRED | Task 06.4 operator action safety |
+| EDS-P2-07 | OPEN | Task 06.4 single-instance lock |
+| EDS-P2-08 | OPEN | Task 06.4 signing/installer/update delivery maturity |
+| EDS-P2-09 | OPEN | Task 06.4 dependency source-map packaging polish |
+| EDS-P2-10 | OPEN | Task 06.4 startup-critical failure surfacing |
+
+Task 06.2 does not start Task 06.3.

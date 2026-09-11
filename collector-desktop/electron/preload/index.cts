@@ -13,7 +13,6 @@ interface ServerConfig {
 }
 
 interface ProxyRequest {
-  serverUrl: string;
   url: string;
   method?: string;
   params?: Record<string, unknown>;
