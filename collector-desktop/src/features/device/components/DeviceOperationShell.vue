@@ -329,6 +329,17 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   background: linear-gradient(180deg, var(--console-panel) 0%, var(--console-bg-soft) 100%);
 }
 
+.device-operation-panel .local-editor-title > div:first-child {
+  min-width: 0;
+}
+
+.device-operation-panel .local-editor-title h3,
+.device-operation-panel .local-editor-title p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .local-editor-title h3,
 .local-editor-title p {
   margin: 0;
@@ -371,6 +382,11 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: nowrap;
+}
+
+.local-editor-title-actions {
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .local-editor-stat {
@@ -590,6 +606,22 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 }
 
 @media (max-width: 1240px) {
+  .device-operation-panel {
+    max-height: none;
+  }
+
+  .device-operation-panel .local-editor-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .local-editor-title-actions,
+  .local-editor-stats {
+    flex-wrap: wrap;
+  }
+
   .device-operation-panel .local-editor-layout {
     grid-template-columns: 1fr;
   }

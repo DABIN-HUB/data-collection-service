@@ -10,10 +10,10 @@
     <el-alert v-if="webSocketStore.error" :title="webSocketStore.error" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <el-table v-loading="loading" :data="filteredRows" height="360" border>
-      <el-table-column prop="pointName" label="点位名称" min-width="160" />
-      <el-table-column prop="pointCode" label="点位编码" min-width="150" />
-      <el-table-column prop="address" label="地址" width="120" />
-      <el-table-column label="当前值" min-width="130"><template #default="{ row }">{{ row.currentValue ?? row.value ?? '-' }}</template></el-table-column>
+      <el-table-column label="点位名称" min-width="160"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointName || '-')">{{ row.pointName || '-' }}</span></template></el-table-column>
+      <el-table-column label="点位编码" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointCode || '-')">{{ row.pointCode || '-' }}</span></template></el-table-column>
+      <el-table-column label="地址" width="120"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.address || '-')">{{ row.address || '-' }}</span></template></el-table-column>
+      <el-table-column label="当前值" min-width="130"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.currentValue ?? row.value ?? '-')">{{ row.currentValue ?? row.value ?? '-' }}</span></template></el-table-column>
       <el-table-column label="质量" width="110"><template #default="{ row }"><el-tag :type="qualityType(row.quality)" effect="light">{{ qualityText(row.quality) }}</el-tag></template></el-table-column>
       <el-table-column prop="unit" label="单位" width="90" />
       <el-table-column label="更新时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.collectTime) }}</template></el-table-column>
@@ -251,9 +251,15 @@ function currentPanelRealtimeContext(): RealtimeRequestContext {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.cell-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 </style>

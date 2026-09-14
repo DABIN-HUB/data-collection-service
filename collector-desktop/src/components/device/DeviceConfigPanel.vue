@@ -1185,6 +1185,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
+  .run-control-card,
+  .quick-nav-card {
+    max-height: none;
+  }
+
   .device-control-grid.control-row {
     grid-template-columns: 1fr;
   }
@@ -1200,6 +1205,12 @@ onBeforeUnmount(() => {
   .state-pill-message {
     width: 100%;
     flex-basis: auto;
+  }
+
+  .run-control-actions {
+    width: 100%;
+    flex-basis: 100%;
+    flex-wrap: wrap;
   }
 }
 </style>

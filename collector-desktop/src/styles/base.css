@@ -110,7 +110,7 @@
   justify-content: space-between;
   gap: 12px;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-panel);
   background: var(--console-panel);
@@ -126,7 +126,7 @@
   gap: 8px;
   flex-wrap: nowrap;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   white-space: nowrap;
 }
 

@@ -26,9 +26,9 @@
     <el-table v-loading="loading" :data="filteredRows" height="420" border @selection-change="selectedRows = $event">
       <el-table-column type="selection" width="44" />
       <el-table-column label="级别" width="110"><template #default="{ row }"><el-tag :type="levelType(row.level)" effect="light">{{ levelText(row.level) }}</el-tag></template></el-table-column>
-      <el-table-column prop="deviceName" label="设备名称" min-width="160" />
-      <el-table-column prop="pointName" label="点位名称" min-width="150" />
-      <el-table-column label="告警内容" min-width="220"><template #default="{ row }">{{ alarmContent(row) }}</template></el-table-column>
+      <el-table-column label="设备名称" min-width="160"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.deviceName || row.deviceId || '-')">{{ row.deviceName || row.deviceId || '-' }}</span></template></el-table-column>
+      <el-table-column label="点位名称" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointName || row.pointCode || row.pointId || '-')">{{ row.pointName || row.pointCode || row.pointId || '-' }}</span></template></el-table-column>
+      <el-table-column label="告警内容" min-width="220"><template #default="{ row }"><span class="cell-ellipsis" :title="alarmContent(row)">{{ alarmContent(row) }}</span></template></el-table-column>
       <el-table-column label="发生时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.occurTime) }}</template></el-table-column>
       <el-table-column label="状态" width="110"><template #default="{ row }">{{ alarmStatusText(row) }}</template></el-table-column>
       <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><el-button type="primary" link :disabled="row.acknowledged" @click="openAck(row)">确认</el-button></template></el-table-column>
@@ -202,20 +202,30 @@ watch(() => [props.deviceId, level.value, timeRange.value?.[0]?.getTime(), timeR
 }
 
 .table-actions,
-.alarm-filter-bar {
+.panel-toolbar {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   white-space: nowrap;
 }
 
+.alarm-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 .alarm-filter-bar :deep(.el-date-editor) {
-  flex: 0 0 360px;
-  width: 360px;
+  flex: 1 1 280px;
+  width: clamp(280px, 34vw, 360px);
+  max-width: 100%;
 }
 
 .alarm-stat-list {
@@ -256,6 +266,14 @@ watch(() => [props.deviceId, level.value, timeRange.value?.[0]?.getTime(), timeR
 
 .alarm-stat-card.success strong {
   color: #34d399;
+}
+
+.cell-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 1280px) {

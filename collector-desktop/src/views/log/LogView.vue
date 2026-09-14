@@ -59,7 +59,7 @@
           <strong class="modao-log-level" :class="String(log.level || 'INFO').toUpperCase()">{{ log.level || 'INFO' }}</strong>
           <span class="modao-log-name" :title="String(log.logger || '-')">{{ shortLoggerName(log.logger) }}</span>
           <span class="modao-log-thread" :title="String(log.thread || '-')">{{ log.thread || '-' }}</span>
-          <span class="modao-log-message">{{ log.message || log.content || '-' }}</span>
+          <span class="modao-log-message" :title="String(log.message || log.content || '-')">{{ log.message || log.content || '-' }}</span>
         </div>
       </section>
     </div>
@@ -411,6 +411,7 @@ watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.
 
 .log-view .modao-log-thread,
 .log-view .modao-log-message {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -418,17 +419,19 @@ watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.
 
 .log-view .log-toolbar {
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px 10px;
+  overflow: visible;
 }
 
 .log-view .log-toolbar .exact-toolbar-filters {
-  flex: 1 1 auto;
+  flex: 1 1 720px;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(96px, 0.68fr) minmax(116px, 0.82fr) minmax(128px, 0.92fr) minmax(128px, 0.92fr) minmax(168px, 1.05fr) minmax(72px, 0.5fr) auto;
+  grid-template-columns: minmax(92px, 0.72fr) minmax(128px, 1fr) minmax(120px, 0.95fr) minmax(120px, 0.95fr) minmax(156px, 1.35fr) minmax(72px, 0.55fr) auto;
   gap: 6px 8px;
   align-items: center;
+  overflow: visible;
 }
 
 .log-view .log-toolbar .exact-toolbar-filters input,
@@ -444,10 +447,28 @@ watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.
 }
 
 .log-view .log-toolbar .exact-toolbar-group:not(.exact-toolbar-filters) {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   justify-content: flex-start;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
+  overflow: visible;
+}
+
+@media (max-width: 1440px) {
+  .log-view .log-toolbar .exact-toolbar-filters,
+  .log-view .log-toolbar .exact-toolbar-group:not(.exact-toolbar-filters) {
+    flex-basis: 100%;
+  }
+
+  .log-view .log-toolbar .exact-toolbar-filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .log-view .log-toolbar .exact-toolbar-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .log-view .log-filter-note {

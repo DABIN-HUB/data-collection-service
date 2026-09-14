@@ -141,20 +141,22 @@
           <h2>历史数据表</h2>
           <span>{{ deviceId || '-' }} / {{ pointRef || '-' }}</span>
         </div>
-        <table>
-          <thead>
-            <tr><th>时间</th><th>值</th><th>质量</th><th>原始记录</th></tr>
-          </thead>
-          <tbody>
-            <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">{{ historyEmptyText }}</td></tr>
-            <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
-              <td>{{ formatHistoryTime(row) }}</td>
-              <td>{{ displayValue(row) }}</td>
-              <td>{{ row.quality || row.qualityCode || '-' }}</td>
-              <td><code>{{ compactJson(row) }}</code></td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-wrap history-data-table-wrap">
+          <table>
+            <thead>
+              <tr><th>时间</th><th>值</th><th>质量</th><th>原始记录</th></tr>
+            </thead>
+            <tbody>
+              <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">{{ historyEmptyText }}</td></tr>
+              <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
+                <td>{{ formatHistoryTime(row) }}</td>
+                <td>{{ displayValue(row) }}</td>
+                <td>{{ row.quality || row.qualityCode || '-' }}</td>
+                <td><code>{{ compactJson(row) }}</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   </section>
@@ -704,6 +706,32 @@ function defaultDateTimeLocal(offsetMs: number): string {
   align-items: end;
 }
 
+.history-data-table-wrap {
+  width: 100%;
+}
+
+.history-data-table-wrap table {
+  width: 100%;
+  min-width: 640px;
+  table-layout: fixed;
+}
+
+.history-data-table-wrap th:nth-child(1) {
+  width: 180px;
+}
+
+.history-data-table-wrap th:nth-child(2),
+.history-data-table-wrap th:nth-child(3) {
+  width: 100px;
+}
+
+.history-data-table-wrap td code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .history-filter-bottom {
   display: grid;
   padding-top: 10px;
@@ -826,6 +854,16 @@ function defaultDateTimeLocal(offsetMs: number): string {
 .history-alarm-table th,
 .history-alarm-table td {
   white-space: nowrap;
+}
+
+.history-alarm-table {
+  table-layout: fixed;
+}
+
+.history-alarm-table td:nth-child(3),
+.history-alarm-table td:nth-child(4) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .history-alarm-table td:nth-child(5) {

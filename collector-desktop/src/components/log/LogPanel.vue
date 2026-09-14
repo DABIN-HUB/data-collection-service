@@ -20,10 +20,10 @@
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <el-table v-loading="loading" :data="filteredRows" height="420" border>
       <el-table-column label="时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.time) }}</template></el-table-column>
-      <el-table-column prop="deviceName" label="设备名称" min-width="150" />
+      <el-table-column label="设备名称" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.deviceName || row.deviceId || '-')">{{ row.deviceName || row.deviceId || '-' }}</span></template></el-table-column>
       <el-table-column label="级别" width="100"><template #default="{ row }"><el-tag :type="levelType(row.level)" effect="light">{{ levelText(row.level) }}</el-tag></template></el-table-column>
-      <el-table-column prop="logger" label="日志来源" min-width="180" />
-      <el-table-column label="日志内容" min-width="320"><template #default="{ row }">{{ row.message || row.content || '-' }}</template></el-table-column>
+      <el-table-column label="日志来源" min-width="180"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.logger || '-')">{{ row.logger || '-' }}</span></template></el-table-column>
+      <el-table-column label="日志内容" min-width="320"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.message || row.content || '-')">{{ row.message || row.content || '-' }}</span></template></el-table-column>
     </el-table>
   </section>
 </template>
@@ -171,19 +171,37 @@ watch(autoRefresh, syncTimer);
 }
 
 .table-actions,
-.log-filter-bar {
+.panel-toolbar {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   white-space: nowrap;
 }
 
+.log-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
 .log-filter-bar :deep(.el-date-editor) {
-  flex: 0 0 360px;
-  width: 360px;
+  flex: 1 1 280px;
+  width: clamp(280px, 34vw, 360px);
+  max-width: 100%;
+}
+
+.cell-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

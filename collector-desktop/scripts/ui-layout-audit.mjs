@@ -220,7 +220,9 @@ async function collectDomMetrics() {
       const textBox = ['span', 'strong', 'em', 'small', 'label'].includes(tag);
       const widthOverflow = element.scrollWidth > element.clientWidth + 4;
       const heightOverflow = element.scrollHeight > element.clientHeight + 4;
-      return (widthOverflow || heightOverflow) && (!textBox || widthOverflow);
+      const style = getComputedStyle(element);
+      const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap' && Boolean(element.getAttribute('title') || element.getAttribute('aria-label'));
+      return (widthOverflow || heightOverflow) && !intentionalEllipsis && (!textBox || widthOverflow);
     }).map((element) => ({
       selector: selectorFor(element),
       tag: element.tagName.toLowerCase(),
@@ -233,6 +235,23 @@ async function collectDomMetrics() {
       overflowY: getComputedStyle(element).overflowY,
       intentional: ['auto', 'scroll'].includes(getComputedStyle(element).overflowX) || ['auto', 'scroll'].includes(getComputedStyle(element).overflowY)
     })).sort((a, b) => Math.max(b.scrollWidth - b.clientWidth, b.scrollHeight - b.clientHeight) - Math.max(a.scrollWidth - a.clientWidth, a.scrollHeight - a.clientHeight)).slice(0, 40);
+    const toolbarSelectors = '.exact-toolbar, .exact-toolbar-group, .exact-toolbar-filters, .table-actions, .panel-toolbar, [class*="toolbar"], [class*="filter-bar"]';
+    const toolbarHorizontalOverflows = [...document.querySelectorAll(toolbarSelectors)].filter((element) => {
+      if (!visible(element)) return false;
+      return element.scrollWidth > element.clientWidth + 4;
+    }).map((element) => ({
+      selector: selectorFor(element),
+      className: String(element.className || '').slice(0, 180),
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      overflowX: getComputedStyle(element).overflowX,
+      overflowY: getComputedStyle(element).overflowY
+    })).slice(0, 20);
+    const hiddenClips = overflowElements.filter((item) => {
+      const horizontalClip = item.scrollWidth > item.clientWidth + 4 && ['hidden', 'clip'].includes(item.overflowX);
+      const verticalClip = item.scrollHeight > item.clientHeight + 4 && ['hidden', 'clip'].includes(item.overflowY);
+      return horizontalClip || verticalClip;
+    });
     const controls = elements.filter((element) => visible(element) && element.matches('input, select, textarea, .el-input__wrapper, .el-select__wrapper, .el-textarea__inner, .el-date-editor, .el-input-number'));
     const whiteBackground = (value) => { const match = value.match(/rgba?\\(([^)]+)\\)/); return value === 'white' || value === '#fff' || value === '#ffffff' || (match && match[1].split(',').slice(0, 3).every((part) => Number(part.trim()) >= 245)); };
     const controlStyles = controls.map((element) => {
@@ -250,6 +269,8 @@ async function collectDomMetrics() {
       body: { scrollWidth: document.body.scrollWidth, clientWidth: document.body.clientWidth, scrollHeight: document.body.scrollHeight, clientHeight: document.body.clientHeight },
       visibleElementCount: elements.filter(visible).length,
       overflowElements,
+      toolbarHorizontalOverflows,
+      hiddenClips,
       controls: { count: controls.length, whiteBackgroundCount: controlStyles.filter((item) => item.whiteBackground).length, samples: controlStyles.slice(0, 80) },
       popups,
       shell: { hasAppShell: Boolean(document.querySelector('.app-shell')), hasPage: Boolean(document.querySelector('.exact-page, .page, main')), hasSidebar: Boolean(document.querySelector('.app-sidebar')), hasTopbar: Boolean(document.querySelector('.app-topbar')) }
@@ -369,9 +390,11 @@ function summarize() {
     path,
     viewports: items.length,
     rendered: items.filter((item) => item.rendered).length,
-    overflow: items.some((item) => item.documentOverflowX || item.documentOverflowY || item.unintentionalOverflowCount > 0),
+    overflow: items.some((item) => item.documentOverflowX || item.documentOverflowY || item.unintentionalOverflowCount > 0 || item.toolbarHorizontalOverflowCount > 0 || item.hiddenClipCount > 0),
     themeMismatch: items.some((item) => item.themeMismatch),
-    layoutIssue: items.some((item) => !item.layoutShellOk || item.unintentionalOverflowCount > 0),
+    layoutIssue: items.some((item) => !item.layoutShellOk || item.unintentionalOverflowCount > 0 || item.toolbarHorizontalOverflowCount > 0 || item.hiddenClipCount > 0),
+    toolbarHorizontalOverflows: items.reduce((sum, item) => sum + item.toolbarHorizontalOverflowCount, 0),
+    hiddenClips: items.reduce((sum, item) => sum + item.hiddenClipCount, 0),
     consoleErrors: items.reduce((sum, item) => sum + item.consoleErrorCount + item.exceptionCount, 0)
   }));
   result.routeSummaries = routeSummaries;
@@ -384,6 +407,8 @@ function summarize() {
     routesWithThemeMismatch: routeSummaries.filter((item) => item.themeMismatch).length,
     routesWithLayoutIssue: routeSummaries.filter((item) => item.layoutIssue).length,
     routesWithConsoleErrors: routeSummaries.filter((item) => item.consoleErrors > 0).length,
+    toolbarHorizontalOverflows: checks.reduce((sum, item) => sum + item.toolbarHorizontalOverflowCount, 0),
+    hiddenClips: checks.reduce((sum, item) => sum + item.hiddenClipCount, 0),
     notVisited: routes.filter((route) => !routeSummaries.some((item) => item.path === route.path)).map((route) => route.path),
     themeFixtureChecks: result.themeFixtureChecks.length,
     themeFixtureWhiteBackgrounds: result.themeFixtureChecks.reduce((sum, item) => sum + item.whiteBackgroundCount, 0),
@@ -427,6 +452,10 @@ try {
         document: metrics.document,
         body: metrics.body,
         overflowElements: metrics.overflowElements,
+        toolbarHorizontalOverflows: metrics.toolbarHorizontalOverflows,
+        toolbarHorizontalOverflowCount: metrics.toolbarHorizontalOverflows.length,
+        hiddenClips: metrics.hiddenClips,
+        hiddenClipCount: metrics.hiddenClips.length,
         intentionalOverflowCount: intentionalOverflow.length,
         unintentionalOverflowCount: unintentionalOverflow.length,
         controls: metrics.controls,
@@ -440,7 +469,7 @@ try {
         elapsedMs: Date.now() - startedAt
       };
       result.checks.push(check);
-      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
+      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, toolbarOverflow: check.toolbarHorizontalOverflowCount, hiddenClips: check.hiddenClipCount, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
     }
     const themeFixture = await collectThemeFixture(viewport);
     result.themeFixtureChecks.push(themeFixture);

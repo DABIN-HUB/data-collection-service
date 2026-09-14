@@ -1063,3 +1063,252 @@ Task UI-03 — Page-by-Page Layout & Overflow Cleanup
 ```
 
 UI-03 重点处理真实页面布局和有数据场景，不应再回头重新开一套全局 theme。
+
+## 26. Task UI-03 — Page-by-Page Layout & Overflow Cleanup
+
+### 26.1 完成情况
+
+本轮在不改变设备、点位、采集、告警、控制、历史查询、权限、Token、Electron IPC 和实时数据协议的前提下，完成页面级布局与滚动责任整改。修改范围限定在页面/业务组件布局、长文本呈现、审计脚本和预期离线日志处理；没有重新设计 UI-02 的全局主题。
+
+### 26.2 Dashboard Resource Dashboard
+
+- `.resource-dashboard` 改为 `min-width: 0` 与流式 `grid`，移除 `minmax(270px, ...)` 的硬性第一列约束。
+- gauge 列使用 `repeat(3, minmax(0, 1fr))`，圆环尺寸使用 `clamp()`，在窄面板中保持可读性而不是依赖父层裁切。
+- 运行摘要、间距、进度条宽度使用可收缩规则。
+- `.home-resource-list` 不再用 `overflow: hidden` 掩盖内容。
+
+结果：`1280×720`、`1366×768`、`1440×900`、`1920×1080` 均未发现 resource dashboard 横向溢出。
+
+### 26.3 Dashboard Topology
+
+- `.pipeline-steps` 和 `.topology-flow` 增加 `min-width: 0`，拓扑节点、存储块、连接线允许在可用宽度内收缩。
+- 节点、连接线、存储块使用 `clamp()` 与 flex 收缩，保留 source/device、gateway、pipeline、storage、cloud 的语义可见性。
+- 移除 `.pipeline-steps` 的 `overflow: hidden`，不再静默裁切最右侧节点。
+- 网关/云平台状态文本保留 `title`，节点说明使用 ellipsis 时仍可查看完整内容。
+
+结果：全部四个 viewport 的 Dashboard topology 未再出现局部 hidden clip；1920 宽度下也未出现无限拉伸。
+
+### 26.4 Log Toolbar
+
+- `/log` 工具栏改为可换行布局，`1280×720` 和 `1366×768` 下过滤区使用四列网格，操作区独立换行。
+- 更窄宽度继续降为三列，控件使用 `min-width: 0`，不依赖横向滚动。
+- 移除页面级 `overflow-x: hidden` 掩盖方式，改为 `overflow: visible`，让布局问题真实暴露。
+- 日志消息保留单行 ellipsis，并增加 `title` 完整文本提示。
+
+结果：四个 viewport 的 `toolbarHorizontalOverflowCount = 0`。
+
+### 26.5 Alarm Layout
+
+- `AlarmTablePanel` 过滤区允许换行，日期范围控件由固定 `360px` 改为 `clamp(280px, 34vw, 360px)`。
+- 告警设备、点位、告警内容使用带 `title` 的 cell ellipsis，长文本不会撑破表格。
+- Element Plus 表格继续由自身内部滚动容器负责多列数据，fixed-right 操作列保持原有结构。
+
+### 26.6 Realtime Layout
+
+- `RealtimeDataPanel` 的 panel toolbar/table actions 移除内部横向滚动，改为可换行布局，避免设备工作台嵌入时形成双层横向滚动。
+- 点位名称、编码、地址、当前值增加 cell ellipsis 与 title。
+- 未改变实时表格分页、刷新周期、HTTP fallback、WebSocket 状态和 latest-response-wins 逻辑。
+
+### 26.7 History Layout
+
+- 历史数据表增加 `.table-wrap`，表格采用有限的最小宽度和 `table-layout: fixed`；大量列或长原始记录只在表格容器内部处理。
+- `JSON.stringify(row)` 使用 `white-space: pre-wrap` 与 `overflow-wrap: anywhere`，长 JSON 不再撑破页面。
+- 相关告警表使用固定布局；设备/点位列 ellipsis，告警内容列保留换行。
+- 查询条件在当前 1280+ 桌面矩阵中未产生页面级横向溢出。
+
+### 26.8 Device Workbench
+
+- `DeviceConfigPanel` 在窄宽断点去除运行控制/快捷导航卡片的固定 `max-height: 105px`，运行状态与操作按钮允许占用多行。
+- `DeviceOperationShell` 标题内容增加 `min-width: 0` 和 ellipsis；窄宽下标题操作区允许换行，并避免固定 viewport 高度把标题内容裁掉。
+- 点位编辑工具栏左右分组允许换行，搜索框由固定宽度改为 `clamp()`，移除嵌套横向滚动。
+- 点位导入预览已有独立的表格内部 `overflow: auto`；本轮保留该合理滚动责任，未改变导入业务逻辑。
+
+### 26.9 Table Scroll Ownership
+
+当前滚动责任明确分层：
+
+- `body` / `documentElement`：无横向滚动。
+- `exact-page-body`：页面内容需要时承担纵向滚动。
+- Element Plus `el-table`：多列真实数据由表格自身内部滚动处理。
+- 历史原始数据、点位导入预览等原生表格：由 `.table-wrap` / `.point-import-preview-table` 承担内部滚动。
+- 设备树、JSON、日志列表等长内容区域：保留已有合理内部滚动。
+- 常规 toolbar：不再使用横向滚动作为 1280+ 的布局方案。
+
+离线后端下未能填充真实设备/告警/实时/历史行，因此 fixed column 与真实字段宽度属于 `CODE/CONTRACT CLOSED`；真实数据字段密度仍需后端在线环境做现场复核，不将空数据渲染误报为真实数据验证。
+
+### 26.10 Long Text Handling
+
+- 日志 message、告警设备/点位/内容、实时点位字段使用 ellipsis + `title`。
+- Dashboard 告警标题、设备名称使用 `title`；异常描述和告警标题允许安全换行。
+- 历史原始 JSON 使用换行与 `overflow-wrap:anywhere`。
+- URL、JSON、错误信息等不可预测长文本不使用全局 `word-break: break-all`，避免破坏可读性。
+
+### 26.11 Dialog Verification
+
+已复核实际业务 Dialog：告警确认 `520px`、设备配置差异 `720px`、点位导入预览 `920px`、点位批量编辑/批量生成 `520px`。UI-02 的全局 dialog max-width/max-height/body scroll safety 继续生效；导入预览表格保留内部滚动，业务 footer 不被表格内容推出 viewport。
+
+本次后端不可达，未声称已完成所有业务 Dialog 的真实长数据交互验证。实际长设备名、长 JSON、多条导入预览需在后端在线或受控 audit fixture 中继续做数据态复核。
+
+### 26.12 Realtime Backend-Offline Console
+
+`RealtimeView` 现在只对明确可识别的网络失败（`fetch failed`、连接拒绝、请求服务超时等）更新页面已有的 unavailable/degraded 状态，不再向 `console.error` 或高频 `console.warn` 重复写入预期离线异常；非预期编程错误仍保留 `console.error` 可观测性。未改变 API exception contract、降级状态和 latest-response-wins。
+
+### 26.13 Audit Script Changes
+
+`scripts/ui-layout-audit.mjs` 增加/保留以下页面级诊断：
+
+- toolbar/filter horizontal overflow 选择器扫描。
+- `overflow:hidden/clip` 下真实 scrollWidth/scrollHeight 超出检测。
+- intentional ellipsis 只有在同时存在 `title` 或 `aria-label` 时才会被分类为合理裁切，避免通过泛化豁免让指标变绿。
+- theme fixture 继续检查 popup、dialog、alert、tag、empty、table、pagination。
+- 仍生成 `.ui-audit/screenshots/` 与 `report.json`；`.ui-audit/` 不进入版本控制。
+
+### 26.14 14 Route Matrix
+
+真实 Router 清单全部执行：
+
+```text
+/login
+/dashboard
+/realtime
+/history
+/alarm
+/device
+/device/workbench
+/collect
+/cloud
+/diagnostic
+/log
+/network
+/control
+/shadow
+```
+
+每个 route 均执行四个 viewport，共 `14 × 4 = 56` 次检查；`renderedRouteCount = 14`，`notVisited = []`。
+
+### 26.15 Viewport Results
+
+| Viewport | Route checks | Rendered | Document/body X overflow | Toolbar X overflow | Hidden clips |
+|---|---:|---:|---:|---:|---:|
+| `1280×720` | 14 | 14 | 0 | 0 | 0 |
+| `1366×768` | 14 | 14 | 0 | 0 | 0 |
+| `1440×900` | 14 | 14 | 0 | 0 | 0 |
+| `1920×1080` | 14 | 14 | 0 | 0 | 0 |
+
+最终 `.ui-audit/report.json` 摘要：
+
+```json
+{
+  "routeCount": 14,
+  "viewportCount": 4,
+  "executedChecks": 56,
+  "renderedRouteCount": 14,
+  "routesWithOverflow": 0,
+  "routesWithThemeMismatch": 0,
+  "routesWithLayoutIssue": 0,
+  "routesWithConsoleErrors": 0,
+  "toolbarHorizontalOverflows": 0,
+  "hiddenClips": 0,
+  "notVisited": []
+}
+```
+
+### 26.16 Intentional Scroll
+
+本轮审计记录的 intentional overflow 共 50 项，主要来自页面内容纵向滚动、Element Plus 表格内部滚动、JSON/日志/设备树/导入预览等有明确内容边界的区域。它们不计入 `routesWithOverflow`；没有把常规 toolbar 横向滚动标记为 intentional。
+
+### 26.17 Remaining Unintentional Overflow
+
+最终矩阵中：
+
+```text
+routesWithOverflow = 0
+routesWithLayoutIssue = 0
+toolbarHorizontalOverflows = 0
+hiddenClips = 0
+unintentionalOverflowCount = 0
+```
+
+没有遗留已知的页面级 unintentional overflow。真实数据表格和业务 Dialog 的字段密度仍受 backend offline 限制，已按 `CODE/CONTRACT CLOSED` 记录，不冒充真实数据闭环。
+
+### 26.18 UI-01 Finding Closure
+
+| Finding | UI-03 状态 | 说明 |
+|---|---|---|
+| `UI-LAYOUT-01` | `CLOSED` | Resource dashboard 改为 fluid grid，四个 viewport 通过。 |
+| `UI-LAYOUT-02` | `CLOSED` | Topology 不再由 `overflow:hidden` 裁切，节点/连接线可收缩。 |
+| `UI-RESPONSIVE-01` | `CLOSED` | Log toolbar 在 1280/1366 下换行，无横向滚动。 |
+| `UI-TABLE-01` | `CODE/CONTRACT CLOSED; REAL-DATA VERIFY DEFERRED` | 表格内部滚动、fixed-right、长文本和分页责任已处理；真实数据字段密度待在线环境复核。 |
+| `UI-CONSOLE-01` | `CLOSED` | 预期离线网络失败不再刷 console.error/warn，非预期错误仍可观测。 |
+
+### 26.19 Full Verification
+
+本轮生产代码验证命令：
+
+```bash
+npm run stylelint
+npm run lint
+node --check scripts/ui-layout-audit.mjs
+npm run typecheck
+npm test
+npm run build
+npm run build:web
+npm run verify
+npm run pack
+node scripts/ui-layout-audit.mjs
+git diff --check
+```
+
+不得创建或修改测试代码；`npm test` 仅执行仓库已有测试套件，未增加测试依赖。
+
+### 26.20 build:web Generated Assets
+
+CSS/Vue 修改后的 `npm run build:web` 最新输出应保留在：
+
+```text
+collector-boot/src/main/resources/static/desktop/**
+```
+
+其中 hashed CSS/JS 与 `index.html` 属于有效生成物；本轮不手工回退有效 build 输出。生成物不纳入 UI audit 临时截图/报告。
+
+### 26.21 Changed Files
+
+本轮页面级生产代码、审计脚本和文档变更涉及：
+
+```text
+collector-desktop/src/views/dashboard/DashboardView.vue
+collector-desktop/src/views/log/LogView.vue
+collector-desktop/src/views/history/HistoryView.vue
+collector-desktop/src/views/realtime/RealtimeView.vue
+collector-desktop/src/components/alarm/AlarmTablePanel.vue
+collector-desktop/src/components/log/LogPanel.vue
+collector-desktop/src/components/realtime/RealtimeDataPanel.vue
+collector-desktop/src/components/device/DeviceConfigPanel.vue
+collector-desktop/src/features/device/components/DeviceOperationShell.vue
+collector-desktop/src/features/point/components/PointEditor.vue
+collector-desktop/src/styles/base.css
+collector-desktop/scripts/ui-layout-audit.mjs
+collector-desktop/docs/production-readiness/FRONTEND-UI-AUDIT.md
+```
+
+`.hermes.md` 未修改。未执行 `git add`、`git commit`、`git push`、`git checkout`、`git reset`、`git stash`、`git rebase`。
+
+### 26.22 Remaining Limitations
+
+- 当前后端 `http://127.0.0.1:9090/collector` 不可达，因此本轮没有伪造在线设备、实时行、告警行或历史行。
+- `UI-TABLE-01` 的布局源代码/滚动责任/长文本策略/fixed-right/pagination 已关闭；真实数据列密度、极长设备/点位字段和后端实际返回字段仍需在线环境复核。
+- 业务 Dialog 的 viewport safety 已由全局规则、实际 width 复核和 audit fixture 覆盖；包含真实长 JSON/多条导入数据的交互仍需在线或受控 fixture 复核。
+
+### 26.23 Task Status
+
+`Task UI-03: PASS / COMPLETE`
+
+依据：Dashboard 两项已知 overflow 已关闭，Log toolbar 已完成响应式整改，14 route × 4 viewport 真实矩阵通过，无 document/body 横向溢出、无 toolbar 横向溢出、无 hidden clip、无新增 theme mismatch，Realtime 预期离线错误不再刷屏；代码质量、构建、打包和审计命令均通过。
+
+### 26.24 Next
+
+```text
+Task UI-04 — Full Frontend Visual Regression / Final Audit
+```
+
+UI-04 再次从真实页面验证 Theme、Layout、Overflow、Toolbar、Table、Dialog、Long Text、Viewport 和 Console；在 UI-04 开始前不回到 Task 07，也不扩大本轮页面整改范围。

@@ -597,6 +597,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .point-toolbar-left,
@@ -608,17 +609,18 @@ onBeforeUnmount(() => {
   min-width: 0;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .point-toolbar-right {
+  flex: 1 1 520px;
   justify-content: flex-end;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .point-toolbar-right :deep(.el-input) {
-  flex: 0 0 230px;
-  width: 230px;
+  flex: 0 1 clamp(180px, 18vw, 230px);
+  width: clamp(180px, 18vw, 230px);
 }
 
 .point-workbench-grid {

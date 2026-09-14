@@ -126,6 +126,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 
+import { ApiRequestError } from "@/api/http";
 import { getPointRealtimeData } from "@/api/data.api";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
@@ -268,7 +269,7 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
       return;
     }
     realtimeError.value = error instanceof Error ? error.message : "实时数据刷新失败";
-    console.error(error);
+    logRealtimeRequestError(error);
   } finally {
     if (realtimeRequestOwner.isLatest(requestTicket)) {
       loading.value = false;
@@ -315,7 +316,7 @@ async function loadSingleRealtime() {
       return;
     }
     singleRealtimeError.value = error instanceof Error ? error.message : "单点实时查询失败";
-    console.error(error);
+    logRealtimeRequestError(error);
   } finally {
     if (singleRealtimeRequestOwner.isLatest(requestTicket)) {
       singleLoading.value = false;
@@ -334,6 +335,21 @@ function pickRealtimePoint(row: RealtimePointRow) {
 
 function refreshRealtime() {
   void loadRealtime("manual");
+}
+
+function logRealtimeRequestError(error: unknown) {
+  if (isExpectedRealtimeRequestFailure(error)) {
+    return;
+  }
+  console.error(error);
+}
+
+function isExpectedRealtimeRequestFailure(error: unknown): boolean {
+  if (!(error instanceof ApiRequestError || error instanceof Error)) {
+    return false;
+  }
+  const message = error.message || "";
+  return /fetch failed|network error|connection refused|请求采集服务超时|无法连接采集服务/i.test(message);
 }
 
 function handleRealtimeDeviceChange() {

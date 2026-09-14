@@ -41,7 +41,7 @@
             <div v-if="recentAlarms.length === 0" class="empty-state compact">{{ recentAlarmEmptyText }}</div>
             <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
               <div class="home-event-main">
-                <strong>{{ alarmMessage(alarm) }}</strong>
+                <strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong>
                 <span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span>
               </div>
               <div class="home-event-meta">
@@ -62,7 +62,7 @@
             <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
               <span class="risk-dot"></span>
               <div>
-                <strong>{{ device.displayName || device.normalizedId }}</strong>
+                <strong :title="device.displayName || device.normalizedId">{{ device.displayName || device.normalizedId }}</strong>
                 <p>{{ riskDescription(device) }}</p>
               </div>
             </div>
@@ -87,7 +87,7 @@
               <div class="topology-node" :class="gatewayToneClass" :title="gatewayDetail">
                 <span class="topology-icon">网</span>
                 <strong>边缘网关</strong>
-                <small>{{ nodeIdentity }}</small>
+                <small :title="nodeIdentity">{{ nodeIdentity }}</small>
               </div>
               <span class="topology-connector" aria-hidden="true"></span>
               <div class="topology-storage-stack">
@@ -102,7 +102,7 @@
               <div class="topology-node" :class="cloudToneClass" :title="reportState">
                 <span class="topology-icon">云</span>
                 <strong>云平台</strong>
-                <small>{{ reportState }}</small>
+                <small :title="reportState">{{ reportState }}</small>
               </div>
             </div>
           </div>
@@ -760,7 +760,7 @@ function formatTime(value: unknown): string {
   min-width: 0;
   min-height: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   color: #e2e8f0;
   border: 1px solid var(--exact-border);
   border-radius: 12px;
@@ -773,7 +773,7 @@ function formatTime(value: unknown): string {
 }
 
 .home-dashboard-observability .home-panel {
-  height: 220px;
+  min-height: 220px;
 }
 
 .home-panel-head {
@@ -879,6 +879,7 @@ function formatTime(value: unknown): string {
 .home-event-main strong {
   color: #93c5fd;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .home-event-main span,
@@ -933,30 +934,36 @@ function formatTime(value: unknown): string {
   margin: 5px 0 0;
   color: var(--exact-dim);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .pipeline-steps {
-  display: block;
+  display: flex;
   height: calc(100% - 56px);
-  padding: 18px 24px;
-  overflow: hidden;
+  min-width: 0;
+  padding: 18px clamp(14px, 1.6vw, 24px);
+  align-items: center;
+  overflow: visible;
 }
 
 .topology-flow {
   display: flex;
-  min-width: 560px;
+  width: 100%;
+  min-width: 0;
   height: 128px;
   align-items: center;
   justify-content: space-between;
+  gap: clamp(6px, 1vw, 18px);
 }
 
 .topology-node {
   display: flex;
-  width: 88px;
-  min-width: 88px;
+  width: clamp(70px, 6.6vw, 88px);
+  min-width: 0;
   min-height: 66px;
   padding: 7px 8px 6px;
   align-items: center;
+  flex: 0 1 clamp(70px, 6.6vw, 88px);
   flex-direction: column;
   justify-content: center;
   border: 2px solid #2d4a7a;
@@ -1003,22 +1010,29 @@ function formatTime(value: unknown): string {
 
 .topology-storage-stack {
   display: grid;
-  min-width: 130px;
-  gap: 14px;
+  min-width: 96px;
+  flex: 0 1 130px;
+  gap: clamp(8px, 1vw, 14px);
 }
 
 .topology-storage-pill {
   display: flex;
   min-height: 28px;
-  padding: 0 10px;
+  min-width: 0;
+  padding: 0 clamp(7px, 0.8vw, 10px);
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid var(--exact-border);
   border-radius: 5px;
   background: var(--exact-panel-soft);
   color: #fff;
   font-size: 10px;
   white-space: nowrap;
+}
+
+.topology-storage-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topology-storage-pill .status-dot {
@@ -1051,9 +1065,9 @@ function formatTime(value: unknown): string {
 
 .topology-connector {
   display: block;
-  min-width: 28px;
+  min-width: clamp(8px, 1vw, 28px);
   height: 1px;
-  flex: 1 1 54px;
+  flex: 1 1 42px;
   background: var(--exact-border);
 }
 
@@ -1061,21 +1075,23 @@ function formatTime(value: unknown): string {
   display: block;
   max-height: none;
   padding: 13px 16px 12px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .resource-dashboard {
   display: grid;
-  height: 134px;
-  grid-template-columns: minmax(270px, 1fr) minmax(150px, 0.55fr);
+  min-width: 0;
+  min-height: 134px;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.45fr);
   align-items: center;
-  gap: 16px;
+  gap: clamp(8px, 1vw, 16px);
 }
 
 .resource-gauges {
   display: grid;
-  grid-template-columns: repeat(3, minmax(74px, 1fr));
-  gap: 8px;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(5px, 0.7vw, 8px);
 }
 
 .resource-gauge {
@@ -1088,8 +1104,8 @@ function formatTime(value: unknown): string {
   --resource-color: #22d3ee;
   position: relative;
   display: grid;
-  width: 68px;
-  height: 68px;
+  width: clamp(54px, 5vw, 68px);
+  height: clamp(54px, 5vw, 68px);
   place-items: center;
   border-radius: 50%;
   background: conic-gradient(var(--resource-color) var(--resource-progress), #233a5c var(--resource-progress));
@@ -1097,8 +1113,8 @@ function formatTime(value: unknown): string {
 
 .resource-ring::after {
   position: absolute;
-  width: 52px;
-  height: 52px;
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
   border-radius: 50%;
   background: var(--exact-panel);
   content: "";
@@ -1125,8 +1141,9 @@ function formatTime(value: unknown): string {
 
 .resource-runtime-summary {
   display: grid;
+  min-width: 0;
   min-height: 104px;
-  padding-left: 28px;
+  padding-left: clamp(10px, 1.4vw, 28px);
   align-content: center;
   gap: 12px;
   border-left: 1px solid var(--exact-border);
@@ -1135,7 +1152,7 @@ function formatTime(value: unknown): string {
 .resource-runtime-summary > div:not(.resource-load-track) {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   font-size: 10px;
 }
 
@@ -1153,7 +1170,7 @@ function formatTime(value: unknown): string {
 }
 
 .resource-load-track {
-  width: 80px;
+  width: min(80px, 100%);
   height: 4px;
   overflow: hidden;
   border-radius: 99px;
