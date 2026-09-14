@@ -34,6 +34,7 @@ AGENTS.md
 !/collector-desktop/scripts/frontend-architecture.test.mjs
 !/collector-desktop/scripts/package-asar-audit.mjs
 !/collector-desktop/scripts/packaged-runtime-smoke.mjs
+!/collector-desktop/scripts/ui-layout-audit.mjs
 AGENTS1.md
 IDEA.md
 .hermes
