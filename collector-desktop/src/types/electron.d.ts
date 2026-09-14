@@ -3,6 +3,7 @@ export interface CollectorDesktopAppInfo {
   version: string;
   platform: string;
   configPath?: string;
+  startupDiagnosticPath?: string;
   backendManaged?: boolean;
   configRecovery?: CollectorDesktopRecoveryInfo;
 }

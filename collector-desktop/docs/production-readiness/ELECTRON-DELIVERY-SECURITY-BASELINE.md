@@ -1334,3 +1334,221 @@ Finding update:
 | EDS-P2-05 | CLOSED / R2 PASS | credential remembered commit is persistence-success-first; atomic rename failure keeps the previous target intact and cleans temp best-effort |
 
 Full command evidence is recorded in the final Task 06.3-R2 report.
+
+---
+
+# Task 06.4 — Packaging, Writable Paths & Delivery Reliability
+
+Date: 2026-09-14
+Branch: feature_2.0
+Remote baseline before Task 06.4: 7d255270ceb218f2fd22cd2e1b3fd5dd9fca2c5e
+Scope: production reload removal, single-instance runtime policy, startup-critical failure surfacing, writable diagnostics, backend deployment log path boundary, packaged source-map cleanup, NSIS delivery verification, and honest signing/update status. Task 06.5 is not started.
+
+Product lifecycle remains unchanged:
+
+```text
+Electron = operator console / UI
+Spring Boot = independent long-running collector backend
+backendManaged = false
+```
+
+Electron still does not start a Spring Boot JAR, bundle a JRE, stop the collector backend on UI exit, or own the long-running acquisition lifecycle.
+
+## Production reload policy
+
+Production desktop runtime no longer exposes Renderer reload capability. The production View menu removes:
+
+```text
+reload
+forceReload
+DevTools
+```
+
+The following non-reload view/navigation capabilities are retained:
+
+```text
+resetZoom
+zoomIn
+zoomOut
+togglefullscreen
+navigation
+quit
+about
+```
+
+Development keeps reload, forceReload, and DevTools for local debugging. In production, Main also blocks Chromium reload shortcuts at the `before-input-event` boundary:
+
+```text
+F5
+Ctrl+R / Cmd+R
+Ctrl+Shift+R / Cmd+Shift+R
+```
+
+Normal editing and business shortcuts such as Ctrl+C, Ctrl+V, Ctrl+F, plain text input, and unrelated commands are not blocked. This closes the remaining EDS-P2-06 reload/pending-write risk without adding a global pending-write manager or changing backend side-effect authority.
+
+## Single instance policy
+
+Startup now calls:
+
+```text
+app.requestSingleInstanceLock()
+```
+
+If the lock is not acquired, the second top-level process quits before creating another Main window. The first instance listens for `second-instance` and focuses the existing window:
+
+```text
+if minimized → restore
+if hidden → show
+focus
+```
+
+If `mainWindow` is not yet available, the helper no-ops and does not crash. Existing macOS `activate` behavior remains in place.
+
+## Startup fatal error behavior
+
+Startup-critical failures are surfaced instead of being swallowed into a blank window or silent exit. Critical paths include app startup initialization, credential-store initialization, production `loadFile`, development `loadURL`, and Electron `preload-error` when available in the current Electron API.
+
+The fatal path:
+
+```text
+capture context + sanitized error
+write bounded diagnostic file under userData/logs
+show Main-native error dialog
+exit with code 1
+```
+
+Best-effort menu actions such as opening external documentation or secondary About dialog errors remain non-fatal.
+
+## Electron writable diagnostic path
+
+Startup diagnostics use the Electron writable profile path:
+
+```text
+app.getPath("userData")/logs/collector-desktop-startup.log
+```
+
+The diagnostic content is bounded and sanitized. It includes timestamp, context, app version, platform, error name/message, and a truncated stack. It redacts sensitive terms such as token, credential, encryptedToken, Authorization, and Cookie. If diagnostic file writing itself fails, the native error dialog still surfaces the startup failure.
+
+## Backend writable log path boundary
+
+The Spring Boot backend remains standalone and owns its own deployment log directory. The default development behavior remains `logs/collector.log`, but deployments can now override it explicitly:
+
+```yaml
+logging:
+  file:
+    name: ${COLLECTOR_LOG_FILE:logs/collector.log}
+```
+
+Example deployment ownership:
+
+```text
+Windows service: COLLECTOR_LOG_FILE=C:/ProgramData/DataCollectionService/logs/collector.log
+Linux service:   COLLECTOR_LOG_FILE=/var/log/data-collection-service/collector.log
+```
+
+The deployment system is responsible for directory creation and permissions. Electron does not put Java backend logs under Electron `userData` and does not manage Java backend lifecycle. This resolves the Task 05 deferred packaged/deployment writable log path boundary.
+
+## Packaged source-map policy
+
+Electron packaging excludes source maps through the electron-builder files rule:
+
+```text
+!**/*.map
+```
+
+The package audit checks the real packaged `app.asar`, not only `dist/`, and requires:
+
+```text
+dist/electron/main/main.js
+dist/electron/preload/index.cjs
+dist/renderer/index.html
+package.json
+```
+
+It also fails if `app.asar` contains source maps, compiled tests, `.env`, `.git`, backend `target/`, runtime `logs/`, local config/credential JSON files, or private signing material.
+
+Latest packaged audit result:
+
+```json
+{
+  "ok": true,
+  "entryCount": 7087,
+  "mapCount": 0
+}
+```
+
+## Signing, installer, and update delivery
+
+The project does not contain a production Authenticode certificate, private signing key, PFX, or certificate password. No fake certificate was generated and no signing secrets were added.
+
+The attempted removal of the explicit local signing disablement was verified against the real toolchain; the current local Windows environment still requires:
+
+```json
+"signAndEditExecutable": false
+```
+
+for successful `electron-builder` packaging. Without this local workaround, `electron-builder` tries to download/extract `winCodeSign-2.6.0.7z` and fails while creating macOS signing-tool symlinks under the Windows user cache because the current account lacks symbolic-link privilege. This remains a local unsigned-build workaround, not a production signing claim.
+
+NSIS installer delivery is verified with:
+
+```text
+npm --prefix collector-desktop run dist
+```
+
+Installer artifact:
+
+```text
+collector-desktop/release/collector-desktop-0.1.0-x64.exe
+version: 0.1.0
+appId: com.wangbin.collector.desktop
+productName: 数据采集工作台
+size: 86908794 bytes
+SHA256: 2EE2D1102DD1E46D9E2CF0E79B93ECE302953F4AE54517B84D87BB04B73FB304
+Authenticode: NotSigned
+```
+
+Auto update remains intentionally not implemented:
+
+```text
+Auto update: NOT IMPLEMENTED
+```
+
+Current upgrade strategy is manual versioned NSIS installer distribution or enterprise software distribution for controlled industrial deployments. Formal external distribution still requires a real Authenticode certificate, approved release-channel policy, and an approved product icon.
+
+## Task 06.4 verification evidence
+
+Focused tests cover:
+
+1. production menu excludes reload / forceReload / DevTools;
+2. development menu keeps reload / forceReload / DevTools;
+3. production reload shortcuts block F5 and Ctrl/Cmd+R variants;
+4. normal shortcuts are not blocked;
+5. second-instance helper restores minimized windows, shows hidden windows, focuses existing windows, and no-ops safely with no window;
+6. fatal startup diagnostics are bounded, include context, and redact sensitive terms;
+7. startup diagnostic path resolves under `userData/logs`.
+
+Packaged runtime smoke covers:
+
+1. packaged exe starts;
+2. renderer index loads;
+3. preload bridge exists;
+4. credential status API works;
+5. server config API works;
+6. startup diagnostic path is writable;
+7. first instance stays running;
+8. second top-level process exits promptly and routes to the first instance;
+9. production reload shortcut does not reload Renderer state;
+10. application process is closed using only PIDs started by the smoke script.
+
+Full command evidence is recorded in the final Task 06.4 report.
+
+## Finding update
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P2-06 | CLOSED | production reload menu and reload shortcuts are removed/blocked; no global pending-write manager introduced |
+| EDS-P2-07 | CLOSED | `requestSingleInstanceLock()` plus second-instance focus/restore/show handling; packaged smoke verifies second process exits and first remains alive |
+| EDS-P2-08 | PARTIAL / OPERATIONAL DEFERRED | NSIS build, hash, manual update policy, and honest unsigned status verified; production Authenticode certificate and approved icon remain operational release gates |
+| EDS-P2-09 | CLOSED | packaged `app.asar` source-map count is 0 and package audit passes |
+| EDS-P2-10 | CLOSED | startup-critical failures now go through fatal diagnostic + native dialog path instead of silent catch/blank window |
+| Task 05 deferred writable log boundary | RESOLVED | backend exposes `COLLECTOR_LOG_FILE` deployment override while Electron keeps backend lifecycle independent |

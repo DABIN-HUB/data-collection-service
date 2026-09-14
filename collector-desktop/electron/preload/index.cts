@@ -5,6 +5,7 @@ interface AppInfo {
   version: string;
   platform: string;
   configPath?: string;
+  startupDiagnosticPath?: string;
   backendManaged?: boolean;
 }
 

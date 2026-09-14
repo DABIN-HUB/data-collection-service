@@ -25,6 +25,14 @@ import {
   type WindowState
 } from "./main-utils.js";
 import { applyServerConfigChange } from "./server-config-change-utils.js";
+import {
+  buildProductionViewMenuTemplate,
+  focusExistingMainWindow,
+  formatFatalStartupDiagnostic,
+  getStartupDiagnosticPath,
+  isReloadShortcut,
+  writeStartupDiagnostic
+} from "./main-lifecycle-utils.js";
 
 interface DesktopConfig extends ServerConfig {
   windowState?: WindowState;
@@ -146,7 +154,7 @@ function persistWindowState(window: BrowserWindow): void {
   });
 }
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
   const config = readDesktopConfig();
   const windowState: NormalizedWindowState = normalizeWindowState(config.windowState);
   const chromeOptions = buildWindowChromeOptions();
@@ -197,11 +205,27 @@ function createWindow(): void {
     }
   });
 
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch(() => undefined);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
-    mainWindow.loadFile(getRendererIndexPath()).catch(() => undefined);
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (!isDev && isReloadShortcut(input)) {
+      event.preventDefault();
+    }
+  });
+
+  mainWindow.webContents.once("preload-error", (_event, preloadPath, error) => {
+    reportFatalStartupError(`preload startup failure: ${preloadPath}`, error);
+  });
+
+  try {
+    if (isDev && process.env.VITE_DEV_SERVER_URL) {
+      await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+      mainWindow.webContents.openDevTools({ mode: "detach" });
+    } else {
+      await mainWindow.loadFile(getRendererIndexPath());
+    }
+  } catch (error) {
+    mainWindow.destroy();
+    mainWindow = null;
+    throw error;
   }
 }
 
@@ -245,18 +269,7 @@ function buildMenuTemplate(): MenuItemConstructorOptions[] {
     },
     {
       label: "视图",
-      submenu: [
-        { label: "重新加载", role: "reload" },
-        ...(isDev ? [
-          { label: "强制重新加载", role: "forceReload" as const },
-          { label: "开发者工具", role: "toggleDevTools" as const }
-        ] : []),
-        { type: "separator" },
-        { label: "重置缩放", role: "resetZoom" },
-        { label: "放大", role: "zoomIn" },
-        { label: "缩小", role: "zoomOut" },
-        { label: "全屏", role: "togglefullscreen" }
-      ]
+      submenu: buildProductionViewMenuTemplate(isDev)
     },
     {
       label: "导航",
@@ -301,6 +314,7 @@ ipcMain.handle("collector:get-app-info", (event) => {
     version: app.getVersion(),
     platform: process.platform,
     configPath: getConfigPath(),
+    startupDiagnosticPath: getStartupDiagnosticPath(app.getPath("userData")),
     backendManaged: false,
     configRecovery
   };
@@ -350,21 +364,57 @@ ipcMain.handle("collector:http-request", (event, request: RendererCollectorProxy
 
 app.setAppUserModelId("com.wangbin.collector.desktop");
 
-app.whenReady().then(() => {
-  credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
-  credentialStore.initialize();
-  Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate()));
-  createWindow();
+const singleInstanceAcquired = app.requestSingleInstanceLock();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+if (!singleInstanceAcquired) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    focusExistingMainWindow(mainWindow);
   });
-}).catch(() => undefined);
+
+  app.whenReady().then(async () => {
+    credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
+    credentialStore.initialize();
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate()));
+    await createWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow().catch((error) => reportFatalStartupError("macOS activate renderer load", error));
+      }
+    });
+  }).catch((error) => reportFatalStartupError("application startup", error));
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
+
+function reportFatalStartupError(context: string, error: unknown): never {
+  const diagnosticPath = getStartupDiagnosticPath(app.getPath("userData"));
+  const diagnostic = formatFatalStartupDiagnostic({
+    context,
+    error,
+    appVersion: app.getVersion(),
+    platform: process.platform
+  });
+  try {
+    writeStartupDiagnostic(diagnosticPath, diagnostic);
+  } catch {
+    // Native error dialog below must still surface the startup failure if diagnostic persistence fails.
+  }
+  dialog.showErrorBox(
+    "数据采集工作台无法启动",
+    [
+      "应用启动过程中发生关键错误，主窗口无法安全加载。",
+      "",
+      `阶段：${context}`,
+      `诊断日志：${diagnosticPath}`
+    ].join("\n")
+  );
+  app.exit(1);
+  throw error instanceof Error ? error : new Error(String(error || "fatal startup error"));
+}

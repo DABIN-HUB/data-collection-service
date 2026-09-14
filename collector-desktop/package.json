@@ -69,6 +69,7 @@
     },
     "files": [
       "dist/**/*",
+      "!**/*.map",
       "package.json"
     ],
     "asar": true,
