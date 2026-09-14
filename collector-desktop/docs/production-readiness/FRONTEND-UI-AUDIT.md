@@ -1312,3 +1312,408 @@ Task UI-04 — Full Frontend Visual Regression / Final Audit
 ```
 
 UI-04 再次从真实页面验证 Theme、Layout、Overflow、Toolbar、Table、Dialog、Long Text、Viewport 和 Console；在 UI-04 开始前不回到 Task 07，也不扩大本轮页面整改范围。
+
+## 27. Task UI-04 — Full Frontend Visual Regression & Final Audit
+
+### 27.1 完成情况
+
+UI-04 是 Frontend UI Cleanup 的最终回归审计。本轮以审计和受控数据回归为主，没有重新设计页面、没有重新做 UI-02 Theme，也没有重新做 UI-03 页面布局整改。实际代码改动集中在 `scripts/ui-layout-audit.mjs`，用于补齐表格区域 computed-style / effective background 审计、受控 table fixture、loading/empty/fixed/pagination/native table 指标；未修改业务 API、设备控制、采集协议、Electron Main/Preload 或后端逻辑。
+
+### 27.2 14 Route Coverage
+
+生产 Router 全量访问完成：
+
+```text
+/login
+/dashboard
+/realtime
+/history
+/alarm
+/device
+/device/workbench
+/collect
+/cloud
+/diagnostic
+/log
+/network
+/control
+/shadow
+```
+
+结果：`visited = 14 / 14`，`notVisited = []`。
+
+### 27.3 4 Viewport Coverage
+
+继续使用 UI-01 至 UI-03 的四个 desktop viewport：
+
+| Viewport | Route checks | Rendered | X overflow | Toolbar X overflow | Hidden clips | Console errors | Table white/light |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `1280×720` | 14 | 14 | 0 | 0 | 0 | 0 | 0 / 0 |
+| `1366×768` | 14 | 14 | 0 | 0 | 0 | 0 | 0 / 0 |
+| `1440×900` | 14 | 14 | 0 | 0 | 0 | 0 | 0 / 0 |
+| `1920×1080` | 14 | 14 | 0 | 0 | 0 | 0 | 0 / 0 |
+
+总计：`14 × 4 = 56`，未抽样替代。
+
+### 27.4 Theme Final Result
+
+最终 Theme fixture 覆盖 native control、Element Plus input/select/textarea/input-number、checkbox/radio/switch、Select popper、DatePicker、MessageBox、Dialog、Alert、Tag、Empty、Table、Pagination。结果：
+
+```text
+themeFixtureChecks = 4
+themeFixtureWhiteBackgrounds = 0
+themeFixtureClippedAlerts = 0
+themeFixtureUnsafeDialogs = 0
+themeFixtureLightEmptyFills = 0
+```
+
+### 27.5 Input / Select Final Result
+
+生产 route 与 fixture 中继续检查 native `input` / `select` / `textarea`、Element Plus `.el-input__wrapper`、`.el-select__wrapper`、`.el-textarea__inner`、`.el-date-editor`、`.el-input-number`，覆盖 normal / focus / disabled / readonly / error 状态。
+
+最终：`whiteBackgrounds = 0`。没有发现白色 Input / Select / Textarea 回归。
+
+### 27.6 Final Table Theme Verification
+
+本轮重点增强表格审计，不再只检查 `.el-table` 根节点，也不把 `transparent` 机械当作 PASS。审计逻辑使用 `getComputedStyle(element).backgroundColor`，并沿父链计算 effective visible background：
+
+```text
+cell → row → table → wrapper → panel → body
+```
+
+白色/浅色判断包括：
+
+- `rgb(255,255,255)` / `rgba(255,255,255,...)`
+- RGB >= 245 的近白背景
+- RGB >= 235 的明显浅灰/浅色 surface 背景
+- 透明背景继续向上查找实际可见背景
+
+### 27.7 Element Plus Table Final Result
+
+Element Plus table 审计至少覆盖：
+
+```text
+.el-table
+.el-table__header-wrapper
+.el-table__header
+thead
+th.el-table__cell
+.el-table__body-wrapper
+.el-table__body
+tbody
+tr
+td.el-table__cell
+.el-table__expanded-cell
+.el-table__fixed
+.el-table__fixed-right
+.el-table__fixed-header-wrapper
+.el-table__fixed-body-wrapper
+.el-table__empty-block
+.el-table__empty-text
+.el-table__loading-mask
+.el-table-filter
+.el-table-filter__list
+.el-table__border-left-patch
+```
+
+受控 fixture 增加了 `3+` 条真实数据行，包含短文本、超长设备名、超长点位编码、较长中文告警内容和较长 endpoint URL，用于验证 cell 背景、ellipsis/wrap、固定列和内部滚动。
+
+结果：
+
+```text
+tableChecks = 236
+tableWhiteBackgrounds = 0
+tableLightBackgrounds = 0
+```
+
+表格白色背景问题：`CLOSED`。
+
+### 27.8 Native Table Final Result
+
+生产 route 与 fixture 同时扫描 native table：
+
+```text
+.runtime-table
+.table-wrap table
+.point-import-preview-table table
+thead / th
+tbody / tr / td
+```
+
+History、Collection、Diagnostic、Point import preview 等普通 table 不再只依赖 Element Plus 规则。最终 native table effective background 未发现白色/浅色 surface 泄漏。
+
+### 27.9 Fixed Column Result
+
+fixture 专门构造并检查：
+
+```text
+table-fixed-left
+table-fixed-right
+fixed header / fixed body / fixed patch
+```
+
+结果：
+
+```text
+tableFixedWhiteBackgrounds = 0
+```
+
+未发现 fixed-right 操作列白块或固定列白色条。
+
+### 27.10 Empty / Loading Table Result
+
+fixture 明确覆盖：
+
+```text
+.el-table__empty-block
+.el-table__empty-text
+.el-empty
+.el-table__loading-mask
+.el-loading-spinner
+.el-loading-text
+```
+
+结果：
+
+```text
+tableEmptyWhiteBackgrounds = 0
+tableLoadingWhiteBackgrounds = 0
+themeFixtureLightEmptyFills = 0
+```
+
+未发现白色 empty block、浅色 loading 遮罩或 `el-empty` 浅色插图回归。
+
+### 27.11 Pagination Result
+
+fixture 覆盖 pagination root、prev / next、pager normal / active / disabled、jumper input、page-size select。
+
+结果：
+
+```text
+paginationWhiteBackgrounds = 0
+```
+
+Pagination 内部 Select/Input 未出现白框。
+
+### 27.12 Popup Result
+
+Popup 回归覆盖 Select dropdown、DatePicker、MessageBox、Dialog、Popover/Dropdown selector 范围。结果：生产 route 与 fixture 中未发现 popup 白底或浅色 fallback。
+
+### 27.13 Dialog Result
+
+fixture 保留并验证 `520px`、`720px`、`920px`，并加入长内容 Dialog fixture：30+ 行导入预览、long JSON、long URL、long Chinese message、long device/point name。
+
+结果：
+
+```text
+themeFixtureUnsafeDialogs = 0
+```
+
+1280×720 与 1366×768 下 header 可见、body 可滚动、footer 存在且未被长内容推出 dialog 边界。
+
+### 27.14 Alert Result
+
+生产 route 与 fixture 继续检查 `/collect`、`/log`、`/realtime`、`/alarm`、`/login` 中的 Alert/状态提示。结果：
+
+```text
+themeFixtureClippedAlerts = 0
+```
+
+未发现 Alert 文本或图标被 line-height / overflow 裁切。
+
+### 27.15 Dashboard Result
+
+Dashboard 最终回归再次覆盖 `.resource-dashboard` 和 `.topology-flow`。四个 viewport 下均无 document/body 横向 overflow、无 hidden clip、无 toolbar overflow。UI-03 对 Resource Dashboard 和 Topology 的整改没有在 UI-04 中回归。
+
+### 27.16 Log Result
+
+`/log` 在 `1280×720` 和 `1366×768` 下 filter toolbar 无横向 scrollbar，操作按钮可见，字段无异常挤压，日志长文本不撑破页面。结果：`toolbarHorizontalOverflows = 0`。
+
+### 27.17 Alarm Result
+
+`/alarm` 最终检查覆盖 level、keyword、datetime range、refresh、batch ack、fixed-right 操作列。结果：允许 wrap，未发现 toolbar horizontal drag，fixed-right 操作列为 dark theme。
+
+### 27.18 Realtime Result
+
+`/realtime` 最终检查覆盖 table、tag、toolbar、error state。当前 backend offline 条件下：
+
+```text
+页面稳定
+error state 可见
+routesWithConsoleErrors = 0
+```
+
+未通过 `console.error = noop` 隐藏未知异常；非预期异常仍保留可观测性。
+
+### 27.19 History Result
+
+`/history` 最终检查覆盖 query controls、chart、alarm table、history table、raw record、pagination/limit controls。结果：raw JSON 使用表格内部换行/滚动责任，不撑破 page。
+
+### 27.20 Device Workbench Result
+
+`/device/workbench` 最终检查覆盖 DeviceConfigPanel、ProtocolDynamicForm、PointEditor、PointBatchEdit、PointGenerate、运行控制区和 Quick Nav。结果：1280 / 1366 下无横向 page overflow，form 可操作，table 自己负责滚动。
+
+### 27.21 Long Text Result
+
+最终长文本策略仍为：单行表格 cell 使用 ellipsis + `title`，JSON / raw record 使用 `pre-wrap` + `overflow-wrap:anywhere`，长 URL / 长编码不撑破页面，Dialog 长内容由 body 内部 scroll 且 footer 保持可操作。未发现长文本撑破 page。
+
+### 27.22 Overflow Result
+
+最终 Layout Gate：
+
+```text
+document horizontal overflow = 0
+body horizontal overflow = 0
+routesWithOverflow = 0
+routesWithLayoutIssue = 0
+toolbarHorizontalOverflows = 0
+hiddenClips = 0
+```
+
+合理内部 scroll 继续单独分类，不算 failure：table horizontal scroll、exact-page-body vertical scroll、device tree vertical scroll、long list vertical scroll、dialog body vertical scroll。
+
+### 27.23 Console Result
+
+最终 Console Gate：
+
+```text
+routesWithConsoleErrors = 0
+```
+
+backend offline 场景稳定降级，未发现新的 route console error 或 exception。
+
+### 27.24 Screenshot / DOM Evidence
+
+`.ui-audit/screenshots/` 已重新生成。重点截图文件存在且非空：
+
+```text
+1280x720/dashboard.png
+1366x768/dashboard.png
+1280x720/log.png
+1366x768/log.png
+1366x768/alarm.png
+1366x768/realtime.png
+1366x768/history.png
+1366x768/device_workbench.png
+1920x1080/dashboard.png
+```
+
+当前工作流主要依赖 DOM/computed-style metrics 做机器可复现审计；未把截图加入 Git。
+
+### 27.25 Audit Metrics
+
+最终 `.ui-audit/report.json` 摘要：
+
+```json
+{
+  "routeCount": 14,
+  "viewportCount": 4,
+  "executedChecks": 56,
+  "renderedRouteCount": 14,
+  "routesWithOverflow": 0,
+  "routesWithThemeMismatch": 0,
+  "routesWithLayoutIssue": 0,
+  "routesWithConsoleErrors": 0,
+  "toolbarHorizontalOverflows": 0,
+  "hiddenClips": 0,
+  "notVisited": [],
+  "themeFixtureChecks": 4,
+  "themeFixtureWhiteBackgrounds": 0,
+  "themeFixtureClippedAlerts": 0,
+  "themeFixtureUnsafeDialogs": 0,
+  "themeFixtureLightEmptyFills": 0,
+  "tableChecks": 236,
+  "tableWhiteBackgrounds": 0,
+  "tableLightBackgrounds": 0,
+  "tableFixedWhiteBackgrounds": 0,
+  "tableLoadingWhiteBackgrounds": 0,
+  "tableEmptyWhiteBackgrounds": 0,
+  "paginationWhiteBackgrounds": 0
+}
+```
+
+### 27.26 Finding Final Matrix
+
+| Finding | Final Status | 说明 |
+|---|---|---|
+| `UI-LAYOUT-01` | `CLOSED` | Dashboard resource dashboard 全 viewport 无横向 overflow。 |
+| `UI-LAYOUT-02` | `CLOSED` | Dashboard topology 无 hidden clip。 |
+| `UI-RESPONSIVE-01` | `CLOSED` | Log toolbar 1280/1366 无横向拖动。 |
+| `UI-OVERFLOW-01` | `CLOSED` | document/body x-overflow 为 0。 |
+| `UI-OVERFLOW-02` | `CLOSED` | 重要 panel hidden clip 为 0。 |
+| `UI-CONSISTENCY-01` | `CLOSED` | controls/popups/table dark theme 无白底回归。 |
+| `UI-DIALOG-01` | `CLOSED` | 520/720/920 与长内容 fixture 均安全。 |
+| `UI-CONSOLE-01` | `CLOSED` | backend offline 降级下 console error 为 0。 |
+| `UI-TABLE-01` | `CLOSED BY CODE + CONTROLLED-DATA VISUAL CONTRACT` | 生产 route table 与受控 populated/fixed/loading/empty/pagination/native table fixture 均无白色/浅色背景。真实后端字段联调变为 optional。 |
+
+### 27.27 Verification
+
+UI-04 验证命令：
+
+```bash
+npm --prefix collector-desktop run stylelint
+npm --prefix collector-desktop run lint
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
+npm --prefix collector-desktop run verify
+npm --prefix collector-desktop run pack
+node --check collector-desktop/scripts/ui-layout-audit.mjs
+node collector-desktop/scripts/ui-layout-audit.mjs
+git diff --check
+```
+
+本轮未创建测试文件、未修改测试代码、未新增测试依赖。
+
+### 27.28 Changed Files
+
+UI-04 生产代码未改业务逻辑；当前新增/修改集中在：
+
+```text
+collector-desktop/scripts/ui-layout-audit.mjs
+collector-desktop/docs/production-readiness/FRONTEND-UI-AUDIT.md
+```
+
+完整验证链执行 `build:web` 后，若 CSS/JS hash 变化，应保留：
+
+```text
+collector-boot/src/main/resources/static/desktop/**
+```
+
+`.hermes.md` 保持不动。未执行 `git add`、`git commit`、`git push`、`git checkout`、`git reset`、`git stash`、`git rebase`。
+
+### 27.29 Remaining Limitations
+
+- 当前后端仍不可达，因此没有声称已经完成真实后端字段值、真实设备数据、真实告警行、真实历史行的现场联调。
+- UI-04 通过受控 audit fixture 覆盖 populated rows、long text、fixed columns、loading、empty、pagination 与 native table，将 UI-03 的 `REAL-DATA FIELD VERIFY DEFERRED` 升级为 `CONTROLLED-DATA VISUAL VERIFY COMPLETE; REAL FIELD DATA VERIFY OPTIONAL`。
+- 截图保存在 `.ui-audit/screenshots/`，未提交 Git；最终判断以 DOM/computed-style metrics 和真实 route matrix 为准。
+
+### 27.30 Task Status
+
+```text
+Task UI-04: PASS / COMPLETE
+```
+
+表格白色背景问题：`CLOSED`。
+
+### 27.31 Frontend UI Cleanup Status
+
+```text
+Frontend UI Cleanup: PASS / COMPLETE
+
+Theme: PASS
+Layout: PASS
+Overflow: PASS
+Table dark-theme: PASS
+Responsive desktop: PASS
+Controlled UI regression: PASS
+```
+
+下一步如需继续，应由用户确认是否回到：
+
+```text
+Task 07 — Dependency Security
+```
+
+UI-04 内未开始 Task 07。

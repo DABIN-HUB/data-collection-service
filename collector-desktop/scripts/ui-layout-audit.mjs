@@ -76,13 +76,32 @@ const themeFixtureHtml = `
     <div data-audit-sample="el-empty" class="el-empty"><div class="el-empty__image"></div><p class="el-empty__description">暂无数据</p></div>
   </section>
   <section data-fixture-section="tables">
-    <div data-audit-sample="el-table" class="el-table"><div class="el-table__inner-wrapper"><table><thead><tr><th class="el-table__cell"><div class="cell">表头</div></th></tr></thead><tbody><tr><td class="el-table__cell"><div class="cell">表格内容</div></td></tr></tbody></table><div class="el-table__empty-block"><span class="el-table__empty-text">暂无数据</span></div></div></div>
-    <div data-audit-sample="el-pagination" class="el-pagination"><button>‹</button><ul class="el-pager"><li>1</li><li class="is-active">2</li><li class="is-disabled">3</li></ul><button disabled>›</button><div class="el-input"><div class="el-input__wrapper"><input class="el-input__inner" value="10" /></div></div></div>
+    <div data-audit-sample="table-root" class="el-table el-table--border el-table--enable-row-hover el-table--enable-row-transition is-scrolling-middle">
+      <div class="el-table__inner-wrapper">
+        <div data-audit-sample="table-header-wrapper" class="el-table__header-wrapper">
+          <table data-audit-sample="table-header" class="el-table__header"><thead><tr><th data-audit-sample="table-fixed-left" class="el-table__cell is-leaf is-left"><div class="cell">设备</div></th><th data-audit-sample="table-header-cell" class="el-table__cell is-leaf"><div class="cell">点位编码</div></th><th class="el-table__cell is-leaf"><div class="cell">告警内容</div></th><th data-audit-sample="table-fixed-right" class="el-table__cell is-leaf is-right"><div class="cell">操作</div></th></tr></thead></table>
+        </div>
+        <div data-audit-sample="table-body-wrapper" class="el-table__body-wrapper">
+          <table data-audit-sample="table-body" class="el-table__body"><tbody>
+            <tr data-audit-sample="table-hover-row" class="el-table__row hover-row"><td data-audit-sample="table-body-cell" class="el-table__cell"><div class="cell">普通设备</div></td><td class="el-table__cell"><div class="cell">POINT_001</div></td><td class="el-table__cell"><div class="cell">普通短文本</div></td><td class="el-table__cell is-right"><div class="cell"><button class="el-button el-button--primary is-link">查看</button></div></td></tr>
+            <tr data-audit-sample="table-current-row" class="el-table__row current-row"><td data-audit-sample="table-current-row-cell" class="el-table__cell"><div class="cell">VERY_LONG_DEVICE_NAME_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789</div></td><td class="el-table__cell"><div class="cell">POINT_CODE_VERY_LONG_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789</div></td><td class="el-table__cell"><div class="cell">较长中文告警内容用于验证单元格背景、ellipsis、wrap 和内部滚动不会撑破页面。</div></td><td class="el-table__cell is-right"><div class="cell"><button class="el-button el-button--primary is-link">确认</button></div></td></tr>
+            <tr class="el-table__row"><td class="el-table__cell"><div class="cell">Endpoint</div></td><td class="el-table__cell"><div class="cell">https://collector.example.local/api/devices/VERY_LONG_ENDPOINT_URL_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789</div></td><td class="el-table__cell"><div class="cell">长 URL 与长编码不能造成白色背景或页面级横向滚动</div></td><td class="el-table__cell is-right"><div class="cell"><button class="el-button el-button--primary is-link">详情</button></div></td></tr>
+          </tbody></table>
+        </div>
+        <div data-audit-sample="table-expanded-cell" class="el-table__expanded-cell">{ &quot;endpoint&quot;: &quot;https://collector.example.local/very/long/url/abcdefghijklmnopqrstuvwxyz/0123456789&quot;, &quot;message&quot;: &quot;较长中文消息用于验证 expanded cell 深色背景&quot; }</div>
+        <div data-audit-sample="table-empty-block" class="el-table__empty-block"><span data-audit-sample="table-empty-text" class="el-table__empty-text">暂无数据</span></div>
+        <div data-audit-sample="table-loading-mask" class="el-loading-mask el-table__loading-mask"><div class="el-loading-spinner"><svg class="circular" viewBox="0 0 50 50"><circle class="path" cx="25" cy="25" r="20" fill="none"></circle></svg><p class="el-loading-text">加载中</p></div></div>
+        <div data-audit-sample="table-border-left-patch" class="el-table__border-left-patch"></div>
+      </div>
+    </div>
+    <div data-audit-sample="table-filter" class="el-table-filter"><ul data-audit-sample="table-filter-list" class="el-table-filter__list"><li class="el-table-filter__list-item is-active">全部</li><li class="el-table-filter__list-item">报警</li></ul></div>
+    <div data-audit-sample="pagination-root" class="el-pagination"><button data-audit-sample="pagination-button" class="btn-prev">‹</button><ul class="el-pager"><li>1</li><li data-audit-sample="pagination-active" class="is-active">2</li><li class="is-disabled">3</li></ul><button class="btn-next" disabled>›</button><div data-audit-sample="pagination-input" class="el-input"><div class="el-input__wrapper"><input class="el-input__inner" value="10" /></div></div><div data-audit-sample="pagination-select" class="el-select__wrapper"><span class="el-select__placeholder">20 条/页</span></div></div>
+    <div data-audit-sample="native-table-wrap" class="table-wrap"><table data-audit-sample="native-table"><thead><tr><th data-audit-sample="native-table-head-cell">名称</th><th>地址</th></tr></thead><tbody><tr><td data-audit-sample="native-table-body-cell">VERY_LONG_DEVICE_NAME_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789</td><td>https://collector.example.local/api/very/long/endpoint/0123456789</td></tr><tr><td>中文长内容</td><td>较长中文告警内容用于验证 native table 背景与换行</td></tr></tbody></table></div>
   </section>
   <section data-fixture-section="dialogs">
     <div data-audit-sample="dialog-520" data-fixture-dialog="520" class="el-dialog" style="width: 520px;"><div class="el-dialog__header"><span class="el-dialog__title">520px Dialog</span><button class="el-dialog__headerbtn"><span class="el-dialog__close">×</span></button></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
-    <div data-audit-sample="dialog-720" data-fixture-dialog="720" class="el-dialog" style="width: 720px;"><div class="el-dialog__header"><span class="el-dialog__title">720px Dialog</span></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
-    <div data-audit-sample="dialog-920" data-fixture-dialog="920" class="el-dialog" style="width: 920px;"><div class="el-dialog__header"><span class="el-dialog__title">920px Dialog</span></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+    <div data-audit-sample="dialog-720" data-fixture-dialog="720" class="el-dialog" style="width: 720px;"><div class="el-dialog__header"><span class="el-dialog__title">720px Dialog</span></div><div class="el-dialog__body"><pre>{ &quot;payload&quot;: &quot;long-json-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789&quot; }</pre></div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+    <div data-audit-sample="dialog-920" data-fixture-dialog="920" class="el-dialog" style="width: 920px;"><div class="el-dialog__header"><span class="el-dialog__title">920px Dialog</span></div><div class="el-dialog__body"><div class="point-import-preview-table"><table><tbody>${Array.from({ length: 32 }, (_, index) => `<tr><td>行 ${index + 1}</td><td>VERY_LONG_DEVICE_NAME_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_${index}</td><td>POINT_CODE_VERY_LONG_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_${index}</td><td>https://collector.example.local/api/very/long/endpoint/${index}</td><td>较长中文消息用于验证长内容 dialog body 内部滚动且 footer 可见</td></tr>`).join('')}</tbody></table></div></div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
   </section>
 `;
 
@@ -252,14 +271,89 @@ async function collectDomMetrics() {
       const verticalClip = item.scrollHeight > item.clientHeight + 4 && ['hidden', 'clip'].includes(item.overflowY);
       return horizontalClip || verticalClip;
     });
+    const parseColor = (value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (!normalized || normalized === 'transparent') return null;
+      if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff') return { r: 255, g: 255, b: 255, a: 1, raw: value };
+      const match = normalized.match(/rgba?\\(([^)]+)\\)/);
+      if (!match) return null;
+      const parts = match[1].split(',').map((part) => Number(part.trim()));
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1, raw: value };
+    };
+    const isTransparent = (value) => {
+      const color = parseColor(value);
+      return !color || color.a <= 0.05;
+    };
+    const whiteBackground = (value) => {
+      const color = parseColor(value);
+      return Boolean(color && color.a > 0.05 && color.r >= 245 && color.g >= 245 && color.b >= 245);
+    };
+    const lightBackground = (value) => {
+      const color = parseColor(value);
+      return Boolean(color && color.a > 0.05 && color.r >= 235 && color.g >= 235 && color.b >= 235);
+    };
+    const effectiveBackground = (element) => {
+      let current = element;
+      for (let depth = 0; current && depth < 8; depth += 1) {
+        const background = getComputedStyle(current).backgroundColor;
+        if (!isTransparent(background)) return { background, selector: selectorFor(current) };
+        current = current.parentElement;
+      }
+      const bodyBackground = getComputedStyle(document.body).backgroundColor;
+      return { background: bodyBackground, selector: 'body' };
+    };
     const controls = elements.filter((element) => visible(element) && element.matches('input, select, textarea, .el-input__wrapper, .el-select__wrapper, .el-textarea__inner, .el-date-editor, .el-input-number'));
-    const whiteBackground = (value) => { const match = value.match(/rgba?\\(([^)]+)\\)/); return value === 'white' || value === '#fff' || value === '#ffffff' || (match && match[1].split(',').slice(0, 3).every((part) => Number(part.trim()) >= 245)); };
     const controlStyles = controls.map((element) => {
       const style = getComputedStyle(element);
-      return { selector: selectorFor(element), tag: element.tagName.toLowerCase(), className: String(element.className || '').slice(0, 160), background: style.backgroundColor, color: style.color, borderColor: style.borderColor, height: Math.round(element.getBoundingClientRect().height), whiteBackground: whiteBackground(style.backgroundColor) };
+      const effective = effectiveBackground(element);
+      return { selector: selectorFor(element), tag: element.tagName.toLowerCase(), className: String(element.className || '').slice(0, 160), background: style.backgroundColor, effectiveBackground: effective.background, effectiveBackgroundSelector: effective.selector, color: style.color, borderColor: style.borderColor, height: Math.round(element.getBoundingClientRect().height), whiteBackground: whiteBackground(effective.background) };
     });
     const popupSelectors = '.el-popper, .el-select-dropdown, .el-picker__popper, .el-dropdown__popper, .el-popover, .el-dialog, .el-drawer, .el-message-box';
-    const popups = [...document.querySelectorAll(popupSelectors)].filter(visible).map((element) => { const style = getComputedStyle(element); return { selector: selectorFor(element), className: String(element.className || '').slice(0, 180), background: style.backgroundColor, color: style.color, width: Math.round(element.getBoundingClientRect().width), height: Math.round(element.getBoundingClientRect().height), top: Math.round(element.getBoundingClientRect().top), bottom: Math.round(element.getBoundingClientRect().bottom) }; });
+    const popups = [...document.querySelectorAll(popupSelectors)].filter(visible).map((element) => { const style = getComputedStyle(element); const effective = effectiveBackground(element); return { selector: selectorFor(element), className: String(element.className || '').slice(0, 180), background: style.backgroundColor, effectiveBackground: effective.background, color: style.color, width: Math.round(element.getBoundingClientRect().width), height: Math.round(element.getBoundingClientRect().height), top: Math.round(element.getBoundingClientRect().top), bottom: Math.round(element.getBoundingClientRect().bottom), whiteBackground: whiteBackground(effective.background), lightBackground: lightBackground(effective.background) }; });
+    const tableSelectorGroups = [
+      { kind: 'element-plus', selector: '.el-table, .el-table__header-wrapper, .el-table__header, .el-table thead, .el-table th.el-table__cell, .el-table__body-wrapper, .el-table__body, .el-table tbody, .el-table tr, .el-table td.el-table__cell, .el-table__expanded-cell, .el-table__fixed, .el-table__fixed-right, .el-table__fixed-header-wrapper, .el-table__fixed-body-wrapper, .el-table__empty-block, .el-table__empty-text, .el-table__loading-mask, .el-table-filter, .el-table-filter__list, .el-table__border-left-patch' },
+      { kind: 'pagination', selector: '.el-pagination, .el-pagination button, .el-pager li, .el-pagination .el-input__wrapper, .el-pagination .el-select__wrapper' },
+      { kind: 'native', selector: '.runtime-table, .runtime-table table, .runtime-table thead, .runtime-table th, .runtime-table tbody, .runtime-table tr, .runtime-table td, .table-wrap table, .table-wrap thead, .table-wrap th, .table-wrap tbody, .table-wrap tr, .table-wrap td, .point-import-preview-table table, .point-import-preview-table th, .point-import-preview-table td' }
+    ];
+    const tableElements = tableSelectorGroups.flatMap((group) => [...document.querySelectorAll(group.selector)].map((element) => ({ element, kind: group.kind })));
+    const seenTableElements = new Set();
+    const tableStyles = tableElements.filter(({ element }) => {
+      if (seenTableElements.has(element) || !visible(element)) return false;
+      seenTableElements.add(element);
+      return true;
+    }).map(({ element, kind }) => {
+      const style = getComputedStyle(element);
+      const effective = effectiveBackground(element);
+      const className = String(element.className || '');
+      const sample = element.getAttribute('data-audit-sample') || '';
+      const category = kind === 'pagination' ? 'pagination' : (className.includes('fixed') || sample.includes('fixed') ? 'fixed' : (className.includes('loading') || sample.includes('loading') ? 'loading' : (className.includes('empty') || sample.includes('empty') ? 'empty' : kind)));
+      return {
+        kind,
+        category,
+        sample,
+        selector: selectorFor(element),
+        tag: element.tagName.toLowerCase(),
+        className: className.slice(0, 180),
+        background: style.backgroundColor,
+        effectiveBackground: effective.background,
+        effectiveBackgroundSelector: effective.selector,
+        color: style.color,
+        borderColor: style.borderColor,
+        whiteBackground: whiteBackground(effective.background),
+        lightBackground: lightBackground(effective.background)
+      };
+    });
+    const tableSummary = {
+      count: tableStyles.length,
+      whiteBackgroundCount: tableStyles.filter((item) => item.whiteBackground).length,
+      lightBackgroundCount: tableStyles.filter((item) => item.lightBackground).length,
+      fixedWhiteBackgroundCount: tableStyles.filter((item) => item.category === 'fixed' && item.whiteBackground).length,
+      loadingWhiteBackgroundCount: tableStyles.filter((item) => item.category === 'loading' && item.whiteBackground).length,
+      emptyWhiteBackgroundCount: tableStyles.filter((item) => item.category === 'empty' && item.whiteBackground).length,
+      paginationWhiteBackgroundCount: tableStyles.filter((item) => item.category === 'pagination' && item.whiteBackground).length,
+      samples: tableStyles.slice(0, 120),
+      issues: tableStyles.filter((item) => item.whiteBackground || item.lightBackground).slice(0, 80)
+    };
     return {
       url: location.href,
       title: document.title,
@@ -273,6 +367,7 @@ async function collectDomMetrics() {
       hiddenClips,
       controls: { count: controls.length, whiteBackgroundCount: controlStyles.filter((item) => item.whiteBackground).length, samples: controlStyles.slice(0, 80) },
       popups,
+      tables: tableSummary,
       shell: { hasAppShell: Boolean(document.querySelector('.app-shell')), hasPage: Boolean(document.querySelector('.exact-page, .page, main')), hasSidebar: Boolean(document.querySelector('.app-sidebar')), hasTopbar: Boolean(document.querySelector('.app-topbar')) }
     };
   })()`);
@@ -316,24 +411,61 @@ async function collectThemeFixture(viewport) {
     host.style.cssText = 'position: fixed; left: 16px; top: 16px; z-index: 2147483000; display: grid; width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px; gap: 12px; overflow: auto; color: var(--app-color-text-secondary); border: 1px solid var(--app-color-border-soft); border-radius: 12px; background: var(--app-color-bg); box-shadow: var(--app-overlay-shadow);';
     host.innerHTML = ${JSON.stringify(themeFixtureHtml)};
     document.body.appendChild(host);
+    const parseColor = (value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (!normalized || normalized === 'transparent') return null;
+      if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff') return { r: 255, g: 255, b: 255, a: 1, raw: value };
+      const match = normalized.match(/rgba?\\(([^)]+)\\)/);
+      if (!match) return null;
+      const parts = match[1].split(',').map((part) => Number(part.trim()));
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1, raw: value };
+    };
+    const isTransparent = (value) => {
+      const color = parseColor(value);
+      return !color || color.a <= 0.05;
+    };
     const whiteBackground = (value) => {
-      const match = value.match(/rgba?\\(([^)]+)\\)/);
-      return value === 'white' || value === '#fff' || value === '#ffffff' || (match && match[1].split(',').slice(0, 3).every((part) => Number(part.trim()) >= 245));
+      const color = parseColor(value);
+      return Boolean(color && color.a > 0.05 && color.r >= 245 && color.g >= 245 && color.b >= 245);
+    };
+    const lightBackground = (value) => {
+      const color = parseColor(value);
+      return Boolean(color && color.a > 0.05 && color.r >= 235 && color.g >= 235 && color.b >= 235);
+    };
+    const selectorFor = (element) => {
+      const sample = element.getAttribute('data-audit-sample');
+      if (sample) return '[data-audit-sample="' + sample + '"]';
+      const className = String(element.className || '').trim().split(' ').filter(Boolean).slice(0, 2).join('.');
+      return element.tagName.toLowerCase() + (className ? '.' + className : '');
+    };
+    const effectiveBackground = (element) => {
+      let current = element;
+      for (let depth = 0; current && depth < 8; depth += 1) {
+        const background = getComputedStyle(current).backgroundColor;
+        if (!isTransparent(background)) return { background, selector: selectorFor(current) };
+        current = current.parentElement;
+      }
+      const bodyBackground = getComputedStyle(document.body).backgroundColor;
+      return { background: bodyBackground, selector: 'body' };
     };
     const styleOf = (element) => {
       const style = getComputedStyle(element);
+      const effective = effectiveBackground(element);
       const rect = element.getBoundingClientRect();
       return {
         name: element.getAttribute('data-audit-sample') || element.getAttribute('data-fixture-dialog') || element.className,
         tag: element.tagName.toLowerCase(),
         className: String(element.className || '').slice(0, 160),
         background: style.backgroundColor,
+        effectiveBackground: effective.background,
+        effectiveBackgroundSelector: effective.selector,
         color: style.color,
         borderColor: style.borderColor,
         boxShadow: style.boxShadow,
         width: Math.round(rect.width),
         height: Math.round(rect.height),
-        whiteBackground: whiteBackground(style.backgroundColor)
+        whiteBackground: whiteBackground(effective.background),
+        lightBackground: lightBackground(effective.background)
       };
     };
     const samples = [...host.querySelectorAll('[data-audit-sample]')].map(styleOf);
@@ -354,14 +486,21 @@ async function collectThemeFixture(viewport) {
     });
     const dialogs = [...host.querySelectorAll('[data-fixture-dialog]')].map((element) => {
       const rect = element.getBoundingClientRect();
+      const body = element.querySelector('.el-dialog__body');
+      const footer = element.querySelector('.el-dialog__footer');
+      const header = element.querySelector('.el-dialog__header');
       return {
         widthToken: element.getAttribute('data-fixture-dialog'),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
         safeWidth: rect.width <= window.innerWidth - 32 + 1,
-        safeHeight: rect.height <= window.innerHeight - 32 + 1
+        safeHeight: rect.height <= window.innerHeight - 32 + 1,
+        headerVisible: Boolean(header && header.getBoundingClientRect().height > 0),
+        bodyScrollable: Boolean(body && body.scrollHeight >= body.clientHeight),
+        footerVisible: Boolean(footer && footer.getBoundingClientRect().top >= rect.top && footer.getBoundingClientRect().bottom <= rect.bottom + 1)
       };
     });
+    const tableSamples = samples.filter((sample) => sample.name.includes('table') || sample.name.includes('pagination'));
     const fixture = {
       viewport: '${viewport.width}x${viewport.height}',
       sampleCount: samples.length,
@@ -372,7 +511,14 @@ async function collectThemeFixture(viewport) {
       emptyFills,
       emptyLightFillCount: emptyFills.reduce((sum, item) => sum + item.lightFillCount, 0),
       dialogs,
-      unsafeDialogCount: dialogs.filter((dialog) => !dialog.safeWidth || !dialog.safeHeight).length
+      unsafeDialogCount: dialogs.filter((dialog) => !dialog.safeWidth || !dialog.safeHeight || !dialog.headerVisible || !dialog.footerVisible).length,
+      tableChecks: tableSamples.length,
+      tableWhiteBackgrounds: tableSamples.filter((sample) => sample.whiteBackground).length,
+      tableLightBackgrounds: tableSamples.filter((sample) => sample.lightBackground).length,
+      tableFixedWhiteBackgrounds: tableSamples.filter((sample) => sample.name.includes('fixed') && sample.whiteBackground).length,
+      tableLoadingWhiteBackgrounds: tableSamples.filter((sample) => sample.name.includes('loading') && sample.whiteBackground).length,
+      tableEmptyWhiteBackgrounds: tableSamples.filter((sample) => sample.name.includes('empty') && sample.whiteBackground).length,
+      paginationWhiteBackgrounds: tableSamples.filter((sample) => sample.name.includes('pagination') && sample.whiteBackground).length
     };
     host.remove();
     return fixture;
@@ -414,7 +560,14 @@ function summarize() {
     themeFixtureWhiteBackgrounds: result.themeFixtureChecks.reduce((sum, item) => sum + item.whiteBackgroundCount, 0),
     themeFixtureClippedAlerts: result.themeFixtureChecks.reduce((sum, item) => sum + item.clippedAlertCount, 0),
     themeFixtureUnsafeDialogs: result.themeFixtureChecks.reduce((sum, item) => sum + item.unsafeDialogCount, 0),
-    themeFixtureLightEmptyFills: result.themeFixtureChecks.reduce((sum, item) => sum + item.emptyLightFillCount, 0)
+    themeFixtureLightEmptyFills: result.themeFixtureChecks.reduce((sum, item) => sum + item.emptyLightFillCount, 0),
+    tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
+    tableWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0),
+    tableLightBackgrounds: checks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0),
+    tableFixedWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableFixedWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableFixedWhiteBackgrounds, 0),
+    tableLoadingWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableLoadingWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableLoadingWhiteBackgrounds, 0),
+    tableEmptyWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableEmptyWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableEmptyWhiteBackgrounds, 0),
+    paginationWhiteBackgrounds: checks.reduce((sum, item) => sum + item.paginationWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.paginationWhiteBackgrounds, 0)
   };
 }
 
@@ -441,7 +594,7 @@ try {
       const documentOverflowY = metrics.document.scrollHeight > metrics.document.clientHeight + 1 || metrics.body.scrollHeight > metrics.body.clientHeight + 1;
       const intentionalOverflow = metrics.overflowElements.filter((item) => item.intentional);
       const unintentionalOverflow = metrics.overflowElements.filter((item) => !item.intentional);
-      const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => /^rgb\\(255, 255, 255\\)$/.test(item.background));
+      const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => item.whiteBackground) || metrics.tables.whiteBackgroundCount > 0 || metrics.tables.lightBackgroundCount > 0;
       const check = {
         route,
         viewport: `${viewport.width}x${viewport.height}`,
@@ -460,6 +613,14 @@ try {
         unintentionalOverflowCount: unintentionalOverflow.length,
         controls: metrics.controls,
         popups: metrics.popups,
+        tables: metrics.tables,
+        tableChecks: metrics.tables.count,
+        tableWhiteBackgrounds: metrics.tables.whiteBackgroundCount,
+        tableLightBackgrounds: metrics.tables.lightBackgroundCount,
+        tableFixedWhiteBackgrounds: metrics.tables.fixedWhiteBackgroundCount,
+        tableLoadingWhiteBackgrounds: metrics.tables.loadingWhiteBackgroundCount,
+        tableEmptyWhiteBackgrounds: metrics.tables.emptyWhiteBackgroundCount,
+        paginationWhiteBackgrounds: metrics.tables.paginationWhiteBackgroundCount,
         themeMismatch,
         consoleErrorCount: consoleMessages.filter((item) => ["error", "assert"].includes(item.type)).length,
         consoleMessages,
@@ -469,11 +630,11 @@ try {
         elapsedMs: Date.now() - startedAt
       };
       result.checks.push(check);
-      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, toolbarOverflow: check.toolbarHorizontalOverflowCount, hiddenClips: check.hiddenClipCount, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
+      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, toolbarOverflow: check.toolbarHorizontalOverflowCount, hiddenClips: check.hiddenClipCount, tableWhite: check.tableWhiteBackgrounds, tableLight: check.tableLightBackgrounds, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
     }
     const themeFixture = await collectThemeFixture(viewport);
     result.themeFixtureChecks.push(themeFixture);
-    console.log(JSON.stringify({ viewport: `${viewport.width}x${viewport.height}`, themeFixture: true, whiteBackgrounds: themeFixture.whiteBackgroundCount, clippedAlerts: themeFixture.clippedAlertCount, unsafeDialogs: themeFixture.unsafeDialogCount, lightEmptyFills: themeFixture.emptyLightFillCount }));
+    console.log(JSON.stringify({ viewport: `${viewport.width}x${viewport.height}`, themeFixture: true, whiteBackgrounds: themeFixture.whiteBackgroundCount, clippedAlerts: themeFixture.clippedAlertCount, unsafeDialogs: themeFixture.unsafeDialogCount, lightEmptyFills: themeFixture.emptyLightFillCount, tableWhite: themeFixture.tableWhiteBackgrounds, tableLight: themeFixture.tableLightBackgrounds }));
   }
   summarize();
   result.ok = true;
