@@ -119,3 +119,165 @@ function openDocs() {
   window.collectorDesktop?.openExternal("https://hermes-agent.nousresearch.com/docs").catch(() => undefined);
 }
 </script>
+
+<style scoped>
+.login-page {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--console-text-secondary);
+  background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.2), transparent 32%), var(--console-bg);
+}
+
+.login-card {
+  display: grid;
+  width: min(960px, 100%);
+  overflow: hidden;
+  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.85fr);
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-panel);
+  background: var(--console-panel);
+  box-shadow: var(--console-overlay-shadow);
+}
+
+.login-form-panel,
+.login-illustration {
+  padding: 32px;
+}
+
+.login-form-panel {
+  background: linear-gradient(180deg, rgba(37, 46, 63, 0.96), rgba(26, 35, 50, 0.96));
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(59, 130, 246, 0.48);
+  border-radius: 14px;
+  color: var(--console-text-primary);
+  background: rgba(37, 99, 235, 0.32);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.login-brand h1,
+.login-illustration h2 {
+  margin: 0;
+  color: var(--console-text-primary);
+}
+
+.login-brand p,
+.login-illustration p,
+footer {
+  color: var(--console-text-muted);
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.login-options,
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.login-submit {
+  width: 100%;
+}
+
+.login-illustration {
+  border-left: 1px solid var(--console-border-soft);
+  background: linear-gradient(145deg, rgba(13, 27, 42, 0.9), rgba(16, 29, 49, 0.94));
+}
+
+.server-stack {
+  position: relative;
+  height: 180px;
+  margin-bottom: 24px;
+}
+
+.server-card,
+.cube {
+  position: absolute;
+  display: block;
+  border: 1px solid rgba(82, 121, 166, 0.58);
+  border-radius: var(--console-radius-lg);
+  background: rgba(18, 38, 59, 0.86);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.server-card.large {
+  inset: 18px 32px auto 8px;
+  height: 76px;
+}
+
+.server-card.medium {
+  right: 12px;
+  bottom: 44px;
+  width: 62%;
+  height: 58px;
+}
+
+.server-card.small {
+  bottom: 8px;
+  left: 34px;
+  width: 42%;
+  height: 42px;
+}
+
+.cube {
+  width: 18px;
+  height: 18px;
+  border-color: rgba(34, 211, 238, 0.52);
+  background: rgba(34, 211, 238, 0.18);
+}
+
+.cube.c1 {
+  top: 8px;
+  right: 36px;
+}
+
+.cube.c2 {
+  top: 102px;
+  left: 8px;
+}
+
+.cube.c3 {
+  right: 26px;
+  bottom: 12px;
+}
+
+.desktop-config-path {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 840px) {
+  .login-page {
+    padding: 20px;
+  }
+
+  .login-card {
+    grid-template-columns: 1fr;
+  }
+
+  .login-illustration {
+    border-top: 1px solid var(--console-border-soft);
+    border-left: 0;
+  }
+}
+</style>

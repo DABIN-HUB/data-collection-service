@@ -599,3 +599,467 @@ Task UI-02 — Global Theme & Component Consistency
 ```
 
 不要在 UI-01 后直接开始逐页重排；UI-02 应先统一全局主题、控件、Teleport popup、Dialog/Table/Pagination/Scrollbar/Card tokens，再进入 UI-03 的逐页 overflow 和响应式清理。
+
+---
+
+## 25. Task UI-02 — Global Theme & Component Consistency
+
+### 25.1 Scope
+
+本节记录 `Task UI-02` 的生产代码变更。本轮开始真正修改全局视觉样式，但仍不处理 UI-03 的页面级结构重排。
+
+本轮处理：
+
+- canonical theme token。
+- native text-like `input` / `select` / `textarea`。
+- Element Plus `Input` / `Select` / `Textarea` / `InputNumber` / `DatePicker` / `Cascader` / `TreeSelect` 基础状态。
+- Teleport popup：select dropdown、date/time picker、dropdown、popover、tooltip。
+- `Dialog` / `MessageBox` 全局 dark baseline 和 viewport safety。
+- `Alert` 内容裁切与 success/warning/error/info 语义暗色主题。
+- `Table` / `Pagination` / fixed column / empty / loading mask 基础 skin。
+- 全局与 Element Plus scrollbar 视觉。
+- Login 与 AppShell 范围外页面的基础控件一致性。
+
+本轮明确不处理：
+
+- `Dashboard resource-dashboard` 固定布局 overflow。
+- `Dashboard topology-flow` 固定布局 overflow。
+- `/log` toolbar 响应式重排。
+- 真实有数据 table 的列宽、长文本和分页挤压。
+- `/realtime` backend offline 的 console error 模型。
+
+### 25.2 Theme Architecture
+
+继续采用现有架构：
+
+```text
+collector-desktop/src/styles/tokens.css       canonical --app-* tokens
+collector-desktop/src/styles/global.css       browser/native baseline
+collector-desktop/src/styles/element-plus.css Element Plus baseline + Teleport overlay
+collector-desktop/src/styles/base.css         页面/壳层基础布局与既有 alias 使用
+```
+
+策略保持不变：
+
+- `--app-*` 是 canonical design token。
+- `--exact-*` / `--console-*` 保留为兼容 alias。
+- 不进行全仓 class rename。
+- 不创建第二套 theme 文件。
+
+### 25.3 Canonical Token Changes
+
+新增或补齐的 token 类别：
+
+```text
+--app-control-bg
+--app-control-bg-hover
+--app-control-bg-focus
+--app-control-bg-disabled
+--app-control-bg-readonly
+--app-control-bg-error
+
+--app-control-border
+--app-control-border-hover
+--app-control-border-focus
+--app-control-border-disabled
+--app-control-border-readonly
+--app-control-border-error
+
+--app-control-text
+--app-control-placeholder
+--app-control-text-disabled
+
+--app-overlay-bg
+--app-overlay-border
+--app-overlay-shadow
+--app-focus-ring
+
+--app-scrollbar-track
+--app-scrollbar-thumb
+--app-scrollbar-thumb-hover
+
+--app-color-success-soft
+--app-color-warning-soft
+--app-color-danger-soft
+--app-color-info-soft
+--app-color-info
+--app-color-error
+--app-color-success-text
+--app-color-warning-text
+--app-color-danger-text
+--app-color-info-text
+--app-color-error-text
+--app-code-bg
+--app-code-border
+--app-code-text
+```
+
+同时将 `--console-input-*`、`--console-overlay-*`、`--console-scrollbar-*` 指向新的 `--app-*` token，避免旧页面继续使用偏白/偏浅的输入背景。
+
+### 25.4 Native Form Control Theme
+
+`global.css` 已建立 native dark baseline：
+
+- 仅覆盖 text-like `input`、`select`、`textarea`。
+- 排除 `checkbox`、`radio`、`range`、`color`、`file`、`hidden`、button 类 input 以及 Element Plus 内部 input。
+- 覆盖 normal、hover、focus、disabled、readonly、placeholder。
+- 增加 `color-scheme: dark` 与 `:-webkit-autofill` 深色覆盖，降低 Electron/Chromium autofill 白底或黄底风险。
+
+### 25.5 Element Plus Input Theme
+
+`element-plus.css` 已将 Element Plus 基础控件从 `.app-shell` 局部 scope 改为全局 dark baseline，覆盖 Login 和 Teleport 场景：
+
+```text
+.el-input__wrapper
+.el-select__wrapper
+.el-textarea__inner
+.el-input-number
+.el-date-editor
+.el-range-editor
+.el-cascader
+.el-tree-select
+```
+
+状态覆盖：
+
+- normal：深蓝 control 背景、统一 border、文字清晰。
+- hover：border 与背景轻微增强，不跳白。
+- focus：蓝色 border + `--app-focus-ring`。
+- disabled：低对比但可读，不使用 `opacity: 0.3`。
+- readonly：与 disabled 区分，保持内容清晰。
+- error：红色 border + 暗红背景和错误 focus ring。
+
+### 25.6 Select / Dropdown Theme
+
+Teleport 层已覆盖：
+
+```text
+.el-popper
+.el-select__popper
+.el-select-dropdown
+.el-select-dropdown__item
+.el-dropdown-menu
+.el-dropdown-menu__item
+.el-popper__arrow
+```
+
+状态覆盖：
+
+- normal 深蓝 overlay 背景。
+- hover 蓝色弱高亮。
+- selected 明确蓝色选中态。
+- disabled 使用 disabled token。
+- empty 文本使用 muted text。
+
+### 25.7 Date / Time Picker Theme
+
+已建立 Element Plus picker baseline：
+
+```text
+.el-picker__popper
+.el-picker-panel
+.el-date-picker__header
+.el-date-table
+.el-time-panel
+.el-time-spinner__item
+.el-picker-panel__footer
+```
+
+覆盖 header、weekday、date cell、today、selected、range、disabled、footer 和 time panel 的深色背景/文字/选中态。
+
+### 25.8 Checkbox / Radio / Switch
+
+已统一：
+
+- label text 使用 dark theme text。
+- checked 状态使用 `--app-color-primary`。
+- disabled 状态使用 control disabled token。
+- 不破坏 Element Plus 原有可访问性 class 结构。
+
+### 25.9 Dialog / MessageBox
+
+已建立所有 `.el-dialog` 的 global dark baseline：
+
+- panel 背景、border、shadow。
+- header/title/close。
+- body text。
+- footer border 和 spacing。
+- `max-width: calc(100vw - 32px)`。
+- `max-height: calc(100vh - 32px)`。
+- body 使用内部滚动，避免直接裁切内容。
+
+`MessageBox` 已同步同一 overlay 体系，覆盖 title、content、buttons、close、最大宽高和内部滚动。
+
+UI audit fixture 对 520px、720px、920px 三类 dialog 宽度策略做了 4 个 viewport 验证：
+
+```text
+themeFixtureUnsafeDialogs = 0
+```
+
+### 25.10 Alert 修复
+
+UI-01 原始 finding：
+
+```text
+UI-OVERFLOW-01 /collect warning alert scrollHeight > clientHeight
+UI-OVERFLOW-02 /log error alert scrollHeight > clientHeight
+```
+
+本轮修复：
+
+- 移除 Alert 内容被固定高度/line-height 裁切的风险。
+- `.el-alert` 使用自然高度和 `overflow: visible`。
+- `.el-alert__content` / title / description 允许正常换行。
+- success/warning/error/info 使用深色语义背景，而不是 Element Plus 默认浅色块。
+
+回归结果：
+
+```text
+themeFixtureClippedAlerts = 0
+/collect route layoutIssue = false
+/log route layoutIssue = false
+```
+
+### 25.11 Table Theme
+
+已统一 Element Plus table 基础 skin：
+
+- header/background/text/border。
+- row hover/current row。
+- empty block/text。
+- loading mask。
+- fixed / fixed-right 背景与边界。
+- sort/filter popper 基础深色背景。
+
+不处理真实数据列宽、长文本、固定列错位和分页挤压，这些继续留给 UI-03 带数据复核。
+
+### 25.12 Pagination
+
+已统一：
+
+- prev / next。
+- pager normal / hover / active / disabled。
+- page size select / jumper input 通过全局 Element Plus input/select baseline 避免白底。
+- pagination 内部 control 使用 30px 紧凑高度。
+
+### 25.13 Scrollbar
+
+已统一：
+
+- 全局 WebKit scrollbar。
+- Firefox `scrollbar-color` / `scrollbar-width`。
+- Element Plus scrollbar thumb。
+- popper/dialog/message-box 内部 scrollbar。
+
+本轮只改视觉，不改变现有滚动责任和布局结构。
+
+### 25.14 Login Theme
+
+因为 `/login` 不在 `.app-shell` 内，本轮将 Element Plus 和 native controls 的深色 baseline 提升为全局 selector。
+
+回归结果：
+
+```text
+/login rendered = 4/4
+/login themeMismatch = false
+/login white control count = 0
+```
+
+### 25.15 Dynamic Form Theme
+
+已重点检查：
+
+```text
+DeviceConfigPanel
+ProtocolDynamicForm
+PointEditor
+PointBatchEditDialog
+PointGenerateDialog
+LocalDeviceEditor
+```
+
+未发现这些 dynamic form 组件通过 scoped CSS 重新设置纯白 input/select/textarea 背景；动态生成的 Element Plus 控件现在会命中全局 dark baseline。
+
+另外修复了少量页面级浅色 token drift：
+
+- `DashboardView.vue`：overview card 指示条不再使用 `#f8fafc`。
+- `HistoryView.vue`：统计 pill 不再使用浅色背景和深色文字。
+
+异步只读主题审查返回后，本轮继续关闭以下共享层风险：
+
+- 补齐 Element Plus `primary/success/warning/danger/error/info` 的 dark light 色阶，避免 `el-tag effect="light"`、plain/disabled 按钮回落到默认浅色变量。
+- 增加 `el-tag.is-light/is-plain` 语义色覆盖。
+- 增加 `.el-empty` 插图填充变量，避免 empty 插图继续使用 Element Plus 默认白/浅灰填充。
+- 修复 `DiagnosticDetailPanel.vue` 中未定义的 `--exact-accent` 链接色，并补充 focus-visible。
+- 修复 AppShell 原生 button disabled 状态，避免 disabled 继续触发 hover 或保持 primary/danger 高亮。
+- 为原生 checkbox/radio 增加统一 `accent-color`。
+- 为 `/login` 自定义 surface 增加 dark panel / border / illustration 基础样式。
+
+### 25.16 UI-01 Finding Closure
+
+| Finding | UI-02 状态 | 说明 |
+|---|---|---|
+| `UI-OVERFLOW-01` | `CLOSED` | `/collect` Alert 裁切已关闭，route audit 不再报告该问题。 |
+| `UI-OVERFLOW-02` | `CLOSED` | `/log` Alert 裁切已关闭，route audit 不再报告该问题。 |
+| `UI-CONSISTENCY-01` | `CLOSED at shared theme layer` | canonical control/overlay/scrollbar token 已统一；页面级布局和图表色继续留 UI-03。 |
+| `UI-DIALOG-01` | `GLOBAL BASELINE CLOSED` | 全局 dialog/message-box dark baseline 与 viewport safety 已建立；业务内容仍需 UI-03 带数据复核。 |
+| Global white form control risk | `CLOSED at shared theme layer` | native + Element Plus + Login + dynamic form 共用 dark baseline。 |
+| Teleport popup theme risk | `CLOSED at shared theme layer` | select/date/dropdown/popper fixture 检查无白底。 |
+| `UI-LAYOUT-01` | `OPEN -> UI-03` | Dashboard resource-dashboard overflow 不在 UI-02 范围。 |
+| `UI-LAYOUT-02` | `OPEN -> UI-03` | Dashboard topology-flow overflow 不在 UI-02 范围。 |
+| `UI-RESPONSIVE-01` | `OPEN -> UI-03` | Log toolbar 响应式重排不在 UI-02 范围。 |
+| `UI-CONSOLE-01` | `OPEN -> UI-03 / failure UX repair` | `/realtime` backend offline console.error 暂不在本轮处理。 |
+| `UI-TABLE-01` | `OPEN -> UI-03` | 有数据 table 布局需带数据复核。 |
+
+### 25.17 56-check Audit Result
+
+最终 UI audit 摘要：
+
+```json
+{
+  "routeCount": 14,
+  "viewportCount": 4,
+  "executedChecks": 56,
+  "renderedRouteCount": 14,
+  "routesWithOverflow": 1,
+  "routesWithThemeMismatch": 0,
+  "routesWithLayoutIssue": 1,
+  "routesWithConsoleErrors": 1,
+  "notVisited": [],
+  "themeFixtureChecks": 4,
+  "themeFixtureWhiteBackgrounds": 0,
+  "themeFixtureClippedAlerts": 0,
+  "themeFixtureUnsafeDialogs": 0,
+  "themeFixtureLightEmptyFills": 0
+}
+```
+
+解释：
+
+- `routesWithOverflow = 1` 仅剩 `/dashboard` 的 `resource-dashboard` / `topology-flow`，属于 UI-03。
+- `routesWithLayoutIssue = 1` 同上，仅剩 `/dashboard`。
+- `routesWithConsoleErrors = 1` 为 `/realtime` backend offline console error，属于 UI-03 或单独 failure UX repair。
+- `routesWithThemeMismatch = 0`。
+- `themeFixtureWhiteBackgrounds = 0`。
+- `themeFixtureClippedAlerts = 0`。
+- `themeFixtureUnsafeDialogs = 0`。
+- `themeFixtureLightEmptyFills = 0`。
+
+### 25.18 Viewport Result
+
+| Viewport | Route checks | Theme fixture samples | White backgrounds | Clipped alerts | Unsafe dialogs | Light empty fills |
+|---|---:|---:|---:|---:|---:|---:|
+| `1280×720` | 14 | 41 | 0 | 0 | 0 | 0 |
+| `1366×768` | 14 | 41 | 0 | 0 | 0 | 0 |
+| `1440×900` | 14 | 41 | 0 | 0 | 0 | 0 |
+| `1920×1080` | 14 | 41 | 0 | 0 | 0 | 0 |
+
+### 25.19 Verification
+
+已执行并通过：
+
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run build:web
+npm run verify
+npm run pack
+node scripts/ui-layout-audit.mjs
+git diff --check
+```
+
+测试结果：
+
+```text
+Test Files  76 passed (76)
+Tests       561 passed (561)
+```
+
+构建提示仍只有既有 vendor chunk / `@vueuse/core` PURE annotation warning，未导致失败。
+
+### 25.20 build:web Generated Assets
+
+`npm run build:web` 已同步新版 Web 控制台到：
+
+```text
+collector-boot/src/main/resources/static/desktop
+```
+
+同步输出：
+
+```text
+同步文件数：57
+```
+
+CSS/JS hash 变化属于本轮 theme CSS 修改后的真实 `build:web` 产物，不手工恢复。
+
+### 25.21 Changed Files
+
+生产代码与审计脚本变更：
+
+```text
+collector-desktop/src/styles/tokens.css
+collector-desktop/src/styles/global.css
+collector-desktop/src/styles/element-plus.css
+collector-desktop/src/views/dashboard/DashboardView.vue
+collector-desktop/src/views/auth/LoginView.vue
+collector-desktop/src/app/AppShell.vue
+collector-desktop/src/features/diagnostic/components/DiagnosticDetailPanel.vue
+collector-desktop/src/views/history/HistoryView.vue
+collector-desktop/scripts/ui-layout-audit.mjs
+collector-desktop/docs/production-readiness/FRONTEND-UI-AUDIT.md
+collector-boot/src/main/resources/static/desktop/**
+```
+
+未修改：
+
+```text
+backend API
+Electron Main/Preload security
+realtime protocol
+dependency 配置
+Dashboard grid / topology layout
+Log toolbar responsive layout
+```
+
+### 25.22 Remaining UI-03 Findings
+
+UI-03 继续处理：
+
+- `Dashboard resource-dashboard` 在 `1280×720`、`1366×768`、`1440×900` 的固定宽度 overflow。
+- `Dashboard topology-flow` 在 `1280×720` 的局部隐藏 overflow。
+- `/log` toolbar 在 `1280×720` 的响应式布局。
+- 有数据场景 table：列宽、fixed column、长文本、pagination 挤压。
+- 业务 dialog 内容区：长表单、真实数据、footer 可见性。
+- `/realtime` backend offline console error 降级模型。
+
+### 25.23 Task Status
+
+`Task UI-02` 状态：`PASS / COMPLETE`
+
+PASS 依据：
+
+- 全局 dark control baseline 完整。
+- Input / Select / Textarea 无明显白底 fallback。
+- dynamic form 命中统一 Element Plus baseline。
+- Select popup / DatePicker popup / MessageBox / Dialog fixture 无白底。
+- Dialog 520px / 720px / 920px viewport safety fixture 通过。
+- Alert 内容裁切已关闭。
+- Alert semantic dark theme 已统一。
+- Table / Pagination / Scrollbar global skin 不回归。
+- Login 与 AppShell 页面主题一致。
+- Element Plus light tag / primary plain button / disabled button / el-empty 共享层风险已关闭。
+- 56-check audit 无新增 document/body overflow。
+- theme fixture 4 个 viewport 全部通过。
+- typecheck/test/build/build:web/verify/pack/ui-layout-audit 通过。
+
+### 25.24 Next
+
+下一步：
+
+```text
+Task UI-03 — Page-by-Page Layout & Overflow Cleanup
+```
+
+UI-03 重点处理真实页面布局和有数据场景，不应再回头重新开一套全局 theme。

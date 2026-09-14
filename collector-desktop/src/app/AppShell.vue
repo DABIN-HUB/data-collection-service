@@ -56,7 +56,7 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.app-shell :deep(button:not(.el-button):hover) {
+.app-shell :deep(button:not(.el-button, :disabled):hover) {
   color: var(--console-text-primary);
   border-color: var(--console-primary-hover);
   background: rgba(59, 130, 246, 0.14);
@@ -75,8 +75,11 @@ onMounted(() => {
 }
 
 .app-shell :deep(button:not(.el-button):disabled) {
+  color: var(--console-input-text-disabled);
+  border-color: var(--console-input-border-disabled);
+  background: var(--console-input-bg-disabled);
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 1;
 }
 
 .app-shell :deep(input:not(.el-input__inner)),

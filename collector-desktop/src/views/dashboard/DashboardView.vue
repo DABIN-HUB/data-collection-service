@@ -654,7 +654,7 @@ function formatTime(value: unknown): string {
 }
 
 .overview-cards .card:nth-child(1)::before { background: var(--exact-cyan); }
-.overview-cards .card:nth-child(2)::before { background: #f8fafc; }
+.overview-cards .card:nth-child(2)::before { background: var(--exact-muted); }
 .overview-cards .card:nth-child(3)::before { background: var(--exact-red); }
 .overview-cards .card:nth-child(4)::before { background: #22c55e; }
 .overview-cards .card:nth-child(5)::before { background: var(--exact-blue); }

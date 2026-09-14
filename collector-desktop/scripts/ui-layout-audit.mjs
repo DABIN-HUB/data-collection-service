@@ -34,6 +34,58 @@ const routes = [
   { path: "/shadow", name: "SHADOW", view: "ShadowView", shell: true, needsAuth: false, needsDevice: true }
 ];
 
+const themeFixtureHtml = `
+  <section data-fixture-section="controls">
+    <input data-audit-sample="native-input" value="native input" placeholder="请输入" />
+    <input data-audit-sample="native-readonly" value="readonly input" readonly />
+    <input data-audit-sample="native-disabled" value="disabled input" disabled />
+    <select data-audit-sample="native-select"><option>深色选项</option></select>
+    <textarea data-audit-sample="native-textarea" placeholder="textarea">多行文本</textarea>
+    <label><input data-audit-sample="native-checkbox" type="checkbox" checked /> 原生复选</label>
+    <label><input data-audit-sample="native-radio" type="radio" checked /> 原生单选</label>
+    <div class="el-input"><div data-audit-sample="el-input-normal" class="el-input__wrapper"><input class="el-input__inner" placeholder="Element Input" /></div></div>
+    <div class="el-input"><div data-audit-sample="el-input-focus" class="el-input__wrapper is-focus"><input class="el-input__inner" value="focus" /></div></div>
+    <div class="el-input"><div data-audit-sample="el-input-disabled" class="el-input__wrapper is-disabled"><input class="el-input__inner" value="disabled" disabled /></div></div>
+    <div class="el-form-item is-error"><div data-audit-sample="el-input-error" class="el-input__wrapper"><input class="el-input__inner" value="error" /></div><div class="el-form-item__error">错误提示</div></div>
+    <div data-audit-sample="el-select-wrapper" class="el-select__wrapper is-focused"><span class="el-select__placeholder">请选择</span><span class="el-select__caret">⌄</span></div>
+    <textarea data-audit-sample="el-textarea" class="el-textarea__inner" placeholder="Element Textarea">Element Textarea</textarea>
+    <div data-audit-sample="el-input-number" class="el-input-number"><div class="el-input"><div class="el-input__wrapper"><input class="el-input__inner" value="12" /></div></div><span class="el-input-number__increase">+</span><span class="el-input-number__decrease">-</span></div>
+    <div data-audit-sample="el-switch" class="el-switch is-checked"><span class="el-switch__core"></span><span class="el-switch__label">启用</span></div>
+    <label data-audit-sample="el-checkbox" class="el-checkbox"><span class="el-checkbox__input is-checked"><span class="el-checkbox__inner"></span></span><span class="el-checkbox__label">复选项</span></label>
+    <label data-audit-sample="el-radio" class="el-radio"><span class="el-radio__input is-checked"><span class="el-radio__inner"></span></span><span class="el-radio__label">单选项</span></label>
+    <button data-audit-sample="primary-plain-button" class="el-button el-button--primary is-plain">主要幽灵按钮</button>
+    <button data-audit-sample="primary-plain-disabled" class="el-button el-button--primary is-plain is-disabled" disabled>禁用主要幽灵按钮</button>
+  </section>
+  <section data-fixture-section="popups">
+    <div data-audit-sample="select-popper" class="el-popper el-select__popper"><div class="el-select-dropdown"><div class="el-select-dropdown__wrap"><ul class="el-scrollbar__view"><li data-audit-sample="select-item" class="el-select-dropdown__item">普通选项</li><li data-audit-sample="select-item-hover" class="el-select-dropdown__item hover">Hover 选项</li><li data-audit-sample="select-item-selected" class="el-select-dropdown__item selected">Selected 选项</li><li data-audit-sample="select-item-disabled" class="el-select-dropdown__item is-disabled">Disabled 选项</li></ul></div></div></div>
+    <div data-audit-sample="date-popper" class="el-popper el-picker__popper"><div class="el-picker-panel"><div class="el-picker-panel__body"><div class="el-date-picker__header"><button class="el-picker-panel__icon-btn">‹</button><span class="el-date-picker__header-label">2026 年 9 月</span></div><table class="el-date-table"><tbody><tr><td class="available today"><div class="el-date-table-cell"><span class="el-date-table-cell__text">14</span></div></td><td class="available current"><div class="el-date-table-cell"><span class="el-date-table-cell__text">15</span></div></td><td class="disabled"><div class="el-date-table-cell"><span class="el-date-table-cell__text">16</span></div></td></tr></tbody></table></div><div class="el-picker-panel__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div></div>
+    <div data-audit-sample="message-box" class="el-message-box"><div class="el-message-box__header"><span class="el-message-box__title">确认操作</span></div><div class="el-message-box__content"><div class="el-message-box__message">深色 MessageBox 内容</div></div><div class="el-message-box__btns"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+  </section>
+  <section data-fixture-section="alerts">
+    <div data-audit-sample="alert-success" class="el-alert el-alert--success"><span class="el-alert__icon">✓</span><div class="el-alert__content"><span class="el-alert__title">成功提示内容不会被裁切</span></div></div>
+    <div data-audit-sample="alert-warning" class="el-alert el-alert--warning"><span class="el-alert__icon">!</span><div class="el-alert__content"><span class="el-alert__title">警告提示内容支持换行，不应再出现 line-height 裁切</span></div></div>
+    <div data-audit-sample="alert-error" class="el-alert el-alert--error"><span class="el-alert__icon">×</span><div class="el-alert__content"><span class="el-alert__title">错误提示内容不会被裁切</span></div></div>
+    <div data-audit-sample="alert-info" class="el-alert el-alert--info"><span class="el-alert__icon">i</span><div class="el-alert__content"><span class="el-alert__title">信息提示内容不会被裁切</span></div></div>
+  </section>
+  <section data-fixture-section="tags-empty">
+    <span data-audit-sample="tag-default" class="el-tag is-light">默认标签</span>
+    <span data-audit-sample="tag-success" class="el-tag el-tag--success is-light">成功标签</span>
+    <span data-audit-sample="tag-warning" class="el-tag el-tag--warning is-light">警告标签</span>
+    <span data-audit-sample="tag-danger" class="el-tag el-tag--danger is-light">危险标签</span>
+    <span data-audit-sample="tag-info" class="el-tag el-tag--info is-light">信息标签</span>
+    <div data-audit-sample="el-empty" class="el-empty"><div class="el-empty__image"></div><p class="el-empty__description">暂无数据</p></div>
+  </section>
+  <section data-fixture-section="tables">
+    <div data-audit-sample="el-table" class="el-table"><div class="el-table__inner-wrapper"><table><thead><tr><th class="el-table__cell"><div class="cell">表头</div></th></tr></thead><tbody><tr><td class="el-table__cell"><div class="cell">表格内容</div></td></tr></tbody></table><div class="el-table__empty-block"><span class="el-table__empty-text">暂无数据</span></div></div></div>
+    <div data-audit-sample="el-pagination" class="el-pagination"><button>‹</button><ul class="el-pager"><li>1</li><li class="is-active">2</li><li class="is-disabled">3</li></ul><button disabled>›</button><div class="el-input"><div class="el-input__wrapper"><input class="el-input__inner" value="10" /></div></div></div>
+  </section>
+  <section data-fixture-section="dialogs">
+    <div data-audit-sample="dialog-520" data-fixture-dialog="520" class="el-dialog" style="width: 520px;"><div class="el-dialog__header"><span class="el-dialog__title">520px Dialog</span><button class="el-dialog__headerbtn"><span class="el-dialog__close">×</span></button></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+    <div data-audit-sample="dialog-720" data-fixture-dialog="720" class="el-dialog" style="width: 720px;"><div class="el-dialog__header"><span class="el-dialog__title">720px Dialog</span></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+    <div data-audit-sample="dialog-920" data-fixture-dialog="920" class="el-dialog" style="width: 920px;"><div class="el-dialog__header"><span class="el-dialog__title">920px Dialog</span></div><div class="el-dialog__body">Dialog body</div><div class="el-dialog__footer"><button class="el-button">取消</button><button class="el-button el-button--primary">确定</button></div></div>
+  </section>
+`;
+
 const result = {
   generatedAt: new Date().toISOString(),
   target: { exePath, devServerUrl, port },
@@ -42,6 +94,7 @@ const result = {
   routeCount: routes.length,
   viewportCount: viewports.length,
   checks: [],
+  themeFixtureChecks: [],
   summary: {}
 };
 let child;
@@ -234,6 +287,77 @@ async function captureScreenshot(route, viewport) {
   return filePath.replaceAll("\\", "/");
 }
 
+async function collectThemeFixture(viewport) {
+  return await evaluate(`(() => {
+    document.getElementById('uiThemeAuditFixture')?.remove();
+    const host = document.createElement('div');
+    host.id = 'uiThemeAuditFixture';
+    host.style.cssText = 'position: fixed; left: 16px; top: 16px; z-index: 2147483000; display: grid; width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px; gap: 12px; overflow: auto; color: var(--app-color-text-secondary); border: 1px solid var(--app-color-border-soft); border-radius: 12px; background: var(--app-color-bg); box-shadow: var(--app-overlay-shadow);';
+    host.innerHTML = ${JSON.stringify(themeFixtureHtml)};
+    document.body.appendChild(host);
+    const whiteBackground = (value) => {
+      const match = value.match(/rgba?\\(([^)]+)\\)/);
+      return value === 'white' || value === '#fff' || value === '#ffffff' || (match && match[1].split(',').slice(0, 3).every((part) => Number(part.trim()) >= 245));
+    };
+    const styleOf = (element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        name: element.getAttribute('data-audit-sample') || element.getAttribute('data-fixture-dialog') || element.className,
+        tag: element.tagName.toLowerCase(),
+        className: String(element.className || '').slice(0, 160),
+        background: style.backgroundColor,
+        color: style.color,
+        borderColor: style.borderColor,
+        boxShadow: style.boxShadow,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        whiteBackground: whiteBackground(style.backgroundColor)
+      };
+    };
+    const samples = [...host.querySelectorAll('[data-audit-sample]')].map(styleOf);
+    const alerts = [...host.querySelectorAll('.el-alert')].map((element) => ({
+      name: element.getAttribute('data-audit-sample'),
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      clipped: element.scrollHeight > element.clientHeight + 1
+    }));
+    const emptyFills = [...host.querySelectorAll('.el-empty')].map((element) => {
+      const style = getComputedStyle(element);
+      const fills = Array.from({ length: 10 }, (_, index) => style.getPropertyValue('--el-empty-fill-color-' + index).trim()).filter(Boolean);
+      return {
+        name: element.getAttribute('data-audit-sample'),
+        fills,
+        lightFillCount: fills.filter((fill) => whiteBackground(fill)).length
+      };
+    });
+    const dialogs = [...host.querySelectorAll('[data-fixture-dialog]')].map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        widthToken: element.getAttribute('data-fixture-dialog'),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        safeWidth: rect.width <= window.innerWidth - 32 + 1,
+        safeHeight: rect.height <= window.innerHeight - 32 + 1
+      };
+    });
+    const fixture = {
+      viewport: '${viewport.width}x${viewport.height}',
+      sampleCount: samples.length,
+      whiteBackgroundCount: samples.filter((sample) => sample.whiteBackground).length,
+      samples,
+      alerts,
+      clippedAlertCount: alerts.filter((alert) => alert.clipped).length,
+      emptyFills,
+      emptyLightFillCount: emptyFills.reduce((sum, item) => sum + item.lightFillCount, 0),
+      dialogs,
+      unsafeDialogCount: dialogs.filter((dialog) => !dialog.safeWidth || !dialog.safeHeight).length
+    };
+    host.remove();
+    return fixture;
+  })()`);
+}
+
 function summarize() {
   const checks = result.checks;
   const routeMap = new Map();
@@ -260,7 +384,12 @@ function summarize() {
     routesWithThemeMismatch: routeSummaries.filter((item) => item.themeMismatch).length,
     routesWithLayoutIssue: routeSummaries.filter((item) => item.layoutIssue).length,
     routesWithConsoleErrors: routeSummaries.filter((item) => item.consoleErrors > 0).length,
-    notVisited: routes.filter((route) => !routeSummaries.some((item) => item.path === route.path)).map((route) => route.path)
+    notVisited: routes.filter((route) => !routeSummaries.some((item) => item.path === route.path)).map((route) => route.path),
+    themeFixtureChecks: result.themeFixtureChecks.length,
+    themeFixtureWhiteBackgrounds: result.themeFixtureChecks.reduce((sum, item) => sum + item.whiteBackgroundCount, 0),
+    themeFixtureClippedAlerts: result.themeFixtureChecks.reduce((sum, item) => sum + item.clippedAlertCount, 0),
+    themeFixtureUnsafeDialogs: result.themeFixtureChecks.reduce((sum, item) => sum + item.unsafeDialogCount, 0),
+    themeFixtureLightEmptyFills: result.themeFixtureChecks.reduce((sum, item) => sum + item.emptyLightFillCount, 0)
   };
 }
 
@@ -288,7 +417,7 @@ try {
       const intentionalOverflow = metrics.overflowElements.filter((item) => item.intentional);
       const unintentionalOverflow = metrics.overflowElements.filter((item) => !item.intentional);
       const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => /^rgb\\(255, 255, 255\\)$/.test(item.background));
-      result.checks.push({
+      const check = {
         route,
         viewport: `${viewport.width}x${viewport.height}`,
         rendered: state.hash === `#${route.path}` && metrics.bodyTextLength > 10,
@@ -309,9 +438,13 @@ try {
         exceptions,
         screenshot,
         elapsedMs: Date.now() - startedAt
-      });
-      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, consoleErrors: consoleMessages.length + exceptions.length }));
+      };
+      result.checks.push(check);
+      console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
     }
+    const themeFixture = await collectThemeFixture(viewport);
+    result.themeFixtureChecks.push(themeFixture);
+    console.log(JSON.stringify({ viewport: `${viewport.width}x${viewport.height}`, themeFixture: true, whiteBackgrounds: themeFixture.whiteBackgroundCount, clippedAlerts: themeFixture.clippedAlertCount, unsafeDialogs: themeFixture.unsafeDialogCount, lightEmptyFills: themeFixture.emptyLightFillCount }));
   }
   summarize();
   result.ok = true;

@@ -778,7 +778,7 @@ function defaultDateTimeLocal(offsetMs: number): string {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 14px;
-  color: #475569;
+  color: var(--console-text-muted);
   font-size: 12px;
 }
 
@@ -800,7 +800,7 @@ function defaultDateTimeLocal(offsetMs: number): string {
   flex-wrap: wrap;
   gap: 10px 14px;
   padding-top: 2px;
-  color: #64748b;
+  color: var(--console-text-muted);
   font-size: 12px;
 }
 
@@ -809,12 +809,13 @@ function defaultDateTimeLocal(offsetMs: number): string {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
+  border: 1px solid var(--console-border-soft);
   border-radius: 999px;
-  background: #f8fafc;
+  background: var(--console-panel-soft);
 }
 
 .history-stat-row b {
-  color: #0f172a;
+  color: var(--console-text-primary);
 }
 
 .history-alarm-card,

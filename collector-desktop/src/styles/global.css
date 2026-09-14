@@ -2,6 +2,7 @@
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
   color: var(--app-color-text-secondary);
   background: var(--app-color-bg);
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -9,6 +10,8 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+  scrollbar-width: thin;
 }
 
 html,
@@ -30,6 +33,119 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--app-color-primary);
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 2px;
+}
+
+html {
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--app-scrollbar-track);
+  border-radius: 999px;
+  background: var(--app-scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input),
+select,
+textarea:not(.el-textarea__inner) {
+  min-height: var(--app-control-height);
+  padding: 0 10px;
+  color: var(--app-control-text);
+  border: 1px solid var(--app-control-border);
+  border-radius: var(--app-radius-md);
+  outline: none;
+  background: var(--app-control-bg);
+  font-size: 12px;
+}
+
+textarea:not(.el-textarea__inner) {
+  min-height: 84px;
+  padding: 10px;
+  resize: vertical;
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input):hover,
+select:hover,
+textarea:not(.el-textarea__inner):hover {
+  border-color: var(--app-control-border-hover);
+  background: var(--app-control-bg-hover);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input):focus,
+select:focus,
+textarea:not(.el-textarea__inner):focus {
+  border-color: var(--app-control-border-focus);
+  background: var(--app-control-bg-focus);
+  box-shadow: var(--app-focus-ring);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input):disabled,
+select:disabled,
+textarea:not(.el-textarea__inner):disabled {
+  color: var(--app-control-text-disabled);
+  border-color: var(--app-control-border-disabled);
+  background: var(--app-control-bg-disabled);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input)[readonly],
+textarea:not(.el-textarea__inner)[readonly] {
+  color: var(--app-control-text);
+  border-color: var(--app-control-border-readonly);
+  background: var(--app-control-bg-readonly);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], .el-input__inner, .el-select__input, .el-range-input)::placeholder,
+textarea:not(.el-textarea__inner)::placeholder {
+  color: var(--app-control-placeholder);
+  opacity: 1;
+}
+
+select option,
+select optgroup {
+  color: var(--app-control-text);
+  background: var(--app-control-bg);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  color: var(--app-control-text);
+  -webkit-text-fill-color: var(--app-control-text);
+  box-shadow: 0 0 0 1000px var(--app-control-bg) inset;
+  transition: background-color 9999s ease-out 0s;
 }
 
 .dot {

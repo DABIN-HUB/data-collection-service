@@ -236,7 +236,7 @@ function formatTime(value: unknown): string {
 .link-button {
   border: 0;
   background: transparent;
-  color: var(--exact-accent);
+  color: var(--console-primary-hover);
   cursor: pointer;
   font: inherit;
   padding: 0;
@@ -244,6 +244,11 @@ function formatTime(value: unknown): string {
 
 .link-button:hover {
   text-decoration: underline;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--console-primary-hover);
+  outline-offset: 2px;
 }
 
 .is-dim {
