@@ -1552,3 +1552,411 @@ Full command evidence is recorded in the final Task 06.4 report.
 | EDS-P2-09 | CLOSED | packaged `app.asar` source-map count is 0 and package audit passes |
 | EDS-P2-10 | CLOSED | startup-critical failures now go through fatal diagnostic + native dialog path instead of silent catch/blank window |
 | Task 05 deferred writable log boundary | RESOLVED | backend exposes `COLLECTOR_LOG_FILE` deployment override while Electron keeps backend lifecycle independent |
+
+---
+
+# Task 06.5 — Electron Security & Delivery Regression / Final Audit
+
+Date: 2026-09-14
+Branch: feature_2.0
+Remote baseline before Task 06.5: 4599b3ac42611d9291ccd78cdf7d610eeabdfc59
+Scope: final audit of Task 06 Electron security and delivery boundaries. This is audit-first work; only a minimal startup diagnostic sanitizer repair was made after the audit found that header-style Authorization and Cookie diagnostic fragments were not covered as strongly as equals-style fields.
+
+## Final architecture
+
+The final Task 06 architecture remains:
+
+```text
+Renderer
+→ Preload bridge
+→ trusted, top-frame IPC
+→ Electron Main
+→ Main-owned config / credential stores
+→ Main HTTP proxy
+→ independently deployed Collector Backend
+```
+
+Delivery chain verified in this final audit:
+
+```text
+Electron source
+→ build
+→ app.asar
+→ packaged runtime
+→ NSIS installer
+→ controlled distribution artifact
+```
+
+`backendManaged=false` remains the runtime contract. Electron is still only the operator console and does not start, stop, bundle, or own the Spring Boot collector backend.
+
+## BrowserWindow matrix
+
+Final `BrowserWindow.webPreferences` matrix:
+
+| Setting | Final value | Evidence |
+| --- | --- | --- |
+| `contextIsolation` | `true` | `collector-desktop/electron/main/main.ts` |
+| `nodeIntegration` | `false` | `collector-desktop/electron/main/main.ts` |
+| `sandbox` | `true` | `collector-desktop/electron/main/main.ts` |
+| `preload` | `../preload/index.cjs` | `.cts` preload compiled to `.cjs` for packaged runtime |
+| `webviewTag` | Electron default | not explicitly enabled |
+| `nodeIntegrationInWorker` | Electron default | not explicitly enabled |
+| `nodeIntegrationInSubFrames` | Electron default | not explicitly enabled |
+| `allowRunningInsecureContent` | Electron default | not explicitly enabled |
+| `webSecurity` | Electron default | not explicitly disabled |
+
+No final-audit risk required mechanically explicit defaults.
+
+## Navigation / CSP
+
+Final navigation policy remains Main-owned:
+
+- `setWindowOpenHandler` denies new windows and sends safe external HTTP/HTTPS URLs to `shell.openExternal`.
+- `will-navigate` prevents untrusted navigation and only allows trusted renderer locations.
+- `isSafeExternalUrl` allows only `http:` and `https:`.
+- production internal renderer trust is the exact packaged `index.html` file path; hash routes such as `file:///.../index.html#/route` continue to map to the same trusted file.
+- development internal renderer trust is the configured dev origin.
+- arbitrary `file://`, `javascript:`, `data:`, and `ftp:` are not trusted internal renderer URLs and are not safe external URLs.
+
+Both source and production renderer HTML include CSP:
+
+```text
+default-src 'self'
+script-src 'self'
+object-src 'none'
+frame-src 'none'
+base-uri 'none'
+```
+
+`unsafe-eval` is absent. Current `style-src 'unsafe-inline'` and `connect-src http: https: ws: wss:` remain documented because they match current Element Plus styling and browser-mode/backend connectivity requirements; this final audit did not tighten them and risk runtime breakage.
+
+## Preload API inventory
+
+Final `window.collectorDesktop` API inventory:
+
+```text
+getAppInfo()
+getServerConfig()
+setServerConfig(config)
+getCredentialStatus()
+setCredential({ token, remember })
+clearCredential()
+request(request)
+openExternal(url)
+onNavigate(handler)
+```
+
+Not exposed:
+
+```text
+getToken()
+getCredentialPlaintext()
+decryptCredential()
+readFile()
+writeFile()
+exec()
+spawn()
+shell arbitrary command
+request.serverUrl
+request.token
+```
+
+`setCredential(token, remember)` remains the explicit user-input credential write path; Renderer cannot read the plaintext token back.
+
+## IPC inventory and sender boundary
+
+Final privileged Renderer-to-Main handlers:
+
+```text
+collector:get-app-info
+collector:get-server-config
+collector:set-server-config
+collector:get-credential-status
+collector:set-credential
+collector:clear-credential
+collector:open-external
+collector:http-request
+```
+
+Each handler calls `assertTrustedSender(event)`, which checks:
+
+```text
+event.sender.id == current mainWindow.webContents.id
+senderFrame exists
+senderFrame is top/main frame
+senderFrame.url is trusted renderer URL
+```
+
+Main-to-Renderer `webContents.send("collector:navigate", path)` remains limited to static menu navigation paths. Preload listens only to `collector:navigate` and returns a removal function.
+
+## Credential lifecycle
+
+Final credential boundary remains:
+
+```text
+Renderer ordinary business request
+→ no token field
+→ Main reads MainCredentialStore.getToken()
+→ Main injects X-Collector-Token only toward the authoritative collector destination
+```
+
+Final audit rechecked the lifecycle states:
+
+- `remember=false`: Main memory only and canonical remembered credential is deleted/disarmed fail-closed.
+- `remember=true`: `safeStorage` encrypts and persistence succeeds before Main memory commits the new token.
+- safeStorage unavailable or Linux `basic_text`: no plaintext persistence; memory-only downgrade with status.
+- legacy localStorage migration: Renderer submits once to Main; plaintext is removed from renderer storage after Main ownership succeeds.
+- logout/clear: Main memory clears first; canonical credential path must be deleted or disarmed before reporting success.
+- restart restore: only encrypted `collector-desktop-credentials.json` is restored by Main.
+
+R1/R2 regressions remain covered:
+
+```text
+clear success → canonical credential cannot resurrect
+delete failure → rename/disarm path
+delete + disarm failure → explicit failure
+remember=true encrypt failure → Main keeps old token
+remember=true write failure → Main keeps old token
+remember=true success → persistence succeeds before Main becomes candidate token
+```
+
+## Config lifecycle
+
+`collector-desktop-config.json` remains Main-owned and strict:
+
+```text
+http/https only
+no URL credentials
+no fragment
+no query
+context path normalized
+atomic-style write
+corrupt recovery
+```
+
+`collector-desktop-credentials.json` remains Main-owned and contains encrypted credential payload only; plaintext remembered credentials are not written. It also uses atomic-style write and corrupt recovery.
+
+## HTTP proxy boundary
+
+Final proxy boundary remains:
+
+```text
+normal http-request → Main persisted authoritative destination
+destination change → Main native explicit confirmation
+```
+
+Compromised trusted Renderer / XSS cannot silently change destination through `request.serverUrl`, `request.token`, credential headers, `Authorization`, `Cookie`, params, absolute URL, or alternate protocol. Renderer requests are normalized into a Main-authoritative proxy request with persisted `serverUrl`; token injection is performed by Main only.
+
+Final size/timeout constraints remain:
+
+```text
+MAX_PROXY_URL_BYTES = 64 KiB
+MAX_PROXY_REQUEST_BODY_BYTES = 4 MiB
+MAX_PROXY_RESPONSE_BODY_BYTES = 64 MiB
+```
+
+The 64 MiB response limit intentionally preserves headroom for the previously verified ~23.66 MiB / 100k realtime compact full snapshot. Task 06.5 did not modify the realtime protocol.
+
+## Runtime reload, single instance, and startup failure
+
+Production runtime has no reload menu, no forceReload menu, and no DevTools menu. Production blocks F5 and Ctrl/Cmd+R reload variants at the Main `before-input-event` boundary. Development keeps reload, forceReload, and DevTools.
+
+Single-instance remains enforced before creating Main window:
+
+```text
+app.requestSingleInstanceLock()
+```
+
+The first instance restores minimized windows, shows hidden windows, and focuses the existing window. The second top-level process exits promptly.
+
+Startup-critical failures for credential initialization, `app.whenReady` initialization, `loadFile`, `loadURL`, and `preload-error` go through fatal diagnostic and native dialog handling. Best-effort actions such as opening documentation and About dialog secondary failures remain non-fatal.
+
+## Writable paths and diagnostics
+
+Electron startup diagnostic path:
+
+```text
+<userData>/logs/collector-desktop-startup.log
+```
+
+Diagnostic content is bounded and overwritten rather than appended indefinitely. Final audit strengthened the sanitizer so colon-style diagnostic fragments are redacted as well:
+
+```text
+token field
+Authorization header
+Cookie header
+password field
+encryptedToken field
+```
+
+Backend logging remains deployment-owned:
+
+```yaml
+logging:
+  file:
+    name: ${COLLECTOR_LOG_FILE:logs/collector.log}
+```
+
+Electron does not move Java backend logs under Electron `userData`.
+
+## Package, installer, signing, update, and icon
+
+Final app.asar audit checks the real packaged file:
+
+```text
+collector-desktop/release/win-unpacked/resources/app.asar
+```
+
+Required entries:
+
+```text
+dist/electron/main/main.js
+dist/electron/preload/index.cjs
+dist/renderer/index.html
+package.json
+```
+
+Forbidden entries include source maps, compiled tests/specs, `.env`, `.git`, backend `target/`, runtime `logs/`, desktop config/credential JSON files, and private signing material.
+
+Final package audit result:
+
+```json
+{
+  "ok": true,
+  "entryCount": 7087,
+  "mapCount": 0
+}
+```
+
+Final installer artifact:
+
+```text
+collector-desktop/release/collector-desktop-0.1.0-x64.exe
+version: 0.1.0
+appId: com.wangbin.collector.desktop
+productName: 数据采集工作台
+size: 86908749 bytes
+SHA256: 83ABD59EF46E502F05DA8A60357510BED3D068C05BF510BC3D6550FDD6D9DA35
+Authenticode: NotSigned
+```
+
+Current Windows signing status:
+
+```text
+Windows installer signing: NOT SIGNED
+```
+
+`"signAndEditExecutable": false` remains a verified local unsigned-build workaround. Formal external signed release requires config/toolchain adjustment and a real Authenticode certificate.
+
+Update status:
+
+```text
+Auto update: NOT IMPLEMENTED
+```
+
+The approved current delivery strategy is manual versioned NSIS installer or enterprise software distribution for controlled field trial. Custom Windows product icon remains deferred; no temporary fake brand icon was generated.
+
+## Final verification evidence
+
+Commands rerun during Task 06.5 final audit:
+
+```text
+npm --prefix collector-desktop run typecheck
+npm --prefix collector-desktop test
+npm --prefix collector-desktop run build
+npm --prefix collector-desktop run build:web
+npm --prefix collector-desktop run verify
+npm --prefix collector-desktop run pack
+npm --prefix collector-desktop run dist
+node collector-desktop/scripts/package-asar-audit.mjs
+node collector-desktop/scripts/packaged-runtime-smoke.mjs
+cmd.exe /c "mvn -pl collector-boot -am -DskipTests package"
+node scripts/audit-source-language.mjs
+node scripts/scan-config-secrets.mjs
+git diff --check
+```
+
+Observed result:
+
+```text
+all listed verification commands exited 0
+backend Maven reactor: BUILD SUCCESS
+package-asar-audit: ok=true,mapCount=0
+packaged-runtime-smoke: ok=true, backendManaged=false, secondInstanceExited=true, firstInstanceStillRunning=true
+source-language audit: ok=true,count=0
+secret scan: passed
+git diff --check: exit 0
+```
+
+Final source-map and package-secret scans:
+
+```text
+collector-desktop/release *.map: 0
+collector-boot/src/main/resources/static/desktop *.map: 0
+collector-desktop/release .env/PFX/P12/PEM/key/config/credential artifacts: 0
+```
+
+## Final finding matrix
+
+| Finding | Final Task 06.5 status | Evidence |
+| --- | --- | --- |
+| EDS-P0-01 | no open P0 | final attack-surface and delivery-chain audit found no open P0 |
+| EDS-P1-01 | CLOSED | BrowserWindow isolation, navigation, IPC sender/frame/URL validation, CSP and sandbox remain in place |
+| EDS-P1-02 | CLOSED | Renderer cannot read remembered plaintext token; normal HTTP IPC does not carry token; Main injects credential only to authoritative destination |
+| EDS-P1-03 | CLOSED | external URL and internal renderer trust boundaries block arbitrary file/javascript/data/ftp navigation |
+| EDS-P1-04 | CLOSED | HTTP proxy destination cannot be silently reconfigured through normal requests; destination change requires Main-native confirmation |
+| EDS-P2-01 | CLOSED | BrowserWindow defaults audited; no high-risk explicit insecure option remains |
+| EDS-P2-02 | CLOSED | CSP exists in source and built renderer without `unsafe-eval` |
+| EDS-P2-03 | CLOSED | IPC inventory is bounded and protected by trusted sender checks |
+| EDS-P2-04 | CLOSED | Main-owned config persistence uses strict server URL validation and atomic-style writes/recovery |
+| EDS-P2-05 | CLOSED | Main-owned credential persistence is encrypted, fail-closed on clear/disarm, and transactional for `remember=true` |
+| EDS-P2-06 | CLOSED | production reload menu and reload shortcuts are removed/blocked |
+| EDS-P2-07 | CLOSED | single-instance lock and packaged second-instance smoke passed |
+| EDS-P2-08 | PARTIAL / OPERATIONAL DEFERRED | NSIS build/runtime/hash/manual strategy pass; Authenticode certificate and product icon remain operational release gates |
+| EDS-P2-09 | CLOSED | app.asar/release/build-web source-map scans are zero |
+| EDS-P2-10 | CLOSED | startup-critical failures use bounded redacted diagnostic + native dialog instead of silent blank window |
+
+Final severity counts:
+
+```text
+P0 open count: 0
+P1 open count: 0
+P2 closed count: 9
+P2 partial/deferred count: 1
+```
+
+## Field-trial verdict
+
+Task 06 Electron security/delivery work is:
+
+```text
+READY FOR CONTROLLED FIELD TRIAL
+```
+
+But final external distribution remains:
+
+```text
+Formal external distribution: NOT YET RELEASE-CERTIFIED
+```
+
+because:
+
+```text
+Windows installer signing: NOT SIGNED
+Auto update: NOT IMPLEMENTED
+custom Windows product icon: DEFERRED
+Task 07 — Dependency Security is not complete
+Task 08 — Bundle / Startup Performance is not complete
+```
+
+Task 06 PASS does not mean the whole `data-collection-service` production certification is complete.
+
+## Task status
+
+```text
+Task 06.5: PASS / COMPLETE
+Task 06: PASS / COMPLETE
+
+Electron Security & Delivery:
+READY FOR CONTROLLED FIELD TRIAL
+```

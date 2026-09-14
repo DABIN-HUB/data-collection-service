@@ -77,7 +77,7 @@ describe("main-lifecycle-utils", () => {
       platform: "win32",
       timestamp: "2026-09-14T00:00:00.000Z",
       maxStackLength: 512,
-      error: new Error("token=secret-value Authorization: Bearer-secret Cookie: abc encryptedToken=xyz password=pw")
+      error: new Error("token=secret-value; Authorization: Bearer secret-auth; Cookie: sid=secret-cookie; password=pw; encryptedToken=xyz")
     });
 
     expect(diagnostic).toContain("context=application startup");
@@ -85,7 +85,9 @@ describe("main-lifecycle-utils", () => {
     expect(diagnostic).toContain("platform=win32");
     expect(diagnostic).toContain("[REDACTED]");
     expect(diagnostic).not.toContain("secret-value");
-    expect(diagnostic).not.toContain("Bearer-secret");
+    expect(diagnostic).not.toContain("Bearer");
+    expect(diagnostic).not.toContain("secret-cookie");
+    expect(diagnostic).not.toContain("password=pw");
     expect(diagnostic).not.toContain("encryptedToken=xyz");
     expect(diagnostic.length).toBeLessThan(2_000);
   });

@@ -30,11 +30,11 @@ export interface FatalStartupDiagnosticOptions {
 }
 
 const SECRET_PATTERNS: RegExp[] = [
-  /token\s*[:=]\s*[^\s,;]+/gi,
-  /encryptedToken\s*[:=]\s*[^\s,;]+/gi,
-  /authorization\s*[:=]\s*[^\s,;]+/gi,
-  /cookie\s*[:=]\s*[^\s,;]+/gi,
-  /password\s*[:=]\s*[^\s,;]+/gi
+  /\btoken\s*[:=]\s*[^\r\n;]+/gi,
+  /\bencryptedToken\s*[:=]\s*[^\r\n;]+/gi,
+  /\bauthorization\s*[:=]\s*[^\r\n;]+/gi,
+  /\bcookie\s*[:=]\s*[^\r\n;]+/gi,
+  /\bpassword\s*[:=]\s*[^\r\n;]+/gi
 ];
 
 export function buildProductionViewMenuTemplate(isDevelopment: boolean): MenuItemConstructorOptions[] {
