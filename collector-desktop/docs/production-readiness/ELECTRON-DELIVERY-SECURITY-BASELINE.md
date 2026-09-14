@@ -1270,3 +1270,67 @@ Finding update:
 | EDS-P2-05 | CLOSED / R1 PASS | credential persistence failure semantics now fail closed for canonical clear/disarm, while preserving current-session memory clearing |
 
 Full command evidence is recorded in the final Task 06.3-R1 report.
+
+---
+
+# Task 06.3-R2 — Transactional Credential Commit & Atomic Rename Regression
+
+Date: 2026-09-14
+Branch: feature_2.0
+Remote baseline before Task 06.3-R2: ee04dfce2b691aac71b50aa14bdfb32e4668b2d7
+Scope: focused repair for `remember=true` credential commit ordering and atomic rename failure regression; no Task 06.4 work is started.
+
+Task 06.3-R2 keeps the Main-owned credential architecture, R1 clear/delete/disarm semantics, and Renderer/Main credential boundary intact. It tightens only the successful-commit semantics for remembered credentials.
+
+Before R2, `setCredential(token, true)` updated Main memory before encrypting and writing the remembered credential. If `safeStorage.encryptString()` or credential JSON persistence failed, the call threw, but the current Main process could already have switched proxy injection from the old credential to the candidate token. That split the caller-visible failure result from the actual Main credential state.
+
+R2 changes `remember=true` to persistence-success-first and state-commit-second:
+
+```text
+candidate token
+→ check protected safeStorage availability
+→ encrypt candidate token
+→ write credential JSON through atomic persistence
+→ only after all fallible persistence steps succeed:
+   memoryToken = candidate token
+   remembered = true
+   recovery = undefined
+```
+
+If encryption fails, `setCredential(token, true)` throws and leaves the previous Main credential state unchanged. If atomic credential writing fails, `setCredential(token, true)` also throws and leaves the previous Main credential state unchanged. A failed `remember=true` call therefore no longer causes the current session proxy credential to silently switch to the rejected candidate token.
+
+The existing product downgrade remains unchanged: when protected safeStorage is unavailable, `setCredential(token, true)` still becomes memory-only with `rememberUnavailable=true` and no plaintext persistence. This is an explicit no-plaintext fallback path, not a persistence failure transaction.
+
+R1 semantics remain unchanged for memory-only replacement: `setCredential(token, false)` may switch current Main memory to the new token immediately, but still throws if the old canonical remembered credential cannot be deleted or disarmed, because current session must not keep using the old token while restart could resurrect it.
+
+Atomic persistence helper behavior is unchanged and now has focused regression coverage for rename failure:
+
+```text
+temp write succeeds
+fsync succeeds
+close succeeds
+rename temp → target throws
+→ writeJsonAtomic(...) throws
+→ original target stays intact
+→ temp cleanup is attempted
+→ old target is not removed and is not replaced by candidate JSON
+```
+
+Focused R2 tests cover:
+
+1. `remember=true` encryption failure throws while `store.getToken()` and `remembered` remain at the original state;
+2. `remember=true` credential writer failure throws while `store.getToken()` and `remembered` remain at the original state;
+3. `remember=true` success still persists ciphertext and restart restores the new remembered token;
+4. R1 clear/delete/disarm double-failure behavior remains covered;
+5. R1 `remember=false` stale remembered credential disarm failure behavior remains covered;
+6. atomic rename failure preserves the original target config, does not remove it, does not replace it with candidate JSON, and attempts temp cleanup.
+
+Finding update:
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| EDS-P1-02 | CLOSED / R2 PASS | Renderer/Main credential boundary remains intact and failed `remember=true` persistence no longer changes Main proxy credential state |
+| EDS-P2-04 | CLOSED / R2 REGRESSION PASS | strict persisted server URL validation remains unchanged |
+| EDS-P2-05 | CLOSED / R2 PASS | credential remembered commit is persistence-success-first; atomic rename failure keeps the previous target intact and cleans temp best-effort |
+
+Full command evidence is recorded in the final Task 06.3-R2 report.

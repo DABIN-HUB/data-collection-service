@@ -18,7 +18,7 @@ export interface CredentialStatus {
   recovery?: RecoveryInfo;
 }
 
-interface PersistedCredentialFile {
+export interface PersistedCredentialFile {
   schemaVersion: 1;
   encryptedToken: string;
   updatedAt: string;
@@ -29,6 +29,8 @@ export interface CredentialFileOps {
   remove(path: string): void;
   rename(sourcePath: string, targetPath: string): void;
 }
+
+export type CredentialWriter = (credentialPath: string, credential: PersistedCredentialFile) => void;
 
 const DEFAULT_STATUS: CredentialStatus = {
   hasCredential: false,
@@ -52,7 +54,8 @@ export class MainCredentialStore {
     private readonly credentialPath: string,
     private readonly safeStorage: SafeStorageLike,
     private readonly platform: NodeJS.Platform = process.platform,
-    private readonly fileOps: CredentialFileOps = DEFAULT_CREDENTIAL_FILE_OPS
+    private readonly fileOps: CredentialFileOps = DEFAULT_CREDENTIAL_FILE_OPS,
+    private readonly writeCredential: CredentialWriter = writeJsonAtomic
   ) {}
 
   initialize(): CredentialStatus {
@@ -95,28 +98,36 @@ export class MainCredentialStore {
 
   setCredential(token: string, remember: boolean): CredentialStatus {
     const normalizedToken = String(token || "").trim();
-    this.memoryToken = normalizedToken;
-    this.remembered = false;
-    this.recovery = undefined;
     if (!normalizedToken) {
+      this.memoryToken = "";
+      this.remembered = false;
+      this.recovery = undefined;
       this.clearPersistedOnly();
       return this.getStatus();
     }
     if (!remember) {
+      this.memoryToken = normalizedToken;
+      this.remembered = false;
+      this.recovery = undefined;
       this.clearPersistedOnly();
       return this.getStatus();
     }
     if (!this.isProtectedPersistenceAvailable()) {
+      this.memoryToken = normalizedToken;
+      this.remembered = false;
+      this.recovery = undefined;
       this.clearPersistedOnly();
       return this.getStatus(true);
     }
     const encryptedToken = this.safeStorage.encryptString(normalizedToken).toString("base64");
-    writeJsonAtomic(this.credentialPath, {
+    this.writeCredential(this.credentialPath, {
       schemaVersion: 1,
       encryptedToken,
       updatedAt: new Date().toISOString()
     } satisfies PersistedCredentialFile);
+    this.memoryToken = normalizedToken;
     this.remembered = true;
+    this.recovery = undefined;
     return this.getStatus();
   }
 

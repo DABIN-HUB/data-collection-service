@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -45,6 +45,35 @@ describe("desktop-persistence-utils", () => {
     expect(() => writeJsonAtomic(configPath, { serverUrl: "http://192.168.1.20:9090/collector" }, fsOps)).toThrow("simulated write failure");
     expect(readFileSync(configPath, "utf8")).toBe(before);
     expect(fsOps.renameSync).not.toHaveBeenCalled();
+    expect(fsOps.rmSync).toHaveBeenCalledWith(expect.stringContaining(".tmp"), { force: true });
+    rmSync(dirname(configPath), { recursive: true, force: true });
+  });
+
+  it("atomic rename 失败时保留原 target、清理 temp，且不删除旧配置", () => {
+    const configPath = tempJsonPath();
+    const originalConfig = { serverUrl: "http://127.0.0.1:9090/collector" };
+    const nextConfig = { serverUrl: "http://192.168.1.20:9090/collector" };
+    writeJsonAtomic(configPath, originalConfig);
+    const before = readFileSync(configPath, "utf8");
+    const renameError = new Error("simulated rename failure");
+    const fsOps: AtomicWriteFileSystem = {
+      mkdirSync,
+      openSync,
+      writeFileSync,
+      fsyncSync,
+      closeSync,
+      renameSync: vi.fn(() => {
+        throw renameError;
+      }),
+      rmSync: vi.fn((path: string) => rmSync(path, { force: true })) as unknown as AtomicWriteFileSystem["rmSync"]
+    };
+
+    expect(() => writeJsonAtomic(configPath, nextConfig, fsOps)).toThrow("simulated rename failure");
+    expect(readFileSync(configPath, "utf8")).toBe(before);
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual(originalConfig);
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).not.toEqual(nextConfig);
+    expect(existsSync(configPath)).toBe(true);
+    expect(fsOps.renameSync).toHaveBeenCalledWith(expect.stringContaining(".tmp"), configPath);
     expect(fsOps.rmSync).toHaveBeenCalledWith(expect.stringContaining(".tmp"), { force: true });
     rmSync(dirname(configPath), { recursive: true, force: true });
   });

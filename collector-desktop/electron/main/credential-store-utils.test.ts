@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MainCredentialStore, normalizePersistedCredentialFile, type CredentialFileOps, type SafeStorageLike } from "./credential-store-utils.js";
+import { MainCredentialStore, normalizePersistedCredentialFile, type CredentialFileOps, type CredentialWriter, type SafeStorageLike } from "./credential-store-utils.js";
 
 const PLAINTEXT = "[REDACTED]";
+const TOKEN_A = "[REDACTED]-A";
+const TOKEN_B = "[REDACTED]-B";
 
 function tempCredentialPath(): string {
   return join(mkdtempSync(join(tmpdir(), "collector-credential-")), "collector-desktop-credentials.json");
@@ -61,6 +63,58 @@ describe("MainCredentialStore", () => {
     expect(persisted).not.toContain(PLAINTEXT);
     expect(restarted.initialize()).toMatchObject({ hasCredential: true, remembered: true });
     expect(restarted.getToken()).toBe(PLAINTEXT);
+    rmSync(join(credentialPath, ".."), { recursive: true, force: true });
+  });
+
+  it("remember=true encrypt 失败时不提交 Main credential state", () => {
+    const credentialPath = tempCredentialPath();
+    const safeStorage = fakeSafeStorage();
+    const store = new MainCredentialStore(credentialPath, safeStorage);
+    store.setCredential(TOKEN_A, true);
+    const beforeStatus = store.getStatus();
+
+    vi.mocked(safeStorage.encryptString).mockImplementationOnce(() => {
+      throw new Error("encrypt denied");
+    });
+
+    expect(() => store.setCredential(TOKEN_B, true)).toThrow("encrypt denied");
+    expect(store.getToken()).toBe(TOKEN_A);
+    expect(store.getStatus()).toMatchObject({
+      hasCredential: beforeStatus.hasCredential,
+      remembered: beforeStatus.remembered,
+      storageAvailable: beforeStatus.storageAvailable,
+      rememberUnavailable: beforeStatus.rememberUnavailable
+    });
+    const restarted = new MainCredentialStore(credentialPath, safeStorage);
+    expect(restarted.initialize()).toMatchObject({ hasCredential: true, remembered: true });
+    expect(restarted.getToken()).toBe(TOKEN_A);
+    rmSync(join(credentialPath, ".."), { recursive: true, force: true });
+  });
+
+  it("remember=true credential write 失败时不提交 Main credential state", () => {
+    const credentialPath = tempCredentialPath();
+    const safeStorage = fakeSafeStorage();
+    const store = new MainCredentialStore(credentialPath, safeStorage);
+    store.setCredential(TOKEN_A, true);
+    const beforeStatus = store.getStatus();
+    const writeError = new Error("credential write denied");
+    const throwingWriter: CredentialWriter = vi.fn(() => {
+      throw writeError;
+    });
+    const failingStore = new MainCredentialStore(credentialPath, safeStorage, process.platform, undefined, throwingWriter);
+    failingStore.initialize();
+
+    expect(() => failingStore.setCredential(TOKEN_B, true)).toThrow("credential write denied");
+    expect(failingStore.getToken()).toBe(TOKEN_A);
+    expect(failingStore.getStatus()).toMatchObject({
+      hasCredential: beforeStatus.hasCredential,
+      remembered: beforeStatus.remembered,
+      storageAvailable: beforeStatus.storageAvailable,
+      rememberUnavailable: beforeStatus.rememberUnavailable
+    });
+    const restarted = new MainCredentialStore(credentialPath, safeStorage);
+    expect(restarted.initialize()).toMatchObject({ hasCredential: true, remembered: true });
+    expect(restarted.getToken()).toBe(TOKEN_A);
     rmSync(join(credentialPath, ".."), { recursive: true, force: true });
   });
 
