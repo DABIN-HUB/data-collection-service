@@ -1618,3 +1618,330 @@ NOT LONG-TERM OSS SUPPORT ENDPOINT
 Next:
 Task 07.2-R1 — Electron Runtime Upgrade
 ```
+
+## Task 07.2-R0-R1 — Residual Java Runtime Security Patch
+
+### Scope
+
+R0-R1 only patches residual Java runtime security fixes that appeared after Spring Boot `3.5.16`'s managed baseline:
+
+```text
+Tomcat 10.1.55 -> 10.1.59
+Netty  4.1.135.Final -> 4.1.138.Final
+```
+
+It does not start Electron remediation, Boot 4 migration, frontend/npm work, or protocol-library major upgrades.
+
+### Baseline
+
+```text
+current remote baseline = 6fcf98274c2f7fa0e93afba13587821577513011
+git log -1 --oneline = 6fcf982 Task 07.2
+branch = feature_2.0...github/feature_2.0
+```
+
+R0 starting point:
+
+```text
+Spring Boot = 3.5.16
+Spring Framework = 6.2.19
+Tomcat = 10.1.55
+Netty = 4.1.135.Final
+Jackson = 2.21.4
+Logback = 1.5.34
+Java = 17
+```
+
+### Deliberate Security Patch Override
+
+R0 intentionally released historical `netty.version` to Boot management. R0-R1 deliberately reintroduces Boot property overrides only for current security patch levels:
+
+```xml
+<!-- Boot 3.5.16 manages Tomcat 10.1.55; override to newer compatible 10.1.x security patch. -->
+<tomcat.version>10.1.59</tomcat.version>
+<!-- Boot 3.5.16 manages Netty 4.1.135.Final; override to newer compatible 4.1.x security patch. -->
+<netty.version>4.1.138.Final</netty.version>
+```
+
+No second BOM was introduced. Boot parent remains the primary BOM.
+
+### Effective POM / Version Check
+
+Effective property verification:
+
+```text
+spring-boot.version = 3.5.16
+spring-framework.version = 6.2.19
+tomcat.version = 10.1.59
+netty.version = 4.1.138.Final
+jackson-bom.version = 2.21.4
+logback.version = 1.5.34
+java.version = 17
+```
+
+Evidence path:
+
+```text
+C:/Users/wangbin/AppData/Local/Temp/collector-dep-remediation-072-r0-r1/effective-pom-r0-r1.xml
+```
+
+### Dependency Tree Verification
+
+Commands executed:
+
+```text
+mvn -pl collector-boot -am dependency:tree -Dincludes=org.apache.tomcat.embed
+mvn -pl collector-boot -am dependency:tree -Dincludes=io.netty
+```
+
+Results:
+
+```text
+Tomcat tree: 10.1.59 present; 10.1.55 absent
+Netty tree: 4.1.138.Final present; 4.1.135.Final absent; 4.1.100.Final absent
+```
+
+### BOOT-INF/lib Verification
+
+Executable JAR inspected:
+
+```text
+collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar
+```
+
+Tomcat runtime JARs:
+
+```text
+tomcat-embed-core-10.1.59.jar
+tomcat-embed-el-10.1.59.jar
+tomcat-embed-websocket-10.1.59.jar
+```
+
+Main Netty runtime JARs converge to `4.1.138.Final`, including:
+
+```text
+netty-all-4.1.138.Final.jar
+netty-buffer-4.1.138.Final.jar
+netty-codec-4.1.138.Final.jar
+netty-codec-http-4.1.138.Final.jar
+netty-codec-http2-4.1.138.Final.jar
+netty-codec-mqtt-4.1.138.Final.jar
+netty-codec-redis-4.1.138.Final.jar
+netty-codec-stomp-4.1.138.Final.jar
+netty-handler-4.1.138.Final.jar
+netty-handler-ssl-ocsp-4.1.138.Final.jar
+netty-resolver-dns-4.1.138.Final.jar
+netty-transport-4.1.138.Final.jar
+```
+
+`netty-channel-fsm-1.0.2.jar` remains a DigitalPetri library and is not an `io.netty` family version conflict.
+
+### Mixed Version Check
+
+No mixed old/new family was found:
+
+```text
+Tomcat 10.1.55 + 10.1.59: NO
+Netty 4.1.135 + 4.1.138: NO
+Netty 4.1.100: NO
+```
+
+### Tomcat Advisory Matrix
+
+Focused verification covered the user-named Tomcat check list (`CVE-2026-55956`, `CVE-2026-68763`, `CVE-2026-68569`, `CVE-2026-65927`, `CVE-2026-65182`) plus the Critical/High OSV/GHSA rows returned for the packaged Tomcat 10.1.x coordinate. None of the named items remain Critical/High against `tomcat-embed-core:10.1.59` in the focused after scan; the actionable pre-patch Critical rows are listed below.
+
+Focused OSV/GHSA scan before R0-R1 (`tomcat-embed-core 10.1.55`) showed 3 Critical rows. After `10.1.59`, focused scan shows 0 Critical/High.
+
+| Advisory / CVE | Artifact | Before | Fixed / After | Packaged? | Current usage / prerequisite | Reachability before patch | Action |
+| --- | --- | ---: | ---: | --- | --- | --- | --- |
+| `GHSA-9xv2-5v5q-p794` / `CVE-2026-65905` | `tomcat-embed-core` | `10.1.55` | `10.1.59` | Yes | DIGEST authenticator replay class; embedded Tomcat HTTP runtime is active, DIGEST auth is not configured in project auth. | `POSSIBLY_REACHABLE` as Tomcat HTTP runtime class, not confirmed by current auth config | Patched by 10.1.59 |
+| `GHSA-gcx9-497g-6cp6` / `CVE-2026-65182` | `tomcat-embed-core` | `10.1.55` | `10.1.59` | Yes | Tomcat authorization/security constraint class; app uses embedded Tomcat and HTTP routes, auth is application filter/token based. | `POSSIBLY_REACHABLE` for Tomcat HTTP/security runtime | Patched by 10.1.59 |
+| `GHSA-h3x4-894j-xpx5` / `CVE-2026-68525` | `tomcat-embed-core` | `10.1.55` | `10.1.59` | Yes | FORM authentication process; project does not use container FORM auth, but Tomcat runtime is packaged. | `NOT_REACHABLE_BY_CURRENT_USAGE` for FORM auth path | Patched by 10.1.59 |
+
+Tomcat final classification after patch:
+
+```text
+Critical/High total = 0
+CONFIRMED_REACHABLE = 0
+LIKELY_REACHABLE = 0
+POSSIBLY_REACHABLE = 0
+NOT_REACHABLE_BY_CURRENT_USAGE = 0
+UNKNOWN = 0
+```
+
+### Netty Advisory Matrix
+
+Focused verification covered the user-named Netty patch window (`4.1.136.Final`, `4.1.137.Final`, `4.1.138.Final`) and the target modules `netty-handler`, `netty-handler-ssl-ocsp`, `netty-codec-http`, `netty-codec-http2`, `netty-codec-stomp`, `netty-codec-redis`, `netty-resolver-dns`, and `netty-codec-mqtt`. The focused after scan for `4.1.138.Final` returned no Critical/High rows for those target modules.
+
+Focused OSV/GHSA scan before R0-R1 (`4.1.135.Final`) showed 10 Critical/High rows across the target module set. After `4.1.138.Final`, focused scan shows 0 Critical/High.
+
+| Advisory / CVE | Module | Before | Fixed / After | Packaged? | Current usage / prerequisite | Reachability before patch | Action |
+| --- | --- | ---: | ---: | --- | --- | --- | --- |
+| `GHSA-558v-64gr-wgg4` / `CVE-2026-59901` | `netty-codec` | `4.1.135.Final` | `4.1.138.Final` | Yes | Bzip2Decoder event-loop hang; no direct source usage found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-6jqx-86gh-f27w` / `CVE-2026-55831` | `netty-codec-http` | `4.1.135.Final` | `4.1.138.Final` | Yes | SPDY SETTINGS map; backend HTTP server is Tomcat, no direct Netty/SPDY source use found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-jppx-w49h-x2qq` / `CVE-2026-56745` | `netty-codec-http` | `4.1.135.Final` | `4.1.138.Final` | Yes | SpdyHttpDecoder ByteBuf leak; backend HTTP server is Tomcat, no direct SPDY use found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-mvh2-crg5-v77c` / `CVE-2026-55833` | `netty-codec-http` | `4.1.135.Final` | `4.1.138.Final` | Yes | SPDY zlib/header expansion; no current SPDY pipeline found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-93wv-jw9v-4972` / `CVE-2026-56819` | `netty-codec-http2` | `4.1.135.Final` | `4.1.138.Final` | Yes | HTTP/2 decompressor ByteBuf leak; backend HTTP server is Tomcat, Netty HTTP/2 server not used. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-c4c3-7fpv-j4q5` / `CVE-2026-75595` | `netty-handler` | `4.1.135.Final` | `4.1.138.Final` | Yes | SNI routing bypass via fragmented TLS ClientHello. Protocol clients may use Netty TLS through Milo/PLC stacks, but no direct SNI server routing code found. | `POSSIBLY_REACHABLE` for protocol TLS clients/stacks | Patched |
+| `GHSA-272m-gcwp-mpwg` / `CVE-2026-56820` | `netty-handler-ssl-ocsp` | `4.1.135.Final` | `4.1.138.Final` | Yes | OCSP CertificateID validation; no direct `io.netty.handler.ssl.ocsp` / OCSP source usage found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-g7hg-vrcf-mvmr` / `CVE-2026-56821` | `netty-handler-ssl-ocsp` | `4.1.135.Final` | `4.1.138.Final` | Yes | OCSP freshness validation; no direct OCSP source usage found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-wc96-39fc-566f` / `CVE-2026-56822` | `netty-handler-ssl-ocsp` | `4.1.135.Final` | `4.1.138.Final` | Yes | OCSP TOCTOU; no direct OCSP source usage found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+| `GHSA-vhch-2wf3-m8rp` / `CVE-2026-44891` | `netty-codec-stomp` | `4.1.135.Final` | `4.1.138.Final` | Yes | STOMP decoder unbounded headers; no STOMP source usage found. | `NOT_REACHABLE_BY_CURRENT_USAGE` | Patched |
+
+Netty final classification after patch:
+
+```text
+Critical/High total = 0
+CONFIRMED_REACHABLE = 0
+LIKELY_REACHABLE = 0
+POSSIBLY_REACHABLE = 0
+NOT_REACHABLE_BY_CURRENT_USAGE = 0
+UNKNOWN = 0
+```
+
+### Usage / Reachability Notes
+
+- Backend HTTP server remains embedded Tomcat, not Netty HTTP.
+- Netty modules are packaged through protocol/client stacks including Redis/Lettuce, DigitalPetri Modbus, Milo/OPC UA, PLC4X, and related transitive graph.
+- Source search found no direct STOMP decoder usage, no direct Netty OCSP API usage, no direct Netty DNS resolver API usage, and no direct Netty HTTP/SPDY server pipeline usage.
+- Protocol regression is covered by existing Maven tests and runtime protocol endpoint smoke rather than field-device soak.
+
+### Maven Package / Tests
+
+Executed:
+
+```text
+mvn -DskipTests clean package
+=> exit 0
+```
+
+Executed:
+
+```text
+mvn test
+=> exit 0 / BUILD SUCCESS
+```
+
+The full reactor succeeded, including:
+
+```text
+collector-runtime
+collector-protocol-modbus
+collector-protocol-opc
+collector-protocol-plc
+collector-protocol-iot
+collector-cloud
+collector-web
+collector-boot
+```
+
+Final executable JAR was regenerated after tests:
+
+```text
+mvn -DskipTests clean package
+=> exit 0
+```
+
+### Application Startup
+
+Started the regenerated JAR:
+
+```text
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --server.port=19090
+```
+
+Startup evidence:
+
+```text
+Tomcat started on port 19090 (http) with context path '/collector'
+```
+
+No `APPLICATION FAILED TO START`, `ClassNotFound`, `NoSuchMethodError`, or `LinkageError` was observed. Local Redis is unavailable, so runtime logs contain connection-refused warnings and health body status is `DOWN`; this is external dependency availability, not patch incompatibility.
+
+### HTTP / OpenAPI / Observability Smoke
+
+Smoke endpoints:
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /collector/actuator/health` | HTTP 200, body `{"status":"DOWN"...}` |
+| `GET /collector/api/protocols` with ops token | HTTP 200 |
+| `GET /collector/api/config/summary` with ops token | HTTP 200 |
+| `GET /collector/v3/api-docs` | HTTP 200, JSON parseable, paths non-empty |
+| `GET /collector/swagger-ui/index.html` | HTTP 200 |
+| `GET /collector/actuator/metrics` with ops token | HTTP 200 |
+| `GET /collector/actuator/prometheus` with ops token | HTTP 200 |
+
+### Health HTTP Status
+
+Observed health behavior:
+
+```text
+HTTP status = 200
+body status = DOWN
+```
+
+This is intentional project configuration in `collector-boot/src/main/resources/application.yml`:
+
+```yaml
+management:
+  endpoint:
+    health:
+      status:
+        http-mapping:
+          down: 200
+          out-of-service: 200
+```
+
+No production health mapping was changed in R0-R1.
+
+### OSV/GHSA After Scan
+
+Focused after-scan:
+
+| Family | Version | Critical | High | Critical/High total |
+| --- | ---: | ---: | ---: | ---: |
+| Tomcat | `10.1.59` | 0 | 0 | 0 |
+| Netty | `4.1.138.Final` | 0 | 0 | 0 |
+
+### Closed Risks
+
+Closed residual current Critical/High rows from R0:
+
+```text
+Tomcat 10.1.55 residual Critical rows: 3 -> 0
+Netty 4.1.135.Final residual Critical/High rows: 10 -> 0 in focused target module scan
+```
+
+### Remaining Risks
+
+R0-R1 does not address non-target families:
+
+```text
+Electron runtime
+Electron-builder packaging toolchain
+PLC4X / Milo / Bouncy Castle / other protocol stack advisories
+Spring Boot 4 strategic migration
+```
+
+### R0-R1 Final Status
+
+```text
+Task 07.2-R0: PASS / COMPLETE
+Task 07.2-R0-R1: PASS / COMPLETE
+
+Java Web Runtime Tactical Remediation:
+COMPLETE
+
+Spring Boot:
+3.5.16 TRANSITIONAL
+
+Tomcat:
+10.1.59
+
+Netty:
+4.1.138.Final
+
+Next:
+Task 07.2-R1 — Electron Runtime Upgrade
+```
