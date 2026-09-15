@@ -1338,3 +1338,283 @@ Task 07.2 — Targeted Dependency Security Remediation
 ```
 
 Do not start 07.2 automatically.
+
+## Task 07.2-R0 — Java Web Runtime Tactical Security Uplift
+
+### Scope and Positioning
+
+R0 starts dependency remediation after 07.1 baseline closure. It is limited to the Java Web Runtime first-stage uplift:
+
+```text
+Spring Boot 3.2.0 -> 3.5.16
+TRANSITIONAL SECURITY UPLIFT
+NOT CURRENT OSS-SUPPORTED LONG-TERM ENDPOINT
+```
+
+R0 does not perform Electron, electron-builder, Vite, Vitest, Vue, npm toolchain, protocol library major, or Spring Boot 4 remediation.
+
+### Baseline Commit
+
+```text
+current remote baseline = a25be34701d955e1a505d671f3f4ca560b33f121
+git log -1 --oneline = a25be34 修改
+branch = feature_2.0...github/feature_2.0
+```
+
+### Maven Changes
+
+Root `pom.xml` changes:
+
+```text
+spring-boot-starter-parent: 3.2.0 -> 3.5.16
+spring-boot.version:       3.2.0 -> 3.5.16
+springdoc.version:         2.3.0 -> 2.8.17
+java.version:              stays 17
+mybatis.version:           stays 3.0.3
+```
+
+Project property overrides released to Spring Boot 3.5.16 managed properties:
+
+```text
+netty.version
+caffeine.version
+jedis.version
+lombok.version
+commons-lang3.version
+commons-pool2.version
+```
+
+The explicit root `maven-compiler-plugin` version was removed so Spring Boot parent plugin management controls it. Existing compiler configuration and Java 17 source/target remain.
+
+### Boot Property Collision Matrix
+
+| Property | Project Current | Boot 3.5.16 Managed | Security Relevant? | Action |
+| --- | ---: | ---: | --- | --- |
+| `netty.version` | `4.1.100.Final` | `4.1.135.Final` | Yes, R1 found many Netty runtime advisories | Released project override; Boot now manages Netty. |
+| `caffeine.version` | `3.1.8` | `3.2.4` | Low/indirect cache library hygiene | Released project override; no code-level pin reason found. |
+| `jedis.version` | `5.1.0` | `6.0.0` | Redis client stack; project uses Spring Data Redis/Lettuce at runtime | Released project override; no direct Jedis code import found. |
+| `lombok.version` | `1.18.30` | `1.18.46` | Build/annotation processor hygiene | Released project override; annotation processor now uses Boot property. |
+| `commons-lang3.version` | `3.14.0` | `3.17.0` | Yes, tracked in 07.1 advisory review | Released project override; Boot-managed version used. |
+| `commons-pool2.version` | `2.12.0` | `2.12.1` | Redis/client pool hygiene | Released project override. |
+| `maven.compiler.plugin.version` | `3.11.0` | Boot plugin management `3.14.1` | Build plugin, not runtime | Removed explicit plugin version; configuration kept. |
+
+### Effective Dependency Baseline
+
+Focused dependency tree and effective-POM evidence were regenerated under:
+
+```text
+C:/Users/wangbin/AppData/Local/Temp/collector-dep-remediation-072-r0/
+```
+
+| Family | Before | After | Evidence |
+| --- | ---: | ---: | --- |
+| Spring Boot | `3.2.0` | `3.5.16` | dependency tree + BOOT-INF/lib |
+| Spring Framework | `6.1.1` | `6.2.19` | dependency tree + BOOT-INF/lib |
+| Tomcat | `10.1.16` | `10.1.55` | dependency tree + BOOT-INF/lib |
+| Jackson Core/Databind | `2.15.3` | `2.21.4` | dependency tree + BOOT-INF/lib |
+| Logback | `1.4.11` | `1.5.34` | dependency tree + BOOT-INF/lib |
+| Netty | `4.1.100.Final` | `4.1.135.Final` | `mvn dependency:tree -Dincludes=io.netty` + BOOT-INF/lib |
+| Spring Data | `3.2.0` | `3.5.13` | dependency tree + BOOT-INF/lib |
+| Micrometer | `1.12.0` | `1.15.12` | dependency tree + BOOT-INF/lib |
+| Springdoc | `2.3.0` | `2.8.17` | dependency tree + runtime OpenAPI smoke |
+| MyBatis starter | `3.0.3` | `3.0.3` | unchanged by design |
+
+### Netty Convergence
+
+`mvn -pl collector-boot -am dependency:tree -Dincludes=io.netty` shows the main Netty family converged to:
+
+```text
+4.1.135.Final
+```
+
+JAR inspection found Netty runtime modules such as:
+
+```text
+netty-all-4.1.135.Final.jar
+netty-buffer-4.1.135.Final.jar
+netty-codec-4.1.135.Final.jar
+netty-codec-http-4.1.135.Final.jar
+netty-codec-http2-4.1.135.Final.jar
+netty-codec-mqtt-4.1.135.Final.jar
+netty-codec-redis-4.1.135.Final.jar
+netty-common-4.1.135.Final.jar
+netty-handler-4.1.135.Final.jar
+netty-transport-4.1.135.Final.jar
+```
+
+No `io.netty` `4.1.100.Final` module remains in the packaged runtime. `netty-channel-fsm-1.0.2.jar` remains as a DigitalPetri library and is not an `io.netty` module version conflict.
+
+### BOOT-INF/lib Verification
+
+Executable JAR inspected:
+
+```text
+collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar
+```
+
+Confirmed packaged runtime JARs include:
+
+```text
+spring-boot-3.5.16.jar
+spring-web-6.2.19.jar
+spring-webmvc-6.2.19.jar
+tomcat-embed-core-10.1.55.jar
+jackson-core-2.21.4.jar
+jackson-databind-2.21.4.jar
+logback-core-1.5.34.jar
+logback-classic-1.5.34.jar
+spring-data-redis-3.5.13.jar
+micrometer-core-1.15.12.jar
+springdoc-openapi-starter-webmvc-ui-2.8.17.jar
+mybatis-spring-boot-starter-3.0.3.jar
+```
+
+Note: `jackson-annotations-2.21.jar` is present together with Jackson core/databind `2.21.4`; this is the Jackson BOM's actual artifact versioning and not a stale `2.15.x` mix.
+
+### Mixed Version Check
+
+No old/new mixed packaged runtime stack was found for:
+
+```text
+Spring 6.1.x + 6.2.x
+Tomcat 10.1.16 + 10.1.55
+Jackson 2.15.x + 2.21.x
+Logback 1.4.x + 1.5.x
+Netty 4.1.100.Final + 4.1.135.Final
+```
+
+### Compatibility Adjustment
+
+During full `mvn test`, one scheduler test exposed an existing observable-state ordering race in `ReconnectCoordinator`: success count was published before `nextRetryAt` was reset. R0 made the smallest production-code compatibility/correctness adjustment:
+
+```text
+collector-runtime/src/main/java/com/wangbin/collector/core/collector/scheduler/ReconnectCoordinator.java
+```
+
+The change resets reconnect backoff state before publishing `reconnectSuccessCount`. It does not change scheduling architecture or API contracts.
+
+### Maven Build and Tests
+
+Executed:
+
+```text
+mvn -DskipTests clean package
+=> exit 0
+```
+
+Executed after the minimal scheduler ordering fix:
+
+```text
+mvn test
+=> exit 0 / BUILD SUCCESS
+```
+
+The full Maven reactor completed successfully across all modules, including protocol modules, monitor, web, application, and boot.
+
+Final executable JAR was regenerated after the production-code fix:
+
+```text
+mvn -DskipTests clean package
+=> exit 0
+```
+
+### Application Startup
+
+Started the packaged executable JAR on a smoke port:
+
+```text
+java -jar collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar --server.port=19090
+```
+
+Startup evidence:
+
+```text
+Tomcat started on port 19090 (http) with context path '/collector'
+```
+
+No `APPLICATION FAILED TO START`, `BeanDefinition` error, `ClassNotFound`, `NoSuchMethodError`, or `LinkageError` was observed. Redis was not available locally, so health reported `DOWN` and scheduled Redis paths logged connection-refused warnings; this is an external dependency availability condition, not a Boot runtime startup failure.
+
+### Backend HTTP / OpenAPI / Observability Smoke
+
+Runtime smoke results:
+
+| Endpoint | Result | Notes |
+| --- | --- | --- |
+| `GET /collector/actuator/health` | HTTP 200 | Body status `DOWN` due local Redis unavailable; app remains running. |
+| `GET /collector/actuator/metrics` with ops token | HTTP 200 | Metrics registry available; existing collector pipeline meters listed. |
+| `GET /collector/actuator/prometheus` with ops token | HTTP 200 | Prometheus export generated. |
+| `GET /collector/v3/api-docs` | HTTP 200 | JSON parseable; paths non-empty. |
+| `GET /collector/swagger-ui/index.html` | HTTP 200 | Swagger UI static resource served. |
+| `GET /collector/api/protocols` with ops token | HTTP 200 | Representative API JSON returned. |
+| `GET /collector/api/config/summary` with ops token | HTTP 200 | Representative config JSON returned. |
+| `GET /collector/desktop/index.html` | HTTP 200 | Static desktop resource served. |
+
+Request IDs were present in HTTP responses, and Prometheus output included `collector_auth_requests`, pipeline gauges, JVM/process, Tomcat, and executor meters.
+
+### Spring Boot 3.2 -> 3.5 Migration Scan
+
+Source/config scan covered Spring MVC/resource config, filters/interceptors, CORS/auth rules, Jackson customization, Redis properties, actuator/prometheus, logging/MDC/requestId, `@ConfigurationProperties`, and `@Value` usage. No code migration was needed beyond the scheduler ordering fix exposed by the upgraded test/runtime stack.
+
+Preserved invariants:
+
+```text
+Java remains 17
+context-path remains /collector
+server port config remains unchanged
+MyBatis remains 3.0.3
+protocol library versions remain unchanged
+Task 01/02/03 frontend/realtime/API invariants not modified
+```
+
+### Focused OSV/GHSA Rescan Delta
+
+Focused OSV queries were rerun for the web-runtime families using before/after resolved versions. Counts are package-advisory rows for the queried representative family artifacts.
+
+| Family | Before | After | Critical/High Before | Critical/High After | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Spring Boot | `3.2.0` | `3.5.16` | 1 | 0 | Closed in focused scan. |
+| Spring Framework | `6.1.1` | `6.2.19` | 9 | 0 | Closed in focused scan. |
+| Tomcat | `10.1.16` | `10.1.55` | 23 | 3 | Significantly reduced; new/future Tomcat Critical advisories still remain in OSV data. |
+| Jackson | `2.15.3` | `2.21.4` | 3 | 0 | Critical/High closed; after scan retains Moderate Jackson findings only. |
+| Logback | `1.4.11` | `1.5.34` | 2 | 0 | Closed in focused scan. |
+| Netty | `4.1.100.Final` | `4.1.135.Final` | 23 | 6 | Significantly reduced; newer Netty Critical/High advisories still remain in OSV data. |
+| Spring Data | `3.2.0` | `3.5.13` | 0 | 0 | No Critical/High in focused scan. |
+| Micrometer | `1.12.0` | `1.15.12` | 1 | 0 | Closed in focused scan. |
+
+R0 does not require Critical/High = 0 because protocol stack, Bouncy Castle, Electron, and future advisories remain outside this scope. Java Web Runtime P1/P2 risk was materially reduced.
+
+### Remaining Risks
+
+Remaining R0-relevant focused OSV Critical/High rows after the uplift are currently concentrated in:
+
+```text
+Tomcat 10.1.55: 3 Critical rows in OSV future/current data
+Netty 4.1.135.Final: 1 Critical + 5 High rows in OSV future/current data
+```
+
+These should be evaluated in subsequent targeted remediation rather than by ad-hoc Spring Framework/Tomcat/Jackson/Netty BOM mixing inside R0.
+
+Other 07.2 scopes remain:
+
+```text
+Electron runtime upgrade
+Electron-builder / packaging toolchain upgrade
+Protocol stack patch review
+Boot 4 strategic migration decision
+```
+
+### R0 Final Status
+
+```text
+Task 07.2-R0: PASS / COMPLETE
+
+Java Web Runtime Tactical Security Uplift:
+COMPLETE
+
+Spring Boot 3.5.16:
+TRANSITIONAL
+NOT LONG-TERM OSS SUPPORT ENDPOINT
+
+Next:
+Task 07.2-R1 — Electron Runtime Upgrade
+```
