@@ -753,3 +753,243 @@ NOT STARTED
 Next:
 Fix npm lockfile reproducibility / clean-install baseline before Task 07.2 remediation
 ```
+
+## Task 07.1-R2 — npm Lockfile Reproducibility Repair
+
+### R2 Scope
+
+本 R2 只尝试修复 `collector-desktop/package-lock.json` 与当前 `collector-desktop/package.json` 在 npm 12 下不同步的问题。未启动 07.2，未升级生产依赖，未修改 `package.json` / `pom.xml` / 源码。
+
+### Node / npm Environment
+
+```text
+node --version = v22.23.2
+npm --version = 12.0.2
+npm config get registry = https://registry.npmjs.org/
+npm config get legacy-peer-deps = false
+npm config get strict-peer-deps = false
+npm config get allow-remote = none before session override
+```
+
+说明：npm 12 当前环境默认 `allow-remote=none`，会拒绝从 lockfile 的 remote tarball URL 拉包。由于 lockfile 记录了大量 `resolved` tarball URL，本轮为验证 dependency graph 曾在 shell session 中设置 `NPM_CONFIG_ALLOW_REMOTE=all` 后执行 `npm ci --prefix collector-desktop`；未使用 `--legacy-peer-deps`、`--force`。
+
+### Root Cause
+
+R1 的 `npm ci` 首个 blocker 是 lockfile 与 manifest/transitive graph 不同步：
+
+```text
+Invalid: lock file's keyv@4.5.4 does not satisfy keyv@5.6.0
+Missing: electron-builder-squirrel-windows@25.1.8 from lock file
+Missing: archiver@5.3.2 / fs-extra@10.1.0 / ... from lock file
+```
+
+R2 发现另一个仍未关闭的 npm graph 问题：
+
+```text
+invalid: vite@6.4.3, ^5.0.0 required by @vitest/mocker@2.1.9
+```
+
+该问题来自当前 direct dependency 意图：项目直接锁定 `vite 6.4.3`，同时 `vitest 2.1.9` / `@vitest/mocker 2.1.9` 要求 `vite ^5.0.0`。在不修改 `package.json`、不升级/降级 direct dependency、不开 `legacy-peer-deps` 的约束下，单靠 npm 生成 `package-lock.json` 不能让 `npm ls --all` 无 ELSPROBLEMS。
+
+### Repair Method
+
+授权命令已执行：
+
+```text
+npm --prefix collector-desktop install --package-lock-only --ignore-scripts --no-audit --no-fund
+```
+
+为确认 npm 是否能通过不同安装策略自动 nest peer，又执行过 npm 生成的 lockfile-only 尝试：
+
+```text
+npm --prefix collector-desktop install --package-lock-only --ignore-scripts --no-audit --no-fund --install-strategy=nested
+```
+
+最终 lockfile 仍由 npm 生成，没有手工补节点、复制 integrity 或移动依赖。
+
+### Lockfile Diff Summary
+
+| Metric | Count |
+| --- | ---: |
+| packages before | 781 |
+| packages after | 811 |
+| added package nodes | 33 |
+| removed package nodes | 3 |
+| version-changed existing package nodes | 1 |
+| resolved URL changed existing nodes | 2 |
+| integrity changed existing nodes | 1 |
+| resolved host changed existing nodes | 2 |
+
+Added package nodes are focused around the missing `electron-builder-squirrel-windows@25.1.8` / Squirrel-Windows archive graph and keyv placement repair, including `archiver`, `fs-extra`, `tar-stream`, `zip-stream`, `archiver-utils`, and nested `keyv@4.5.4` for consumers that still require keyv 4.x.
+
+Version-changed existing node:
+
+```text
+node_modules/keyv: 4.5.4 -> 5.6.0
+```
+
+This is required for `@cacheable/*` / `cacheable` consumers that require `keyv ^5.6.0`; keyv 4.x remains nested for `cacheable-request` / `flat-cache` consumers.
+
+### Direct Version Before/After
+
+| Dependency | Before | After | Changed? |
+| --- | ---: | ---: | --- |
+| `electron` | `33.4.11` | `33.4.11` | NO |
+| `electron-builder` | `25.1.8` | `25.1.8` | NO |
+| `vite` | `6.4.3` | `6.4.3` | NO |
+| `vitest` | `2.1.9` | `2.1.9` | NO |
+| `vue` | `3.5.41` | `3.5.41` | NO |
+| `vue-router` | `4.6.4` | `4.6.4` | NO |
+| `pinia` | `2.3.1` | `2.3.1` | NO |
+| `axios` | `1.19.0` | `1.19.0` | NO |
+| `element-plus` | `2.14.4` | `2.14.4` | NO |
+| `@element-plus/icons-vue` | `2.3.2` | `2.3.2` | NO |
+| `typescript` | `5.9.3` | `5.9.3` | NO |
+| `vue-tsc` | `2.2.12` | `2.2.12` | NO |
+| `eslint` | `10.9.1` | `10.9.1` | NO |
+| `stylelint` | `17.14.1` | `17.14.1` | NO |
+
+Direct dependency versions remained unchanged.
+
+### Registry Host Evidence
+
+Before:
+
+```text
+{'registry.npmmirror.com': 780, 'registry.npmjs.org': 1}
+```
+
+After:
+
+```text
+{'registry.npmmirror.com': 775, 'registry.npmjs.org': 36}
+```
+
+Existing resolved host changes were limited to 2 node(s): node_modules/json-buffer, node_modules/keyv.
+
+Lockfile still contains third-party npm mirror resolved URLs (`registry.npmmirror.com`) plus some `registry.npmjs.org` URLs. Every package-lock entry with tarball URL continues to carry SHA integrity. R2 did not perform full registry URL normalization. Whether to unify to official npm registry remains a separate supply-chain policy decision.
+
+### npm ci Result
+
+Default current npm config:
+
+```text
+npm config get allow-remote = none
+npm ci --prefix collector-desktop
+=> EALLOWREMOTE: Fetching packages of type "remote" have been disabled
+```
+
+With session fetch policy allowing lockfile remote tarballs:
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all npm ci --prefix collector-desktop
+=> exit 0
+```
+
+No `--legacy-peer-deps` and no `--force` were used.
+
+### npm ls / ELSPROBLEMS Result
+
+```text
+npm --prefix collector-desktop ls --all --json
+=> exit 1 / ELSPROBLEMS
+```
+
+Remaining problem:
+
+```text
+invalid: vite@6.4.3 F:\ideaWorkSpace\data-collection-service\collector-desktop\node_modules\vite
+```
+
+SBOM reports the exact peer mismatch:
+
+```text
+invalid: vite@6.4.3, ^5.0.0 required by @vitest/mocker@2.1.9
+```
+
+This cannot be fixed by package-lock-only repair while also preserving direct `vite 6.4.3` and `vitest 2.1.9` and avoiding `legacy-peer-deps`.
+
+### npm Audit Rerun
+
+Clean install graph audit rerun result:
+
+| Audit | Critical | High | Moderate | Low | Total | Dependencies total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| full | 2 | 17 | 3 | 1 | 23 | 811 |
+| `--omit=dev` | 0 | 0 | 0 | 0 | 0 | 811 |
+
+Production-only audit remains 0 vulnerabilities.
+
+### npm outdated Rerun
+
+```text
+npm --prefix collector-desktop outdated --json
+=> non-zero because outdated packages exist
+outdated package count = 19
+```
+
+This is informational only and was not remediated in R2.
+
+### npm SBOM Rerun
+
+```text
+npm --prefix collector-desktop sbom --sbom-format cyclonedx
+=> ESBOMPROBLEMS
+```
+
+Exact reason:
+
+```text
+invalid: vite@6.4.3, ^5.0.0 required by @vitest/mocker@2.1.9
+```
+
+### Frontend Verification
+
+Despite `npm ls` / SBOM peer graph problem, the rebuilt `node_modules` can run the current desktop verification chain:
+
+```text
+npm --prefix collector-desktop run lint              PASS
+npm --prefix collector-desktop run stylelint         PASS
+npm --prefix collector-desktop run typecheck         PASS
+npm --prefix collector-desktop test                  PASS
+npm --prefix collector-desktop run build             PASS
+npm --prefix collector-desktop run build:web         PASS
+npm --prefix collector-desktop run verify            PASS
+npm --prefix collector-desktop run pack              PASS
+```
+
+`build:web` temporarily changed generated static `collector-boot/src/main/resources/static/desktop/index.html`; because R2 scope allows only lockfile/doc changes and this was generated output drift, it was restored from `HEAD` content without using `git checkout` / `git restore`.
+
+### Java Critical/High Matrix Status
+
+R1 Java Runtime Critical/High matrix remains unchanged:
+
+```text
+Runtime Critical/High advisory candidates = 78
+UNKNOWN = 0
+```
+
+R2 did not redo Java CVE analysis.
+
+### R2 Status
+
+```text
+Task 07.1-R2: INCOMPLETE
+Task 07.1-R1: INCOMPLETE
+Task 07.1: INCOMPLETE
+
+Dependency Security Baseline:
+INCOMPLETE — npm ls/SBOM still blocked by Vite/Vitest peer graph mismatch
+
+Dependency Remediation:
+NOT STARTED
+```
+
+R2 closes the original missing-node / keyv lockfile sync error, but it does not satisfy the full PASS gate because `npm ls --all` still reports ELSPROBLEMS and npm SBOM still fails.
+
+### Next
+
+Before `Task 07.2`, decide how to resolve the dev-tool peer graph while respecting security-remediation scope. Likely options are:
+
+1. Accept a narrowly scoped dev-toolchain compatibility repair that changes direct versions (`vite`/`vitest`) in a dedicated task; or
+2. Keep R2 incomplete and document that package-lock-only repair cannot make the current manifest graph fully reproducible under strict npm 12 checks.
