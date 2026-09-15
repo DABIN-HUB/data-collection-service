@@ -144,7 +144,7 @@ Electron runtime status from official lifecycle sources:
 
 | Item | Current | Security Support | Shipped? | Risk | Recommended Path |
 | --- | --- | --- | --- | --- | --- |
-| Electron | `33.4.11` | Electron schedule lists Electron 33 EOL `2025-04-28`; latest three stable majors are supported | Yes, packaged runtime | **P1 / UNSUPPORTED + known advisories** | Separate Electron major upgrade task; current supported majors at audit date are 42/43/44 |
+| Electron | `33.4.11` | Electron schedule lists Electron 33 EOL `2025-04-29`; latest three stable majors are supported | Yes, packaged runtime | **P1 / UNSUPPORTED + known advisories** | Separate Electron major upgrade task; current supported majors at audit date are 42/43/44 |
 | Chromium runtime | Electron 33 uses Chromium `M130` | Chromium embedded in Electron 33 no longer receives Electron backports | Yes | Browser engine security lag | Upgrade Electron; cannot patch Chromium independently here |
 | Node runtime | Electron 33 uses Node `v20.18.0` | tied to EOL Electron line | Yes | Runtime security lag | Upgrade Electron |
 | electron-builder | `25.1.8` | npm audit High through `app-builder-lib`/`builder-util` | Build/packaging only | P2/P3 depending distribution workflow | Targeted upgrade to `26.15.3` candidate, separate from Electron runtime upgrade |
@@ -236,7 +236,7 @@ Important: OWASP Dependency-Check did not finish NVD update within the allowed r
 | `POSSIBLY_REACHABLE` | Bouncy Castle via OPC UA cert/TLS; TDengine JDBC; protocol-specific parsers depending enabled device configs |
 | `NOT_RUNTIME` | Vitest, ESLint, Stylelint, TypeScript, most Vite dev-server findings, node-gyp/tar/cacache when only used during dependency/build steps |
 | `NOT_REACHABLE_BY_CURRENT_USAGE` | Log4j Core style exploit class not present; Log4j API/SLF4J bridge only; Lombok packaged but not used at runtime |
-| `UNKNOWN` | Individual OSV Java advisory method-level reachability until code-path review in 07.2; OWASP Dependency-Check incomplete |
+| `UNKNOWN` | Superseded by R1: Runtime Critical/High advisory reachability is now complete with `UNKNOWN = 0`; Moderate/Low package-family detail and OWASP Dependency-Check scanner completion remain deferred. |
 
 ## 11. Exposure
 
@@ -284,7 +284,7 @@ npm:
 
 | Dependency | Current | Status | Evidence | Risk |
 | --- | ---: | --- | --- | --- |
-| Electron | `33.4.11` | EOL since `2025-04-28` per Electron release schedule; latest three stable majors are supported | Electron official schedule/timeline | **P1 unsupported packaged runtime** |
+| Electron | `33.4.11` | EOL since `2025-04-29` per Electron release schedule; latest three stable majors are supported | Electron official schedule/timeline | **P1 unsupported packaged runtime** |
 | Spring Boot | `3.2.0` | Spring Boot 3.2 OSS support ended in 2024; commercial support windows also stale/ending depending source | Spring lifecycle/advisory sources | **P1 unsupported Java web runtime baseline** |
 | Spring Framework | `6.1.1` | Old 6.1 patch level with multiple advisories fixed in later 6.1/6.2 releases | Spring/GHSA evidence | P1/P2 |
 | Tomcat | `10.1.16` | Very old 10.1 patch level with many fixed advisories through 10.1.44+ and later | Tomcat/GHSA evidence | P1 |
@@ -305,7 +305,7 @@ npm:
 
 | Candidate | Current | Target Class | Reason | Risk |
 | --- | ---: | --- | --- | --- |
-| Spring Boot 3.x supported line | `3.2.0` | supported 3.x minor line | resolves Spring/Tomcat/Jackson/Netty managed advisories without Boot major | medium/high regression; needs dedicated backend test/smoke task |
+| Spring Boot 3.5.16 transitional security uplift / Boot 4 supported path | `3.2.0` | 3.5.16 transitional security uplift; not current OSS-supported | brings many Spring/Tomcat/Jackson/Netty patches without Boot major, but remains transitional because Boot 3.5.x OSS support has ended | medium/high regression; needs dedicated backend test/smoke task |
 | Netty 4.1.x | `4.1.100.Final` | newer 4.1.x | many Netty advisories; may be managed by Boot or protocol libraries | medium; protocol regression risk |
 | Tomcat 10.1.x | `10.1.16` | newer 10.1.x via Boot | HTTP server advisories | medium; prefer Boot-managed |
 | Jackson 2.x | `2.15.3` | newer 2.x via Boot | parser advisories | medium; serialization compatibility |
@@ -317,7 +317,7 @@ npm:
 
 | Candidate | Current | Target Class | Reason | Risk |
 | --- | ---: | --- | --- | --- |
-| Electron | `33.4.11` | supported major (`42/43/44` at audit date) | EOL + multiple Electron advisories | high; needs separate Electron runtime verification |
+| Electron | `33.4.11` | Electron 44 latest stable patch by default (`42/43/44` supported at R1 audit date) | EOL + multiple Electron advisories | high; needs separate Electron runtime verification |
 | Vitest | `2.1.9` | `5.0.0` per npm audit | Critical dev-server finding | medium; tests/build config may change |
 | Vite | `6.4.3` | latest major available is `8.3.0`; direct Vite not prod vulnerable | dev-server/toolchain modernization | medium; not 07.2 first priority unless dev exposure required |
 | Vue Router / Pinia | current major behind latest major | major available | outdated only, no confirmed vuln | defer |
@@ -385,17 +385,17 @@ Electron official release schedule extraction
 | P2/P3 | electron-builder/app-builder-lib/tar packaging vulnerabilities | Build/packaging | build host/artifact generation | Upgrade builder toolchain; rerun pack/dist and installer checks |
 | P3 | Vitest/Vite dev-server Critical/High | Dev/test only | only when dev/test server exposed | Dev toolchain upgrade; restrict dev server exposure |
 | INFO | Renderer runtime packages outdated (`axios`, `vue`, `element-plus`) but no prod audit vuln | Yes but no vuln | normal renderer usage | Patch/minor maintenance after security blockers |
-| UNKNOWN | OWASP Dependency-Check not completed | N/A | N/A | Rerun with NVD API/cache before final release certification |
+| SCANNER_LIMITATION | OWASP Dependency-Check not completed | N/A | N/A | Rerun with NVD API/cache before final release certification; this no longer represents Critical/High reachability UNKNOWN after R1 |
 
 ## 19. Task 07.2 Recommendation
 
 Recommended 07.2 split:
 
 1. **07.2-R0 / Java Web Runtime Security Remediation**
-   - Upgrade Spring Boot within supported 3.x line, allowing managed Spring/Tomcat/Jackson/Logback/Netty updates.
+   - Upgrade Spring Boot within Boot 3.5.16 transitional security uplift / Boot 4 supported path, allowing managed Spring/Tomcat/Jackson/Logback/Netty updates.
    - Re-run Maven dependency tree, package, backend smoke, and OSV/Dependency-Check.
 2. **07.2-R1 / Electron Runtime Upgrade Plan**
-   - Upgrade Electron from 33 to supported major in a dedicated branch/task.
+   - Upgrade Electron from 33 to Electron 44 latest stable patch by default in a dedicated task, unless compatibility validation finds a blocker.
    - Verify preload, CSP, app.asar, pack/dist, Windows launch smoke, and existing Electron security architecture.
 3. **07.2-R2 / npm Build Toolchain Remediation**
    - Upgrade electron-builder and Vitest/Vite toolchain intentionally.
@@ -403,19 +403,353 @@ Recommended 07.2 split:
 4. **07.2-R3 / Protocol Stack Patch Review**
    - Netty, Bouncy Castle, PLC4X/Milo/Californium/Paho/SNMP4J compatibility verification by enabled protocol.
 
-## 20. Final Status
+## 20. Final Status (superseded by R1)
+
+The original 07.1 PASS status is superseded by the R1 clean-install gate. See `Task 07.1-R1 — Baseline Closure` below.
+
+## Task 07.1-R1 — Baseline Closure
+
+### R1 Scope
+
+本 R1 是 focused repair：只处理 npm reproducible install、Java Runtime Critical/High reachability UNKNOWN、Spring Boot/Electron lifecycle 与 07.2 target 修正。没有开始 07.2，没有升级生产依赖，没有修改 `pom.xml` / `package.json` / `package-lock.json`。
+
+### npm ci Result
+
+命令：
 
 ```text
-Task 07.1: PASS / COMPLETE
+npm ci --prefix collector-desktop
+```
+
+结果：
+
+```text
+npm ci exit=1
+```
+
+`npm ci` exact error 摘要：
+
+```text
+npm error code EUSAGE
+npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.
+npm error Invalid: lock file's keyv@4.5.4 does not satisfy keyv@5.6.0
+npm error Missing: electron-builder-squirrel-windows@25.1.8 from lock file
+npm error Missing: keyv@4.5.4 from lock file
+npm error Missing: archiver@5.3.2 from lock file
+npm error Missing: fs-extra@10.1.0 from lock file
+...
+```
+
+R1 分析：
+
+- 这是 lockfile 与 `package.json` / transitive graph 不同步，不是可忽略的 optional dependency 下载失败。
+- `package-lock.json` 中 `node_modules/electron-builder` 为 `25.1.8`，依赖 `app-builder-lib 25.1.8`。
+- lockfile 缺少 `electron-builder-squirrel-windows@25.1.8`，也缺少其 Windows/Squirrel 打包链条中的 `archiver` / `fs-extra` / `tar-stream` 等节点。
+- lockfile 当前存在 `node_modules/keyv@4.5.4`；但 `@cacheable/memory@2.2.0`、`@cacheable/utils@2.5.0`、`cacheable@2.5.0` 要求 `keyv ^5.6.0`，导致 npm 12 的 strict clean install 拒绝继续。
+- 按用户约束，未使用 `npm install` / `npm update` / `npm audit fix` / `npm audit fix --force` 修复或规避。
+
+### npm ls / audit / SBOM Rerun
+
+由于 `npm ci` 未通过，未产生 clean reproducible `node_modules`。因此 R1 没有把当前 dependency graph 声称为最终可重复基线。
+
+- `npm ls after clean install`: **NOT RUN / BLOCKED BY npm ci failure**
+- `npm audit after clean install`: **NOT RUN / BLOCKED BY npm ci failure**
+- `npm audit --omit=dev after clean install`: **NOT RUN / BLOCKED BY npm ci failure**
+- `npm outdated after clean install`: **NOT RUN / BLOCKED BY npm ci failure**
+- `npm sbom --sbom-format=cyclonedx`: **NOT RUN / BLOCKED BY npm ci failure**
+
+保留旧 07.1 npm audit 数字仅作为 pre-R1 evidence；最终 clean-install 基线不能声称 reproducible。
+
+### Lockfile Reproducibility
+
+`npm ci` 前后 `git status --short`：
+
+```text
+before:
+?? .hermes.md
+
+after:
+?? .hermes.md
+```
+
+Manifest diff：
+
+```text
+git diff -- collector-desktop/package.json
+# no diff
+
+git diff -- collector-desktop/package-lock.json
+# no diff
+```
+
+结论：`npm ci` 没有修改 `package.json` / `package-lock.json`，但 clean install 失败，说明当前 lockfile 本身不能作为 npm 12 下的可重复安装基线。
+
+### Runtime Critical/High advisory candidates
+
+基于 `collector-boot` runtime OSV/GHSA 原始结果重新提取：
+
+- Runtime Critical/High advisory candidates = 78
+- `CONFIRMED_REACHABLE` = 0
+- `LIKELY_REACHABLE` = 14
+- `POSSIBLY_REACHABLE` = 31
+- `NOT_REACHABLE_BY_CURRENT_USAGE` = 33
+- `FALSE_POSITIVE` = 0
+- `UNKNOWN` = 0
+
+### Critical/High Exact Advisory Matrix
+
+| Advisory / CVE | Severity | Maven coordinate | Resolved version | Affected / fixed | Runtime packaged? | Exposure | Attack prerequisite | Current project usage evidence | Reachability | Reason | 07.2 action |
+| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- |
+| GHSA-vmq6-5m68-f53m, CVE-2023-6378 | HIGH | `ch.qos.logback:logback-classic` | `1.4.11` | 当前 1.4.11 受影响；fixed: 1.2.13, 1.3.12, 1.4.12 | yes | Logback logging runtime | Logback receiver/serialization input or attacker-controlled serialized payload to logging component | logback-classic/core packaged via Boot logging; no logback receiver/socket-server config found。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 普通日志写入不满足 serialization receiver 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-vmq6-5m68-f53m, CVE-2023-6378 | HIGH | `ch.qos.logback:logback-core` | `1.4.11` | 当前 1.4.11 受影响；fixed: 1.2.13, 1.3.12, 1.4.12 | yes | Logback logging runtime | Logback receiver/serialization input or attacker-controlled serialized payload to logging component | logback-classic/core packaged via Boot logging; no logback receiver/socket-server config found。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 普通日志写入不满足 serialization receiver 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-r7wm-3cxj-wff9 | HIGH | `com.fasterxml.jackson.core:jackson-core` | `2.15.3` | 当前 2.15.3 受影响；fixed: 2.18.8, 2.21.4, 3.1.4 | yes | Jackson JSON parser | Affected async/non-blocking parser numeric limit path with untrusted JSON | Spring MVC HTTP JSON parser confirmed; no evidence of Jackson async parser direct use。 | `POSSIBLY_REACHABLE` | untrusted JSON parser reachable，但该 advisory 指向 async/parser feature，具体 parser mode 未确认。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-j3rv-43j4-c7qm, CVE-2026-54512 | HIGH | `com.fasterxml.jackson.core:jackson-databind` | `2.15.3` | 当前 2.15.3 受影响；fixed: 2.18.8, 2.21.4, 3.1.4 | yes | Jackson databind / Redis serializer polymorphic typing | Polymorphic typing with BasicPolymorphicTypeValidator bypass and attacker-controlled typed JSON/Redis payload | RedisConfig activates default typing with BasicPolymorphicTypeValidator allowing com.wangbin/java.util/java.time; HTTP ObjectMapper itself not globally default-typed。 | `POSSIBLY_REACHABLE` | 默认 typing 只在 Redis serializer copy 中使用；需攻击者控制 Redis/cache payload or trusted boundary break。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-rmj7-2vxq-3g9f, CVE-2026-54513 | HIGH | `com.fasterxml.jackson.core:jackson-databind` | `2.15.3` | 当前 2.15.3 受影响；fixed: 2.18.8, 2.21.4, 3.1.4 | yes | Jackson databind / Redis serializer polymorphic typing | Polymorphic typing with BasicPolymorphicTypeValidator bypass and attacker-controlled typed JSON/Redis payload | RedisConfig activates default typing with BasicPolymorphicTypeValidator allowing com.wangbin/java.util/java.time; HTTP ObjectMapper itself not globally default-typed。 | `POSSIBLY_REACHABLE` | 默认 typing 只在 Redis serializer copy 中使用；需攻击者控制 Redis/cache payload or trusted boundary break。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-g3pr-3p32-fp23, CVE-2026-40984 | HIGH | `io.micrometer:micrometer-core` | `1.12.0` | 当前 1.12.0 受影响；fixed: 1.15.12, 1.16.6 | yes | Micrometer HTTP server instrumentation / actuator metrics | HTTP server instrumentation active and attacker sends high-cardinality/DoS triggering requests | actuator metrics/prometheus exposed in application.yml; micrometer runtime packaged。 | `LIKELY_REACHABLE` | metrics/prometheus endpoint enabled; exact instrumentation path likely active in Boot web app。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-558v-64gr-wgg4, CVE-2026-59901 | HIGH | `io.netty:netty-codec` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Generic Netty codec/common runtime | Affected decoder/compression/common helper is selected by an enabled Netty protocol path | Netty packaged via Redis/protocol stacks; Redis path confirmed, other protocol path config dependent。 | `POSSIBLY_REACHABLE` | 通用 Netty runtime 存在，但具体 codec (bzip2/lz4/etc.) use not confirmed。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-mj4r-2hfc-f8p6, CVE-2026-42583 | HIGH | `io.netty:netty-codec` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.133.Final, 4.2.13.Final | yes | Generic Netty codec/common runtime | Affected decoder/compression/common helper is selected by an enabled Netty protocol path | Netty packaged via Redis/protocol stacks; Redis path confirmed, other protocol path config dependent。 | `POSSIBLY_REACHABLE` | 通用 Netty runtime 存在，但具体 codec (bzip2/lz4/etc.) use not confirmed。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-cm33-6792-r9fm, CVE-2026-42579 | HIGH | `io.netty:netty-codec-dns` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.133.Final, 4.2.13.Final | yes | Netty DNS resolver | Netty DnsNameResolver used and DNS response attacker-influenced | Netty DNS resolver packaged；industrial/Redis clients may resolve remote hosts。 | `POSSIBLY_REACHABLE` | 运行时存在且网络客户端会解析主机，但未确认使用 Netty DnsNameResolver 而非 JVM resolver。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-cc37-9q2j-3hfv, CVE-2026-44893 | HIGH | `io.netty:netty-codec-haproxy` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty netty-codec-haproxy module | netty-codec-haproxy codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-haproxy packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-haproxy codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-h2qv-fj59-j46j, CVE-2026-48059 | HIGH | `io.netty:netty-codec-haproxy` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty netty-codec-haproxy module | netty-codec-haproxy codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-haproxy packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-haproxy codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-q6cq-mhr2-jmr5, CVE-2026-55851 | HIGH | `io.netty:netty-codec-haproxy` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty netty-codec-haproxy module | netty-codec-haproxy codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-haproxy packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-haproxy codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-57rv-r2g8-2cj3, CVE-2026-42584 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.133.Final, 4.2.13.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-6jqx-86gh-f27w, CVE-2026-55831 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-f6hv-jmp6-3vwv, CVE-2026-42587 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.133.Final, 4.2.13.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-jppx-w49h-x2qq, CVE-2026-56745 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-mvh2-crg5-v77c, CVE-2026-55833 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-pwqr-wmgm-9rr8, CVE-2026-33870 | HIGH | `io.netty:netty-codec-http` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.132.Final, 4.2.10.Final | yes | Netty HTTP codec/client codec | Netty HTTP client/server codec handles attacker-controlled HTTP traffic | netty-codec-http packaged；collector-boot Web server is Tomcat；protocol libraries may use Netty HTTP internally。 | `POSSIBLY_REACHABLE` | 不是主 HTTP server；具体协议启用时可能进入 Netty HTTP path。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-93wv-jw9v-4972, CVE-2026-56819 | HIGH | `io.netty:netty-codec-http2` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty HTTP/2 codec | Netty-based HTTP/2 client/server path enabled | netty-codec-http2 packaged via netty-all/protocol deps；embedded web server is Tomcat, no server.http2 config。 | `POSSIBLY_REACHABLE` | 库打包但主 HTTP server 不使用 Netty；可能被 OPC UA/PLC4X/other protocol clients indirectly used。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-f6hv-jmp6-3vwv, CVE-2026-42587 | HIGH | `io.netty:netty-codec-http2` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.133.Final, 4.2.13.Final | yes | Netty HTTP/2 codec | Netty-based HTTP/2 client/server path enabled | netty-codec-http2 packaged via netty-all/protocol deps；embedded web server is Tomcat, no server.http2 config。 | `POSSIBLY_REACHABLE` | 库打包但主 HTTP server 不使用 Netty；可能被 OPC UA/PLC4X/other protocol clients indirectly used。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-prj3-ccx8-p6x4, CVE-2025-55163 | HIGH | `io.netty:netty-codec-http2` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 1.75.0, 4.1.124.Final, 4.2.4.Final | yes | Netty HTTP/2 codec | Netty-based HTTP/2 client/server path enabled | netty-codec-http2 packaged via netty-all/protocol deps；embedded web server is Tomcat, no server.http2 config。 | `POSSIBLY_REACHABLE` | 库打包但主 HTTP server 不使用 Netty；可能被 OPC UA/PLC4X/other protocol clients indirectly used。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-w9fj-cfpg-grvv, CVE-2026-33871 | HIGH | `io.netty:netty-codec-http2` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.132.Final, 4.2.11.Final | yes | Netty HTTP/2 codec | Netty-based HTTP/2 client/server path enabled | netty-codec-http2 packaged via netty-all/protocol deps；embedded web server is Tomcat, no server.http2 config。 | `POSSIBLY_REACHABLE` | 库打包但主 HTTP server 不使用 Netty；可能被 OPC UA/PLC4X/other protocol clients indirectly used。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-3244-j874-rhc2, CVE-2026-44250 | HIGH | `io.netty:netty-codec-redis` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Redis/Lettuce RESP codec | Redis server or network peer returns crafted RESP payload / compromised Redis path | application.yml spring.data.redis enabled；RedisTemplate/StringRedisTemplate/Redis stream code存在；Lettuce brings Netty Redis codec。 | `LIKELY_REACHABLE` | Redis runtime path confirmed；攻击前提通常是 Redis peer/input compromise。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-5w86-c3rq-vjj7, CVE-2026-50011 | HIGH | `io.netty:netty-codec-redis` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Redis/Lettuce RESP codec | Redis server or network peer returns crafted RESP payload / compromised Redis path | application.yml spring.data.redis enabled；RedisTemplate/StringRedisTemplate/Redis stream code存在；Lettuce brings Netty Redis codec。 | `LIKELY_REACHABLE` | Redis runtime path confirmed；攻击前提通常是 Redis peer/input compromise。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-6ghj-frrj-jjj3, CVE-2026-44890 | HIGH | `io.netty:netty-codec-redis` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Redis/Lettuce RESP codec | Redis server or network peer returns crafted RESP payload / compromised Redis path | application.yml spring.data.redis enabled；RedisTemplate/StringRedisTemplate/Redis stream code存在；Lettuce brings Netty Redis codec。 | `LIKELY_REACHABLE` | Redis runtime path confirmed；攻击前提通常是 Redis peer/input compromise。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-6jv9-x5w9-2ccm, CVE-2026-48006 | HIGH | `io.netty:netty-codec-redis` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Redis/Lettuce RESP codec | Redis server or network peer returns crafted RESP payload / compromised Redis path | application.yml spring.data.redis enabled；RedisTemplate/StringRedisTemplate/Redis stream code存在；Lettuce brings Netty Redis codec。 | `LIKELY_REACHABLE` | Redis runtime path confirmed；攻击前提通常是 Redis peer/input compromise。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-jq43-27x9-3v86, CVE-2025-59419 | HIGH | `io.netty:netty-codec-smtp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.128.Final, 4.2.7.Final | yes | Netty netty-codec-smtp module | netty-codec-smtp codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-smtp packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-smtp codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-vhch-2wf3-m8rp, CVE-2026-44891 | HIGH | `io.netty:netty-codec-stomp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty netty-codec-stomp module | netty-codec-stomp codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-stomp packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-stomp codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-4qhr-g3c6-fcfx, CVE-2026-56817 | HIGH | `io.netty:netty-codec-xml` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty netty-codec-xml module | netty-codec-xml codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-xml packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-xml codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-v74w-7mr3-4qg3, CVE-2026-73507 | HIGH | `io.netty:netty-codec-xml` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty netty-codec-xml module | netty-codec-xml codec/transport is actually used by enabled protocol and handles untrusted frames | netty-codec-xml packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-codec-xml codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-3qp7-7mw8-wx86, CVE-2026-44249 | HIGH | `io.netty:netty-handler` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty TLS/SNI/proxy/handler stack | Netty TLS/SNI/native SSL/proxy handler path processes attacker-controlled traffic | Netty handler packaged; OPC UA/Milo/protocol TLS paths and Redis/protocol clients exist。 | `POSSIBLY_REACHABLE` | Netty handler runtime exists through protocol clients；specific handler use depends enabled protocol。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-4g8c-wm8x-jfhw, CVE-2025-24970 | HIGH | `io.netty:netty-handler` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.118.Final | yes | Netty TLS/SNI/proxy/handler stack | Netty TLS/SNI/native SSL/proxy handler path processes attacker-controlled traffic | Netty handler packaged; OPC UA/Milo/protocol TLS paths and Redis/protocol clients exist。 | `POSSIBLY_REACHABLE` | 有 OPC UA/protocol TLS path evidence，但未确认当前设备配置启用 SNI/native SSL/OCSP 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-c4c3-7fpv-j4q5, CVE-2026-75595 | CRITICAL | `io.netty:netty-handler` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.137.Final, 4.2.17.Final | yes | Netty TLS/SNI/proxy/handler stack | Netty TLS/SNI/native SSL/proxy handler path processes attacker-controlled traffic | Netty handler packaged; OPC UA/Milo/protocol TLS paths and Redis/protocol clients exist。 | `POSSIBLY_REACHABLE` | 有 OPC UA/protocol TLS path evidence，但未确认当前设备配置启用 SNI/native SSL/OCSP 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-c653-97m9-rcg9, CVE-2026-50010 | HIGH | `io.netty:netty-handler` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty TLS/SNI/proxy/handler stack | Netty TLS/SNI/native SSL/proxy handler path processes attacker-controlled traffic | Netty handler packaged; OPC UA/Milo/protocol TLS paths and Redis/protocol clients exist。 | `POSSIBLY_REACHABLE` | 有 OPC UA/protocol TLS path evidence，但未确认当前设备配置启用 SNI/native SSL/OCSP 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-x4gw-5cx5-pgmh, CVE-2026-45416 | HIGH | `io.netty:netty-handler` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty TLS/SNI/proxy/handler stack | Netty TLS/SNI/native SSL/proxy handler path processes attacker-controlled traffic | Netty handler packaged; OPC UA/Milo/protocol TLS paths and Redis/protocol clients exist。 | `POSSIBLY_REACHABLE` | 有 OPC UA/protocol TLS path evidence，但未确认当前设备配置启用 SNI/native SSL/OCSP 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-272m-gcwp-mpwg, CVE-2026-56820 | HIGH | `io.netty:netty-handler-ssl-ocsp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty TLS/OCSP validation | Netty SslHandler OCSP validation enabled with attacker-controlled cert/OCSP response | OPC UA/Milo and protocol TLS paths exist; application.yml 无全局 OCSP 配置。 | `POSSIBLY_REACHABLE` | TLS protocol path可能存在，但 OCSP validator usage 未确认。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-g7hg-vrcf-mvmr, CVE-2026-56821 | HIGH | `io.netty:netty-handler-ssl-ocsp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty TLS/OCSP validation | Netty SslHandler OCSP validation enabled with attacker-controlled cert/OCSP response | OPC UA/Milo and protocol TLS paths exist; application.yml 无全局 OCSP 配置。 | `POSSIBLY_REACHABLE` | TLS protocol path可能存在，但 OCSP validator usage 未确认。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-wc96-39fc-566f, CVE-2026-56822 | HIGH | `io.netty:netty-handler-ssl-ocsp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.136.Final, 4.2.16.Final | yes | Netty TLS/OCSP validation | Netty SslHandler OCSP validation enabled with attacker-controlled cert/OCSP response | OPC UA/Milo and protocol TLS paths exist; application.yml 无全局 OCSP 配置。 | `POSSIBLY_REACHABLE` | TLS protocol path可能存在，但 OCSP validator usage 未确认。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-5pvg-856g-cp85, CVE-2026-47691 | HIGH | `io.netty:netty-resolver-dns` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty DNS resolver | Netty DnsNameResolver used and DNS response attacker-influenced | Netty DNS resolver packaged；industrial/Redis clients may resolve remote hosts。 | `POSSIBLY_REACHABLE` | 运行时存在且网络客户端会解析主机，但未确认使用 Netty DnsNameResolver 而非 JVM resolver。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-676x-f7gg-47vc, CVE-2026-45674 | HIGH | `io.netty:netty-resolver-dns` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty DNS resolver | Netty DnsNameResolver used and DNS response attacker-influenced | Netty DNS resolver packaged；industrial/Redis clients may resolve remote hosts。 | `POSSIBLY_REACHABLE` | 运行时存在且网络客户端会解析主机，但未确认使用 Netty DnsNameResolver 而非 JVM resolver。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-2qj4-mmr9-4v2f, CVE-2026-59902 | HIGH | `io.netty:netty-transport-sctp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.137.Final, 4.2.17.Final | yes | Netty netty-transport-sctp module | netty-transport-sctp codec/transport is actually used by enabled protocol and handles untrusted frames | netty-transport-sctp packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-transport-sctp codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-5xrh-qmmq-w6ch, CVE-2026-46340 | HIGH | `io.netty:netty-transport-sctp` | `4.1.100.Final` | 当前 4.1.100.Final 受影响；fixed: 4.1.135.Final, 4.2.15.Final | yes | Netty netty-transport-sctp module | netty-transport-sctp codec/transport is actually used by enabled protocol and handles untrusted frames | netty-transport-sctp packaged via netty-all/protocol dependency; no direct production code reference found for this specific codec except protocol libraries. | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目生产代码直接使用 netty-transport-sctp codec/transport；仅因 netty-all 打包存在。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-25xr-qj8w-c4vf, CVE-2025-53506 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.43, 11.0.9, 9.0.107 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/2 connector enabled and attacker can send crafted HTTP/2 traffic | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 server.http2.enabled/HTTP2 upgrade protocol 配置；默认 Tomcat HTTP/1.1。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-27hp-xhwr-wr2m, CVE-2024-56337 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.34, 11.0.2, 9.0.98 | yes | Embedded Tomcat HTTP/1.1 server | DefaultServlet writable/partial PUT/WebDAV LOCK/PROPFIND or vulnerable static file write settings | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 DefaultServlet writable、WebDAV servlet 或相关 Tomcat customization；当前只是 Boot static resources。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-563x-q5rq-57qp, CVE-2026-24880 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.52, 11.0.20, 9.0.116 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-5j33-cvvr-w245, CVE-2024-50379 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.34, 11.0.2, 9.0.98 | yes | Embedded Tomcat HTTP/1.1 server | DefaultServlet writable/partial PUT/WebDAV LOCK/PROPFIND or vulnerable static file write settings | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 DefaultServlet writable、WebDAV servlet 或相关 Tomcat customization；当前只是 Boot static resources。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-5m62-pw8w-7w9f, CVE-2026-43515 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat container-managed FORM/DIGEST auth/security-constraint path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 项目未发现 Tomcat FORM/DIGEST authenticator 或 web.xml security-constraint；鉴权由应用 Filter/YAML path-scope 管理。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-5mp6-jrq3-r938, CVE-2026-43513 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-7jqf-v358-p8g7, CVE-2024-38286 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.25, 11.0.0-M21, 9.0.90 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-83qj-6fr2-vhqg, CVE-2025-24813 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.35, 11.0.3, 9.0.99 | yes | Embedded Tomcat HTTP/1.1 server | DefaultServlet writable/partial PUT/WebDAV LOCK/PROPFIND or vulnerable static file write settings | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 DefaultServlet writable、WebDAV servlet 或相关 Tomcat customization；当前只是 Boot static resources。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-9xv2-5v5q-p794, CVE-2026-65905 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.58, 11.0.25, 9.0.121 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat container-managed FORM/DIGEST auth/security-constraint path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 项目未发现 Tomcat FORM/DIGEST authenticator 或 web.xml security-constraint；鉴权由应用 Filter/YAML path-scope 管理。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-fv25-8xcx-gqjc, CVE-2026-42498 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat WebSocket endpoint with authentication/header exposure path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `POSSIBLY_REACHABLE` | tomcat-embed-websocket packaged；需确认生产是否启用后端 WebSocket endpoint。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-gcx9-497g-6cp6, CVE-2026-65182 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.58, 11.0.25, 9.0.121 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat container-managed FORM/DIGEST auth/security-constraint path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 项目未发现 Tomcat FORM/DIGEST authenticator 或 web.xml security-constraint；鉴权由应用 Filter/YAML path-scope 管理。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-gqp3-2cvr-x8m3, CVE-2025-48989 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.44, 11.0.10, 9.0.108 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-gx5v-xp9w-j4cg, CVE-2026-41284 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | DefaultServlet writable/partial PUT/WebDAV LOCK/PROPFIND or vulnerable static file write settings | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 DefaultServlet writable、WebDAV servlet 或相关 Tomcat customization；当前只是 Boot static resources。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-h3gc-qfqq-6h8f, CVE-2025-48988 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.42, 11.0.8, 9.0.106 | yes | Embedded Tomcat HTTP/1.1 server | multipart upload endpoint receives attacker-controlled upload | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | collector-application/collector-boot main 中 MultipartFile/@RequestPart 搜索为 0。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-h3x4-894j-xpx5, CVE-2026-68525 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.58, 11.0.25, 9.0.121 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat container-managed FORM/DIGEST auth/security-constraint path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 项目未发现 Tomcat FORM/DIGEST authenticator 或 web.xml security-constraint；鉴权由应用 Filter/YAML path-scope 管理。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-h6fc-48rj-7qqh, CVE-2026-43512 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | Tomcat container-managed FORM/DIGEST auth/security-constraint path | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 项目未发现 Tomcat FORM/DIGEST authenticator 或 web.xml security-constraint；鉴权由应用 Filter/YAML path-scope 管理。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-mgp5-rv84-w37q, CVE-2026-24734 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.52, 11.0.18, 9.0.115 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-r29c-68gh-xp6x, CVE-2026-41293 | CRITICAL | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.55, 11.0.22, 9.0.118 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/2 connector enabled and attacker can send crafted HTTP/2 traffic | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 server.http2.enabled/HTTP2 upgrade protocol 配置；默认 Tomcat HTTP/1.1。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-rv64-5gf8-9qq8, CVE-2026-34483 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.54, 11.0.21, 9.0.116 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-wm9w-rjj3-j356, CVE-2024-34750 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.25, 11.0.0-M21, 9.0.90 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-wmwf-9ccg-fff5, CVE-2025-55752 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.45, 11.0.11, 9.0.109 | yes | Embedded Tomcat HTTP/1.1 server | DefaultServlet writable/partial PUT/WebDAV LOCK/PROPFIND or vulnerable static file write settings | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 DefaultServlet writable、WebDAV servlet 或相关 Tomcat customization；当前只是 Boot static resources。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-wr62-c79q-cv37, CVE-2025-52520 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.43, 11.0.9, 9.0.107 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-x4m4-345f-5h5g, CVE-2026-34487 | HIGH | `org.apache.tomcat.embed:tomcat-embed-core` | `10.1.16` | 当前 10.1.16 受影响；fixed: 10.1.54, 11.0.21, 9.0.117 | yes | Embedded Tomcat HTTP/1.1 server | HTTP/1.1 network traffic to embedded Tomcat default connector | collector-boot application.yml 使用 embedded Tomcat，server.port=9090/context-path=/collector；GracefulShutdown 自定义 Connector pause，无 HTTP/2/WebDAV/rewrite/Digest/Form 自定义。 | `LIKELY_REACHABLE` | embedded Tomcat 对外监听 9090，HTTP/1.1 request parsing/general DoS 类前提成立。 | 07.2-R0 通过 Boot 3.5.16 过渡升级带入 Tomcat 10.1.x patched line；长期 Boot 4 migration |
+| GHSA-574f-3g2m-x479, CVE-2025-14813 | CRITICAL | `org.bouncycastle:bcprov-jdk18on` | `1.80` | 当前 1.80 受影响；fixed: 1.80.2, 1.81.1, 1.84 | yes | Bouncy Castle crypto provider via Milo/OPC UA TLS/cert stack | Affected GOST algorithm/mode used in TLS/certificate/crypto path | Milo/OPC UA and securityPolicy schema present; no production code evidence of GOST 28147 usage。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | OPC UA TLS path可能存在，但 GOST algorithm 未在源码/配置中出现。 | 07.2-R3 protocol stack compatible Bouncy Castle patch; verify Milo compatibility |
+| GHSA-574f-3g2m-x479, CVE-2025-14813 | CRITICAL | `org.bouncycastle:bcprov-jdk18on` | `1.81` | 当前 1.81 受影响；fixed: 1.80.2, 1.81.1, 1.84 | yes | Bouncy Castle crypto provider via Milo/OPC UA TLS/cert stack | Affected GOST algorithm/mode used in TLS/certificate/crypto path | Milo/OPC UA and securityPolicy schema present; no production code evidence of GOST 28147 usage。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | OPC UA TLS path可能存在，但 GOST algorithm 未在源码/配置中出现。 | 07.2-R3 protocol stack compatible Bouncy Castle patch; verify Milo compatibility |
+| GHSA-jmp9-x22r-554x, CVE-2025-41249 | HIGH | `org.springframework:spring-core` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.2.11 | yes | Spring annotation/method security support | 依赖 Spring annotation detection + method/security annotation combination | 运行时打包 spring-core；当前搜索未确认生产 main 中 @PreAuthorize/@PostAuthorize/@EnableMethodSecurity 命中。 | `POSSIBLY_REACHABLE` | Framework 基础库可达，但 advisory 需要特定 annotation detection 组合，当前未确认业务路径。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-r5w3-xv2f-j59q, CVE-2026-41850 | HIGH | `org.springframework:spring-expression` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.2.19, 7.0.8 | yes | SpEL expression evaluation | 攻击者可控 SpEL expression 或可触发复杂 SpEL evaluation | 运行时打包 spring-expression；源码搜索未发现直接 SpelExpressionParser/ExpressionParser 业务调用。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现项目直接解析用户可控 SpEL 表达式；保留框架间接风险由 Boot 统一升级处理。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-2wrp-6fg6-hmc5, CVE-2024-22262 | HIGH | `org.springframework:spring-web` | `6.1.1` | 当前 6.1.1 受影响；fixed: 5.3.34, 6.0.19, 6.1.6 | yes | Spring Web URL parsing / HTTP client-server helper surface | 应用使用受影响 URL parser/redirect/SSRF host validation path处理攻击者 URL | collector-boot 打包 spring-web；HTTP API confirmed；需按 URL validation 调用点约束。 | `POSSIBLY_REACHABLE` | Web 栈可达，但未确认存在把用户 URL 交给 UriComponentsBuilder/redirect/SSRF 校验的具体业务路径。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-ccgv-vj62-xf9h, CVE-2024-22243 | HIGH | `org.springframework:spring-web` | `6.1.1` | 当前 6.1.1 受影响；fixed: 5.3.32, 6.0.17, 6.1.4 | yes | Spring Web URL parsing / HTTP client-server helper surface | 应用使用受影响 URL parser/redirect/SSRF host validation path处理攻击者 URL | collector-boot 打包 spring-web；HTTP API confirmed；需按 URL validation 调用点约束。 | `POSSIBLY_REACHABLE` | Web 栈可达，但未确认存在把用户 URL 交给 UriComponentsBuilder/redirect/SSRF 校验的具体业务路径。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-hgjh-9rj2-g67j, CVE-2024-22259 | HIGH | `org.springframework:spring-web` | `6.1.1` | 当前 6.1.1 受影响；fixed: 5.3.33, 6.0.18, 6.1.5 | yes | Spring Web URL parsing / HTTP client-server helper surface | 应用使用受影响 URL parser/redirect/SSRF host validation path处理攻击者 URL | collector-boot 打包 spring-web；HTTP API confirmed；需按 URL validation 调用点约束。 | `POSSIBLY_REACHABLE` | Web 栈可达，但未确认存在把用户 URL 交给 UriComponentsBuilder/redirect/SSRF 校验的具体业务路径。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-3chg-m5w7-qfv5, CVE-2026-41845 | HIGH | `org.springframework:spring-webmvc` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.2.19, 7.0.8 | yes | Spring MVC HTTP runtime | 应用显式调用 Spring JavaScriptUtils 转义攻击者输入 | collector-boot 打包 spring-webmvc；未发现 VersionResourceResolver/resourceChain/addResourceHandlers 自定义配置；普通 static resources 存在但不等同 versioned resources。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 源码搜索未发现 JavaScriptUtils/HtmlUtils 调用。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-cx7f-g6mp-7hqm, CVE-2024-38816 | HIGH | `org.springframework:spring-webmvc` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.1.13 | yes | Spring MVC HTTP runtime | functional routing/static resource path traversal specific usage | collector-boot 打包 spring-webmvc；未发现 VersionResourceResolver/resourceChain/addResourceHandlers 自定义配置；普通 static resources 存在但不等同 versioned resources。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 RouterFunction/functional WebMvc 路由；应用主要为注解 Controller + Boot static。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-g5vr-rgqm-vf78, CVE-2024-38819 | HIGH | `org.springframework:spring-webmvc` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.1.14 | yes | Spring MVC HTTP runtime | functional routing/static resource path traversal specific usage | collector-boot 打包 spring-webmvc；未发现 VersionResourceResolver/resourceChain/addResourceHandlers 自定义配置；普通 static resources 存在但不等同 versioned resources。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现 RouterFunction/functional WebMvc 路由；应用主要为注解 Controller + Boot static。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-x23c-287f-qqv5, CVE-2026-41842 | HIGH | `org.springframework:spring-webmvc` | `6.1.1` | 当前 6.1.1 受影响；fixed: 6.2.19, 7.0.8 | yes | Spring MVC HTTP runtime | Spring MVC/WebFlux versioned static resources enabled (VersionResourceResolver/resourceChain or spring.web.resources.chain.strategy) | collector-boot 打包 spring-webmvc；未发现 VersionResourceResolver/resourceChain/addResourceHandlers 自定义配置；普通 static resources 存在但不等同 versioned resources。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 源码/配置搜索未发现 versioned-resource chain 配置；普通静态资源不满足 advisory 前提。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-rc42-6c7j-7h5r, CVE-2025-22235 | HIGH | `org.springframework.boot:spring-boot` | `3.2.0` | 当前 3.2.0 受影响；fixed: 3.3.11, 3.4.5 | yes | Actuator EndpointRequest matcher | Spring Security EndpointRequest.to() matcher用于未暴露 actuator endpoint | 运行时打包 spring-boot；源码搜索未发现 SecurityFilterChain/EndpointRequest 生产配置。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 未发现当前项目使用 EndpointRequest.to() 自定义 matcher。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+| GHSA-mgvc-8q2h-5pgc, CVE-2026-22733 | HIGH | `org.springframework.boot:spring-boot-starter-actuator` | `3.2.0` | 当前 3.2.0 受影响；fixed: 3.5.12, 4.0.4 | yes | Actuator CloudFoundry endpoint | CloudFoundry actuator endpoint/filter exposed in deployment | application.yml 暴露 health/info/metrics/prometheus；未暴露 cloudfoundry。 | `NOT_REACHABLE_BY_CURRENT_USAGE` | 当前 actuator exposure 未包含 CloudFoundry endpoint。 | 07.2-R0 tactical Boot/JVM stack uplift or focused compatible patch |
+
+### Spring Framework CVE-2026-41842 Specific Decision
+
+`org.springframework:spring-webmvc 6.1.1` 受 `GHSA-x23c-287f-qqv5 / CVE-2026-41842` 影响范围覆盖。
+
+R1 搜索项：
+
+```text
+VersionResourceResolver
+ResourceUrlProvider
+ResourceUrlEncodingFilter
+resourceChain
+addResourceHandlers
+spring.web.resources.chain
+spring.web.resources.chain.strategy
+```
+
+结果：未发现当前仓库生产源码/配置启用 versioned static resources 或 resource chain strategy。
+
+分类：
+
+```text
+NOT_REACHABLE_BY_CURRENT_USAGE
+```
+
+理由：该 advisory 前提是 Spring MVC/WebFlux versioned static resources；当前存在普通 static resources / `/desktop/**` 静态文件并不自动满足 versioned resources 前提。
+
+### Spring Boot Lifecycle Correction
+
+原文中的 “Spring Boot 3.x supported line” 已被 R1 修正为两条路径：
+
+1. Tactical compatibility path：
+   - `3.2.0 -> 3.5.16`
+   - 目的：保持 Boot 3 / Spring 6 / Tomcat 10 / Jackson 2 的兼容边界，带入大量 security patch。
+   - 状态：`TRANSITIONAL SECURITY UPLIFT`。
+   - 限制：`3.5.16` 已是 Spring Boot 3.5.x 最后一个 OSS release，3.5.x OSS support 已结束；不能宣称为长期 OSS-supported endpoint。
+2. Strategic supported path：
+   - 当前 OSS-supported path 应为 Spring Boot `4.0.x` 或 `4.1.x`。
+   - R1 evidence：endoflife.date / Spring references 显示 `4.1.1`、`4.0.8` 为 2026-08 patch；Boot 4 带来 Spring Framework 7 / Tomcat 11 / Servlet 6.1 / Jackson 3 等 managed dependency 变化。
+   - 结论：需要单独 `Spring Boot 4 Migration`，不能放入小型 security patch task。
+
+### Electron Lifecycle Correction
+
+Electron 33 lifecycle 修正：
+
+```text
+Electron 33 EOL = 2025-04-29
+Chromium = M130
+Node.js = v20.18.0
+```
+
+当前 2026-09 官方支持策略仍是 latest 3 stable major releases。R1 通过 npm registry 核实当前 supported majors/latest patch：
+
+```text
+Electron 42 latest patch = 42.11.3
+Electron 43 latest patch = 43.7.0
+Electron 44 latest patch = 44.3.0
+```
+
+07.2 默认建议目标：
+
+```text
+Electron 44 latest stable patch
+```
+
+除非 07.2-R1 兼容性验证发现 Electron 44 blocker。
+
+### electron-builder Advisory Reclassification
+
+当前 Windows distribution target：
+
+```text
+win.target = nsis
+```
+
+`GHSA-7g7r-gx96-252g` 主要影响 Linux AppImage。对于当前 Windows NSIS：
+
+```text
+NOT_REACHABLE_BY_CURRENT_DISTRIBUTION_TARGET
+```
+
+但 `app-builder-lib < 26.15.0` 仍属于 vulnerable build dependency，应在 07.2-R2 toolchain remediation 中升级并重新验证 pack/dist。
+
+### builder-util-runtime updater advisory
+
+当前项目未发现：
+
+```text
+electron-updater
+autoUpdater
+authenticated GitLab updater
+private token redirect flow
+```
+
+因此 `GHSA-p2f4-r6v6-j797`：
+
+```text
+NOT_REACHABLE_BY_CURRENT_USAGE
+```
+
+仍可通过 electron-builder toolchain upgrade 消除。
+
+### Vitest Advisory Reclassification
+
+当前：
+
+```text
+vitest 2.1.9
+standard script: npm test -> vitest run
+```
+
+未发现标准脚本使用：
+
+```text
+--ui
+browser mode
+network-exposed Vitest API
+```
+
+`GHSA-5xrq-8626-4rwp` 分类：
+
+```text
+DEV/TEST ONLY
+NOT_REACHABLE_IN_STANDARD_TEST_COMMAND
+```
+
+仍建议后续 toolchain task 升级。
+
+### Dependency-Check Remaining Limitation
+
+Dependency-Check 状态保持：
+
+```text
+Dependency-Check secondary scanner: SCAN INCOMPLETE
+```
+
+但 R1 Java Runtime Critical/High reachability matrix 已用 OSV/GHSA + code/config evidence 补齐：
+
+```text
+Critical/High reachability matrix: COMPLETE
+Critical/High UNKNOWN: 0
+```
+
+### Revised Task 07.2 Scope
+
+1. **Task 07.2-R0 — Java Web Runtime Tactical Security Uplift**
+   - Candidate target: Spring Boot `3.5.16`
+   - Classification: `TRANSITIONAL`, `NOT CURRENT OSS-SUPPORTED`
+   - After R0 still must decide:
+     - A. Spring commercial support, or
+     - B. Boot 4 migration.
+2. **Task 07.2-R1 — Electron Runtime Upgrade**
+   - Default target: Electron `44.3.0` or latest Electron 44 stable patch at execution time.
+   - Verify preload / CSP / navigation / external URL / app.asar / Windows launch smoke.
+3. **Task 07.2-R2 — npm Build Toolchain / Lockfile Reproducibility Repair**
+   - Fix npm ci blocker without blind mass upgrade.
+   - Resolve electron-builder / app-builder-lib / Vitest / Vite / SBOM issues.
+4. **Task 07.2-R3 — Protocol Stack Patch Review**
+   - Netty / Bouncy Castle / PLC4X / Milo compatibility by actually enabled protocol.
+
+### R1 Status
+
+```text
+Task 07.1-R1: INCOMPLETE
+Task 07.1: INCOMPLETE
 
 Dependency Security Baseline:
-COMPLETE
+INCOMPLETE — npm reproducible install failed
 
 Dependency Remediation:
 NOT STARTED
 
 Next:
-Task 07.2 — Targeted Dependency Security Remediation
+Fix npm lockfile reproducibility / clean-install baseline before Task 07.2 remediation
 ```
-
-No blind upgrade was performed. No `npm audit fix --force`, no major Spring Boot/Electron upgrade, no production dependency remediation in this task.
