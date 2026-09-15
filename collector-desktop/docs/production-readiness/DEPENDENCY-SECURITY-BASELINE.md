@@ -993,3 +993,348 @@ Before `Task 07.2`, decide how to resolve the dev-tool peer graph while respecti
 
 1. Accept a narrowly scoped dev-toolchain compatibility repair that changes direct versions (`vite`/`vitest`) in a dedicated task; or
 2. Keep R2 incomplete and document that package-lock-only repair cannot make the current manifest graph fully reproducible under strict npm 12 checks.
+
+## Task 07.1-R3 — Vitest/Vite Peer Compatibility Closure
+
+### R3 Scope
+
+R3 only resolves the remaining npm dev-tool peer compatibility blocker between direct `vite 6.4.3` and `vitest` / `@vitest/mocker 2.1.9`. It does not start Task 07.2 and does not perform production dependency remediation.
+
+Allowed files changed in R3:
+
+```text
+collector-desktop/package.json
+collector-desktop/package-lock.json
+collector-desktop/docs/production-readiness/DEPENDENCY-SECURITY-BASELINE.md
+```
+
+No Java matrix update was performed.
+
+### Baseline Environment
+
+```text
+node --version = v22.23.2
+npm --version = 12.0.2
+npm config get registry = https://registry.npmjs.org/
+npm config get legacy-peer-deps = false
+npm config get strict-peer-deps = false
+npm config get allow-remote = none
+```
+
+The current npm execution policy has `allow-remote=none`; R3 therefore uses session-only `NPM_CONFIG_ALLOW_REMOTE=all` for clean install reproducibility from the lockfile tarball URLs. No project, user, or global npm config was modified.
+
+### Root Cause
+
+R2 left one dependency graph blocker:
+
+```text
+vite@6.4.3
+vitest@2.1.9
+@vitest/mocker@2.1.9 requires vite ^5.0.0
+```
+
+Baseline command result:
+
+```text
+npm --prefix collector-desktop ls vite vitest @vitest/mocker --all
+=> exit 1 / ELSPROBLEMS
+invalid: vite@6.4.3 ... required by @vitest/mocker@2.1.9
+```
+
+This was a manifest-level dev-tool peer mismatch, not a missing package-lock node.
+
+### Version Decision
+
+R3 keeps the existing Vite build baseline:
+
+```text
+vite package range = ^6.0.7
+vite resolved = 6.4.3
+```
+
+R3 upgrades only Vitest:
+
+```text
+vitest: ^2.1.8 -> ^4.1.11
+resolved vitest: 2.1.9 -> 4.1.11
+resolved @vitest/mocker: 2.1.9 -> 4.1.11
+```
+
+Reason: Vitest `4.1.11` and `@vitest/mocker 4.1.11` support Vite 6 and Node 22, and also remove the `@vitest/mocker >=2.1.0, <4.1.11` advisory range. Vitest 3.x was intentionally not selected because `GHSA-82fw-gwwq-j7x9` remains in the affected range before 4.1.11.
+
+### Update Command
+
+Executed:
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all npm --prefix collector-desktop install --save-dev vitest@4.1.11 --no-audit --no-fund
+```
+
+Not used:
+
+```text
+--legacy-peer-deps
+--force
+npm update
+npm audit fix
+npm audit fix --force
+```
+
+### package.json Diff
+
+The only direct dependency intent change is:
+
+```diff
+- "vitest": "^2.1.8"
++ "vitest": "^4.1.11"
+```
+
+No Vite, Electron, electron-builder, Vue, Router, Pinia, Axios, Element Plus, TypeScript, ESLint, Stylelint, or backend Maven dependency was changed.
+
+### Direct Version Drift Check
+
+| Dependency | Before | After | Expected |
+| --- | ---: | ---: | --- |
+| `vite` | `6.4.3` | `6.4.3` | unchanged |
+| `vitest` | `2.1.9` | `4.1.11` | upgraded |
+| `@vitest/mocker` | `2.1.9` | `4.1.11` | upgraded with Vitest |
+| `electron` | `33.4.11` | `33.4.11` | unchanged |
+| `electron-builder` | `25.1.8` | `25.1.8` | unchanged |
+| `vue` | `3.5.41` | `3.5.41` | unchanged |
+| `vue-router` | `4.6.4` | `4.6.4` | unchanged |
+| `pinia` | `2.3.1` | `2.3.1` | unchanged |
+| `axios` | `1.19.0` | `1.19.0` | unchanged |
+| `element-plus` | `2.14.4` | `2.14.4` | unchanged |
+| `@element-plus/icons-vue` | `2.3.2` | `2.3.2` | unchanged |
+| `typescript` | `5.9.3` | `5.9.3` | unchanged |
+| `vue-tsc` | `2.2.12` | `2.2.12` | unchanged |
+| `eslint` | `10.9.1` | `10.9.1` | unchanged |
+| `stylelint` | `17.14.1` | `17.14.1` | unchanged |
+
+### Lockfile Diff Summary
+
+| Metric | Count |
+| --- | ---: |
+| packages before | 811 |
+| packages after | 757 |
+| added package nodes | 4 |
+| removed package nodes | 58 |
+| version-changed existing package nodes | 14 |
+| resolved URL changed existing nodes | 16 |
+| integrity changed existing nodes | 14 |
+| resolved host changed existing nodes | 16 |
+
+Added nodes:
+
+```text
+@types/chai
+@types/deep-eql
+convert-source-map
+obug
+```
+
+Removed nodes are focused on the old Vitest 2 tree, including old nested `vite-node`, duplicate nested `vite@5.4.21`, nested `esbuild` optional packages, and old assertion helper packages. This is expected for the Vitest 2 -> 4 dev-tool replacement.
+
+Version-changed nodes are Vitest-related/tooling nodes:
+
+```text
+@vitest/expect
+@vitest/mocker
+@vitest/pretty-format
+@vitest/runner
+@vitest/snapshot
+@vitest/spy
+@vitest/utils
+chai
+es-module-lexer
+pathe
+std-env
+tinyexec
+tinyrainbow
+vitest
+```
+
+### Registry Host Evidence
+
+Before R3:
+
+```text
+registry.npmmirror.com = 775
+registry.npmjs.org = 36
+```
+
+After R3:
+
+```text
+registry.npmmirror.com = 701
+registry.npmjs.org = 56
+```
+
+R3 did not normalize registry URLs globally. Mixed `npmmirror` + `npmjs` resolved URLs remain. The host changes are localized to the Vitest subtree removed/updated by npm.
+
+### Clean Install Gate
+
+Executed with the current environment's explicit remote-fetch policy:
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all npm ci --prefix collector-desktop
+=> exit 0
+```
+
+This distinguishes dependency graph reproducibility from the local npm execution policy `allow-remote=none`.
+
+### npm ls / ELSPROBLEMS Gate
+
+Executed:
+
+```text
+npm --prefix collector-desktop ls --all --json
+=> exit 0
+```
+
+Result:
+
+```text
+ELSPROBLEMS = 0
+missing package = 0
+invalid vite = 0
+invalid vitest = 0
+invalid @vitest/mocker = 0
+```
+
+Actual focused graph:
+
+```text
+collector-desktop@0.1.0
++-- @vitejs/plugin-vue@5.2.4
+| `-- vite@6.4.3 deduped
++-- vite@6.4.3
+`-- vitest@4.1.11
+  +-- @vitest/mocker@4.1.11
+  | `-- vite@6.4.3 deduped
+  `-- vite@6.4.3 deduped
+```
+
+### npm SBOM Gate
+
+Executed:
+
+```text
+npm --prefix collector-desktop sbom --sbom-format cyclonedx
+=> exit 0
+```
+
+CycloneDX output was generated only as a temporary audit artifact and was not committed.
+
+### npm Audit Rerun
+
+| Audit | Critical | High | Moderate | Low | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| full | 1 | 16 | 0 | 1 | 18 |
+| `--omit=dev` | 0 | 0 | 0 | 0 | 0 |
+
+Production npm audit remains clean.
+
+### Vitest Security Advisories
+
+After upgrading to Vitest `4.1.11`, these advisories are no longer present in npm audit output:
+
+```text
+GHSA-5xrq-8626-4rwp
+GHSA-82fw-gwwq-j7x9
+```
+
+Remaining npm audit findings are Electron / electron-builder / packaging-toolchain related and remain out of R3 scope.
+
+### Vitest 4 Breaking Change Review
+
+Searched project test/config usage for:
+
+```text
+vi.mock
+vi.spyOn
+vi.fn
+restoreAllMocks / resetAllMocks / clearAllMocks
+mockReset / mockRestore / mockResolvedValue / mockImplementation
+fake timers / useFakeTimers / useRealTimers / advanceTimersByTime
+snapshots
+pool / threads / workers / minWorkers / maxWorkers
+coverage
+browser mode
+UI mode
+```
+
+Findings:
+
+- Tests use common `vi.fn`, `vi.mocked`, mock reset/resolved helpers, and `vi.restoreAllMocks` / `vi.clearAllMocks` patterns.
+- `src/stores/websocket.store.test.ts` uses fake timers via `vi.useFakeTimers`, `vi.useRealTimers`, and `vi.advanceTimersByTime`.
+- No snapshot assertions were found.
+- No custom Vitest pool/thread/worker/minWorkers/maxWorkers config was found.
+- No Vitest browser mode or UI mode script/config was introduced.
+- Existing standard script remains `npm test = vitest run`.
+
+No test code changes were required for Vitest 4.
+
+### Test Regression
+
+Executed:
+
+```text
+npm --prefix collector-desktop test
+```
+
+Result:
+
+```text
+RUN  v4.1.11
+Test Files  76 passed (76)
+Tests       561 passed (561)
+```
+
+### Frontend Verification
+
+Full validation chain passed:
+
+```text
+npm --prefix collector-desktop run lint       PASS
+npm --prefix collector-desktop run stylelint  PASS
+npm --prefix collector-desktop run typecheck  PASS
+npm --prefix collector-desktop test           PASS
+npm --prefix collector-desktop run build      PASS
+npm --prefix collector-desktop run build:web  PASS
+npm --prefix collector-desktop run verify     PASS
+npm --prefix collector-desktop run pack       PASS
+```
+
+`build:web` generated static output drift in `collector-boot/src/main/resources/static/desktop/index.html`; the file was restored from `HEAD` content and no generated static diff is retained.
+
+### Java Critical/High Matrix Status
+
+R1 Java Runtime Critical/High matrix remains unchanged:
+
+```text
+Runtime Critical/High advisory candidates = 78
+UNKNOWN = 0
+```
+
+R3 did not rescan or modify Java dependency reachability.
+
+### R3 Final Status
+
+```text
+Task 07.1-R3: PASS / COMPLETE
+Task 07.1-R2: SUPERSEDED / BLOCKER CLOSED
+Task 07.1-R1: SUPERSEDED / BLOCKER CLOSED
+Task 07.1: PASS / COMPLETE
+
+Dependency Security Baseline:
+COMPLETE
+
+Dependency Remediation:
+NOT STARTED
+
+Next:
+Task 07.2 — Targeted Dependency Security Remediation
+```
+
+Do not start 07.2 automatically.
