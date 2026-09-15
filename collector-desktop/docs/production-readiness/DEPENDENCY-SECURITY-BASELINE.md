@@ -1945,3 +1945,604 @@ Netty:
 Next:
 Task 07.2-R1 — Electron Runtime Upgrade
 ```
+
+## Task 07.2-R1 — Electron Runtime Upgrade
+
+### Scope
+
+```text
+Task 07.2-R1:
+Electron Runtime Security Upgrade
+
+Scope:
+Electron runtime only
+
+Explicitly out of scope:
+electron-builder upgrade
+Spring Boot / Java dependency
+Vite / Vitest / Vue / Element Plus
+Auto Update
+Code Signing
+business feature refactor
+UI redesign
+```
+
+Baseline commit supplied by task:
+
+```text
+d4a7cf5feb178a1cd165ef534298a2528f3b9eea
+```
+
+### Electron Before / After
+
+Electron package intent and resolved runtime:
+
+| Item | Before | After | Status |
+| --- | ---: | ---: | --- |
+| `collector-desktop/package.json` | `electron = ^33.2.1` | `electron = ^44.3.0` | changed as scoped |
+| `collector-desktop/package-lock.json` | `electron = 33.4.11` | `electron = 44.3.0` | changed as scoped |
+| Electron CLI | `v33.4.11` | `v44.3.0` | verified |
+| `node_modules/electron/package.json` | `33.4.11` | `44.3.0` | verified |
+| `node_modules/electron/dist/version` | `33.4.11` | `44.3.0` | verified |
+
+Runtime component versions from Electron release metadata:
+
+| Runtime | Before `33.4.11` | After `44.3.0` |
+| --- | ---: | ---: |
+| Chromium | `130.0.6723.191` | `152.0.7977.78` |
+| Node runtime | `20.18.3` | `24.20.0` |
+| V8 | `13.0.245.25` | `15.2.124.19` |
+
+Electron `44.3.0` release date evidence:
+
+```text
+version = 44.3.0
+fullDate = 2026-09-08T16:57:51.000Z
+chrome = 152.0.7977.78
+node = 24.20.0
+v8 = 15.2.124.19
+```
+
+### Support / EOL Status
+
+```text
+Electron 33.4.11:
+old runtime baseline, Chromium 130 / Node 20 runtime line.
+
+Electron 44.3.0:
+current supported stable runtime line for this task.
+```
+
+No Electron 45 prerelease was selected.
+
+### package.json Gate
+
+Actual direct dependency intent change:
+
+```diff
+- "electron": "^33.2.1"
++ "electron": "^44.3.0"
+```
+
+Verified unchanged direct dependency intent:
+
+```text
+electron-builder = ^25.1.8
+vite = ^6.0.7
+vitest = ^4.1.11
+vue = ^3.5.13
+vue-router = ^4.5.0
+pinia = ^2.3.0
+axios = ^1.7.9
+element-plus = ^2.9.3
+typescript = ^5.7.2
+eslint = ^10.9.1
+stylelint = ^17.14.1
+```
+
+### package-lock Diff Summary
+
+Lockfile package-node summary:
+
+| Metric | Value |
+| --- | ---: |
+| package count before | 758 |
+| package count after | 725 |
+| added nodes | 3 |
+| removed nodes | 36 |
+| version-changed nodes | 5 |
+| resolved changes | 7 |
+| integrity changes | 5 |
+
+Version-changed nodes:
+
+```text
+node_modules/electron: 33.4.11 -> 44.3.0
+node_modules/@electron/get: 2.0.3 -> 5.1.0
+node_modules/@types/node: 20.19.43 -> 24.13.4
+node_modules/semver: 6.3.1 -> 7.8.5
+node_modules/undici-types: 6.21.0 -> 7.18.2
+```
+
+Added nodes were Electron install subtree related:
+
+```text
+node_modules/@electron-internal/extract-zip
+node_modules/@electron/get/node_modules/env-paths
+node_modules/undici
+```
+
+Registry host distribution:
+
+| Host | Before | After |
+| --- | ---: | ---: |
+| `registry.npmmirror.com` | 701 | 658 |
+| `registry.npmjs.org` | 56 | 66 |
+
+No Vite/Vitest/Vue/electron-builder version drift was introduced.
+
+### Electron 33 → 44 Breaking Change Audit
+
+Audit basis:
+
+```text
+Electron official breaking changes for majors 34 through 44
+current project Electron Main / Preload API usage
+source scan for removed/deprecated APIs
+packaged runtime smoke
+```
+
+Current project API usage remains compatible:
+
+```text
+app
+BrowserWindow
+dialog
+ipcMain
+ipcRenderer
+contextBridge
+Menu
+safeStorage
+shell
+webContents
+requestSingleInstanceLock
+setWindowOpenHandler
+will-navigate
+before-input-event
+preload-error
+loadURL / loadFile
+openDevTools in development path only
+showMessageBox / showErrorBox
+```
+
+Electron 44 Clipboard Migration:
+
+```text
+NOT APPLICABLE
+```
+
+Source scan found no application use of:
+
+```text
+clipboard
+ClipboardItem
+readText / writeText
+readImage / writeImage
+```
+
+Removed / deprecated API scan result:
+
+```text
+BrowserView: NOT APPLICABLE
+remote / enableRemoteModule: NOT APPLICABLE
+webview: NOT APPLICABLE
+nativeWindowOpen: NOT APPLICABLE
+File.path: NOT APPLICABLE
+session/protocol/webRequest custom handling: NOT APPLICABLE for this upgrade
+```
+
+No production Electron Main / Preload API compatibility code was required.
+
+### Minimal Smoke-Script Compatibility Fixes
+
+Electron 44 / Chromium 152 changed the practical CDP startup/message timing observed by the existing packaged smoke/audit scripts.
+
+Scoped script-only fixes:
+
+```text
+collector-desktop/scripts/packaged-runtime-smoke.mjs
+collector-desktop/scripts/ui-layout-audit.mjs
+```
+
+Fix details:
+
+```text
+CDP WebSocket message decoding now handles string, ArrayBuffer, ArrayBuffer views, and Blob-like data.
+CDP send has bounded command timeouts so a missing reply cannot hang indefinitely.
+packaged-runtime smoke waits for renderer readiness and preload bridge presence before asserting.
+ui-layout audit waits briefly after CDP enablement before the first renderer evaluation.
+ui-layout audit uses renderer location assignment instead of relying on Page.navigate reply timing.
+```
+
+These are verification harness compatibility repairs only. They do not alter Electron Main, Preload, renderer production code, business behavior, IPC security, navigation policy, credentials, or backend proxy behavior.
+
+### BrowserWindow Security
+
+Security invariant remains:
+
+```text
+contextIsolation = true
+nodeIntegration = false
+sandbox = true
+```
+
+No compatibility workaround changed these values.
+
+### Preload Compatibility
+
+Preload remains:
+
+```text
+index.cts -> index.cjs
+contextBridge.exposeInMainWorld(...)
+```
+
+Packaged runtime smoke verified:
+
+```text
+preloadBridge.hasBridge = true
+getAppInfo = function
+getCredentialStatus = function
+getServerConfig = function
+```
+
+No raw `ipcRenderer`, `require`, `process`, `fs`, `child_process`, or `shell` exposure was added.
+
+### IPC Security
+
+IPC sender validation remains active:
+
+```text
+assertTrustedIpcSender(...)
+trusted main frame
+trusted renderer URL
+correct webContents
+```
+
+No sender validation was removed for Electron 44 compatibility.
+
+### Navigation Security
+
+Navigation policy remains:
+
+```text
+setWindowOpenHandler -> deny
+will-navigate -> untrusted navigation blocked
+shell.openExternal -> validated safe URL only
+isSafeExternalUrl() active
+```
+
+No direct `shell.openExternal(rendererUrl)` path was introduced.
+
+### Credential / safeStorage
+
+Main-owned credential boundary remains:
+
+```text
+safeStorage owned by Main
+plaintext credential stays Main-only
+renderer has no plaintext getter
+preload has no plaintext getter
+remember=true uses encrypted persistence
+clear credential remains fail-closed
+```
+
+Source scan confirmed `safeStorage.isEncryptionAvailable()`, `safeStorage.encryptString()`, and `safeStorage.decryptString()` remain in `MainCredentialStore` ownership.
+
+Packaged runtime smoke verified credential status API shape without exposing plaintext:
+
+```text
+credentialStatusApi = true
+```
+
+### Server URL / HTTP Proxy Boundary
+
+Task 06 server URL authority remains:
+
+```text
+Renderer proposes server URL
+Main validates
+Native confirmation
+Main persists
+```
+
+Main HTTP proxy destination remains authoritative. No renderer arbitrary proxy destination was introduced.
+
+### Single Instance / Reload / DevTools
+
+Packaged runtime smoke verified:
+
+```text
+firstStarted = true
+secondInstanceExited = true
+firstInstanceStillRunning = true
+productionReloadShortcutBlocked = true
+```
+
+Production DevTools remain not auto-opened. Development behavior is unchanged.
+
+### npm Gates
+
+Clean reproducibility and dependency graph:
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all npm ci --prefix collector-desktop => PASS / exit 0
+npm --prefix collector-desktop ls --all --json => PASS / exit 0
+ELSPROBLEMS = 0
+npm --prefix collector-desktop sbom --sbom-format cyclonedx => PASS / exit 0
+```
+
+Environment note:
+
+```text
+npm config allow-remote = none
+```
+
+As in previous dependency tasks, the clean install was run with session-only:
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all
+```
+
+The local npm environment also blocks some install scripts by policy. For Electron binary verification after clean install, the official Electron `44.3.0` Windows x64 zip was downloaded/extracted as a local verification artifact, then the binary gate verified `v44.3.0`. No user/global `.npmrc` was modified.
+
+### npm Audit Before / After
+
+R3 baseline before Electron R1:
+
+```text
+Critical = 1
+High = 16
+Moderate = 0
+Low = 1
+Total = 18
+```
+
+After Electron 44.3.0:
+
+```text
+Full audit:
+Critical = 1
+High = 14
+Moderate = 0
+Low = 1
+Total = 16
+
+Production audit:
+Critical = 0
+High = 0
+Moderate = 0
+Low = 0
+Total = 0
+```
+
+Classification remains:
+
+```text
+Electron = PACKAGED_RUNTIME
+electron-builder / app-builder-lib / tar = BUILD / PACKAGING
+```
+
+Electron-builder remediation is intentionally deferred to `Task 07.2-R2`.
+
+### Electron Runtime Advisory Status
+
+Focused Electron runtime advisory check:
+
+```text
+OSV query: npm/electron@44.3.0
+Critical/High findings returned: 0
+Total findings returned: 0
+```
+
+Electron Runtime Critical/High:
+
+```text
+0
+```
+
+### Tests / Typecheck / Build
+
+Verification chain:
+
+```text
+npm --prefix collector-desktop run lint => PASS
+npm --prefix collector-desktop run stylelint => PASS
+npm --prefix collector-desktop run typecheck => PASS
+npm --prefix collector-desktop test => PASS
+npm --prefix collector-desktop run build => PASS
+npm --prefix collector-desktop run build:web => PASS
+npm --prefix collector-desktop run verify => PASS
+```
+
+Vitest count remained stable:
+
+```text
+Test Files: 76 passed (76)
+Tests: 561 passed (561)
+```
+
+### Pack / Dist / NSIS
+
+Electron-builder stayed unchanged:
+
+```text
+electron-builder = 25.1.8
+```
+
+Packaging results:
+
+```text
+npm --prefix collector-desktop run pack => PASS
+release/win-unpacked generated
+
+npm --prefix collector-desktop run dist => PASS
+NSIS installer generated:
+release/collector-desktop-0.1.0-x64.exe
+```
+
+Dist log kept current signing state:
+
+```text
+no signing info identified, signing is skipped
+```
+
+### ASAR Audit
+
+ASAR audit result:
+
+```text
+ok = true
+app.asar present
+entryCount = 7088
+mapCount = 0
+required entries present:
+- dist/electron/main/main.js
+- dist/electron/preload/index.cjs
+- dist/renderer/index.html
+- package.json
+```
+
+Source maps remain absent from packaged ASAR.
+
+### Packaged Runtime Smoke
+
+Packaged runtime smoke result:
+
+```text
+ok = true
+firstStarted = true
+rendererIndexLoaded = true
+preloadBridge.hasBridge = true
+credentialStatusApi = true
+serverConfigApi = true
+startupDiagnosticPathWritable = true
+productionReloadShortcutBlocked = true
+secondInstanceExited = true
+firstInstanceStillRunning = true
+errors = []
+```
+
+### UI / Chromium Regression
+
+Chromium 152 UI audit result:
+
+```text
+routeCount = 14
+viewportCount = 4
+executedChecks = 56
+renderedRouteCount = 14
+routesWithOverflow = 0
+routesWithThemeMismatch = 0
+routesWithLayoutIssue = 0
+routesWithConsoleErrors = 0
+toolbarHorizontalOverflows = 0
+hiddenClips = 0
+```
+
+Table/theme regression result:
+
+```text
+tableWhiteBackgrounds = 0
+tableLightBackgrounds = 0
+tableFixedWhiteBackgrounds = 0
+tableLoadingWhiteBackgrounds = 0
+tableEmptyWhiteBackgrounds = 0
+paginationWhiteBackgrounds = 0
+```
+
+Table white background status:
+
+```text
+CLOSED
+```
+
+### Electron Security Matrix
+
+| Invariant | Status |
+| --- | --- |
+| `contextIsolation = true` | PASS |
+| `nodeIntegration = false` | PASS |
+| `sandbox = true` | PASS |
+| raw `ipcRenderer` exposed | false / PASS |
+| IPC sender validation | active / PASS |
+| untrusted navigation | blocked / PASS |
+| `window.open` | denied / PASS |
+| safe external URL validation | active / PASS |
+| safeStorage ownership | Main / PASS |
+| plaintext credential getter | absent / PASS |
+| renderer arbitrary backend destination | blocked / PASS |
+| single instance | active / PASS |
+| production reload | blocked / PASS |
+| production DevTools | not auto-opened / PASS |
+| ASAR | enabled / PASS |
+
+### Code Signing / Auto Update
+
+Code signing:
+
+```text
+NOT IMPLEMENTED / OPERATIONAL DEFERRED
+signAndEditExecutable = false
+Windows installer = NOT SIGNED
+```
+
+Auto update:
+
+```text
+NOT IMPLEMENTED
+```
+
+No `electron-updater`, update server, release feed, or token updater was added.
+
+### R1 Final Status
+
+```text
+Task 07.2-R1: PASS / COMPLETE
+
+Electron Runtime Upgrade:
+COMPLETE
+
+Electron Before/After:
+33.4.11 -> 44.3.0
+
+Electron:
+44.3.0
+
+Chromium Before/After:
+130.0.6723.191 -> 152.0.7977.78
+
+Chromium:
+152.0.7977.78
+
+Node Runtime Before/After:
+20.18.3 -> 24.20.0
+
+Node Runtime:
+24.20.0
+
+Windows Packaged Runtime:
+PASS
+
+Security Boundaries:
+PASS
+
+Code Signing:
+NOT IMPLEMENTED / OPERATIONAL DEFERRED
+
+Auto Update:
+NOT IMPLEMENTED
+
+Next:
+Task 07.2-R2 — npm / Electron Packaging Toolchain Security Remediation
+```

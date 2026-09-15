@@ -154,14 +154,27 @@ async function waitForPage() {
 function connectCdp(webSocketDebuggerUrl) {
   if (typeof WebSocket !== "function") throw new Error("Node WebSocket API is unavailable");
   const socket = new WebSocket(webSocketDebuggerUrl);
+  socket.binaryType = "arraybuffer";
   let id = 0;
   const pending = new Map();
   const events = new Map();
-  socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data));
+  const decodeMessage = async (data) => {
+    if (typeof data === "string") return data;
+    if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+    if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+    if (data && typeof data.text === "function") return await data.text();
+    return String(data);
+  };
+  const rejectPending = (error) => {
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+  };
+  socket.addEventListener("message", async (event) => {
+    const message = JSON.parse(await decodeMessage(event.data));
     if (message.id && pending.has(message.id)) {
       const request = pending.get(message.id);
       pending.delete(message.id);
+      clearTimeout(request.timer);
       if (message.error) request.reject(new Error(message.error.message || "CDP command failed"));
       else request.resolve(message.result);
       return;
@@ -173,10 +186,16 @@ function connectCdp(webSocketDebuggerUrl) {
   });
   return new Promise((resolve, reject) => {
     socket.addEventListener("open", () => resolve({
-      send(method, params = {}) {
+      send(method, params = {}, timeoutMs = 10000) {
         const commandId = ++id;
         socket.send(JSON.stringify({ id: commandId, method, params }));
-        return new Promise((commandResolve, commandReject) => pending.set(commandId, { resolve: commandResolve, reject: commandReject }));
+        return new Promise((commandResolve, commandReject) => {
+          const timer = setTimeout(() => {
+            pending.delete(commandId);
+            commandReject(new Error(`CDP command timed out: ${method}`));
+          }, timeoutMs);
+          pending.set(commandId, { resolve: commandResolve, reject: commandReject, timer });
+        });
       },
       on(method, listener) {
         events.set(method, [...(events.get(method) || []), listener]);
@@ -187,6 +206,7 @@ function connectCdp(webSocketDebuggerUrl) {
       }
     }));
     socket.addEventListener("error", () => reject(new Error("CDP websocket connection failed")), { once: true });
+    socket.addEventListener("close", () => rejectPending(new Error("CDP websocket closed")));
   });
 }
 
@@ -382,7 +402,7 @@ async function collectConsoleForRoute(route) {
   });
   const removeExceptionListener = cdp.on("Runtime.exceptionThrown", (params) => exceptions.push({ text: String(params.exceptionDetails?.text || params.exceptionDetails?.exception?.description || "exception").slice(0, 500) }));
   const href = `${devServerUrl}/#${route.path}`;
-  await cdp.send("Page.navigate", { url: href });
+  await evaluate(`location.href = ${JSON.stringify(href)}`);
   const state = await waitForRoute(route.path);
   await delay(300);
   const beforePopup = await collectDomMetrics();
@@ -584,6 +604,7 @@ try {
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await delay(1500);
   for (const viewport of viewports) {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
     for (const route of routes) {

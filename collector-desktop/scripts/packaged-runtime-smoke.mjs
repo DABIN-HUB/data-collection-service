@@ -86,13 +86,26 @@ function connectCdp(webSocketDebuggerUrl) {
     throw new Error("Node WebSocket API is unavailable");
   }
   const socket = new WebSocket(webSocketDebuggerUrl);
+  socket.binaryType = "arraybuffer";
   let id = 0;
   const pending = new Map();
-  socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data));
+  const decodeMessage = async (data) => {
+    if (typeof data === "string") return data;
+    if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+    if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
+    if (data && typeof data.text === "function") return await data.text();
+    return String(data);
+  };
+  const rejectPending = (error) => {
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+  };
+  socket.addEventListener("message", async (event) => {
+    const message = JSON.parse(await decodeMessage(event.data));
     if (message.id && pending.has(message.id)) {
-      const { resolve, reject } = pending.get(message.id);
+      const { resolve, reject, timer } = pending.get(message.id);
       pending.delete(message.id);
+      clearTimeout(timer);
       if (message.error) {
         reject(new Error(message.error.message || "CDP command failed"));
       } else {
@@ -103,11 +116,15 @@ function connectCdp(webSocketDebuggerUrl) {
   return new Promise((resolve, reject) => {
     socket.addEventListener("open", () => {
       resolve({
-        send(method, params = {}) {
+        send(method, params = {}, timeoutMs = 10000) {
           const commandId = ++id;
           socket.send(JSON.stringify({ id: commandId, method, params }));
           return new Promise((commandResolve, commandReject) => {
-            pending.set(commandId, { resolve: commandResolve, reject: commandReject });
+            const timer = setTimeout(() => {
+              pending.delete(commandId);
+              commandReject(new Error(`CDP command timed out: ${method}`));
+            }, timeoutMs);
+            pending.set(commandId, { resolve: commandResolve, reject: commandReject, timer });
           });
         },
         close() {
@@ -116,6 +133,7 @@ function connectCdp(webSocketDebuggerUrl) {
       });
     });
     socket.addEventListener("error", () => reject(new Error("CDP websocket connection failed")), { once: true });
+    socket.addEventListener("close", () => rejectPending(new Error("CDP websocket closed")));
   });
 }
 
@@ -137,6 +155,19 @@ async function dispatchReloadShortcut() {
   await delay(750);
 }
 
+async function waitForRendererReady() {
+  const deadline = Date.now() + 15000;
+  let state = { readyState: "loading", hasBridge: false };
+  while (Date.now() < deadline) {
+    state = await evaluate("({ readyState: document.readyState, hasBridge: Boolean(window.collectorDesktop) })");
+    if (["interactive", "complete"].includes(state.readyState) && state.hasBridge) {
+      return state;
+    }
+    await delay(150);
+  }
+  return state;
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -152,9 +183,9 @@ try {
   const page = await waitForPage();
   cdp = await connectCdp(page.webSocketDebuggerUrl);
   await cdp.send("Runtime.enable");
-  const readyState = await evaluate("document.readyState");
-  result.checks.rendererIndexLoaded = ["interactive", "complete"].includes(readyState);
-  assert(result.checks.rendererIndexLoaded, `unexpected readyState ${readyState}`);
+  const rendererState = await waitForRendererReady();
+  result.checks.rendererIndexLoaded = ["interactive", "complete"].includes(rendererState.readyState);
+  assert(result.checks.rendererIndexLoaded, `unexpected readyState ${rendererState.readyState}`);
 
   const bridgeShape = await evaluate(`(() => ({
     hasBridge: Boolean(window.collectorDesktop),
