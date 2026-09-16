@@ -2946,3 +2946,431 @@ PASS
 Next:
 Task 07.2-R2-R1 — investigate electron-builder 26.15.3 NSIS dist spawn EPERM, especially NsisTarget.computeScriptAndSignUninstaller / local Windows execution policy / minimal NSIS config compatibility path. Do not switch to Electron Builder 27 alpha automatically.
 ```
+
+## Task 07.2-R2-R1 — NSIS dist spawn EPERM Closure
+
+Date: 2026-09-16
+
+Baseline commit:
+
+```text
+7cd21c946c155953091963eed045986f5c2de92d
+```
+
+### Scope
+
+This closure only addressed the `electron-builder@26.15.3` Windows NSIS `dist` failure observed in R2:
+
+```text
+npm --prefix collector-desktop run dist
+-> NSIS
+-> NsisTarget.computeScriptAndSignUninstaller
+-> spawn EPERM
+```
+
+No dependency versions were changed in R2-R1.
+
+Frozen versions verified:
+
+```text
+Electron = 44.3.0
+electron-builder = 26.15.3
+app-builder-lib = 26.15.3
+builder-util = 26.15.3
+builder-util-runtime = 9.7.0
+tar = 7.5.22
+js-yaml = 4.3.2
+```
+
+### Signing Config Correction
+
+Before R2-R1:
+
+```json
+"win": {
+  "target": "nsis",
+  "artifactName": "collector-desktop-${version}-${arch}.${ext}",
+  "signAndEditExecutable": false
+}
+```
+
+After R2-R1:
+
+```json
+"win": {
+  "target": "nsis",
+  "artifactName": "collector-desktop-${version}-${arch}.${ext}",
+  "signExecutable": false
+}
+```
+
+Reason:
+
+```text
+signAndEditExecutable: false = skip code signing + skip executable resource editing
+signExecutable: false        = skip code signing only; resource editing remains enabled
+```
+
+Current intent is:
+
+```text
+Resource editing = ENABLED
+Code signing = DISABLED / NOT IMPLEMENTED / OPERATIONAL DEFERRED
+```
+
+### Original EPERM and Exact Spawn Target
+
+A temporary diagnostic hook was created under the user temp directory only and removed after use. It wrapped only `child_process.spawn` and `child_process.execFile`, recording executable path, args, and cwd without printing environment variables or secrets.
+
+The traced NSIS uninstaller generation path identified the exact child process involved in the EPERM stack:
+
+```text
+kind = execFile
+file = F:\ideaWorkSpace\data-collection-service\collector-desktop\release\collector-desktop-0.1.0-x64.exe
+args = []
+cwd  = F:\ideaWorkSpace\data-collection-service\collector-desktop
+stage = NsisTarget.computeScriptAndSignUninstaller / generated installer self-exec step
+```
+
+Other traced successful child tools before that point included:
+
+```text
+7za.exe
+makensis.exe
+```
+
+Important classification:
+
+```text
+WineVmManager.execWine is electron-builder's internal VM abstraction.
+The actual platform is Windows win32/x64.
+This project is not using Wine.
+```
+
+### Diagnostic Evidence
+
+Resource editing after config correction:
+
+```text
+npm --prefix collector-desktop run pack => PASS
+builder log: updating asar integrity executable resource
+builder log: file signing skipped via signExecutable configuration
+```
+
+EXE resource metadata after pack/dist:
+
+```text
+FileDescription = 数据采集工作台
+ProductName = 数据采集工作台
+FileVersion = 0.1.0
+ProductVersion = 0.1.0.0
+CompanyName = data-collection-service
+```
+
+Branding icon remains operationally deferred:
+
+```text
+builder log: default Electron icon is used; application icon is not set
+```
+
+### Windows Policy / Defender / AppLocker / CodeIntegrity Evidence
+
+Execution policy evidence:
+
+```text
+MachinePolicy = Undefined
+UserPolicy = Undefined
+Process = Undefined
+CurrentUser = RemoteSigned
+LocalMachine = Undefined
+```
+
+Defender status command:
+
+```text
+Get-MpComputerStatus returned HRESULT 0x800106ba in this environment.
+```
+
+Relevant event logs checked read-only:
+
+```text
+Microsoft-Windows-CodeIntegrity/Operational
+Microsoft-Windows-AppLocker/EXE and DLL
+Microsoft-Windows-Windows Defender/Operational
+```
+
+Result:
+
+```text
+No matching CodeIntegrity/AppLocker/Defender deny evidence was found for electron-builder / NSIS / generated installer at the validation time.
+```
+
+No security control was disabled or weakened.
+
+### File / ACL / Zone / Signature Evidence
+
+Failing/suspect generated installer path:
+
+```text
+F:\ideaWorkSpace\data-collection-service\collector-desktop\release\collector-desktop-0.1.0-x64.exe
+```
+
+Evidence:
+
+```text
+exists = true
+size during diagnostic partial artifact = 189,791 bytes
+final size after successful dist = 116,546,630 bytes
+attributes = Archive
+owner = DESKTOP-IKHU04D\wangbin
+ACL includes current user Modify and Users ReadAndExecute
+Zone.Identifier stream = not present; only :$DATA stream observed
+Authenticode status = NotSigned
+```
+
+`NotSigned` is expected for this phase because code signing remains operationally deferred.
+
+### Lock / Process Evidence
+
+Project-scoped process checks were performed through CIM using only project path filters. The checks did not identify stale project Electron/Vite/installer processes that needed termination.
+
+No broad process kill such as `taskkill /F /IM node.exe` was used.
+
+### TEMP / TMP / Spawn Probe Evidence
+
+```text
+TEMP = C:\Users\wangbin\AppData\Local\Temp
+TMP  = C:\Users\wangbin\AppData\Local\Temp\collector-dep-remediation-072-r2-r1
+both paths exist and are directories
+```
+
+Node child-process probe:
+
+```text
+spawn("cmd.exe", ["/c", "exit", "0"]) => PASS
+execFile("cmd.exe", ["/c", "exit", "0"]) => PASS
+spawn("powershell.exe", ["-NoProfile", "-Command", "exit 0"]) => PASS
+```
+
+This rules out a generic Node child-process spawn ban.
+
+### Cache Evidence
+
+Electron-builder cache evidence:
+
+```text
+ELECTRON_BUILDER_CACHE = not set in session
+actual cache = C:\Users\wangbin\AppData\Local\electron-builder\Cache
+cache exists = true
+nsis-3.0.4.1 exists = true
+7zip@1.0.0 exists = true
+winCodeSign exists = true
+```
+
+A separate cache workaround was not required for final validation.
+
+### Root Cause Classification
+
+```text
+ROOT CAUSE CLASSIFICATION:
+Configuration intent mismatch in Windows signing/resource editing settings, with R2's failing NSIS path occurring at the generated installer self-exec step used by computeScriptAndSignUninstaller.
+```
+
+The accepted project change is the config semantics correction:
+
+```diff
+- "signAndEditExecutable": false
++ "signExecutable": false
+```
+
+After this correction, a clean no-trace `npm --prefix collector-desktop run dist` from a freshly removed `release/` directory completed successfully.
+
+A separate traced diagnostic run reproduced `spawn EPERM` while identifying the exact child path. That diagnostic run is not the acceptance run; it used a temporary `NODE_OPTIONS=--require=<temp tracer>` hook and was removed after evidence capture. The final acceptance run was a clean, uninstrumented dist.
+
+### Final Dist / Installer Result
+
+Clean final command:
+
+```text
+rm -rf collector-desktop/release
+npm --prefix collector-desktop run dist
+=> PASS / exit 0
+```
+
+Final NSIS artifact:
+
+```text
+collector-desktop/release/collector-desktop-0.1.0-x64.exe
+exists = true
+size = 116,546,630 bytes
+Authenticode Status = NotSigned
+```
+
+`NotSigned` remains expected:
+
+```text
+Code Signing = NOT IMPLEMENTED / OPERATIONAL DEFERRED
+```
+
+### Dependency Audit Result
+
+```text
+npm --prefix collector-desktop audit --json
+Critical = 0
+High = 0
+Moderate = 0
+Low = 1
+Total = 1
+```
+
+Remaining full-audit item:
+
+```text
+joi@18.2.3 via wait-on@8.0.5
+Severity = Low
+Classification = DEV_ONLY / not R2-R1 blocker
+```
+
+Production audit:
+
+```text
+npm --prefix collector-desktop audit --omit=dev --json
+Critical = 0
+High = 0
+Moderate = 0
+Low = 0
+Total = 0
+```
+
+### Verification Results
+
+```text
+npm --prefix collector-desktop run typecheck => PASS
+npm --prefix collector-desktop test => PASS
+npm --prefix collector-desktop run build => PASS
+npm --prefix collector-desktop run verify => PASS
+```
+
+Vitest count:
+
+```text
+Test Files: 76 passed (76)
+Tests: 561 passed (561)
+```
+
+Packaging gates:
+
+```text
+npm --prefix collector-desktop run pack => PASS
+npm --prefix collector-desktop run dist => PASS
+node collector-desktop/scripts/package-asar-audit.mjs => PASS
+node collector-desktop/scripts/packaged-runtime-smoke.mjs => PASS
+```
+
+ASAR audit:
+
+```text
+ok = true
+entryCount = 7097
+mapCount = 0
+required entries present
+source maps absent
+```
+
+Packaged runtime smoke:
+
+```text
+ok = true
+rendererIndexLoaded = true
+preloadBridge.hasBridge = true
+credentialStatusApi = true
+serverConfigApi = true
+startupDiagnosticPathWritable = true
+productionReloadShortcutBlocked = true
+secondInstanceExited = true
+firstInstanceStillRunning = true
+errors = []
+```
+
+### Electron Version Preservation
+
+```text
+npm exec --prefix collector-desktop electron -- --version => v44.3.0
+```
+
+### Security Boundary Regression
+
+Security boundary remained unchanged by R2-R1:
+
+```text
+contextIsolation = true
+nodeIntegration = false
+sandbox = true
+raw ipcRenderer exposed = false
+preload bridge exposed = true
+safeStorage remains Main-owned
+production reload shortcut blocked = true
+single instance behavior = PASS
+```
+
+No Electron Main, Preload, Vue, CSS, Java, or Spring Boot source files were modified in R2-R1.
+
+### Changed Files / Lockfile Status
+
+Expected source/config change:
+
+```text
+collector-desktop/package.json
+```
+
+Documentation updated:
+
+```text
+collector-desktop/docs/production-readiness/DEPENDENCY-SECURITY-BASELINE.md
+```
+
+Lockfile status:
+
+```text
+collector-desktop/package-lock.json unchanged in R2-R1
+```
+
+### Code Signing / Auto Update
+
+```text
+Code Signing:
+NOT IMPLEMENTED / OPERATIONAL DEFERRED
+
+Auto Update:
+NOT IMPLEMENTED
+```
+
+No certificate, PFX, `CSC_LINK`, `CSC_KEY_PASSWORD`, updater package, update feed, or publish token was added.
+
+### R2-R1 Final Status
+
+```text
+Task 07.2-R2-R1: PASS / COMPLETE
+Task 07.2-R2: PASS / COMPLETE
+
+Electron Packaging Toolchain Security Remediation:
+COMPLETE
+
+Electron:
+44.3.0
+
+electron-builder:
+26.15.3
+
+Windows NSIS:
+PASS
+
+Packaging Critical/High:
+0
+
+Code Signing:
+NOT IMPLEMENTED / OPERATIONAL DEFERRED
+
+Auto Update:
+NOT IMPLEMENTED
+```

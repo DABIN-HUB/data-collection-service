@@ -79,7 +79,7 @@
     "win": {
       "target": "nsis",
       "artifactName": "collector-desktop-${version}-${arch}.${ext}",
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,
