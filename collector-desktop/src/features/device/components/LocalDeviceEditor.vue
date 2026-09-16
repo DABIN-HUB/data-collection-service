@@ -947,6 +947,10 @@ h3, p {
   overflow-y: auto;
 }
 
+.schema-card {
+  overflow-y: auto;
+}
+
 .local-connection-body {
   flex: 1 1 auto;
   min-width: 0;

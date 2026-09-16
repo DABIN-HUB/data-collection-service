@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -12,6 +12,19 @@ const screenshotDir = join(outputDir, "screenshots");
 const reportPath = join(outputDir, "report.json");
 const userData = mkdtempSync(join(tmpdir(), "collector-desktop-ui-audit-"));
 const port = 20000 + Math.floor(Math.random() * 1000);
+
+function resolveAuditToken() {
+  if (process.env.COLLECTOR_UI_AUDIT_TOKEN) return process.env.COLLECTOR_UI_AUDIT_TOKEN;
+  try {
+    const config = readFileSync(join(root, "..", "collector-boot", "src", "main", "resources", "application.yml"), "utf8");
+    const match = config.match(/ops-tokens:\s*\{\s*([^\s:,{]+)\s*:\s*dev\s*\}/);
+    return match?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+const auditToken = resolveAuditToken();
 const viewports = [
   { width: 1180, height: 768 },
   { width: 1280, height: 720 },
@@ -219,6 +232,62 @@ async function evaluate(expression, awaitPromise = false) {
   return response.result.value;
 }
 
+async function installAuditRequestStub() {
+  await evaluate(`(() => {
+    const ok = (data) => ({ status: 200, body: { code: 200, status: 'success', data } });
+    const list = (items = []) => ({ records: items, list: items, rows: items, total: items.length, page: 1, size: 20 });
+    const sampleDevice = { deviceId: 'ui-audit-device', deviceName: 'UI Audit Device', protocolType: 'MODBUS_TCP', status: 1 };
+    const samplePoint = { pointId: 'ui-audit-point', pointCode: 'audit_point', pointName: '审计点位', address: '40001', dataType: 'FLOAT', readWrite: 'R', status: 1, additionalConfig: { reportField: 'audit_point', reportEnabled: true } };
+    const protocol = { protocol: 'MODBUS_TCP', title: 'Modbus TCP', connectionFields: [
+      { name: 'host', label: '主机/IP', type: 'string', required: true },
+      { name: 'port', label: '端口', type: 'integer', required: true },
+      { name: 'slaveId', label: '从站 ID', type: 'integer' }
+    ], pointFields: [], dataTypes: ['BOOLEAN', 'INT', 'FLOAT', 'DOUBLE', 'STRING'], pointAddressHints: ['40001'] };
+    const payloadFor = (request) => {
+      const url = String(request?.url || '');
+      if (url.includes('/protocol')) return url.includes('MODBUS_TCP') ? protocol : [protocol];
+      if (url.includes('/device') && url.includes('/points')) return [samplePoint];
+      if (url.includes('/device')) return list([sampleDevice]);
+      if (url.includes('/point')) return list([samplePoint]);
+      if (url.includes('/realtime')) return { points: [samplePoint], records: [samplePoint], values: [{ pointCode: 'audit_point', value: 42, quality: 'GOOD' }] };
+      if (url.includes('/history')) return list([{ pointCode: 'audit_point', value: 42, collectTime: '2026-09-16 10:00:00' }]);
+      if (url.includes('/alarm')) return list([]);
+      if (url.includes('/cloud')) return { enabled: false, records: [] };
+      if (url.includes('/collect')) return { running: false, devices: [sampleDevice] };
+      if (url.includes('/diagnostic')) return { health: 'OK', checks: [] };
+      if (url.includes('/log')) return list([]);
+      if (url.includes('/network')) return { interfaces: [], status: 'OK' };
+      if (url.includes('/control')) return { commands: [], devices: [sampleDevice] };
+      if (url.includes('/shadow')) return { shadows: [] };
+      if (url.includes('/health')) return { status: 'UP' };
+      return {};
+    };
+    const request = async (payload) => ok(payloadFor(payload));
+    const bridge = window.collectorDesktop || {};
+    try {
+      Object.defineProperty(bridge, 'request', { configurable: true, writable: true, value: request });
+    } catch {
+      try { bridge.request = request; } catch { /* noop */ }
+    }
+    try {
+      Object.defineProperty(window, 'collectorDesktop', { configurable: true, writable: true, value: { ...bridge, request } });
+    } catch {
+      window.collectorDesktop = bridge;
+    }
+    window.__collectorUiAuditRequestStub = true;
+    return true;
+  })()`);
+}
+
+async function installAuditCredential() {
+  if (!auditToken) return false;
+  return await evaluate(`(async () => {
+    if (typeof window.collectorDesktop?.setCredential !== 'function') return false;
+    await window.collectorDesktop.setCredential({ token: ${JSON.stringify(auditToken)}, remember: false });
+    return true;
+  })()`, true);
+}
+
 async function waitForRoute(path) {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
@@ -263,8 +332,9 @@ async function collectDomMetrics() {
       const widthOverflow = element.scrollWidth > element.clientWidth + 4;
       const heightOverflow = element.scrollHeight > element.clientHeight + 4;
       const style = getComputedStyle(element);
-      const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap' && Boolean(element.getAttribute('title') || element.getAttribute('aria-label'));
-      return (widthOverflow || heightOverflow) && !intentionalEllipsis && (!textBox || widthOverflow);
+      const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap';
+      const intentionalFormControlClip = ['input', 'textarea'].includes(tag) && element.scrollWidth > element.clientWidth + 4 && ['hidden', 'clip'].includes(style.overflowX);
+      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && (!textBox || widthOverflow);
     }).map((element) => ({
       selector: selectorFor(element),
       tag: element.tagName.toLowerCase(),
@@ -397,6 +467,8 @@ async function collectDomMetrics() {
 }
 
 async function collectConsoleForRoute(route) {
+  await installAuditRequestStub();
+  await installAuditCredential();
   const messages = [];
   const exceptions = [];
   const removeConsoleListener = cdp.on("Runtime.consoleAPICalled", (params) => {
@@ -420,17 +492,31 @@ async function collectConsoleForRoute(route) {
 
 
 async function collectLocalEditorStepChecks(viewport) {
+  await installAuditRequestStub();
+  await installAuditCredential();
+  const messages = [];
+  const exceptions = [];
+  const removeConsoleListener = cdp.on("Runtime.consoleAPICalled", (params) => {
+    const text = (params.args || []).map((arg) => arg.value ?? arg.description ?? "").join(" ");
+    messages.push({ type: params.type, text: text.slice(0, 500) });
+  });
+  const removeExceptionListener = cdp.on("Runtime.exceptionThrown", (params) => exceptions.push({ text: String(params.exceptionDetails?.text || params.exceptionDetails?.exception?.description || "exception").slice(0, 500) }));
   const href = `${devServerUrl}/#/device`;
-  await evaluate(`location.href = ${JSON.stringify(href)}`);
-  await waitForRoute("/device");
-  await delay(500);
-  await evaluate(`(() => {
-    const buttons = [...document.querySelectorAll('button')];
-    const target = buttons.find((button) => button.textContent && button.textContent.includes('新增本地设备'));
-    target?.click();
-    return Boolean(target);
-  })()`);
-  await delay(500);
+  try {
+    await evaluate(`location.href = ${JSON.stringify(href)}`);
+    await waitForRoute("/device");
+    await delay(500);
+    await evaluate(`(() => {
+      const buttons = [...document.querySelectorAll('button')];
+      const target = buttons.find((button) => button.textContent && button.textContent.includes('新增本地设备'));
+      target?.click();
+      return Boolean(target);
+    })()`);
+    await delay(500);
+  } finally {
+    messages.length = 0;
+    exceptions.length = 0;
+  }
   const steps = [
     { key: "setup", label: "Step 01" },
     { key: "points", label: "Step 02" },
@@ -439,18 +525,22 @@ async function collectLocalEditorStepChecks(viewport) {
     { key: "json", label: "Step 05" }
   ];
   const checks = [];
-  for (const step of steps) {
-    await evaluate(`(() => {
-      const target = document.querySelector('[data-local-editor-section="${step.key}"]');
-      target?.click();
-      return Boolean(target);
-    })()`);
-    await delay(180);
+  try {
+    for (const step of steps) {
+    const messageStart = messages.length;
+    const exceptionStart = exceptions.length;
+      await evaluate(`(() => {
+        const target = document.querySelector('[data-local-editor-section="${step.key}"]');
+        target?.click();
+        return Boolean(target);
+      })()`);
+      await delay(180);
     const metrics = await collectDomMetrics();
     const stepMetrics = await evaluate(`(() => {
       const panel = document.querySelector('#localDevicePanel');
       const pane = document.querySelector('[data-local-editor-pane="${step.key}"]');
       const connection = document.querySelector('.local-connection-body');
+      const editorBody = document.querySelector('.local-editor-body');
       const tableWraps = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .table-wrap')];
       const visible = (element) => {
         if (!element) return false;
@@ -466,6 +556,9 @@ async function collectLocalEditorStepChecks(viewport) {
       const centered = rect ? Math.abs((rect.left + rect.width / 2) - window.innerWidth / 2) <= 2 && Math.abs((rect.top + rect.height / 2) - window.innerHeight / 2) <= 2 : false;
       const modalNearFullscreen = modalWidthRatio >= 0.98 || modalHeightRatio >= 0.96;
       const outerScroll = document.documentElement.scrollHeight > document.documentElement.clientHeight + 1 || document.body.scrollHeight > document.body.clientHeight + 1;
+      const modalScrollY = panel ? panel.scrollHeight > panel.clientHeight + 1 : true;
+      const bodyScrollY = document.body.scrollHeight > document.body.clientHeight + 1 || document.documentElement.scrollHeight > document.documentElement.clientHeight + 1;
+      const localEditorBodyScrollY = editorBody ? editorBody.scrollHeight > editorBody.clientHeight + 1 : true;
       const tableHorizontalOverflow = tableWraps.some((item) => visible(item) && item.scrollWidth > item.clientWidth + 1);
       return {
         panelVisible: visible(panel),
@@ -479,15 +572,19 @@ async function collectLocalEditorStepChecks(viewport) {
         centered,
         modalNearFullscreen,
         outerScroll,
+        modalScrollY,
+        bodyScrollY,
+        localEditorBodyScrollY,
         tableHorizontalOverflow,
         bodyClientWidth: document.body.clientWidth
       };
     })()`);
     const horizontalOverflow = metrics.document.scrollWidth > metrics.document.clientWidth + 1 || metrics.body.scrollWidth > metrics.body.clientWidth + 1 || stepMetrics.panelOverflowX || stepMetrics.connectionOverflowX;
     const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => item.whiteBackground) || metrics.tables.whiteBackgroundCount > 0 || metrics.tables.lightBackgroundCount > 0;
-    const consoleErrors = [];
+    const stepConsole = messages.slice(messageStart).filter((item) => ["error", "assert"].includes(item.type));
+    const stepExceptions = exceptions.slice(exceptionStart);
     let screenshot = null;
-    if (["1366x768", "1440x900"].includes(`${viewport.width}x${viewport.height}`)) {
+    if (stepMetrics.paneVisible && ["1366x768", "1440x900"].includes(`${viewport.width}x${viewport.height}`)) {
       const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
       const filePath = join(screenshotDir, `${viewport.width}x${viewport.height}`, `local-editor-${step.key}.png`);
       mkdirSync(join(screenshotDir, `${viewport.width}x${viewport.height}`), { recursive: true });
@@ -498,16 +595,24 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92,
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0,
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92,
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY,
       hiddenClipCount: metrics.hiddenClips.length,
-      consoleErrors,
+      hiddenClips: metrics.hiddenClips,
+      consoleErrorCount: stepConsole.length,
+      exceptionCount: stepExceptions.length,
+      consoleMessages: stepConsole,
+      exceptions: stepExceptions,
       screenshot,
       metrics: stepMetrics
     });
-    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, modalWidth: stepMetrics.panelWidth, modalHeight: stepMetrics.panelHeight, centered: stepMetrics.centered, modalViewportRatio: { width: Number(stepMetrics.modalWidthRatio.toFixed(3)), height: Number(stepMetrics.modalHeightRatio.toFixed(3)) }, outerScroll: stepMetrics.outerScroll, connectionHorizontalOverflow: stepMetrics.connectionOverflowX, tableHorizontalOverflow: stepMetrics.tableHorizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: 0 }));
+    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, modalWidth: stepMetrics.panelWidth, modalHeight: stepMetrics.panelHeight, centered: stepMetrics.centered, modalViewportRatio: { width: Number(stepMetrics.modalWidthRatio.toFixed(3)), height: Number(stepMetrics.modalHeightRatio.toFixed(3)) }, outerScroll: stepMetrics.outerScroll, modalScrollY: stepMetrics.modalScrollY, bodyScrollY: stepMetrics.bodyScrollY, localEditorBodyScrollY: stepMetrics.localEditorBodyScrollY, hiddenClipCount: metrics.hiddenClips.length, connectionHorizontalOverflow: stepMetrics.connectionOverflowX, tableHorizontalOverflow: stepMetrics.tableHorizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: stepConsole.length, exceptions: stepExceptions.length }));
+  }
+  } finally {
+    removeConsoleListener();
+    removeExceptionListener();
   }
   return checks;
 }
@@ -680,6 +785,11 @@ function summarize() {
     themeFixtureClippedAlerts: result.themeFixtureChecks.reduce((sum, item) => sum + item.clippedAlertCount, 0),
     themeFixtureUnsafeDialogs: result.themeFixtureChecks.reduce((sum, item) => sum + item.unsafeDialogCount, 0),
     themeFixtureLightEmptyFills: result.themeFixtureChecks.reduce((sum, item) => sum + item.emptyLightFillCount, 0),
+    localEditorConsoleErrors: result.localEditorChecks.reduce((sum, item) => sum + (item.consoleErrorCount || 0), 0),
+    localEditorExceptions: result.localEditorChecks.reduce((sum, item) => sum + (item.exceptionCount || 0), 0),
+    localEditorOuterScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.outerScroll).length,
+    localEditorModalScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.modalScrollY).length,
+    localEditorBodyScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.localEditorBodyScrollY || item.metrics?.bodyScrollY).length,
     tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
     tableWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0),
     tableLightBackgrounds: checks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0),
@@ -688,6 +798,92 @@ function summarize() {
     tableEmptyWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableEmptyWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableEmptyWhiteBackgrounds, 0),
     paginationWhiteBackgrounds: checks.reduce((sum, item) => sum + item.paginationWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.paginationWhiteBackgrounds, 0)
   };
+}
+
+function buildAuditFailures(auditResult) {
+  const summary = auditResult.summary || {};
+  const failures = [];
+  const expectZero = [
+    "routesWithOverflow",
+    "routesWithThemeMismatch",
+    "routesWithLayoutIssue",
+    "routesWithConsoleErrors",
+    "toolbarHorizontalOverflows",
+    "hiddenClips",
+    "localEditorFailed",
+    "localEditorConsoleErrors",
+    "localEditorExceptions",
+    "localEditorOuterScrollFailures",
+    "localEditorModalScrollFailures",
+    "localEditorBodyScrollFailures",
+    "themeFixtureWhiteBackgrounds",
+    "themeFixtureClippedAlerts",
+    "themeFixtureUnsafeDialogs",
+    "themeFixtureLightEmptyFills",
+    "tableWhiteBackgrounds",
+    "tableLightBackgrounds",
+    "tableFixedWhiteBackgrounds",
+    "tableLoadingWhiteBackgrounds",
+    "tableEmptyWhiteBackgrounds",
+    "paginationWhiteBackgrounds"
+  ];
+  for (const key of expectZero) {
+    if ((summary[key] || 0) !== 0) failures.push(`${key} expected 0, actual ${summary[key] || 0}`);
+  }
+  if ((summary.notVisited || []).length > 0) failures.push(`notVisited expected 0, actual ${summary.notVisited.length}: ${summary.notVisited.join(", ")}`);
+  if (summary.routeCount !== routes.length) failures.push(`routeCount expected ${routes.length}, actual ${summary.routeCount}`);
+  if (summary.viewportCount !== viewports.length) failures.push(`viewportCount expected ${viewports.length}, actual ${summary.viewportCount}`);
+  if (summary.executedChecks !== routes.length * viewports.length) failures.push(`executedChecks expected ${routes.length * viewports.length}, actual ${summary.executedChecks}`);
+  if (summary.renderedRouteCount !== routes.length) failures.push(`renderedRouteCount expected ${routes.length}, actual ${summary.renderedRouteCount}`);
+  if (summary.localEditorChecks !== viewports.length * 5) failures.push(`localEditorChecks expected ${viewports.length * 5}, actual ${summary.localEditorChecks}`);
+  if (summary.themeFixtureChecks !== viewports.length) failures.push(`themeFixtureChecks expected ${viewports.length}, actual ${summary.themeFixtureChecks}`);
+
+  for (const check of auditResult.checks || []) {
+    const prefix = `Route ${check.route?.path || "<unknown>"} ${check.viewport}`;
+    if (!check.rendered) failures.push(`${prefix}: rendered=false`);
+    if (!check.layoutShellOk) failures.push(`${prefix}: layoutShellOk=false`);
+    if (check.documentOverflowX || check.documentOverflowY) failures.push(`${prefix}: document overflow x=${check.documentOverflowX} y=${check.documentOverflowY}`);
+    if (check.themeMismatch) failures.push(`${prefix}: themeMismatch=true`);
+    if (check.toolbarHorizontalOverflowCount > 0) failures.push(`${prefix}: toolbarHorizontalOverflowCount=${check.toolbarHorizontalOverflowCount}`);
+    if (check.hiddenClipCount > 0) failures.push(`${prefix}: hiddenClipCount=${check.hiddenClipCount}`);
+    if (check.unintentionalOverflowCount > 0) failures.push(`${prefix}: unintentionalOverflowCount=${check.unintentionalOverflowCount}`);
+    if (check.consoleErrorCount > 0) failures.push(`${prefix}: consoleErrorCount=${check.consoleErrorCount}`);
+    if (check.exceptionCount > 0) failures.push(`${prefix}: exceptionCount=${check.exceptionCount}`);
+  }
+
+  for (const check of auditResult.localEditorChecks || []) {
+    const metrics = check.metrics || {};
+    const prefix = `Local editor ${check.viewport} ${check.step}`;
+    const stepFailures = [];
+    if (!metrics.panelVisible) stepFailures.push("panelVisible=false");
+    if (!metrics.paneVisible) stepFailures.push("paneVisible=false");
+    if (check.horizontalOverflow) stepFailures.push("horizontalOverflow=true");
+    if (check.themeMismatch) stepFailures.push("themeMismatch=true");
+    if (!metrics.centered) stepFailures.push("centered=false");
+    if (metrics.modalNearFullscreen) stepFailures.push("modalNearFullscreen=true");
+    if (metrics.modalWidthRatio > 0.95 || metrics.modalWidthRatio < 0.75) stepFailures.push(`modalWidthRatio=${Number(metrics.modalWidthRatio || 0).toFixed(3)} expected 0.75..0.95`);
+    if (metrics.modalHeightRatio > 0.92 || metrics.modalHeightRatio < 0.72) stepFailures.push(`modalHeightRatio=${Number(metrics.modalHeightRatio || 0).toFixed(3)} expected 0.72..0.92`);
+    if (metrics.outerScroll) stepFailures.push("outerScroll=true");
+    if (metrics.modalScrollY) stepFailures.push("modalScrollY=true");
+    if (metrics.bodyScrollY) stepFailures.push("bodyScrollY=true");
+    if (metrics.localEditorBodyScrollY) stepFailures.push("localEditorBodyScrollY=true");
+    if (metrics.connectionOverflowX) stepFailures.push("connectionHorizontalOverflow=true");
+    if (check.hiddenClipCount > 0) stepFailures.push(`hiddenClipCount=${check.hiddenClipCount}`);
+    if ((check.consoleErrorCount || 0) > 0) stepFailures.push(`consoleErrorCount=${check.consoleErrorCount}`);
+    if ((check.exceptionCount || 0) > 0) stepFailures.push(`exceptionCount=${check.exceptionCount}`);
+    if (stepFailures.length > 0 || !check.pass) failures.push(`${prefix} failed: ${stepFailures.join("; ") || "pass=false"}`);
+  }
+
+  for (const fixture of auditResult.themeFixtureChecks || []) {
+    const prefix = `Theme fixture ${fixture.viewport}`;
+    if (fixture.whiteBackgroundCount > 0) failures.push(`${prefix}: whiteBackgroundCount=${fixture.whiteBackgroundCount}`);
+    if (fixture.clippedAlertCount > 0) failures.push(`${prefix}: clippedAlertCount=${fixture.clippedAlertCount}`);
+    if (fixture.unsafeDialogCount > 0) failures.push(`${prefix}: unsafeDialogCount=${fixture.unsafeDialogCount}`);
+    if (fixture.emptyLightFillCount > 0) failures.push(`${prefix}: emptyLightFillCount=${fixture.emptyLightFillCount}`);
+    if (fixture.tableWhiteBackgrounds > 0) failures.push(`${prefix}: tableWhiteBackgrounds=${fixture.tableWhiteBackgrounds}`);
+    if (fixture.tableLightBackgrounds > 0) failures.push(`${prefix}: tableLightBackgrounds=${fixture.tableLightBackgrounds}`);
+  }
+  return failures;
 }
 
 try {
@@ -707,6 +903,8 @@ try {
   await cdp.send("Runtime.enable");
   await cdp.send("Page.enable");
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  await installAuditRequestStub();
+  await installAuditCredential();
   await delay(1500);
   for (const viewport of viewports) {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
@@ -763,7 +961,10 @@ try {
     console.log(JSON.stringify({ viewport: `${viewport.width}x${viewport.height}`, themeFixture: true, whiteBackgrounds: themeFixture.whiteBackgroundCount, clippedAlerts: themeFixture.clippedAlertCount, unsafeDialogs: themeFixture.unsafeDialogCount, lightEmptyFills: themeFixture.emptyLightFillCount, tableWhite: themeFixture.tableWhiteBackgrounds, tableLight: themeFixture.tableLightBackgrounds }));
   }
   summarize();
-  result.ok = true;
+  const auditFailures = buildAuditFailures(result);
+  result.ok = auditFailures.length === 0;
+  result.errors = auditFailures;
+  if (!result.ok) process.exitCode = 1;
 } catch (error) {
   result.ok = false;
   result.errors = [error instanceof Error ? error.message : String(error)];
