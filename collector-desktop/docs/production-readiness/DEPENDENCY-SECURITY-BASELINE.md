@@ -2546,3 +2546,403 @@ NOT IMPLEMENTED
 Next:
 Task 07.2-R2 — npm / Electron Packaging Toolchain Security Remediation
 ```
+
+## Task 07.2-R2 — npm / Electron Packaging Toolchain Security Remediation
+
+Date: 2026-09-15
+
+Baseline commit:
+
+```text
+d4d2315d8b5e4ca1c8fbafb1128b108ab532b090
+```
+
+### R2 Scope
+
+This task was scoped to npm / Electron packaging toolchain dependencies only:
+
+```text
+electron-builder
+app-builder-lib
+builder-util
+builder-util-runtime
+electron-publish
+tar
+node-gyp / packaging transitive chain
+```
+
+Explicitly not changed:
+
+```text
+Electron runtime
+Vite / Vitest / Vue / Element Plus
+Spring Boot / Java / Tomcat / Netty
+business code
+UI
+Auto Update
+Code Signing
+```
+
+### Version Before / After
+
+| Package | Before | After | Status |
+| --- | ---: | ---: | --- |
+| electron | 44.3.0 | 44.3.0 | PRESERVED |
+| electron-builder | 25.1.8 | 26.15.3 | UPGRADED |
+| app-builder-lib | 25.1.8 | 26.15.3 | UPGRADED |
+| builder-util | 25.1.7 | 26.15.3 | UPGRADED |
+| builder-util-runtime | 9.2.10 | 9.7.0 | UPGRADED / GHSA-p2f4-r6v6-j797 PATCHED |
+| electron-publish | 25.1.7 | 26.15.3 | UPGRADED |
+| tar | 6.2.1 | 7.5.22 | UPGRADED / CVE-2026-59873 NOT AFFECTED |
+| node-gyp | 9.4.1 | 12.4.0 | UPGRADED BY PACKAGING GRAPH |
+| js-yaml | 4.3.1 | 4.3.2 | OVERRIDDEN AFTER CLEAN INSTALL STILL RETURNED HIGH FINDING |
+| joi | 18.2.3 | 18.2.3 | REMAINING LOW / DEV TOOLING |
+
+### npm dist-tag Evidence
+
+```text
+npm view electron-builder dist-tags --json
+latest = 26.15.3
+next = 27.0.0-alpha.8
+v26 = 26.16.1
+```
+
+The task used `electron-builder@26.15.3` and did not follow 27 alpha or non-latest 26.16.x.
+
+### package.json Diff
+
+Direct dependency intent change:
+
+```diff
+- "electron-builder": "^25.1.8"
++ "electron-builder": "^26.15.3"
+```
+
+Additional targeted override was added only after the clean `electron-builder@26.15.3` graph still resolved vulnerable `js-yaml@4.3.1` in the packaging chain:
+
+```json
+"overrides": {
+  "js-yaml": "4.3.2"
+}
+```
+
+Reasoning:
+
+```text
+app-builder-lib@26.15.3 -> js-yaml range ^4.1.0
+builder-util@26.15.3 -> js-yaml range ^4.1.0
+dmg-builder@26.15.3 -> js-yaml range ^4.1.0
+cosmiconfig@9.0.2 -> js-yaml range ^4.1.0
+4.3.2 is semver-compatible with all observed consumers.
+```
+
+### package-lock Diff
+
+```text
+package count before: 725
+package count after: 625
+
+added nodes: 67
+removed nodes: 167
+version-changed nodes: 36
+
+resolved changes: 135
+integrity changes: 36
+```
+
+Registry host counts:
+
+```text
+before:
+registry.npmjs.org = 66
+registry.npmmirror.com = 658
+
+after:
+registry.npmjs.org = 239
+registry.npmmirror.com = 385
+```
+
+The registry changes were scoped to the regenerated packaging dependency subtree; no deliberate full-lock registry normalization was performed.
+
+### Builder Graph After
+
+```text
+electron-builder@26.15.3
+├─ app-builder-lib@26.15.3
+│  ├─ @electron/rebuild@4.2.0 -> node-gyp@12.4.0 -> tar@7.5.22
+│  ├─ builder-util@26.15.3
+│  ├─ builder-util-runtime@9.7.0
+│  ├─ electron-builder-squirrel-windows@26.15.3
+│  ├─ electron-publish@26.15.3
+│  ├─ js-yaml@4.3.2 overridden
+│  └─ tar@7.5.22
+├─ builder-util@26.15.3 -> js-yaml@4.3.2
+├─ builder-util-runtime@9.7.0
+└─ dmg-builder@26.15.3 -> js-yaml@4.3.2
+```
+
+### npm Clean Install / npm ls / SBOM
+
+```text
+NPM_CONFIG_ALLOW_REMOTE=all npm ci --prefix collector-desktop
+=> PASS / exit 0
+
+npm --prefix collector-desktop ls --all --json
+=> PASS / exit 0 / ELSPROBLEMS = 0
+
+npm --prefix collector-desktop sbom --sbom-format cyclonedx
+=> PASS / exit 0
+```
+
+One initial `npm ci` attempt failed with Windows EPERM while a stale Vite/Node process held Rollup's native binary. After killing the stale Vite/Node process, clean install passed. No `--force` or `--legacy-peer-deps` was used.
+
+### npm Audit Before / After
+
+Before from R1:
+
+```text
+Critical = 1
+High = 14
+Moderate = 0
+Low = 1
+Total = 16
+```
+
+After R2 final:
+
+```text
+Full audit:
+Critical = 0
+High = 0
+Moderate = 0
+Low = 1
+Total = 1
+
+Production audit:
+Critical = 0
+High = 0
+Moderate = 0
+Low = 0
+Total = 0
+```
+
+Remaining full-audit item:
+
+| Advisory | Package | Severity | Dependency path | Classification | Status |
+| --- | --- | --- | --- | --- | --- |
+| GHSA-6w3j-5fw6-r9vr / GHSA-gg4h-3hg2-grpc | joi@18.2.3 | Low | wait-on@8.0.5 -> joi | DEV_ONLY / LOW | OPEN / NOT R2 BLOCKER |
+
+### Packaging Advisory Matrix
+
+| Advisory | Package | Before | After | Current Target | Reachability | Status |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| GHSA-7g7r-gx96-252g / CVE-2026-54672 | app-builder-lib | 25.1.8 | 26.15.3 | Windows NSIS | Old finding primarily Linux AppImage; current dependency upgraded | PATCHED |
+| GHSA-p2f4-r6v6-j797 | builder-util-runtime | 9.2.10 | 9.7.0 | Auto Update not implemented | NOT_REACHABLE_BY_CURRENT_USAGE before; dependency upgraded | PATCHED |
+| CVE-2026-59873 | tar | 6.2.1 | 7.5.22 | packaging graph | packaging tar >= 7.5.19 required | NOT AFFECTED |
+| GHSA-2883-xcg3-v3hh | js-yaml | 4.3.1 | 4.3.2 | electron-builder config parsing / build tooling | BUILD/PACKAGING CHAIN | PATCHED BY TARGETED OVERRIDE |
+| GHSA-6w3j-5fw6-r9vr / GHSA-gg4h-3hg2-grpc | joi | 18.2.3 | 18.2.3 | wait-on dev tooling | DEV_ONLY | LOW / OPEN |
+
+### Tar Version Matrix
+
+| Dependency Path | Version | Advisory Status |
+| --- | ---: | --- |
+| app-builder-lib -> tar | 7.5.22 | CVE-2026-59873 NOT AFFECTED |
+| @electron/rebuild -> node-gyp -> tar | 7.5.22 | CVE-2026-59873 NOT AFFECTED |
+
+Packaging-reachable tar Critical/High:
+
+```text
+0
+```
+
+### Windows NSIS Reachability
+
+Current primary distribution target remains:
+
+```text
+win.target = nsis
+```
+
+Old NSIS advisory `GHSA-r4pf-3v7r-hh55` was already not a current finding before R2 because the project was already on `electron-builder 25.1.8`, above the affected `< 24.13.2` range.
+
+### Verification Results
+
+```text
+npm --prefix collector-desktop run lint => PASS
+npm --prefix collector-desktop run stylelint => PASS
+npm --prefix collector-desktop run typecheck => PASS
+npm --prefix collector-desktop test => PASS
+npm --prefix collector-desktop run build => PASS
+npm --prefix collector-desktop run verify => PASS
+```
+
+Vitest count:
+
+```text
+Test Files: 76 passed (76)
+Tests: 561 passed (561)
+```
+
+Electron preservation:
+
+```text
+npm exec --prefix collector-desktop electron -- --version => v44.3.0
+```
+
+Electron binary note: local npm/electron postinstall again attempted to download Electron and failed/hung under the current environment after `npm ci`; the existing official `electron-v44.3.0-win32-x64.zip` temporary artifact was re-extracted to `node_modules/electron/dist`, and `path.txt` was set to `electron.exe` for verification. No permanent npm config was changed.
+
+### Pack / ASAR / Packaged Runtime Smoke
+
+```text
+npm --prefix collector-desktop run pack => PASS
+node collector-desktop/scripts/package-asar-audit.mjs => PASS
+node collector-desktop/scripts/packaged-runtime-smoke.mjs => PASS
+```
+
+ASAR result:
+
+```text
+ok = true
+entryCount = 7097
+mapCount = 0
+required entries present
+```
+
+Packaged runtime smoke result:
+
+```text
+ok = true
+firstStarted = true
+rendererIndexLoaded = true
+preloadBridge.hasBridge = true
+credentialStatusApi = true
+serverConfigApi = true
+startupDiagnosticPathWritable = true
+productionReloadShortcutBlocked = true
+secondInstanceExited = true
+firstInstanceStillRunning = true
+errors = []
+```
+
+### Dist / NSIS Blocker
+
+`electron-builder@26.15.3` did not complete NSIS `dist` in this local Windows environment.
+
+Command:
+
+```text
+npm --prefix collector-desktop run dist
+```
+
+Exact failure class:
+
+```text
+⨯ spawn EPERM
+failedTask=build
+```
+
+Exact stack root:
+
+```text
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:420:11)
+    at spawn (node:child_process:787:9)
+    at execFile (node:child_process:349:17)
+    at .../node_modules/builder-util/src/util.ts:152:13
+    at WineVmManager.execWine (.../node_modules/app-builder-lib/src/vm/WineVm.ts:40:18)
+    at WineVmManager.exec (.../node_modules/app-builder-lib/src/vm/WineVm.ts:22:17)
+    at NsisTarget.computeScriptAndSignUninstaller (.../node_modules/app-builder-lib/src/targets/nsis/NsisTarget.ts:445:20)
+```
+
+Observed context:
+
+```text
+electron-builder 26.15.3
+platform = win32
+arch = x64
+Electron = 44.3.0
+pack --dir = PASS
+ASAR audit = PASS
+packaged runtime smoke = PASS
+NSIS dist = BLOCKED at uninstaller generation / installer self-exec step
+```
+
+This is a packaging toolchain compatibility/runtime-environment blocker, not an Electron runtime drift.
+
+### Electron Security Boundary Regression
+
+Packaged runtime smoke re-proved the delivery boundary after `pack`:
+
+| Invariant | Status |
+| --- | --- |
+| `contextIsolation = true` | PASS / unchanged |
+| `nodeIntegration = false` | PASS / unchanged |
+| `sandbox = true` | PASS / unchanged |
+| raw `ipcRenderer` exposed | false / PASS |
+| preload bridge exposed | PASS |
+| credential status API | PASS |
+| server config API | PASS |
+| single instance | PASS |
+| production reload shortcut blocked | PASS |
+
+No Electron main/preload/source UI changes were made in R2.
+
+### Code Signing / Auto Update
+
+Code signing:
+
+```text
+NOT IMPLEMENTED / OPERATIONAL DEFERRED
+signAndEditExecutable = false
+Windows installer signing = NOT SIGNED
+```
+
+Electron-builder 26 logs also reported:
+
+```text
+executable resource editing and code signing skipped — signAndEditExecutable is false.
+To skip only code signing while keeping icon and metadata applied, use signExecutable: false instead.
+```
+
+No signing configuration, certificate, or signing credential was added in R2.
+
+Auto update:
+
+```text
+NOT IMPLEMENTED
+```
+
+No updater package, feed, server, or publish token was added.
+
+### R2 Final Status
+
+```text
+Task 07.2-R2: INCOMPLETE
+
+Electron Packaging Toolchain Security Remediation:
+PARTIAL / BLOCKED AT NSIS DIST
+
+Electron:
+44.3.0 PRESERVED
+
+electron-builder:
+26.15.3
+
+npm packaging Critical/High:
+0
+
+Production npm audit:
+0
+
+Windows NSIS Packaging:
+BLOCKED BY electron-builder 26.15.3 NSIS dist spawn EPERM
+
+Packaged Runtime Smoke:
+PASS
+
+Security Boundaries:
+PASS
+
+Next:
+Task 07.2-R2-R1 — investigate electron-builder 26.15.3 NSIS dist spawn EPERM, especially NsisTarget.computeScriptAndSignUninstaller / local Windows execution policy / minimal NSIS config compatibility path. Do not switch to Electron Builder 27 alpha automatically.
+```

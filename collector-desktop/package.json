@@ -44,7 +44,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^44.3.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.9.1",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.12.0",
@@ -60,6 +60,9 @@
     "vue-eslint-parser": "^10.4.1",
     "vue-tsc": "^2.2.0",
     "wait-on": "^8.0.1"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2"
   },
   "build": {
     "appId": "com.wangbin.collector.desktop",
