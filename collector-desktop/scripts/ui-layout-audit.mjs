@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 
 const root = join(import.meta.dirname, "..");
 const exePath = process.env.COLLECTOR_DESKTOP_EXE || join(root, "release", "win-unpacked", "数据采集工作台.exe");
+const fallbackElectronExe = join(root, "node_modules", "electron", "dist", "electron.exe");
 const devServerUrl = process.env.COLLECTOR_DESKTOP_DEV_URL || "http://127.0.0.1:5173";
 const outputDir = process.env.COLLECTOR_DESKTOP_UI_AUDIT_DIR || join(root, ".ui-audit");
 const screenshotDir = join(outputDir, "screenshots");
@@ -12,6 +13,7 @@ const reportPath = join(outputDir, "report.json");
 const userData = mkdtempSync(join(tmpdir(), "collector-desktop-ui-audit-"));
 const port = 20000 + Math.floor(Math.random() * 1000);
 const viewports = [
+  { width: 1180, height: 768 },
   { width: 1280, height: 720 },
   { width: 1366, height: 768 },
   { width: 1440, height: 900 },
@@ -114,6 +116,7 @@ const result = {
   viewportCount: viewports.length,
   checks: [],
   themeFixtureChecks: [],
+  localEditorChecks: [],
   summary: {}
 };
 let child;
@@ -415,6 +418,76 @@ async function collectConsoleForRoute(route) {
   return { state, metrics, console: messages, exceptions };
 }
 
+
+async function collectLocalEditorStepChecks(viewport) {
+  const href = `${devServerUrl}/#/device`;
+  await evaluate(`location.href = ${JSON.stringify(href)}`);
+  await waitForRoute("/device");
+  await delay(500);
+  await evaluate(`(() => {
+    const buttons = [...document.querySelectorAll('button')];
+    const target = buttons.find((button) => button.textContent && button.textContent.includes('新增本地设备'));
+    target?.click();
+    return Boolean(target);
+  })()`);
+  await delay(500);
+  const steps = [
+    { key: "setup", label: "Step 01" },
+    { key: "points", label: "Step 02" },
+    { key: "alarm", label: "Step 03" },
+    { key: "cloud", label: "Step 04" },
+    { key: "json", label: "Step 05" }
+  ];
+  const checks = [];
+  for (const step of steps) {
+    await evaluate(`(() => {
+      const target = document.querySelector('[data-local-editor-section="${step.key}"]');
+      target?.click();
+      return Boolean(target);
+    })()`);
+    await delay(180);
+    const metrics = await collectDomMetrics();
+    const stepMetrics = await evaluate(`(() => {
+      const panel = document.querySelector('#localDevicePanel');
+      const pane = document.querySelector('[data-local-editor-pane="${step.key}"]');
+      const connection = document.querySelector('.local-connection-body');
+      const visible = (element) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const panelOverflowX = panel ? panel.scrollWidth > panel.clientWidth + 1 : true;
+      const connectionOverflowX = connection && visible(connection) ? connection.scrollWidth > connection.clientWidth + 1 : false;
+      return {
+        panelVisible: visible(panel),
+        paneVisible: visible(pane),
+        panelOverflowX,
+        connectionOverflowX,
+        panelWidth: panel ? Math.round(panel.getBoundingClientRect().width) : 0,
+        bodyClientWidth: document.body.clientWidth
+      };
+    })()`);
+    const horizontalOverflow = metrics.document.scrollWidth > metrics.document.clientWidth + 1 || metrics.body.scrollWidth > metrics.body.clientWidth + 1 || stepMetrics.panelOverflowX || stepMetrics.connectionOverflowX;
+    const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => item.whiteBackground) || metrics.tables.whiteBackgroundCount > 0 || metrics.tables.lightBackgroundCount > 0;
+    const consoleErrors = [];
+    checks.push({
+      viewport: `${viewport.width}x${viewport.height}`,
+      step: step.label,
+      key: step.key,
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch,
+      horizontalOverflow,
+      themeMismatch,
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible,
+      hiddenClipCount: metrics.hiddenClips.length,
+      consoleErrors,
+      metrics: stepMetrics
+    });
+    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: 0 }));
+  }
+  return checks;
+}
+
 async function captureScreenshot(route, viewport) {
   const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   const filePath = join(screenshotDir, `${viewport.width}x${viewport.height}`, `${route.name.toLowerCase()}.png`);
@@ -576,6 +649,8 @@ function summarize() {
     toolbarHorizontalOverflows: checks.reduce((sum, item) => sum + item.toolbarHorizontalOverflowCount, 0),
     hiddenClips: checks.reduce((sum, item) => sum + item.hiddenClipCount, 0),
     notVisited: routes.filter((route) => !routeSummaries.some((item) => item.path === route.path)).map((route) => route.path),
+    localEditorChecks: result.localEditorChecks.length,
+    localEditorFailed: result.localEditorChecks.filter((item) => !item.pass).length,
     themeFixtureChecks: result.themeFixtureChecks.length,
     themeFixtureWhiteBackgrounds: result.themeFixtureChecks.reduce((sum, item) => sum + item.whiteBackgroundCount, 0),
     themeFixtureClippedAlerts: result.themeFixtureChecks.reduce((sum, item) => sum + item.clippedAlertCount, 0),
@@ -592,9 +667,13 @@ function summarize() {
 }
 
 try {
-  if (!existsSync(exePath)) throw new Error(`packaged exe missing: ${exePath}`);
+  const launchExe = existsSync(exePath) ? exePath : fallbackElectronExe;
+  const launchArgs = existsSync(exePath) ? [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`] : [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`, root];
+  if (!existsSync(launchExe)) throw new Error(`packaged exe missing: ${exePath}; fallback electron missing: ${fallbackElectronExe}`);
+  result.target.launchExe = launchExe;
+  result.target.launchMode = existsSync(exePath) ? "packaged" : "electron-dev-fallback";
   mkdirSync(outputDir, { recursive: true });
-  child = spawn(exePath, [`--remote-debugging-port=${port}`, `--user-data-dir=${userData}`], {
+  child = spawn(launchExe, launchArgs, {
     stdio: "ignore",
     windowsHide: true,
     env: { ...process.env, VITE_DEV_SERVER_URL: devServerUrl }
@@ -653,6 +732,8 @@ try {
       result.checks.push(check);
       console.log(JSON.stringify({ route: route.path, viewport: `${viewport.width}x${viewport.height}`, rendered: state.hash === `#${route.path}`, overflowX: documentOverflowX, overflowY: documentOverflowY, toolbarOverflow: check.toolbarHorizontalOverflowCount, hiddenClips: check.hiddenClipCount, tableWhite: check.tableWhiteBackgrounds, tableLight: check.tableLightBackgrounds, consoleErrors: check.consoleErrorCount, exceptions: check.exceptionCount }));
     }
+    const localEditorChecks = await collectLocalEditorStepChecks(viewport);
+    result.localEditorChecks.push(...localEditorChecks);
     const themeFixture = await collectThemeFixture(viewport);
     result.themeFixtureChecks.push(themeFixture);
     console.log(JSON.stringify({ viewport: `${viewport.width}x${viewport.height}`, themeFixture: true, whiteBackgrounds: themeFixture.whiteBackgroundCount, clippedAlerts: themeFixture.clippedAlertCount, unsafeDialogs: themeFixture.unsafeDialogCount, lightEmptyFills: themeFixture.emptyLightFillCount, tableWhite: themeFixture.tableWhiteBackgrounds, tableLight: themeFixture.tableLightBackgrounds }));
