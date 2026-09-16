@@ -217,7 +217,7 @@
                     <thead><tr><th>关联点位</th><th>规则名称</th><th>告警类型</th><th>触发条件</th><th>持续时间</th><th>告警级别</th><th>启用状态</th><th>操作</th></tr></thead>
                     <tbody>
                       <tr v-for="row in filteredAlarmRows" :key="`${row.pointIndex}-${row.ruleIndex}`" :class="{ 'is-selected': row.pointIndex === selectedPointIndex && row.ruleIndex === selectedAlarmRuleIndex }" @click="selectAlarmRow(row)">
-                        <td>{{ row.point.pointName || row.point.pointCode }}</td><td>{{ row.rule.ruleName || row.rule.ruleId || '未命名规则' }}</td><td>{{ row.rule.operator || '-' }}</td><td>{{ alarmConditionText(row) }}</td><td>{{ row.rule.duration ?? '-' }} s</td><td>{{ row.rule.level || '-' }}</td><td>{{ row.rule.enabled === false ? '禁用' : '启用' }}</td><td><button type="button" @click.stop="selectAlarmRow(row)">编辑</button><button type="button" class="danger" @click.stop="removeAlarmRuleAt(row.pointIndex, row.ruleIndex)">删除</button></td>
+                        <td>{{ row.point.pointName || row.point.pointCode }}</td><td>{{ row.rule.ruleName || row.rule.ruleId || '未命名规则' }}</td><td>{{ row.rule.operator || '-' }}</td><td>{{ alarmConditionText(row) }}</td><td>{{ row.rule.duration ?? '-' }} s</td><td><span class="level-badge" :class="alarmLevelClass(row.rule.level)">{{ alarmLevelLabel(row.rule.level) }}</span></td><td><span class="state-badge" :class="row.rule.enabled === false ? 'is-off' : 'is-on'">{{ row.rule.enabled === false ? '禁用' : '启用' }}</span></td><td><button type="button" @click.stop="selectAlarmRow(row)">编辑</button><button type="button" class="danger" @click.stop="removeAlarmRuleAt(row.pointIndex, row.ruleIndex)">删除</button></td>
                       </tr>
                       <tr v-if="filteredAlarmRows.length === 0"><td colspan="8">暂无告警规则，请选择点位后新增。</td></tr>
                     </tbody>
@@ -241,7 +241,7 @@
                     <label>启用<el-select :model-value="currentAlarmRule.enabled === undefined ? '' : String(Boolean(currentAlarmRule.enabled))" clearable @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'enabled', parseBooleanOption($event))"><el-option label="是" value="true" /><el-option label="否" value="false" /></el-select></label>
                     <label class="wide-field">描述<el-input :model-value="String(currentAlarmRule.description || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'description', $event)" /></label>
                   </div>
-                  <div class="logic-preview"><span>触发逻辑预览</span><strong>{{ alarmLogicPreview }}</strong></div>
+                  <div class="logic-preview"><span>触发逻辑预览</span><div class="logic-flow"><strong v-for="(part, index) in alarmLogicParts" :key="`${part}-${index}`">{{ part }}</strong></div></div>
                 </div>
                 <div v-else class="empty-state"><strong>暂无可编辑规则</strong><span>选择已有规则，或点击“新增规则”。</span></div>
               </section>
@@ -529,7 +529,16 @@ const filteredAlarmRows = computed(() => alarmRuleRows.value.filter((row) => (!a
 const enabledAlarmRuleCount = computed(() => alarmRuleRows.value.filter((row) => row.rule.enabled !== false).length);
 const alarmLevelCounts = computed<Record<string, number>>(() => alarmRuleRows.value.reduce<Record<string, number>>((acc, row) => { const level = String(row.rule.level || "UNSET"); acc[level] = (acc[level] || 0) + 1; return acc; }, {}));
 const currentAlarmRule = computed(() => selectedPoint.value ? alarmRules(selectedPoint.value)[selectedAlarmRuleIndex.value] || null : null);
-const alarmLogicPreview = computed(() => currentAlarmRule.value && selectedPoint.value ? alarmConditionText({ point: selectedPoint.value, pointIndex: selectedPointIndex.value, rule: currentAlarmRule.value, ruleIndex: selectedAlarmRuleIndex.value }) + ` → 触发告警（${currentAlarmRule.value.level || "未设置级别"}）` : "未选择规则");
+const alarmLogicParts = computed(() => {
+  if (!currentAlarmRule.value || !selectedPoint.value) return ["未选择规则"];
+  const unit = selectedPoint.value.unit ? String(selectedPoint.value.unit) : "";
+  return [
+    `${selectedPoint.value.pointName || selectedPoint.value.pointCode || "点位"} ${selectedPoint.value.pointCode || "-"}`,
+    `${currentAlarmRule.value.operator || "?"} ${currentAlarmRule.value.threshold ?? "?"}${unit}`,
+    `持续 ${currentAlarmRule.value.duration ?? 0} 秒`,
+    `${alarmLevelLabel(currentAlarmRule.value.level)}告警`
+  ];
+});
 const eventIntervalSummary = computed(() => minPointAdditionalNumber("eventMinIntervalMs"));
 const reportStrategySummary = computed(() => ({ changeMinInterval: minPointAdditionalNumber("changeMinIntervalMs"), eventMinInterval: minPointAdditionalNumber("eventMinIntervalMs"), cache: `${points.value.filter((point) => Number(point.cacheEnabled ?? 0) !== 0).length}/${points.value.length}` }));
 const eventMappingPreview = computed(() => points.value.filter((point) => point.alarmEnabled || point.additionalConfig?.eventEnabled).map((point) => `${point.pointName || point.pointCode}: ${point.alarmEnabled ? "告警事件" : "点位事件"} → ${point.additionalConfig?.reportField || point.pointCode || "未配置 reportField"}`));
@@ -608,6 +617,8 @@ function getPointFieldValue(path: string): unknown { return selectedPoint.value 
 function protocolPointFieldPath(field: ProtocolFieldConfig): string { return field.name.startsWith("additionalConfig.") ? field.name : `additionalConfig.${field.name}`; }
 function transformRuleText(point: DataPoint) { const scale = point.scalingFactor ?? 1; const offset = point.offset ?? 0; return Number(scale) !== 1 || Number(offset) !== 0 ? `value * ${scale} + ${offset}` : "原值"; }
 function alarmConditionText(row: AlarmRuleRow) { const unit = row.point.unit ? String(row.point.unit) : ""; return `${row.point.pointName || row.point.pointCode || "点位"}(${row.point.pointCode || "-"}) → ${row.rule.operator || "?"} ${row.rule.threshold ?? "?"}${unit} → 持续 ${row.rule.duration ?? 0} 秒`; }
+function alarmLevelLabel(level: unknown) { return alarmLevels.find((item) => item.value === String(level || ""))?.label || String(level || "未设置"); }
+function alarmLevelClass(level: unknown) { const value = String(level || "").toUpperCase(); if (value === "CRITICAL") return "is-critical"; if (value === "ERROR" || value === "WARNING") return "is-warning"; if (value === "INFO") return "is-info"; return "is-unset"; }
 function minPointAdditionalNumber(key: string) { const values = points.value.map((point) => Number(point.additionalConfig?.[key])).filter((value) => Number.isFinite(value) && value > 0); return values.length ? `${Math.min(...values)} ms` : "未配置"; }
 function buildPayloadPreview(mode: "property" | "event" | "full") { const mapped = points.value.filter((point) => point.additionalConfig?.reportEnabled !== false && hasValue(point.additionalConfig?.reportField)); if (mode === "property") return { topic: cloudTopicPreview.value, productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, properties: Object.fromEntries(mapped.map((point) => [String(point.additionalConfig?.reportField), point.lastValue ?? `<${point.pointCode || point.pointName}>`])) }; if (mode === "event") return { productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, events: eventMappingPreview.value, minIntervalMs: eventIntervalSummary.value }; return { device: { deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value }, cloudTarget: { ...cloudTarget }, pointCount: points.value.length, reportFields: mapped.map((point) => point.additionalConfig?.reportField), alarmRules: alarmRuleRows.value.length }; }
 function handleLocalEditorKeydown(event: KeyboardEvent) { if (event.key === "Escape" && props.modelValue) close(false); }
@@ -632,28 +643,35 @@ onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document
   --panel-line: var(--console-border-soft, #1e3a5f);
   --panel-muted: var(--console-text-muted, #8aa0b8);
   --panel-text: var(--console-text-primary, #e5edf8);
+  --editor-card-border: rgba(96, 165, 250, 0.22);
+  --editor-card-bg: color-mix(in srgb, var(--console-panel, #0f1b2e) 88%, #1d4ed8 12%);
+  --editor-card-soft: color-mix(in srgb, var(--console-panel-soft, #12233a) 82%, #0ea5e9 18%);
+  --editor-glow: 0 0 0 1px rgba(59, 130, 246, 0.24), 0 8px 24px rgba(37, 99, 235, 0.12);
   position: fixed;
-  inset: 12px 12px auto;
+  top: 50%;
+  left: 50%;
   z-index: 2001;
   display: flex;
-  height: calc(100vh - 24px);
+  width: min(1480px, 94vw);
+  height: min(860px, 90vh);
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
+  transform: translate(-50%, -50%);
   color: var(--console-text-secondary);
-  border: 1px solid var(--panel-line);
-  border-radius: 18px;
-  background: var(--console-bg);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+  border: 1px solid rgba(96, 165, 250, 0.26);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), var(--console-bg));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.46);
 }
 
 .local-editor-title {
   display: flex;
-  min-height: 76px;
-  padding: 0 18px;
+  min-height: 60px;
+  padding: 0 14px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
   flex: none;
   color: var(--panel-text);
   border-bottom: 1px solid var(--panel-line);
@@ -670,7 +688,7 @@ onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document
 .local-title-copy {
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 2px;
 }
 
 h3, p {
@@ -679,28 +697,28 @@ h3, p {
 
 .local-editor-title h3 {
   color: var(--console-text-primary);
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 850;
   line-height: 1.16;
 }
 
 .local-editor-title p, .local-section-head p, .field-description, .hint-list, .protocol-point-note, .validation-list {
   color: var(--console-text-muted);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .label-chip, .pill {
   display: inline-flex;
   width: fit-content;
-  min-height: 20px;
-  padding: 2px 7px;
+  min-height: 18px;
+  padding: 2px 6px;
   align-items: center;
   border: 1px solid rgba(59, 130, 246, 0.34);
   border-radius: 999px;
   color: #bfdbfe;
   background: rgba(37, 99, 235, 0.18);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1.2;
 }
@@ -716,10 +734,10 @@ h3, p {
 }
 
 .local-editor-stat {
-  width: 112px;
+  width: 102px;
   min-width: 0;
-  min-height: 46px;
-  padding: 6px 9px;
+  min-height: 42px;
+  padding: 5px 8px;
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-md);
   background: var(--console-panel-soft);
@@ -746,8 +764,8 @@ h3, p {
 
 .local-editor-tabs {
   display: grid;
-  min-height: 66px;
-  padding: 8px 16px;
+  min-height: 56px;
+  padding: 6px 12px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0;
   flex: none;
@@ -758,8 +776,8 @@ h3, p {
 .local-editor-tab {
   position: relative;
   min-width: 0;
-  min-height: 50px;
-  padding: 7px 10px 7px 44px;
+  min-height: 44px;
+  padding: 6px 8px 6px 39px;
   color: var(--console-text-dim);
   border: 1px solid var(--console-border-soft);
   background: linear-gradient(90deg, var(--console-panel), var(--console-panel-soft));
@@ -779,11 +797,11 @@ h3, p {
 
 .local-editor-tab > span {
   position: absolute;
-  top: 11px;
-  left: 14px;
+  top: 9px;
+  left: 12px;
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   place-items: center;
   border: 1px solid var(--console-border-soft);
   border-radius: 50%;
@@ -801,21 +819,22 @@ h3, p {
 
 .local-editor-tab strong {
   color: var(--console-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.15;
 }
 
 .local-editor-tab small {
   margin-top: 2px;
   color: var(--console-text-dim);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.1;
 }
 
 .local-editor-tab.is-active {
   color: var(--console-text-primary);
-  border-color: var(--console-primary-hover);
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.44), rgba(14, 165, 233, 0.2));
+  border-color: #60a5fa;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.62), rgba(14, 165, 233, 0.28));
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.18), 0 0 18px rgba(37, 99, 235, 0.22);
 }
 
 .local-editor-tab.is-active > span, .local-editor-tab.is-complete > span {
@@ -828,7 +847,7 @@ h3, p {
   display: flex;
   min-width: 0;
   min-height: 0;
-  padding: 12px 16px;
+  padding: 10px 12px;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 10px;
@@ -849,25 +868,25 @@ h3, p {
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
-  gap: 12px;
+  gap: 10px;
   overflow: hidden;
 }
 
 .step-grid-setup {
-  grid-template-columns: 260px minmax(420px, 0.9fr) minmax(560px, 1.2fr);
+  grid-template-columns: 210px minmax(0, 0.92fr) minmax(0, 1.15fr);
   align-items: stretch;
 }
 
 .step-grid-master-detail {
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 215px minmax(0, 1fr);
 }
 
 .step-grid-cloud {
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 290px minmax(0, 1fr);
 }
 
 .step-grid-json {
-  grid-template-columns: 220px minmax(420px, 1fr) 360px;
+  grid-template-columns: 200px minmax(0, 1fr) 315px;
 }
 
 .local-setup-stable-column, .detail-stack, .advanced-stack {
@@ -884,11 +903,11 @@ h3, p {
 }
 
 .detail-stack > .list-card {
-  flex: 1 1 52%;
+  flex: 0 1 46%;
 }
 
 .detail-stack > .editor-card, .cloud-bottom-grid {
-  flex: 1 1 48%;
+  flex: 1 1 54%;
   min-height: 0;
 }
 
@@ -1344,27 +1363,222 @@ button:disabled {
   color: var(--console-text-primary);
 }
 
+.local-editor .local-section-card,
+.local-editor .readonly-card {
+  padding: 12px;
+  border-color: var(--editor-card-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--editor-card-bg), var(--console-panel));
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.04);
+}
+
+.local-section-head > div,
+.compact-head > div {
+  position: relative;
+  min-width: 0;
+  padding-left: 32px;
+}
+
+.local-section-head > div::before,
+.compact-head > div::before {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #bfdbfe;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.18);
+  content: "◆";
+  font-size: 10px;
+}
+
+.overview-card,
+.metric-stack {
+  gap: 7px;
+}
+
+.local-editor .form-grid,
+.local-editor .readonly-grid {
+  gap: 8px 10px;
+}
+
+.local-editor input,
+.local-editor select,
+.local-editor textarea {
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.local-editor .metric-item {
+  min-height: 36px;
+  padding: 6px 8px;
+}
+
+.local-editor .metric-item strong {
+  font-size: 18px;
+}
+
+.local-editor .local-checklist li,
+.local-editor .hint-list li,
+.local-editor .validation-list li {
+  min-height: 30px;
+  padding: 6px 8px;
+}
+
+.point-table.editor-table {
+  min-width: 820px;
+}
+
+.alarm-table-wrap .editor-table {
+  min-width: 780px;
+}
+
+.mapping-table-wrap .editor-table {
+  min-width: 880px;
+}
+
+.local-editor .editor-table th,
+.local-editor .editor-table td,
+.local-editor .schema-table th,
+.local-editor .schema-table td {
+  padding: 7px 8px;
+}
+
+.local-editor .cloud-bottom-grid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 10px;
+}
+
+.local-editor .json-preview,
+.local-editor .point-json-textarea {
+  line-height: 1.4;
+}
+
+.local-editor .schema-table {
+  min-width: 0;
+}
+
+.schema-table th:nth-child(4),
+.schema-table td:nth-child(4) {
+  white-space: normal;
+}
+
+.logic-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.logic-flow strong {
+  max-width: 210px;
+  padding: 6px 10px;
+  overflow: hidden;
+  color: #dbeafe;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logic-flow strong:not(:last-child)::after {
+  margin-left: 8px;
+  color: #60a5fa;
+  content: "→";
+}
+
+.level-badge,
+.state-badge {
+  display: inline-flex;
+  min-height: 20px;
+  padding: 2px 7px;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.level-badge.is-critical {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.46);
+  background: rgba(127, 29, 29, 0.28);
+}
+.level-badge.is-warning {
+  color: #fed7aa;
+  border-color: rgba(251, 146, 60, 0.46);
+  background: rgba(124, 45, 18, 0.26);
+}
+.level-badge.is-info {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.42);
+  background: rgba(30, 64, 175, 0.22);
+}
+.level-badge.is-unset {
+  color: var(--console-text-muted);
+  background: rgba(15, 23, 42, 0.42);
+}
+.state-badge.is-on {
+  color: #bbf7d0;
+  border-color: rgba(52, 211, 153, 0.42);
+  background: rgba(6, 78, 59, 0.26);
+}
+.state-badge.is-off {
+  color: #cbd5e1;
+  background: rgba(51, 65, 85, 0.4);
+}
+
+.local-editor .local-editor-footer {
+  min-height: 50px;
+  padding: 8px 14px;
+}
+
+.local-editor,
+.local-editor * {
+  scrollbar-color: rgba(96, 165, 250, 0.45) rgba(15, 23, 42, 0.35);
+  scrollbar-width: thin;
+}
+
+.local-editor ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.local-editor ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.local-editor ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.45);
+}
 
 @media (max-width: 1366px) {
 .local-device-panel {
-  inset: 8px;
-  height: calc(100vh - 16px);
+  width: min(1280px, 94vw);
+  height: min(860px, 90vh);
 }
 
 .step-grid-setup {
-  grid-template-columns: 230px minmax(340px, 0.95fr) minmax(420px, 1.05fr);
+  grid-template-columns: 190px minmax(0, 0.92fr) minmax(0, 1.12fr);
 }
 
 .step-grid-master-detail {
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: 195px minmax(0, 1fr);
 }
 
 .step-grid-json {
-  grid-template-columns: 190px minmax(360px, 1fr) 310px;
+  grid-template-columns: 185px minmax(0, 1fr) 300px;
 }
 
 .local-editor-title {
-  min-height: 66px;
+  min-height: 58px;
 }
 
 .local-editor-tabs {
@@ -1378,31 +1592,43 @@ button:disabled {
  }
 
 @media (max-width: 1180px) {
-.local-editor-body {
-  overflow: auto;
+.local-device-panel {
+  width: 94vw;
+  height: min(860px, 90vh);
 }
 
-.local-editor-pane, .step-grid {
-  overflow: visible;
+.step-grid-setup {
+  grid-template-columns: 180px minmax(0, 0.9fr) minmax(0, 1.1fr);
 }
 
-.step-grid-setup, .step-grid-master-detail, .step-grid-cloud, .step-grid-json, .cloud-bottom-grid {
-  grid-template-columns: 1fr;
+.step-grid-master-detail,
+.step-grid-cloud {
+  grid-template-columns: 185px minmax(0, 1fr);
+}
+
+.step-grid-json {
+  grid-template-columns: 175px minmax(0, 1fr) 280px;
+}
+
+.cloud-bottom-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.8fr);
 }
 
 .overview-card {
   max-height: none;
 }
 
-.local-connection-card {
-  min-height: 420px;
-}
-
 .local-editor-tabs {
   overflow-x: auto;
-  grid-template-columns: repeat(5, minmax(168px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
  }
+
+@media (max-height: 760px) {
+.local-device-panel {
+  height: 92vh;
+}
+}
 
 @media (max-width: 960px) {
 .form-grid, .readonly-grid {

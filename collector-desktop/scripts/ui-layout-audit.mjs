@@ -451,39 +451,63 @@ async function collectLocalEditorStepChecks(viewport) {
       const panel = document.querySelector('#localDevicePanel');
       const pane = document.querySelector('[data-local-editor-pane="${step.key}"]');
       const connection = document.querySelector('.local-connection-body');
+      const tableWraps = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .table-wrap')];
       const visible = (element) => {
         if (!element) return false;
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       };
+      const rect = panel?.getBoundingClientRect();
       const panelOverflowX = panel ? panel.scrollWidth > panel.clientWidth + 1 : true;
       const connectionOverflowX = connection && visible(connection) ? connection.scrollWidth > connection.clientWidth + 1 : false;
+      const modalWidthRatio = rect ? rect.width / window.innerWidth : 1;
+      const modalHeightRatio = rect ? rect.height / window.innerHeight : 1;
+      const centered = rect ? Math.abs((rect.left + rect.width / 2) - window.innerWidth / 2) <= 2 && Math.abs((rect.top + rect.height / 2) - window.innerHeight / 2) <= 2 : false;
+      const modalNearFullscreen = modalWidthRatio >= 0.98 || modalHeightRatio >= 0.96;
+      const outerScroll = document.documentElement.scrollHeight > document.documentElement.clientHeight + 1 || document.body.scrollHeight > document.body.clientHeight + 1;
+      const tableHorizontalOverflow = tableWraps.some((item) => visible(item) && item.scrollWidth > item.clientWidth + 1);
       return {
         panelVisible: visible(panel),
         paneVisible: visible(pane),
         panelOverflowX,
         connectionOverflowX,
         panelWidth: panel ? Math.round(panel.getBoundingClientRect().width) : 0,
+        panelHeight: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
+        modalWidthRatio,
+        modalHeightRatio,
+        centered,
+        modalNearFullscreen,
+        outerScroll,
+        tableHorizontalOverflow,
         bodyClientWidth: document.body.clientWidth
       };
     })()`);
     const horizontalOverflow = metrics.document.scrollWidth > metrics.document.clientWidth + 1 || metrics.body.scrollWidth > metrics.body.clientWidth + 1 || stepMetrics.panelOverflowX || stepMetrics.connectionOverflowX;
     const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => item.whiteBackground) || metrics.tables.whiteBackgroundCount > 0 || metrics.tables.lightBackgroundCount > 0;
     const consoleErrors = [];
+    let screenshot = null;
+    if (["1366x768", "1440x900"].includes(`${viewport.width}x${viewport.height}`)) {
+      const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+      const filePath = join(screenshotDir, `${viewport.width}x${viewport.height}`, `local-editor-${step.key}.png`);
+      mkdirSync(join(screenshotDir, `${viewport.width}x${viewport.height}`), { recursive: true });
+      writeFileSync(filePath, Buffer.from(shot.data, "base64"));
+      screenshot = filePath.replaceAll("\\", "/");
+    }
     checks.push({
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch,
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92,
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible,
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92,
       hiddenClipCount: metrics.hiddenClips.length,
       consoleErrors,
+      screenshot,
       metrics: stepMetrics
     });
-    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: 0 }));
+    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, modalWidth: stepMetrics.panelWidth, modalHeight: stepMetrics.panelHeight, centered: stepMetrics.centered, modalViewportRatio: { width: Number(stepMetrics.modalWidthRatio.toFixed(3)), height: Number(stepMetrics.modalHeightRatio.toFixed(3)) }, outerScroll: stepMetrics.outerScroll, connectionHorizontalOverflow: stepMetrics.connectionOverflowX, tableHorizontalOverflow: stepMetrics.tableHorizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: 0 }));
   }
   return checks;
 }
