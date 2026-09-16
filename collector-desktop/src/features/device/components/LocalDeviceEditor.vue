@@ -124,17 +124,14 @@
                     <span class="label-chip">连接参数</span>
                     <h3>协议对应字段</h3>
                   </div>
-                  <div class="local-connection-meta" aria-label="连接参数摘要">
-                    <span>{{ currentProtocolTitle }}</span>
-                    <span>{{ connectionFields.length }} 字段</span>
-                    <span>{{ connectionRequiredCount }} 必填</span>
-                  </div>
-                  <p>切换协议只影响本区域高度；字段较多时在连接参数内部滚动，不再拉伸左侧卡片。</p>
+                  <p>按所选协议渲染连接字段；字段较多时仅在本卡片内部纵向滚动。</p>
                 </div>
 
-                <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
-                  <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
-                </form>
+                <div class="local-connection-body">
+                  <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
+                    <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
+                  </form>
+                </div>
               </section>
             </div>
           </section>
@@ -541,7 +538,6 @@ const alarmLevels = [
 const visibleProtocols = computed(() => props.protocols.filter((item) => item.protocol));
 const protocolSchema = computed(() => protocolDetails.value[protocol.value] || props.protocols.find((item) => item.protocol === protocol.value) || null);
 const connectionFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.connectionFields || []);
-const connectionRequiredCount = computed(() => connectionFields.value.filter((field) => field.required).length);
 const pointFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.pointFields || []);
 const pointDataTypes = computed(() => protocolSchema.value?.dataTypes?.length ? protocolSchema.value.dataTypes : ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"]);
 const currentProtocolTitle = computed(() => protocolSchema.value?.title ? `${protocolSchema.value.title} (${protocol.value})` : protocol.value);
@@ -1069,13 +1065,13 @@ onBeforeUnmount(() => {
   --panel-muted: var(--console-text-muted, #8aa0b8);
   --panel-text: var(--console-text-primary, #e5edf8);
   position: fixed;
-  top: 24px;
+  top: 16px;
   left: 50%;
   z-index: 2001;
   display: grid;
   width: min(1180px, calc(100vw - 48px));
-  height: min(860px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
+  height: min(920px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   color: var(--console-text-secondary);
@@ -1331,7 +1327,7 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   flex-direction: column;
   gap: 10px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .local-editor-pane {
@@ -1344,19 +1340,35 @@ onBeforeUnmount(() => {
 
 .local-setup-cluster {
   display: grid;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.2fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
 }
 
-.local-setup-stable-column,
+.local-setup-stable-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .local-cloud-detail-stack,
 .point-detail-stack {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 10px;
+}
+
+.local-setup-stable-column .local-section-card {
+  flex: 0 0 auto;
 }
 
 .local-section-card,
@@ -1394,40 +1406,42 @@ onBeforeUnmount(() => {
 .local-connection-card {
   display: flex;
   min-width: 0;
-  max-height: 520px;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
   flex-direction: column;
   overflow: hidden;
 }
 
-.local-connection-meta {
-  display: flex;
-  margin-left: auto;
-  align-items: center;
-  gap: 6px;
-  color: var(--console-text-muted);
-  font-size: 11px;
+.local-connection-card > .local-section-head {
+  flex: 0 0 auto;
+  margin-bottom: 6px;
 }
 
-.local-connection-meta span {
-  padding: 2px 6px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: 999px;
-}
-
-.dynamic-form {
+.local-connection-body {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
-.dynamic-form :deep(.dynamic-form) {
+.local-connection-body .dynamic-form {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.local-connection-body .dynamic-form :deep(.dynamic-form) {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex: 0 0 auto;
 }
 
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-form-grid) {
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.protocol-form-grid) {
   display: grid;
   width: 100%;
   max-width: 100%;
@@ -1436,24 +1450,24 @@ onBeforeUnmount(() => {
   gap: 10px 14px;
 }
 
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-row) {
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.protocol-field-row) {
   width: 100%;
   min-width: 0;
   grid-template-columns: 72px minmax(0, 1fr);
   column-gap: 8px;
 }
 
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-row.is-wide) {
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.protocol-field-row.is-wide) {
   grid-column: 1 / -1;
   grid-template-columns: minmax(96px, 108px) minmax(0, 1fr);
 }
 
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-control),
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input),
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-select),
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input-number),
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input__wrapper),
-[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-select__wrapper) {
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.protocol-field-control),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.el-input),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.el-select),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.el-input-number),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.el-input__wrapper),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .local-connection-body :deep(.el-select__wrapper) {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
@@ -1671,7 +1685,6 @@ onBeforeUnmount(() => {
   }
 
   .local-editor-layout,
-  .local-setup-cluster,
   .point-workspace,
   .local-point-workspace {
     grid-template-columns: 1fr;
@@ -1680,9 +1693,23 @@ onBeforeUnmount(() => {
   .local-editor-rail {
     display: none;
   }
+
+  .local-editor-body {
+    overflow: auto;
+  }
 }
 
 @media (max-width: 960px) {
+  .local-setup-cluster {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .local-connection-card {
+    height: auto;
+    max-height: none;
+  }
+
   .modao-form-grid,
   .compact-form-grid,
   .form-grid,
