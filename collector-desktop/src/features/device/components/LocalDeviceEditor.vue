@@ -1393,6 +1393,7 @@ onBeforeUnmount(() => {
 
 .local-connection-card {
   display: flex;
+  min-width: 0;
   max-height: 520px;
   flex-direction: column;
   overflow: hidden;
@@ -1414,12 +1415,49 @@ onBeforeUnmount(() => {
 }
 
 .dynamic-form {
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .dynamic-form :deep(.dynamic-form) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-form-grid) {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-row) {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-row.is-wide) {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(96px, 108px) minmax(0, 1fr);
+}
+
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.protocol-field-control),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-select),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input-number),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-input__wrapper),
+[id="localDevicePanel"].local-device-panel.local-device-web-dialog .local-connection-card .dynamic-form :deep(.el-select__wrapper) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .modao-form-grid,

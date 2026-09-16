@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectionPayload,
   buildProtocolInitialModel,
+  displayProtocolFieldLabel,
   extractProtocolModel,
   getPathValue,
   groupProtocolFields,
+  isWideProtocolField,
   setPathValue,
   validateProtocolModel
 } from "./protocol-form-utils";
@@ -75,5 +77,28 @@ describe("protocol-form-utils", () => {
     setPathValue(target, "additionalConfig.driverDataType", "REAL");
     expect(target).toEqual({ additionalConfig: { driverDataType: "REAL" } });
     expect(getPathValue(target, "additionalConfig.driverDataType")).toBe("REAL");
+  });
+
+  it("为 Modbus 连接参数提供可读中文 label 和稳定宽字段分类", () => {
+    const modbusFields: ProtocolFieldConfig[] = [
+      { name: "plc4xConnectionString", label: "PLC4X connection string", type: "string" },
+      { name: "pingAddress", label: "PLC4X ping address", type: "string" },
+      { name: "maxRegistersPerRequest", label: "Max registers per request", type: "number" },
+      { name: "maxCoilsPerRequest", label: "Max coils per request", type: "number" },
+      { name: "readTimeout", label: "Read timeout (ms)", type: "number" },
+      { name: "timeout", label: "Protocol timeout (ms)", type: "number" }
+    ];
+
+    expect(modbusFields.map(displayProtocolFieldLabel)).toEqual([
+      "PLC4X连接串",
+      "PLC4X Ping",
+      "最大寄存器数",
+      "最大线圈数",
+      "读取超时",
+      "协议超时"
+    ]);
+    expect(isWideProtocolField(modbusFields[0])).toBe(true);
+    expect(isWideProtocolField(modbusFields[1])).toBe(true);
+    expect(isWideProtocolField(modbusFields[2])).toBe(false);
   });
 });
