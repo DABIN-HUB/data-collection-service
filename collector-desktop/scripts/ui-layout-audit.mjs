@@ -569,11 +569,30 @@ async function collectLocalEditorStepChecks(viewport) {
         height: Math.round(header.getBoundingClientRect().height),
         wrapped: Boolean([...header.querySelectorAll('.editor-object-title, .editor-object-meta')].some((item) => item.scrollHeight > (parseFloat(getComputedStyle(item).lineHeight) || 16) * 1.45))
       }));
-      const pointFields = [...document.querySelectorAll('[data-local-editor-pane="points"] .point-field-grid-dense > label')].filter(visible);
-      const primaryPaths = ['pointName', 'pointCode', 'dataType'];
-      const primaryFields = primaryPaths.map((path) => pointFields.find((field) => field.textContent?.includes({ pointName: '点位名称', pointCode: '点位标识', dataType: '数据类型' }[path])));
+      const countGridColumns = (element) => {
+        const value = getComputedStyle(element).gridTemplateColumns;
+        return value && value !== 'none' ? value.split(' ').filter(Boolean).length : 0;
+      };
+      const pointPane = document.querySelector('[data-local-editor-pane="points"]');
+      const fourColumnGrids = [...document.querySelectorAll('[data-local-editor-pane="points"] .point-field-grid-four-column')].filter(visible);
+      const fourColumnGridColumns = fourColumnGrids.map(countGridColumns);
+      const readonlyGrid = document.querySelector('[data-local-editor-pane="points"] .readonly-grid');
+      const readonlyGridColumns = readonlyGrid && visible(readonlyGrid) ? countGridColumns(readonlyGrid) : 0;
+      const pointFields = [...document.querySelectorAll('[data-local-editor-pane="points"] .point-field-grid-four-column > label')].filter(visible);
+      const primaryPaths = ['pointName', 'pointCode', 'dataType', 'address'];
+      const primaryFields = primaryPaths.map((path) => pointFields.find((field) => field.textContent?.includes({ pointName: '点位名称', pointCode: '点位标识', dataType: '数据类型', address: '寄存器地址' }[path])));
       const primaryTops = primaryFields.filter(Boolean).map((field) => Math.round(field.getBoundingClientRect().top));
-      const densePrimaryRow = primaryTops.length === 3 && Math.max(...primaryTops) - Math.min(...primaryTops) <= 4;
+      const fourColumnPrimaryRow = primaryTops.length === 4 && Math.max(...primaryTops) - Math.min(...primaryTops) <= 4;
+      const visibleSvgs = [...(panel?.querySelectorAll('svg') || [])].filter(visible).map((svg) => {
+        const rect = svg.getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height), className: String(svg.getAttribute('class') || ''), text: String(svg.textContent || '').slice(0, 80) };
+      });
+      const largeSvgs = visibleSvgs.filter((svg) => svg.width > 40 || svg.height > 40);
+      const backgroundImageViolations = [...(panel ? [panel, ...panel.querySelectorAll('*')] : [])].filter(visible).map((element) => ({
+        tag: element.tagName.toLowerCase(),
+        className: String(element.getAttribute('class') || ''),
+        backgroundImage: getComputedStyle(element).backgroundImage
+      })).filter((item) => item.backgroundImage && item.backgroundImage !== 'none' && !item.backgroundImage.startsWith('linear-gradient'));
       const rect = panel?.getBoundingClientRect();
       const panelOverflowX = panel ? panel.scrollWidth > panel.clientWidth + 1 : true;
       const connectionOverflowX = connection && visible(connection) ? connection.scrollWidth > connection.clientWidth + 1 : false;
@@ -612,7 +631,15 @@ async function collectLocalEditorStepChecks(viewport) {
         objectHeaderMaxHeight: objectHeaderMetrics.length ? Math.max(...objectHeaderMetrics.map((item) => item.height)) : 0,
         objectHeaderWrapped: objectHeaderMetrics.filter((item) => item.wrapped).length,
         densePrimaryFieldCount: primaryTops.length,
-        densePrimaryRow
+        densePrimaryRow: fourColumnPrimaryRow,
+        fourColumnGridColumns,
+        fourColumnPrimaryRow,
+        readonlyGridColumns,
+        pointFourColumnOk: !pointPane || window.innerWidth < 1366 || (fourColumnGridColumns.length >= 3 && fourColumnGridColumns.every((columns) => columns === 4) && fourColumnPrimaryRow && readonlyGridColumns === 4),
+        largeSvgCount: largeSvgs.length,
+        largeSvgs,
+        backgroundImageViolationCount: backgroundImageViolations.length,
+        backgroundImageViolations
       };
     })()`);
     const horizontalOverflow = metrics.document.scrollWidth > metrics.document.clientWidth + 1 || metrics.body.scrollWidth > metrics.body.clientWidth + 1 || stepMetrics.panelOverflowX || stepMetrics.connectionOverflowX;
@@ -631,10 +658,10 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && (step.key !== 'points' || stepMetrics.densePrimaryRow),
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && (step.key !== 'points' || stepMetrics.pointFourColumnOk),
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || (step.key === 'points' && !stepMetrics.densePrimaryRow),
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || (step.key === 'points' && !stepMetrics.pointFourColumnOk),
       hiddenClipCount: metrics.hiddenClips.length,
       hiddenClips: metrics.hiddenClips,
       consoleErrorCount: stepConsole.length,
@@ -644,7 +671,7 @@ async function collectLocalEditorStepChecks(viewport) {
       screenshot,
       metrics: stepMetrics
     });
-    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, modalWidth: stepMetrics.panelWidth, modalHeight: stepMetrics.panelHeight, centered: stepMetrics.centered, modalViewportRatio: { width: Number(stepMetrics.modalWidthRatio.toFixed(3)), height: Number(stepMetrics.modalHeightRatio.toFixed(3)) }, outerScroll: stepMetrics.outerScroll, modalScrollY: stepMetrics.modalScrollY, bodyScrollY: stepMetrics.bodyScrollY, localEditorBodyScrollY: stepMetrics.localEditorBodyScrollY, hiddenClipCount: metrics.hiddenClips.length, connectionHorizontalOverflow: stepMetrics.connectionOverflowX, tableHorizontalOverflow: stepMetrics.tableHorizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, consoleErrors: stepConsole.length, exceptions: stepExceptions.length }));
+    console.log(JSON.stringify({ localEditor: true, viewport: `${viewport.width}x${viewport.height}`, step: step.label, pass: checks.at(-1).pass, horizontalOverflow, modalWidth: stepMetrics.panelWidth, modalHeight: stepMetrics.panelHeight, centered: stepMetrics.centered, modalViewportRatio: { width: Number(stepMetrics.modalWidthRatio.toFixed(3)), height: Number(stepMetrics.modalHeightRatio.toFixed(3)) }, outerScroll: stepMetrics.outerScroll, modalScrollY: stepMetrics.modalScrollY, bodyScrollY: stepMetrics.bodyScrollY, localEditorBodyScrollY: stepMetrics.localEditorBodyScrollY, hiddenClipCount: metrics.hiddenClips.length, connectionHorizontalOverflow: stepMetrics.connectionOverflowX, tableHorizontalOverflow: stepMetrics.tableHorizontalOverflow, themeMismatch, layoutIssue: checks.at(-1).layoutIssue, fourColumnGridColumns: stepMetrics.fourColumnGridColumns, readonlyGridColumns: stepMetrics.readonlyGridColumns, largeSvgCount: stepMetrics.largeSvgCount, backgroundImageViolationCount: stepMetrics.backgroundImageViolationCount, consoleErrors: stepConsole.length, exceptions: stepExceptions.length }));
   }
   } finally {
     removeConsoleListener();
@@ -829,6 +856,9 @@ function summarize() {
     localEditorHeaderFailures: result.localEditorChecks.filter((item) => (item.metrics?.sectionHeaderMaxHeight || 0) > 50 || (item.metrics?.sectionHeaderWrappedTitles || 0) > 0 || (item.metrics?.sectionHeaderMisaligned || 0) > 0).length,
     localEditorObjectHeaderFailures: result.localEditorChecks.filter((item) => (item.metrics?.objectHeaderMaxHeight || 0) > 54 || (item.metrics?.objectHeaderWrapped || 0) > 0).length,
     localEditorPointDenseFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.densePrimaryRow).length,
+    localEditorPointFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.pointFourColumnOk).length,
+    localEditorLargeSvgFailures: result.localEditorChecks.filter((item) => (item.metrics?.largeSvgCount || 0) > 0).length,
+    localEditorBackgroundImageFailures: result.localEditorChecks.filter((item) => (item.metrics?.backgroundImageViolationCount || 0) > 0).length,
     tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
     tableWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0),
     tableLightBackgrounds: checks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0),
@@ -858,6 +888,9 @@ function buildAuditFailures(auditResult) {
     "localEditorHeaderFailures",
     "localEditorObjectHeaderFailures",
     "localEditorPointDenseFailures",
+    "localEditorPointFourColumnFailures",
+    "localEditorLargeSvgFailures",
+    "localEditorBackgroundImageFailures",
     "themeFixtureWhiteBackgrounds",
     "themeFixtureClippedAlerts",
     "themeFixtureUnsafeDialogs",
@@ -915,7 +948,10 @@ function buildAuditFailures(auditResult) {
     if ((metrics.sectionHeaderMisaligned || 0) > 0) stepFailures.push(`sectionHeaderMisaligned=${metrics.sectionHeaderMisaligned}`);
     if ((metrics.objectHeaderMaxHeight || 0) > 54) stepFailures.push(`objectHeaderMaxHeight=${metrics.objectHeaderMaxHeight}`);
     if ((metrics.objectHeaderWrapped || 0) > 0) stepFailures.push(`objectHeaderWrapped=${metrics.objectHeaderWrapped}`);
+    if ((metrics.largeSvgCount || 0) > 0) stepFailures.push(`largeSvgCount=${metrics.largeSvgCount}`);
+    if ((metrics.backgroundImageViolationCount || 0) > 0) stepFailures.push(`backgroundImageViolationCount=${metrics.backgroundImageViolationCount}`);
     if (check.key === 'points' && !metrics.densePrimaryRow) stepFailures.push(`densePrimaryRow=false (fields=${metrics.densePrimaryFieldCount})`);
+    if (check.key === 'points' && !metrics.pointFourColumnOk) stepFailures.push(`pointFourColumnOk=false (columns=${(metrics.fourColumnGridColumns || []).join("/")}, readonly=${metrics.readonlyGridColumns})`);
     if (check.hiddenClipCount > 0) stepFailures.push(`hiddenClipCount=${check.hiddenClipCount}`);
     if ((check.consoleErrorCount || 0) > 0) stepFailures.push(`consoleErrorCount=${check.consoleErrorCount}`);
     if ((check.exceptionCount || 0) > 0) stepFailures.push(`exceptionCount=${check.exceptionCount}`);

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { computed, ref } from "vue";
 
 import {
+  buildLocalEditorChecklist,
+  buildPointModelingOverview,
   cloudPointStatus,
   cloudTargetSummary,
+  countReportFields,
   defaultAddress,
   normalizeInitialPoints,
   removeDeprecatedCloudIdentityConfig,
@@ -88,5 +92,75 @@ describe("local-device-editor-utils", () => {
     expect(cloudPointStatus({ pointCode: "p1", additionalConfig: { reportField: "temperature", reportEnabled: false } }, cloudTarget)).toBe("未开启上报");
     expect(cloudPointStatus({ pointCode: "p1", additionalConfig: {} }, cloudTarget)).toBe("缺少上报属性");
     expect(cloudPointStatus({ pointCode: "p1", additionalConfig: {} }, { ...cloudTarget, enabled: false })).toBe("设备未上云");
+  });
+
+  it("Step02 建模概览随点位增删、地址和编码变化实时更新", () => {
+    const points = ref<DataPoint[]>([
+      { pointCode: "point_1", pointName: "点位 1", address: "40001", dataType: "INT", additionalConfig: { reportField: "point_1" } }
+    ]);
+    const overview = computed(() => buildPointModelingOverview(points.value));
+
+    expect(overview.value.pointCount).toBe(1);
+    expect(overview.value.completenessText).toBe("100%");
+    expect(overview.value.duplicatePointCode).toBe("");
+    expect(overview.value.missingPointAddressCount).toBe(0);
+
+    points.value = [...points.value, { pointCode: "point_2", pointName: "点位 2", address: "40002", dataType: "FLOAT" }];
+    expect(overview.value.pointCount).toBe(2);
+    expect(overview.value.completenessText).toBe("100%");
+
+    points.value[1].address = "";
+    expect(overview.value.missingPointAddressCount).toBe(1);
+    expect(overview.value.completenessText).toBe("50%");
+
+    points.value[1].pointCode = "point_1";
+    expect(overview.value.duplicatePointCode).toBe("point_1");
+
+    points.value[1].pointCode = "point_2";
+    points.value[1].address = "40002";
+    expect(overview.value.duplicatePointCode).toBe("");
+    expect(overview.value.missingPointAddressCount).toBe(0);
+    expect(overview.value.completenessText).toBe("100%");
+
+    points.value = points.value.slice(0, 1);
+    expect(overview.value.pointCount).toBe(1);
+  });
+
+  it("Step01 配置状态随设备基础信息、连接错误、点位和上报字段变化实时更新", () => {
+    const deviceId = ref("");
+    const deviceName = ref("");
+    const connectionErrors = ref<string[]>([]);
+    const points = ref<DataPoint[]>([
+      { pointCode: "point_1", pointName: "点位 1", address: "40001", additionalConfig: {} }
+    ]);
+    const checklist = computed(() => buildLocalEditorChecklist({
+      deviceId: deviceId.value,
+      deviceName: deviceName.value,
+      connectionErrors: connectionErrors.value,
+      points: points.value,
+      totalReportFieldCount: countReportFields(points.value),
+      cloudTarget: { enabled: false, deviceType: "SUB_DEVICE", topologyEnabled: true }
+    }));
+    const stateOf = (label: string) => checklist.value.find((item) => item.label.includes(label))?.state;
+
+    expect(stateOf("设备 ID 待填写")).toBe("error");
+    expect(stateOf("设备名称待填写")).toBe("error");
+
+    deviceId.value = "local-1";
+    deviceName.value = "本地设备";
+    expect(stateOf("设备 ID 已填写")).toBe("ok");
+    expect(stateOf("设备名称已填写")).toBe("ok");
+
+    connectionErrors.value = ["host 必填"];
+    expect(stateOf("连接参数需要修正")).toBe("error");
+    connectionErrors.value = [];
+    expect(stateOf("连接参数格式正常")).toBe("ok");
+
+    points.value = [];
+    expect(stateOf("至少需要 1 个点位")).toBe("error");
+
+    points.value = [{ pointCode: "point_1", pointName: "点位 1", address: "40001", additionalConfig: { reportField: "temperature" } }];
+    expect(stateOf("已配置 1 个点位")).toBe("ok");
+    expect(stateOf("已配置 1 个上报属性")).toBe("ok");
   });
 });

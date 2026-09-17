@@ -1,9 +1,67 @@
 import { DEFAULT_ADAPTIVE_CONFIG, normalizeLocalPoints, type AdaptiveConfig, type CloudTargetConfig } from "./local-device-utils";
 import type { DataPoint } from "@/types/point";
 
+export type LocalEditorChecklistState = "ok" | "warn" | "error";
+
 export interface LocalDeviceEditorPointOptions {
   adaptive?: AdaptiveConfig;
   pointDataTypes?: string[];
+}
+
+export interface PointModelingOverview {
+  pointCount: number;
+  completenessText: string;
+  duplicatePointCode: string;
+  missingPointAddressCount: number;
+}
+
+export interface LocalEditorChecklistInput {
+  deviceId: string;
+  deviceName: string;
+  connectionErrors: string[];
+  points: DataPoint[];
+  totalReportFieldCount: number;
+  cloudTarget: CloudTargetConfig;
+}
+
+export interface LocalEditorChecklistItem {
+  label: string;
+  state: LocalEditorChecklistState;
+}
+
+export function buildPointModelingOverview(points: DataPoint[]): PointModelingOverview {
+  const complete = points.filter((point) => hasValue(point.pointCode) && hasValue(point.pointName) && hasValue(point.address)).length;
+  return {
+    pointCount: points.length,
+    completenessText: points.length ? `${Math.round((complete / points.length) * 100)}%` : "0%",
+    duplicatePointCode: findDuplicatePointCode(points),
+    missingPointAddressCount: points.filter((point) => !hasValue(point.address)).length
+  };
+}
+
+export function buildLocalEditorChecklist(input: LocalEditorChecklistInput): LocalEditorChecklistItem[] {
+  const missingPoint = input.points.find((point) => !hasValue(point.pointCode) || !hasValue(point.pointName) || !hasValue(point.address));
+  const duplicatePointCode = findDuplicatePointCode(input.points);
+  const checks: LocalEditorChecklistItem[] = [
+    { label: input.deviceId.trim() ? "设备 ID 已填写" : "设备 ID 待填写", state: input.deviceId.trim() ? "ok" : "error" },
+    { label: input.deviceName.trim() ? "设备名称已填写" : "设备名称待填写", state: input.deviceName.trim() ? "ok" : "error" },
+    { label: input.connectionErrors.length === 0 ? "连接参数格式正常" : "连接参数需要修正", state: input.connectionErrors.length === 0 ? "ok" : "error" },
+    { label: input.points.length > 0 ? `已配置 ${input.points.length} 个点位` : "至少需要 1 个点位", state: input.points.length > 0 ? "ok" : "error" },
+    { label: duplicatePointCode ? `点位编码重复：${duplicatePointCode}` : "点位编码未重复", state: duplicatePointCode ? "error" : "ok" },
+    { label: missingPoint ? "存在点位缺少编码、名称或地址" : "点位必填项完整", state: missingPoint ? "error" : "ok" },
+    { label: input.totalReportFieldCount ? `已配置 ${input.totalReportFieldCount} 个上报属性` : "建议配置上报属性", state: input.totalReportFieldCount ? "ok" : "warn" }
+  ];
+  if (input.cloudTarget.enabled) {
+    checks.push({
+      label: input.cloudTarget.productKey && input.cloudTarget.deviceName ? "云设备身份已填写" : "云设备身份待填写",
+      state: input.cloudTarget.productKey && input.cloudTarget.deviceName ? "ok" : "error"
+    });
+  }
+  return checks;
+}
+
+export function countReportFields(points: DataPoint[]): number {
+  return points.filter((point) => hasValue(point.additionalConfig?.reportField)).length;
 }
 
 export function normalizeInitialPoints(rawPoints: DataPoint[], currentDeviceId: string, currentProtocol: string, options: LocalDeviceEditorPointOptions = {}): DataPoint[] {
@@ -98,6 +156,21 @@ export function removeDeprecatedCloudIdentityConfig(additionalConfig: Record<str
   delete additionalConfig.reportProductKey;
   delete additionalConfig.productKey;
   delete additionalConfig.cloudBindings;
+}
+
+function findDuplicatePointCode(points: DataPoint[]): string {
+  const seen = new Set<string>();
+  for (const point of points) {
+    const code = String(point.pointCode || "").trim();
+    if (!code) {
+      continue;
+    }
+    if (seen.has(code)) {
+      return code;
+    }
+    seen.add(code);
+  }
+  return "";
 }
 
 export function cloudTargetSummary(_point: DataPoint, cloudTarget: CloudTargetConfig): string {
