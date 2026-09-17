@@ -15,12 +15,12 @@
         <div class="local-title-copy">
           <span class="label-chip">配置编辑器</span>
           <h3 id="localEditorTitle">{{ editingDeviceId ? "编辑本地临时设备" : "新增本地临时设备" }}</h3>
-          <p>创建并配置新的工业协议采集终端</p>
+          <p>工业协议采集终端配置</p>
         </div>
         <div class="local-editor-title-actions">
           <div class="local-editor-stats">
             <div class="local-editor-stat">
-              <strong id="localEditorProtocolText">{{ currentProtocolTitle }}</strong>
+              <strong id="localEditorProtocolText">{{ currentProtocolDisplay }}</strong>
               <span>当前协议</span>
             </div>
             <div class="local-editor-stat">
@@ -58,11 +58,12 @@
             <div class="local-setup-stable-column">
               <section class="local-section-card local-setup-card">
                 <div class="local-section-head">
+                  <Monitor class="section-icon" />
                   <div>
                     <span class="label-chip">设备基础</span>
-                    <h3>设备基础与调度参数</h3>
+                    <h3>设备信息</h3>
                   </div>
-                  <p>设备标识、协议和采集节奏集中配置；切换协议不会丢失点位编辑内容。</p>
+                  <p>设备标识、协议和采集节奏集中配置。</p>
                 </div>
                 <div class="form-grid two-column">
                   <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" @change="syncDeviceIdToPoints"></label>
@@ -77,11 +78,12 @@
 
               <section class="local-section-card local-cloud-target-card">
                 <div class="local-section-head">
+                  <UploadFilled class="section-icon" />
                   <div>
                     <span class="label-chip">云平台身份</span>
-                    <h3>设备级云目标</h3>
+                    <h3>云平台身份</h3>
                   </div>
-                  <p>绑定当前真实 cloudTarget；点位级 reportField 在第 04 步维护。</p>
+                  <p>配置该设备在云端的身份信息。</p>
                 </div>
                 <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
               </section>
@@ -89,11 +91,12 @@
 
             <section class="local-section-card local-connection-card">
               <div class="local-section-head">
+                <Connection class="section-icon" />
                 <div>
                   <span class="label-chip">连接参数</span>
-                  <h3>协议对应字段</h3>
+                  <h3>协议通信参数</h3>
                 </div>
-                <p>按后端 Protocol Schema 动态渲染；字段多时仅在本卡片内纵向滚动。</p>
+                <p>基础连接与高级连接参数。</p>
               </div>
               <div class="local-connection-body">
                 <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
@@ -123,35 +126,35 @@
             </aside>
 
             <div class="detail-stack">
-              <section class="local-section-card list-card">
+              <section class="local-section-card list-card point-list-card">
                 <div class="local-section-head compact-head">
+                  <DataLine class="section-icon" />
                   <div>
                     <span class="label-chip">点位列表</span>
-                    <h3>管理设备的所有采集点位</h3>
+                    <h3>采集点位</h3>
                   </div>
                   <div class="inline-actions table-actions">
                     <input id="localPointSearch" v-model="pointKeyword" class="compact-select" type="search" placeholder="搜索点位编码 / 名称 / 地址">
                     <select v-model="pointDataTypeFilter" class="compact-select"><option value="">全部类型</option><option v-for="item in pointDataTypes" :key="item" :value="item">{{ item }}</option></select>
                     <select v-model="pointReadWriteFilter" class="compact-select"><option value="">全部读写</option><option v-for="item in readWriteOptions" :key="String(item.value)" :value="String(item.value)">{{ item.label }}</option></select>
-                    <button id="addLocalPointBtn" type="button" @click="addPoint">新增点位</button>
+                    <button id="addLocalPointBtn" type="button" class="primary-soft" @click="addPoint">新增点位</button>
                   </div>
                 </div>
                 <div class="table-wrap compact point-table-wrap">
                   <table class="point-table editor-table">
-                    <thead><tr><th>选择</th><th>序号</th><th>点位名称</th><th>点位标识</th><th>数据类型</th><th>寄存器地址</th><th>读写类型</th><th>缩放系数</th><th>操作</th></tr></thead>
+                    <thead><tr><th>序号</th><th>点位名称</th><th>点位标识</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>操作</th></tr></thead>
                     <tbody id="localPointRows">
-                      <tr v-for="row in filteredPoints" :key="row.pointCode || row.address || points.indexOf(row)" :class="{ 'is-selected': points.indexOf(row) === selectedPointIndex }" @dblclick="selectPoint(row)">
-                        <td><input type="radio" name="selectedPoint" :checked="points.indexOf(row) === selectedPointIndex" @change="selectPoint(row)"></td>
+                      <tr v-for="row in filteredPoints" :key="row.pointCode || row.address || points.indexOf(row)" :class="{ 'is-selected': points.indexOf(row) === selectedPointIndex }" @click="selectPoint(row)" @dblclick="selectPoint(row)">
                         <td>{{ points.indexOf(row) + 1 }}</td>
-                        <td><button type="button" class="point-select-button" :data-select-local-point="points.indexOf(row)" @click="selectPoint(row)"><strong>{{ row.pointName || row.pointCode || '-' }}</strong></button></td>
+                        <td><button type="button" class="point-select-button" :data-select-local-point="points.indexOf(row)" @click.stop="selectPoint(row)"><strong>{{ row.pointName || row.pointCode || '-' }}</strong></button></td>
                         <td>{{ row.pointCode || '-' }}</td>
                         <td>{{ row.dataType || '-' }}</td>
                         <td>{{ row.address || '-' }}</td>
                         <td>{{ row.readWrite || '-' }}</td>
                         <td>{{ row.scalingFactor ?? '-' }}</td>
-                        <td class="row-actions"><button type="button" @click="selectPoint(row)">编辑</button><button type="button" @click="duplicatePoint(row)">复制</button><button type="button" class="danger" @click="removePoint(row)">删除</button></td>
+                        <td class="row-actions"><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button><button type="button" class="text-action" @click.stop="duplicatePoint(row)">复制</button><button type="button" class="text-action danger" @click.stop="removePoint(row)">删除</button></td>
                       </tr>
-                      <tr v-if="filteredPoints.length === 0"><td colspan="9">{{ pointKeyword ? '没有匹配的点位' : '暂无点位' }}</td></tr>
+                      <tr v-if="filteredPoints.length === 0"><td colspan="8">{{ pointKeyword ? '没有匹配的点位' : '暂无点位' }}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -194,25 +197,26 @@
                 <MetricItem label="重要/错误" :value="String((alarmLevelCounts.ERROR || 0) + (alarmLevelCounts.WARNING || 0))" tone="warn" />
                 <MetricItem label="事件最小间隔" :value="eventIntervalSummary" />
               </div>
-              <ul class="hint-list">
-                <li>当前 Contract：point.alarmEnabled + point.alarmRule。</li>
-                <li>删除点位后，其点位内告警规则会自然随点位删除。</li>
-                <li>未配置通知方式字段，不展示短信/邮件等假能力。</li>
-              </ul>
             </aside>
 
             <div class="detail-stack">
-              <section class="local-section-card list-card">
+              <section class="local-section-card list-card alarm-list-card" :class="{ 'is-empty': alarmRuleRows.length === 0 }">
                 <div class="local-section-head compact-head">
-                  <div><span class="label-chip">告警规则列表</span><h3>按当前点位 alarmRule 生成</h3></div>
+                  <Bell class="section-icon" />
+                  <div><span class="label-chip">告警规则</span><h3>点位告警规则</h3></div>
                   <div class="inline-actions table-actions">
                     <select v-model="alarmPointFilter" class="compact-select"><option value="">全部点位</option><option v-for="point in points" :key="point.pointCode || point.pointId" :value="point.pointCode || point.pointId || ''">{{ point.pointName || point.pointCode }}</option></select>
                     <select v-model="alarmLevelFilter" class="compact-select"><option value="">全部级别</option><option v-for="level in alarmLevels" :key="level.value" :value="level.value">{{ level.label }}</option></select>
                     <select v-model="alarmEnabledFilter" class="compact-select"><option value="">全部状态</option><option value="true">启用</option><option value="false">禁用</option></select>
-                    <button type="button" @click="addAlarmRuleForCurrent">新增规则</button>
+                    <button type="button" class="primary-soft" @click="addAlarmRuleForCurrent">新增规则</button>
                   </div>
                 </div>
-                <div class="table-wrap compact alarm-table-wrap">
+                <div v-if="alarmRuleRows.length === 0" class="empty-state alarm-empty-state">
+                  <strong>暂无告警规则</strong>
+                  <span>选择已有点位或创建第一条规则，即可配置触发条件与告警级别。</span>
+                  <button type="button" class="primary-soft" @click="addAlarmRuleForCurrent">新增规则</button>
+                </div>
+                <div v-else class="table-wrap compact alarm-table-wrap">
                   <table class="point-table editor-table">
                     <thead><tr><th>关联点位</th><th>规则名称</th><th>告警类型</th><th>触发条件</th><th>持续时间</th><th>告警级别</th><th>启用状态</th><th>操作</th></tr></thead>
                     <tbody>
@@ -225,9 +229,9 @@
                 </div>
               </section>
 
-              <section class="local-section-card editor-card">
+              <section v-if="alarmRuleRows.length" class="local-section-card editor-card alarm-editor-card">
                 <PointEditorHeader :point="selectedPoint" title="规则配置" />
-                <FieldGroup v-if="selectedPoint" title="点位告警开关">
+                <FieldGroup v-if="selectedPoint" title="启用告警">
                   <PointFieldGrid :fields="alarmPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
                 </FieldGroup>
                 <div v-if="selectedPoint && currentAlarmRule" class="alarm-rule-form">
@@ -241,7 +245,7 @@
                     <label>启用<el-select :model-value="currentAlarmRule.enabled === undefined ? '' : String(Boolean(currentAlarmRule.enabled))" clearable @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'enabled', parseBooleanOption($event))"><el-option label="是" value="true" /><el-option label="否" value="false" /></el-select></label>
                     <label class="wide-field">描述<el-input :model-value="String(currentAlarmRule.description || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'description', $event)" /></label>
                   </div>
-                  <div class="logic-preview"><span>触发逻辑预览</span><div class="logic-flow"><strong v-for="(part, index) in alarmLogicParts" :key="`${part}-${index}`">{{ part }}</strong></div></div>
+                  <div class="logic-preview"><span>触发逻辑</span><div class="logic-flow"><strong v-for="(part, index) in alarmLogicParts" :key="`${part}-${index}`">{{ part }}</strong></div></div>
                 </div>
                 <div v-else class="empty-state"><strong>暂无可编辑规则</strong><span>选择已有规则，或点击“新增规则”。</span></div>
               </section>
@@ -253,7 +257,7 @@
           <div class="step-grid step-grid-cloud">
             <aside class="local-section-card overview-card cloud-sidebar">
               <span class="label-chip">云端目标与身份</span>
-              <h3>cloudTarget</h3>
+              <h3>云平台身份</h3>
               <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
               <FieldGroup title="上报策略">
                 <div class="metric-stack">
@@ -267,16 +271,16 @@
             </aside>
 
             <div class="detail-stack">
-              <section class="local-section-card list-card">
-                <div class="local-section-head compact-head"><div><span class="label-chip">属性映射列表</span><h3>从当前 points 自动生成</h3></div></div>
+              <section class="local-section-card list-card mapping-list-card">
+                <div class="local-section-head compact-head"><UploadFilled class="section-icon" /><div><span class="label-chip">属性映射列表</span><h3>云端属性映射</h3></div></div>
                 <div class="table-wrap compact mapping-table-wrap">
                   <table class="point-table editor-table cloud-point-table">
-                    <thead><tr><th>选择</th><th>序号</th><th>点位名称</th><th>本地标识</th><th>云端属性编码</th><th>上报类型</th><th>转换规则</th><th>单位</th><th>启用状态</th><th>操作</th></tr></thead>
+                    <thead><tr><th>序号</th><th>点位名称</th><th>本地标识</th><th>云端属性编码</th><th>上报类型</th><th>转换规则</th><th>单位</th><th>启用状态</th><th>操作</th></tr></thead>
                     <tbody id="localCloudRows">
-                      <tr v-for="(row, index) in points" :key="row.pointCode || row.address || index" :class="{ 'is-selected': index === selectedPointIndex }">
-                        <td><input type="radio" name="cloudPoint" :checked="index === selectedPointIndex" @change="selectPoint(row)"></td><td>{{ index + 1 }}</td><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.pointCode || '-' }}</td><td>{{ row.additionalConfig?.reportField || '-' }}</td><td>{{ row.additionalConfig?.eventEnabled ? '属性+事件' : '属性' }}</td><td>{{ transformRuleText(row) }}</td><td>{{ row.unit || '-' }}</td><td>{{ cloudPointStatus(row, cloudTarget) }}</td><td><button type="button" @click="selectPoint(row)">编辑</button></td>
+                      <tr v-for="(row, index) in points" :key="row.pointCode || row.address || index" :class="{ 'is-selected': index === selectedPointIndex }" @click="selectPoint(row)">
+                        <td>{{ index + 1 }}</td><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.pointCode || '-' }}</td><td>{{ row.additionalConfig?.reportField || '-' }}</td><td>{{ row.additionalConfig?.eventEnabled ? '属性+事件' : '属性' }}</td><td>{{ transformRuleText(row) }}</td><td>{{ row.unit || '-' }}</td><td>{{ cloudPointStatus(row, cloudTarget) }}</td><td><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button></td>
                       </tr>
-                      <tr v-if="points.length === 0"><td colspan="10">暂无点位</td></tr>
+                      <tr v-if="points.length === 0"><td colspan="9">暂无点位</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -284,12 +288,11 @@
               <div class="cloud-bottom-grid">
                 <section class="local-section-card editor-card">
                   <PointEditorHeader :point="selectedPoint" title="属性映射编辑" />
-                  <FieldGroup v-if="selectedPoint" title="reportField / 上报控制"><PointFieldGrid :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
-                  <FieldGroup title="事件映射"><p class="field-description">当前前端 Contract 未发现独立 event mapping 保存字段；这里根据点位 alarmRule、eventEnabled、eventMinIntervalMs 生成只读预览，不伪造新字段。</p><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li></ul></FieldGroup>
+                  <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
+                  <FieldGroup title="事件预览"><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li><li v-if="eventMappingPreview.length === 0">暂无事件上报配置</li></ul></FieldGroup>
                 </section>
                 <section class="local-section-card payload-card">
-                  <div class="local-section-head"><div><span class="label-chip">Payload 预览</span><h3>实时构造示例</h3></div></div>
-                  <select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select>
+                  <div class="local-section-head compact-head"><Document class="section-icon" /><div><span class="label-chip">Payload 预览</span><h3>实时构造示例</h3></div><select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select></div>
                   <pre class="json-preview">{{ payloadPreview }}</pre>
                 </section>
               </div>
@@ -301,22 +304,22 @@
           <div class="step-grid step-grid-json">
             <aside class="local-section-card overview-card">
               <span class="label-chip">高级配置导航</span>
-              <h3>JSON 章节</h3>
+              <h3>配置章节</h3>
               <button v-for="item in jsonSections" :key="item.key" type="button" class="json-nav-item" :class="{ 'is-active': jsonSection === item.key, 'is-modified': item.status === '有修改' }" @click="jsonSection = item.key"><span>{{ item.label }}</span><small>{{ item.status }}</small></button>
             </aside>
             <section class="local-section-card json-editor-card">
-              <div class="local-section-head compact-head"><div><span class="label-chip">JSON 配置编辑器</span><h3>完整 Local Device 配置 JSON</h3></div><div class="inline-actions table-actions"><button type="button" @click="formatConfigJson">格式化</button><button type="button" @click="applyConfigJson">校验并应用</button><button type="button" @click="syncJsonFromState">恢复结构化表单当前值</button></div></div>
+              <div class="local-section-head compact-head"><Document class="section-icon" /><div><span class="label-chip">JSON 高级配置</span><h3>完整设备配置</h3></div><div class="inline-actions table-actions"><button type="button" @click="formatConfigJson">格式化</button><button type="button" @click="applyConfigJson">校验并应用</button><button type="button" @click="syncJsonFromState">恢复当前配置</button></div></div>
               <textarea id="localPointsJson" v-model="configJson" class="point-json-textarea" spellcheck="false"></textarea>
-              <label class="change-note-label">变更说明（本次 UI session metadata，不提交后端）<textarea v-model="changeDescription" class="change-note" placeholder="可选：记录本次配置调整目的"></textarea></label>
+              <label class="change-note-label">变更说明（仅用于本次编辑备注）<textarea v-model="changeDescription" class="change-note" placeholder="可选：记录本次配置调整目的"></textarea></label>
             </section>
             <aside class="local-section-card schema-card">
               <span class="label-chip">校验与结构说明</span>
-              <h3>校验结果</h3>
+              <h3>配置校验</h3>
               <div class="metric-stack"><MetricItem label="错误数" :value="String(jsonValidation.errors.length)" :tone="jsonValidation.errors.length ? 'error' : 'ok'" /><MetricItem label="警告数" :value="String(jsonValidation.warnings.length)" :tone="jsonValidation.warnings.length ? 'warn' : 'ok'" /><MetricItem label="配置章节数" :value="String(jsonSections.length)" /><MetricItem label="点位数" :value="String(points.length)" /></div>
               <ul class="validation-list"><li v-for="item in jsonValidation.errors" :key="item" class="is-error">{{ item }}</li><li v-for="item in jsonValidation.warnings" :key="item" class="is-warn">{{ item }}</li><li v-if="!jsonValidation.errors.length && !jsonValidation.warnings.length" class="is-ok">当前 JSON 与结构化状态校验通过</li></ul>
               <div class="schema-tabs"><button v-for="tab in schemaTabs" :key="tab.key" type="button" :class="{ 'is-active': schemaTab === tab.key }" @click="schemaTab = tab.key">{{ tab.label }}</button></div>
-              <div class="schema-table-wrap"><table class="schema-table"><thead><tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr></thead><tbody><tr v-for="row in activeSchemaRows" :key="row.field"><td>{{ row.field }}</td><td>{{ row.type }}</td><td>{{ row.required ? '是' : '否' }}</td><td>{{ row.description }}</td></tr></tbody></table></div>
-              <FieldGroup title="生成配置预览"><div class="metric-stack"><MetricItem label="协议类型" :value="protocol" /><MetricItem label="设备地址" :value="connectionAddressSummary" /><MetricItem label="上报平台" :value="cloudTargetSummary({} as DataPoint, cloudTarget)" /><MetricItem label="告警规则" :value="String(alarmRuleRows.length)" /><MetricItem label="自定义标签" :value="changeDescription ? '有说明' : '未填写'" /></div></FieldGroup>
+              <div class="schema-table-wrap"><table class="schema-table"><thead><tr><th>字段</th><th>类型</th><th>必填</th></tr></thead><tbody><tr v-for="row in activeSchemaRows" :key="row.field"><td>{{ row.field }}<small>{{ row.description }}</small></td><td>{{ row.type }}</td><td>{{ row.required ? '是' : '否' }}</td></tr></tbody></table></div>
+              <FieldGroup title="配置摘要"><div class="metric-stack"><MetricItem label="协议类型" :value="protocol" /><MetricItem label="设备地址" :value="connectionAddressSummary" /><MetricItem label="上报平台" :value="cloudTargetSummary({} as DataPoint, cloudTarget)" /><MetricItem label="告警规则" :value="String(alarmRuleRows.length)" /><MetricItem label="编辑备注" :value="changeDescription ? '有说明' : '未填写'" /></div></FieldGroup>
             </aside>
           </div>
         </section>
@@ -338,6 +341,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch, type PropType } from "vue";
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
+import { Bell, Connection, DataLine, Document, Monitor, UploadFilled } from "@element-plus/icons-vue";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
 import { startLocalDevice } from "@/api/device.api";
@@ -365,8 +369,8 @@ const EditorProgressRail = defineComponent({
   props: { validationTitle: { type: String, required: true }, items: { type: Array as PropType<Array<{ label: string; state: ChecklistState }>>, required: true } },
   setup(props) {
     return () => h("aside", { class: "local-section-card overview-card progress-rail" }, [
-      h("span", { class: "label-chip" }, "配置进度"), h("h3", props.validationTitle), h("p", "红色项需要必填；切换分区不会丢失当前编辑内容。"),
-      h("ol", { id: "localEditorChecklist", class: "local-checklist" }, props.items.map((item) => h("li", { class: [`is-${item.state}`] }, item.label)))
+      h("span", { class: "label-chip" }, "配置状态"), h("h3", props.validationTitle),
+      h("ol", { id: "localEditorChecklist", class: "local-checklist" }, props.items.map((item) => h("li", { class: [`is-${item.state}`] }, [h("span", { class: "status-dot" }), h("span", item.label)])))
     ]);
   }
 });
@@ -384,9 +388,9 @@ const CloudTargetForm = defineComponent({
   setup(props, { emit }) {
     return () => h("div", { class: "form-grid two-column" }, [
       h("label", ["启用云上报", h("select", { id: "localCloudEnabled", value: String(props.cloudTarget.enabled), onChange: (event: Event) => emit("update-field", "enabled", (event.target as HTMLSelectElement).value === "true") }, [h("option", { value: "false" }, "否"), h("option", { value: "true" }, "是")])]),
-      h("label", ["云设备类型", h("select", { id: "localCloudDeviceType", value: props.cloudTarget.deviceType, onChange: (event: Event) => emit("update-field", "deviceType", (event.target as HTMLSelectElement).value) }, ["SUB_DEVICE", "GATEWAY", "DIRECT", "LOGICAL_SUB_DEVICE"].map((value) => h("option", { value }, value)))]),
-      h("label", ["productKey", h("input", { id: "localCloudProductKey", value: props.cloudTarget.productKey || "", placeholder: "pk_xxx", onInput: (event: Event) => emit("update-field", "productKey", (event.target as HTMLInputElement).value) })]),
-      h("label", ["deviceName", h("input", { id: "localCloudDeviceName", value: props.cloudTarget.deviceName || "", placeholder: "sub_device_001", onInput: (event: Event) => emit("update-field", "deviceName", (event.target as HTMLInputElement).value) })]),
+      h("label", ["设备类型", h("select", { id: "localCloudDeviceType", value: props.cloudTarget.deviceType, onChange: (event: Event) => emit("update-field", "deviceType", (event.target as HTMLSelectElement).value) }, ["SUB_DEVICE", "GATEWAY", "DIRECT", "LOGICAL_SUB_DEVICE"].map((value) => h("option", { value }, value)))]),
+      h("label", ["ProductKey", h("input", { id: "localCloudProductKey", value: props.cloudTarget.productKey || "", placeholder: "pk_xxx", onInput: (event: Event) => emit("update-field", "productKey", (event.target as HTMLInputElement).value) })]),
+      h("label", ["DeviceName", h("input", { id: "localCloudDeviceName", value: props.cloudTarget.deviceName || "", placeholder: "sub_device_001", onInput: (event: Event) => emit("update-field", "deviceName", (event.target as HTMLInputElement).value) })]),
       h("label", ["启用拓扑注册", h("select", { id: "localCloudTopologyEnabled", value: String(props.cloudTarget.topologyEnabled), onChange: (event: Event) => emit("update-field", "topologyEnabled", (event.target as HTMLSelectElement).value === "true") }, [h("option", { value: "true" }, "是"), h("option", { value: "false" }, "否")])]),
       h("label", { class: "wide-field" }, ["Topic 示例", h("input", { id: "localCloudTopicPreview", value: props.topicPreview, readonly: true })])
     ]);
@@ -398,7 +402,7 @@ const FieldGroup = defineComponent({ name: "FieldGroup", props: { title: { type:
 const PointEditorHeader = defineComponent({
   name: "PointEditorHeader",
   props: { point: { type: Object as PropType<DataPoint | null>, default: null }, title: { type: String, default: "当前编辑" } },
-  setup(props) { return () => props.point ? h("section", { class: "point-detail-hero" }, [h("div", [h("span", { class: "label-chip" }, props.title), h("strong", props.point?.pointName || props.point?.pointCode || "未命名点位"), h("p", `${props.point?.pointCode || "-"} · ${props.point?.address || "未设置地址"}`)]), h("div", { class: "point-detail-hero-meta" }, [h("span", { class: "pill subtle" }, props.point?.dataType || "-"), h("span", { class: "pill subtle" }, props.point?.readWrite || "-"), h("span", { class: "pill subtle" }, statusLabel(props.point?.status))])]) : h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")]); }
+  setup(props) { return () => props.point ? h("section", { class: "point-detail-hero" }, [h("div", [h("span", { class: "label-chip" }, props.title === "当前编辑" ? "点位配置" : props.title), h("strong", props.point?.pointName || props.point?.pointCode || "未命名点位"), h("p", `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}`)]), h("div", { class: "point-detail-hero-meta" }, [h("span", { class: "pill subtle" }, statusLabel(props.point?.status))])]) : h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")]); }
 });
 
 const PointFieldGrid = defineComponent({
@@ -473,7 +477,7 @@ const protocolSchema = computed(() => protocolDetails.value[protocol.value] || p
 const connectionFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.connectionFields || []);
 const pointFields = computed<ProtocolFieldConfig[]>(() => protocolSchema.value?.pointFields || []);
 const pointDataTypes = computed(() => protocolSchema.value?.dataTypes?.length ? protocolSchema.value.dataTypes : ["BOOLEAN", "INT", "FLOAT", "DOUBLE", "STRING"]);
-const currentProtocolTitle = computed(() => protocolSchema.value?.title ? `${protocolSchema.value.title} (${protocol.value})` : protocol.value);
+const currentProtocolDisplay = computed(() => protocolSchema.value?.title || protocol.value.replace(/_/g, " ").replace(/\bTcp\b/i, "TCP"));
 const selectedPoint = computed<DataPoint | null>(() => points.value[selectedPointIndex.value] || null);
 const duplicatePointCode = computed(() => findDuplicatePointCode(points.value));
 const missingPointAddressCount = computed(() => points.value.filter((point) => !hasValue(point.address)).length);
@@ -515,12 +519,12 @@ const validationTitle = computed(() => {
 });
 const readonlyItems = computed(() => buildReadonlyItems(selectedPoint.value));
 const primaryPointFields = computed<PointEditorField[]>(() => [
-  { path: "pointName", label: "点位名称", required: true }, { path: "pointCode", label: "点位标识", required: true, description: "修改点位编码时，如果 reportField 未单独改过，会同步更新云端属性。" }, { path: "dataType", label: "数据类型", control: "select", options: pointDataTypes.value.map((value) => ({ label: value, value })) }, { path: "address", label: "地址", required: true }, { path: "additionalConfig.readCount", label: "读取数量", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.byteOrder", label: "字节序" }, { path: "readWrite", label: "读写类型", control: "select", options: readWriteOptions }, { path: "scalingFactor", label: "缩放系数", control: "number", valueType: "number", step: 0.0001 }, { path: "offset", label: "偏移量", control: "number", valueType: "number", step: 0.0001 }, { path: "unit", label: "工程单位" }, { path: "precision", label: "小数位", control: "number", valueType: "integer", step: 1 }, { path: "collectionMode", label: "采集方式", control: "select", options: collectionModeOptions }, { path: "pointChangeThreshold", label: "变化上报阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "remark", label: "点位描述", fullWidth: true }
+  { path: "pointName", label: "点位名称", required: true }, { path: "pointCode", label: "点位标识", required: true, description: "修改点位标识时，云端属性未单独配置则同步更新。" }, { path: "dataType", label: "数据类型", control: "select", options: pointDataTypes.value.map((value) => ({ label: value, value })) }, { path: "address", label: "寄存器地址", required: true }, { path: "readWrite", label: "读写类型", control: "select", options: readWriteOptions }, { path: "collectionMode", label: "采集方式", control: "select", options: collectionModeOptions }, { path: "scalingFactor", label: "缩放系数", control: "number", valueType: "number", step: 0.0001 }, { path: "offset", label: "偏移量", control: "number", valueType: "number", step: 0.0001 }, { path: "unit", label: "工程单位" }, { path: "additionalConfig.readCount", label: "读取数量", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.byteOrder", label: "字节序" }, { path: "precision", label: "小数位", control: "number", valueType: "integer", step: 1 }, { path: "pointChangeThreshold", label: "变化上报阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "remark", label: "点位描述", fullWidth: true }
 ]);
 const dataPointFields = computed<PointEditorField[]>(() => [{ path: "deadband", label: "死区", control: "number", valueType: "number", step: 0.0001 }, { path: "minValue", label: "最小值", control: "number", valueType: "number", step: 0.0001 }, { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: 0.0001 }, { path: "priority", label: "优先级", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }, { path: "status", label: "启用状态", control: "select", valueType: "integer", options: enableOptions }]);
-const reportPointFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性（reportField）" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }]);
-const cloudReportFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "启用上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码（reportField）" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.streamEnabled", label: "实时流", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.historyEnabled", label: "历史", control: "select", valueType: "boolean", options: booleanOptions }]);
-const alarmPointFields = computed<PointEditorField[]>(() => [{ path: "alarmEnabled", label: "启用告警", control: "select", valueType: "integer", options: enableOptions }]);
+const reportPointFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }]);
+const cloudReportFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "启用上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码", description: "属性标识：reportField" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "最小变化间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.streamEnabled", label: "实时流", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.historyEnabled", label: "历史", control: "select", valueType: "boolean", options: booleanOptions }]);
+const alarmPointFields = computed<PointEditorField[]>(() => [{ path: "alarmEnabled", label: "启用告警", control: "switch", valueType: "integer" }]);
 const protocolPointFields = computed<PointEditorField[]>(() => pointFields.value.map((field) => ({ path: protocolPointFieldPath(field), label: field.label || field.name, required: field.required, control: field.type === "boolean" ? "switch" : field.options?.length ? "select" : (field.type === "number" || field.type === "integer") ? "number" : "text", valueType: field.type === "boolean" ? "boolean" : field.type === "number" ? "number" : field.type === "integer" ? "integer" : "string", options: field.options?.map((option) => ({ label: option, value: option })), description: field.description })));
 const protocolPointTitle = computed(() => protocol.value === "MODBUS_TCP" || protocol.value === "MODBUS_RTU" ? "协议扩展（Modbus 的 dataType 会直接影响取值长度和解码）" : "协议扩展");
 const protocolPointNotes = computed(() => buildProtocolPointNotes(protocol.value, protocolSchema.value?.pointAddressHints || [], pointFields.value.length));
@@ -541,7 +545,7 @@ const alarmLogicParts = computed(() => {
 });
 const eventIntervalSummary = computed(() => minPointAdditionalNumber("eventMinIntervalMs"));
 const reportStrategySummary = computed(() => ({ changeMinInterval: minPointAdditionalNumber("changeMinIntervalMs"), eventMinInterval: minPointAdditionalNumber("eventMinIntervalMs"), cache: `${points.value.filter((point) => Number(point.cacheEnabled ?? 0) !== 0).length}/${points.value.length}` }));
-const eventMappingPreview = computed(() => points.value.filter((point) => point.alarmEnabled || point.additionalConfig?.eventEnabled).map((point) => `${point.pointName || point.pointCode}: ${point.alarmEnabled ? "告警事件" : "点位事件"} → ${point.additionalConfig?.reportField || point.pointCode || "未配置 reportField"}`));
+const eventMappingPreview = computed(() => points.value.filter((point) => point.alarmEnabled || point.additionalConfig?.eventEnabled).map((point) => `${point.pointName || point.pointCode}: ${point.alarmEnabled ? "告警事件" : "点位事件"} → ${point.additionalConfig?.reportField || point.pointCode || "未配置云端属性"}`));
 const payloadPreview = computed(() => JSON.stringify(buildPayloadPreview(payloadPreviewMode.value), null, 2));
 const jsonSections = computed(() => [
   { key: "connection" as const, label: "采集参数扩展", status: Object.keys(connectionModel.value).length ? "已配置" : "未配置" },
@@ -554,9 +558,9 @@ const jsonValidation = computed(() => validateConfigSnapshot(buildConfigSnapshot
 const activeSchemaRows = computed<SchemaRow[]>(() => {
   if (schemaTab.value === "protocol") return connectionFields.value.map((field) => ({ field: field.name, type: field.type || "string", required: Boolean(field.required), description: field.description || field.label || "ProtocolDescriptor 字段" }));
   if (schemaTab.value === "point") return ["pointName", "pointCode", "dataType", "address", "readWrite", "scalingFactor", "offset", "unit", "precision", "collectionMode", "cacheEnabled", "cacheDuration", "priority", "remark"].map((field) => ({ field, type: "DataPoint", required: ["pointName", "pointCode", "address"].includes(field), description: "来自 DataPoint 类型" }));
-  if (schemaTab.value === "report") return ["cloudTarget.enabled", "cloudTarget.productKey", "cloudTarget.deviceName", "additionalConfig.reportField", "additionalConfig.reportEnabled", "additionalConfig.changeThreshold", "additionalConfig.changeMinIntervalMs", "additionalConfig.eventMinIntervalMs"].map((field) => ({ field, type: "真实配置字段", required: false, description: "设备级 cloudTarget 或点位 additionalConfig" }));
-  if (schemaTab.value === "alarm") return ["alarmEnabled", "alarmRule", "ruleId", "ruleName", "operator", "threshold", "duration", "level", "enabled", "description"].map((field) => ({ field, type: "point.alarmRule JSON", required: false, description: "当前 Contract 为点位上的 alarmRule 字符串" }));
-  return ["deviceId", "deviceName", "protocol", "adaptive", "connection", "points", "cloudTarget"].map((field) => ({ field, type: "LocalDeviceDraft", required: ["deviceId", "deviceName", "protocol", "points"].includes(field), description: "保存 payload 的结构化来源" }));
+  if (schemaTab.value === "report") return ["cloudTarget.enabled", "cloudTarget.productKey", "cloudTarget.deviceName", "additionalConfig.reportField", "additionalConfig.reportEnabled", "additionalConfig.changeThreshold", "additionalConfig.changeMinIntervalMs", "additionalConfig.eventMinIntervalMs"].map((field) => ({ field, type: "上报配置", required: false, description: "设备身份或点位属性映射" }));
+  if (schemaTab.value === "alarm") return ["alarmEnabled", "alarmRule", "ruleId", "ruleName", "operator", "threshold", "duration", "level", "enabled", "description"].map((field) => ({ field, type: "告警配置", required: false, description: "点位告警触发条件" }));
+  return ["deviceId", "deviceName", "protocol", "adaptive", "connection", "points", "cloudTarget"].map((field) => ({ field, type: "设备配置", required: ["deviceId", "deviceName", "protocol", "points"].includes(field), description: "保存配置来源" }));
 });
 const connectionAddressSummary = computed(() => String(connectionModel.value.host || connectionModel.value.url || connectionModel.value.endpoint || connectionModel.value.plc4xConnectionString || "未配置"));
 
@@ -635,47 +639,47 @@ onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background: rgba(2, 6, 23, 0.64);
-  backdrop-filter: blur(3px);
+  background: rgba(2, 6, 23, 0.54);
+  backdrop-filter: blur(2px);
 }
 
 .local-device-panel {
   --panel-line: var(--console-border-soft, #1e3a5f);
   --panel-muted: var(--console-text-muted, #8aa0b8);
   --panel-text: var(--console-text-primary, #e5edf8);
-  --editor-card-border: rgba(96, 165, 250, 0.22);
-  --editor-card-bg: color-mix(in srgb, var(--console-panel, #0f1b2e) 88%, #1d4ed8 12%);
-  --editor-card-soft: color-mix(in srgb, var(--console-panel-soft, #12233a) 82%, #0ea5e9 18%);
-  --editor-glow: 0 0 0 1px rgba(59, 130, 246, 0.24), 0 8px 24px rgba(37, 99, 235, 0.12);
+  --editor-card-border: rgba(96, 165, 250, 0.16);
+  --editor-card-bg: color-mix(in srgb, var(--console-panel, #0f1b2e) 93%, #1d4ed8 7%);
+  --editor-card-soft: color-mix(in srgb, var(--console-panel-soft, #12233a) 90%, #0ea5e9 10%);
+  --editor-glow: 0 10px 28px rgba(15, 23, 42, 0.24);
   position: fixed;
   top: 50%;
   left: 50%;
   z-index: 2001;
   display: flex;
-  width: min(1480px, 94vw);
-  height: min(860px, 90vh);
+  width: clamp(1100px, 90vw, 1440px);
+  height: clamp(650px, 86vh, 780px);
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
   transform: translate(-50%, -50%);
   color: var(--console-text-secondary);
-  border: 1px solid rgba(96, 165, 250, 0.26);
+  border: 1px solid rgba(96, 165, 250, 0.22);
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), var(--console-bg));
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.46);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
 }
 
 .local-editor-title {
   display: flex;
-  min-height: 60px;
-  padding: 0 14px;
+  min-height: 54px;
+  padding: 0 16px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex: none;
   color: var(--panel-text);
-  border-bottom: 1px solid var(--panel-line);
-  background: linear-gradient(180deg, var(--console-panel) 0%, var(--console-bg-soft) 100%);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(15, 23, 42, 0.9) 100%);
 }
 
 .local-title-copy, .local-editor-title-actions, .local-editor-stats, .inline-actions, .table-actions, .local-step-actions, .point-detail-hero-meta {
@@ -697,8 +701,8 @@ h3, p {
 
 .local-editor-title h3 {
   color: var(--console-text-primary);
-  font-size: 18px;
-  font-weight: 850;
+  font-size: 16px;
+  font-weight: 800;
   line-height: 1.16;
 }
 
@@ -734,13 +738,13 @@ h3, p {
 }
 
 .local-editor-stat {
-  width: 102px;
+  width: 118px;
   min-width: 0;
-  min-height: 42px;
-  padding: 5px 8px;
-  border: 1px solid var(--console-border-soft);
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 1px solid rgba(96, 165, 250, 0.14);
   border-radius: var(--console-radius-md);
-  background: var(--console-panel-soft);
+  background: rgba(15, 23, 42, 0.38);
 }
 
 .local-editor-stat strong, .local-editor-stat span {
@@ -752,7 +756,7 @@ h3, p {
 
 .local-editor-stat strong {
   color: var(--console-text-primary);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.1;
 }
 
@@ -764,23 +768,23 @@ h3, p {
 
 .local-editor-tabs {
   display: grid;
-  min-height: 56px;
-  padding: 6px 12px;
+  min-height: 50px;
+  padding: 5px 12px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0;
   flex: none;
-  border-bottom: 1px solid var(--panel-line);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.15);
   background: var(--console-bg-soft);
 }
 
 .local-editor-tab {
   position: relative;
   min-width: 0;
-  min-height: 44px;
-  padding: 6px 8px 6px 39px;
+  min-height: 40px;
+  padding: 5px 8px 5px 37px;
   color: var(--console-text-dim);
-  border: 1px solid var(--console-border-soft);
-  background: linear-gradient(90deg, var(--console-panel), var(--console-panel-soft));
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  background: rgba(15, 23, 42, 0.42);
   text-align: left;
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%);
 }
@@ -797,13 +801,13 @@ h3, p {
 
 .local-editor-tab > span {
   position: absolute;
-  top: 9px;
+  top: 8px;
   left: 12px;
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   place-items: center;
-  border: 1px solid var(--console-border-soft);
+  border: 1px solid rgba(96, 165, 250, 0.18);
   border-radius: 50%;
   background: var(--console-bg);
   font-size: 11px;
@@ -832,9 +836,9 @@ h3, p {
 
 .local-editor-tab.is-active {
   color: var(--console-text-primary);
-  border-color: #60a5fa;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.62), rgba(14, 165, 233, 0.28));
-  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.18), 0 0 18px rgba(37, 99, 235, 0.22);
+  border-color: rgba(96, 165, 250, 0.44);
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.42), rgba(14, 165, 233, 0.16));
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.1);
 }
 
 .local-editor-tab.is-active > span, .local-editor-tab.is-complete > span {
@@ -903,7 +907,22 @@ h3, p {
 }
 
 .detail-stack > .list-card {
-  flex: 0 1 46%;
+  flex: 0 0 auto;
+}
+
+.detail-stack > .point-list-card,
+.detail-stack > .mapping-list-card {
+  min-height: 170px;
+  max-height: 260px;
+}
+
+.detail-stack > .alarm-list-card {
+  min-height: 170px;
+  max-height: 240px;
+}
+
+.detail-stack > .alarm-list-card.is-empty {
+  max-height: 210px;
 }
 
 .detail-stack > .editor-card, .cloud-bottom-grid {
@@ -926,6 +945,20 @@ h3, p {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+}
+
+.local-section-head > div,
+.compact-head > div {
+  min-width: 0;
+}
+
+.section-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #93c5fd;
+  opacity: 0.86;
 }
 
 .local-section-head h3, .point-detail-hero strong, .field-group h3, .overview-card h3 {
@@ -1054,14 +1087,13 @@ button:disabled {
 
 .metric-item {
   display: flex;
-  min-height: 42px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 5px 2px 5px 9px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
+  border-left: 2px solid rgba(96, 165, 250, 0.28);
+  background: transparent;
 }
 
 .metric-item span {
@@ -1095,18 +1127,47 @@ button:disabled {
 }
 
 .local-checklist li, .hint-list li, .validation-list li {
+  display: flex;
   min-height: 30px;
-  padding: 7px 9px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
+  padding: 5px 3px 5px 0;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.local-checklist li:hover,
+.hint-list li:hover,
+.validation-list li:hover {
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--console-text-dim);
+}
+
+.local-checklist li.is-ok .status-dot {
+  background: #34d399;
+}
+
+.local-checklist li.is-warn .status-dot {
+  background: #fb923c;
+}
+
+.local-checklist li.is-error .status-dot {
+  background: #f87171;
 }
 
 .table-wrap {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  border: 1px solid var(--console-border-soft);
+  border: 1px solid rgba(96, 165, 250, 0.14);
   border-radius: var(--console-radius-lg);
   background: var(--console-panel);
 }
@@ -1142,9 +1203,27 @@ button:disabled {
   background: rgba(59, 130, 246, 0.16);
 }
 
+.editor-table tr.is-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--console-primary);
+}
+
 .row-actions {
   display: flex;
   gap: 6px;
+}
+
+.text-action {
+  min-height: auto;
+  padding: 0;
+  color: #bfdbfe;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.text-action.danger {
+  color: #fca5a5;
+  border: 0;
 }
 
 .point-select-button {
@@ -1170,10 +1249,12 @@ button:disabled {
 }
 
 .point-detail-hero {
-  padding: 10px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-lg);
-  background: var(--console-bg-soft);
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 0;
+  border-left: 3px solid rgba(96, 165, 250, 0.55);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.36);
 }
 
 .point-detail-hero p {
@@ -1281,16 +1362,25 @@ button:disabled {
 
 .schema-table-wrap {
   min-height: 120px;
-  overflow: auto;
-  border: 1px solid var(--console-border-soft);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid rgba(96, 165, 250, 0.14);
   border-radius: var(--console-radius-md);
 }
 
 .schema-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 0;
   border-collapse: collapse;
   font-size: 12px;
+  table-layout: fixed;
+}
+
+.schema-table small {
+  display: block;
+  margin-top: 3px;
+  color: var(--console-text-dim);
+  white-space: normal;
 }
 
 .empty-state {
@@ -1376,30 +1466,6 @@ button:disabled {
   box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.04);
 }
 
-.local-section-head > div,
-.compact-head > div {
-  position: relative;
-  min-width: 0;
-  padding-left: 32px;
-}
-
-.local-section-head > div::before,
-.compact-head > div::before {
-  position: absolute;
-  top: 1px;
-  left: 0;
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  color: #bfdbfe;
-  border: 1px solid rgba(96, 165, 250, 0.32);
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.18);
-  content: "◆";
-  font-size: 10px;
-}
-
 .overview-card,
 .metric-stack {
   gap: 7px;
@@ -1418,12 +1484,12 @@ button:disabled {
 }
 
 .local-editor .metric-item {
-  min-height: 36px;
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 5px 2px 5px 9px;
 }
 
 .local-editor .metric-item strong {
-  font-size: 18px;
+  font-size: 14px;
 }
 
 .local-editor .local-checklist li,
@@ -1434,7 +1500,7 @@ button:disabled {
 }
 
 .point-table.editor-table {
-  min-width: 820px;
+  min-width: 760px;
 }
 
 .alarm-table-wrap .editor-table {
@@ -1442,7 +1508,7 @@ button:disabled {
 }
 
 .mapping-table-wrap .editor-table {
-  min-width: 880px;
+  min-width: 790px;
 }
 
 .local-editor .editor-table th,
@@ -1459,7 +1525,10 @@ button:disabled {
 
 .local-editor .json-preview,
 .local-editor .point-json-textarea {
-  line-height: 1.4;
+  padding: 14px;
+  background: #0b1220;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .local-editor .schema-table {
@@ -1565,8 +1634,8 @@ button:disabled {
 
 @media (max-width: 1366px) {
 .local-device-panel {
-  width: min(1280px, 94vw);
-  height: min(860px, 90vh);
+  width: clamp(1100px, 90vw, 1440px);
+  height: clamp(650px, 86vh, 780px);
 }
 
 .step-grid-setup {
@@ -1582,12 +1651,12 @@ button:disabled {
 }
 
 .local-editor-title {
-  min-height: 58px;
+  min-height: 54px;
 }
 
 .local-editor-tabs {
-  min-height: 58px;
-  padding: 6px 12px;
+  min-height: 50px;
+  padding: 5px 12px;
 }
 
 .local-editor-tab small {
@@ -1598,7 +1667,7 @@ button:disabled {
 @media (max-width: 1180px) {
 .local-device-panel {
   width: 94vw;
-  height: min(860px, 90vh);
+  height: clamp(650px, 86vh, 780px);
 }
 
 .step-grid-setup {
@@ -1630,7 +1699,7 @@ button:disabled {
 
 @media (max-height: 760px) {
 .local-device-panel {
-  height: 92vh;
+  height: min(92vh, 680px);
 }
 }
 
