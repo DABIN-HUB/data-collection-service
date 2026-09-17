@@ -57,14 +57,7 @@
 
             <div class="local-setup-stable-column">
               <section class="local-section-card local-setup-card">
-                <div class="local-section-head">
-                  <Monitor class="section-icon" />
-                  <div>
-                    <span class="label-chip">设备基础</span>
-                    <h3>设备信息</h3>
-                  </div>
-                  <p>设备标识、协议和采集节奏集中配置。</p>
-                </div>
+                <EditorSectionHeader :icon="Monitor" badge="设备基础" title="设备信息" subtitle="设备标识、协议和采集节奏集中配置。" />
                 <div class="form-grid two-column">
                   <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" @change="syncDeviceIdToPoints"></label>
                   <label>设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
@@ -77,27 +70,13 @@
               </section>
 
               <section class="local-section-card local-cloud-target-card">
-                <div class="local-section-head">
-                  <UploadFilled class="section-icon" />
-                  <div>
-                    <span class="label-chip">云平台身份</span>
-                    <h3>云平台身份</h3>
-                  </div>
-                  <p>配置该设备在云端的身份信息。</p>
-                </div>
+                <EditorSectionHeader :icon="UploadFilled" badge="云平台身份" title="云平台身份" subtitle="配置该设备在云端的身份信息。" />
                 <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
               </section>
             </div>
 
             <section class="local-section-card local-connection-card">
-              <div class="local-section-head">
-                <Connection class="section-icon" />
-                <div>
-                  <span class="label-chip">连接参数</span>
-                  <h3>协议通信参数</h3>
-                </div>
-                <p>基础连接与高级连接参数。</p>
-              </div>
+              <EditorSectionHeader :icon="Connection" badge="连接参数" title="协议通信参数" subtitle="基础连接与高级连接参数。" />
               <div class="local-connection-body">
                 <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
                   <ProtocolDynamicForm v-model="connectionModel" :fields="connectionFields" @validate="connectionErrors = $event" />
@@ -110,8 +89,7 @@
         <section v-show="activeStep === 1" class="local-editor-pane" data-local-editor-pane="points">
           <div class="step-grid step-grid-master-detail">
             <aside class="local-section-card overview-card">
-              <span class="label-chip">建模概览</span>
-              <h3>建模概览</h3>
+              <EditorSectionHeader badge="建模概览" title="点位建模" subtitle="点位完整度与地址检查" />
               <div class="metric-stack">
                 <MetricItem label="已配置点位" :value="String(points.length)" />
                 <MetricItem label="必填项完整度" :value="pointCompletenessText" />
@@ -127,19 +105,16 @@
 
             <div class="detail-stack">
               <section class="local-section-card list-card point-list-card">
-                <div class="local-section-head compact-head">
-                  <DataLine class="section-icon" />
-                  <div>
-                    <span class="label-chip">点位列表</span>
-                    <h3>采集点位</h3>
-                  </div>
+                <EditorSectionHeader :icon="DataLine" badge="点位列表" title="采集点位">
+                  <template #actions>
                   <div class="inline-actions table-actions">
                     <input id="localPointSearch" v-model="pointKeyword" class="compact-select" type="search" placeholder="搜索点位编码 / 名称 / 地址">
                     <select v-model="pointDataTypeFilter" class="compact-select"><option value="">全部类型</option><option v-for="item in pointDataTypes" :key="item" :value="item">{{ item }}</option></select>
                     <select v-model="pointReadWriteFilter" class="compact-select"><option value="">全部读写</option><option v-for="item in readWriteOptions" :key="String(item.value)" :value="String(item.value)">{{ item.label }}</option></select>
                     <button id="addLocalPointBtn" type="button" class="primary-soft" @click="addPoint">新增点位</button>
                   </div>
-                </div>
+                  </template>
+                </EditorSectionHeader>
                 <div class="table-wrap compact point-table-wrap">
                   <table class="point-table editor-table">
                     <thead><tr><th>序号</th><th>点位名称</th><th>点位标识</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>操作</th></tr></thead>
@@ -164,7 +139,7 @@
                 <PointEditorHeader :point="selectedPoint" />
                 <div v-if="selectedPoint" class="point-detail-stack">
                   <FieldGroup title="主要字段">
-                    <PointFieldGrid :fields="primaryPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
+                    <PointFieldGrid layout="dense" :fields="primaryPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
                   </FieldGroup>
                   <details class="advanced-collapse" open>
                     <summary>高级参数 / 协议扩展 / 只读信息</summary>
@@ -201,16 +176,16 @@
 
             <div class="detail-stack">
               <section class="local-section-card list-card alarm-list-card" :class="{ 'is-empty': alarmRuleRows.length === 0 }">
-                <div class="local-section-head compact-head">
-                  <Bell class="section-icon" />
-                  <div><span class="label-chip">告警规则</span><h3>点位告警规则</h3></div>
+                <EditorSectionHeader :icon="Bell" badge="告警规则" title="点位告警规则">
+                  <template #actions>
                   <div class="inline-actions table-actions">
                     <select v-model="alarmPointFilter" class="compact-select"><option value="">全部点位</option><option v-for="point in points" :key="point.pointCode || point.pointId" :value="point.pointCode || point.pointId || ''">{{ point.pointName || point.pointCode }}</option></select>
                     <select v-model="alarmLevelFilter" class="compact-select"><option value="">全部级别</option><option v-for="level in alarmLevels" :key="level.value" :value="level.value">{{ level.label }}</option></select>
                     <select v-model="alarmEnabledFilter" class="compact-select"><option value="">全部状态</option><option value="true">启用</option><option value="false">禁用</option></select>
                     <button type="button" class="primary-soft" @click="addAlarmRuleForCurrent">新增规则</button>
                   </div>
-                </div>
+                  </template>
+                </EditorSectionHeader>
                 <div v-if="alarmRuleRows.length === 0" class="empty-state alarm-empty-state">
                   <strong>暂无告警规则</strong>
                   <span>选择已有点位或创建第一条规则，即可配置触发条件与告警级别。</span>
@@ -232,10 +207,10 @@
               <section v-if="alarmRuleRows.length" class="local-section-card editor-card alarm-editor-card">
                 <PointEditorHeader :point="selectedPoint" title="规则配置" />
                 <FieldGroup v-if="selectedPoint" title="启用告警">
-                  <PointFieldGrid :fields="alarmPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
+                  <PointFieldGrid layout="dense" :fields="alarmPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
                 </FieldGroup>
                 <div v-if="selectedPoint && currentAlarmRule" class="alarm-rule-form">
-                  <div class="form-grid two-column">
+                  <div class="form-grid dense-form-grid">
                     <label>规则ID<el-input :model-value="String(currentAlarmRule.ruleId || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'ruleId', $event)" /></label>
                     <label>规则名称<el-input :model-value="String(currentAlarmRule.ruleName || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'ruleName', $event)" /></label>
                     <label>运算符<el-select :model-value="String(currentAlarmRule.operator || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'operator', $event)"><el-option v-for="operator in alarmOperators" :key="operator" :label="operator" :value="operator" /></el-select></label>
@@ -256,8 +231,7 @@
         <section v-show="activeStep === 3" class="local-editor-pane" data-local-editor-pane="cloud">
           <div class="step-grid step-grid-cloud">
             <aside class="local-section-card overview-card cloud-sidebar">
-              <span class="label-chip">云端目标与身份</span>
-              <h3>云平台身份</h3>
+              <EditorSectionHeader :icon="UploadFilled" badge="云端目标与身份" title="云平台身份" subtitle="目标身份与上报策略" />
               <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
               <FieldGroup title="上报策略">
                 <div class="metric-stack">
@@ -272,7 +246,7 @@
 
             <div class="detail-stack">
               <section class="local-section-card list-card mapping-list-card">
-                <div class="local-section-head compact-head"><UploadFilled class="section-icon" /><div><span class="label-chip">属性映射列表</span><h3>云端属性映射</h3></div></div>
+                <EditorSectionHeader :icon="UploadFilled" badge="属性映射列表" title="云端属性映射" />
                 <div class="table-wrap compact mapping-table-wrap">
                   <table class="point-table editor-table cloud-point-table">
                     <thead><tr><th>序号</th><th>点位名称</th><th>本地标识</th><th>云端属性编码</th><th>上报类型</th><th>转换规则</th><th>单位</th><th>启用状态</th><th>操作</th></tr></thead>
@@ -288,11 +262,13 @@
               <div class="cloud-bottom-grid">
                 <section class="local-section-card editor-card">
                   <PointEditorHeader :point="selectedPoint" title="属性映射编辑" />
-                  <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
+                  <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid layout="dense" :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
                   <FieldGroup title="事件预览"><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li><li v-if="eventMappingPreview.length === 0">暂无事件上报配置</li></ul></FieldGroup>
                 </section>
                 <section class="local-section-card payload-card">
-                  <div class="local-section-head compact-head"><Document class="section-icon" /><div><span class="label-chip">Payload 预览</span><h3>实时构造示例</h3></div><select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select></div>
+                  <EditorSectionHeader :icon="Document" badge="Payload 预览" title="实时构造示例" subtitle="实时构造示例">
+                    <template #actions><select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select></template>
+                  </EditorSectionHeader>
                   <pre class="json-preview">{{ payloadPreview }}</pre>
                 </section>
               </div>
@@ -303,18 +279,18 @@
         <section v-show="activeStep === 4" class="local-editor-pane" data-local-editor-pane="json">
           <div class="step-grid step-grid-json">
             <aside class="local-section-card overview-card">
-              <span class="label-chip">高级配置导航</span>
-              <h3>配置章节</h3>
+              <EditorSectionHeader :icon="Document" badge="高级配置导航" title="配置章节" />
               <button v-for="item in jsonSections" :key="item.key" type="button" class="json-nav-item" :class="{ 'is-active': jsonSection === item.key, 'is-modified': item.status === '有修改' }" @click="jsonSection = item.key"><span>{{ item.label }}</span><small>{{ item.status }}</small></button>
             </aside>
             <section class="local-section-card json-editor-card">
-              <div class="local-section-head compact-head"><Document class="section-icon" /><div><span class="label-chip">JSON 高级配置</span><h3>完整设备配置</h3></div><div class="inline-actions table-actions"><button type="button" @click="formatConfigJson">格式化</button><button type="button" @click="applyConfigJson">校验并应用</button><button type="button" @click="syncJsonFromState">恢复当前配置</button></div></div>
+              <EditorSectionHeader :icon="Document" badge="JSON 高级配置" title="完整设备配置">
+                <template #actions><div class="inline-actions table-actions"><button type="button" @click="formatConfigJson">格式化</button><button type="button" @click="applyConfigJson">校验并应用</button><button type="button" @click="syncJsonFromState">恢复当前配置</button></div></template>
+              </EditorSectionHeader>
               <textarea id="localPointsJson" v-model="configJson" class="point-json-textarea" spellcheck="false"></textarea>
               <label class="change-note-label">变更说明（仅用于本次编辑备注）<textarea v-model="changeDescription" class="change-note" placeholder="可选：记录本次配置调整目的"></textarea></label>
             </section>
             <aside class="local-section-card schema-card">
-              <span class="label-chip">校验与结构说明</span>
-              <h3>配置校验</h3>
+              <EditorSectionHeader badge="校验与结构说明" title="配置校验" subtitle="结构、字段与摘要" />
               <div class="metric-stack"><MetricItem label="错误数" :value="String(jsonValidation.errors.length)" :tone="jsonValidation.errors.length ? 'error' : 'ok'" /><MetricItem label="警告数" :value="String(jsonValidation.warnings.length)" :tone="jsonValidation.warnings.length ? 'warn' : 'ok'" /><MetricItem label="配置章节数" :value="String(jsonSections.length)" /><MetricItem label="点位数" :value="String(points.length)" /></div>
               <ul class="validation-list"><li v-for="item in jsonValidation.errors" :key="item" class="is-error">{{ item }}</li><li v-for="item in jsonValidation.warnings" :key="item" class="is-warn">{{ item }}</li><li v-if="!jsonValidation.errors.length && !jsonValidation.warnings.length" class="is-ok">当前 JSON 与结构化状态校验通过</li></ul>
               <div class="schema-tabs"><button v-for="tab in schemaTabs" :key="tab.key" type="button" :class="{ 'is-active': schemaTab === tab.key }" @click="schemaTab = tab.key">{{ tab.label }}</button></div>
@@ -339,7 +315,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch, type Component, type PropType } from "vue";
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
 import { Bell, Connection, DataLine, Document, Monitor, UploadFilled } from "@element-plus/icons-vue";
 
@@ -360,16 +336,37 @@ type JsonSectionKey = "connection" | "report" | "alarm" | "debug" | "metadata";
 type SchemaTabKey = "protocol" | "point" | "report" | "alarm" | "metadata";
 
 interface SelectOption { label: string; value: string | number | boolean }
-interface PointEditorField { path: string; label: string; control?: FieldControl; valueType?: FieldValueType; options?: SelectOption[]; required?: boolean; description?: string; fullWidth?: boolean; disabled?: boolean; step?: number }
+interface PointEditorField { path: string; label: string; control?: FieldControl; valueType?: FieldValueType; options?: SelectOption[]; required?: boolean; description?: string; fullWidth?: boolean; disabled?: boolean; step?: number; span?: number }
 interface AlarmRuleRow { point: DataPoint; pointIndex: number; rule: AlarmRule; ruleIndex: number }
 interface SchemaRow { field: string; type: string; required: boolean; description: string }
+
+const EditorSectionHeader = defineComponent({
+  name: "EditorSectionHeader",
+  props: {
+    icon: { type: Object as PropType<Component>, default: undefined },
+    badge: { type: String, default: "" },
+    title: { type: String, required: true },
+    subtitle: { type: String, default: "" }
+  },
+  setup(props, { slots }) {
+    return () => h("header", { class: "editor-section-header" }, [
+      h("div", { class: "editor-section-heading" }, [
+        props.icon ? h(props.icon, { class: "section-icon" }) : null,
+        props.badge ? h("span", { class: "editor-section-badge" }, props.badge) : null,
+        h("h3", { class: "editor-section-title" }, props.title),
+        props.subtitle ? h("span", { class: "editor-section-subtitle", title: props.subtitle }, props.subtitle) : null
+      ]),
+      h("div", { class: "editor-section-actions" }, slots.actions?.())
+    ]);
+  }
+});
 
 const EditorProgressRail = defineComponent({
   name: "EditorProgressRail",
   props: { validationTitle: { type: String, required: true }, items: { type: Array as PropType<Array<{ label: string; state: ChecklistState }>>, required: true } },
   setup(props) {
     return () => h("aside", { class: "local-section-card overview-card progress-rail" }, [
-      h("span", { class: "label-chip" }, "配置状态"), h("h3", props.validationTitle),
+      h(EditorSectionHeader, { badge: "配置状态", title: props.validationTitle }),
       h("ol", { id: "localEditorChecklist", class: "local-checklist" }, props.items.map((item) => h("li", { class: [`is-${item.state}`] }, [h("span", { class: "status-dot" }), h("span", item.label)])))
     ]);
   }
@@ -402,7 +399,7 @@ const FieldGroup = defineComponent({ name: "FieldGroup", props: { title: { type:
 const PointEditorHeader = defineComponent({
   name: "PointEditorHeader",
   props: { point: { type: Object as PropType<DataPoint | null>, default: null }, title: { type: String, default: "当前编辑" } },
-  setup(props) { return () => props.point ? h("section", { class: "point-detail-hero" }, [h("div", [h("span", { class: "label-chip" }, props.title === "当前编辑" ? "点位配置" : props.title), h("strong", props.point?.pointName || props.point?.pointCode || "未命名点位"), h("p", `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}`)]), h("div", { class: "point-detail-hero-meta" }, [h("span", { class: "pill subtle" }, statusLabel(props.point?.status))])]) : h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")]); }
+  setup(props) { return () => props.point ? h("section", { class: "editor-object-header point-detail-hero" }, [h("div", { class: "editor-object-heading" }, [h("span", { class: "editor-object-badge" }, props.title === "当前编辑" ? "点位配置" : props.title), h("strong", { class: "editor-object-title" }, props.point?.pointName || props.point?.pointCode || "未命名点位"), h("span", { class: "editor-object-meta", title: `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}` }, `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}`)]), h("div", { class: "editor-object-actions point-detail-hero-meta" }, [h("span", { class: "pill subtle" }, statusLabel(props.point?.status))])]) : h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")] ); }
 });
 
 const PointFieldGrid = defineComponent({
@@ -411,10 +408,11 @@ const PointFieldGrid = defineComponent({
     fields: { type: Array as PropType<PointEditorField[]>, required: true },
     fieldComponent: { type: Function as PropType<(field: PointEditorField) => unknown>, required: true },
     fieldProps: { type: Function as PropType<(field: PointEditorField) => Record<string, unknown>>, required: true },
-    updatePointField: { type: Function as PropType<(field: PointEditorField, value: unknown) => void>, required: true }
+    updatePointField: { type: Function as PropType<(field: PointEditorField, value: unknown) => void>, required: true },
+    layout: { type: String as PropType<"two-column" | "dense" | "single">, default: "two-column" }
   },
   setup(props) {
-    return () => h("div", { class: "form-grid two-column" }, props.fields.map((field) => h("label", { key: field.path, class: { "wide-field": field.fullWidth } }, [
+    return () => h("div", { class: ["point-field-grid", `point-field-grid-${props.layout}`] }, props.fields.map((field) => h("label", { key: field.path, class: { "wide-field": field.fullWidth, "point-field-full": field.fullWidth }, style: field.span ? { "--field-span": field.span } : undefined }, [
       h("span", { class: "field-label-text" }, [field.label, field.required ? h("span", { class: "field-required" }, " *") : null]),
       h(props.fieldComponent(field) as string, { ...props.fieldProps(field), "onUpdate:modelValue": (value: unknown) => props.updatePointField(field, value) }, () => field.options?.map((option) => h(ElOption, { key: String(option.value), label: option.label, value: option.value }))),
       field.description ? h("small", { class: "field-description" }, field.description) : null
@@ -519,7 +517,7 @@ const validationTitle = computed(() => {
 });
 const readonlyItems = computed(() => buildReadonlyItems(selectedPoint.value));
 const primaryPointFields = computed<PointEditorField[]>(() => [
-  { path: "pointName", label: "点位名称", required: true }, { path: "pointCode", label: "点位标识", required: true, description: "修改点位标识时，云端属性未单独配置则同步更新。" }, { path: "dataType", label: "数据类型", control: "select", options: pointDataTypes.value.map((value) => ({ label: value, value })) }, { path: "address", label: "寄存器地址", required: true }, { path: "readWrite", label: "读写类型", control: "select", options: readWriteOptions }, { path: "collectionMode", label: "采集方式", control: "select", options: collectionModeOptions }, { path: "scalingFactor", label: "缩放系数", control: "number", valueType: "number", step: 0.0001 }, { path: "offset", label: "偏移量", control: "number", valueType: "number", step: 0.0001 }, { path: "unit", label: "工程单位" }, { path: "additionalConfig.readCount", label: "读取数量", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.byteOrder", label: "字节序" }, { path: "precision", label: "小数位", control: "number", valueType: "integer", step: 1 }, { path: "pointChangeThreshold", label: "变化上报阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "remark", label: "点位描述", fullWidth: true }
+  { path: "pointName", label: "点位名称", required: true, span: 4 }, { path: "pointCode", label: "点位标识", required: true, description: "修改点位标识时，云端属性未单独配置则同步更新。", span: 4 }, { path: "dataType", label: "数据类型", control: "select", options: pointDataTypes.value.map((value) => ({ label: value, value })), span: 4 }, { path: "address", label: "寄存器地址", required: true, span: 4 }, { path: "readWrite", label: "读写类型", control: "select", options: readWriteOptions, span: 4 }, { path: "collectionMode", label: "采集方式", control: "select", options: collectionModeOptions, span: 4 }, { path: "scalingFactor", label: "缩放系数", control: "number", valueType: "number", step: 0.0001, span: 3 }, { path: "offset", label: "偏移量", control: "number", valueType: "number", step: 0.0001, span: 3 }, { path: "unit", label: "工程单位", span: 3 }, { path: "additionalConfig.readCount", label: "读取数量", control: "number", valueType: "integer", step: 1, span: 3 }, { path: "additionalConfig.byteOrder", label: "字节序", span: 3 }, { path: "precision", label: "小数位", control: "number", valueType: "integer", step: 1, span: 3 }, { path: "pointChangeThreshold", label: "变化上报阈值", control: "number", valueType: "number", step: 0.0001, span: 3 }, { path: "remark", label: "点位描述", fullWidth: true }
 ]);
 const dataPointFields = computed<PointEditorField[]>(() => [{ path: "deadband", label: "死区", control: "number", valueType: "number", step: 0.0001 }, { path: "minValue", label: "最小值", control: "number", valueType: "number", step: 0.0001 }, { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: 0.0001 }, { path: "priority", label: "优先级", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }, { path: "status", label: "启用状态", control: "select", valueType: "integer", options: enableOptions }]);
 const reportPointFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }]);
@@ -1731,5 +1729,288 @@ button:disabled {
 .point-workspace,
 .local-point-workspace {
   align-items: start;
+}
+
+/* 编辑器统一三层标题系统：一级卡片、当前对象、卡片内子区域。 */
+.local-editor :deep(.editor-section-header) {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  margin: -12px -12px 10px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 44px;
+  height: 44px;
+  max-height: 44px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.13);
+}
+
+.local-editor :deep(.editor-section-heading),
+.local-editor :deep(.editor-section-actions) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.local-editor :deep(.editor-section-heading) {
+  gap: 7px;
+  overflow: hidden;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.local-editor :deep(.editor-section-actions) {
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 1 auto;
+}
+
+.local-editor :deep(.editor-section-title) {
+  min-width: 0;
+  margin: 0;
+  color: var(--console-text-primary);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.local-editor :deep(.editor-section-badge) {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 120px;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: #bfdbfe;
+  border: 1px solid rgba(59, 130, 246, 0.34);
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.18);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.local-editor :deep(.editor-section-subtitle) {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.local-editor :deep(.editor-object-header) {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 48px;
+  margin: -12px -12px 10px;
+  padding: 0 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 48px;
+  height: 48px;
+  max-height: 48px;
+  border: 0;
+  border-left: 3px solid rgba(96, 165, 250, 0.62);
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.local-editor :deep(.editor-object-heading),
+.local-editor :deep(.editor-object-actions) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.local-editor :deep(.editor-object-heading) {
+  gap: 8px;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.local-editor :deep(.editor-object-badge) {
+  color: #bfdbfe;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.local-editor :deep(.editor-object-title) {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.local-editor :deep(.editor-object-meta) {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.local-editor :deep(.editor-subsection-title),
+.local-editor .field-group h3 {
+  min-width: 0;
+  margin: 0 0 7px;
+  padding: 8px 0 6px 8px;
+  color: var(--console-text-primary);
+  border-left: 2px solid var(--console-primary-hover);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: left;
+}
+
+.local-editor :deep(.point-field-grid) {
+  display: grid;
+  min-width: 0;
+  gap: 8px 10px;
+}
+
+.local-editor :deep(.point-field-grid-two-column) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.local-editor :deep(.point-field-grid-single) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.local-editor :deep(.point-field-grid-dense) {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.local-editor :deep(.point-field-grid-dense > label) {
+  min-width: 0;
+  grid-column: span var(--field-span, 4);
+}
+
+.local-editor :deep(.point-field-grid > .point-field-full),
+.local-editor :deep(.point-field-grid > .wide-field) {
+  grid-column: 1 / -1;
+}
+
+.local-editor :deep(.point-field-grid label) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.local-editor :deep(.field-label-text) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-editor .dense-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.local-editor .point-list-card :deep(.editor-section-actions) {
+  max-width: 68%;
+}
+
+.local-editor .point-list-card :deep(.table-actions),
+.local-editor .alarm-list-card :deep(.table-actions) {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.local-editor .point-list-card :deep(.table-actions) .compact-select,
+.local-editor .alarm-list-card :deep(.table-actions) .compact-select {
+  width: 150px;
+  min-width: 0;
+}
+
+.local-editor .point-list-card,
+.local-editor .mapping-list-card,
+.local-editor .alarm-list-card {
+  overflow-y: auto;
+}
+
+@media (max-width: 1149px) and (min-width: 900px) {
+  .local-editor :deep(.point-field-grid-dense > label) {
+    grid-column: span 4;
+  }
+
+  .local-editor :deep(.point-field-grid-dense > label[style*="--field-span: 3"]) {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 899px) and (min-width: 650px) {
+  .local-editor :deep(.editor-section-subtitle) {
+    display: none;
+  }
+
+  .local-editor :deep(.point-field-grid-dense) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .local-editor :deep(.point-field-grid-dense > label),
+  .local-editor :deep(.point-field-grid-dense > label[style*="--field-span: 3"]) {
+    grid-column: span 3;
+  }
+
+  .local-editor .dense-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 649px) {
+  .local-editor :deep(.editor-section-subtitle),
+  .local-editor :deep(.editor-section-badge) {
+    display: none;
+  }
+
+  .local-editor :deep(.point-field-grid-dense) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .local-editor :deep(.point-field-grid-dense > label),
+  .local-editor :deep(.point-field-grid-dense > label[style*="--field-span: 3"]) {
+    grid-column: 1 / -1;
+  }
+
+  .local-editor .dense-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .local-editor :deep(.editor-section-badge) {
+    display: none;
+  }
+
+  .local-editor :deep(.editor-section-actions) {
+    gap: 4px;
+  }
 }
 </style>

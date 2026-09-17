@@ -334,7 +334,8 @@ async function collectDomMetrics() {
       const style = getComputedStyle(element);
       const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap';
       const intentionalFormControlClip = ['input', 'textarea'].includes(tag) && element.scrollWidth > element.clientWidth + 4 && ['hidden', 'clip'].includes(style.overflowX);
-      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && (!textBox || widthOverflow);
+      const intentionalHeaderClip = element.matches('.editor-section-header, .editor-object-header, .editor-section-subtitle, .editor-section-badge, .editor-object-title, .editor-object-meta');
+      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && !intentionalHeaderClip && (!textBox || widthOverflow);
     }).map((element) => ({
       selector: selectorFor(element),
       tag: element.tagName.toLowerCase(),
@@ -542,12 +543,37 @@ async function collectLocalEditorStepChecks(viewport) {
       const connection = document.querySelector('.local-connection-body');
       const editorBody = document.querySelector('.local-editor-body');
       const tableWraps = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .table-wrap')];
+      const sectionHeaders = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .editor-section-header')];
+      const objectHeaders = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .editor-object-header')];
       const visible = (element) => {
         if (!element) return false;
         const rect = element.getBoundingClientRect();
         const style = getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       };
+      const headerMetrics = sectionHeaders.filter(visible).map((header) => {
+        const title = header.querySelector('.editor-section-title');
+        const heading = header.querySelector('.editor-section-heading');
+        const titleStyle = title ? getComputedStyle(title) : null;
+        const titleLineHeight = titleStyle ? parseFloat(titleStyle.lineHeight) || 16 : 16;
+        const headerRect = header.getBoundingClientRect();
+        const headingRect = heading?.getBoundingClientRect();
+        return {
+          height: Math.round(headerRect.height),
+          titleWrapped: Boolean(title && title.scrollHeight > titleLineHeight * 1.45),
+          headingLeftOffset: headingRect ? Math.round(headingRect.left - headerRect.left) : 999,
+          title: title?.textContent?.trim() || ''
+        };
+      });
+      const objectHeaderMetrics = objectHeaders.filter(visible).map((header) => ({
+        height: Math.round(header.getBoundingClientRect().height),
+        wrapped: Boolean([...header.querySelectorAll('.editor-object-title, .editor-object-meta')].some((item) => item.scrollHeight > (parseFloat(getComputedStyle(item).lineHeight) || 16) * 1.45))
+      }));
+      const pointFields = [...document.querySelectorAll('[data-local-editor-pane="points"] .point-field-grid-dense > label')].filter(visible);
+      const primaryPaths = ['pointName', 'pointCode', 'dataType'];
+      const primaryFields = primaryPaths.map((path) => pointFields.find((field) => field.textContent?.includes({ pointName: '点位名称', pointCode: '点位标识', dataType: '数据类型' }[path])));
+      const primaryTops = primaryFields.filter(Boolean).map((field) => Math.round(field.getBoundingClientRect().top));
+      const densePrimaryRow = primaryTops.length === 3 && Math.max(...primaryTops) - Math.min(...primaryTops) <= 4;
       const rect = panel?.getBoundingClientRect();
       const panelOverflowX = panel ? panel.scrollWidth > panel.clientWidth + 1 : true;
       const connectionOverflowX = connection && visible(connection) ? connection.scrollWidth > connection.clientWidth + 1 : false;
@@ -576,7 +602,17 @@ async function collectLocalEditorStepChecks(viewport) {
         bodyScrollY,
         localEditorBodyScrollY,
         tableHorizontalOverflow,
-        bodyClientWidth: document.body.clientWidth
+        bodyClientWidth: document.body.clientWidth,
+        sectionHeaderCount: headerMetrics.length,
+        sectionHeaderMaxHeight: headerMetrics.length ? Math.max(...headerMetrics.map((item) => item.height)) : 0,
+        sectionHeaderWrappedTitles: headerMetrics.filter((item) => item.titleWrapped).length,
+        sectionHeaderMisaligned: headerMetrics.filter((item) => item.headingLeftOffset > 18).length,
+        sectionHeaders: headerMetrics,
+        objectHeaderCount: objectHeaderMetrics.length,
+        objectHeaderMaxHeight: objectHeaderMetrics.length ? Math.max(...objectHeaderMetrics.map((item) => item.height)) : 0,
+        objectHeaderWrapped: objectHeaderMetrics.filter((item) => item.wrapped).length,
+        densePrimaryFieldCount: primaryTops.length,
+        densePrimaryRow
       };
     })()`);
     const horizontalOverflow = metrics.document.scrollWidth > metrics.document.clientWidth + 1 || metrics.body.scrollWidth > metrics.body.clientWidth + 1 || stepMetrics.panelOverflowX || stepMetrics.connectionOverflowX;
@@ -595,10 +631,10 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0,
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && (step.key !== 'points' || stepMetrics.densePrimaryRow),
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY,
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || (step.key === 'points' && !stepMetrics.densePrimaryRow),
       hiddenClipCount: metrics.hiddenClips.length,
       hiddenClips: metrics.hiddenClips,
       consoleErrorCount: stepConsole.length,
@@ -790,6 +826,9 @@ function summarize() {
     localEditorOuterScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.outerScroll).length,
     localEditorModalScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.modalScrollY).length,
     localEditorBodyScrollFailures: result.localEditorChecks.filter((item) => item.metrics?.localEditorBodyScrollY || item.metrics?.bodyScrollY).length,
+    localEditorHeaderFailures: result.localEditorChecks.filter((item) => (item.metrics?.sectionHeaderMaxHeight || 0) > 50 || (item.metrics?.sectionHeaderWrappedTitles || 0) > 0 || (item.metrics?.sectionHeaderMisaligned || 0) > 0).length,
+    localEditorObjectHeaderFailures: result.localEditorChecks.filter((item) => (item.metrics?.objectHeaderMaxHeight || 0) > 54 || (item.metrics?.objectHeaderWrapped || 0) > 0).length,
+    localEditorPointDenseFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.densePrimaryRow).length,
     tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
     tableWhiteBackgrounds: checks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableWhiteBackgrounds, 0),
     tableLightBackgrounds: checks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableLightBackgrounds, 0),
@@ -816,6 +855,9 @@ function buildAuditFailures(auditResult) {
     "localEditorOuterScrollFailures",
     "localEditorModalScrollFailures",
     "localEditorBodyScrollFailures",
+    "localEditorHeaderFailures",
+    "localEditorObjectHeaderFailures",
+    "localEditorPointDenseFailures",
     "themeFixtureWhiteBackgrounds",
     "themeFixtureClippedAlerts",
     "themeFixtureUnsafeDialogs",
@@ -868,6 +910,12 @@ function buildAuditFailures(auditResult) {
     if (metrics.bodyScrollY) stepFailures.push("bodyScrollY=true");
     if (metrics.localEditorBodyScrollY) stepFailures.push("localEditorBodyScrollY=true");
     if (metrics.connectionOverflowX) stepFailures.push("connectionHorizontalOverflow=true");
+    if ((metrics.sectionHeaderMaxHeight || 0) > 50) stepFailures.push(`sectionHeaderMaxHeight=${metrics.sectionHeaderMaxHeight}`);
+    if ((metrics.sectionHeaderWrappedTitles || 0) > 0) stepFailures.push(`sectionHeaderWrappedTitles=${metrics.sectionHeaderWrappedTitles}`);
+    if ((metrics.sectionHeaderMisaligned || 0) > 0) stepFailures.push(`sectionHeaderMisaligned=${metrics.sectionHeaderMisaligned}`);
+    if ((metrics.objectHeaderMaxHeight || 0) > 54) stepFailures.push(`objectHeaderMaxHeight=${metrics.objectHeaderMaxHeight}`);
+    if ((metrics.objectHeaderWrapped || 0) > 0) stepFailures.push(`objectHeaderWrapped=${metrics.objectHeaderWrapped}`);
+    if (check.key === 'points' && !metrics.densePrimaryRow) stepFailures.push(`densePrimaryRow=false (fields=${metrics.densePrimaryFieldCount})`);
     if (check.hiddenClipCount > 0) stepFailures.push(`hiddenClipCount=${check.hiddenClipCount}`);
     if ((check.consoleErrorCount || 0) > 0) stepFailures.push(`consoleErrorCount=${check.consoleErrorCount}`);
     if ((check.exceptionCount || 0) > 0) stepFailures.push(`exceptionCount=${check.exceptionCount}`);
