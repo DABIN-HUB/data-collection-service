@@ -681,6 +681,64 @@ async function collectLocalEditorStepChecks(viewport) {
       const enableSectionVisible = [...document.querySelectorAll('[data-local-editor-pane="alarm"] .field-group h3')].filter(visible).some((element) => element.textContent?.trim() === '启用告警');
       const alarmHint = document.querySelector('[data-local-editor-pane="alarm"] .alarm-condition-hint');
       const alarmEditor = document.querySelector('[data-local-editor-pane="alarm"] .alarm-editor-card');
+      const densityViewport = ['1366x768', '1440x900'].includes(window.innerWidth + 'x' + window.innerHeight);
+      const controlHeight = (element) => Math.round(element.getBoundingClientRect().height);
+      const nativeControls = [...(pane?.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]), select') || [])].filter((element) => visible(element) && !element.closest('.el-input, .el-select, .el-input-number'));
+      const elementControls = [...(pane?.querySelectorAll('.el-input__wrapper, .el-select__wrapper, .el-input-number') || [])].filter(visible);
+      const controlSamples = [...nativeControls, ...elementControls].map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          tag: element.tagName.toLowerCase(),
+          className: String(element.className || ''),
+          height: controlHeight(element),
+          boxSizing: style.boxSizing,
+          cssHeight: style.height,
+          paddingTop: style.paddingTop,
+          paddingBottom: style.paddingBottom,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomWidth: style.borderBottomWidth
+        };
+      });
+      const nativeControlHeights = nativeControls.map(controlHeight);
+      const elementControlHeights = elementControls.map(controlHeight);
+      const controlHeightsOk = controlSamples.every((item) => Math.abs(item.height - 32) <= 1);
+      const elementNativeControlDelta = nativeControlHeights.length && elementControlHeights.length ? Math.abs(Math.max(...nativeControlHeights, ...elementControlHeights) - Math.min(...nativeControlHeights, ...elementControlHeights)) : 0;
+      const switches = [...(pane?.querySelectorAll('.el-switch') || [])].filter(visible).map((element) => controlHeight(element));
+      const switchAlignmentOk = switches.every((height) => Math.abs(height - 32) <= 1);
+      const normalButtons = [...(panel?.querySelectorAll('button') || [])].filter((element) => visible(element) && !element.matches('.local-editor-tab, .text-action, .point-select-button, .json-nav-item'));
+      const normalButtonHeights = normalButtons.map(controlHeight);
+      const buttonHeightsOk = normalButtonHeights.every((height) => Math.abs(height - 30) <= 1);
+      const formGrids = [...(pane?.querySelectorAll('.form-grid, .point-field-grid, .protocol-form-grid') || [])].filter(visible).map((element) => {
+        const style = getComputedStyle(element);
+        return { className: String(element.className || ''), rowGap: numberPx(style.rowGap), columnGap: numberPx(style.columnGap) };
+      });
+      const formRhythmOk = formGrids.every((grid) => Math.abs(grid.rowGap - 8) <= 1 && grid.columnGap >= 10 && grid.columnGap <= 12);
+      const cards = [...(pane?.querySelectorAll('.local-section-card') || [])].filter(visible);
+      const cardPaddings = cards.map((card) => {
+        const style = getComputedStyle(card);
+        const header = [...card.children].find((child) => child.classList?.contains('editor-section-header'));
+        const firstContent = [...card.children].find((child) => child !== header && visible(child));
+        return {
+          className: String(card.className || ''),
+          left: numberPx(style.paddingLeft),
+          right: numberPx(style.paddingRight),
+          top: numberPx(style.paddingTop),
+          contentTopOffset: header && firstContent ? Math.round(firstContent.getBoundingClientRect().top - header.getBoundingClientRect().bottom) : null
+        };
+      });
+      const cardPaddingOk = cardPaddings.every((item) => Math.abs(item.left - 12) <= 1 && Math.abs(item.right - 12) <= 1 && Math.abs(item.top - 12) <= 1);
+      const cardContentOffsetOk = cardPaddings.filter((item) => item.contentTopOffset !== null).every((item) => Math.abs(item.contentTopOffset - 10) <= 1);
+      const stepGridStyle = pane ? getComputedStyle(pane.querySelector('.step-grid')) : null;
+      const primaryCardGapOk = Boolean(stepGridStyle) && Math.abs(numberPx(stepGridStyle.columnGap) - 10) <= 1 && Math.abs(numberPx(stepGridStyle.rowGap) - 10) <= 1;
+      const tableDensity = [...(pane?.querySelectorAll('.editor-table') || [])].filter(visible).map((table) => ({
+        className: String(table.className || ''),
+        headerHeights: [...table.querySelectorAll('thead th')].filter(visible).map(controlHeight),
+        rowHeights: [...table.querySelectorAll('tbody tr')].filter(visible).map((row) => controlHeight(row))
+      }));
+      const tableDensityOk = tableDensity.every((table) => table.headerHeights.every((height) => Math.abs(height - 34) <= 1) && table.rowHeights.every((height) => Math.abs(height - 36) <= 1));
+      const sidebarMetrics = [...(pane?.querySelectorAll('.overview-card .metric-item') || [])].filter(visible).map(controlHeight);
+      const sidebarMetricDensityOk = sidebarMetrics.every((height) => Math.abs(height - 34) <= 1);
+      const densityOk = !densityViewport || (controlHeightsOk && elementNativeControlDelta <= 1 && switchAlignmentOk && buttonHeightsOk && formRhythmOk && cardPaddingOk && cardContentOffsetOk && primaryCardGapOk && tableDensityOk && sidebarMetricDensityOk);
       return {
         panelVisible: visible(panel),
         paneVisible: visible(pane),
@@ -732,6 +790,25 @@ async function collectLocalEditorStepChecks(viewport) {
         alarmCompactOk: !logicPreviewVisible && !enableSectionVisible && Boolean(alarmHint && visible(alarmHint) && alarmHint.getBoundingClientRect().height <= 28 && getComputedStyle(alarmHint).borderStyle === 'none') && (!alarmEditor || alarmEditor.getBoundingClientRect().height < 360),
         cloudFourColumnGridColumns: cloudGrids.map(countGridColumns),
         cloudFourColumnOk: '${step.key}' !== 'cloud' || window.innerWidth < 1366 || (cloudGrids.length > 0 && cloudGrids.every((grid) => countGridColumns(grid) === 4)),
+        densityViewport,
+        controlSamples,
+        controlHeightsOk,
+        elementNativeControlDelta,
+        switches,
+        switchAlignmentOk,
+        normalButtonHeights,
+        buttonHeightsOk,
+        formGrids,
+        formRhythmOk,
+        cardPaddings,
+        cardPaddingOk,
+        cardContentOffsetOk,
+        primaryCardGapOk,
+        tableDensity,
+        tableDensityOk,
+        sidebarMetrics,
+        sidebarMetricDensityOk,
+        densityOk,
         largeSvgCount: largeSvgs.length,
         largeSvgs,
         backgroundImageViolationCount: backgroundImageViolations.length,
@@ -756,10 +833,10 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && stepMetrics.typographyOk && headerStyleGate && stepMetrics.tableRowHeightOk && stepMetrics.selectedBackgroundOk && (step.key !== 'points' || stepMetrics.pointFourColumnOk) && (step.key !== 'alarm' || (stepMetrics.alarmTableColumnsOk && stepMetrics.alarmGridColumns === 4 && stepMetrics.alarmFirstRowFourFields && stepMetrics.alarmDescriptionFullWidth && stepMetrics.alarmCompactOk)) && (step.key !== 'cloud' || stepMetrics.cloudFourColumnOk),
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && stepMetrics.typographyOk && headerStyleGate && stepMetrics.tableRowHeightOk && stepMetrics.selectedBackgroundOk && stepMetrics.densityOk && (step.key !== 'points' || stepMetrics.pointFourColumnOk) && (step.key !== 'alarm' || (stepMetrics.alarmTableColumnsOk && stepMetrics.alarmGridColumns === 4 && stepMetrics.alarmFirstRowFourFields && stepMetrics.alarmDescriptionFullWidth && stepMetrics.alarmCompactOk)) && (step.key !== 'cloud' || stepMetrics.cloudFourColumnOk),
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || !stepMetrics.typographyOk || !headerStyleGate || !stepMetrics.tableRowHeightOk || !stepMetrics.selectedBackgroundOk || (step.key === 'points' && !stepMetrics.pointFourColumnOk) || (step.key === 'alarm' && (!stepMetrics.alarmTableColumnsOk || stepMetrics.alarmGridColumns !== 4 || !stepMetrics.alarmFirstRowFourFields || !stepMetrics.alarmDescriptionFullWidth || !stepMetrics.alarmCompactOk)) || (step.key === 'cloud' && !stepMetrics.cloudFourColumnOk),
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || !stepMetrics.typographyOk || !headerStyleGate || !stepMetrics.tableRowHeightOk || !stepMetrics.selectedBackgroundOk || !stepMetrics.densityOk || (step.key === 'points' && !stepMetrics.pointFourColumnOk) || (step.key === 'alarm' && (!stepMetrics.alarmTableColumnsOk || stepMetrics.alarmGridColumns !== 4 || !stepMetrics.alarmFirstRowFourFields || !stepMetrics.alarmDescriptionFullWidth || !stepMetrics.alarmCompactOk)) || (step.key === 'cloud' && !stepMetrics.cloudFourColumnOk),
       hiddenClipCount: metrics.hiddenClips.length,
       hiddenClips: metrics.hiddenClips,
       consoleErrorCount: stepConsole.length,
@@ -964,6 +1041,16 @@ function summarize() {
     localEditorAlarmFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && ((item.metrics?.alarmGridColumns || 0) !== 4 || !item.metrics?.alarmFirstRowFourFields)).length,
     localEditorAlarmCompactFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && (!item.metrics?.alarmDescriptionFullWidth || !item.metrics?.alarmCompactOk)).length,
     localEditorCloudFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'cloud' && !item.metrics?.cloudFourColumnOk).length,
+    localEditorControlHeightFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.controlHeightsOk).length,
+    localEditorElementNativeControlDeltaFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && (item.metrics?.elementNativeControlDelta || 0) > 1).length,
+    localEditorSwitchAlignmentFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.switchAlignmentOk).length,
+    localEditorButtonHeightFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.buttonHeightsOk).length,
+    localEditorFormRhythmFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.formRhythmOk).length,
+    localEditorCardPaddingFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.cardPaddingOk).length,
+    localEditorCardContentOffsetFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.cardContentOffsetOk).length,
+    localEditorPrimaryCardGapFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.primaryCardGapOk).length,
+    localEditorTableDensityFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.tableDensityOk).length,
+    localEditorSidebarDensityFailures: result.localEditorChecks.filter((item) => item.metrics?.densityViewport && !item.metrics?.sidebarMetricDensityOk).length,
     localEditorLargeSvgFailures: result.localEditorChecks.filter((item) => (item.metrics?.largeSvgCount || 0) > 0).length,
     localEditorBackgroundImageFailures: result.localEditorChecks.filter((item) => (item.metrics?.backgroundImageViolationCount || 0) > 0).length,
     tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
@@ -1005,6 +1092,16 @@ function buildAuditFailures(auditResult) {
     "localEditorAlarmFourColumnFailures",
     "localEditorAlarmCompactFailures",
     "localEditorCloudFourColumnFailures",
+    "localEditorControlHeightFailures",
+    "localEditorElementNativeControlDeltaFailures",
+    "localEditorSwitchAlignmentFailures",
+    "localEditorButtonHeightFailures",
+    "localEditorFormRhythmFailures",
+    "localEditorCardPaddingFailures",
+    "localEditorCardContentOffsetFailures",
+    "localEditorPrimaryCardGapFailures",
+    "localEditorTableDensityFailures",
+    "localEditorSidebarDensityFailures",
     "localEditorLargeSvgFailures",
     "localEditorBackgroundImageFailures",
     "themeFixtureWhiteBackgrounds",
@@ -1077,6 +1174,7 @@ function buildAuditFailures(auditResult) {
     if (check.key === 'alarm' && ((metrics.alarmGridColumns || 0) !== 4 || !metrics.alarmFirstRowFourFields)) stepFailures.push(`alarmFourColumn=false (columns=${metrics.alarmGridColumns}, firstRow=${metrics.alarmFirstRowFourFields})`);
     if (check.key === 'alarm' && (!metrics.alarmDescriptionFullWidth || !metrics.alarmCompactOk)) stepFailures.push(`alarmCompact=false (descriptionFull=${metrics.alarmDescriptionFullWidth}, compact=${metrics.alarmCompactOk})`);
     if (check.key === 'cloud' && !metrics.cloudFourColumnOk) stepFailures.push(`cloudFourColumnOk=false (columns=${(metrics.cloudFourColumnGridColumns || []).join("/")})`);
+    if (metrics.densityViewport && !metrics.densityOk) stepFailures.push(`densityOk=false (controls=${metrics.controlHeightsOk}, nativeElementDelta=${metrics.elementNativeControlDelta}, switches=${metrics.switchAlignmentOk}, buttons=${metrics.buttonHeightsOk}, formRhythm=${metrics.formRhythmOk}, cardPadding=${metrics.cardPaddingOk}, cardContentOffset=${metrics.cardContentOffsetOk}, cardGap=${metrics.primaryCardGapOk}, tables=${metrics.tableDensityOk}, sidebar=${metrics.sidebarMetricDensityOk})`);
     if (check.hiddenClipCount > 0) stepFailures.push(`hiddenClipCount=${check.hiddenClipCount}`);
     if ((check.consoleErrorCount || 0) > 0) stepFailures.push(`consoleErrorCount=${check.consoleErrorCount}`);
     if ((check.exceptionCount || 0) > 0) stepFailures.push(`exceptionCount=${check.exceptionCount}`);

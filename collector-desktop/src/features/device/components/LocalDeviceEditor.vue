@@ -679,6 +679,15 @@ onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document
   --editor-font-helper: 10px;
   --editor-font-badge: 10px;
   --editor-font-metric-value: 13px;
+  --editor-card-padding: 12px;
+  --editor-card-content-offset: 10px;
+  --editor-form-row-gap: 8px;
+  --editor-form-column-gap: 10px;
+  --editor-label-control-gap: 4px;
+  --editor-control-height: 32px;
+  --editor-button-height: 30px;
+  --editor-sidebar-gap: 7px;
+  --editor-subsection-bottom: 6px;
   --editor-card-border: rgba(96, 165, 250, 0.16);
   --editor-card-bg: color-mix(in srgb, var(--console-panel, #0f1b2e) 93%, #1d4ed8 7%);
   --editor-card-soft: color-mix(in srgb, var(--console-panel-soft, #12233a) 90%, #0ea5e9 10%);
@@ -925,11 +934,11 @@ h3, p {
 }
 
 .step-grid-cloud {
-  grid-template-columns: 290px minmax(0, 1fr);
+  grid-template-columns: 230px minmax(0, 1fr);
 }
 
 .step-grid-json {
-  grid-template-columns: 200px minmax(0, 1fr) 315px;
+  grid-template-columns: 190px minmax(0, 1fr) 260px;
 }
 
 .local-setup-stable-column, .detail-stack, .advanced-stack {
@@ -971,7 +980,7 @@ h3, p {
 
 .local-section-card, .readonly-card {
   min-width: 0;
-  padding: 10px 12px;
+  padding: var(--editor-card-padding);
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-panel);
@@ -980,7 +989,7 @@ h3, p {
 
 .local-section-head, .compact-head, .point-detail-hero {
   display: flex;
-  margin-bottom: 8px;
+  margin-bottom: var(--editor-card-content-offset);
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
@@ -1006,7 +1015,7 @@ h3, p {
 }
 
 .overview-card {
-  gap: 10px;
+  gap: var(--editor-sidebar-gap);
   overflow-y: auto;
 }
 
@@ -1030,6 +1039,7 @@ h3, p {
 
 .local-connection-body :deep(.protocol-form-grid) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--editor-form-row-gap) var(--editor-form-column-gap);
 }
 
 .local-connection-body :deep(.protocol-field-row) {
@@ -1043,7 +1053,7 @@ h3, p {
 .form-grid, .readonly-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px 12px;
+  gap: var(--editor-form-row-gap) var(--editor-form-column-gap);
 }
 
 .readonly-grid {
@@ -1058,7 +1068,7 @@ h3, p {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--editor-label-control-gap);
   color: var(--console-text-muted);
   font-size: var(--editor-font-label);
 }
@@ -1068,7 +1078,7 @@ input, select, textarea {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 32px;
+  min-height: var(--editor-control-height);
   color: var(--console-text-primary);
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-md);
@@ -1077,11 +1087,13 @@ input, select, textarea {
 }
 
 input, select {
+  height: var(--editor-control-height);
   padding: 0 10px;
 }
 
 button {
-  min-height: 30px;
+  height: var(--editor-button-height);
+  min-height: var(--editor-button-height);
   padding: 0 10px;
   font-size: var(--editor-font-body);
   color: var(--console-text-secondary);
@@ -1118,7 +1130,7 @@ button:disabled {
 
 .metric-stack {
   display: grid;
-  gap: 8px;
+  gap: var(--editor-sidebar-gap);
 }
 
 .metric-item {
@@ -1502,7 +1514,7 @@ button:disabled {
 }
 
 :deep(.el-input__wrapper), :deep(.el-select__wrapper) {
-  min-height: 32px;
+  min-height: var(--editor-control-height);
   background: var(--console-bg-soft);
   box-shadow: 0 0 0 1px var(--console-border-soft) inset;
 }
@@ -1518,7 +1530,7 @@ button:disabled {
 
 .local-editor .local-section-card,
 .local-editor .readonly-card {
-  padding: 12px;
+  padding: var(--editor-card-padding);
   border-color: var(--editor-card-border);
   border-radius: 12px;
   background: linear-gradient(180deg, var(--editor-card-bg), var(--console-panel));
@@ -1527,12 +1539,12 @@ button:disabled {
 
 .overview-card,
 .metric-stack {
-  gap: 7px;
+  gap: var(--editor-sidebar-gap);
 }
 
 .local-editor .form-grid,
 .local-editor .readonly-grid {
-  gap: 8px 10px;
+  gap: var(--editor-form-row-gap) var(--editor-form-column-gap);
 }
 
 .local-editor input,
@@ -1542,9 +1554,41 @@ button:disabled {
   background: rgba(15, 23, 42, 0.7);
 }
 
+.local-editor :deep(input),
+.local-editor :deep(select) {
+  box-sizing: border-box !important;
+  height: var(--editor-control-height) !important;
+  min-height: var(--editor-control-height) !important;
+}
+
+.local-editor :deep(input[type="checkbox"]),
+.local-editor :deep(input[type="radio"]) {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
 .local-editor .metric-item {
+  box-sizing: border-box;
+  height: 34px;
   min-height: 34px;
   padding: 5px 2px 5px 9px;
+}
+
+.local-editor .cloud-sidebar .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.local-editor .overview-card {
+  gap: 0;
+}
+
+.local-editor .overview-card > :not(.editor-section-header) + :not(.editor-section-header) {
+  margin-top: var(--editor-sidebar-gap);
+}
+
+.local-editor :deep(.progress-rail .local-checklist) {
+  margin: 0;
+  padding: 0;
 }
 
 .local-editor .metric-item strong {
@@ -1592,7 +1636,8 @@ button:disabled {
 
 .local-editor .json-preview,
 .local-editor .point-json-textarea {
-  padding: 14px;
+  margin: 0;
+  padding: 10px;
   background: #0b1220;
   font-size: 12px;
   line-height: 1.5;
@@ -1714,7 +1759,7 @@ button:disabled {
 }
 
 .step-grid-json {
-  grid-template-columns: 185px minmax(0, 1fr) 300px;
+  grid-template-columns: 190px minmax(0, 1fr) 260px;
 }
 
 .local-editor-title {
@@ -1743,11 +1788,11 @@ button:disabled {
 
 .step-grid-master-detail,
 .step-grid-cloud {
-  grid-template-columns: 185px minmax(0, 1fr);
+  grid-template-columns: 180px minmax(0, 1fr);
 }
 
 .step-grid-json {
-  grid-template-columns: 175px minmax(0, 1fr) 280px;
+  grid-template-columns: 180px minmax(0, 1fr) 200px;
 }
 
 .cloud-bottom-grid {
@@ -1806,8 +1851,8 @@ button:disabled {
   box-sizing: border-box;
   min-width: 0;
   min-height: 44px;
-  margin: -12px -12px 10px;
-  padding: 0 12px;
+  margin: calc(-1 * var(--editor-card-padding)) calc(-1 * var(--editor-card-padding)) var(--editor-card-content-offset);
+  padding: 0 var(--editor-card-padding);
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -1930,7 +1975,7 @@ button:disabled {
 .local-editor :deep(.field-group h3),
 .local-editor :deep(.advanced-collapse summary) {
   min-width: 0;
-  margin: 0 0 6px;
+  margin: 0 0 var(--editor-subsection-bottom);
   padding: 6px 0 5px 8px;
   color: var(--console-text-primary);
   border-left: 2px solid var(--console-primary-hover);
@@ -1943,7 +1988,7 @@ button:disabled {
 .local-editor :deep(.point-field-grid) {
   display: grid;
   min-width: 0;
-  gap: 8px 10px;
+  gap: var(--editor-form-row-gap) var(--editor-form-column-gap);
 }
 
 .local-editor :deep(.point-field-grid-two-column) {
@@ -1981,7 +2026,7 @@ button:disabled {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--editor-label-control-gap);
   color: var(--console-text-muted);
   font-size: 12px;
 }
@@ -2027,6 +2072,30 @@ button:disabled {
 .local-editor .mapping-list-card,
 .local-editor .alarm-list-card {
   overflow-y: auto;
+}
+
+/* 弹窗内普通控件和开关按基础连接页的 32px 节奏对齐。 */
+.local-editor :deep(.el-input__wrapper),
+.local-editor :deep(.el-select__wrapper),
+.local-editor :deep(.el-input-number),
+.local-editor :deep(.el-input-number .el-input__wrapper) {
+  box-sizing: border-box;
+  height: var(--editor-control-height);
+  min-height: var(--editor-control-height);
+}
+
+.local-editor :deep(.el-switch) {
+  box-sizing: border-box;
+  min-height: var(--editor-control-height);
+  align-items: center;
+}
+
+.local-editor :deep(.el-button:not(.is-link, .is-text)) {
+  box-sizing: border-box;
+  height: var(--editor-button-height);
+  min-height: var(--editor-button-height);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 @media (max-width: 1149px) and (min-width: 900px) {
