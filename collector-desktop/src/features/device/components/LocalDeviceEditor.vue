@@ -127,7 +127,7 @@
                         <td>{{ row.address || '-' }}</td>
                         <td>{{ row.readWrite || '-' }}</td>
                         <td>{{ row.scalingFactor ?? '-' }}</td>
-                        <td class="row-actions"><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button><button type="button" class="text-action" @click.stop="duplicatePoint(row)">复制</button><button type="button" class="text-action danger" @click.stop="removePoint(row)">删除</button></td>
+                        <td class="action-cell"><div class="row-actions"><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button><button type="button" class="text-action" @click.stop="duplicatePoint(row)">复制</button><button type="button" class="text-action danger" @click.stop="removePoint(row)">删除</button></div></td>
                       </tr>
                       <tr v-if="filteredPoints.length === 0"><td colspan="8">{{ pointKeyword ? '没有匹配的点位' : '暂无点位' }}</td></tr>
                     </tbody>
@@ -193,10 +193,10 @@
                 </div>
                 <div v-else class="table-wrap compact alarm-table-wrap">
                   <table class="point-table editor-table">
-                    <thead><tr><th>关联点位</th><th>规则名称</th><th>告警类型</th><th>触发条件</th><th>持续时间</th><th>告警级别</th><th>启用状态</th><th>操作</th></tr></thead>
+                    <thead><tr><th>关联点位</th><th>规则名称</th><th>运算符</th><th>阈值</th><th>持续时间</th><th>告警级别</th><th>启用状态</th><th>操作</th></tr></thead>
                     <tbody>
                       <tr v-for="row in filteredAlarmRows" :key="`${row.pointIndex}-${row.ruleIndex}`" :class="{ 'is-selected': row.pointIndex === selectedPointIndex && row.ruleIndex === selectedAlarmRuleIndex }" @click="selectAlarmRow(row)">
-                        <td>{{ row.point.pointName || row.point.pointCode }}</td><td>{{ row.rule.ruleName || row.rule.ruleId || '未命名规则' }}</td><td>{{ row.rule.operator || '-' }}</td><td>{{ alarmConditionText(row) }}</td><td>{{ row.rule.duration ?? '-' }} s</td><td><span class="level-badge" :class="alarmLevelClass(row.rule.level)">{{ alarmLevelLabel(row.rule.level) }}</span></td><td><span class="state-badge" :class="row.rule.enabled === false ? 'is-off' : 'is-on'">{{ row.rule.enabled === false ? '禁用' : '启用' }}</span></td><td><button type="button" @click.stop="selectAlarmRow(row)">编辑</button><button type="button" class="danger" @click.stop="removeAlarmRuleAt(row.pointIndex, row.ruleIndex)">删除</button></td>
+                        <td>{{ row.point.pointName || row.point.pointCode }}</td><td>{{ row.rule.ruleName || row.rule.ruleId || '未命名规则' }}</td><td>{{ row.rule.operator || '-' }}</td><td>{{ alarmThresholdText(row) }}</td><td>{{ row.rule.duration ?? '-' }} s</td><td><span class="level-badge" :class="alarmLevelClass(row.rule.level)">{{ alarmLevelLabel(row.rule.level) }}</span></td><td><span class="state-badge" :class="row.rule.enabled === false ? 'is-off' : 'is-on'">{{ row.rule.enabled === false ? '禁用' : '启用' }}</span></td><td class="action-cell"><div class="row-actions"><button type="button" class="text-action" @click.stop="selectAlarmRow(row)">编辑</button><button type="button" class="text-action danger" @click.stop="removeAlarmRuleAt(row.pointIndex, row.ruleIndex)">删除</button></div></td>
                       </tr>
                       <tr v-if="filteredAlarmRows.length === 0"><td colspan="8">暂无告警规则，请选择点位后新增。</td></tr>
                     </tbody>
@@ -206,11 +206,9 @@
 
               <section v-if="alarmRuleRows.length" class="local-section-card editor-card alarm-editor-card">
                 <PointEditorHeader :point="selectedPoint" title="规则配置" />
-                <FieldGroup v-if="selectedPoint" title="启用告警">
-                  <PointFieldGrid layout="dense" :fields="alarmPointFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" />
-                </FieldGroup>
                 <div v-if="selectedPoint && currentAlarmRule" class="alarm-rule-form">
-                  <div class="form-grid dense-form-grid">
+                  <div class="form-grid alarm-rule-grid">
+                    <label>启用告警<el-switch :model-value="Boolean(selectedPoint.alarmEnabled)" @update:model-value="updateSelectedPath('alarmEnabled', $event ? 1 : 0)" /></label>
                     <label>规则ID<el-input :model-value="String(currentAlarmRule.ruleId || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'ruleId', $event)" /></label>
                     <label>规则名称<el-input :model-value="String(currentAlarmRule.ruleName || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'ruleName', $event)" /></label>
                     <label>运算符<el-select :model-value="String(currentAlarmRule.operator || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'operator', $event)"><el-option v-for="operator in alarmOperators" :key="operator" :label="operator" :value="operator" /></el-select></label>
@@ -220,7 +218,7 @@
                     <label>启用<el-select :model-value="currentAlarmRule.enabled === undefined ? '' : String(Boolean(currentAlarmRule.enabled))" clearable @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'enabled', parseBooleanOption($event))"><el-option label="是" value="true" /><el-option label="否" value="false" /></el-select></label>
                     <label class="wide-field">描述<el-input :model-value="String(currentAlarmRule.description || '')" @update:model-value="updateAlarmRule(selectedAlarmRuleIndex, 'description', $event)" /></label>
                   </div>
-                  <div class="logic-preview"><span>触发逻辑</span><div class="logic-flow"><strong v-for="(part, index) in alarmLogicParts" :key="`${part}-${index}`">{{ part }}</strong></div></div>
+                  <div class="alarm-condition-hint" :title="alarmTriggerHint">触发预览：{{ alarmTriggerHint }}</div>
                 </div>
                 <div v-else class="empty-state"><strong>暂无可编辑规则</strong><span>选择已有规则，或点击“新增规则”。</span></div>
               </section>
@@ -252,7 +250,7 @@
                     <thead><tr><th>序号</th><th>点位名称</th><th>本地标识</th><th>云端属性编码</th><th>上报类型</th><th>转换规则</th><th>单位</th><th>启用状态</th><th>操作</th></tr></thead>
                     <tbody id="localCloudRows">
                       <tr v-for="(row, index) in points" :key="row.pointCode || row.address || index" :class="{ 'is-selected': index === selectedPointIndex }" @click="selectPoint(row)">
-                        <td>{{ index + 1 }}</td><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.pointCode || '-' }}</td><td>{{ row.additionalConfig?.reportField || '-' }}</td><td>{{ row.additionalConfig?.eventEnabled ? '属性+事件' : '属性' }}</td><td>{{ transformRuleText(row) }}</td><td>{{ row.unit || '-' }}</td><td>{{ cloudPointStatus(row, cloudTarget) }}</td><td><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button></td>
+                        <td>{{ index + 1 }}</td><td>{{ row.pointName || row.pointCode || '-' }}</td><td>{{ row.pointCode || '-' }}</td><td>{{ row.additionalConfig?.reportField || '-' }}</td><td>{{ row.additionalConfig?.eventEnabled ? '属性+事件' : '属性' }}</td><td>{{ transformRuleText(row) }}</td><td>{{ row.unit || '-' }}</td><td>{{ cloudPointStatus(row, cloudTarget) }}</td><td class="action-cell"><div class="row-actions"><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button></div></td>
                       </tr>
                       <tr v-if="points.length === 0"><td colspan="9">暂无点位</td></tr>
                     </tbody>
@@ -262,7 +260,7 @@
               <div class="cloud-bottom-grid">
                 <section class="local-section-card editor-card">
                   <PointEditorHeader :point="selectedPoint" title="属性映射编辑" />
-                  <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid layout="dense" :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
+                  <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid layout="four-column" :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
                   <FieldGroup title="事件预览"><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li><li v-if="eventMappingPreview.length === 0">暂无事件上报配置</li></ul></FieldGroup>
                 </section>
                 <section class="local-section-card payload-card">
@@ -525,7 +523,6 @@ const primaryPointFields = computed<PointEditorField[]>(() => [
 const dataPointFields = computed<PointEditorField[]>(() => [{ path: "deadband", label: "死区", control: "number", valueType: "number", step: 0.0001 }, { path: "minValue", label: "最小值", control: "number", valueType: "number", step: 0.0001 }, { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: 0.0001 }, { path: "priority", label: "优先级", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }, { path: "status", label: "启用状态", control: "select", valueType: "integer", options: enableOptions }]);
 const reportPointFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }]);
 const cloudReportFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "启用上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码", description: "属性标识：reportField" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "最小变化间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.streamEnabled", label: "实时流", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.historyEnabled", label: "历史", control: "select", valueType: "boolean", options: booleanOptions }]);
-const alarmPointFields = computed<PointEditorField[]>(() => [{ path: "alarmEnabled", label: "启用告警", control: "switch", valueType: "integer" }]);
 const protocolPointFields = computed<PointEditorField[]>(() => pointFields.value.map((field) => ({ path: protocolPointFieldPath(field), label: field.label || field.name, required: field.required, control: field.type === "boolean" ? "switch" : field.options?.length ? "select" : (field.type === "number" || field.type === "integer") ? "number" : "text", valueType: field.type === "boolean" ? "boolean" : field.type === "number" ? "number" : field.type === "integer" ? "integer" : "string", options: field.options?.map((option) => ({ label: option, value: option })), description: field.description, span: protocolPointFieldSpan(field) })));
 const protocolPointTitle = computed(() => protocol.value === "MODBUS_TCP" || protocol.value === "MODBUS_RTU" ? "协议扩展（Modbus 的 dataType 会直接影响取值长度和解码）" : "协议扩展");
 const protocolPointNotes = computed(() => buildProtocolPointNotes(protocol.value, protocolSchema.value?.pointAddressHints || [], pointFields.value.length));
@@ -544,6 +541,7 @@ const alarmLogicParts = computed(() => {
     `${alarmLevelLabel(currentAlarmRule.value.level)}告警`
   ];
 });
+const alarmTriggerHint = computed(() => alarmLogicParts.value.join(" · "));
 const eventIntervalSummary = computed(() => minPointAdditionalNumber("eventMinIntervalMs"));
 const reportStrategySummary = computed(() => ({ changeMinInterval: minPointAdditionalNumber("changeMinIntervalMs"), eventMinInterval: minPointAdditionalNumber("eventMinIntervalMs"), cache: `${points.value.filter((point) => Number(point.cacheEnabled ?? 0) !== 0).length}/${points.value.length}` }));
 const eventMappingPreview = computed(() => points.value.filter((point) => point.alarmEnabled || point.additionalConfig?.eventEnabled).map((point) => `${point.pointName || point.pointCode}: ${point.alarmEnabled ? "告警事件" : "点位事件"} → ${point.additionalConfig?.reportField || point.pointCode || "未配置云端属性"}`));
@@ -628,7 +626,7 @@ function protocolPointFieldSpan(field: ProtocolFieldConfig): number | undefined 
   return /url|topic|endpoint|path|script|expression|payload|template|正则|脚本|表达式|模板|报文/.test(marker) ? 2 : undefined;
 }
 function transformRuleText(point: DataPoint) { const scale = point.scalingFactor ?? 1; const offset = point.offset ?? 0; return Number(scale) !== 1 || Number(offset) !== 0 ? `value * ${scale} + ${offset}` : "原值"; }
-function alarmConditionText(row: AlarmRuleRow) { const unit = row.point.unit ? String(row.point.unit) : ""; return `${row.point.pointName || row.point.pointCode || "点位"}(${row.point.pointCode || "-"}) → ${row.rule.operator || "?"} ${row.rule.threshold ?? "?"}${unit} → 持续 ${row.rule.duration ?? 0} 秒`; }
+function alarmThresholdText(row: AlarmRuleRow) { const unit = row.point.unit ? ` ${String(row.point.unit)}` : ""; const threshold = row.rule.threshold; return threshold === undefined || threshold === null || String(threshold).trim() === "" ? "-" : `${threshold}${unit}`; }
 function alarmLevelLabel(level: unknown) { return alarmLevels.find((item) => item.value === String(level || ""))?.label || String(level || "未设置"); }
 function alarmLevelClass(level: unknown) { const value = String(level || "").toUpperCase(); if (value === "CRITICAL") return "is-critical"; if (value === "ERROR" || value === "WARNING") return "is-warning"; if (value === "INFO") return "is-info"; return "is-unset"; }
 function minPointAdditionalNumber(key: string) { const values = points.value.map((point) => Number(point.additionalConfig?.[key])).filter((value) => Number.isFinite(value) && value > 0); return values.length ? `${Math.min(...values)} ms` : "未配置"; }
@@ -655,6 +653,17 @@ onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document
   --panel-line: var(--console-border-soft, #1e3a5f);
   --panel-muted: var(--console-text-muted, #8aa0b8);
   --panel-text: var(--console-text-primary, #e5edf8);
+  --editor-font-page-title: 17px;
+  --editor-font-section-title: 14px;
+  --editor-font-object-title: 13px;
+  --editor-font-subsection-title: 13px;
+  --editor-font-body: 12px;
+  --editor-font-label: 12px;
+  --editor-font-table: 12px;
+  --editor-font-meta: 11px;
+  --editor-font-helper: 10px;
+  --editor-font-badge: 10px;
+  --editor-font-metric-value: 13px;
   --editor-card-border: rgba(96, 165, 250, 0.16);
   --editor-card-bg: color-mix(in srgb, var(--console-panel, #0f1b2e) 93%, #1d4ed8 7%);
   --editor-card-soft: color-mix(in srgb, var(--console-panel-soft, #12233a) 90%, #0ea5e9 10%);
@@ -709,14 +718,14 @@ h3, p {
 
 .local-editor-title h3 {
   color: var(--console-text-primary);
-  font-size: 16px;
+  font-size: var(--editor-font-page-title);
   font-weight: 800;
   line-height: 1.16;
 }
 
 .local-editor-title p, .local-section-head p, .field-description, .hint-list, .protocol-point-note, .validation-list {
   color: var(--console-text-muted);
-  font-size: 11px;
+  font-size: var(--editor-font-meta);
   line-height: 1.3;
 }
 
@@ -736,8 +745,8 @@ h3, p {
   border-radius: 999px;
   color: #bfdbfe;
   background: rgba(37, 99, 235, 0.18);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: var(--editor-font-badge);
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -770,14 +779,15 @@ h3, p {
 
 .local-editor-stat strong {
   color: var(--console-text-primary);
-  font-size: 14px;
+  font-size: var(--editor-font-metric-value);
+  font-weight: 700;
   line-height: 1.1;
 }
 
 .local-editor-stat span {
   margin-top: 2px;
   color: var(--console-text-dim);
-  font-size: 11px;
+  font-size: var(--editor-font-meta);
 }
 
 .local-editor-tabs {
@@ -824,8 +834,8 @@ h3, p {
   border: 1px solid rgba(96, 165, 250, 0.18);
   border-radius: 50%;
   background: var(--console-bg);
-  font-size: 11px;
-  font-weight: 800;
+  font-size: var(--editor-font-meta);
+  font-weight: 700;
 }
 
 .local-editor-tab strong, .local-editor-tab small {
@@ -837,14 +847,14 @@ h3, p {
 
 .local-editor-tab strong {
   color: var(--console-text-secondary);
-  font-size: 12px;
+  font-size: var(--editor-font-body);
   line-height: 1.15;
 }
 
 .local-editor-tab small {
   margin-top: 2px;
   color: var(--console-text-dim);
-  font-size: 10px;
+  font-size: var(--editor-font-helper);
   line-height: 1.1;
 }
 
@@ -968,7 +978,7 @@ h3, p {
 
 .local-section-head h3, .point-detail-hero strong, .field-group h3, .overview-card h3 {
   color: var(--console-text-primary);
-  font-size: 15px;
+  font-size: var(--editor-font-section-title);
   line-height: 1.2;
 }
 
@@ -1035,7 +1045,7 @@ h3, p {
   flex-direction: column;
   gap: 5px;
   color: var(--console-text-muted);
-  font-size: 12px;
+  font-size: var(--editor-font-label);
 }
 
 input, select, textarea {
@@ -1048,6 +1058,7 @@ input, select, textarea {
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-md);
   background: var(--console-bg-soft);
+  font-size: var(--editor-font-body);
 }
 
 input, select {
@@ -1057,6 +1068,7 @@ input, select {
 button {
   min-height: 30px;
   padding: 0 10px;
+  font-size: var(--editor-font-body);
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-md);
@@ -1106,13 +1118,23 @@ button:disabled {
 }
 
 .metric-item span {
+  min-width: 0;
+  overflow: hidden;
   color: var(--console-text-muted);
-  font-size: 12px;
+  font-size: var(--editor-font-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric-item strong {
+  max-width: 50%;
+  overflow: hidden;
   color: var(--console-text-primary);
-  font-size: 15px;
+  font-size: var(--editor-font-metric-value);
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric-item.is-ok strong, .is-ok {
@@ -1191,17 +1213,23 @@ button:disabled {
 }
 
 .editor-table th, .editor-table td, .schema-table th, .schema-table td {
-  padding: 8px 9px;
+  height: 36px;
+  padding: 0 8px;
   overflow: hidden;
   border-bottom: 1px solid var(--console-border-soft);
   text-align: left;
   text-overflow: ellipsis;
+  vertical-align: middle;
   white-space: nowrap;
+  line-height: 1.2;
 }
 
 .editor-table th, .schema-table th {
+  height: 34px;
   color: var(--console-text-muted);
   background: var(--console-bg-soft);
+  font-size: var(--editor-font-table);
+  font-weight: 700;
 }
 
 .editor-table tr:hover td {
@@ -1216,8 +1244,14 @@ button:disabled {
   box-shadow: inset 3px 0 0 var(--console-primary);
 }
 
+.action-cell {
+  display: table-cell;
+  vertical-align: middle;
+}
+
 .row-actions {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -1406,23 +1440,18 @@ button:disabled {
 }
 
 .logic-preview {
-  display: grid;
-  margin-top: 10px;
-  padding: 10px;
-  gap: 4px;
-  border: 1px solid rgba(14, 165, 233, 0.35);
-  border-radius: var(--console-radius-md);
-  background: rgba(14, 165, 233, 0.1);
+  display: none;
 }
 
-.logic-preview span {
+.alarm-condition-hint {
+  height: 26px;
+  margin-top: 6px;
+  overflow: hidden;
   color: var(--console-text-muted);
-  font-size: 12px;
-}
-
-.logic-preview strong {
-  color: var(--console-text-primary);
-  font-size: 13px;
+  font-size: var(--editor-font-meta);
+  line-height: 26px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .local-editor-footer {
@@ -1465,6 +1494,11 @@ button:disabled {
 
 :deep(.el-input__inner), :deep(.el-select__placeholder), :deep(.el-input-number .el-input__inner) {
   color: var(--console-text-primary);
+  font-size: var(--editor-font-body);
+}
+
+:deep(.el-switch__label), :deep(.el-select-dropdown__item) {
+  font-size: var(--editor-font-body);
 }
 
 .local-editor .local-section-card,
@@ -1499,7 +1533,15 @@ button:disabled {
 }
 
 .local-editor .metric-item strong {
-  font-size: 14px;
+  font-size: var(--editor-font-metric-value) !important;
+}
+
+.local-device-panel .overview-card .metric-item strong {
+  font-size: var(--editor-font-metric-value) !important;
+}
+
+.local-device-panel :deep(.overview-card .metric-item strong) {
+  font-size: var(--editor-font-metric-value) !important;
 }
 
 .local-editor .local-checklist li,
@@ -1525,7 +1567,7 @@ button:disabled {
 .local-editor .editor-table td,
 .local-editor .schema-table th,
 .local-editor .schema-table td {
-  padding: 7px 8px;
+  padding: 0 8px;
 }
 
 .local-editor .cloud-bottom-grid {
@@ -1786,8 +1828,8 @@ button:disabled {
   min-width: 0;
   margin: 0;
   color: var(--console-text-primary);
-  font-size: 14px;
-  font-weight: 800;
+  font-size: var(--editor-font-section-title);
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
   flex: 0 0 auto;
@@ -1867,7 +1909,7 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   color: var(--console-text-primary);
-  font-size: 14px;
+  font-size: var(--editor-font-object-title);
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1950,8 +1992,19 @@ button:disabled {
   white-space: nowrap;
 }
 
-.local-editor .dense-form-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.local-editor .dense-form-grid,
+.local-editor .alarm-rule-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.local-editor .alarm-editor-card {
+  flex: 0 0 auto;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.local-editor .alarm-rule-form {
+  flex: 0 0 auto;
 }
 
 .local-editor .point-list-card :deep(.editor-section-actions) {

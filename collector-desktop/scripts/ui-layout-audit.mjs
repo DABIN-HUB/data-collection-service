@@ -237,7 +237,7 @@ async function installAuditRequestStub() {
     const ok = (data) => ({ status: 200, body: { code: 200, status: 'success', data } });
     const list = (items = []) => ({ records: items, list: items, rows: items, total: items.length, page: 1, size: 20 });
     const sampleDevice = { deviceId: 'ui-audit-device', deviceName: 'UI Audit Device', protocolType: 'MODBUS_TCP', status: 1 };
-    const samplePoint = { pointId: 'ui-audit-point', pointCode: 'audit_point', pointName: '审计点位', address: '40001', dataType: 'FLOAT', readWrite: 'R', status: 1, additionalConfig: { reportField: 'audit_point', reportEnabled: true } };
+    const samplePoint = { pointId: 'ui-audit-point', pointCode: 'audit_point', pointName: '审计点位', address: '40001', dataType: 'FLOAT', readWrite: 'R', unit: '℃', status: 1, alarmEnabled: 1, alarmRule: JSON.stringify([{ ruleId: 'audit_rule', ruleName: '温度高限', operator: '>=', threshold: 80, duration: 10, level: 'WARNING', enabled: true, description: 'UI audit alarm rule' }]), additionalConfig: { reportField: 'audit_point', reportEnabled: true, eventEnabled: true, changeThreshold: 1, changeMinIntervalMs: 1000, eventMinIntervalMs: 1000, streamEnabled: true, historyEnabled: true } };
     const protocol = { protocol: 'MODBUS_TCP', title: 'Modbus TCP', connectionFields: [
       { name: 'host', label: '主机/IP', type: 'string', required: true },
       { name: 'port', label: '端口', type: 'integer', required: true },
@@ -335,7 +335,8 @@ async function collectDomMetrics() {
       const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap';
       const intentionalFormControlClip = ['input', 'textarea'].includes(tag) && element.scrollWidth > element.clientWidth + 4 && ['hidden', 'clip'].includes(style.overflowX);
       const intentionalHeaderClip = element.matches('.editor-section-header, .editor-object-header, .editor-section-subtitle, .editor-section-badge, .editor-object-title, .editor-object-meta');
-      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && !intentionalHeaderClip && (!textBox || widthOverflow);
+      const intentionalLogNameOverflow = element.matches('.modao-log-name') && widthOverflow;
+      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && !intentionalHeaderClip && !intentionalLogNameOverflow && (!textBox || widthOverflow);
     }).map((element) => ({
       selector: selectorFor(element),
       tag: element.tagName.toLowerCase(),
@@ -536,6 +537,18 @@ async function collectLocalEditorStepChecks(viewport) {
         return Boolean(target);
       })()`);
       await delay(180);
+      if (step.key === "alarm") {
+        await evaluate(`(() => {
+          const pane = document.querySelector('[data-local-editor-pane="alarm"]');
+          const hasRule = Boolean(pane?.querySelector('.alarm-list-card tbody tr.is-selected'));
+          if (hasRule) return true;
+          const buttons = [...(pane?.querySelectorAll('button') || [])];
+          const addButton = buttons.find((button) => button.textContent?.includes('新增规则'));
+          addButton?.click();
+          return Boolean(addButton);
+        })()`);
+        await delay(180);
+      }
     const metrics = await collectDomMetrics();
     const stepMetrics = await evaluate(`(() => {
       const panel = document.querySelector('#localDevicePanel');
@@ -605,6 +618,33 @@ async function collectLocalEditorStepChecks(viewport) {
       const bodyScrollY = document.body.scrollHeight > document.body.clientHeight + 1 || document.documentElement.scrollHeight > document.documentElement.clientHeight + 1;
       const localEditorBodyScrollY = editorBody ? editorBody.scrollHeight > editorBody.clientHeight + 1 : true;
       const tableHorizontalOverflow = tableWraps.some((item) => visible(item) && item.scrollWidth > item.clientWidth + 1);
+      const numberPx = (value) => Number.parseFloat(String(value || '0')) || 0;
+      const sectionTitleSizes = sectionHeaders.filter(visible).map((header) => numberPx(getComputedStyle(header.querySelector('.editor-section-title') || header).fontSize));
+      const sidebarMetricSizes = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .overview-card .metric-item strong')].filter(visible).map((element) => numberPx(getComputedStyle(element).fontSize));
+      const sidebarTitleSizes = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .overview-card .editor-section-title, [data-local-editor-pane="${step.key}"] .overview-card > h3')].filter(visible).map((element) => numberPx(getComputedStyle(element).fontSize));
+      const tableRowChecks = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .editor-table tr.is-selected')].filter(visible).map((row) => {
+        const cells = [...row.querySelectorAll('td')].filter(visible);
+        const heights = cells.map((cell) => cell.getBoundingClientRect().height);
+        const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
+        return {
+          tableClass: String(row.closest('table')?.className || ''),
+          cellCount: cells.length,
+          minHeight: heights.length ? Math.min(...heights) : 0,
+          maxHeight: heights.length ? Math.max(...heights) : 0,
+          heightDelta: heights.length ? Math.max(...heights) - Math.min(...heights) : 0,
+          backgroundCount: new Set(backgrounds).size,
+          backgrounds
+        };
+      });
+      const alarmHeaders = [...document.querySelectorAll('[data-local-editor-pane="alarm"] .alarm-list-card th')].filter(visible).map((item) => item.textContent?.trim() || '');
+      const alarmGrid = document.querySelector('[data-local-editor-pane="alarm"] .alarm-rule-grid');
+      const alarmFields = [...document.querySelectorAll('[data-local-editor-pane="alarm"] .alarm-rule-grid > label')].filter(visible);
+      const alarmFieldTops = alarmFields.slice(0, 4).map((field) => Math.round(field.getBoundingClientRect().top));
+      const cloudGrids = [...document.querySelectorAll('[data-local-editor-pane="cloud"] .point-field-grid-four-column')].filter(visible);
+      const logicPreviewVisible = [...document.querySelectorAll('[data-local-editor-pane="alarm"] .logic-preview')].some(visible);
+      const enableSectionVisible = [...document.querySelectorAll('[data-local-editor-pane="alarm"] .field-group h3')].filter(visible).some((element) => element.textContent?.trim() === '启用告警');
+      const alarmHint = document.querySelector('[data-local-editor-pane="alarm"] .alarm-condition-hint');
+      const alarmEditor = document.querySelector('[data-local-editor-pane="alarm"] .alarm-editor-card');
       return {
         panelVisible: visible(panel),
         paneVisible: visible(pane),
@@ -636,6 +676,21 @@ async function collectLocalEditorStepChecks(viewport) {
         fourColumnPrimaryRow,
         readonlyGridColumns,
         pointFourColumnOk: !pointPane || window.innerWidth < 1366 || (fourColumnGridColumns.length >= 3 && fourColumnGridColumns.every((columns) => columns === 4) && fourColumnPrimaryRow && readonlyGridColumns === 4),
+        sectionTitleFontSize: sectionTitleSizes.length ? Math.max(...sectionTitleSizes) : 0,
+        sidebarMetricFontSize: sidebarMetricSizes.length ? Math.max(...sidebarMetricSizes) : 0,
+        sidebarTitleFontSize: sidebarTitleSizes.length ? Math.max(...sidebarTitleSizes) : 0,
+        typographyOk: sidebarMetricSizes.length === 0 || sectionTitleSizes.length === 0 || Math.max(...sidebarMetricSizes) <= Math.max(...sectionTitleSizes),
+        tableRowChecks,
+        tableRowHeightOk: tableRowChecks.every((item) => item.heightDelta <= 1),
+        selectedBackgroundOk: tableRowChecks.every((item) => item.backgroundCount <= 1),
+        alarmHeaders,
+        alarmTableColumnsOk: '${step.key}' !== 'alarm' || (alarmHeaders.includes('阈值') && alarmHeaders.includes('运算符') && !alarmHeaders.includes('触发条件') && !alarmHeaders.includes('告警类型')),
+        alarmGridColumns: alarmGrid && visible(alarmGrid) ? countGridColumns(alarmGrid) : 0,
+        alarmFirstRowFourFields: alarmFieldTops.length === 4 && Math.max(...alarmFieldTops) - Math.min(...alarmFieldTops) <= 4,
+        alarmDescriptionFullWidth: Boolean(alarmFields.find((field) => field.textContent?.includes('描述') && Math.round(field.getBoundingClientRect().width) >= Math.round((alarmGrid?.getBoundingClientRect().width || 0) * 0.95))),
+        alarmCompactOk: !logicPreviewVisible && !enableSectionVisible && Boolean(alarmHint && visible(alarmHint) && alarmHint.getBoundingClientRect().height <= 28 && getComputedStyle(alarmHint).borderStyle === 'none') && (!alarmEditor || alarmEditor.getBoundingClientRect().height < 360),
+        cloudFourColumnGridColumns: cloudGrids.map(countGridColumns),
+        cloudFourColumnOk: '${step.key}' !== 'cloud' || window.innerWidth < 1366 || (cloudGrids.length > 0 && cloudGrids.every((grid) => countGridColumns(grid) === 4)),
         largeSvgCount: largeSvgs.length,
         largeSvgs,
         backgroundImageViolationCount: backgroundImageViolations.length,
@@ -658,10 +713,10 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && (step.key !== 'points' || stepMetrics.pointFourColumnOk),
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && stepMetrics.typographyOk && stepMetrics.tableRowHeightOk && stepMetrics.selectedBackgroundOk && (step.key !== 'points' || stepMetrics.pointFourColumnOk) && (step.key !== 'alarm' || (stepMetrics.alarmTableColumnsOk && stepMetrics.alarmGridColumns === 4 && stepMetrics.alarmFirstRowFourFields && stepMetrics.alarmDescriptionFullWidth && stepMetrics.alarmCompactOk)) && (step.key !== 'cloud' || stepMetrics.cloudFourColumnOk),
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || (step.key === 'points' && !stepMetrics.pointFourColumnOk),
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || !stepMetrics.typographyOk || !stepMetrics.tableRowHeightOk || !stepMetrics.selectedBackgroundOk || (step.key === 'points' && !stepMetrics.pointFourColumnOk) || (step.key === 'alarm' && (!stepMetrics.alarmTableColumnsOk || stepMetrics.alarmGridColumns !== 4 || !stepMetrics.alarmFirstRowFourFields || !stepMetrics.alarmDescriptionFullWidth || !stepMetrics.alarmCompactOk)) || (step.key === 'cloud' && !stepMetrics.cloudFourColumnOk),
       hiddenClipCount: metrics.hiddenClips.length,
       hiddenClips: metrics.hiddenClips,
       consoleErrorCount: stepConsole.length,
@@ -857,6 +912,13 @@ function summarize() {
     localEditorObjectHeaderFailures: result.localEditorChecks.filter((item) => (item.metrics?.objectHeaderMaxHeight || 0) > 54 || (item.metrics?.objectHeaderWrapped || 0) > 0).length,
     localEditorPointDenseFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.densePrimaryRow).length,
     localEditorPointFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.pointFourColumnOk).length,
+    localEditorTypographyFailures: result.localEditorChecks.filter((item) => !item.metrics?.typographyOk).length,
+    localEditorTableRowHeightFailures: result.localEditorChecks.filter((item) => !item.metrics?.tableRowHeightOk).length,
+    localEditorSelectedBackgroundFailures: result.localEditorChecks.filter((item) => !item.metrics?.selectedBackgroundOk).length,
+    localEditorAlarmTableColumnFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && !item.metrics?.alarmTableColumnsOk).length,
+    localEditorAlarmFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && ((item.metrics?.alarmGridColumns || 0) !== 4 || !item.metrics?.alarmFirstRowFourFields)).length,
+    localEditorAlarmCompactFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && (!item.metrics?.alarmDescriptionFullWidth || !item.metrics?.alarmCompactOk)).length,
+    localEditorCloudFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'cloud' && !item.metrics?.cloudFourColumnOk).length,
     localEditorLargeSvgFailures: result.localEditorChecks.filter((item) => (item.metrics?.largeSvgCount || 0) > 0).length,
     localEditorBackgroundImageFailures: result.localEditorChecks.filter((item) => (item.metrics?.backgroundImageViolationCount || 0) > 0).length,
     tableChecks: checks.reduce((sum, item) => sum + item.tableChecks, 0) + result.themeFixtureChecks.reduce((sum, item) => sum + item.tableChecks, 0),
@@ -889,6 +951,13 @@ function buildAuditFailures(auditResult) {
     "localEditorObjectHeaderFailures",
     "localEditorPointDenseFailures",
     "localEditorPointFourColumnFailures",
+    "localEditorTypographyFailures",
+    "localEditorTableRowHeightFailures",
+    "localEditorSelectedBackgroundFailures",
+    "localEditorAlarmTableColumnFailures",
+    "localEditorAlarmFourColumnFailures",
+    "localEditorAlarmCompactFailures",
+    "localEditorCloudFourColumnFailures",
     "localEditorLargeSvgFailures",
     "localEditorBackgroundImageFailures",
     "themeFixtureWhiteBackgrounds",
@@ -950,8 +1019,15 @@ function buildAuditFailures(auditResult) {
     if ((metrics.objectHeaderWrapped || 0) > 0) stepFailures.push(`objectHeaderWrapped=${metrics.objectHeaderWrapped}`);
     if ((metrics.largeSvgCount || 0) > 0) stepFailures.push(`largeSvgCount=${metrics.largeSvgCount}`);
     if ((metrics.backgroundImageViolationCount || 0) > 0) stepFailures.push(`backgroundImageViolationCount=${metrics.backgroundImageViolationCount}`);
+    if (!metrics.typographyOk) stepFailures.push(`typographyOk=false (section=${metrics.sectionTitleFontSize}, sidebarMetric=${metrics.sidebarMetricFontSize})`);
+    if (!metrics.tableRowHeightOk) stepFailures.push(`tableRowHeightOk=false (${JSON.stringify(metrics.tableRowChecks || [])})`);
+    if (!metrics.selectedBackgroundOk) stepFailures.push(`selectedBackgroundOk=false (${JSON.stringify(metrics.tableRowChecks || [])})`);
     if (check.key === 'points' && !metrics.densePrimaryRow) stepFailures.push(`densePrimaryRow=false (fields=${metrics.densePrimaryFieldCount})`);
     if (check.key === 'points' && !metrics.pointFourColumnOk) stepFailures.push(`pointFourColumnOk=false (columns=${(metrics.fourColumnGridColumns || []).join("/")}, readonly=${metrics.readonlyGridColumns})`);
+    if (check.key === 'alarm' && !metrics.alarmTableColumnsOk) stepFailures.push(`alarmTableColumnsOk=false (headers=${(metrics.alarmHeaders || []).join("/")})`);
+    if (check.key === 'alarm' && ((metrics.alarmGridColumns || 0) !== 4 || !metrics.alarmFirstRowFourFields)) stepFailures.push(`alarmFourColumn=false (columns=${metrics.alarmGridColumns}, firstRow=${metrics.alarmFirstRowFourFields})`);
+    if (check.key === 'alarm' && (!metrics.alarmDescriptionFullWidth || !metrics.alarmCompactOk)) stepFailures.push(`alarmCompact=false (descriptionFull=${metrics.alarmDescriptionFullWidth}, compact=${metrics.alarmCompactOk})`);
+    if (check.key === 'cloud' && !metrics.cloudFourColumnOk) stepFailures.push(`cloudFourColumnOk=false (columns=${(metrics.cloudFourColumnGridColumns || []).join("/")})`);
     if (check.hiddenClipCount > 0) stepFailures.push(`hiddenClipCount=${check.hiddenClipCount}`);
     if ((check.consoleErrorCount || 0) > 0) stepFailures.push(`consoleErrorCount=${check.consoleErrorCount}`);
     if ((check.exceptionCount || 0) > 0) stepFailures.push(`exceptionCount=${check.exceptionCount}`);
