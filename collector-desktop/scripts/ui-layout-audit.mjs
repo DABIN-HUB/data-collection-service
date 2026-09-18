@@ -525,6 +525,23 @@ async function collectLocalEditorStepChecks(viewport) {
     { key: "cloud", label: "Step 04" },
     { key: "json", label: "Step 05" }
   ];
+  const headerBaseline = await evaluate(`(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const normalizeWeight = (value) => value === 'bold' ? '700' : String(value || '');
+    const header = [...document.querySelectorAll('[data-local-editor-pane="setup"] .editor-section-header')].filter(visible)[0];
+    const title = header?.querySelector('.editor-section-title');
+    const titleStyle = title ? getComputedStyle(title) : null;
+    return {
+      fontSize: titleStyle ? Number.parseFloat(titleStyle.fontSize).toFixed(2) : '',
+      fontWeight: titleStyle ? normalizeWeight(titleStyle.fontWeight) : '',
+      height: header ? Math.round(header.getBoundingClientRect().height) : 0
+    };
+  })()`);
   const checks = [];
   try {
     for (const step of steps) {
@@ -581,6 +598,26 @@ async function collectLocalEditorStepChecks(viewport) {
         height: Math.round(header.getBoundingClientRect().height),
         wrapped: Boolean([...header.querySelectorAll('.editor-object-title, .editor-object-meta')].some((item) => item.scrollHeight > (parseFloat(getComputedStyle(item).lineHeight) || 16) * 1.45))
       }));
+      const headerBaseline = ${JSON.stringify(headerBaseline)};
+      const normalizeWeight = (value) => value === 'bold' ? '700' : String(value || '');
+      const primaryHeaders = [...new Set([...sectionHeaders, ...objectHeaders])].filter(visible);
+      const primaryHeaderMetrics = primaryHeaders.map((header) => {
+        const title = header.querySelector('.editor-section-title, .editor-object-title');
+        const style = title ? getComputedStyle(title) : getComputedStyle(header);
+        return {
+          title: title?.textContent?.trim() || '',
+          fontSize: Number.parseFloat(style.fontSize).toFixed(2),
+          fontWeight: normalizeWeight(style.fontWeight),
+          height: Math.round(header.getBoundingClientRect().height)
+        };
+      });
+      const primaryHeaderStyleOk = Boolean(headerBaseline.fontSize && headerBaseline.fontWeight && headerBaseline.height) && primaryHeaderMetrics.every((item) => item.fontSize === headerBaseline.fontSize && item.fontWeight === headerBaseline.fontWeight && item.height === headerBaseline.height);
+      const subsectionTitleMetrics = [...document.querySelectorAll('[data-local-editor-pane="${step.key}"] .field-group h3, [data-local-editor-pane="${step.key}"] .advanced-collapse > summary')].filter(visible).map((element) => ({
+        title: element.textContent?.trim() || '',
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize).toFixed(2),
+        fontWeight: normalizeWeight(getComputedStyle(element).fontWeight)
+      }));
+      const subsectionTitleOk = subsectionTitleMetrics.every((item) => Number(item.fontSize) <= 13);
       const countGridColumns = (element) => {
         const value = getComputedStyle(element).gridTemplateColumns;
         return value && value !== 'none' ? value.split(' ').filter(Boolean).length : 0;
@@ -669,6 +706,11 @@ async function collectLocalEditorStepChecks(viewport) {
         objectHeaderCount: objectHeaderMetrics.length,
         objectHeaderMaxHeight: objectHeaderMetrics.length ? Math.max(...objectHeaderMetrics.map((item) => item.height)) : 0,
         objectHeaderWrapped: objectHeaderMetrics.filter((item) => item.wrapped).length,
+        headerBaseline,
+        primaryHeaderMetrics,
+        primaryHeaderStyleOk,
+        subsectionTitleMetrics,
+        subsectionTitleOk,
         densePrimaryFieldCount: primaryTops.length,
         densePrimaryRow: fourColumnPrimaryRow,
         fourColumnGridColumns,
@@ -700,6 +742,8 @@ async function collectLocalEditorStepChecks(viewport) {
     const themeMismatch = metrics.controls.whiteBackgroundCount > 0 || metrics.popups.some((item) => item.whiteBackground) || metrics.tables.whiteBackgroundCount > 0 || metrics.tables.lightBackgroundCount > 0;
     const stepConsole = messages.slice(messageStart).filter((item) => ["error", "assert"].includes(item.type));
     const stepExceptions = exceptions.slice(exceptionStart);
+    const headerStyleViewport = ["1366x768", "1440x900"].includes(`${viewport.width}x${viewport.height}`);
+    const headerStyleGate = !headerStyleViewport || (stepMetrics.primaryHeaderStyleOk && stepMetrics.subsectionTitleOk);
     let screenshot = null;
     if (stepMetrics.paneVisible && ["1366x768", "1440x900"].includes(`${viewport.width}x${viewport.height}`)) {
       const shot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -712,10 +756,10 @@ async function collectLocalEditorStepChecks(viewport) {
       viewport: `${viewport.width}x${viewport.height}`,
       step: step.label,
       key: step.key,
-      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && stepMetrics.typographyOk && stepMetrics.tableRowHeightOk && stepMetrics.selectedBackgroundOk && (step.key !== 'points' || stepMetrics.pointFourColumnOk) && (step.key !== 'alarm' || (stepMetrics.alarmTableColumnsOk && stepMetrics.alarmGridColumns === 4 && stepMetrics.alarmFirstRowFourFields && stepMetrics.alarmDescriptionFullWidth && stepMetrics.alarmCompactOk)) && (step.key !== 'cloud' || stepMetrics.cloudFourColumnOk),
+      pass: stepMetrics.panelVisible && stepMetrics.paneVisible && !horizontalOverflow && !themeMismatch && stepMetrics.centered && !stepMetrics.modalNearFullscreen && stepMetrics.modalWidthRatio <= 0.95 && stepMetrics.modalHeightRatio <= 0.92 && stepMetrics.modalWidthRatio >= 0.75 && stepMetrics.modalHeightRatio >= 0.72 && !stepMetrics.outerScroll && !stepMetrics.modalScrollY && !stepMetrics.bodyScrollY && !stepMetrics.localEditorBodyScrollY && metrics.hiddenClips.length === 0 && stepConsole.length === 0 && stepExceptions.length === 0 && stepMetrics.sectionHeaderMaxHeight <= 50 && stepMetrics.sectionHeaderWrappedTitles === 0 && stepMetrics.sectionHeaderMisaligned === 0 && stepMetrics.objectHeaderMaxHeight <= 54 && stepMetrics.objectHeaderWrapped === 0 && stepMetrics.largeSvgCount === 0 && stepMetrics.backgroundImageViolationCount === 0 && stepMetrics.typographyOk && headerStyleGate && stepMetrics.tableRowHeightOk && stepMetrics.selectedBackgroundOk && (step.key !== 'points' || stepMetrics.pointFourColumnOk) && (step.key !== 'alarm' || (stepMetrics.alarmTableColumnsOk && stepMetrics.alarmGridColumns === 4 && stepMetrics.alarmFirstRowFourFields && stepMetrics.alarmDescriptionFullWidth && stepMetrics.alarmCompactOk)) && (step.key !== 'cloud' || stepMetrics.cloudFourColumnOk),
       horizontalOverflow,
       themeMismatch,
-      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || !stepMetrics.typographyOk || !stepMetrics.tableRowHeightOk || !stepMetrics.selectedBackgroundOk || (step.key === 'points' && !stepMetrics.pointFourColumnOk) || (step.key === 'alarm' && (!stepMetrics.alarmTableColumnsOk || stepMetrics.alarmGridColumns !== 4 || !stepMetrics.alarmFirstRowFourFields || !stepMetrics.alarmDescriptionFullWidth || !stepMetrics.alarmCompactOk)) || (step.key === 'cloud' && !stepMetrics.cloudFourColumnOk),
+      layoutIssue: !stepMetrics.panelVisible || !stepMetrics.paneVisible || !stepMetrics.centered || stepMetrics.modalNearFullscreen || stepMetrics.modalWidthRatio > 0.95 || stepMetrics.modalHeightRatio > 0.92 || stepMetrics.modalWidthRatio < 0.75 || stepMetrics.modalHeightRatio < 0.72 || stepMetrics.outerScroll || stepMetrics.modalScrollY || stepMetrics.bodyScrollY || stepMetrics.localEditorBodyScrollY || stepMetrics.sectionHeaderMaxHeight > 50 || stepMetrics.sectionHeaderWrappedTitles > 0 || stepMetrics.sectionHeaderMisaligned > 0 || stepMetrics.objectHeaderMaxHeight > 54 || stepMetrics.objectHeaderWrapped > 0 || stepMetrics.largeSvgCount > 0 || stepMetrics.backgroundImageViolationCount > 0 || !stepMetrics.typographyOk || !headerStyleGate || !stepMetrics.tableRowHeightOk || !stepMetrics.selectedBackgroundOk || (step.key === 'points' && !stepMetrics.pointFourColumnOk) || (step.key === 'alarm' && (!stepMetrics.alarmTableColumnsOk || stepMetrics.alarmGridColumns !== 4 || !stepMetrics.alarmFirstRowFourFields || !stepMetrics.alarmDescriptionFullWidth || !stepMetrics.alarmCompactOk)) || (step.key === 'cloud' && !stepMetrics.cloudFourColumnOk),
       hiddenClipCount: metrics.hiddenClips.length,
       hiddenClips: metrics.hiddenClips,
       consoleErrorCount: stepConsole.length,
@@ -912,6 +956,8 @@ function summarize() {
     localEditorPointDenseFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.densePrimaryRow).length,
     localEditorPointFourColumnFailures: result.localEditorChecks.filter((item) => item.key === 'points' && !item.metrics?.pointFourColumnOk).length,
     localEditorTypographyFailures: result.localEditorChecks.filter((item) => !item.metrics?.typographyOk).length,
+    localEditorPrimaryHeaderStyleFailures: result.localEditorChecks.filter((item) => ["1366x768", "1440x900"].includes(item.viewport) && !item.metrics?.primaryHeaderStyleOk).length,
+    localEditorSubsectionTitleFailures: result.localEditorChecks.filter((item) => ["1366x768", "1440x900"].includes(item.viewport) && !item.metrics?.subsectionTitleOk).length,
     localEditorTableRowHeightFailures: result.localEditorChecks.filter((item) => !item.metrics?.tableRowHeightOk).length,
     localEditorSelectedBackgroundFailures: result.localEditorChecks.filter((item) => !item.metrics?.selectedBackgroundOk).length,
     localEditorAlarmTableColumnFailures: result.localEditorChecks.filter((item) => item.key === 'alarm' && !item.metrics?.alarmTableColumnsOk).length,
@@ -951,6 +997,8 @@ function buildAuditFailures(auditResult) {
     "localEditorPointDenseFailures",
     "localEditorPointFourColumnFailures",
     "localEditorTypographyFailures",
+    "localEditorPrimaryHeaderStyleFailures",
+    "localEditorSubsectionTitleFailures",
     "localEditorTableRowHeightFailures",
     "localEditorSelectedBackgroundFailures",
     "localEditorAlarmTableColumnFailures",
@@ -1019,6 +1067,8 @@ function buildAuditFailures(auditResult) {
     if ((metrics.largeSvgCount || 0) > 0) stepFailures.push(`largeSvgCount=${metrics.largeSvgCount}`);
     if ((metrics.backgroundImageViolationCount || 0) > 0) stepFailures.push(`backgroundImageViolationCount=${metrics.backgroundImageViolationCount}`);
     if (!metrics.typographyOk) stepFailures.push(`typographyOk=false (section=${metrics.sectionTitleFontSize}, sidebarMetric=${metrics.sidebarMetricFontSize})`);
+    if (["1366x768", "1440x900"].includes(check.viewport) && !metrics.primaryHeaderStyleOk) stepFailures.push(`primaryHeaderStyleOk=false (baseline=${JSON.stringify(metrics.headerBaseline || {})}, headers=${JSON.stringify(metrics.primaryHeaderMetrics || [])})`);
+    if (["1366x768", "1440x900"].includes(check.viewport) && !metrics.subsectionTitleOk) stepFailures.push(`subsectionTitleOk=false (${JSON.stringify(metrics.subsectionTitleMetrics || [])})`);
     if (!metrics.tableRowHeightOk) stepFailures.push(`tableRowHeightOk=false (${JSON.stringify(metrics.tableRowChecks || [])})`);
     if (!metrics.selectedBackgroundOk) stepFailures.push(`selectedBackgroundOk=false (${JSON.stringify(metrics.tableRowChecks || [])})`);
     if (check.key === 'points' && !metrics.densePrimaryRow) stepFailures.push(`densePrimaryRow=false (fields=${metrics.densePrimaryFieldCount})`);

@@ -163,8 +163,7 @@
         <section v-show="activeStep === 2" class="local-editor-pane" data-local-editor-pane="alarm">
           <div class="step-grid step-grid-master-detail">
             <aside class="local-section-card overview-card">
-              <span class="label-chip">规则概览</span>
-              <h3>告警规则</h3>
+              <EditorSectionHeader badge="规则概览" title="告警规则" />
               <div class="metric-stack">
                 <MetricItem label="规则总数" :value="String(alarmRuleRows.length)" />
                 <MetricItem label="已启用" :value="String(enabledAlarmRuleCount)" tone="ok" />
@@ -264,7 +263,7 @@
                   <FieldGroup title="事件预览"><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li><li v-if="eventMappingPreview.length === 0">暂无事件上报配置</li></ul></FieldGroup>
                 </section>
                 <section class="local-section-card payload-card">
-                  <EditorSectionHeader badge="Payload 预览" title="实时构造示例" subtitle="实时构造示例">
+                  <EditorSectionHeader badge="Payload" title="Payload 预览" subtitle="实时构造示例">
                     <template #actions><select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select></template>
                   </EditorSectionHeader>
                   <pre class="json-preview">{{ payloadPreview }}</pre>
@@ -393,8 +392,24 @@ const FieldGroup = defineComponent({ name: "FieldGroup", props: { title: { type:
 
 const PointEditorHeader = defineComponent({
   name: "PointEditorHeader",
-  props: { point: { type: Object as PropType<DataPoint | null>, default: null }, title: { type: String, default: "当前编辑" } },
-  setup(props) { return () => props.point ? h("section", { class: "editor-object-header point-detail-hero" }, [h("div", { class: "editor-object-heading" }, [h("span", { class: "editor-object-badge" }, props.title === "当前编辑" ? "点位配置" : props.title), h("strong", { class: "editor-object-title" }, props.point?.pointName || props.point?.pointCode || "未命名点位"), h("span", { class: "editor-object-meta", title: `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}` }, `${props.point?.pointCode || "-"} · ${props.point?.dataType || "-"} · ${props.point?.address || "未设置地址"} · ${props.point?.readWrite || "-"}`)]), h("div", { class: "editor-object-actions point-detail-hero-meta" }, [h("span", { class: "pill subtle" }, statusLabel(props.point?.status))])]) : h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")] ); }
+  props: { point: { type: Object as PropType<DataPoint | null>, default: null }, title: { type: String, default: "点位配置" } },
+  setup(props) {
+    return () => {
+      if (!props.point) {
+        return h("div", { class: "empty-state" }, [h("strong", "暂无选中的点位"), h("span", "先新增一个点位，或从列表选择已有点位。")]);
+      }
+      const pointName = props.point.pointName || props.point.pointCode || "未命名点位";
+      const meta = `${props.point.pointCode || "-"} · ${props.point.dataType || "-"} · ${props.point.address || "未设置地址"} · ${props.point.readWrite || "-"}`;
+      return h("header", { class: "editor-section-header editor-object-header" }, [
+        h("div", { class: "editor-section-heading editor-object-heading" }, [
+          h("span", { class: "editor-section-badge editor-object-badge" }, "当前点位"),
+          h("h3", { class: "editor-section-title editor-object-title" }, props.title),
+          h("span", { class: "editor-section-subtitle editor-object-meta", title: `${pointName} | ${meta}` }, `${pointName} | ${meta}`)
+        ]),
+        h("div", { class: "editor-section-actions editor-object-actions" }, [h("span", { class: "pill subtle" }, statusLabel(props.point.status))])
+      ]);
+    };
+  }
 });
 
 const PointFieldGrid = defineComponent({
@@ -1324,7 +1339,7 @@ button:disabled {
   cursor: pointer;
   color: #bfdbfe;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .protocol-point-note code {
@@ -1865,22 +1880,9 @@ button:disabled {
 }
 
 .local-editor :deep(.editor-object-header) {
-  display: flex;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 44px;
-  margin: -12px -12px 10px;
-  padding: 0 10px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex: 0 0 44px;
-  height: 44px;
-  max-height: 44px;
   border: 0;
-  border-left: 3px solid rgba(96, 165, 250, 0.62);
-  border-radius: 0;
-  background: rgba(15, 23, 42, 0.36);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.13);
+  background: transparent;
 }
 
 .local-editor :deep(.editor-object-heading),
@@ -1891,29 +1893,26 @@ button:disabled {
 }
 
 .local-editor :deep(.editor-object-heading) {
-  gap: 8px;
+  gap: 7px;
   overflow: hidden;
   flex: 1 1 auto;
   text-align: left;
 }
 
 .local-editor :deep(.editor-object-badge) {
-  color: #bfdbfe;
-  font-size: 10px;
-  font-weight: 800;
-  white-space: nowrap;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
 }
 
 .local-editor :deep(.editor-object-title) {
   min-width: 0;
   overflow: hidden;
   color: var(--console-text-primary);
-  font-size: var(--editor-font-object-title);
+  font-size: var(--editor-font-section-title);
+  font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 
 .local-editor :deep(.editor-object-meta) {
@@ -1928,7 +1927,8 @@ button:disabled {
 }
 
 .local-editor :deep(.editor-subsection-title),
-.local-editor .field-group h3 {
+.local-editor :deep(.field-group h3),
+.local-editor :deep(.advanced-collapse summary) {
   min-width: 0;
   margin: 0 0 6px;
   padding: 6px 0 5px 8px;
