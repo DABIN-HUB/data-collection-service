@@ -335,8 +335,7 @@ async function collectDomMetrics() {
       const intentionalEllipsis = style.textOverflow === 'ellipsis' && ['hidden', 'clip'].includes(style.overflowX) && style.whiteSpace === 'nowrap';
       const intentionalFormControlClip = ['input', 'textarea'].includes(tag) && element.scrollWidth > element.clientWidth + 4 && ['hidden', 'clip'].includes(style.overflowX);
       const intentionalHeaderClip = element.matches('.editor-section-header, .editor-object-header, .editor-section-subtitle, .editor-section-badge, .editor-object-title, .editor-object-meta');
-      const intentionalLogNameOverflow = element.matches('.modao-log-name') && widthOverflow;
-      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && !intentionalHeaderClip && !intentionalLogNameOverflow && (!textBox || widthOverflow);
+      return (widthOverflow || heightOverflow) && !intentionalEllipsis && !intentionalFormControlClip && !intentionalHeaderClip && (!textBox || widthOverflow);
     }).map((element) => ({
       selector: selectorFor(element),
       tag: element.tagName.toLowerCase(),

@@ -409,6 +409,7 @@ watch(() => [route.query.level, route.query.deviceId, route.query.logger, route.
   color: #71839a;
 }
 
+.log-view .modao-log-name,
 .log-view .modao-log-thread,
 .log-view .modao-log-message {
   min-width: 0;
