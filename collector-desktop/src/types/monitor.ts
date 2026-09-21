@@ -17,6 +17,10 @@ export interface PointRealtimePayload extends DataPoint {
   qualityAvailable?: boolean;
   processMessage?: string;
   processSuccess?: boolean;
+  realtimeStatus?: "GOOD" | "CONNECTING" | "COLLECT_ERROR" | "PROCESS_ERROR" | "DISCONNECTED" | "NO_VALUE" | "STALE" | "UNASSESSED" | string;
+  errorMessage?: string;
+  stale?: boolean;
+  lastSuccessfulCollectionAt?: number;
   skipped?: boolean;
   processorName?: string;
   processingTime?: number;
@@ -81,6 +85,10 @@ export interface CompactRealtimePointPayload {
   qualityAcceptable?: boolean;
   qualityAvailable?: boolean;
   processSuccess?: boolean;
+  realtimeStatus?: string;
+  errorMessage?: string;
+  stale?: boolean;
+  lastSuccessfulCollectionAt?: number;
   processingTime?: number;
   lastUpdateTime?: number | string;
 }

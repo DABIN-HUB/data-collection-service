@@ -11,6 +11,8 @@ import {
   realtimeQualityClass,
   realtimeQualityText,
   realtimeScale,
+  realtimeStatusText,
+  realtimeErrorText,
   realtimeValueText
 } from "./realtime-utils";
 
@@ -62,6 +64,12 @@ describe("realtime-utils", () => {
     expect(buildRealtimeSummary([{ qualityLevel: "GOOD" }, { qualityLevel: "A" }, { qualityLevel: "BAD" }, { qualityAvailable: false }])).toEqual({ total: 4, good: 2, bad: 2 });
   });
 
+  it("区分断线、旧值和真实错误状态", () => {
+    expect(realtimeStatusText({ realtimeStatus: "DISCONNECTED" })).toBe("连接已断开");
+    expect(realtimeStatusText({ realtimeStatus: "NO_VALUE" })).toBe("暂无有效采集值");
+    expect(realtimeErrorText({ realtimeStatus: "COLLECT_ERROR", errorMessage: "连接拒绝" })).toBe("连接拒绝");
+    expect(realtimeValueText({ value: 12, stale: true })).toBe("12（旧值）");
+  });
   it("格式化实时行展示文本", () => {
     const row = {
       address: "7",

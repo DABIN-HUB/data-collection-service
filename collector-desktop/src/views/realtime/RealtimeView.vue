@@ -92,13 +92,14 @@
               <th>单位</th>
               <th>采集时间</th>
               <th>质量</th>
+              <th>状态说明</th>
               <th>处理耗时</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="filteredRealtimeRows.length === 0">
-              <td colspan="12" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td>
+              <td colspan="13" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td>
             </tr>
             <tr v-for="row in pagedRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}`">
               <td>{{ row.pointName || row.pointCode || '-' }}</td>
@@ -111,6 +112,7 @@
               <td>{{ row.unit || '-' }}</td>
               <td>{{ formatTime(row.timestamp || row.collectTime || row.lastUpdateTime) }}</td>
               <td><span class="quality-badge" :class="realtimeQualityClass(row)">{{ realtimeQualityText(row) }}</span></td>
+              <td><span :title="realtimeErrorText(row)">{{ realtimeStatusText(row) }}</span></td>
               <td>{{ realtimeProcessingText(row) }}</td>
               <td><button type="button" @click="pickRealtimePoint(row)">查单点</button></td>
             </tr>
@@ -139,7 +141,9 @@ import {
   realtimeQualityClass,
   realtimeQualityText,
   realtimeScale,
-  realtimeValueText
+  realtimeValueText,
+  realtimeStatusText,
+  realtimeErrorText
 } from "@/features/realtime/utils/realtime-utils";
 import { loadRealtimeDeltaResponseByContext, loadRealtimeFullResponseByContext } from "@/features/realtime/utils/realtime-load-strategy";
 import {
@@ -190,12 +194,13 @@ const realtimeRequestOwner = createLatestRealtimeRequestOwner();
 const singleRealtimeRequestOwner = createLatestRealtimeRequestOwner();
 const deviceDisplayNameLookup = computed(() => buildRealtimeDeviceNameLookup(deviceStore.devices));
 
+const displayRealtimeRows = computed(() => realtimeRows.value.map(enrichRealtimeRowWithRuntime));
 const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
   if (!keyword) {
-    return realtimeRows.value;
+    return displayRealtimeRows.value;
   }
-  return filterRealtimeRows(realtimeRows.value, keyword, deviceDisplayNameLookup.value, realtimeDeviceId.value);
+  return filterRealtimeRows(displayRealtimeRows.value, keyword, deviceDisplayNameLookup.value, realtimeDeviceId.value);
 });
 
 const realtimePageWindow = computed(() => buildRealtimePageWindow({
@@ -398,6 +403,7 @@ function syncTimer() {
   }
   if (realtimeAuto.value) {
     realtimeTimer = window.setInterval(() => {
+      void deviceStore.refresh();
       void loadRealtime("timer");
     }, 5000);
   }
@@ -412,6 +418,26 @@ function applyRouteQuery() {
   realtimeSingleDeviceId.value = deviceId;
   realtimeSinglePointId.value = pointId;
   void loadSingleRealtime();
+}
+
+function enrichRealtimeRowWithRuntime(row: RealtimePointRow): RealtimePointRow {
+  const runtime = row.deviceId ? deviceStore.runtimeMap[row.deviceId] : undefined;
+  if (!runtime) {
+    return row;
+  }
+  const hasValue = row.value !== undefined && row.value !== null
+    || row.currentValue !== undefined && row.currentValue !== null
+    || row.rawValue !== undefined && row.rawValue !== null;
+  if (runtime.starting || runtime.reconnecting) {
+    return { ...row, realtimeStatus: "CONNECTING", errorMessage: "正在建立或恢复连接", stale: hasValue };
+  }
+  if (runtime.connected === false) {
+    return { ...row, realtimeStatus: hasValue ? "STALE" : "DISCONNECTED", errorMessage: "连接已断开", stale: hasValue };
+  }
+  if (Number(runtime.consecutiveFailures || 0) > 0 || runtime.degradedReason) {
+    return { ...row, realtimeStatus: hasValue ? "STALE" : "COLLECT_ERROR", errorMessage: runtime.degradedReason || "最近连续采集失败", stale: hasValue };
+  }
+  return row;
 }
 
 function deviceDisplayName(deviceId: string): string {

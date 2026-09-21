@@ -212,14 +212,15 @@ public class CollectionScheduler {
         } else if (consecutiveFailures > 0) {
             phase = DeviceRuntimePhase.DEGRADED;
             degradedReason = "采集存在连续失败";
-        } else if (connected) {
-            phase = DeviceRuntimePhase.ONLINE;
-        } else if (reconnecting) {
-            phase = DeviceRuntimePhase.RECONNECTING;
         } else if (starting) {
             phase = DeviceRuntimePhase.STARTING;
+        } else if (reconnecting) {
+            phase = DeviceRuntimePhase.RECONNECTING;
+        } else if (connected) {
+            phase = DeviceRuntimePhase.ONLINE;
         } else if (running) {
-            phase = DeviceRuntimePhase.RUNNING;
+            phase = DeviceRuntimePhase.FAILED;
+            degradedReason = "连接已断开";
         } else {
             phase = DeviceRuntimePhase.STOPPED;
         }

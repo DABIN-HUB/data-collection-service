@@ -120,12 +120,11 @@ export function realtimeScale(row: RealtimePointRow): string {
 
 export function realtimeValueText(row: RealtimePointRow): string {
   const value = valueOf(row, ["value", "currentValue", "rawValue"], "-");
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
-  }
-  return String(value ?? "-");
+  const text = typeof value === "number"
+    ? (Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4))))
+    : String(value ?? "-");
+  return row.stale ? `${text}（旧值）` : text;
 }
-
 export function realtimeQualityText(row: RealtimePointRow): string {
   const quality = String(valueOf(row, ["qualityLevel", "qualityDescription", "quality", "qualityCode", "status"], "UNKNOWN"));
   if (row.qualityAvailable === false) {
@@ -161,10 +160,29 @@ export function realtimeQualityClass(row: RealtimePointRow): string {
   return "";
 }
 
+export function realtimeStatusText(row: RealtimePointRow): string {
+  switch (String(row.realtimeStatus || "UNASSESSED").toUpperCase()) {
+    case "GOOD": return "正常";
+    case "CONNECTING": return "连接中";
+    case "DISCONNECTED": return "连接已断开";
+    case "COLLECT_ERROR": return "采集失败";
+    case "PROCESS_ERROR": return "处理失败";
+    case "NO_VALUE": return "暂无有效采集值";
+    case "STALE": return "旧值 / 数据已过期";
+    case "UNASSESSED": return "未评估";
+    default: return String(row.realtimeStatus || "未评估");
+  }
+}
+
+export function realtimeErrorText(row: RealtimePointRow): string {
+  return String(row.errorMessage || row.processMessage || realtimeStatusText(row));
+}
+
 export function realtimeProcessingText(row: RealtimePointRow): string {
   const value = valueOf(row, ["processCostMs", "processingTime", "costMs", "elapsedMs"], "-");
   return typeof value === "number" ? `${value} ms` : String(value || "-");
 }
+
 
 function attachDeviceId(row: RealtimePointRow, fallbackDeviceId: string): RealtimePointRow {
   if (!fallbackDeviceId || row.deviceId) {

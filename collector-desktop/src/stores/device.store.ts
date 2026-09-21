@@ -151,13 +151,20 @@ export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, ru
 }
 
 export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" {
-  if (device.runtime?.reconnecting || device.runtime?.starting) {
+  const runtime = device.runtime;
+  if (runtime?.starting || runtime?.reconnecting) {
     return "CONNECTING";
   }
-  if (device.runtime?.connected || device.runtime?.running || device.status === "ONLINE") {
+  if (runtime?.degradedReason || Number(runtime?.consecutiveFailures || 0) > 0) {
+    return "ERROR";
+  }
+  if (runtime && runtime.connected === false) {
+    return "OFFLINE";
+  }
+  if (runtime?.connected === true && Number(runtime.consecutiveFailures || 0) === 0) {
     return "ONLINE";
   }
-  if (device.runtime?.degradedReason || device.status === "ERROR") {
+  if (device.status === "ERROR") {
     return "ERROR";
   }
   if (device.status === "DISABLED") {

@@ -591,12 +591,45 @@ function reset(bundle: LocalDeviceBundle | null = null) {
   points.value = normalizePointsForEditor(bundle?.points || [], deviceId.value || "local-device", protocol.value); if (points.value.length === 0) addPoint(); selectedPointIndex.value = points.value.length ? 0 : -1; selectedAlarmRuleIndex.value = 0;
   connectionModel.value = connectionFields.value.length ? extractProtocolModel(connectionFields.value, connection as ConnectionPayload) : buildProtocolInitialModel(connectionFields.value); syncJsonFromState(); void ensureProtocolSchema(protocol.value);
 }
-function onProtocolChanged() { const previous = { ...connectionModel.value }; connectionModel.value = { ...buildProtocolInitialModel(connectionFields.value), ...previous }; points.value = normalizePointsForEditor(points.value, deviceId.value || "local-device", protocol.value); syncJsonFromState(); void ensureProtocolSchema(protocol.value); }
+const protocolChanged = ref(false);
+function onProtocolChanged() {
+  protocolChanged.value = true;
+  connectionModel.value = buildProtocolInitialModel(connectionFields.value);
+  points.value = points.value.map((point, index) => buildDefaultPoint(deviceId.value || "local-device", protocol.value, {
+    pointId: point.pointId,
+    pointCode: point.pointCode || `point_${index + 1}`,
+    pointName: point.pointName || `点位 ${index + 1}`
+  }));
+  syncJsonFromState();
+  void ensureProtocolSchema(protocol.value);
+}
 async function ensureProtocolSchema(protocolCode: string) {
   const normalizedProtocol = protocolCode.trim(); if (!normalizedProtocol) return;
   const existing = protocolDetails.value[normalizedProtocol] || props.protocols.find((item) => item.protocol === normalizedProtocol);
-  if (hasRenderableProtocolFields(existing)) { protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: existing }; connectionModel.value = { ...buildProtocolInitialModel(existing.connectionFields || []), ...connectionModel.value }; return; }
-  try { const detail = await getProtocol(normalizedProtocol); protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: detail }; if (protocol.value === normalizedProtocol) { connectionModel.value = { ...buildProtocolInitialModel(detail.connectionFields || []), ...connectionModel.value }; points.value = normalizePointsForEditor(points.value, deviceId.value || "local-device", normalizedProtocol); syncJsonFromState(); } } catch (caught) { error.value = caught instanceof Error ? `协议字段加载失败：${caught.message}` : "协议字段加载失败"; }
+  if (hasRenderableProtocolFields(existing)) {
+    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: existing };
+    connectionModel.value = protocolChanged.value
+      ? buildProtocolInitialModel(existing.connectionFields || [])
+      : { ...buildProtocolInitialModel(existing.connectionFields || []), ...connectionModel.value };
+    protocolChanged.value = false;
+    return;
+  }
+  try {
+    const detail = await getProtocol(normalizedProtocol);
+    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: detail };
+    if (protocol.value === normalizedProtocol) {
+      connectionModel.value = buildProtocolInitialModel(detail.connectionFields || []);
+      points.value = protocolChanged.value
+        ? points.value.map((point, index) => buildDefaultPoint(deviceId.value || "local-device", normalizedProtocol, {
+            pointId: point.pointId,
+            pointCode: point.pointCode || `point_${index + 1}`,
+            pointName: point.pointName || `点位 ${index + 1}`
+          }))
+        : normalizePointsForEditor(points.value, deviceId.value || "local-device", normalizedProtocol);
+      protocolChanged.value = false;
+      syncJsonFromState();
+    }
+  } catch (caught) { error.value = caught instanceof Error ? `协议字段加载失败：${caught.message}` : "协议字段加载失败"; }
 }
 function hasRenderableProtocolFields(schema: ProtocolSchema | null | undefined): schema is ProtocolSchema { return Boolean(schema && ((schema.connectionFields?.length || 0) > 0 || (schema.pointFields?.length || 0) > 0)); }
 function addPoint() { const pointCode = createUniqueCode(points.value, "point"); const point = buildDefaultPoint(deviceId.value || "local-device", protocol.value, { pointCode, pointName: `点位 ${points.value.length + 1}` }); points.value = [...points.value, point]; selectedPointIndex.value = points.value.length - 1; syncJsonFromState(); }
@@ -604,7 +637,29 @@ function duplicatePoint(row?: DataPoint) { const source = row || selectedPoint.v
 async function removePoint(row?: DataPoint) { const index = row ? points.value.indexOf(row) : selectedPointIndex.value; const point = points.value[index]; if (!point || index < 0) return; try { await ElMessageBox.confirm(`确认删除点位 ${point.pointCode || point.pointName || "当前点位"} 吗？`, "删除点位", { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }); } catch { return; } points.value.splice(index, 1); selectedPointIndex.value = points.value.length ? Math.min(index, points.value.length - 1) : -1; selectedAlarmRuleIndex.value = 0; syncJsonFromState(); }
 function selectPoint(row: DataPoint) { selectedPointIndex.value = points.value.indexOf(row); selectedAlarmRuleIndex.value = 0; }
 function updatePointField(field: PointEditorField, value: unknown) { updateSelectedPath(field.path, parseFieldValue(value, field.valueType)); }
-function updateSelectedPath(path: string, value: unknown) { const point = selectedPoint.value; if (!point) return; const previousPointCode = point.pointCode; const previousAddress = point.address; const previousTopic = getPathValue(point, "additionalConfig.topic"); const previousNodeId = getPathValue(point, "additionalConfig.nodeId"); const previousReportField = getPathValue(point, "additionalConfig.reportField"); setPathValue(point as Record<string, unknown>, path, value); if (path === "pointCode" && hasValue(previousReportField) && String(previousReportField).trim() === String(previousPointCode || "").trim()) setPathValue(point as Record<string, unknown>, "additionalConfig.reportField", value); if (path === "address") { if (protocol.value === "MQTT" && (!hasValue(previousTopic) || String(previousTopic).trim() === String(previousAddress || "").trim())) setPathValue(point as Record<string, unknown>, "additionalConfig.topic", value); if (isOpcUaProtocol(protocol.value) && (!hasValue(previousNodeId) || String(previousNodeId).trim() === String(previousAddress || "").trim())) setPathValue(point as Record<string, unknown>, "additionalConfig.nodeId", value); } if (path === "additionalConfig.topic" && protocol.value === "MQTT" && (!hasValue(previousAddress) || String(previousAddress).trim() === String(previousTopic || "").trim())) point.address = String(value || ""); if (path === "additionalConfig.nodeId" && isOpcUaProtocol(protocol.value) && (!hasValue(previousAddress) || String(previousAddress).trim() === String(previousNodeId || "").trim())) point.address = String(value || ""); syncJsonFromState(); }
+function updateSelectedPath(path: string, value: unknown) {
+  const point = selectedPoint.value;
+  if (!point) return;
+  const previousPointCode = point.pointCode;
+  const previousAddress = point.address;
+  const previousTopic = getPathValue(point, "additionalConfig.topic");
+  const previousNodeId = getPathValue(point, "additionalConfig.nodeId");
+  const previousReportField = getPathValue(point, "additionalConfig.reportField");
+  setPathValue(point as Record<string, unknown>, path, value);
+  if (path === "pointCode" && String(value || "").trim() !== String(previousPointCode || "").trim()) {
+    point.pointId = undefined;
+  }
+  if (path === "pointCode" && hasValue(previousReportField) && String(previousReportField).trim() === String(previousPointCode || "").trim()) {
+    setPathValue(point as Record<string, unknown>, "additionalConfig.reportField", value);
+  }
+  if (path === "address") {
+    if (protocol.value === "MQTT" && (!hasValue(previousTopic) || String(previousTopic).trim() === String(previousAddress || "").trim())) setPathValue(point as Record<string, unknown>, "additionalConfig.topic", value);
+    if (isOpcUaProtocol(protocol.value) && (!hasValue(previousNodeId) || String(previousNodeId).trim() === String(previousAddress || "").trim())) setPathValue(point as Record<string, unknown>, "additionalConfig.nodeId", value);
+  }
+  if (path === "additionalConfig.topic" && protocol.value === "MQTT" && (!hasValue(previousAddress) || String(previousAddress).trim() === String(previousTopic || "").trim())) point.address = String(value || "");
+  if (path === "additionalConfig.nodeId" && isOpcUaProtocol(protocol.value) && (!hasValue(previousAddress) || String(previousAddress).trim() === String(previousNodeId || "").trim())) point.address = String(value || "");
+  syncJsonFromState();
+}
 function updateAlarmRule(index: number, field: string, value: unknown) { const point = selectedPoint.value; if (!point || index < 0) return; const rules = alarmRules(point); while (rules.length <= index) rules.push({}); if (value === undefined || value === null || value === "") delete rules[index][field]; else rules[index][field] = value; point.alarmEnabled = rules.length ? 1 : 0; point.alarmRule = serializeAlarmRules(rules); syncJsonFromState(); }
 function addAlarmRuleForCurrent() { if (!selectedPoint.value && points.value.length) selectedPointIndex.value = 0; const point = selectedPoint.value; if (!point) return; const rules = alarmRules(point); rules.push({ ruleId: createUniqueCode(rules.map((rule) => ({ pointCode: String(rule.ruleId || "") } as DataPoint)), "rule"), ruleName: "新告警规则", operator: ">=", enabled: true, level: "WARNING" }); point.alarmEnabled = 1; point.alarmRule = serializeAlarmRules(rules); selectedAlarmRuleIndex.value = rules.length - 1; syncJsonFromState(); }
 function removeAlarmRuleAt(pointIndex: number, ruleIndex: number) { const point = points.value[pointIndex]; if (!point) return; const rules = alarmRules(point); rules.splice(ruleIndex, 1); point.alarmRule = serializeAlarmRules(rules); point.alarmEnabled = rules.length ? 1 : 0; selectedPointIndex.value = pointIndex; selectedAlarmRuleIndex.value = Math.max(0, Math.min(ruleIndex, rules.length - 1)); syncJsonFromState(); }

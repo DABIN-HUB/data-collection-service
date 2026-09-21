@@ -106,6 +106,30 @@ describe("device.store helpers", () => {
     expect(view["configStatus"]).toBe("OFFLINE");
   });
 
+  it("running=true 且 connected=false 不能显示 ONLINE", () => {
+    const view = normalizeDeviceViewModelWithRuntimeStatus({
+      id: "dev-1",
+      deviceName: "断线设备",
+      status: "ONLINE"
+    }, {
+      "dev-1": { deviceId: "dev-1", running: true, connected: false, phase: "FAILED", degradedReason: "连接已断开" }
+    });
+
+    expect(view.status).toBe("ERROR");
+  });
+
+  it("connected=true 且 consecutiveFailures>0 不能显示 ONLINE", () => {
+    const view = normalizeDeviceViewModelWithRuntimeStatus({
+      id: "dev-1",
+      deviceName: "降级设备",
+      status: "ONLINE"
+    }, {
+      "dev-1": { deviceId: "dev-1", running: true, connected: true, phase: "DEGRADED", consecutiveFailures: 1 }
+    });
+
+    expect(view.status).toBe("ERROR");
+  });
+
   it("startSmart 按本地临时设备来源选择启动接口", async () => {
     apiMocks.getConfigDevices.mockResolvedValue({
       devices: [

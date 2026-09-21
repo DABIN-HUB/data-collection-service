@@ -153,6 +153,28 @@ class ConfigManagerLocalDeviceTest {
     }
 
     @Test
+    void shouldReplaceLocalPointsInCacheAndContextWhenOverwriting() {
+        configManager.saveLocalDeviceConfig(
+                device("local-replace"),
+                connection("local-replace"),
+                List.of(point("local-replace")),
+                false);
+
+        DataPoint replacement = point("local-replace");
+        replacement.setPointCode("spindle_speed");
+        replacement.setAddress("40004");
+        assertTrue(configManager.saveLocalDeviceConfig(
+                device("local-replace"),
+                connection("local-replace"),
+                List.of(replacement),
+                true));
+
+        assertEquals("spindle_speed", configManager.getDataPoints("local-replace").get(0).getPointCode());
+        assertEquals("40004", configManager.getDataPoints("local-replace").get(0).getAddress());
+        assertEquals("spindle_speed", configManager.getDeviceContext("local-replace").getDataPoints().get(0).getPointCode());
+    }
+
+    @Test
     void shouldRefreshRemoteDeviceFromRemoteSource() {
         DeviceInfo remoteDevice = device("remote-refresh");
         DeviceConnection remoteConnection = connection("remote-refresh");
