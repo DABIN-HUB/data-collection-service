@@ -29,7 +29,12 @@ public class IecProtocolDescriptorProvider implements ProtocolDescriptorProvider
                         registry.field("host", "string", "Device host", true, "127.0.0.1", null, "connection"),
                         registry.field("port", "number", "Port", true, "2404", null, "connection"),
                         registry.field("slaveId", "number", "Common address", true, "1", null, "protocol"),
-                        registry.field("timeout", "number", "Protocol timeout (ms)", true, "5000", null, "advanced")))
+                        registry.field("timeout", "number", "Protocol timeout (ms)", true, "5000", null, "advanced"),
+                        registry.field("cotFieldLength", "select", "COT 字段长度", false, "2", List.of("1", "2"), "advanced"),
+                        registry.field("commonAddressFieldLength", "select", "公共地址字段长度", false, "2", List.of("1", "2"), "advanced"),
+                        registry.field("ioaFieldLength", "select", "IOA 字段长度", false, "3", List.of("1", "2", "3"), "advanced"),
+                        registry.field("ioaEncodingMode", "select", "IOA 编码模式", false, "STANDARD",
+                                List.of("STANDARD", "SHIFT8_COMPAT"), "advanced", "标准设备使用 STANDARD；仅兼容特定模拟器或厂家设备时使用 SHIFT8_COMPAT。")))
                 .withPointFields(iec104PointFields(registry)));
 
     }

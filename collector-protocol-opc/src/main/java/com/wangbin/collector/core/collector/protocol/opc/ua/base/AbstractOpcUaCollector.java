@@ -4,7 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.opc.ua.address.OpcUaNodeIdResolver;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
+import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaDataType;
 import com.wangbin.collector.core.collector.protocol.opc.ua.util.OpcUaAddressParser;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.OpcUaConnectionAdapter;
@@ -44,6 +46,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     protected String password;
     protected int requestTimeout = 5000;
     protected double subscriptionInterval = 1000;
+    private final OpcUaNodeIdResolver nodeIdResolver = new OpcUaNodeIdResolver();
 
     protected final Map<String, OpcUaSubscription> subscriptions = new ConcurrentHashMap<>();
 
@@ -94,118 +97,34 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     /**
      * 查询并返回业务数据。
      */
-    protected Object readValue(OpcUaAddress address) throws Exception {
-        NodeId nodeId = address.toNodeId();
-        DataValue value = readValueWithAliasFallback(nodeId);
+    protected Object readValue(OpcUaAddress address, NodeId nodeId) throws Exception {
+        DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
         return value != null && value.getValue() != null ? value.getValue().getValue() : null;
     }
 
-    /**
-     * 批量读取并对 ProtoForge 展示的短字符串 NodeId 执行设备前缀回退。
-     */
-    protected List<DataValue> readValuesWithAliasFallback(List<NodeId> nodeIds) throws Exception {
-        List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, nodeIds);
-        List<DataValue> resolved = new ArrayList<>(values);
-        for (int index = 0; index < nodeIds.size(); index++) {
-            DataValue current = values.get(index);
-            if (isUsable(current)) {
-                continue;
-            }
-            NodeId alias = resolveDeviceScopedAlias(nodeIds.get(index));
-            if (alias == null || alias.equals(nodeIds.get(index))) {
-                continue;
-            }
-            try {
-                DataValue fallback = client.readValue(0, TimestampsToReturn.Both, alias);
-                if (isUsable(fallback)) {
-                    resolved.set(index, fallback);
-                    log.debug("OPC UA 已使用设备作用域 NodeId 回退: 原始={}, 实际={}",
-                            nodeIds.get(index), alias);
-                }
-            } catch (Exception exception) {
-                log.debug("OPC UA NodeId 回退读取失败: {}", alias, exception);
-            }
-        }
-        return resolved;
+    protected NodeId resolveNodeId(DataPoint point) {
+        DeviceConnection connection = requireConnectionConfig();
+        return nodeIdResolver.resolve(point, connection);
     }
 
-    private DataValue readValueWithAliasFallback(NodeId nodeId) throws Exception {
-        DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
-        if (isUsable(value)) {
-            return value;
-        }
-        NodeId alias = resolveDeviceScopedAlias(nodeId);
-        if (alias == null || alias.equals(nodeId)) {
-            return value;
-        }
-        try {
-            DataValue fallback = client.readValue(0, TimestampsToReturn.Both, alias);
-            return isUsable(fallback) ? fallback : value;
-        } catch (Exception exception) {
-            log.debug("OPC UA NodeId 回退读取失败: {}", alias, exception);
-            return value;
-        }
+    protected List<DataValue> readValues(List<NodeId> nodeIds) throws Exception {
+        return client.readValues(0, TimestampsToReturn.Both, nodeIds);
     }
 
-    private boolean isUsable(DataValue value) {
-        return value != null
-                && value.getStatusCode() != null
-                && value.getStatusCode().isGood()
-                && value.getValue() != null
-                && value.getValue().getValue() != null;
-    }
-
-    private NodeId resolveDeviceScopedAlias(NodeId nodeId) {
-        if (nodeId == null || !(nodeId.getIdentifier() instanceof String identifier)
-                || identifier.isBlank() || identifier.contains(".")) {
-            return null;
-        }
-        String prefix = resolveDeviceNodePrefix();
-        if (prefix == null || prefix.isBlank()) {
-            return null;
-        }
-        return new NodeId(nodeId.getNamespaceIndex(), prefix + "." + identifier);
-    }
-
-    private String resolveDeviceNodePrefix() {
-        if (deviceInfo == null || deviceInfo.getDeviceId() == null) {
-            return null;
-        }
-        String deviceId = deviceInfo.getDeviceId();
-        int protocolSeparator = deviceId.indexOf('_', 3);
-        return protocolSeparator > 0 && protocolSeparator + 1 < deviceId.length()
-                ? deviceId.substring(protocolSeparator + 1)
-                : null;
-    }
-
-    /**
-     * 查询并返回业务数据。
-     */
-    protected Map<String, Object> readValues(List<DataPoint> points) throws Exception {
-        List<NodeId> nodeIds = new ArrayList<>();
-        for (DataPoint point : points) {
-            OpcUaAddress address = OpcUaAddressParser.parse(point);
-            nodeIds.add(address.toNodeId());
-        }
-        List<DataValue> values = readValuesWithAliasFallback(nodeIds);
+    protected Map<String, Object> readValues(List<DataPoint> points, List<NodeId> nodeIds) throws Exception {
+        List<DataValue> values = readValues(nodeIds);
         Map<String, Object> result = new HashMap<>();
         for (int i = 0; i < points.size(); i++) {
             DataValue value = values.get(i);
-            result.put(points.get(i).getPointId(),
-                    value != null ? value.getValue().getValue() : null);
+            result.put(points.get(i).getPointId(), value != null && value.getValue() != null
+                    ? value.getValue().getValue() : null);
         }
         return result;
     }
 
-    /**
-     * 写入或持久化业务数据。
-     */
-    protected boolean writeValue(OpcUaAddress address, Object rawValue) throws Exception {
-        Variant variant = OpcUaAddressParser.toVariant(rawValue, address.getDataType());
-        List<StatusCode> results = client.writeValues(
-                List.of(address.toNodeId()),
-                List.of(DataValue.valueOnly(variant))
-        );
+    protected boolean writeValue(NodeId nodeId, OpcUaDataType dataType, Object rawValue) throws Exception {
+        Variant variant = OpcUaAddressParser.toVariant(rawValue, dataType);
+        List<StatusCode> results = client.writeValues(List.of(nodeId), List.of(DataValue.valueOnly(variant)));
         return !results.isEmpty() && results.get(0).isGood();
     }
 
@@ -227,8 +146,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      */
     protected OpcUaMonitoredItem addMonitoredItem(OpcUaSubscription subscription,
                                                    OpcUaAddress address,
+                                                   NodeId nodeId,
                                                    Consumer<OpcUaMonitoredItem> configurator) throws Exception {
-        OpcUaMonitoredItem item = OpcUaMonitoredItem.newDataItem(address.toNodeId(), MonitoringMode.Reporting);
+        OpcUaMonitoredItem item = OpcUaMonitoredItem.newDataItem(nodeId, MonitoringMode.Reporting);
 
         Double publishingInterval = subscription.getPublishingInterval();
         double sampling = address.getSamplingInterval() > 0

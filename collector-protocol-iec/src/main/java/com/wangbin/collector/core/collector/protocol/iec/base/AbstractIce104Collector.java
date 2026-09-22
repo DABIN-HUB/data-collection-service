@@ -32,6 +32,10 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected int port = 2404;
     protected int commonAddress = 1;
     protected int timeout = 5000;
+    protected int cotFieldLength = 2;
+    protected int commonAddressFieldLength = 2;
+    protected int ioaFieldLength = 3;
+    protected Iec104IoaEncodingMode ioaEncodingMode = Iec104IoaEncodingMode.STANDARD;
     protected boolean timeTag = true;
     protected CollectorProperties.Iec104Config iec104Config;
 
@@ -83,6 +87,10 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         DeviceConnection connectionConfig = requireConnectionConfig();
         this.commonAddress = resolveCommonAddress(connectionConfig);
         this.timeout = resolveTimeout(connectionConfig);
+        this.cotFieldLength = connectionConfig.getInt("cotFieldLength", 2);
+        this.commonAddressFieldLength = connectionConfig.getInt("commonAddressFieldLength", 2);
+        this.ioaFieldLength = connectionConfig.getInt("ioaFieldLength", 3);
+        this.ioaEncodingMode = Iec104IoaEncodingMode.from(connectionConfig.getProperty("ioaEncodingMode"));
         this.timeTag = true;
         if (interrogationScheduler == null) {
             interrogationScheduler = resolveProtocolScheduler();
@@ -174,14 +182,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     }
 
     private int normalizeInformationObjectAddress(int rawIoa) {
-        if (rawIoa > 0xFFFF && (rawIoa & 0xFF) == 0) {
-            int shifted = rawIoa >>> 8;
-            if (shifted > 0 && shifted <= 0xFFFF) {
-                log.debug("兼容 IEC104 IOA 左移编码: raw={}, normalized={}", rawIoa, shifted);
-                return shifted;
-            }
-        }
-        return rawIoa;
+        return ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT
+                ? rawIoa >>> 8
+                : rawIoa;
     }
 
     /**

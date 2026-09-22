@@ -45,7 +45,9 @@ public class ModbusProtocolDescriptorProvider implements ProtocolDescriptorProvi
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "3000", null,
                                 "advanced"),
                         registry.field("timeout", "number", "Protocol timeout (ms)", false, "3000", null,
-                                "advanced")))
+                                "advanced"),
+                        registry.field("addressMode", "select", "Address mode", false, "AUTO_COMPAT",
+                                List.of("RAW_OFFSET", "REFERENCE", "AUTO_COMPAT"), "advanced")))
                 .withSchema(modbusDataTypes(), ProtocolTypeMode.PLATFORM_ONLY, "dataType",
                         PlatformDataTypeMode.REQUIRED, false, null, null, Collections.emptyList(),
                         modbusPointFields(registry)));
@@ -78,7 +80,9 @@ public class ModbusProtocolDescriptorProvider implements ProtocolDescriptorProvi
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "3000", null,
                                 "advanced"),
                         registry.field("timeout", "number", "Protocol timeout (ms)", false, "3000", null,
-                                "advanced")))
+                                "advanced"),
+                        registry.field("addressMode", "select", "Address mode", false, "AUTO_COMPAT",
+                                List.of("RAW_OFFSET", "REFERENCE", "AUTO_COMPAT"), "advanced")))
                 .withSchema(modbusDataTypes(), ProtocolTypeMode.PLATFORM_ONLY, "dataType",
                         PlatformDataTypeMode.REQUIRED, false, null, null, Collections.emptyList(),
                         modbusPointFields(registry)));

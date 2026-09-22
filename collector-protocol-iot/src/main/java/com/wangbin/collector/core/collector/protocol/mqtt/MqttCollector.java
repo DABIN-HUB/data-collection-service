@@ -291,12 +291,10 @@ public class MqttCollector extends ConnectionBackedCollector {
         if (value == null || deviceInfo == null || deviceInfo.getDeviceId() == null) {
             return value;
         }
-        String deviceId = deviceInfo.getDeviceId();
-        return value.toString()
-                .replace("${deviceId}", deviceId)
-                .replace("${device_id}", deviceId)
-                .replace("{deviceId}", deviceId)
-                .replace("{device_id}", deviceId);
+        Map<String, Object> values = new HashMap<>();
+        values.put("deviceId", deviceInfo.getDeviceId());
+        values.put("device_id", deviceInfo.getDeviceId());
+        return ProtocolTemplateResolver.resolve(value.toString(), values);
     }
 
     /**

@@ -102,6 +102,8 @@ public class OpcUaProtocolDescriptorProvider implements ProtocolDescriptorProvid
                 registry.field("requestTimeout", "number", "请求超时（毫秒）", false, "5000", null, "advanced"),
                 registry.field("requestTimeoutMs", "number", "请求超时别名（毫秒）", false, "5000", null, "advanced"),
                 registry.field("subscriptionInterval", "number", "订阅间隔（毫秒）", false, "1000", null, "advanced"),
+                registry.field("nodeIdAliasMode", "select", "NodeId 别名模式", false, "NONE", List.of("NONE", "PREFIX"), "advanced"),
+                registry.field("nodeIdPrefix", "string", "NodeId 前缀", false, "", null, "advanced"),
                 registry.field("maxFieldsPerRequest", "number", "单次最大字段数", false, "100", null, "advanced"),
                 registry.field("plc4xConnectionString", "string", "PLC4X 连接串", false, "", null, "advanced"));
     }

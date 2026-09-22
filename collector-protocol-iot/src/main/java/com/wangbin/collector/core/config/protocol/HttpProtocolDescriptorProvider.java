@@ -49,7 +49,13 @@ public class HttpProtocolDescriptorProvider implements ProtocolDescriptorProvide
                         registry.field("deviceSecret", "password", "Device secret", false, "", null, "security"),
                         registry.field("authParams", "object", "Extended auth params", false, "{}", null, "security"),
                         registry.field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
-                        registry.field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"))));
+                        registry.field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
+                        registry.field("responseMode", "select", "Response extraction mode", false, "RAW",
+                                List.of("RAW", "JSON_PATH", "POINT_ARRAY"), "response"),
+                        registry.field("responsePath", "string", "JSONPath response path", false, "$.value", null, "response"),
+                        registry.field("responseArrayPath", "string", "Response array JSONPath", false, "$.points", null, "response"),
+                        registry.field("responseKeyField", "string", "Response array key field", false, "name", null, "response"),
+                        registry.field("responseValueField", "string", "Response array value field", false, "value", null, "response"))));
 
         registry.registerAlias("HTTPS", "HTTP", cfg -> {
             cfg.setSslEnabled(true);

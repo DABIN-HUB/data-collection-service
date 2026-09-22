@@ -5,6 +5,8 @@ import lombok.Getter;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -54,17 +56,23 @@ public class MqttPointOptions {
      * 根据设备身份解析 ProtoForge 等设备端使用的主题占位符。
      */
     public static MqttPointOptions from(DataPoint point, int defaultQos, String deviceId) {
+        Map<String, Object> templateValues = new HashMap<>();
+        templateValues.put("deviceId", deviceId);
+        templateValues.put("device_id", deviceId);
+        templateValues.put("pointId", point.getPointId());
+        templateValues.put("pointCode", point.getPointCode());
+        templateValues.put("address", point.getAddress());
         String topic = resolveTopic(Optional.ofNullable(point.getAdditionalConfig("topic"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())
-                .orElse(point.getAddress()), deviceId);
+                .orElse(point.getAddress()), templateValues);
         if (topic == null || topic.isBlank()) {
             throw new IllegalArgumentException("MQTT point missing topic: " + point.getPointId());
         }
         String writeTopic = resolveTopic(Optional.ofNullable(point.getAdditionalConfig("writeTopic"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())
-                .orElse(topic), deviceId);
+                .orElse(topic), templateValues);
         int qos = Optional.ofNullable(point.getAdditionalConfig("qos"))
                 .map(value -> MqttCollectorUtils.asInt(value, defaultQos))
                 .orElse(defaultQos);
@@ -88,14 +96,7 @@ public class MqttPointOptions {
         return new MqttPointOptions(topic, writeTopic, qos, retain, jsonPath, encoding, template, charset);
     }
 
-    private static String resolveTopic(String topic, String deviceId) {
-        if (topic == null || deviceId == null || deviceId.isBlank()) {
-            return topic;
-        }
-        return topic
-                .replace("${deviceId}", deviceId)
-                .replace("${device_id}", deviceId)
-                .replace("{deviceId}", deviceId)
-                .replace("{device_id}", deviceId);
+    private static String resolveTopic(String topic, Map<String, ?> values) {
+        return ProtocolTemplateResolver.resolve(topic, values);
     }
 }

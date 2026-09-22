@@ -86,7 +86,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         OpcUaAddress address = resolveAddress(point);
-        return readValue(address);
+        return readValue(address, resolveNodeId(point));
     }
 
     /**
@@ -101,9 +101,9 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         List<NodeId> nodeIds = new ArrayList<>(points.size());
         for (DataPoint point : points) {
             OpcUaAddress address = resolveAddress(point);
-            nodeIds.add(address.toNodeId());
+            nodeIds.add(resolveNodeId(point));
         }
-        List<DataValue> dataValues = readValuesWithAliasFallback(nodeIds);
+        List<DataValue> dataValues = readValues(nodeIds);
         for (int i = 0; i < points.size(); i++) {
             DataValue value = dataValues.get(i);
             values.put(points.get(i).getPointId(), value != null && value.getValue() != null
@@ -118,7 +118,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         OpcUaAddress address = resolveAddress(point);
-        return writeValue(address, value);
+        return writeValue(resolveNodeId(point), address.getDataType(), value);
     }
 
     /**
@@ -155,7 +155,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             if (existing != null) {
                 removeMonitoredItem(point.getPointId(), existing);
             }
-            OpcUaMonitoredItem item = addMonitoredItem(subscription, address,
+            OpcUaMonitoredItem item = addMonitoredItem(subscription, address, resolveNodeId(point),
                     monitoredItem -> monitoredItem.setDataValueListener(
                             (monitored, value) -> handleNotification(point, address, value)));
             monitoredItems.put(point.getPointId(), item);
@@ -340,7 +340,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
                 -1,
                 false
         );
-        boolean success = writeValue(tempAddress, value);
+        boolean success = writeValue(tempAddress.toNodeId(), tempAddress.getDataType(), value);
         return Map.of("nodeId", nodeIdText, "status", success ? "success" : "error");
     }
 

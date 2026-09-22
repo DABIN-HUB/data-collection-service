@@ -9,6 +9,10 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
+import com.wangbin.collector.core.collector.protocol.http.extractor.HttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.JsonPathHttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.PointArrayHttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.RawHttpResponseExtractor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
@@ -67,9 +71,7 @@ public class HttpCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) {
         try {
-            Map<String, Object> values = isRestPointConfiguration(List.of(point))
-                    ? requestRestRead(List.of(point))
-                    : requestRead(List.of(point));
+            Map<String, Object> values = requestRead(List.of(point));
             Object value = values.get(point.getPointId());
             if (value != null) {
                 latestValues.put(point.getPointId(), value);
@@ -92,17 +94,6 @@ public class HttpCollector extends ConnectionBackedCollector {
         }
 
         try {
-            if (isRestPointConfiguration(points)) {
-                Map<String, Object> values = requestRestRead(points);
-                for (DataPoint point : points) {
-                    Object value = values.get(point.getPointId());
-                    if (value != null) {
-                        latestValues.put(point.getPointId(), value);
-                    }
-                    result.put(point.getPointId(), value != null ? value : latestValues.get(point.getPointId()));
-                }
-                return result;
-            }
             Map<String, Object> values = requestRead(points);
             for (DataPoint point : points) {
                 String pointId = point.getPointId();
@@ -249,40 +240,6 @@ public class HttpCollector extends ConnectionBackedCollector {
         }
     }
 
-    private boolean isRestPointConfiguration(List<DataPoint> points) {
-        if (httpConnection == null || points == null || points.isEmpty()) {
-            return false;
-        }
-        String apiPrefix = httpConnection.getConnectionConfig().getString("apiPrefix", "");
-        return !apiPrefix.isBlank() && points.stream().allMatch(point ->
-                point != null && point.getAddress() != null && point.getAddress().startsWith("/"));
-    }
-
-    private Map<String, Object> requestRestRead(List<DataPoint> points) throws Exception {
-        DeviceConnection config = httpConnection.getConnectionConfig();
-        String apiPrefix = config.getString("apiPrefix", "");
-        byte[] response = httpConnection.request("GET", apiPrefix);
-        JSONObject body = JSON.parseObject(new String(response, StandardCharsets.UTF_8));
-        Object rawPoints = body.get("points");
-        Map<String, Object> result = new HashMap<>();
-        if (!(rawPoints instanceof JSONArray pointArray)) {
-            return result;
-        }
-        Map<String, Object> byName = new HashMap<>();
-        for (Object item : pointArray) {
-            if (item instanceof JSONObject pointObject && pointObject.get("name") != null) {
-                byName.put(pointObject.getString("name"), pointObject.get("value"));
-            }
-        }
-        for (DataPoint point : points) {
-            Object value = byName.get(point.getPointCode());
-            if (value != null) {
-                result.put(point.getPointId(), value);
-            }
-        }
-        return result;
-    }
-
     /**
      * 执行当前业务逻辑。
      */
@@ -303,9 +260,16 @@ public class HttpCollector extends ConnectionBackedCollector {
         }
         payload.put("points", pointArray);
 
-        httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
-        byte[] response = tryReceiveResponse();
-        return parseReadResponse(points, response);
+        DeviceConnection config = httpConnection.getConnectionConfig();
+        String apiPrefix = config.getString("apiPrefix", "");
+        byte[] response;
+        if (!apiPrefix.isBlank() && points.stream().allMatch(point -> point.getAddress() != null && point.getAddress().startsWith("/"))) {
+            response = httpConnection.request(config.getString("method", "GET"), apiPrefix);
+        } else {
+            httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+            response = tryReceiveResponse();
+        }
+        return selectResponseExtractor(config).extract(response, points, config.getExtJson() != null ? config.getExtJson() : Map.of());
     }
 
     /**
@@ -321,6 +285,14 @@ public class HttpCollector extends ConnectionBackedCollector {
             timeout = config.getReadTimeout();
         }
         return httpConnection.receive(timeout);
+    }
+
+    private HttpResponseExtractor selectResponseExtractor(DeviceConnection config) {
+        return switch (config.getString("responseMode", "RAW").toUpperCase()) {
+            case "JSON_PATH" -> new JsonPathHttpResponseExtractor();
+            case "POINT_ARRAY" -> new PointArrayHttpResponseExtractor();
+            default -> new RawHttpResponseExtractor();
+        };
     }
 
     /**
