@@ -29,6 +29,13 @@ public final class CustomValueCodec {
      * 解析或转换业务数据。
      */
     public static Object decode(byte[] response, DataPoint point) throws Exception {
+        return decode(response, point, -1);
+    }
+
+    /**
+     * 按自定义响应帧中的显式偏移解码点位。
+     */
+    public static Object decode(byte[] response, DataPoint point, int responseOffset) throws Exception {
         CustomPointAddress address = CustomPointAddress.parse(point.getAddress());
         if (address.mode() == CustomPointAddress.AddressMode.JSON) {
             return decodeJson(response, address.jsonPath(), resolveCharset(point));
@@ -39,9 +46,13 @@ public final class CustomValueCodec {
         }
 
         String dataType = normalizeDataType(point.getDataType());
+        int configuredOffset = point.getAdditionalConfig("responseOffset", -1);
+        int offset = responseOffset >= 0
+                ? responseOffset
+                : configuredOffset >= 0 ? configuredOffset : address.byteOffset();
         int length = resolveLength(address, point, dataType, response.length);
-        ensureRange(response, address.byteOffset(), length);
-        byte[] valueBytes = Arrays.copyOfRange(response, address.byteOffset(), address.byteOffset() + length);
+        ensureRange(response, offset, length);
+        byte[] valueBytes = Arrays.copyOfRange(response, offset, offset + length);
         ByteBuffer buffer = ByteBuffer.wrap(valueBytes).order(resolveByteOrder(point));
         return switch (dataType) {
             case "BOOLEAN", "BOOL" -> valueBytes[0] != 0;

@@ -21,6 +21,10 @@ public enum RegisterType {
         this.description = description;
     }
 
+    public int getCode() {
+        return code;
+    }
+
     /**
      * 创建并返回业务对象。
      */

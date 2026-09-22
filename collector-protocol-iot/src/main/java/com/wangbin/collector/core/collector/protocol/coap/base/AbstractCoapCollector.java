@@ -117,7 +117,16 @@ public abstract class AbstractCoapCollector extends ConnectionBackedCollector {
         if (point.isBinary()) {
             return response.getPayload();
         }
-        return response.getResponseText();
+        String text = response.getResponseText();
+        try {
+            Object parsed = com.alibaba.fastjson2.JSON.parse(text);
+            if (parsed instanceof com.alibaba.fastjson2.JSONObject object && object.containsKey("value")) {
+                return object.get("value");
+            }
+        } catch (Exception ignored) {
+            // 非 JSON 响应按原始文本处理。
+        }
+        return text;
     }
 
     /**

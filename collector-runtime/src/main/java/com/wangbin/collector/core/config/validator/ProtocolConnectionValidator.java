@@ -57,7 +57,7 @@ public class ProtocolConnectionValidator {
             case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
             case "DLT645_2007" -> validateDlt645(deviceInfo, connection);
             case "IEC101" -> validateIec101(deviceInfo, connection);
-            case "OPC_UA" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA");
+            case "OPC_UA" -> validateMiloOpcUa(deviceInfo, connection);
             case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA_PLC4X");
             case "OPC_UA_MILO" -> validateMiloOpcUa(deviceInfo, connection);
             case "OPC_DA" -> validateOpcDa(deviceInfo, connection);

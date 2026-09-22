@@ -6,6 +6,7 @@ import com.wangbin.collector.core.connection.dispatch.MessageBatchDispatcher;
 import com.wangbin.collector.core.connection.dispatch.OverflowStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.californium.core.CoapClient;
+import org.eclipse.californium.elements.config.Configuration;
 
 import java.net.URI;
 import java.util.List;
@@ -36,6 +37,7 @@ public class CoapConnectionAdapter extends AbstractConnectionAdapter<CoapClient>
      */
     @Override
     protected void doConnect() throws Exception {
+        Configuration.setStandard(Configuration.createStandardWithoutFile());
         this.baseUri = resolveBaseUri();
         this.baseClient = new CoapClient(new URI(baseUri));
         this.baseClient.setTimeout(getRequestTimeout());

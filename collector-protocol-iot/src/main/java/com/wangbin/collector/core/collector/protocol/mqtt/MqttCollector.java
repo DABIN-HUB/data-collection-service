@@ -70,6 +70,10 @@ public class MqttCollector extends ConnectionBackedCollector {
             ensureTopicSubscription(subscription.getTopic(), subscription.getQos());
             baseSubscribedTopics.add(subscription.getTopic());
         }
+        for (DataPoint point : pointDefinitions.values()) {
+            MqttPointOptions options = resolvePointOptions(point);
+            bindPointToTopic(point, options);
+        }
     }
 
     /**
@@ -229,7 +233,8 @@ public class MqttCollector extends ConnectionBackedCollector {
         int defaultQos = getDefaultQos();
         for (DataPoint point : points) {
             pointDefinitions.put(point.getPointId(), point);
-            pointOptions.put(point.getPointId(), MqttPointOptions.from(point, defaultQos));
+            pointOptions.put(point.getPointId(), MqttPointOptions.from(point, defaultQos,
+                    deviceInfo != null ? deviceInfo.getDeviceId() : null));
         }
         log.info("MQTT 点位加载完成，数量={}，设备={}", pointOptions.size(), deviceId);
     }
@@ -278,7 +283,20 @@ public class MqttCollector extends ConnectionBackedCollector {
     }
 
     private List<MqttTopicSubscription> getDefaultSubscriptions() {
-        return parseTopics(getConnectionProperties().get("subscribeTopics"), getDefaultQos());
+        Object configuredTopics = getConnectionProperties().get("subscribeTopics");
+        return parseTopics(resolveTopicTemplate(configuredTopics), getDefaultQos());
+    }
+
+    private Object resolveTopicTemplate(Object value) {
+        if (value == null || deviceInfo == null || deviceInfo.getDeviceId() == null) {
+            return value;
+        }
+        String deviceId = deviceInfo.getDeviceId();
+        return value.toString()
+                .replace("${deviceId}", deviceId)
+                .replace("${device_id}", deviceId)
+                .replace("{deviceId}", deviceId)
+                .replace("{device_id}", deviceId);
     }
 
     /**
@@ -388,7 +406,8 @@ public class MqttCollector extends ConnectionBackedCollector {
      */
     private MqttPointOptions resolvePointOptions(DataPoint point) {
         return pointOptions.computeIfAbsent(point.getPointId(),
-                id -> MqttPointOptions.from(point, getDefaultQos()));
+                id -> MqttPointOptions.from(point, getDefaultQos(),
+                        deviceInfo != null ? deviceInfo.getDeviceId() : null));
     }
 
     /**
@@ -579,6 +598,15 @@ public class MqttCollector extends ConnectionBackedCollector {
         if (options.getJsonPath() != null && !options.getJsonPath().isBlank()) {
             Object json = JSON.parse(text);
             raw = JSONPath.eval(json, options.getJsonPath());
+        } else {
+            try {
+                Object json = JSON.parse(text);
+                if (json instanceof Map<?, ?> map && map.containsKey("value")) {
+                    raw = map.get("value");
+                }
+            } catch (Exception ignored) {
+                // 非 JSON 载荷继续按原始文本处理。
+            }
         }
         return convertToDataType(point.getDataType(), raw);
     }
@@ -596,13 +624,15 @@ public class MqttCollector extends ConnectionBackedCollector {
         String type = dataType.trim().toUpperCase(Locale.ROOT);
         try {
             return switch (type) {
-                case "INT", "INTEGER" -> toNumber(raw).intValue();
-                case "LONG" -> toNumber(raw).longValue();
-                case "FLOAT" -> toNumber(raw).floatValue();
-                case "DOUBLE" -> toNumber(raw).doubleValue();
-                case "BOOLEAN" -> toBoolean(raw);
+                case "INT", "INTEGER", "INT8", "INT16", "INT32" -> toNumber(raw).intValue();
+                case "LONG", "INT64" -> toNumber(raw).longValue();
+                case "UINT8", "BYTE" -> toNumber(raw).intValue();
+                case "UINT16" -> toNumber(raw).intValue();
+                case "UINT32" -> toNumber(raw).longValue();
+                case "FLOAT", "FLOAT32" -> toNumber(raw).floatValue();
+                case "DOUBLE", "FLOAT64" -> toNumber(raw).doubleValue();
+                case "BOOLEAN", "BOOL" -> toBoolean(raw);
                 case "SHORT" -> toNumber(raw).shortValue();
-                case "BYTE" -> toNumber(raw).byteValue();
                 default -> raw.toString();
             };
         } catch (Exception ex) {

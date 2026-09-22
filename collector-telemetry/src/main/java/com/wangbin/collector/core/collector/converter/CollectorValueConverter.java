@@ -26,6 +26,9 @@ public final class CollectorValueConverter {
             return null;
         }
 
+        if ("STRING".equalsIgnoreCase(point.getDataType())) {
+            return String.valueOf(rawValue);
+        }
         Double scaledValue = point.getActualValue(convertToDouble(rawValue));
 
         DataConverter converter = dataConverters.get(point.getDataType());

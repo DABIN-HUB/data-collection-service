@@ -183,7 +183,7 @@ public class CollectorDataPostProcessor {
                 deviceId,
                 point,
                 processResult,
-                value,
+                processResult,
                 System.currentTimeMillis(),
                 generation));
     }
@@ -236,7 +236,7 @@ public class CollectorDataPostProcessor {
                 deviceId,
                 point,
                 processResult,
-                cacheValue,
+                processResult,
                 System.currentTimeMillis(),
                 generation);
     }

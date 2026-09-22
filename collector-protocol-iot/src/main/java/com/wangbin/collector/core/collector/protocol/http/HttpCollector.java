@@ -67,7 +67,9 @@ public class HttpCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) {
         try {
-            Map<String, Object> values = requestRead(List.of(point));
+            Map<String, Object> values = isRestPointConfiguration(List.of(point))
+                    ? requestRestRead(List.of(point))
+                    : requestRead(List.of(point));
             Object value = values.get(point.getPointId());
             if (value != null) {
                 latestValues.put(point.getPointId(), value);
@@ -90,6 +92,17 @@ public class HttpCollector extends ConnectionBackedCollector {
         }
 
         try {
+            if (isRestPointConfiguration(points)) {
+                Map<String, Object> values = requestRestRead(points);
+                for (DataPoint point : points) {
+                    Object value = values.get(point.getPointId());
+                    if (value != null) {
+                        latestValues.put(point.getPointId(), value);
+                    }
+                    result.put(point.getPointId(), value != null ? value : latestValues.get(point.getPointId()));
+                }
+                return result;
+            }
             Map<String, Object> values = requestRead(points);
             for (DataPoint point : points) {
                 String pointId = point.getPointId();
@@ -234,6 +247,40 @@ public class HttpCollector extends ConnectionBackedCollector {
         for (DataPoint point : points) {
             pointDefinitions.put(point.getPointId(), point);
         }
+    }
+
+    private boolean isRestPointConfiguration(List<DataPoint> points) {
+        if (httpConnection == null || points == null || points.isEmpty()) {
+            return false;
+        }
+        String apiPrefix = httpConnection.getConnectionConfig().getString("apiPrefix", "");
+        return !apiPrefix.isBlank() && points.stream().allMatch(point ->
+                point != null && point.getAddress() != null && point.getAddress().startsWith("/"));
+    }
+
+    private Map<String, Object> requestRestRead(List<DataPoint> points) throws Exception {
+        DeviceConnection config = httpConnection.getConnectionConfig();
+        String apiPrefix = config.getString("apiPrefix", "");
+        byte[] response = httpConnection.request("GET", apiPrefix);
+        JSONObject body = JSON.parseObject(new String(response, StandardCharsets.UTF_8));
+        Object rawPoints = body.get("points");
+        Map<String, Object> result = new HashMap<>();
+        if (!(rawPoints instanceof JSONArray pointArray)) {
+            return result;
+        }
+        Map<String, Object> byName = new HashMap<>();
+        for (Object item : pointArray) {
+            if (item instanceof JSONObject pointObject && pointObject.get("name") != null) {
+                byName.put(pointObject.getString("name"), pointObject.get("value"));
+            }
+        }
+        for (DataPoint point : points) {
+            Object value = byName.get(point.getPointCode());
+            if (value != null) {
+                result.put(point.getPointId(), value);
+            }
+        }
+        return result;
     }
 
     /**

@@ -19,6 +19,9 @@ public final class BacnetAddressParser {
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
             "^([A-Za-z][A-Za-z0-9_#-]*|\\d+)\\s*:\\s*(\\d+)\\s*\\.\\s*([A-Za-z][A-Za-z0-9_#-]*|\\d+)(?:\\[(\\d+)])?$"
     );
+    private static final Pattern OBJECT_SHORTHAND_PATTERN = Pattern.compile(
+            "^([A-Za-z][A-Za-z0-9_#-]*)\\s*:\\s*(\\d+)$"
+    );
 
     /**
      * 创建当前组件实例。
@@ -60,7 +63,14 @@ public final class BacnetAddressParser {
         String rawAddress = address.trim();
         Matcher matcher = ADDRESS_PATTERN.matcher(rawAddress);
         if (!matcher.matches()) {
-            throw new IllegalArgumentException("Unsupported BACnet address format: " + rawAddress);
+            Matcher shorthand = OBJECT_SHORTHAND_PATTERN.matcher(rawAddress);
+            if (shorthand.matches()) {
+                rawAddress = shorthand.group(1) + ":" + shorthand.group(2) + ".presentValue";
+                matcher = ADDRESS_PATTERN.matcher(rawAddress);
+            }
+        }
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Unsupported BACnet address format: " + address);
         }
 
         String objectType = normalizeToken(matcher.group(1));

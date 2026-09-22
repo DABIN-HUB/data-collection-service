@@ -5,15 +5,18 @@ import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.ClientConnectionBuilder;
 import org.openmuc.j60870.Connection;
 import org.openmuc.j60870.ConnectionEventListener;
 
+import java.lang.reflect.Field;
 import java.net.InetAddress;
 
 /**
  * IEC104 连接 适配器.
  */
+@Slf4j
 public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connection> {
 
     private Connection connection;
@@ -42,7 +45,14 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         InetAddress address = InetAddress.getByName(host);
         ClientConnectionBuilder builder = new ClientConnectionBuilder(address)
                 .setPort(port)
+                .setCotFieldLength(2)
+                .setCommonAddressFieldLength(2)
+                .setIoaFieldLength(3)
                 .setConnectionTimeout(timeout);
+        builder.setCotFieldLength(2);
+        builder.setCommonAddressFieldLength(2);
+        builder.setIoaFieldLength(3);
+        forceFieldLengths(builder);
         if (connectionEventListener != null) {
             builder.setConnectionEventListener(connectionEventListener);
         }
@@ -52,6 +62,22 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         connectionParams.put(CommonMapKeys.HOST, host);
         connectionParams.put(CommonMapKeys.PORT, port);
         connectionParams.put(CommonMapKeys.TIMEOUT, timeout);
+    }
+
+    private void forceFieldLengths(ClientConnectionBuilder builder) throws Exception {
+        Field settingsField = builder.getClass().getSuperclass().getDeclaredField("settings");
+        settingsField.setAccessible(true);
+        Object settings = settingsField.get(builder);
+        invokeFieldLength(settings, "setCotFieldLength", 2);
+        invokeFieldLength(settings, "setCommonAddressFieldLength", 2);
+        invokeFieldLength(settings, "setIoaFieldLength", 3);
+        log.info("IEC104 字段长度已强制设置: COT=2, CA=2, IOA=3");
+    }
+
+    private void invokeFieldLength(Object settings, String methodName, int length) throws Exception {
+        var method = settings.getClass().getDeclaredMethod(methodName, int.class);
+        method.setAccessible(true);
+        method.invoke(settings, length);
     }
 
     /**

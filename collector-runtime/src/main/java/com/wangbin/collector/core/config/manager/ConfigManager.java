@@ -9,6 +9,7 @@ import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import jakarta.annotation.PostConstruct;
@@ -71,6 +72,7 @@ public class ConfigManager {
     private final ApplicationEventPublisher eventPublisher;
     private final FieldUniquenessValidator fieldUniquenessValidator;
     private final ProtocolConnectionValidator protocolConnectionValidator;
+    private final LocalDeviceConfigStore localDeviceConfigStore;
 
     /**
      * 创建配置管理器。
@@ -78,10 +80,12 @@ public class ConfigManager {
     public ConfigManager(ConfigSyncService configSyncService,
                          ApplicationEventPublisher eventPublisher,
                          FieldUniquenessValidator fieldUniquenessValidator,
+                         LocalDeviceConfigStore localDeviceConfigStore,
                          ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider) {
         this.configSyncService = configSyncService;
         this.eventPublisher = eventPublisher;
         this.fieldUniquenessValidator = fieldUniquenessValidator;
+        this.localDeviceConfigStore = localDeviceConfigStore;
         this.protocolConnectionValidator = protocolConnectionValidatorProvider != null
                 ? protocolConnectionValidatorProvider.getIfAvailable(ProtocolConnectionValidator::new)
                 : new ProtocolConnectionValidator();
@@ -93,20 +97,38 @@ public class ConfigManager {
     @PostConstruct
     public void init() {
         log.info("配置管理器初始化开始...");
+        restorePersistedLocalTemporaryContexts();
         loadAllConfig();
         startConfigSync();
         log.info("配置管理器初始化完成");
     }
 
     /**
+     * 从本地快照恢复非远端托管设备。
+     */
+    private void restorePersistedLocalTemporaryContexts() {
+        List<DeviceContext> contexts = localDeviceConfigStore.load();
+        if (contexts.isEmpty()) {
+            return;
+        }
+        lock.writeLock().lock();
+        try {
+            restoreLocalTemporaryContexts(contexts);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * 加载所有配置
      */
     private void loadAllConfig() {
+        List<DeviceContext> localTemporaryContexts = Collections.emptyList();
         try {
             lock.writeLock().lock();
             log.info("开始加载所有配置...");
 
-            List<DeviceContext> localTemporaryContexts = snapshotLocalTemporaryContexts();
+            localTemporaryContexts = snapshotLocalTemporaryContexts();
 
             deviceCache.clear();
             pointCache.clear();
@@ -153,7 +175,8 @@ public class ConfigManager {
 
             log.info("配置加载完成，共加载 {} 个设备配置", devices.size());
         } catch (Exception e) {
-            log.error("加载所有配置失败", e);
+            restoreLocalTemporaryContexts(localTemporaryContexts);
+            log.error("加载所有配置失败，已恢复本地设备配置", e);
         } finally {
             lock.writeLock().unlock();
         }
@@ -350,6 +373,9 @@ public class ConfigManager {
             // 更新缓存
             deviceCache.put(deviceId, device);
             rebuildDeviceContext(deviceId);
+            if (isLocalTemporaryDeviceInfo(device)) {
+                persistLocalTemporaryContexts();
+            }
 
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
@@ -399,6 +425,9 @@ public class ConfigManager {
 
             pointCache.put(deviceId, safePoints);
             rebuildDeviceContext(deviceId);
+            if (isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) {
+                persistLocalTemporaryContexts();
+            }
 
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
@@ -446,6 +475,9 @@ public class ConfigManager {
             }
 
             rebuildDeviceContext(deviceId);
+            if (isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) {
+                persistLocalTemporaryContexts();
+            }
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
@@ -501,6 +533,7 @@ public class ConfigManager {
                     pointCache.put(deviceId, normalizedPoints.get(deviceId));
                     rebuildDeviceContext(deviceId);
                 }
+                persistLocalTemporaryContexts();
             } catch (RuntimeException e) {
                 restoreCache(deviceCache, deviceBackup);
                 restoreCache(connectionCache, connectionBackup);
@@ -595,6 +628,7 @@ public class ConfigManager {
         lock.writeLock().lock();
         try {
             DeviceInfo existing = deviceCache.get(deviceId);
+            DeviceContext previousContext = deviceContextCache.get(deviceId);
             if (existing != null && !isLocalTemporaryDeviceInfo(existing)) {
                 throw new IllegalArgumentException("device already exists from non-local config source: " + deviceId);
             }
@@ -615,6 +649,12 @@ public class ConfigManager {
             connectionCache.put(deviceId, connection);
             pointCache.put(deviceId, safePoints);
             rebuildDeviceContext(deviceId);
+            try {
+                persistLocalTemporaryContexts();
+            } catch (RuntimeException exception) {
+                restoreDeviceContext(deviceId, previousContext);
+                throw exception;
+            }
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
@@ -645,10 +685,17 @@ public class ConfigManager {
             if (!isLocalTemporaryDeviceInfo(existing)) {
                 throw new IllegalArgumentException("refuse to delete non-local device config: " + deviceId);
             }
+            DeviceContext previousContext = deviceContextCache.get(deviceId);
             deviceCache.remove(deviceId);
             pointCache.remove(deviceId);
             connectionCache.remove(deviceId);
             deviceContextCache.remove(deviceId);
+            try {
+                persistLocalTemporaryContexts();
+            } catch (RuntimeException exception) {
+                restoreDeviceContext(deviceId, previousContext);
+                throw exception;
+            }
 
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
@@ -801,6 +848,35 @@ public class ConfigManager {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    /**
+     * 将当前所有本地设备配置持久化为可恢复快照。
+     */
+    private void persistLocalTemporaryContexts() {
+        localDeviceConfigStore.save(snapshotLocalTemporaryContexts());
+    }
+
+    /**
+     * 恢复一次因本地快照保存失败而回滚的设备上下文。
+     */
+    private void restoreDeviceContext(String deviceId, DeviceContext context) {
+        if (context == null) {
+            deviceCache.remove(deviceId);
+            pointCache.remove(deviceId);
+            connectionCache.remove(deviceId);
+            deviceContextCache.remove(deviceId);
+            return;
+        }
+        deviceCache.put(deviceId, context.getDeviceInfo());
+        DeviceConnection connection = context.copyConnectionConfig();
+        if (connection == null) {
+            connectionCache.remove(deviceId);
+        } else {
+            connectionCache.put(deviceId, connection);
+        }
+        pointCache.put(deviceId, context.copyDataPoints());
+        rebuildDeviceContext(deviceId);
     }
 
     /**

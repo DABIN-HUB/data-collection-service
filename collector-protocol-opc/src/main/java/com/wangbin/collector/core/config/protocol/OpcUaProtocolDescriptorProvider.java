@@ -23,14 +23,14 @@ public class OpcUaProtocolDescriptorProvider implements ProtocolDescriptorProvid
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("OPC_UA", "OPC UA",
-                "基于 PLC4X 的 OPC UA 统一架构采集器。",
-                List.of("OPCUA"), Plc4xOpcUaCollector.class, "OPC_UA", 4840, ProtocolAddressingMode.SYMBOLIC,
+                "基于 Eclipse Milo 的 OPC UA 统一架构采集器，直接使用标准 NodeId 读取 ProtoForge/OPC UA 服务。",
+                List.of("OPCUA"), OpcUaCollector.class, "OPC_UA_MILO", 4840, ProtocolAddressingMode.SYMBOLIC,
                 ProtocolCapabilityState.SUPPORTED,
                 ProtocolCapabilityState.SUPPORTED,
                 ProtocolCapabilityState.RUNTIME_DEPENDENT,
                 ProtocolCapabilityState.RUNTIME_DEPENDENT,
-                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001", "ns=3;i=1001;REAL"),
-                opcUaFields(registry))
+                List.of("ns=2;s=Channel1.Device1.Tag1", "ns=3;i=1001"),
+                opcUaMiloFields(registry))
                 .withDriverPrimarySchema("OPC UA 驱动数据类型", opcUaDriverDataTypes(), opcUaPointFields(registry)));
         registry.registerPrimary(registry.descriptor("OPC_UA_PLC4X", "OPC UA（PLC4X 别名）",
                 "保留的 PLC4X OPC UA 采集器历史别名，用于兼容旧配置。",

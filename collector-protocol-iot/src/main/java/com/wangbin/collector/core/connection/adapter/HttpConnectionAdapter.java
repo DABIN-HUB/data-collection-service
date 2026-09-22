@@ -83,6 +83,15 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
                 "http-connection-io-shared");
     }
 
+    public byte[] request(String method, String endpoint) throws Exception {
+        HttpRequest request = buildRequest(method, endpoint, null);
+        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("HTTP 请求失败，状态码: " + response.statusCode());
+        }
+        return response.body();
+    }
+
     /**
      * 创建并返回业务对象。
      */

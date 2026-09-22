@@ -97,10 +97,16 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
                 typeCode = Integer.parseInt(parts[0].trim());
                 address = Integer.parseInt(parts[1].trim());
             } else {
-                // 处理传统格式: "440001" (4表示类型，40001表示地址)
+                // ProtoForge 的 Modbus 点位使用原始 0-based 偏移；未带区号时按保持寄存器偏移解析。
                 int fullAddress = Integer.parseInt(addressStr.trim());
-                typeCode = fullAddress / 10000;
-                address = fullAddress % 10000 - 1;  // 转换为0-based地址
+                if (fullAddress >= 0 && fullAddress < 10000) {
+                    typeCode = RegisterType.HOLDING_REGISTER.getCode();
+                    address = fullAddress;
+                } else {
+                    // 处理传统格式: "440001" (4表示类型，40001表示地址)
+                    typeCode = fullAddress / 10000;
+                    address = fullAddress % 10000 - 1;  // 转换为0-based地址
+                }
             }
 
             // 获取寄存器类型

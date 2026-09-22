@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -102,10 +103,11 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             OpcUaAddress address = resolveAddress(point);
             nodeIds.add(address.toNodeId());
         }
-        List<DataValue> dataValues = client.readValues(0, TimestampsToReturn.Both, nodeIds);
+        List<DataValue> dataValues = readValuesWithAliasFallback(nodeIds);
         for (int i = 0; i < points.size(); i++) {
             DataValue value = dataValues.get(i);
-            values.put(points.get(i).getPointId(), value.getValue() != null ? value.getValue().getValue() : null);
+            values.put(points.get(i).getPointId(), value != null && value.getValue() != null
+                    ? value.getValue().getValue() : null);
         }
         return values;
     }
@@ -307,12 +309,12 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         List<Map<String, Object>> response = new ArrayList<>(nodeIds.size());
         for (int i = 0; i < nodeIds.size(); i++) {
             DataValue value = values.get(i);
-            response.add(Map.of(
-                    "nodeId", nodeIds.get(i),
-                    "value", value.getValue() != null ? value.getValue().getValue() : null,
-                    "status", value.getStatusCode() != null ? value.getStatusCode().toString() : "null",
-                    "sourceTimestamp", value.getSourceTime() != null ? value.getSourceTime().getJavaDate() : null
-            ));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("nodeId", nodeIds.get(i));
+            item.put("value", value != null && value.getValue() != null ? value.getValue().getValue() : null);
+            item.put("status", value != null && value.getStatusCode() != null ? value.getStatusCode().toString() : "null");
+            item.put("sourceTimestamp", value != null && value.getSourceTime() != null ? value.getSourceTime().getJavaDate() : null);
+            response.add(item);
         }
         return response;
     }

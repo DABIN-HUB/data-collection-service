@@ -47,17 +47,24 @@ public class MqttPointOptions {
      * 创建并返回业务对象。
      */
     public static MqttPointOptions from(DataPoint point, int defaultQos) {
-        String topic = Optional.ofNullable(point.getAdditionalConfig("topic"))
+        return from(point, defaultQos, null);
+    }
+
+    /**
+     * 根据设备身份解析 ProtoForge 等设备端使用的主题占位符。
+     */
+    public static MqttPointOptions from(DataPoint point, int defaultQos, String deviceId) {
+        String topic = resolveTopic(Optional.ofNullable(point.getAdditionalConfig("topic"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())
-                .orElse(point.getAddress());
+                .orElse(point.getAddress()), deviceId);
         if (topic == null || topic.isBlank()) {
             throw new IllegalArgumentException("MQTT point missing topic: " + point.getPointId());
         }
-        String writeTopic = Optional.ofNullable(point.getAdditionalConfig("writeTopic"))
+        String writeTopic = resolveTopic(Optional.ofNullable(point.getAdditionalConfig("writeTopic"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())
-                .orElse(topic);
+                .orElse(topic), deviceId);
         int qos = Optional.ofNullable(point.getAdditionalConfig("qos"))
                 .map(value -> MqttCollectorUtils.asInt(value, defaultQos))
                 .orElse(defaultQos);
@@ -79,5 +86,16 @@ public class MqttPointOptions {
                 .map(Charset::forName)
                 .orElse(StandardCharsets.UTF_8);
         return new MqttPointOptions(topic, writeTopic, qos, retain, jsonPath, encoding, template, charset);
+    }
+
+    private static String resolveTopic(String topic, String deviceId) {
+        if (topic == null || deviceId == null || deviceId.isBlank()) {
+            return topic;
+        }
+        return topic
+                .replace("${deviceId}", deviceId)
+                .replace("${device_id}", deviceId)
+                .replace("{deviceId}", deviceId)
+                .replace("{device_id}", deviceId);
     }
 }

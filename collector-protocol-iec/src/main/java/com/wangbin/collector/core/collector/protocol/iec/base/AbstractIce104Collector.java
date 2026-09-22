@@ -146,7 +146,8 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             boolean isResponse = isResponseCause(cot);
 
             for (InformationObject io : ios) {
-                int ioa = io.getInformationObjectAddress();
+                int rawIoa = io.getInformationObjectAddress();
+                int ioa = normalizeInformationObjectAddress(rawIoa);
                 InformationElement[][] elements = io.getInformationElements();
 
                 Object value = null;
@@ -172,8 +173,19 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         return result;
     }
 
+    private int normalizeInformationObjectAddress(int rawIoa) {
+        if (rawIoa > 0xFFFF && (rawIoa & 0xFF) == 0) {
+            int shifted = rawIoa >>> 8;
+            if (shifted > 0 && shifted <= 0xFFFF) {
+                log.debug("兼容 IEC104 IOA 左移编码: raw={}, normalized={}", rawIoa, shifted);
+                return shifted;
+            }
+        }
+        return rawIoa;
+    }
+
     /**
-     * 构造标准业务结果。
+     * 解析或转换业务数据。
      */
     private void failAllPending(Exception e) {
         pendingRequests.forEach((k, list) -> list.forEach(f -> f.completeExceptionally(e)));

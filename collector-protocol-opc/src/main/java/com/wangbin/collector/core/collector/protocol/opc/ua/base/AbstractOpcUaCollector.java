@@ -96,8 +96,86 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      */
     protected Object readValue(OpcUaAddress address) throws Exception {
         NodeId nodeId = address.toNodeId();
+        DataValue value = readValueWithAliasFallback(nodeId);
+        return value != null && value.getValue() != null ? value.getValue().getValue() : null;
+    }
+
+    /**
+     * 批量读取并对 ProtoForge 展示的短字符串 NodeId 执行设备前缀回退。
+     */
+    protected List<DataValue> readValuesWithAliasFallback(List<NodeId> nodeIds) throws Exception {
+        List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, nodeIds);
+        List<DataValue> resolved = new ArrayList<>(values);
+        for (int index = 0; index < nodeIds.size(); index++) {
+            DataValue current = values.get(index);
+            if (isUsable(current)) {
+                continue;
+            }
+            NodeId alias = resolveDeviceScopedAlias(nodeIds.get(index));
+            if (alias == null || alias.equals(nodeIds.get(index))) {
+                continue;
+            }
+            try {
+                DataValue fallback = client.readValue(0, TimestampsToReturn.Both, alias);
+                if (isUsable(fallback)) {
+                    resolved.set(index, fallback);
+                    log.debug("OPC UA 已使用设备作用域 NodeId 回退: 原始={}, 实际={}",
+                            nodeIds.get(index), alias);
+                }
+            } catch (Exception exception) {
+                log.debug("OPC UA NodeId 回退读取失败: {}", alias, exception);
+            }
+        }
+        return resolved;
+    }
+
+    private DataValue readValueWithAliasFallback(NodeId nodeId) throws Exception {
         DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
-        return value.getValue().getValue();
+        if (isUsable(value)) {
+            return value;
+        }
+        NodeId alias = resolveDeviceScopedAlias(nodeId);
+        if (alias == null || alias.equals(nodeId)) {
+            return value;
+        }
+        try {
+            DataValue fallback = client.readValue(0, TimestampsToReturn.Both, alias);
+            return isUsable(fallback) ? fallback : value;
+        } catch (Exception exception) {
+            log.debug("OPC UA NodeId 回退读取失败: {}", alias, exception);
+            return value;
+        }
+    }
+
+    private boolean isUsable(DataValue value) {
+        return value != null
+                && value.getStatusCode() != null
+                && value.getStatusCode().isGood()
+                && value.getValue() != null
+                && value.getValue().getValue() != null;
+    }
+
+    private NodeId resolveDeviceScopedAlias(NodeId nodeId) {
+        if (nodeId == null || !(nodeId.getIdentifier() instanceof String identifier)
+                || identifier.isBlank() || identifier.contains(".")) {
+            return null;
+        }
+        String prefix = resolveDeviceNodePrefix();
+        if (prefix == null || prefix.isBlank()) {
+            return null;
+        }
+        return new NodeId(nodeId.getNamespaceIndex(), prefix + "." + identifier);
+    }
+
+    private String resolveDeviceNodePrefix() {
+        if (deviceInfo == null || deviceInfo.getDeviceId() == null) {
+            return null;
+        }
+        String deviceId = deviceInfo.getDeviceId();
+        int protocolSeparator = deviceId.indexOf('_', 3);
+        return protocolSeparator > 0 && protocolSeparator + 1 < deviceId.length()
+                ? deviceId.substring(protocolSeparator + 1)
+                : null;
     }
 
     /**
@@ -109,7 +187,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
             OpcUaAddress address = OpcUaAddressParser.parse(point);
             nodeIds.add(address.toNodeId());
         }
-        List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, nodeIds);
+        List<DataValue> values = readValuesWithAliasFallback(nodeIds);
         Map<String, Object> result = new HashMap<>();
         for (int i = 0; i < points.size(); i++) {
             DataValue value = values.get(i);
