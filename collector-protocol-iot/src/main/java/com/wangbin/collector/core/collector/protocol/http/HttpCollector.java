@@ -16,7 +16,6 @@ import com.wangbin.collector.core.collector.protocol.http.extractor.RawHttpRespo
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -306,82 +305,6 @@ public class HttpCollector extends ConnectionBackedCollector {
             case "POINT_ARRAY" -> new PointArrayHttpResponseExtractor();
             default -> new RawHttpResponseExtractor();
         };
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private Map<String, Object> parseReadResponse(List<DataPoint> points, byte[] responseBytes) {
-        Map<String, Object> result = new HashMap<>();
-        if (responseBytes == null || responseBytes.length == 0) {
-            return result;
-        }
-
-        String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
-        if (text.isEmpty()) {
-            return result;
-        }
-
-        try {
-            Object parsed = JSON.parse(text);
-
-            if (parsed instanceof JSONObject obj) {
-                Object valuesObj = obj.get("values");
-                if (valuesObj instanceof JSONObject values) {
-                    putValueMap(points, result, values);
-                    return result;
-                }
-
-                Object pointId = obj.get(CommonMapKeys.POINT_ID);
-                if (pointId != null && obj.containsKey(CommonMapKeys.VALUE)) {
-                    result.put(pointId.toString(), obj.get(CommonMapKeys.VALUE));
-                    return result;
-                }
-
-                putValueMap(points, result, obj);
-                return result;
-            }
-
-            if (parsed instanceof JSONArray array) {
-                for (Object item : array) {
-                    if (!(item instanceof JSONObject itemObj)) {
-                        continue;
-                    }
-                    Object pointId = itemObj.get(CommonMapKeys.POINT_ID);
-                    if (pointId != null && itemObj.containsKey(CommonMapKeys.VALUE)) {
-                        result.put(pointId.toString(), itemObj.get(CommonMapKeys.VALUE));
-                    }
-                }
-                return result;
-            }
-
-            if (points.size() == 1) {
-                result.put(points.get(0).getPointId(), parsed);
-            }
-            return result;
-        } catch (Exception e) {
-            if (points.size() == 1) {
-                result.put(points.get(0).getPointId(), text);
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void putValueMap(List<DataPoint> points, Map<String, Object> result, JSONObject source) {
-        for (DataPoint point : points) {
-            String pointId = point.getPointId();
-            if (source.containsKey(pointId)) {
-                result.put(pointId, source.get(pointId));
-                continue;
-            }
-            String pointCode = point.getPointCode();
-            if (pointCode != null && source.containsKey(pointCode)) {
-                result.put(pointId, source.get(pointCode));
-            }
-        }
     }
 
     /**

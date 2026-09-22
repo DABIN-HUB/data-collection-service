@@ -18,28 +18,37 @@ public class JsonPathHttpResponseExtractor implements HttpResponseExtractor {
         if (response == null || response.length == 0 || points == null || points.isEmpty()) {
             return Collections.emptyMap();
         }
+        Object root;
         try {
-            Object root = JSON.parse(new String(response, StandardCharsets.UTF_8));
-            String path = String.valueOf(config.getOrDefault("responsePath", config.getOrDefault("jsonPath", "$")));
-            Object value = JSONPath.eval(root, path);
-            if (value == null) {
-                return Collections.emptyMap();
-            }
-            if (points.size() == 1) {
-                return Map.of(points.get(0).getPointId(), value);
-            }
-            if (value instanceof JSONObject object) {
-                Map<String, Object> result = new HashMap<>();
-                for (DataPoint point : points) {
-                    Object item = object.get(point.getPointId());
-                    if (item == null && point.getPointCode() != null) item = object.get(point.getPointCode());
-                    if (item != null) result.put(point.getPointId(), item);
-                }
-                return result;
-            }
-            return Collections.emptyMap();
-        } catch (Exception exception) {
+            root = JSON.parse(new String(response, StandardCharsets.UTF_8));
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("HTTP response parse failed", exception);
+        }
+
+        Map<String, Object> safeConfig = config != null ? config : Collections.emptyMap();
+        String path = String.valueOf(safeConfig.getOrDefault(
+                "responsePath", safeConfig.getOrDefault("jsonPath", "$")));
+        Object value;
+        try {
+            value = JSONPath.eval(root, path);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("HTTP JSONPath extraction failed: " + path, exception);
+        }
+        if (value == null) {
             return Collections.emptyMap();
         }
+        if (points.size() == 1) {
+            return Map.of(points.get(0).getPointId(), value);
+        }
+        if (value instanceof JSONObject object) {
+            Map<String, Object> result = new HashMap<>();
+            for (DataPoint point : points) {
+                Object item = object.get(point.getPointId());
+                if (item == null && point.getPointCode() != null) item = object.get(point.getPointCode());
+                if (item != null) result.put(point.getPointId(), item);
+            }
+            return result;
+        }
+        return Collections.emptyMap();
     }
 }
