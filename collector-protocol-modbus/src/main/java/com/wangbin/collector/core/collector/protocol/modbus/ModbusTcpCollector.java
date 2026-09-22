@@ -174,7 +174,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("点位地址不能为空");
         }
 
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = resolveUnitId(point);
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> readCoil(unitId,modbusAddress);
@@ -195,7 +195,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("点位地址不能为空");
         }
 
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = resolveUnitId(point);
         return switch (modbusAddress.getRegisterType()) {
             case COIL -> writeCoil(unitId,modbusAddress, (Boolean) value);

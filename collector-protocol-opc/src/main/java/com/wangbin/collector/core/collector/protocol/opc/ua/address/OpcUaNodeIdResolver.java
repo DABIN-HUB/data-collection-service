@@ -10,8 +10,14 @@ import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
  */
 public class OpcUaNodeIdResolver {
     public NodeId resolve(DataPoint point, DeviceConnection connection) {
-        NodeId nodeId = OpcUaAddressParser.parse(point).toNodeId();
-        String mode = connection != null ? connection.getString("nodeIdAliasMode", "NONE") : "NONE";
+        return resolve(OpcUaAddressParser.parse(point).toNodeId(), connection);
+    }
+
+    public NodeId resolve(NodeId nodeId, DeviceConnection connection) {
+        if (nodeId == null || connection == null) {
+            return nodeId;
+        }
+        String mode = connection.getString("nodeIdAliasMode", "NONE");
         if (!"PREFIX".equalsIgnoreCase(mode) || !(nodeId.getIdentifier() instanceof String identifier)
                 || identifier.isBlank() || identifier.contains(".")) {
             return nodeId;

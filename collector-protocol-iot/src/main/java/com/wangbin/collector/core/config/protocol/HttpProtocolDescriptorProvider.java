@@ -30,6 +30,8 @@ public class HttpProtocolDescriptorProvider implements ProtocolDescriptorProvide
                         registry.field("path", "string", "Base path", false, "", null, "request"),
                         registry.field("method", "select", "Request method", false, "POST",
                                 List.of("GET", "POST", "PUT", "DELETE", "HEAD"), "request"),
+                        registry.field("requestMode", "select", "Request mode", false, "AUTO_COMPAT",
+                                List.of("AUTO_COMPAT", "ENVELOPE", "DIRECT"), "request"),
                         registry.field("headers", "object", "Request headers", false, "{}", null, "request"),
                         registry.field("queryParams", "object", "Query parameters", false, "{}", null, "request"),
                         registry.field("sendEndpoint", "string", "Send endpoint", false, "/api/data", null, "request"),

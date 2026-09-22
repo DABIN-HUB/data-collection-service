@@ -107,6 +107,10 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
         return nodeIdResolver.resolve(point, connection);
     }
 
+    protected NodeId resolveNodeIdForCommand(NodeId nodeId) {
+        return nodeIdResolver.resolve(nodeId, requireConnectionConfig());
+    }
+
     protected List<DataValue> readValues(List<NodeId> nodeIds) throws Exception {
         return client.readValues(0, TimestampsToReturn.Both, nodeIds);
     }

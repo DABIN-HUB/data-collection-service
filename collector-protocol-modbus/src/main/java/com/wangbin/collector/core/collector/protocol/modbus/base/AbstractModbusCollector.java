@@ -75,7 +75,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         log.info("Modbus 读取计划构建完成，计划数: {}", readPlans.size());
     }
 
-    private ModbusAddress parseModbusAddressForPoint(DataPoint point, String address) {
+    protected ModbusAddress parseModbusAddressForPoint(DataPoint point, String address) {
         DeviceConnection connection = getCurrentConnectionConfig();
         Object configuredMode = point.getAdditionalConfig("addressMode");
         if (configuredMode == null && connection != null) configuredMode = connection.getProperty("addressMode");
@@ -85,94 +85,65 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         return parseModbusAddress(address, mode, registerType);
     }
 
+    private RegisterType parseRegisterTypeToken(String token) {
+        String normalized = token == null ? "" : token.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "0", "COIL" -> RegisterType.COIL;
+            case "1", "DISCRETE_INPUT" -> RegisterType.DISCRETE_INPUT;
+            case "3", "INPUT_REGISTER" -> RegisterType.INPUT_REGISTER;
+            case "4", "HOLDING_REGISTER" -> RegisterType.HOLDING_REGISTER;
+            default -> throw new IllegalArgumentException("Unsupported Modbus register type: " + token);
+        };
+    }
+
     private RegisterType resolveRegisterType(Object value) {
-        if (value == null) return null;
-        try { return RegisterType.valueOf(value.toString().trim().toUpperCase()); }
-        catch (IllegalArgumentException ignored) { return RegisterType.fromCode(Integer.parseInt(value.toString())); }
+        return value == null ? null : parseRegisterTypeToken(value.toString());
     }
 
     private ModbusAddress parseModbusAddress(String address, ModbusAddressMode mode, RegisterType configuredType) {
+        if (address == null || address.isBlank()) {
+            throw new IllegalArgumentException("Modbus address cannot be empty");
+        }
         String text = address.trim();
         boolean typed = text.contains("x") || text.contains("X") || text.contains(":");
-        if (mode == ModbusAddressMode.RAW_OFFSET && !typed) {
-            if (configuredType == null) configuredType = RegisterType.HOLDING_REGISTER;
-            return new ModbusAddress(configuredType, Integer.parseInt(text));
-        }
-        if (mode == ModbusAddressMode.REFERENCE && !typed) {
-            return parseReferenceAddress(Integer.parseInt(text));
-        }
         if (typed) {
             String[] parts = text.split("[xX:]");
-            if (parts.length != 2) throw new IllegalArgumentException("Modbus 地址格式错误: " + address);
-            RegisterType type = RegisterType.fromCode(Integer.parseInt(parts[0].trim()));
-            if (type == null) type = RegisterType.valueOf(parts[0].trim().toUpperCase());
-            int reference = Integer.parseInt(parts[1].trim());
-            int offset = reference >= 10000 ? reference % 10000 - 1 : reference;
-            return new ModbusAddress(type, offset);
+            if (parts.length != 2) throw new IllegalArgumentException("Invalid Modbus address: " + address);
+            RegisterType type = parseRegisterTypeToken(parts[0]);
+            int value = parseAddressNumber(parts[1], address);
+            int offset = value >= 10000 ? value % 10000 - 1 : value;
+            return new ModbusAddress(type, validateOffset(offset, address));
         }
-        return parseModbusAddress(text);
+        int value = parseAddressNumber(text, address);
+        if (mode == ModbusAddressMode.RAW_OFFSET || (mode == ModbusAddressMode.AUTO_COMPAT && value < 10000)) {
+            RegisterType type = configuredType != null ? configuredType : RegisterType.HOLDING_REGISTER;
+            return new ModbusAddress(type, validateOffset(value, address));
+        }
+        return parseReferenceAddress(value, address);
     }
 
-    private ModbusAddress parseReferenceAddress(int reference) {
-        int typeCode = reference / 10000;
-        RegisterType type = RegisterType.fromCode(typeCode);
-        if (type == null) throw new IllegalArgumentException("不支持的 Modbus 引用地址: " + reference);
-        return new ModbusAddress(type, reference % 10000 - 1);
+    private int parseAddressNumber(String value, String address) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Invalid Modbus address: " + address);
+        }
+    }
+
+    private int validateOffset(int offset, String address) {
+        if (offset < 0 || offset > 65535) {
+            throw new IllegalArgumentException("Modbus address out of range: " + address);
+        }
+        return offset;
+    }
+
+    private ModbusAddress parseReferenceAddress(int reference, String address) {
+        RegisterType type = parseRegisterTypeToken(String.valueOf(reference / 10000));
+        return new ModbusAddress(type, validateOffset(reference % 10000 - 1, address));
     }
 
     public ModbusAddress parseModbusAddress(String addressStr) {
-        if (addressStr == null || addressStr.isEmpty()) {
-            throw new IllegalArgumentException("Modbus地址不能为空");
-        }
-
-        try {
-            int address;
-            RegisterType type;
-            int typeCode;
-
-            // 处理分隔符格式: "3x40001", "3X40001", "3:40001"
-            if (addressStr.contains("x") || addressStr.contains("X") || addressStr.contains(":")) {
-                String[] parts = addressStr.split("[xX:]");
-                if (parts.length != 2) {
-                    throw new IllegalArgumentException("Modbus地址格式错误，应为'类型x地址'或'类型:地址': " + addressStr);
-                }
-
-                typeCode = Integer.parseInt(parts[0].trim());
-                int reference = Integer.parseInt(parts[1].trim());
-                address = reference >= 10000 ? reference % 10000 - 1 : reference;
-            } else {
-                // ProtoForge 的 Modbus 点位使用原始 0-based 偏移；未带区号时按保持寄存器偏移解析。
-                int fullAddress = Integer.parseInt(addressStr.trim());
-                if (fullAddress >= 0 && fullAddress < 10000) {
-                    typeCode = RegisterType.HOLDING_REGISTER.getCode();
-                    address = fullAddress;
-                } else {
-                    // 处理传统格式: "440001" (4表示类型，40001表示地址)
-                    typeCode = fullAddress / 10000;
-                    address = fullAddress % 10000 - 1;  // 转换为0-based地址
-                }
-            }
-
-            // 获取寄存器类型
-            type = RegisterType.fromCode(typeCode);
-            if (type == null) {
-                throw new IllegalArgumentException("不支持的Modbus寄存器类型代码: " + typeCode +
-                        " (地址: " + addressStr + ")");
-            }
-
-            // 验证地址有效性
-            if (address < 0) {
-                throw new IllegalArgumentException("Modbus地址不能小于0: " + addressStr);
-            }
-            if (address > 65535) {
-                throw new IllegalArgumentException("Modbus地址不能超过65535: " + addressStr);
-            }
-
-            return new ModbusAddress(type, address);
-
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Modbus地址格式错误，请输入有效的数字: " + addressStr, e);
-        }
+        return parseModbusAddress(addressStr, ModbusAddressMode.AUTO_COMPAT, null);
     }
 
     /**
@@ -255,7 +226,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
             Object value = entry.getValue();
 
             try {
-                ModbusAddress address = parseModbusAddress(point.getAddress());
+                ModbusAddress address = parseModbusAddressForPoint(point, point.getAddress());
                 RegisterType type = address.getRegisterType();
 
                 if (type != RegisterType.COIL && type != RegisterType.HOLDING_REGISTER) {
@@ -293,7 +264,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
 
         for (DataPoint point : points) {
             try {
-                ModbusAddress address = parseModbusAddress(point.getAddress());
+                ModbusAddress address = parseModbusAddressForPoint(point, point.getAddress());
                 RegisterType type = address.getRegisterType();
 
                 registerCache.computeIfAbsent(type, k -> new ConcurrentHashMap<>())
@@ -316,7 +287,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
         } else {
             for (DataPoint point : points) {
                 try {
-                    ModbusAddress address = parseModbusAddress(point.getAddress());
+                    ModbusAddress address = parseModbusAddressForPoint(point, point.getAddress());
                     RegisterType type = address.getRegisterType();
 
                     Map<Integer, DataPoint> typeCache = registerCache.get(type);

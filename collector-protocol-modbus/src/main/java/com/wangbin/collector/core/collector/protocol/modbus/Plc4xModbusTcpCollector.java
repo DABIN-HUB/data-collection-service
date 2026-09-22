@@ -195,7 +195,7 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("Point address cannot be empty");
         }
 
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = resolveUnitId(point);
         int registerCount = resolveQuantity(modbusAddress.getRegisterType(), point.getDataType());
         byte[] raw = transport.read(unitId, modbusAddress.getRegisterType(), modbusAddress.getAddress(), registerCount);
@@ -217,7 +217,7 @@ public class Plc4xModbusTcpCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("Point address cannot be empty");
         }
 
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = resolveUnitId(point);
 
         return switch (modbusAddress.getRegisterType()) {

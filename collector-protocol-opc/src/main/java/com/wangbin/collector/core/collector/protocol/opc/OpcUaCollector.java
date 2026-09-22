@@ -304,6 +304,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         List<NodeId> readTargets = nodeIds.stream()
                 .map(this::safeParseNodeId)
+                .map(this::resolveNodeIdForCommand)
                 .collect(Collectors.toList());
         List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, readTargets);
         List<Map<String, Object>> response = new ArrayList<>(nodeIds.size());
@@ -333,7 +334,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         OpcUaDataType dataType = OpcUaDataType.fromText(Objects.toString(params.get("dataType"), null));
         OpcUaAddress tempAddress = new OpcUaAddress(
-                safeParseNodeId(nodeIdText),
+                resolveNodeIdForCommand(safeParseNodeId(nodeIdText)),
                 dataType,
                 -1,
                 1,

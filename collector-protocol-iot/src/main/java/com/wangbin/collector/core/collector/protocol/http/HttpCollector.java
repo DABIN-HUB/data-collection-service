@@ -261,10 +261,11 @@ public class HttpCollector extends ConnectionBackedCollector {
         payload.put("points", pointArray);
 
         DeviceConnection config = httpConnection.getConnectionConfig();
-        String apiPrefix = config.getString("apiPrefix", "");
+        String requestMode = resolveRequestMode(config, points);
         byte[] response;
-        if (!apiPrefix.isBlank() && points.stream().allMatch(point -> point.getAddress() != null && point.getAddress().startsWith("/"))) {
-            response = httpConnection.request(config.getString("method", "GET"), apiPrefix);
+        if ("DIRECT".equals(requestMode)) {
+            String endpoint = config.getString("apiPrefix", config.getString("path", ""));
+            response = httpConnection.request(config.getString("method", "GET"), endpoint);
         } else {
             httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
             response = tryReceiveResponse();
@@ -285,6 +286,18 @@ public class HttpCollector extends ConnectionBackedCollector {
             timeout = config.getReadTimeout();
         }
         return httpConnection.receive(timeout);
+    }
+
+    /** 根据显式配置决定 HTTP 请求模式；AUTO_COMPAT 仅保留旧配置兼容规则。 */
+    private String resolveRequestMode(DeviceConnection config, List<DataPoint> points) {
+        String configured = config.getString("requestMode", "AUTO_COMPAT").toUpperCase();
+        if ("DIRECT".equals(configured) || "ENVELOPE".equals(configured)) {
+            return configured;
+        }
+        String apiPrefix = config.getString("apiPrefix", "");
+        boolean directCompatible = !apiPrefix.isBlank()
+                && points.stream().allMatch(point -> point.getAddress() != null && point.getAddress().startsWith("/"));
+        return directCompatible ? "DIRECT" : "ENVELOPE";
     }
 
     private HttpResponseExtractor selectResponseExtractor(DeviceConnection config) {

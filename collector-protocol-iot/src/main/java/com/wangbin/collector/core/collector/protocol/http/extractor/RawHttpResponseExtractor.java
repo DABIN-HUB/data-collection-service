@@ -27,6 +27,8 @@ public class RawHttpResponseExtractor implements HttpResponseExtractor {
             Object values = object.get("values");
             if (values instanceof JSONObject valuesObject) {
                 putMap(points, result, valuesObject);
+            } else if (object.get("pointId") != null && object.containsKey("value")) {
+                result.put(object.getString("pointId"), object.get("value"));
             } else {
                 putMap(points, result, object);
             }
