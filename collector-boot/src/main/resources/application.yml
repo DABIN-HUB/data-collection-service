@@ -206,6 +206,12 @@ collector:
         paths: [/api/device/**, /api/data/device/*/reset-adaptive]
         required-scope: DEVICE_CONTROL
       - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/control/**]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/shadow/**]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
         required-scope: CONFIG_MANAGE
       - methods: [POST]

@@ -262,6 +262,87 @@ class AuthFilterTest {
         assertThat(response.getHeader("X-Request-Id")).isEqualTo("obs-053-denied");
     }
 
+    @Test
+    void shouldProtectControlAndShadowWritesByDeviceControlScope() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.DEVICE_CONTROL));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/point/p1", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/points", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/command", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1/delta", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1/history", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/shadow/dev-1/desired", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("DELETE", "/api/shadow/dev-1/desired", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/point/p1", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/points", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/command", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/shadow/dev-1/desired", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("DELETE", "/api/shadow/dev-1/desired", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void shouldApplyControlAndShadowRulesAfterContextPath() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.DEVICE_CONTROL));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        MockHttpServletRequest viewerRequest = request("POST", "/collector/api/control/device/dev-1/point/p1", "viewer-token");
+        viewerRequest.setContextPath("/collector");
+        assertThat(status(filter, viewerRequest)).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        MockHttpServletRequest operatorRequest = request("POST", "/collector/api/control/device/dev-1/point/p1", "operator-token");
+        operatorRequest.setContextPath("/collector");
+        assertThat(status(filter, operatorRequest)).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    private AuthProperties controlAndShadowAuthProperties() {
+        AuthProperties properties = new AuthProperties();
+        properties.setAccessRules(List.of(
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/device/**", "/api/data/device/*/reset-adaptive"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/control/**"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/shadow/**"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/config/**"), AuthScope.CONFIG_MANAGE),
+                accessRule(List.of("GET"), List.of("/api/**", "/monitor/**"), AuthScope.VIEW)));
+        return properties;
+    }
+
+    private AuthProperties.AccessRule accessRule(List<String> methods,
+                                                  List<String> paths,
+                                                  AuthScope scope) {
+        AuthProperties.AccessRule rule = new AuthProperties.AccessRule();
+        rule.setMethods(methods);
+        rule.setPaths(paths);
+        rule.setRequiredScope(scope);
+        return rule;
+    }
     private MockHttpServletRequest request(String method, String path, String token) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         if (token != null) {
