@@ -343,6 +343,7 @@ public class ControlCommandApplicationService {
      * @return 单点写入结果
      */
     private boolean isControlAvailable(String deviceId) {
+        if (collectionService != null && configManager.getDevice(deviceId) == null) return false;
         if (collectionService != null && !collectionService.isDeviceRunning(deviceId)) return false;
         if (collectionManager.getCollector(deviceId) != null && !collectionManager.isDeviceConnected(deviceId)) return false;
         return true;

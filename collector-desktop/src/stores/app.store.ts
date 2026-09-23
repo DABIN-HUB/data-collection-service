@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 
 import { configureHttp, DEFAULT_SERVER_URL, isDesktopRuntime, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
 import { getSystemCapabilities } from "@/api/system.api";
+import { useWebSocketStore } from "@/stores/websocket.store";
 import type { SystemCapabilities } from "@/types/system";
 
 interface AppState {
@@ -93,10 +94,12 @@ export const useAppStore = defineStore("app", {
         .then((capabilities) => {
           this.capabilities = capabilities;
           this.capabilitiesError = "";
+          useWebSocketStore().setSupported(Boolean(capabilities.realtime.websocketAvailable));
         })
         .catch((error: unknown) => {
           this.capabilities = null;
           this.capabilitiesError = error instanceof Error ? error.message : "系统能力读取失败";
+          useWebSocketStore().setSupported(false);
         });
     },
     async updateServerUrl(serverUrl: string) {

@@ -5,27 +5,27 @@ import { usePointStore } from "./point.store";
 import type { DataPoint } from "@/types/point";
 
 const apiMocks = vi.hoisted(() => ({
-  getDevicePointConfig: vi.fn(),
-  saveDevicePointConfig: vi.fn(),
+  getDeviceConfigBundle: vi.fn(),
   validateDeviceConfigBundle: vi.fn(),
   commitDeviceConfigBundle: vi.fn()
 }));
 
-vi.mock("@/api/point.api", () => ({
-  getDevicePointConfig: apiMocks.getDevicePointConfig,
-  saveDevicePointConfig: apiMocks.saveDevicePointConfig
-}));
-
 vi.mock("@/api/config.api", () => ({
-  getDeviceConfigBundle: apiMocks.getDevicePointConfig,
+  getDeviceConfigBundle: apiMocks.getDeviceConfigBundle,
   validateDeviceConfigBundle: apiMocks.validateDeviceConfigBundle,
   commitDeviceConfigBundle: apiMocks.commitDeviceConfigBundle
 }));
 beforeEach(() => {
   vi.clearAllMocks();
   setActivePinia(createPinia());
-  apiMocks.getDevicePointConfig.mockResolvedValue({ points: [] });
-  apiMocks.saveDevicePointConfig.mockResolvedValue({});
+  apiMocks.getDeviceConfigBundle.mockResolvedValue({
+    points: [],
+    configVersion: 1,
+    device: { deviceId: "dev-a", deviceName: "测试设备", protocolType: "MODBUS_TCP" },
+    connection: { deviceId: "dev-a", host: "127.0.0.1", port: 502 }
+  });
+  apiMocks.validateDeviceConfigBundle.mockResolvedValue({ valid: true, errors: [] });
+  apiMocks.commitDeviceConfigBundle.mockResolvedValue({ configVersion: 2 });
 });
 
 function createDeferred<T>() {
@@ -135,7 +135,7 @@ describe("point.store", () => {
   it("同设备 Load1 → Load2 时，旧 Load1 后返回不会覆盖新 Load2", async () => {
     const load1 = createDeferred<{ points: DataPoint[] }>();
     const load2 = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.getDevicePointConfig
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => load1.promise)
       .mockImplementationOnce(() => load2.promise);
     const store = usePointStore();
@@ -156,7 +156,7 @@ describe("point.store", () => {
   it("A 与 B 设备 load 并行时，互相独立提交各自 points 和 error", async () => {
     const loadA = createDeferred<{ points: DataPoint[] }>();
     const loadB = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.getDevicePointConfig
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => loadA.promise)
       .mockImplementationOnce(() => loadB.promise);
     const store = usePointStore();
@@ -179,7 +179,7 @@ describe("point.store", () => {
   it("A 设备旧错误不会污染 B 设备 error", async () => {
     const loadA = createDeferred<{ points: DataPoint[] }>();
     const loadB = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.getDevicePointConfig
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => loadA.promise)
       .mockImplementationOnce(() => loadB.promise);
     const store = usePointStore();
@@ -200,7 +200,7 @@ describe("point.store", () => {
   it("同设备旧 finally 不会关闭 newer loading", async () => {
     const load1 = createDeferred<{ points: DataPoint[] }>();
     const load2 = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.getDevicePointConfig
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => load1.promise)
       .mockImplementationOnce(() => load2.promise);
     const store = usePointStore();
@@ -225,13 +225,15 @@ describe("point.store", () => {
     const saveRequest = createDeferred<unknown>();
     const reloadRequest = createDeferred<{ points: DataPoint[] }>();
     let capturedPayload: DataPoint[] = [];
-    apiMocks.saveDevicePointConfig.mockImplementationOnce(async (_deviceId: string, points: DataPoint[]) => {
-      capturedPayload = JSON.parse(JSON.stringify(points));
+    apiMocks.commitDeviceConfigBundle.mockImplementationOnce(async (_deviceId: string, bundle: { points: DataPoint[] }) => {
+      capturedPayload = JSON.parse(JSON.stringify(bundle.points));
       return saveRequest.promise;
     });
-    apiMocks.getDevicePointConfig.mockImplementationOnce(() => reloadRequest.promise);
+    apiMocks.getDeviceConfigBundle.mockImplementationOnce(() => reloadRequest.promise);
     const store = usePointStore();
     store.replacePoints("dev-a", [point({ pointId: "p1", pointName: "原始点位" })]);
+    store.bundleDeviceByDevice["dev-a"] = { deviceId: "dev-a", deviceName: "测试设备", protocolType: "MODBUS_TCP" };
+    store.bundleConnectionByDevice["dev-a"] = { deviceId: "dev-a", host: "127.0.0.1", port: 502 };
 
     const savePromise = store.save("dev-a");
     await flushPromises();
@@ -253,12 +255,14 @@ describe("point.store", () => {
     const saveRequest = createDeferred<unknown>();
     const manualLoad = createDeferred<{ points: DataPoint[] }>();
     const postSaveLoad = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.saveDevicePointConfig.mockImplementationOnce(() => saveRequest.promise);
-    apiMocks.getDevicePointConfig
+    apiMocks.commitDeviceConfigBundle.mockImplementationOnce(() => saveRequest.promise);
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => manualLoad.promise)
       .mockImplementationOnce(() => postSaveLoad.promise);
     const store = usePointStore();
     store.replacePoints("dev-a", [point({ pointId: "base" })]);
+    store.bundleDeviceByDevice["dev-a"] = { deviceId: "dev-a", deviceName: "测试设备", protocolType: "MODBUS_TCP" };
+    store.bundleConnectionByDevice["dev-a"] = { deviceId: "dev-a", host: "127.0.0.1", port: 502 };
 
     const savePromise = store.save("dev-a");
     await flushPromises();
@@ -281,12 +285,14 @@ describe("point.store", () => {
   it("save 成功后的 post-save reload 先开始，但随后用户 manual load 开始时，manual load 成为 latest", async () => {
     const postSaveLoad = createDeferred<{ points: DataPoint[] }>();
     const manualLoad = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.saveDevicePointConfig.mockResolvedValueOnce({});
-    apiMocks.getDevicePointConfig
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({});
+    apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => postSaveLoad.promise)
       .mockImplementationOnce(() => manualLoad.promise);
     const store = usePointStore();
     store.replacePoints("dev-a", [point({ pointId: "base" })]);
+    store.bundleDeviceByDevice["dev-a"] = { deviceId: "dev-a", deviceName: "测试设备", protocolType: "MODBUS_TCP" };
+    store.bundleConnectionByDevice["dev-a"] = { deviceId: "dev-a", host: "127.0.0.1", port: 502 };
 
     const savePromise = store.save("dev-a");
     await flushPromises();

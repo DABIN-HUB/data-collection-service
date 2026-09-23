@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.argThat;
@@ -107,6 +108,53 @@ class ConfigManagerLocalDeviceTest {
 
         assertTrue(configManager.containsDevice("local-keep"));
         assertTrue(configManager.isLocalTemporaryDevice("local-keep"));
+    }
+
+    @Test
+    void shouldPreserveAllLiveCachesAndVersionWhenCandidatePointLoadFails() {
+        DeviceInfo original = device("stable-1");
+        assertTrue(configManager.updateDeviceConfig(original));
+        assertTrue(configManager.updateConnectionConfig("stable-1", connection("stable-1")));
+        assertTrue(configManager.updateDataPoints("stable-1", List.of(point("stable-1"))));
+        long originalVersion = configManager.getDeviceConfigVersion("stable-1");
+        DeviceInfo originalDevice = configManager.getDevice("stable-1");
+        DeviceConnection originalConnection = configManager.getConnectionConfig("stable-1");
+        List<DataPoint> originalPoints = configManager.getDataPoints("stable-1");
+        DeviceContext originalContext = configManager.getDeviceContext("stable-1");
+
+        when(configSyncService.loadAllDevices()).thenReturn(List.of(device("new-a"), device("new-b")));
+        when(configSyncService.loadDataPoints("new-a")).thenReturn(List.of(point("new-a")));
+        when(configSyncService.loadDataPoints("new-b")).thenThrow(new IllegalStateException("points down"));
+        when(configSyncService.loadConnectionConfig("new-a")).thenReturn(connection("new-a"));
+
+        ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig");
+
+        assertSame(originalDevice, configManager.getDevice("stable-1"));
+        assertSame(originalConnection, configManager.getConnectionConfig("stable-1"));
+        assertEquals(originalPoints, configManager.getDataPoints("stable-1"));
+        assertSame(originalContext, configManager.getDeviceContext("stable-1"));
+        assertEquals(originalVersion, configManager.getDeviceConfigVersion("stable-1"));
+        assertFalse(configManager.containsDevice("new-a"));
+        assertFalse(configManager.containsDevice("new-b"));
+    }
+
+    @Test
+    void shouldPreserveLiveCachesWhenCandidateConnectionLoadFails() {
+        assertTrue(configManager.updateDeviceConfig(device("stable-2")));
+        assertTrue(configManager.updateConnectionConfig("stable-2", connection("stable-2")));
+        assertTrue(configManager.updateDataPoints("stable-2", List.of(point("stable-2"))));
+        long originalVersion = configManager.getDeviceConfigVersion("stable-2");
+        DeviceContext originalContext = configManager.getDeviceContext("stable-2");
+
+        when(configSyncService.loadAllDevices()).thenReturn(List.of(device("new-c")));
+        when(configSyncService.loadDataPoints("new-c")).thenReturn(List.of(point("new-c")));
+        when(configSyncService.loadConnectionConfig("new-c")).thenThrow(new IllegalStateException("connection down"));
+
+        ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig");
+
+        assertSame(originalContext, configManager.getDeviceContext("stable-2"));
+        assertEquals(originalVersion, configManager.getDeviceConfigVersion("stable-2"));
+        assertFalse(configManager.containsDevice("new-c"));
     }
 
     @Test

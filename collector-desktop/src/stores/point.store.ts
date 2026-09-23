@@ -1,6 +1,5 @@
 import { defineStore } from "pinia";
 
-import { getDevicePointConfig, saveDevicePointConfig } from "@/api/point.api";
 import { getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
@@ -132,15 +131,7 @@ export const usePointStore = defineStore("point", {
       const connection = this.bundleConnectionByDevice[targetDeviceId];
       const baseVersion = this.configVersionByDevice[targetDeviceId] || 0;
       if (!device || !connection) {
-        this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
-        try {
-          await saveDevicePointConfig(targetDeviceId, payload);
-          await this.load(targetDeviceId);
-        } catch (error) {
-          this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置保存失败";
-        } finally {
-          this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);
-        }
+        this.errorByDevice[targetDeviceId] = "设备完整配置尚未加载";
         return;
       }
       this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
@@ -154,6 +145,7 @@ export const usePointStore = defineStore("point", {
         }
         const result = await commitDeviceConfigBundle(targetDeviceId, bundlePayload);
         this.configVersionByDevice[targetDeviceId] = result.configVersion;
+        await this.load(targetDeviceId);
       } catch (error) {
         this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && error.httpStatus === 409
           ? "设备配置已经发生变化，请重新读取配置后确认当前修改"

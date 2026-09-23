@@ -53,6 +53,7 @@ beforeEach(() => {
   FakeWebSocket.reset();
   setActivePinia(createPinia());
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
+  useWebSocketStore().setSupported(true);
 });
 
 afterEach(() => {
@@ -69,6 +70,16 @@ function latestSocket(): FakeWebSocket {
 }
 
 describe("websocket.store", () => {
+  it("不支持浏览器 WebSocket 时 connect 不创建 socket，也不安排重连", () => {
+    const store = useWebSocketStore();
+    store.setSupported(false);
+
+    store.connectRealtime("device-a");
+
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(store.status).toBe("unavailable");
+    expect(store.enabled).toBe(false);
+  });
   it("默认关闭 WebSocket，需用户手动启用", () => {
     const store = useWebSocketStore();
 
@@ -313,6 +324,8 @@ describe("websocket.store", () => {
     const piniaB = createPinia();
     const storeA = useWebSocketStore(piniaA);
     const storeB = useWebSocketStore(piniaB);
+    storeA.setSupported(true);
+    storeB.setSupported(true);
 
     storeA.connectRealtime("device-a");
     const socketA = latestSocket();

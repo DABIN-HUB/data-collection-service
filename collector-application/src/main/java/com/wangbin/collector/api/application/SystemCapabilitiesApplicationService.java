@@ -2,7 +2,6 @@ package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.SystemCapabilitiesResponse;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
-import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import com.wangbin.collector.storage.service.HistoryDataService;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +15,6 @@ public class SystemCapabilitiesApplicationService {
     private final ObjectProvider<HistoryDataService> historyDataServiceProvider;
     private final ObjectProvider<CollectionManager> collectionManagerProvider;
     private final ObjectProvider<ShadowManager> shadowManagerProvider;
-    private final ObjectProvider<ReportProperties> reportPropertiesProvider;
 
     public SystemCapabilitiesResponse getCapabilities() {
         HistoryDataService history = historyDataServiceProvider.getIfAvailable();
@@ -24,9 +22,8 @@ public class SystemCapabilitiesApplicationService {
         String historyReason = historyAvailable ? null : "当前服务未启用历史存储能力";
         boolean controlAvailable = collectionManagerProvider.getIfAvailable() != null;
         ShadowManager shadow = shadowManagerProvider.getIfAvailable();
-        ReportProperties reportProperties = reportPropertiesProvider.getIfAvailable();
-        boolean shadowAvailable = shadow != null && reportProperties != null && reportProperties.getShadow().isEnabled();
-        boolean cloudMonitoringAvailable = reportProperties != null && reportProperties.mqttEnabled();
+        boolean shadowAvailable = shadow != null;
+        boolean cloudMonitoringAvailable = false;
         return SystemCapabilitiesResponse.builder()
                 .realtime(SystemCapabilitiesResponse.Realtime.builder()
                         .browserTransport("HTTP_POLLING")

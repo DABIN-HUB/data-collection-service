@@ -12,6 +12,7 @@ import {
 type WebSocketStatus = "disabled" | "connecting" | "connected" | "reconnecting" | "unavailable" | "closed";
 
 interface WebSocketState {
+  websocketSupported: boolean;
   enabled: boolean;
   connected: boolean;
   connecting: boolean;
@@ -43,6 +44,7 @@ const storeRuntimeMap = new WeakMap<object, WebSocketRuntime>();
 
 export const useWebSocketStore = defineStore("websocket", {
   state: (): WebSocketState => ({
+    websocketSupported: false,
     enabled: false,
     connected: false,
     connecting: false,
@@ -73,6 +75,9 @@ export const useWebSocketStore = defineStore("websocket", {
   },
   actions: {
     connectRealtime(deviceId: string) {
+      if (!this.websocketSupported) {
+        return;
+      }
       if (!deviceId) {
         this.disableRealtime();
         return;
@@ -89,6 +94,22 @@ export const useWebSocketStore = defineStore("websocket", {
       this.reconnectAttempt = 0;
       resetParseObservability(this);
       openRealtimeConnection(this, deviceId, { reconnect: false });
+    },
+    setSupported(supported: boolean) {
+      this.websocketSupported = supported;
+      if (!supported) {
+        const runtime = getStoreRuntime(this);
+        clearReconnectTimer(runtime);
+        closeRuntimeSocket(runtime);
+        runtime.allowReconnect = false;
+        this.enabled = false;
+        this.connected = false;
+        this.connecting = false;
+        this.status = "unavailable";
+        this.error = "";
+        this.activeDeviceId = "";
+        this.reconnectAttempt = 0;
+      }
     },
     disableRealtime() {
       const runtime = getStoreRuntime(this);
