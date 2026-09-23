@@ -198,7 +198,8 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
-import { getDeviceConfigBundle, getDeviceDiff, commitDeviceConfigBundle } from "@/api/config.api";
+import { getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { ApiRequestError } from "@/api/http";
 import { getDeviceRealtimeData } from "@/api/data.api";
 import { getDeviceRuntimeSnapshot } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
@@ -433,12 +434,17 @@ async function saveProtocolConfig() {
     if (!currentBundle?.device || !currentBundle.connection) {
       throw new Error("完整设备配置尚未加载");
     }
-    const result = await commitDeviceConfigBundle(targetContext.deviceId, {
+    const bundlePayload = {
       baseVersion: currentBundle.configVersion,
       device: { ...currentBundle.device, deviceId: targetContext.deviceId },
       connection: payload,
       points: currentBundle.points || []
-    });
+    };
+    const validation = await validateDeviceConfigBundle(targetContext.deviceId, bundlePayload);
+    if (!validation.valid) {
+      throw new Error(validation.errors?.join("；") || "设备配置校验失败");
+    }
+    const result = await commitDeviceConfigBundle(targetContext.deviceId, bundlePayload);
     if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
       connectionConfig.value = payload;
       configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion };
@@ -448,7 +454,9 @@ async function saveProtocolConfig() {
     }
     ElMessage.success(`设备 ${targetDeviceName} 协议连接配置已保存`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "协议连接配置保存失败";
+    const message = error instanceof ApiRequestError && error.httpStatus === 409
+      ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
+      : error instanceof Error ? error.message : "协议连接配置保存失败";
     if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
       protocolError.value = message;
       return;

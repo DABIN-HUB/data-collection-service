@@ -135,6 +135,7 @@ public class DeviceLifecycleCoordinator {
                 discardStaleStart(deviceId, preparation.generation());
                 return false;
             }
+            performanceMonitor.resetDeviceRuntimeWindow(deviceId, preparation.generation());
             if (!connectDevice(deviceId, preparation.connectTimeoutMs(), preparation.generation())) {
                 cleanupFailedStart(deviceId, preparation.generation());
                 return false;

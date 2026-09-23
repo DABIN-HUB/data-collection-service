@@ -207,9 +207,11 @@ public class CollectionScheduler {
         boolean connected = collectionManager.isDeviceConnected(deviceId);
         boolean reconnecting = reconnectCoordinator.isReconnecting(deviceId);
         DevicePerformance performance = performanceMonitor.devicePerformance.get(deviceId);
-        int consecutiveFailures = performance != null ? performance.consecutiveFailureCount : 0;
-        long firstSampleAt = performance != null ? performance.firstSuccessTime : 0L;
-        long lastSuccessfulCollectionAt = performance != null ? performance.lastSuccessTime : 0L;
+        boolean matchingRuntimeWindow = performance != null && scheduleInfo != null
+                && performance.runtimeGeneration == scheduleInfo.getGeneration();
+        int consecutiveFailures = matchingRuntimeWindow ? performance.consecutiveFailureCount : 0;
+        long firstSampleAt = matchingRuntimeWindow ? performance.firstSuccessTime : 0L;
+        long lastSuccessfulCollectionAt = matchingRuntimeWindow ? performance.lastSuccessTime : 0L;
         long backoffUntil = runtimeState.getDeviceBackoffUntil(deviceId);
         DeviceRuntimePhase phase;
         String degradedReason = null;
@@ -251,7 +253,6 @@ public class CollectionScheduler {
         return buildRuntimeSnapshot(deviceId);
     }
     public boolean startDevice(String deviceId) {
-        performanceMonitor.resetDeviceRuntimeWindow(deviceId);
         boolean started = deviceLifecycleCoordinator.startDevice(deviceId);
         if (started) {
             schedulerMaintenanceCoordinator.adjustTimeSlicesAfterWorkloadChange();

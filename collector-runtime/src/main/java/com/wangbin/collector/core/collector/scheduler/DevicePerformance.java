@@ -33,6 +33,7 @@ class DevicePerformance {
     int consecutiveFailureCount = 0;
     long lastSuccessTime;
     long firstSuccessTime;
+    volatile long runtimeGeneration;
 
     final List<Long> recentResponseTimes = new ArrayList<>();
     static final int MAX_RESPONSE_TIME_HISTORY = 10;
@@ -61,6 +62,11 @@ class DevicePerformance {
      * 记录或统计业务状态。
      */
     void recordSuccess(int pointCount, long executionTime) {
+        recordSuccess(pointCount, executionTime, runtimeGeneration);
+    }
+
+    void recordSuccess(int pointCount, long executionTime, long generation) {
+        if (runtimeGeneration != generation) return;
         totalPoints.addAndGet(pointCount);
         successfulBatches.incrementAndGet();
         totalExecutionTime.addAndGet(executionTime);
@@ -71,21 +77,28 @@ class DevicePerformance {
         lastSuccessTime = now;
     }
 
-    void resetRuntimeWindow() {
+    void resetRuntimeWindow(long generation) {
+        runtimeGeneration = generation;
         firstSuccessTime = 0L;
         lastSuccessTime = 0L;
         consecutiveFailureCount = 0;
     }
-    /** 记录批次失败。 */
-    void recordFailure() {
+    void resetRuntimeWindow() {
+        resetRuntimeWindow(runtimeGeneration);
+    }
+
+
+    void recordFailure(long generation) {
+        if (runtimeGeneration != generation) return;
         failedBatches.incrementAndGet();
         consecutiveFailureCount++;
         updateResponseTimeHistory(-1);
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
+    void recordFailure() {
+        recordFailure(runtimeGeneration);
+    }
+
     void recordDataProcessed() {
         // 预留后续扩展钩子。
     }

@@ -16,6 +16,8 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
 import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
+import com.wangbin.collector.core.port.DeviceDataActivityReporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.wangbin.collector.core.cache.aspect.InvocationProcessResultSource;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.port.ExceptionReporter;
@@ -54,6 +56,12 @@ public abstract class BaseCollector implements ProtocolCollector,
     protected DataQualityProcessor dataQualityProcessor;
     protected ExceptionReporter exceptionReporter;
     protected TelemetryIngressService telemetryIngressService;
+    protected DeviceDataActivityReporter deviceDataActivityReporter;
+
+    @Autowired(required = false)
+    public void setDeviceDataActivityReporter(DeviceDataActivityReporter reporter) {
+        this.deviceDataActivityReporter = reporter;
+    }
 
     /**
      * 注入采集器通用依赖。
@@ -806,10 +814,13 @@ protected volatile boolean connected = false;
                         resolvedDeviceId, point.getPointName(), processResult.getMessage());
             }
 
-            lastActivityTime = System.currentTimeMillis();
             if (telemetryIngressService != null) {
                 telemetryIngressService.append(resolvedDeviceId, point, processResult);
             }
+            if (processResult.isSuccess() && deviceDataActivityReporter != null) {
+                deviceDataActivityReporter.recordSuccessfulData(resolvedDeviceId, collectTime);
+            }
+            lastActivityTime = System.currentTimeMillis();
             return processResult;
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
-import { getDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { ApiRequestError } from "@/api/http";
 import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
 import type { DeviceConnection } from "@/types/config";
@@ -136,10 +137,16 @@ export const usePointStore = defineStore("point", {
       this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
       this.errorByDevice[targetDeviceId] = "";
       try {
-        const result = await commitDeviceConfigBundle(targetDeviceId, { baseVersion, device: clone(device), connection: clone(connection), points: payload });
+        const bundlePayload = { baseVersion, device: clone(device), connection: clone(connection), points: payload };
+        const validation = await validateDeviceConfigBundle(targetDeviceId, bundlePayload);
+        if (!validation.valid) {
+          this.errorByDevice[targetDeviceId] = validation.errors?.join("；") || "设备配置校验失败";
+          return;
+        }
+        const result = await commitDeviceConfigBundle(targetDeviceId, bundlePayload);
         this.configVersionByDevice[targetDeviceId] = result.configVersion;
       } catch (error) {
-        this.errorByDevice[targetDeviceId] = error instanceof Error && error.message.includes("409")
+        this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && error.httpStatus === 409
           ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
           : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {

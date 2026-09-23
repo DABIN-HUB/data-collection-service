@@ -215,10 +215,10 @@ public class DeviceBatchExecutor {
             long executionTime = System.currentTimeMillis() - startTime;
             if (success) {
                 collectionStatistics.collectionSuccess(deviceId, executionTime);
-                performanceMonitor.recordBatchSuccess(deviceId, points.size(), executionTime);
+                performanceMonitor.recordBatchSuccess(deviceId, generation, points.size(), executionTime);
             } else {
                 collectionStatistics.collectionFailed(deviceId);
-                performanceMonitor.recordBatchFailure(deviceId);
+                performanceMonitor.recordBatchFailure(deviceId, generation);
             }
             if (executionTime > 100) {
                 adjustBatchSize(deviceId, -10);

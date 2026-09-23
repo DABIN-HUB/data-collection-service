@@ -53,7 +53,7 @@
             <span>连接地址 {{ deviceAddress(device) }}</span>
           </div>
           <div class="exact-device-meta">
-            <span class="status-badge" :class="statusBadgeClass(device)">{{ localizeDeviceStatus(device.status) }}</span>
+            <span class="status-badge" :class="statusBadgeClass(device)">{{ runtimePhaseLabel(device.runtime) }}</span>
             <span>采集周期 {{ device.collectionInterval ?? '-' }} ms</span>
           </div>
           <div class="exact-device-actions">
@@ -91,7 +91,7 @@ import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportB
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceListEmptyText } from "@/features/device/utils/device-list-utils";
 import { useAppStore } from "@/stores/app.store";
-import { runtimeOperationMessage } from "@/features/diagnostic/utils/device-runtime-utils";
+import { runtimeOperationMessage, runtimePhaseLabel } from "@/features/diagnostic/utils/device-runtime-utils";
 import { isLocalDevice, useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
@@ -366,26 +366,6 @@ function openDeviceOperation(device: DeviceViewModel, tab: "config" | "control" 
 function deviceAddress(device: DeviceViewModel): string {
   const host = device.ipAddress || device["host"] || device["url"];
   return [host, device.port].filter((value) => value !== null && value !== undefined && value !== "").join(":") || "-";
-}
-
-function localizeDeviceStatus(status: unknown): string {
-  switch (String(status || "UNKNOWN").toUpperCase()) {
-    case "ONLINE":
-    case "RUNNING":
-      return "在线";
-    case "CONNECTING":
-      return "连接中";
-    case "OFFLINE":
-      return "离线";
-    case "ERROR":
-      return "异常";
-    case "STOPPED":
-      return "已停止";
-    case "DISABLED":
-      return "已停用";
-    default:
-      return "未知";
-  }
 }
 
 function statusBadgeClass(device: DeviceViewModel): string {

@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.scheduler;
 
+import com.wangbin.collector.core.port.DeviceDataActivityReporter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 @Component
-public class PerformanceMonitor {
+public class PerformanceMonitor implements DeviceDataActivityReporter {
     private static final int MAX_PHASE_WHEEL_SAMPLES = 20_000;
 
     final Map<String, DevicePerformance> devicePerformance = new ConcurrentHashMap<>();
@@ -56,9 +57,13 @@ public class PerformanceMonitor {
                 .initializeBatchWindow(initialBatchSize, maxBatchSize);
     }
 
-    public void resetDeviceRuntimeWindow(String deviceId) {
+    public void resetDeviceRuntimeWindow(String deviceId, long generation) {
         if (deviceId == null || deviceId.isBlank()) return;
-        devicePerformance.computeIfAbsent(deviceId, DevicePerformance::new).resetRuntimeWindow();
+        devicePerformance.computeIfAbsent(deviceId, DevicePerformance::new).resetRuntimeWindow(generation);
+    }
+
+    public void resetDeviceRuntimeWindow(String deviceId) {
+        resetDeviceRuntimeWindow(deviceId, 0L);
     }
     /** 记录时间片执行。 */
     void recordTimeSliceExecution(int sliceIndex, long executionTime, int timeSliceIntervalMs) {
@@ -134,17 +139,24 @@ public class PerformanceMonitor {
         );
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
+    @Override
+    public void recordSuccessfulData(String deviceId, long collectTime) {
+        DevicePerformance performance = devicePerformance.get(deviceId);
+        if (performance == null) return;
+        performance.recordSuccess(0, 0L, performance.runtimeGeneration);
+    }
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
+        recordBatchSuccess(deviceId, 0L, pointCount, executionTime);
+    }
+
+    void recordBatchSuccess(String deviceId, long generation, int pointCount, long executionTime) {
         totalProcessedPoints.addAndGet(pointCount);
         totalSuccessfulBatches.incrementAndGet();
 
         DevicePerformance perf = devicePerformance.computeIfAbsent(
                 deviceId, DevicePerformance::new
         );
-        perf.recordSuccess(pointCount, executionTime);
+        perf.recordSuccess(pointCount, executionTime, generation);
 
         if (executionTime > 200) {
             slowestDevices.put(deviceId, executionTime);
@@ -155,12 +167,16 @@ public class PerformanceMonitor {
      * 记录或统计业务状态。
      */
     void recordBatchFailure(String deviceId) {
+        recordBatchFailure(deviceId, 0L);
+    }
+
+    void recordBatchFailure(String deviceId, long generation) {
         totalFailedBatches.incrementAndGet();
 
         DevicePerformance perf = devicePerformance.computeIfAbsent(
                 deviceId, DevicePerformance::new
         );
-        perf.recordFailure();
+        perf.recordFailure(generation);
     }
 
     /**
