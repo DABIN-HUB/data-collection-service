@@ -26,6 +26,18 @@ export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): s
     default: return "状态未知";
   }
 }
+export function runtimeOperationMessage(runtime: DeviceRuntimeSnapshot | undefined, action: "START" | "STOP"): string {
+  if (action === "STOP") return runtime?.phase === "STOPPED" ? "设备已停止" : "设备停止操作已完成";
+  switch (runtime?.phase) {
+    case "ONLINE": return "设备采集已就绪";
+    case "WAITING_FIRST_SAMPLE": return "设备已启动并建立连接，正在等待首轮有效采集";
+    case "DEGRADED": return `设备已启动，但当前采集处于降级状态${runtime.degradedReason ? `：${runtime.degradedReason}` : ""}`;
+    case "FAILED": return `设备启动失败${runtime.degradedReason ? `：${runtime.degradedReason}` : ""}`;
+    default: return runtimePhaseLabel(runtime);
+  }
+}
+
+
 export interface DeviceRuntimeSummary {
   total: number;
   running: number;

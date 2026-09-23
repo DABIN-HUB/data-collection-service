@@ -91,6 +91,7 @@ import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportB
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceListEmptyText } from "@/features/device/utils/device-list-utils";
 import { useAppStore } from "@/stores/app.store";
+import { runtimeOperationMessage } from "@/features/diagnostic/utils/device-runtime-utils";
 import { isLocalDevice, useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
@@ -184,7 +185,7 @@ async function startSelectedDevice(deviceId: string) {
     ElMessage.error(deviceStore.error);
     return;
   }
-  ElMessage.success("已请求启动设备");
+  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "START"));
 }
 
 async function stopSelectedDevice(deviceId: string) {
@@ -193,7 +194,7 @@ async function stopSelectedDevice(deviceId: string) {
     ElMessage.error(deviceStore.error);
     return;
   }
-  ElMessage.success("已请求停止设备");
+  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "STOP"));
 }
 
 async function deleteLocal(deviceId: string) {

@@ -16,6 +16,7 @@ import { useRouter } from "vue-router";
 
 import DeviceConfigPanel from "@/components/device/DeviceConfigPanel.vue";
 import DeviceOperationShell from "@/features/device/components/DeviceOperationShell.vue";
+import { runtimeOperationMessage } from "@/features/diagnostic/utils/device-runtime-utils";
 import { useDeviceStore } from "@/stores/device.store";
 
 interface WorkbenchPointTarget {
@@ -34,7 +35,7 @@ async function startSelectedDevice(deviceId: string) {
     ElMessage.error(deviceStore.error);
     return;
   }
-  ElMessage.success("已请求启动设备");
+  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "START"));
 }
 
 async function stopSelectedDevice(deviceId: string) {
@@ -43,7 +44,7 @@ async function stopSelectedDevice(deviceId: string) {
     ElMessage.error(deviceStore.error);
     return;
   }
-  ElMessage.success("已请求停止设备");
+  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "STOP"));
 }
 
 function openWorkbenchHistory(target: WorkbenchPointTarget) {

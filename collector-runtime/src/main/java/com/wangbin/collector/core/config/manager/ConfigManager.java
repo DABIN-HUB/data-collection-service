@@ -77,9 +77,13 @@ public class ConfigManager {
     private final ProtocolConnectionValidator protocolConnectionValidator;
     private final LocalDeviceConfigStore localDeviceConfigStore;
 
-    /**
-     * 创建配置管理器。
-     */
+    /** 保留旧的四参数构造方式，供嵌入式调用方兼容。 */
+    public ConfigManager(ConfigSyncService configSyncService,
+                         ApplicationEventPublisher eventPublisher,
+                         FieldUniquenessValidator fieldUniquenessValidator,
+                         LocalDeviceConfigStore localDeviceConfigStore) {
+        this(configSyncService, eventPublisher, fieldUniquenessValidator, localDeviceConfigStore, null);
+    }
     public ConfigManager(ConfigSyncService configSyncService,
                          ApplicationEventPublisher eventPublisher,
                          FieldUniquenessValidator fieldUniquenessValidator,
@@ -720,6 +724,7 @@ public class ConfigManager {
         try {
             DeviceInfo existing = deviceCache.get(deviceId);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
+            Long previousVersion = deviceConfigVersions.get(deviceId);
             if (existing != null && !isLocalTemporaryDeviceInfo(existing)) {
                 throw new IllegalArgumentException("device already exists from non-local config source: " + deviceId);
             }
@@ -744,12 +749,19 @@ public class ConfigManager {
                 persistLocalTemporaryContexts();
             } catch (RuntimeException exception) {
                 restoreDeviceContext(deviceId, previousContext);
+                if (previousVersion == null) deviceConfigVersions.remove(deviceId);
+                else deviceConfigVersions.put(deviceId, previousVersion);
                 throw exception;
             }
 
+            long previousConfigVersion = previousVersion != null ? previousVersion : getDeviceConfigVersion(deviceId);
+            long newConfigVersion = nextConfigVersion();
+            deviceConfigVersions.put(deviceId, newConfigVersion);
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.LOCAL.getValue())
+                    .previousVersion(previousConfigVersion)
+                    .configVersion(newConfigVersion)
                     .connectionChanged(true)
                     .updateTime(new Date())
                     .build();
@@ -777,6 +789,7 @@ public class ConfigManager {
                 throw new IllegalArgumentException("refuse to delete non-local device config: " + deviceId);
             }
             DeviceContext previousContext = deviceContextCache.get(deviceId);
+            Long previousVersion = deviceConfigVersions.get(deviceId);
             deviceCache.remove(deviceId);
             pointCache.remove(deviceId);
             connectionCache.remove(deviceId);
@@ -785,12 +798,18 @@ public class ConfigManager {
                 persistLocalTemporaryContexts();
             } catch (RuntimeException exception) {
                 restoreDeviceContext(deviceId, previousContext);
+                if (previousVersion != null) deviceConfigVersions.put(deviceId, previousVersion);
                 throw exception;
             }
 
+            long previousConfigVersion = previousVersion != null ? previousVersion : 0L;
+            long newConfigVersion = nextConfigVersion();
+            deviceConfigVersions.remove(deviceId);
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.LOCAL_DELETE.getValue())
+                    .previousVersion(previousConfigVersion)
+                    .configVersion(newConfigVersion)
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
@@ -945,7 +964,9 @@ public class ConfigManager {
      * 将当前所有本地设备配置持久化为可恢复快照。
      */
     private void persistLocalTemporaryContexts() {
-        localDeviceConfigStore.save(snapshotLocalTemporaryContexts());
+        if (localDeviceConfigStore != null) {
+            localDeviceConfigStore.save(snapshotLocalTemporaryContexts());
+        }
     }
 
     /**

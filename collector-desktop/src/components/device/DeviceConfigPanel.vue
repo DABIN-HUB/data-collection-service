@@ -200,7 +200,7 @@ import { ElMessage } from "element-plus";
 
 import { getDeviceConfigBundle, getDeviceDiff, commitDeviceConfigBundle } from "@/api/config.api";
 import { getDeviceRealtimeData } from "@/api/data.api";
-import { getDeviceStatus } from "@/api/device.api";
+import { getDeviceRuntimeSnapshot } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
@@ -209,7 +209,7 @@ import PointEditor from "@/features/point/components/PointEditor.vue";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { resolveDeviceStatus } from "@/stores/device.store";
-import { normalizeDeviceStatusDetail, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
+import { normalizeDeviceStatusDetail, runtimePhaseLabel, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
 import { buildConnectionPayload, extractProtocolModel, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import {
   buildDeviceProtocolRequestContext,
@@ -281,14 +281,17 @@ const connectionStatusText = computed(() => {
   if (!statusDetail.value) {
     return resolveDeviceStatus(props.device || ({ status: "OFFLINE" } as DeviceViewModel));
   }
-  return statusDetail.value.isRunning || statusDetail.value.running ? "RUNNING" : (statusDetail.value.connected ? "ONLINE" : (statusDetail.value.degradedReason ? "ERROR" : "OFFLINE"));
+  return statusDetail.value ? runtimePhaseLabel(statusDetail.value) : "状态未知";
 });
 const connectionHealthText = computed(() => {
   if (!statusDetail.value) {
     return props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
   }
-  if (statusDetail.value.connected && !statusDetail.value.degradedReason) {
-    return "正常";
+  if (statusDetail.value.ready === true) {
+    return "采集就绪";
+  }
+  if (statusDetail.value.phase === "WAITING_FIRST_SAMPLE") {
+    return "等待首采";
   }
   if (statusDetail.value.degradedReason) {
     return statusDetail.value.degradedReason;
@@ -352,7 +355,7 @@ async function loadConnectionStatus() {
   const ticket = statusOwner.begin(requestContext);
   statusLoading.value = true;
   try {
-    const nextStatusDetail = normalizeDeviceStatusDetail(await getDeviceStatus(requestContext.deviceId), requestContext.deviceId);
+    const nextStatusDetail = normalizeDeviceStatusDetail(await getDeviceRuntimeSnapshot(requestContext.deviceId), requestContext.deviceId);
     const nextConnectionMessage = nextStatusDetail.message || (nextStatusDetail.connected ? "连接正常" : "连接异常");
     if (!statusOwner.canCommit(ticket, currentDeviceRequestContext())) {
       return;

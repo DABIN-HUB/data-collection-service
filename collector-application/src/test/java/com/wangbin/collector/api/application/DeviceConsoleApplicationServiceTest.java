@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
+import com.wangbin.collector.api.controller.dto.DeviceOperationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
@@ -43,7 +44,7 @@ class DeviceConsoleApplicationServiceTest {
     void startDeviceShouldReturnSuccessWhenCollectionStarts() {
         when(collectionService.startDevice("dev-1")).thenReturn(true);
 
-        ApiResult<Object> result = service.startDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
 
         assertEquals("success", result.getStatus());
         assertEquals("设备启动成功", result.getMessage());
@@ -54,7 +55,7 @@ class DeviceConsoleApplicationServiceTest {
     void startDeviceShouldReturnErrorWhenCollectionDoesNotStart() {
         when(collectionService.startDevice("dev-1")).thenReturn(false);
 
-        ApiResult<Object> result = service.startDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("设备已启动或启动失败", result.getMessage());
@@ -65,7 +66,7 @@ class DeviceConsoleApplicationServiceTest {
     void startDeviceShouldConvertExceptionToDeviceError() {
         when(collectionService.startDevice("dev-1")).thenThrow(new RuntimeException("boom"));
 
-        ApiResult<Object> result = service.startDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("启动异常: boom", result.getMessage());
@@ -76,7 +77,7 @@ class DeviceConsoleApplicationServiceTest {
     void startLocalDeviceShouldReturnSuccessForLocalDevice() {
         when(collectionService.startLocalDevice("local-1")).thenReturn(true);
 
-        ApiResult<Object> result = service.startLocalDevice("local-1");
+        ApiResult<DeviceOperationResponse> result = service.startLocalDevice("local-1");
 
         assertEquals("success", result.getStatus());
         assertEquals("本地临时设备启动成功", result.getMessage());
@@ -87,7 +88,7 @@ class DeviceConsoleApplicationServiceTest {
     void startLocalDeviceShouldReturnErrorForRejectedDevice() {
         when(collectionService.startLocalDevice("remote-1")).thenReturn(false);
 
-        ApiResult<Object> result = service.startLocalDevice("remote-1");
+        ApiResult<DeviceOperationResponse> result = service.startLocalDevice("remote-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("设备不是本地临时设备，或启动失败", result.getMessage());
@@ -98,7 +99,7 @@ class DeviceConsoleApplicationServiceTest {
     void startLocalDeviceShouldConvertExceptionToDeviceError() {
         when(collectionService.startLocalDevice("local-1")).thenThrow(new RuntimeException("local down"));
 
-        ApiResult<Object> result = service.startLocalDevice("local-1");
+        ApiResult<DeviceOperationResponse> result = service.startLocalDevice("local-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("启动异常: local down", result.getMessage());
@@ -109,7 +110,7 @@ class DeviceConsoleApplicationServiceTest {
     void stopDeviceShouldReturnSuccessWhenStopped() {
         when(collectionService.stopDevice("dev-1")).thenReturn(true);
 
-        ApiResult<Object> result = service.stopDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.stopDevice("dev-1");
 
         assertEquals("success", result.getStatus());
         assertEquals("设备已停止", result.getMessage());
@@ -120,7 +121,7 @@ class DeviceConsoleApplicationServiceTest {
     void stopDeviceShouldReturnErrorWhenStopFails() {
         when(collectionService.stopDevice("dev-1")).thenReturn(false);
 
-        ApiResult<Object> result = service.stopDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.stopDevice("dev-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("设备停止失败或已经停止", result.getMessage());
@@ -131,7 +132,7 @@ class DeviceConsoleApplicationServiceTest {
     void stopDeviceShouldConvertExceptionToDeviceError() {
         when(collectionService.stopDevice("dev-1")).thenThrow(new RuntimeException("stop down"));
 
-        ApiResult<Object> result = service.stopDevice("dev-1");
+        ApiResult<DeviceOperationResponse> result = service.stopDevice("dev-1");
 
         assertEquals("error", result.getStatus());
         assertEquals("停止异常: stop down", result.getMessage());

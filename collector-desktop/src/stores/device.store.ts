@@ -115,8 +115,13 @@ export const useDeviceStore = defineStore("device", {
       this.operating = true;
       this.error = "";
       try {
-        await action();
+        const result = await action();
+        const runtime = extractOperationRuntime(result);
+        if (runtime?.deviceId) {
+          this.runtimeMap = { ...this.runtimeMap, [runtime.deviceId]: runtime };
+        }
         await this.refresh();
+        return result;
       } catch (error) {
         this.error = error instanceof Error ? error.message : "设备操作失败";
       } finally {
@@ -152,25 +157,25 @@ export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, ru
 
 export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" {
   const runtime = device.runtime;
-  if (runtime?.starting || runtime?.reconnecting) {
-    return "CONNECTING";
+  switch (runtime?.phase) {
+    case "ONLINE": return "ONLINE";
+    case "DEGRADED":
+    case "FAILED": return "ERROR";
+    case "STARTING":
+    case "CONNECTING":
+    case "WAITING_FIRST_SAMPLE":
+    case "RECONNECTING": return "CONNECTING";
+    case "STOPPED": return "OFFLINE";
   }
-  if (runtime?.degradedReason || Number(runtime?.consecutiveFailures || 0) > 0) {
-    return "ERROR";
-  }
-  if (runtime && runtime.connected === false) {
-    return "OFFLINE";
-  }
-  if (runtime?.connected === true && Number(runtime.consecutiveFailures || 0) === 0) {
-    return "ONLINE";
-  }
-  if (device.status === "ERROR") {
-    return "ERROR";
-  }
-  if (device.status === "DISABLED") {
-    return "DISABLED";
-  }
+  if (device.status === "ERROR") return "ERROR";
+  if (device.status === "DISABLED") return "DISABLED";
   return "OFFLINE";
+}
+
+function extractOperationRuntime(result: unknown): DeviceRuntimeSnapshot | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const runtime = (result as { runtime?: unknown }).runtime;
+  return runtime && typeof runtime === "object" ? runtime as DeviceRuntimeSnapshot : undefined;
 }
 
 export function resolvePointCount(device: DeviceViewModel): number {

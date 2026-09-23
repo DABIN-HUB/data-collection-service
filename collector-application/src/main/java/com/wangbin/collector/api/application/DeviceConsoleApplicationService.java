@@ -68,13 +68,18 @@ public class DeviceConsoleApplicationService {
             DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
                     .deviceId(deviceId).action(action).accepted(accepted).acceptedAt(acceptedAt)
                     .completedAt(System.currentTimeMillis()).runtime(runtime).build();
-            return accepted ? ApiResult.statusSuccess(successMessage, response) : ApiResult.statusError(failureMessage, response);
+            ApiResult<DeviceOperationResponse> result = accepted
+                    ? ApiResult.statusSuccess(successMessage, response)
+                    : ApiResult.statusError(failureMessage, response);
+            return result.withDeviceId(deviceId);
         } catch (Exception exception) {
             log.error("设备操作失败，设备={}，action={}", deviceId, action, exception);
             DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
                     .deviceId(deviceId).action(action).accepted(false).acceptedAt(acceptedAt)
                     .completedAt(System.currentTimeMillis()).runtime(collectionService.getDeviceRuntimeSnapshot(deviceId)).build();
-            return ApiResult.statusError("操作异常: " + exception.getMessage(), response);
+            String operationErrorPrefix = "STOP".equals(action) ? "停止异常: " : "启动异常: ";
+            return ApiResult.<DeviceOperationResponse>statusError(operationErrorPrefix + exception.getMessage(), response)
+                    .withDeviceId(deviceId);
         }
     }
     /** 重新加载全部设备配置。 */
