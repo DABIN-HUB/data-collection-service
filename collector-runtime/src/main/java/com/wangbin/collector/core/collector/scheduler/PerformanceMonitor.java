@@ -56,9 +56,11 @@ public class PerformanceMonitor {
                 .initializeBatchWindow(initialBatchSize, maxBatchSize);
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
+    public void resetDeviceRuntimeWindow(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) return;
+        devicePerformance.computeIfAbsent(deviceId, DevicePerformance::new).resetRuntimeWindow();
+    }
+    /** 记录时间片执行。 */
     void recordTimeSliceExecution(int sliceIndex, long executionTime, int timeSliceIntervalMs) {
         timeSliceExecutionTimes.put(sliceIndex, executionTime);
         addBoundedSample(timeSliceExecutionSamplesMs, Math.max(0L, executionTime));

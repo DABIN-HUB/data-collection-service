@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -62,6 +63,8 @@ public class ConfigManager {
      * 聚合配置缓存 key:设备ID value:DeviceContext
      */
     private final Map<String, DeviceContext> deviceContextCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> deviceConfigVersions = new ConcurrentHashMap<>();
+    private final AtomicLong configVersionSequence = new AtomicLong(System.currentTimeMillis());
 
     /**
      * 读写锁，保证配置读写的线程安全
@@ -230,11 +233,25 @@ public class ConfigManager {
         }
     }
 
-    /**
-     * 获取全部设备上下文
-     *
-     * @return 上下文列表
-     */
+    /** 获取当前 JVM 内设备配置版本。 */
+    public long getDeviceConfigVersion(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        lock.writeLock().lock();
+        try {
+            if (!deviceContextCache.containsKey(deviceId) && !deviceCache.containsKey(deviceId)) {
+                return 0L;
+            }
+            return deviceConfigVersions.computeIfAbsent(deviceId, ignored -> nextConfigVersion());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private long nextConfigVersion() {
+        return configVersionSequence.updateAndGet(current ->
+                Math.max(System.currentTimeMillis(), current + 1));
+    }
+    /** 获取全部设备上下文。 */
     public List<DeviceContext> getAllDeviceContexts() {
         lock.readLock().lock();
         try {
@@ -377,6 +394,7 @@ public class ConfigManager {
                 persistLocalTemporaryContexts();
             }
 
+            deviceConfigVersions.put(deviceId, nextConfigVersion());
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
@@ -429,6 +447,8 @@ public class ConfigManager {
                 persistLocalTemporaryContexts();
             }
 
+            deviceConfigVersions.put(deviceId, nextConfigVersion());
+
             // 发布配置更新事件
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
@@ -479,6 +499,8 @@ public class ConfigManager {
                 persistLocalTemporaryContexts();
             }
 
+            deviceConfigVersions.put(deviceId, nextConfigVersion());
+
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.CONNECTION.getValue())
@@ -495,12 +517,81 @@ public class ConfigManager {
         }
     }
 
+    /** 单设备原子提交结果。 */
+    public record DeviceConfigCommitResult(String deviceId, long previousVersion, long configVersion, int pointCount) {}
+
+    /** 无副作用校验完整设备配置。 */
+    public void validateDeviceContext(String deviceId, DeviceInfo device, DeviceConnection connection, List<DataPoint> points) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (device == null) throw new IllegalArgumentException("设备信息不能为空");
+        device.setDeviceId(deviceId);
+        if (connection != null) connection.setDeviceId(deviceId);
+        List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
+        for (DataPoint point : safePoints) if (point != null) point.setDeviceId(deviceId);
+        DeviceContext candidate = DeviceContext.of(device, connection, safePoints);
+        validateImportContext(candidate, new HashSet<>(), new HashMap<>());
+    }
+
+
     /**
-     * 原子替换一组设备上下文，任一配置校验失败时不修改现有缓存。
-     *
-     * @param contexts 待导入的设备上下文
-     * @return 是否全部导入成功
+     * 使用设备级 CAS 原子替换完整配置。
      */
+    public DeviceConfigCommitResult replaceDeviceContextAtomically(String deviceId,
+                                                                     DeviceInfo device,
+                                                                     DeviceConnection connection,
+                                                                     List<DataPoint> points,
+                                                                     long expectedVersion) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        DeviceInfo candidateDevice = device;
+        candidateDevice.setDeviceId(deviceId);
+        if (connection != null) connection.setDeviceId(deviceId);
+        List<DataPoint> candidatePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
+        for (DataPoint point : candidatePoints) {
+            if (point != null) point.setDeviceId(deviceId);
+        }
+        DeviceContext candidate = DeviceContext.of(candidateDevice, connection, candidatePoints);
+
+        lock.writeLock().lock();
+        Map<String, DeviceInfo> deviceBackup = new HashMap<>(deviceCache);
+        Map<String, DeviceConnection> connectionBackup = new HashMap<>(connectionCache);
+        Map<String, List<DataPoint>> pointBackup = new HashMap<>(pointCache);
+        Map<String, DeviceContext> contextBackup = new HashMap<>(deviceContextCache);
+        Map<String, Long> versionBackup = new HashMap<>(deviceConfigVersions);
+        long previousVersion = deviceConfigVersions.computeIfAbsent(deviceId, ignored -> nextConfigVersion());
+        try {
+            if (previousVersion != expectedVersion) {
+                throw new ConfigVersionConflictException(deviceId, expectedVersion, previousVersion);
+            }
+            Set<String> ids = new HashSet<>();
+            Map<String, List<DataPoint>> normalized = new HashMap<>();
+            validateImportContext(candidate, ids, normalized);
+            deviceCache.put(deviceId, candidate.getDeviceInfo());
+            if (candidate.getConnectionConfig() == null) connectionCache.remove(deviceId);
+            else connectionCache.put(deviceId, candidate.copyConnectionConfig());
+            pointCache.put(deviceId, normalized.get(deviceId));
+            deviceContextCache.put(deviceId, DeviceContext.of(candidate.getDeviceInfo(), candidate.copyConnectionConfig(), normalized.get(deviceId)));
+            if (isLocalTemporaryDeviceInfo(candidate.getDeviceInfo())) persistLocalTemporaryContexts();
+            long newVersion = nextConfigVersion();
+            deviceConfigVersions.put(deviceId, newVersion);
+            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+                    .deviceId(deviceId).configType(ConfigUpdateType.ALL.getValue()).source("config-bundle")
+                    .previousVersion(previousVersion).configVersion(newVersion)
+                    .connectionChanged(!Objects.equals(connectionBackup.get(deviceId), candidate.getConnectionConfig()))
+                    .updateTime(new Date()).build();
+            eventPublisher.publishEvent(event);
+            return new DeviceConfigCommitResult(deviceId, previousVersion, newVersion, normalized.get(deviceId).size());
+        } catch (RuntimeException exception) {
+            restoreCache(deviceCache, deviceBackup);
+            restoreCache(connectionCache, connectionBackup);
+            restoreCache(pointCache, pointBackup);
+            restoreCache(deviceContextCache, contextBackup);
+            restoreCache(deviceConfigVersions, versionBackup);
+            throw exception;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    /** 原子替换一组设备上下文，任一配置校验失败时不修改现有缓存。 */
     public boolean replaceDeviceContextsAtomically(List<DeviceContext> contexts) {
         if (CollectionUtils.isEmpty(contexts)) {
             return false;

@@ -79,6 +79,36 @@ export interface DeviceConnection {
   [key: string]: unknown;
 }
 
+export interface DeviceConfigBundleResponse {
+  deviceId?: string;
+  configVersion: number;
+  device?: DeviceInfo;
+  connection?: DeviceConnection;
+  points?: DataPoint[];
+  configSource?: string;
+  temporaryConfig?: boolean;
+}
+
+export interface DeviceConfigBundleRequest {
+  baseVersion: number;
+  device: DeviceInfo;
+  connection: DeviceConnection;
+  points: DataPoint[];
+}
+
+export interface DeviceConfigValidationResponse {
+  valid: boolean;
+  currentVersion: number;
+  errors?: string[];
+  warnings?: string[];
+}
+
+export interface DeviceConfigCommitResponse {
+  deviceId?: string;
+  previousVersion: number;
+  configVersion: number;
+  pointCount: number;
+}
 export interface ConfigBundle {
   device?: DeviceInfo;
   connection?: DeviceConnection;

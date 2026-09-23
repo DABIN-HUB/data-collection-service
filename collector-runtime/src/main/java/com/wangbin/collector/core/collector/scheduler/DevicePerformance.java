@@ -32,6 +32,7 @@ class DevicePerformance {
     long lastHealthCheckTime = System.currentTimeMillis();
     int consecutiveFailureCount = 0;
     long lastSuccessTime;
+    long firstSuccessTime;
 
     final List<Long> recentResponseTimes = new ArrayList<>();
     static final int MAX_RESPONSE_TIME_HISTORY = 10;
@@ -65,12 +66,17 @@ class DevicePerformance {
         totalExecutionTime.addAndGet(executionTime);
         updateResponseTimeHistory(executionTime);
         consecutiveFailureCount = 0;
-        lastSuccessTime = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        if (firstSuccessTime <= 0) firstSuccessTime = now;
+        lastSuccessTime = now;
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
+    void resetRuntimeWindow() {
+        firstSuccessTime = 0L;
+        lastSuccessTime = 0L;
+        consecutiveFailureCount = 0;
+    }
+    /** 记录批次失败。 */
     void recordFailure() {
         failedBatches.incrementAndGet();
         consecutiveFailureCount++;

@@ -8,7 +8,11 @@ import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.api.controller.dto.ConfigImportResult;
 import com.wangbin.collector.api.controller.dto.ConfigSummaryResponse;
 import com.wangbin.collector.api.controller.dto.ConfigSyncStatusResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleRequest;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigCommitResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConfigDetailResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigValidationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConnectionConfigResponse;
 import com.wangbin.collector.api.controller.dto.DeviceIdResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointConfigResponse;
@@ -122,13 +126,22 @@ public class ConfigController {
         return configConsoleApplicationService.getDevice(deviceId);
     }
 
-    /**
-     * 查询设备点位配置。
-     *
-     * @param deviceId 本地设备唯一标识
-     * @param includeAdaptive 是否包含运行期自适应字段
-     * @return 设备点位配置响应
-     */
+    @GetMapping("/device/{deviceId}/bundle")
+    public ApiResult<DeviceConfigBundleResponse> getDeviceBundle(@PathVariable String deviceId) {
+        return configConsoleApplicationService.getDeviceBundle(deviceId);
+    }
+
+    @PostMapping("/device/{deviceId}/bundle/validate")
+    public ApiResult<DeviceConfigValidationResponse> validateDeviceBundle(
+            @PathVariable String deviceId, @Valid @RequestBody DeviceConfigBundleRequest request) {
+        return configConsoleApplicationService.validateDeviceBundle(deviceId, request);
+    }
+
+    @PutMapping("/device/{deviceId}/bundle")
+    public ApiResult<DeviceConfigCommitResponse> commitDeviceBundle(
+            @PathVariable String deviceId, @Valid @RequestBody DeviceConfigBundleRequest request) {
+        return configConsoleApplicationService.commitDeviceBundle(deviceId, request);
+    }
     @GetMapping("/device/{deviceId}/points")
     public ApiResult<DevicePointConfigResponse> getDevicePoints(@PathVariable String deviceId,
                                                                   @RequestParam(value = "includeAdaptive", defaultValue = "false")

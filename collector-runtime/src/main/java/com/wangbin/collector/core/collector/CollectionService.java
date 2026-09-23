@@ -80,6 +80,9 @@ public class CollectionService {
         return collectionScheduler.isDeviceRunning(deviceId);
     }
 
+    public DeviceRuntimeSnapshot getDeviceRuntimeSnapshot(String deviceId) {
+        return collectionScheduler.getDeviceRuntimeSnapshot(deviceId);
+    }
     public List<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshots() {
         return collectionScheduler.getDeviceRuntimeSnapshots();
     }

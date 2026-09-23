@@ -5,6 +5,7 @@ import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
+import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -39,6 +40,7 @@ public class CollectionScheduler {
     private final TimeSliceConfigCoordinator timeSliceConfigCoordinator;
     private final SchedulerMaintenanceCoordinator schedulerMaintenanceCoordinator;
     private final ConfigRestartCoordinator configRestartCoordinator;
+    private ConfigManager configManager;
 
     @Autowired
     public CollectionScheduler(CollectionManager collectionManager,
@@ -67,6 +69,10 @@ public class CollectionScheduler {
         this.configRestartCoordinator = configRestartCoordinator;
     }
 
+    @Autowired(required = false)
+    public void setConfigManager(ConfigManager configManager) {
+        this.configManager = configManager;
+    }
     @PostConstruct
     public void init() {
         timeSliceConfigCoordinator.initializeTimeSlices();
@@ -202,46 +208,50 @@ public class CollectionScheduler {
         boolean reconnecting = reconnectCoordinator.isReconnecting(deviceId);
         DevicePerformance performance = performanceMonitor.devicePerformance.get(deviceId);
         int consecutiveFailures = performance != null ? performance.consecutiveFailureCount : 0;
+        long firstSampleAt = performance != null ? performance.firstSuccessTime : 0L;
         long lastSuccessfulCollectionAt = performance != null ? performance.lastSuccessTime : 0L;
         long backoffUntil = runtimeState.getDeviceBackoffUntil(deviceId);
         DeviceRuntimePhase phase;
         String degradedReason = null;
-        if (consecutiveFailures >= 5) {
-            phase = DeviceRuntimePhase.FAILED;
-            degradedReason = "连续采集失败";
-        } else if (consecutiveFailures > 0) {
-            phase = DeviceRuntimePhase.DEGRADED;
-            degradedReason = "采集存在连续失败";
-        } else if (starting) {
-            phase = DeviceRuntimePhase.STARTING;
-        } else if (reconnecting) {
+        if (reconnecting) {
             phase = DeviceRuntimePhase.RECONNECTING;
-        } else if (connected) {
-            phase = DeviceRuntimePhase.ONLINE;
-        } else if (running) {
+        } else if (starting && !connected) {
+            phase = DeviceRuntimePhase.CONNECTING;
+        } else if (starting) {
+            phase = DeviceRuntimePhase.CONNECTING;
+        } else if (running && !connected) {
             phase = DeviceRuntimePhase.FAILED;
             degradedReason = "连接已断开";
+        } else if (running && consecutiveFailures >= 5) {
+            phase = DeviceRuntimePhase.FAILED;
+            degradedReason = "连续采集失败";
+        } else if (running && consecutiveFailures > 0) {
+            phase = DeviceRuntimePhase.DEGRADED;
+            degradedReason = "采集存在连续失败";
+        } else if (running && connected && firstSampleAt <= 0) {
+            phase = DeviceRuntimePhase.WAITING_FIRST_SAMPLE;
+        } else if (running && connected) {
+            phase = DeviceRuntimePhase.ONLINE;
         } else {
             phase = DeviceRuntimePhase.STOPPED;
         }
+        boolean ready = running && connected && firstSampleAt > 0;
+        int configuredPointCount = configManager != null && configManager.getDataPoints(deviceId) != null
+                ? configManager.getDataPoints(deviceId).size() : 0;
+        long configVersion = configManager != null ? configManager.getDeviceConfigVersion(deviceId) : 0L;
         return new DeviceRuntimeSnapshot(
-                deviceId,
-                phase,
-                running,
-                starting,
-                connected,
-                reconnecting,
-                reconnectCoordinator.getNextRetryAt(deviceId),
-                scheduleInfo != null ? scheduleInfo.getStartTime() : 0L,
-                scheduleInfo != null ? scheduleInfo.getGeneration() : 0L,
-                lastSuccessfulCollectionAt,
-                consecutiveFailures,
-                backoffUntil,
-                degradedReason,
-                System.currentTimeMillis());
+                deviceId, phase, running, starting, connected, reconnecting,
+                reconnectCoordinator.getNextRetryAt(deviceId), scheduleInfo != null ? scheduleInfo.getStartTime() : 0L,
+                scheduleInfo != null ? scheduleInfo.getGeneration() : 0L, lastSuccessfulCollectionAt,
+                consecutiveFailures, backoffUntil, degradedReason, System.currentTimeMillis(), ready,
+                firstSampleAt, configuredPointCount, degradedReason, configVersion);
     }
 
+    public DeviceRuntimeSnapshot getDeviceRuntimeSnapshot(String deviceId) {
+        return buildRuntimeSnapshot(deviceId);
+    }
     public boolean startDevice(String deviceId) {
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId);
         boolean started = deviceLifecycleCoordinator.startDevice(deviceId);
         if (started) {
             schedulerMaintenanceCoordinator.adjustTimeSlicesAfterWorkloadChange();

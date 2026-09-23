@@ -198,7 +198,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
-import { getDeviceConnection, getDeviceDiff, updateDeviceConnection } from "@/api/config.api";
+import { getDeviceConfigBundle, getDeviceDiff, commitDeviceConfigBundle } from "@/api/config.api";
 import { getDeviceRealtimeData } from "@/api/data.api";
 import { getDeviceStatus } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
@@ -251,6 +251,7 @@ const protocolLoading = ref(false);
 const savingConnection = ref(false);
 const protocolError = ref("");
 const connectionMessage = ref("");
+const configBundle = ref<{ configVersion: number; device?: any; connection?: any; points?: any[] } | null>(null);
 const diffVisible = ref(false);
 const diffText = ref("{}");
 const statusDetail = ref<DeviceStatusDetail | null>(null);
@@ -317,16 +318,17 @@ async function loadProtocolConfig() {
   protocolError.value = "";
   connectionMessage.value = "";
   try {
-    const [schema, connection] = await Promise.all([
+    const [schema, bundle] = await Promise.all([
       getProtocol(requestContext.protocolKey),
-      getDeviceConnection(requestContext.deviceId)
+      getDeviceConfigBundle(requestContext.deviceId)
     ]);
-    const nextConnectionConfig = connection.connection || {};
+    const nextConnectionConfig = bundle.connection || {};
     const nextProtocolModel = extractProtocolModel(schema.connectionFields || [], nextConnectionConfig);
     if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext())) {
       return;
     }
     protocolSchema.value = schema;
+    configBundle.value = bundle;
     connectionConfig.value = nextConnectionConfig;
     protocolModel.value = nextProtocolModel;
     connectionMessage.value = "连接配置已读取";
@@ -424,10 +426,20 @@ async function saveProtocolConfig() {
       connectionType: targetContext.protocolKey,
       protocolType: targetContext.protocolKey
     });
-    await updateDeviceConnection(targetContext.deviceId, payload);
+    const currentBundle = configBundle.value;
+    if (!currentBundle?.device || !currentBundle.connection) {
+      throw new Error("完整设备配置尚未加载");
+    }
+    const result = await commitDeviceConfigBundle(targetContext.deviceId, {
+      baseVersion: currentBundle.configVersion,
+      device: { ...currentBundle.device, deviceId: targetContext.deviceId },
+      connection: payload,
+      points: currentBundle.points || []
+    });
     if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
       connectionConfig.value = payload;
-      connectionMessage.value = "协议连接配置已保存";
+      configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion };
+      connectionMessage.value = `完整设备配置已保存，配置版本 v${result.configVersion}`;
       ElMessage.success("协议连接配置已保存");
       return;
     }

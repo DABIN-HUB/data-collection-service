@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
 
-import { getDevicePointConfig, saveDevicePointConfig } from "@/api/point.api";
+import { getDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
+import type { DeviceConnection } from "@/types/config";
+import type { DeviceInfo } from "@/types/device";
 
 interface PointState {
   pointsByDevice: Record<string, DataPoint[]>;
@@ -11,6 +13,9 @@ interface PointState {
   loadingByDevice: Record<string, boolean>;
   savingCountByDevice: Record<string, number>;
   errorByDevice: Record<string, string>;
+  configVersionByDevice: Record<string, number>;
+  bundleDeviceByDevice: Record<string, DeviceInfo | undefined>;
+  bundleConnectionByDevice: Record<string, DeviceConnection | undefined>;
 }
 
 export const usePointStore = defineStore("point", {
@@ -20,7 +25,10 @@ export const usePointStore = defineStore("point", {
     loadGenerationByDevice: {},
     loadingByDevice: {},
     savingCountByDevice: {},
-    errorByDevice: {}
+    errorByDevice: {},
+    configVersionByDevice: {},
+    bundleDeviceByDevice: {},
+    bundleConnectionByDevice: {}
   }),
   getters: {
     getPoints: (state) => (deviceId: string) => state.pointsByDevice[deviceId] || [],
@@ -40,11 +48,14 @@ export const usePointStore = defineStore("point", {
       this.loadingByDevice[targetDeviceId] = true;
       this.errorByDevice[targetDeviceId] = "";
       try {
-        const response = await getDevicePointConfig(targetDeviceId, true);
+        const response = await getDeviceConfigBundle(targetDeviceId);
         if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
           return;
         }
         this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || []);
+        this.configVersionByDevice[targetDeviceId] = response.configVersion;
+        this.bundleDeviceByDevice[targetDeviceId] = response.device;
+        this.bundleConnectionByDevice[targetDeviceId] = response.connection;
       } catch (error) {
         if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
           return;
@@ -115,13 +126,22 @@ export const usePointStore = defineStore("point", {
         return;
       }
       const payload = clonePoints(this.getPoints(targetDeviceId));
+      const device = this.bundleDeviceByDevice[targetDeviceId];
+      const connection = this.bundleConnectionByDevice[targetDeviceId];
+      const baseVersion = this.configVersionByDevice[targetDeviceId] || 0;
+      if (!device || !connection) {
+        this.errorByDevice[targetDeviceId] = "设备完整配置尚未加载";
+        return;
+      }
       this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
       this.errorByDevice[targetDeviceId] = "";
       try {
-        await saveDevicePointConfig(targetDeviceId, payload);
-        await this.load(targetDeviceId);
+        const result = await commitDeviceConfigBundle(targetDeviceId, { baseVersion, device: clone(device), connection: clone(connection), points: payload });
+        this.configVersionByDevice[targetDeviceId] = result.configVersion;
       } catch (error) {
-        this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置保存失败";
+        this.errorByDevice[targetDeviceId] = error instanceof Error && error.message.includes("409")
+          ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
+          : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {
         this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);
       }
@@ -133,6 +153,9 @@ function normalizeDeviceId(deviceId: string): string {
   return typeof deviceId === "string" ? deviceId.trim() : "";
 }
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 function clonePoints(points: DataPoint[]): DataPoint[] {
-  return JSON.parse(JSON.stringify(points || [])) as DataPoint[];
+  return clone(points || []);
 }

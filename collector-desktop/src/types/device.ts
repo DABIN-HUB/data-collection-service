@@ -31,6 +31,7 @@ export interface DeviceInfo {
   [key: string]: unknown;
 }
 
+export type DeviceRuntimePhase = "STOPPED" | "STARTING" | "CONNECTING" | "WAITING_FIRST_SAMPLE" | "ONLINE" | "DEGRADED" | "RECONNECTING" | "FAILED";
 export interface DeviceRuntimeSnapshot {
   deviceId: string;
   phase?: string;
@@ -46,8 +47,22 @@ export interface DeviceRuntimeSnapshot {
   backoffUntil?: number;
   degradedReason?: string;
   generatedAt?: number;
+  ready?: boolean;
+  firstSampleAt?: number;
+  configuredPointCount?: number;
+  lastError?: string;
+  configVersion?: number;
 }
 
+export interface DeviceOperationResponse {
+  operationId: string;
+  deviceId: string;
+  action: string;
+  accepted: boolean;
+  acceptedAt: number;
+  completedAt: number;
+  runtime?: DeviceRuntimeSnapshot;
+}
 export interface DeviceStatisticsResponse {
   deviceId?: string;
   isRunning?: boolean;

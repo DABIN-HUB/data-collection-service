@@ -6,7 +6,8 @@ package com.wangbin.collector.core.collector.runtime;
 public enum DeviceRuntimePhase {
     STOPPED,
     STARTING,
-    RUNNING,
+    CONNECTING,
+    WAITING_FIRST_SAMPLE,
     RECONNECTING,
     ONLINE,
     DEGRADED,

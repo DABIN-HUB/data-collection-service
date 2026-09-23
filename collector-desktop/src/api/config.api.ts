@@ -2,6 +2,10 @@ import { requestApiData, requestEnvelope } from "./http";
 import type { ApiResult } from "@/types/api";
 import type {
   ConfigDiffResponse,
+  DeviceConfigBundleRequest,
+  DeviceConfigBundleResponse,
+  DeviceConfigCommitResponse,
+  DeviceConfigValidationResponse,
   ConfigExportResponse,
   ConfigImportRequest,
   ConfigImportResult,
@@ -45,10 +49,20 @@ export function getDeviceConfig(deviceId: string): Promise<DeviceConfigDetailRes
   return requestApiData<DeviceConfigDetailResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}`, method: "GET" });
 }
 
+export function getDeviceConfigBundle(deviceId: string): Promise<DeviceConfigBundleResponse> {
+  return requestApiData<DeviceConfigBundleResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}/bundle`, method: "GET" });
+}
+
+export function validateDeviceConfigBundle(deviceId: string, payload: DeviceConfigBundleRequest): Promise<DeviceConfigValidationResponse> {
+  return requestApiData<DeviceConfigValidationResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}/bundle/validate`, method: "POST", data: payload });
+}
+
+export function commitDeviceConfigBundle(deviceId: string, payload: DeviceConfigBundleRequest): Promise<DeviceConfigCommitResponse> {
+  return requestApiData<DeviceConfigCommitResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}/bundle`, method: "PUT", data: payload });
+}
 export function updateDeviceConfig(deviceId: string, payload: DeviceInfo): Promise<DeviceIdResponse> {
   return requestApiData<DeviceIdResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}`, method: "PUT", data: payload });
 }
-
 export function getDevicePointsConfig(deviceId: string, includeAdaptive = true): Promise<DevicePointConfigResponse> {
   return requestApiData<DevicePointConfigResponse>({
     url: `/api/config/device/${encodeURIComponent(deviceId)}/points`,

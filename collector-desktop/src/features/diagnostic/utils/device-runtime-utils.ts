@@ -13,6 +13,19 @@ export interface DeviceStatusDetail extends DeviceRuntimeSnapshot {
   performance?: DevicePerformanceResponse;
 }
 
+export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): string {
+  switch (runtime?.phase) {
+    case "STOPPED": return "已停止";
+    case "STARTING": return "启动中";
+    case "CONNECTING": return "连接中";
+    case "WAITING_FIRST_SAMPLE": return "等待首采";
+    case "ONLINE": return "采集正常";
+    case "DEGRADED": return "采集降级";
+    case "RECONNECTING": return "重连中";
+    case "FAILED": return "运行失败";
+    default: return "状态未知";
+  }
+}
 export interface DeviceRuntimeSummary {
   total: number;
   running: number;
@@ -101,7 +114,12 @@ function normalizeRuntimeRow(record: Record<string, unknown>): DeviceRuntimeSnap
     consecutiveFailures: numberValue(record.consecutiveFailures),
     backoffUntil: numberValue(record.backoffUntil),
     degradedReason: textValue(record.degradedReason),
-    generatedAt: numberValue(record.generatedAt)
+    generatedAt: numberValue(record.generatedAt),
+    ready: booleanValue(record.ready),
+    firstSampleAt: numberValue(record.firstSampleAt),
+    configuredPointCount: numberValue(record.configuredPointCount),
+    lastError: textValue(record.lastError),
+    configVersion: numberValue(record.configVersion)
   };
 }
 

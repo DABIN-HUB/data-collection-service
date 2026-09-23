@@ -2,6 +2,7 @@ import { requestApiData, requestEnvelope } from "./http";
 import type { ApiResult } from "@/types/api";
 import type {
   ConfigDeviceListResponse,
+  DeviceOperationResponse,
   DeviceRuntimeSnapshot,
   DeviceStatisticsResponse,
   DeviceStatusResponse
@@ -15,16 +16,16 @@ export function getConfigDevices(): Promise<ConfigDeviceListResponse> {
   return requestApiData<ConfigDeviceListResponse>({ url: "/api/config/devices", method: "GET" });
 }
 
-export function startDevice(deviceId: string): Promise<ApiResult<null>> {
-  return requestEnvelope<null>({ url: `/api/device/${encodeURIComponent(deviceId)}/start`, method: "POST" });
+export function startDevice(deviceId: string): Promise<DeviceOperationResponse> {
+  return requestApiData<DeviceOperationResponse>({ url: `/api/device/${encodeURIComponent(deviceId)}/start`, method: "POST" });
 }
 
-export function startLocalDevice(deviceId: string): Promise<ApiResult<null>> {
-  return requestEnvelope<null>({ url: `/api/device/${encodeURIComponent(deviceId)}/start-local`, method: "POST" });
+export function startLocalDevice(deviceId: string): Promise<DeviceOperationResponse> {
+  return requestApiData<DeviceOperationResponse>({ url: `/api/device/${encodeURIComponent(deviceId)}/start-local`, method: "POST" });
 }
 
-export function stopDevice(deviceId: string): Promise<ApiResult<null>> {
-  return requestEnvelope<null>({ url: `/api/device/${encodeURIComponent(deviceId)}/stop`, method: "POST" });
+export function stopDevice(deviceId: string): Promise<DeviceOperationResponse> {
+  return requestApiData<DeviceOperationResponse>({ url: `/api/device/${encodeURIComponent(deviceId)}/stop`, method: "POST" });
 }
 
 export function reloadDevices(): Promise<ApiResult<null>> {
@@ -43,6 +44,9 @@ export function getRunningDevices(): Promise<string[]> {
   return requestApiData<string[]>({ url: "/api/device/running", method: "GET" });
 }
 
+export function getDeviceRuntimeSnapshot(deviceId: string): Promise<DeviceRuntimeSnapshot> {
+  return requestApiData<DeviceRuntimeSnapshot>({ url: `/api/device/${encodeURIComponent(deviceId)}/runtime`, method: "GET" });
+}
 export function getDeviceRuntime(): Promise<DeviceRuntimeSnapshot[]> {
   return requestApiData<DeviceRuntimeSnapshot[]>({ url: "/api/device/runtime", method: "GET" });
 }

@@ -9,7 +9,11 @@ import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.api.controller.dto.ConfigImportResult;
 import com.wangbin.collector.api.controller.dto.ConfigSummaryResponse;
 import com.wangbin.collector.api.controller.dto.ConfigSyncStatusResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleRequest;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigCommitResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConfigDetailResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigValidationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConnectionConfigResponse;
 import com.wangbin.collector.api.controller.dto.DeviceIdResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointConfigResponse;
@@ -23,6 +27,7 @@ import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
@@ -154,13 +159,62 @@ public class ConfigConsoleApplicationService {
         return success(response);
     }
 
-    /**
-     * 查询设备点位配置。
-     *
-     * @param deviceId 本地设备唯一标识
-     * @param includeAdaptive 是否包含运行期自适应字段
-     * @return 设备点位配置响应
-     */
+    public ApiResult<DeviceConfigBundleResponse> getDeviceBundle(String deviceId) {
+        if (!configManager.containsDevice(deviceId)) return notFound("设备不存在: " + deviceId);
+        DeviceInfo device = configManager.getDevice(deviceId);
+        DeviceConnection connection = sensitiveConfigSanitizer.sanitize(configManager.getConnectionConfig(deviceId));
+        return success(DeviceConfigBundleResponse.builder()
+                .deviceId(deviceId)
+                .configVersion(configManager.getDeviceConfigVersion(deviceId))
+                .device(device)
+                .connection(connection)
+                .points(configManager.getDataPoints(deviceId))
+                .configSource(configManager.isLocalTemporaryDevice(deviceId) ? ConfigManager.CONFIG_SOURCE_LOCAL : "remote")
+                .temporaryConfig(configManager.isLocalTemporaryDevice(deviceId))
+                .build());
+    }
+
+    public ApiResult<DeviceConfigValidationResponse> validateDeviceBundle(String deviceId, DeviceConfigBundleRequest request) {
+        long currentVersion = configManager.getDeviceConfigVersion(deviceId);
+        try {
+            normalizeBundle(deviceId, request);
+            sensitiveConfigSanitizer.restoreMaskedValues(request.getConnection(), configManager.getConnectionConfig(deviceId));
+            configManager.validateDeviceContext(deviceId, request.getDevice(), request.getConnection(), request.getPoints());
+            return success(DeviceConfigValidationResponse.builder().valid(true).currentVersion(currentVersion).build());
+        } catch (RuntimeException exception) {
+            return success(DeviceConfigValidationResponse.builder().valid(false).currentVersion(currentVersion)
+                    .errors(List.of(exception.getMessage() == null ? "配置校验失败" : exception.getMessage())).build());
+        }
+    }
+
+    public ApiResult<DeviceConfigCommitResponse> commitDeviceBundle(String deviceId, DeviceConfigBundleRequest request) {
+        normalizeBundle(deviceId, request);
+        sensitiveConfigSanitizer.restoreMaskedValues(request.getConnection(), configManager.getConnectionConfig(deviceId));
+        try {
+            ConfigManager.DeviceConfigCommitResult result = configManager.replaceDeviceContextAtomically(
+                    deviceId, request.getDevice(), request.getConnection(), request.getPoints(), request.getBaseVersion());
+            return success("完整设备配置已保存，配置版本 v" + result.configVersion(),
+                    DeviceConfigCommitResponse.builder().deviceId(deviceId).previousVersion(result.previousVersion())
+                            .configVersion(result.configVersion()).pointCount(result.pointCount()).build());
+        } catch (ConfigVersionConflictException exception) {
+            throw new ConfigApiException(HttpStatus.CONFLICT,
+                    "设备配置已被其他操作更新，请刷新后重新确认修改",
+                    Map.of("deviceId", deviceId, "expectedVersion", exception.getExpectedVersion(),
+                            "currentVersion", exception.getCurrentVersion()));
+        } catch (IllegalArgumentException exception) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, exception.getMessage(), null);
+        }
+    }
+
+    private void normalizeBundle(String deviceId, DeviceConfigBundleRequest request) {
+        if (request == null || request.getDevice() == null || request.getConnection() == null) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, "配置 Bundle 不能为空", null);
+        }
+        request.getDevice().setDeviceId(deviceId);
+        request.getConnection().setDeviceId(deviceId);
+        if (request.getPoints() != null) request.getPoints().forEach(point -> { if (point != null) point.setDeviceId(deviceId); });
+    }
+    /** 查询设备点位配置。 */
     public ApiResult<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
         if (!configManager.containsDevice(deviceId)) {
             return notFound("设备不存在: " + deviceId);

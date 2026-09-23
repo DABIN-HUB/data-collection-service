@@ -169,33 +169,36 @@ describe("device.api", () => {
     expect(httpMocks.request).not.toHaveBeenCalled();
   });
 
-  it("startDevice 保留 envelope metadata，避免 data=null 时丢失 message 与 deviceId", async () => {
-    const response: ApiResult<null> = {
-      status: "success",
-      message: "设备启动成功",
+  it("startDevice 返回运行操作响应并走 requestApiData", async () => {
+    const response = {
+      operationId: "op-1",
       deviceId: "device-1",
-      data: null
+      action: "START",
+      accepted: true,
+      acceptedAt: 1700000000000,
+      completedAt: 1700000000100,
+      runtime: { deviceId: "device-1", phase: "WAITING_FIRST_SAMPLE", ready: false }
     };
-    httpMocks.requestEnvelope.mockResolvedValue(response);
+    httpMocks.requestApiData.mockResolvedValue(response);
 
     const result = await startDevice("device-1");
 
     expect(result).toEqual(response);
-    expectTypeOf(result).toMatchTypeOf<ApiResult<null>>();
-    expect(httpMocks.requestEnvelope).toHaveBeenCalledWith({ url: "/api/device/device-1/start", method: "POST" });
-    expect(httpMocks.request).not.toHaveBeenCalled();
+    expect(httpMocks.requestApiData).toHaveBeenCalledWith({ url: "/api/device/device-1/start", method: "POST" });
+    expect(httpMocks.requestEnvelope).not.toHaveBeenCalled();
   });
 
-  it("startLocalDevice、stopDevice、reloadDevices 都显式走 requestEnvelope", async () => {
+  it("startLocalDevice、stopDevice、reloadDevices 使用各自的响应契约", async () => {
+    httpMocks.requestApiData.mockResolvedValue({ accepted: true });
     httpMocks.requestEnvelope.mockResolvedValue({ status: "success", data: null });
 
     await startLocalDevice("device-1");
     await stopDevice("device-1");
     await reloadDevices();
 
-    expect(httpMocks.requestEnvelope).toHaveBeenNthCalledWith(1, { url: "/api/device/device-1/start-local", method: "POST" });
-    expect(httpMocks.requestEnvelope).toHaveBeenNthCalledWith(2, { url: "/api/device/device-1/stop", method: "POST" });
-    expect(httpMocks.requestEnvelope).toHaveBeenNthCalledWith(3, { url: "/api/device/reload", method: "POST" });
+    expect(httpMocks.requestApiData).toHaveBeenNthCalledWith(1, { url: "/api/device/device-1/start-local", method: "POST" });
+    expect(httpMocks.requestApiData).toHaveBeenNthCalledWith(2, { url: "/api/device/device-1/stop", method: "POST" });
+    expect(httpMocks.requestEnvelope).toHaveBeenCalledWith({ url: "/api/device/reload", method: "POST" });
     expect(httpMocks.request).not.toHaveBeenCalled();
   });
 
