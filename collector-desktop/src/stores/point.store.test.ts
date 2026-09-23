@@ -6,7 +6,9 @@ import type { DataPoint } from "@/types/point";
 
 const apiMocks = vi.hoisted(() => ({
   getDevicePointConfig: vi.fn(),
-  saveDevicePointConfig: vi.fn()
+  saveDevicePointConfig: vi.fn(),
+  validateDeviceConfigBundle: vi.fn(),
+  commitDeviceConfigBundle: vi.fn()
 }));
 
 vi.mock("@/api/point.api", () => ({
@@ -14,6 +16,11 @@ vi.mock("@/api/point.api", () => ({
   saveDevicePointConfig: apiMocks.saveDevicePointConfig
 }));
 
+vi.mock("@/api/config.api", () => ({
+  getDeviceConfigBundle: apiMocks.getDevicePointConfig,
+  validateDeviceConfigBundle: apiMocks.validateDeviceConfigBundle,
+  commitDeviceConfigBundle: apiMocks.commitDeviceConfigBundle
+}));
 beforeEach(() => {
   vi.clearAllMocks();
   setActivePinia(createPinia());

@@ -86,6 +86,13 @@ protected volatile boolean connected = false;
     protected volatile long lastConnectTime;
     protected volatile long lastDisconnectTime;
     protected volatile long lastActivityTime;
+    protected volatile long runtimeGeneration;
+
+    @Override
+    public void setRuntimeGeneration(long generation) {
+        this.runtimeGeneration = generation;
+    }
+
 
     // 统计信息
     protected AtomicLong totalReadCount = new AtomicLong(0);
@@ -818,7 +825,7 @@ protected volatile boolean connected = false;
                 telemetryIngressService.append(resolvedDeviceId, point, processResult);
             }
             if (processResult.isSuccess() && deviceDataActivityReporter != null) {
-                deviceDataActivityReporter.recordSuccessfulData(resolvedDeviceId, collectTime);
+                deviceDataActivityReporter.recordSuccessfulData(resolvedDeviceId, runtimeGeneration, collectTime);
             }
             lastActivityTime = System.currentTimeMillis();
             return processResult;

@@ -3,6 +3,7 @@
     <div class="console-panel-head local-section-card manual-shadow-head-card">
       <h2>手动控制</h2>
       <span>{{ deviceId || "未选择设备" }}</span>
+      <small v-if="!canControl">当前运行态不允许写入</small>
     </div>
     <div class="surface-grid two">
       <section class="surface-card local-section-card">
@@ -23,7 +24,7 @@
           </label>
           <label class="wide-field">写入值<input v-model="singleValue" type="text" placeholder="写入值" /></label>
         </div>
-        <button type="button" class="primary wide" :disabled="!deviceId || singleWriting" @click="writeSingle">{{ singleWritingText }}</button>
+        <button type="button" class="primary wide" :disabled="!deviceId || !canControl || singleWriting" @click="writeSingle">{{ singleWritingText }}</button>
       </section>
 
       <section class="surface-card local-section-card">
@@ -32,7 +33,7 @@
           <button type="button" @click="fillBatchTemplate">模板</button>
         </div>
         <textarea v-model="batchPayload" spellcheck="false"></textarea>
-        <button type="button" class="primary wide" :disabled="!deviceId || batchWriting" @click="writeBatch">{{ batchWritingText }}</button>
+        <button type="button" class="primary wide" :disabled="!deviceId || !canControl || batchWriting" @click="writeBatch">{{ batchWritingText }}</button>
       </section>
 
       <section class="surface-card local-section-card wide-field">
@@ -41,7 +42,7 @@
           <button type="button" @click="fillCommandTemplate">套用模板</button>
         </div>
         <textarea v-model="commandPayload" spellcheck="false"></textarea>
-        <button type="button" class="primary wide" :disabled="!deviceId || commandExecuting" @click="executeCommand">{{ commandWritingText }}</button>
+        <button type="button" class="primary wide" :disabled="!deviceId || !canControl || commandExecuting" @click="executeCommand">{{ commandWritingText }}</button>
         <div v-if="actionResult" class="control-result-meta" :class="{ 'is-error': Boolean(actionResult.error) }">
           <span>目标设备：<strong>{{ actionResult.target.deviceId || actionResult.target.target }}</strong></span>
           <span>动作：<strong>{{ actionResult.target.action }}</strong></span>
@@ -59,7 +60,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 import { executeDeviceCommand, writeDevicePoint, writeDevicePoints } from "@/api/control.api";
 import {
@@ -77,6 +78,7 @@ import {
   formatControlJson,
   parseControlJson
 } from "@/features/control/utils/control-utils";
+import { useDeviceStore } from "@/stores/device.store";
 import type { ControlResultResponse, DeviceCommandRequest, PointWriteRequest } from "@/types/control";
 
 interface ControlPanelMessageState {
@@ -85,6 +87,7 @@ interface ControlPanelMessageState {
 }
 
 const props = defineProps<{ deviceId: string }>();
+const deviceStore = useDeviceStore();
 
 const singlePointRef = ref("");
 const singleDataType = ref("STRING");
@@ -100,7 +103,12 @@ const singleWritingTarget = ref<ActionExecutionTarget | null>(null);
 const batchWritingTarget = ref<ActionExecutionTarget | null>(null);
 const commandWritingTarget = ref<ActionExecutionTarget | null>(null);
 
+const canControl = computed(() => {
+  const runtime = deviceStore.runtimeMap[props.deviceId];
+  return Boolean(runtime && runtime.phase === "ONLINE" && runtime.ready && runtime.connected);
+});
 const resultText = computed(() => JSON.stringify(result.value, null, 2));
+
 const singleWritingText = computed(() => singleWritingTarget.value ? `正在写入设备 ${singleWritingTarget.value.deviceId || singleWritingTarget.value.target}` : "写入单点");
 const batchWritingText = computed(() => batchWritingTarget.value ? `正在批量写入设备 ${batchWritingTarget.value.deviceId || batchWritingTarget.value.target}` : "批量写入点位");
 const commandWritingText = computed(() => commandWritingTarget.value ? `正在执行设备 ${commandWritingTarget.value.deviceId || commandWritingTarget.value.target} 命令` : "执行命令");
@@ -121,6 +129,15 @@ async function writeSingle() {
     pointRef: targetPointRef,
     payload: { dataType: targetDataType, value: payload.value }
   });
+  try {
+    await ElMessageBox.confirm(
+      `设备：${targetDeviceId}\n点位：${targetPointRef}\n将写入值：${String(payload.value ?? "")}`,
+      "确认单点写入",
+      { type: "warning", confirmButtonText: "确认写入", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   singleWriting.value = true;
   singleWritingTarget.value = target;
   try {
@@ -154,6 +171,15 @@ async function writeBatch() {
     action: "batch-write",
     payload
   });
+  try {
+    await ElMessageBox.confirm(
+      `设备：${targetDeviceId}\n写入点位数量：${Object.keys(payload.values || {}).length}\n摘要：${JSON.stringify(payload.values || {}).slice(0, 240)}`,
+      "确认批量写入",
+      { type: "warning", confirmButtonText: "确认写入", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   batchWriting.value = true;
   batchWritingTarget.value = target;
   try {
@@ -187,6 +213,15 @@ async function executeCommand() {
     action: "command",
     payload
   });
+  try {
+    await ElMessageBox.confirm(
+      `设备：${targetDeviceId}\n命令：${String(payload.command)}\n参数：${JSON.stringify(payload.params || {})}`,
+      "确认执行协议命令",
+      { type: "warning", confirmButtonText: "确认执行", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   commandExecuting.value = true;
   commandWritingTarget.value = target;
   try {

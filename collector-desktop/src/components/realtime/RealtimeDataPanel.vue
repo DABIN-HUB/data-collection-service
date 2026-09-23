@@ -3,11 +3,11 @@
     <div class="panel-toolbar">
       <div class="table-actions">
         <el-tag effect="plain">实时通道：{{ wsStatusText }}</el-tag>
-        <el-button :loading="webSocketStore.connecting" @click="toggleWebSocket">{{ webSocketActionText }}</el-button>
+        <el-button v-if="appStore.capabilities?.realtime.websocketAvailable" :loading="webSocketStore.connecting" @click="toggleWebSocket">{{ webSocketActionText }}</el-button>
         <el-button :loading="loading" @click="load">刷新实时值</el-button>
       </div>
     </div>
-    <el-alert v-if="webSocketStore.error" :title="webSocketStore.error" type="info" :closable="false" />
+    <el-alert v-if="webSocketStore.error && appStore.capabilities?.realtime.websocketAvailable" :title="webSocketStore.error" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <el-table v-loading="loading" :data="filteredRows" height="360" border>
       <el-table-column label="点位名称" min-width="160"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointName || '-')">{{ row.pointName || '-' }}</span></template></el-table-column>
@@ -33,6 +33,7 @@ import {
 } from "@/features/realtime/utils/realtime-panel-transport";
 import { createLatestRealtimeRequestOwner, type RealtimeRequestContext } from "@/features/realtime/utils/realtime-request-lifecycle";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
+import { useAppStore } from "@/stores/app.store";
 import { useWebSocketStore } from "@/stores/websocket.store";
 import type { RealtimePointRow } from "@/types/monitor";
 
@@ -47,6 +48,7 @@ const props = withDefaults(defineProps<{
   refreshIntervalMs: 5000
 });
 
+const appStore = useAppStore();
 const webSocketStore = useWebSocketStore();
 const loading = ref(false);
 const error = ref("");
@@ -72,19 +74,14 @@ const filteredRows = computed(() => {
     .some((value) => String(value || "").toLowerCase().includes(keyword)));
 });
 const wsStatusText = computed(() => {
+  if (!appStore.capabilities?.realtime.websocketAvailable) return "HTTP 轮询";
   switch (webSocketStore.status) {
-    case "connected":
-      return "已连接";
-    case "connecting":
-      return "连接中";
-    case "reconnecting":
-      return "重连中";
-    case "unavailable":
-      return "不可用";
-    case "closed":
-      return "已关闭";
-    default:
-      return "未启用";
+    case "connected": return "已连接";
+    case "connecting": return "连接中";
+    case "reconnecting": return "重连中";
+    case "unavailable": return "不可用";
+    case "closed": return "已关闭";
+    default: return "未启用";
   }
 });
 const webSocketActionText = computed(() => webSocketStore.enabled ? "关闭实时通道" : "启用实时通道");
@@ -128,6 +125,10 @@ async function load(source: RealtimePanelLoadSource = "manual") {
 }
 
 function toggleWebSocket() {
+  if (!appStore.capabilities?.realtime.websocketAvailable) {
+    webSocketStore.disableRealtime();
+    return;
+  }
   if (webSocketStore.enabled) {
     webSocketStore.disableRealtime();
     return;

@@ -134,67 +134,92 @@ public class ConfigManager {
      * 加载所有配置
      */
     private void loadAllConfig() {
-        List<DeviceContext> localTemporaryContexts = Collections.emptyList();
-        Map<String, DeviceContext> previousContexts = new HashMap<>();
-        Map<String, Long> previousVersions = new HashMap<>();
+        log.info("开始加载所有配置...");
+        Map<String, DeviceContext> previousContexts;
+        Map<String, Long> previousVersions;
+        List<DeviceContext> localTemporaryContexts;
+        lock.readLock().lock();
         try {
-            lock.writeLock().lock();
-            previousContexts.putAll(deviceContextCache);
-            previousVersions.putAll(deviceConfigVersions);
-            log.info("开始加载所有配置...");
-
+            previousContexts = new HashMap<>(deviceContextCache);
+            previousVersions = new HashMap<>(deviceConfigVersions);
             localTemporaryContexts = snapshotLocalTemporaryContexts();
+        } finally {
+            lock.readLock().unlock();
+        }
 
-            deviceCache.clear();
-            pointCache.clear();
-            connectionCache.clear();
-            deviceContextCache.clear();
-
-            // 从远程服务加载配置
+        Map<String, DeviceInfo> candidateDevices = new HashMap<>();
+        Map<String, DeviceConnection> candidateConnections = new HashMap<>();
+        Map<String, List<DataPoint>> candidatePoints = new HashMap<>();
+        Map<String, DeviceContext> candidateContexts = new HashMap<>();
+        try {
             List<DeviceInfo> devices = configSyncService.loadAllDevices();
+            if (devices == null) {
+                throw new IllegalStateException("远端设备配置返回为空");
+            }
             for (DeviceInfo device : devices) {
-                String deviceId = device.getDeviceId();
-
-                if (deviceId == null || deviceId.trim().isEmpty()) {
-                    log.warn("设备ID为空，跳过设备: {}", device.getDeviceName());
+                String deviceId = device == null ? null : device.getDeviceId();
+                if (!StringUtils.hasText(deviceId)) {
+                    log.warn("远端设备ID为空，跳过设备");
                     continue;
                 }
-
-                // 缓存设备信息
-                deviceCache.put(deviceId, device);
-
+                if (candidateDevices.putIfAbsent(deviceId, device) != null) {
+                    throw new IllegalStateException("远端配置包含重复设备ID: " + deviceId);
+                }
                 try {
-                    // 加载设备的数据点
                     List<DataPoint> points = configSyncService.loadDataPoints(deviceId);
-                    List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
+                    List<DataPoint> safePoints = points == null ? new ArrayList<>() : new ArrayList<>(points);
                     normalizeDataPointCollectionPolicy(device, safePoints);
-                    pointCache.put(deviceId, safePoints);
-
-                    // 加载连接配置
+                    if (fieldUniquenessValidator != null) {
+                        fieldUniquenessValidator.validate(deviceId, safePoints);
+                    }
                     DeviceConnection connection = configSyncService.loadConnectionConfig(deviceId);
                     if (connection != null) {
-                        connectionCache.put(deviceId, connection);
-                    } else {
-                        connectionCache.remove(deviceId);
+                        connection.setDeviceId(deviceId);
+                        protocolConnectionValidator.validate(device, connection);
+                        candidateConnections.put(deviceId, connection);
                     }
-
-                    deviceContextCache.put(deviceId, DeviceContext.of(device, connection, safePoints));
-
-                    log.debug("设备配置加载成功: {} - {}", deviceId, device.getDeviceName());
-                } catch (Exception e) {
-                    log.error("加载设备相关配置失败: {}", deviceId, e);
+                    candidatePoints.put(deviceId, safePoints);
+                    candidateContexts.put(deviceId, DeviceContext.of(device, connection, safePoints));
+                } catch (Exception exception) {
+                    log.error("full configuration refresh aborted, deviceId={}, reason={}",
+                            deviceId, exception.getMessage(), exception);
+                    throw new IllegalStateException("远端设备配置加载失败: " + deviceId, exception);
                 }
             }
 
-            restoreLocalTemporaryContexts(localTemporaryContexts);
-            reconcileConfigVersions(previousContexts, previousVersions);
+            // Only after the complete remote candidate is valid may local temporary devices be merged.
+            for (DeviceContext localContext : localTemporaryContexts) {
+                if (localContext == null || localContext.getDeviceInfo() == null) continue;
+                String deviceId = localContext.getDeviceId();
+                if (candidateDevices.containsKey(deviceId)) {
+                    log.warn("跳过恢复本地临时设备，原因=远端配置已存在：{}", deviceId);
+                    continue;
+                }
+                DeviceConnection connection = localContext.copyConnectionConfig();
+                List<DataPoint> points = localContext.copyDataPoints();
+                candidateDevices.put(deviceId, localContext.getDeviceInfo());
+                candidatePoints.put(deviceId, points);
+                if (connection != null) candidateConnections.put(deviceId, connection);
+                candidateContexts.put(deviceId, DeviceContext.of(localContext.getDeviceInfo(), connection, points));
+            }
 
-            log.info("配置加载完成，共加载 {} 个设备配置", devices.size());
-        } catch (Exception e) {
-            restoreLocalTemporaryContexts(localTemporaryContexts);
-            log.error("加载所有配置失败，已恢复本地设备配置", e);
-        } finally {
-            lock.writeLock().unlock();
+            lock.writeLock().lock();
+            try {
+                deviceCache.clear();
+                deviceCache.putAll(candidateDevices);
+                connectionCache.clear();
+                connectionCache.putAll(candidateConnections);
+                pointCache.clear();
+                pointCache.putAll(candidatePoints);
+                deviceContextCache.clear();
+                deviceContextCache.putAll(candidateContexts);
+                reconcileConfigVersions(previousContexts, previousVersions);
+            } finally {
+                lock.writeLock().unlock();
+            }
+            log.info("配置加载完成，共加载 {} 个设备配置", candidateContexts.size());
+        } catch (RuntimeException exception) {
+            log.error("full configuration refresh aborted, live cache preserved, reason={}", exception.getMessage(), exception);
         }
     }
 
@@ -810,7 +835,7 @@ public class ConfigManager {
                 throw exception;
             }
 
-            long previousConfigVersion = previousVersion != null ? previousVersion : getDeviceConfigVersion(deviceId);
+            long previousConfigVersion = previousVersion != null ? previousVersion : 0L;
             long newConfigVersion = nextConfigVersion();
             deviceConfigVersions.put(deviceId, newConfigVersion);
             ConfigUpdateEvent event = ConfigUpdateEvent.builder()

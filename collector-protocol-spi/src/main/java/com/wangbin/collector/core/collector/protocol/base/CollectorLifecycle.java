@@ -20,6 +20,11 @@ public interface CollectorLifecycle {
      */
     void connect() throws CollectorException;
 
+    /** 绑定采集器所属运行代次，旧采集器的迟到推送不得污染新窗口。 */
+    default void setRuntimeGeneration(long generation) {
+        // 兼容未提供运行代次绑定能力的旧采集器。
+    }
+
     /**
      * 处理连接生命周期。
      */

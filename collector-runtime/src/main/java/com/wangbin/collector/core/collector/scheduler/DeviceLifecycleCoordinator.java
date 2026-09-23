@@ -161,6 +161,7 @@ public class DeviceLifecycleCoordinator {
             }
             try {
                 collectionManager.registerDevice(preparation.deviceInfo());
+                collectionManager.bindRuntimeGeneration(deviceId, preparation.generation());
             } catch (Exception e) {
                 log.debug("register 设备 skipped, 设备={}", deviceId, e);
             }

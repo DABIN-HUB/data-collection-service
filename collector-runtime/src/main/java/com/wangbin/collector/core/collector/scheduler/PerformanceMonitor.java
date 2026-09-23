@@ -140,10 +140,11 @@ public class PerformanceMonitor implements DeviceDataActivityReporter {
     }
 
     @Override
-    public void recordSuccessfulData(String deviceId, long collectTime) {
+    public void recordSuccessfulData(String deviceId, long sourceGeneration, long collectTime) {
+        if (deviceId == null || deviceId.isBlank()) return;
         DevicePerformance performance = devicePerformance.get(deviceId);
         if (performance == null) return;
-        performance.recordSuccess(0, 0L, performance.runtimeGeneration);
+        performance.recordDataSuccess(sourceGeneration, collectTime);
     }
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
         recordBatchSuccess(deviceId, 0L, pointCount, executionTime);

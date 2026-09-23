@@ -85,6 +85,13 @@ public class CollectionManager {
     /**
      * 重建设备协议读取计划。
      */
+    public void bindRuntimeGeneration(String deviceId, long generation) {
+        ProtocolCollector collector = getCollector(deviceId);
+        if (collector != null) {
+            collector.setRuntimeGeneration(generation);
+        }
+    }
+
     public void rebuildReadPlans(String deviceId, List<DataPoint> points) throws CollectorException {
         ProtocolCollector collector = getCollector(deviceId);
         ReadPlanCapable readPlanCapable = requireCapability(deviceId, collector, ReadPlanCapable.class,

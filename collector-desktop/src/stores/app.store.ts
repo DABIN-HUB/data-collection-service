@@ -1,6 +1,8 @@
 import { defineStore } from "pinia";
 
 import { configureHttp, DEFAULT_SERVER_URL, isDesktopRuntime, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
+import { getSystemCapabilities } from "@/api/system.api";
+import type { SystemCapabilities } from "@/types/system";
 
 interface AppState {
   appName: string;
@@ -17,6 +19,8 @@ interface AppState {
   configPath: string;
   backendManaged: boolean;
   initialized: boolean;
+  capabilities: SystemCapabilities | null;
+  capabilitiesError: string;
 }
 
 const TOKEN_KEY = "collector-desktop-token";
@@ -37,7 +41,9 @@ export const useAppStore = defineStore("app", {
     platform: "browser",
     configPath: "",
     backendManaged: false,
-    initialized: false
+    initialized: false,
+    capabilities: null,
+    capabilitiesError: ""
   }),
   actions: {
     async initialize() {
@@ -83,6 +89,15 @@ export const useAppStore = defineStore("app", {
       }
       configureHttp({ serverUrl: this.serverUrl, token: this.token });
       this.initialized = true;
+      void getSystemCapabilities()
+        .then((capabilities) => {
+          this.capabilities = capabilities;
+          this.capabilitiesError = "";
+        })
+        .catch((error: unknown) => {
+          this.capabilities = null;
+          this.capabilitiesError = error instanceof Error ? error.message : "系统能力读取失败";
+        });
     },
     async updateServerUrl(serverUrl: string) {
       const candidate = normalizeServerUrl(serverUrl);

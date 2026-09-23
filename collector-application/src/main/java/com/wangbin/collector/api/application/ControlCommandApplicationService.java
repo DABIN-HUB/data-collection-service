@@ -9,10 +9,12 @@ import com.wangbin.collector.api.controller.dto.PointWriteResultResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
+import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -25,6 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 控制命令应用服务。
@@ -44,6 +47,12 @@ public class ControlCommandApplicationService {
     private final ConfigManager configManager;
     private final CollectionManager collectionManager;
     private final DevicePointResolver devicePointResolver;
+    private CollectionService collectionService;
+
+    @Autowired(required = false)
+    public void setCollectionService(CollectionService collectionService) {
+        this.collectionService = collectionService;
+    }
 
     /**
      * 写入单个点位。
@@ -68,17 +77,50 @@ public class ControlCommandApplicationService {
         if (!dataPoint.isWritable()) {
             return ApiResult.error(ResultCode.DATA_INVALID.getCode(), "点位不可写: " + pointRef);
         }
+        if (collectionService != null && !collectionService.isDeviceRunning(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行，禁止写入: " + deviceId);
+        }
+        if (collectionManager.getCollector(deviceId) != null && !collectionManager.isDeviceConnected(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未连接，禁止写入: " + deviceId);
+        }
 
+        long startedAt = System.currentTimeMillis();
+        String operationId = UUID.randomUUID().toString();
         boolean success = collectionManager.writePoint(deviceId, dataPoint, request.getValue());
+        Object readbackValue = null;
+        boolean readbackAttempted = false;
+        boolean readbackSuccess = false;
+        String message = success ? "点位写入成功" : "点位写入失败";
+        if (success && "RW".equalsIgnoreCase(dataPoint.getReadWrite())) {
+            readbackAttempted = true;
+            try {
+                readbackValue = collectionManager.readPoint(deviceId, dataPoint);
+                readbackSuccess = true;
+                message = "写入成功，读回验证成功";
+            } catch (Exception readbackException) {
+                message = "写入已完成，但读回验证失败";
+            }
+        }
         PointWriteResultResponse data = pointResult(dataPoint, request.getValue(), success,
                 success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+        data.setOperationId(operationId);
+        data.setDeviceId(deviceId);
+        data.setRequestedValue(request.getValue());
+        data.setAccepted(true);
+        data.setWriteSuccess(success);
+        data.setReadbackAttempted(readbackAttempted);
+        data.setReadbackSuccess(readbackSuccess);
+        data.setReadbackValue(readbackValue);
+        data.setStartedAt(startedAt);
+        data.setCompletedAt(System.currentTimeMillis());
+        data.setMessage(message);
         if (!success) {
             ApiResult<PointWriteResultResponse> result = ApiResult.error(
                     ResultCode.OPERATION_FAILED.getCode(), "点位写入失败");
             result.setData(data);
             return result;
         }
-        return ApiResult.success("点位写入成功", data);
+        return ApiResult.success(message, data);
     }
 
     /**
@@ -91,6 +133,10 @@ public class ControlCommandApplicationService {
     public ApiResult<BatchPointWriteResponse> writePoints(String deviceId, PointWriteRequest request) {
         if (request == null || CollectionUtils.isEmpty(request.getValues())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "values 不能为空");
+        }
+
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止控制操作");
         }
 
         List<DataPoint> points = configManager.getDataPoints(deviceId);
@@ -136,6 +182,9 @@ public class ControlCommandApplicationService {
     public ApiResult<DeviceCommandResponse> executeCommand(String deviceId, DeviceCommandRequest request) {
         if (request == null || !StringUtils.hasText(request.getCommand())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "command 不能为空");
+        }
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止控制操作");
         }
         Map<String, Object> params = request.getParams() != null ? request.getParams() : Map.of();
         Object commandResult = collectionManager.executeCommand(deviceId, request.getCommand(), params);
@@ -293,6 +342,12 @@ public class ControlCommandApplicationService {
      * @param error 错误信息
      * @return 单点写入结果
      */
+    private boolean isControlAvailable(String deviceId) {
+        if (collectionService != null && !collectionService.isDeviceRunning(deviceId)) return false;
+        if (collectionManager.getCollector(deviceId) != null && !collectionManager.isDeviceConnected(deviceId)) return false;
+        return true;
+    }
+
     private PointWriteResultResponse pointResult(DataPoint point, Object value, boolean success, String error) {
         return PointWriteResultResponse.builder()
                 .pointId(point.getPointId())

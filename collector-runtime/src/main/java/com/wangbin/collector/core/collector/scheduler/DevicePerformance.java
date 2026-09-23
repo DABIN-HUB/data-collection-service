@@ -30,9 +30,9 @@ class DevicePerformance {
 
     double healthScore = 100.0;
     long lastHealthCheckTime = System.currentTimeMillis();
-    int consecutiveFailureCount = 0;
-    long lastSuccessTime;
-    long firstSuccessTime;
+    volatile int consecutiveFailureCount = 0;
+    volatile long lastSuccessTime;
+    volatile long firstSuccessTime;
     volatile long runtimeGeneration;
 
     final List<Long> recentResponseTimes = new ArrayList<>();
@@ -75,6 +75,14 @@ class DevicePerformance {
         long now = System.currentTimeMillis();
         if (firstSuccessTime <= 0) firstSuccessTime = now;
         lastSuccessTime = now;
+    }
+
+    void recordDataSuccess(long generation, long collectTime) {
+        if (runtimeGeneration != generation) return;
+        consecutiveFailureCount = 0;
+        long sampleTime = collectTime > 0 ? collectTime : System.currentTimeMillis();
+        if (firstSuccessTime <= 0) firstSuccessTime = sampleTime;
+        lastSuccessTime = sampleTime;
     }
 
     void resetRuntimeWindow(long generation) {

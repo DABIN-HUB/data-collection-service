@@ -58,6 +58,7 @@
         </div>
       </section>
 
+      <el-alert v-if="historyCapabilityMessage && !appStore.capabilities?.history.available" :title="historyCapabilityMessage" type="warning" :closable="false" />
       <el-alert v-if="historyReadStatusText" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
       <el-alert v-if="historyPartialWarning" :title="historyPartialWarning" type="warning" :closable="false" />
 
@@ -286,11 +287,12 @@ const historyReadStatusText = computed(() => buildContextualReadStatus({
 }));
 const historyReadStatusType = computed(() => historyError.value && hasHistoryLastGoodForCurrentContext.value ? "warning" : "error");
 const historyEmptyText = computed(() => historyError.value ? `历史数据加载失败：${historyError.value}` : "暂无历史数据");
-const historyQueryDisabled = computed(() => shouldDisableHistorySubmit(
+const historyQueryDisabled = computed(() => !appStore.capabilities?.history.available || shouldDisableHistorySubmit(
   loading.value,
   pendingHistoryQueryContext.value,
   currentHistoryQueryContext()
 ));
+const historyCapabilityMessage = computed(() => appStore.capabilities?.history.reason || appStore.capabilitiesError);
 
 onMounted(async () => {
   await appStore.initialize();
