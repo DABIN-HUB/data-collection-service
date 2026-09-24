@@ -78,10 +78,6 @@ public final class FinsAddressParser {
         if ("STRING".equals(normalizedType) && bitOffset != null) {
             throw new IllegalArgumentException("FINS STRING does not support bit offset");
         }
-        if (bitOffset != null && !"BOOLEAN".equals(normalizedType)) {
-            throw new IllegalArgumentException("FINS bit address requires BOOLEAN dataType");
-        }
-
         FinsByteOrder byteOrder = FinsByteOrder.from(effectiveConfig.get("byteOrder"), FinsByteOrder.BIG_ENDIAN);
         FinsWordOrder wordOrder = FinsWordOrder.from(effectiveConfig.get("wordOrder"), FinsWordOrder.BIG_ENDIAN);
         String canonical = memoryArea.name() + ":" + wordAddress
