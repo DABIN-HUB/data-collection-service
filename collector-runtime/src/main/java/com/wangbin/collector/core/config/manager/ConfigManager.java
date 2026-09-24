@@ -15,6 +15,7 @@ import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
@@ -85,6 +86,7 @@ public class ConfigManager {
                          LocalDeviceConfigStore localDeviceConfigStore) {
         this(configSyncService, eventPublisher, fieldUniquenessValidator, localDeviceConfigStore, null);
     }
+    @Autowired
     public ConfigManager(ConfigSyncService configSyncService,
                          ApplicationEventPublisher eventPublisher,
                          FieldUniquenessValidator fieldUniquenessValidator,
