@@ -91,11 +91,40 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
-    void shouldAcceptOpcUaRawConnectionStringWithoutEndpointFields() {
+    void shouldRejectOpcUaAliasRawPlc4xConnectionStringWithoutEndpoint() {
         DeviceConnection connection = new DeviceConnection();
         connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
 
-        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptMiloEndpointFromEveryRuntimeSource() {
+        DeviceConnection url = new DeviceConnection();
+        url.setUrl("opc.tcp://127.0.0.1:4840");
+        DeviceConnection endpointUrl = new DeviceConnection();
+        endpointUrl.setExtJson(ext("endpointUrl", "opc.tcp://127.0.0.1:4840"));
+        DeviceConnection endpoint = new DeviceConnection();
+        endpoint.setExtJson(ext("endpoint", "opc.tcp://127.0.0.1:4840"));
+        DeviceConnection host = new DeviceConnection();
+        host.setHost("127.0.0.1");
+
+        for (String protocol : new String[]{"OPC_UA", "OPC_UA_MILO"}) {
+            DeviceInfo milo = device("dev-opcua", protocol);
+            for (DeviceConnection connection : new DeviceConnection[]{url, endpointUrl, endpoint, host}) {
+                assertDoesNotThrow(() -> validator.validate(milo, connection));
+            }
+        }
+    }
+
+    @Test
+    void shouldRejectMiloDeviceIpWithoutConnectionEndpoint() {
+        DeviceInfo milo = device("dev-opcua", "OPC_UA");
+        milo.setIpAddress("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(milo, new DeviceConnection()));
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.config.protocol;
 
+import com.wangbin.collector.core.collector.protocol.opc.OpcUaCollector;
+import com.wangbin.collector.core.collector.protocol.opc.Plc4xOpcUaCollector;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
@@ -243,6 +245,12 @@ public class ProtocolSchemaServiceTest {
         assertTrue(modbus.getPointFields().stream().anyMatch(field -> "additionalConfig.registerType".equals(field.getName())));
 
         ProtocolSchema opcUa = service.getSchema("OPC_UA").orElseThrow();
+        assertEquals(OpcUaCollector.class, registry.resolve("OPC_UA").collectorClass());
+        assertEquals("OPC_UA_MILO", registry.resolve("OPC_UA").connectionType());
+        assertEquals(OpcUaCollector.class, registry.resolve("OPC_UA_MILO").collectorClass());
+        assertEquals("OPC_UA_MILO", registry.resolve("OPC_UA_MILO").connectionType());
+        assertEquals(Plc4xOpcUaCollector.class, registry.resolve("OPC_UA_PLC4X").collectorClass());
+        assertEquals("OPC_UA_PLC4X", registry.resolve("OPC_UA_PLC4X").connectionType());
         assertEquals(ProtocolTypeMode.DRIVER_PRIMARY, opcUa.getTypeMode());
         assertEquals("additionalConfig.driverDataType", opcUa.getPrimaryTypeField());
         assertEquals(PlatformDataTypeMode.DERIVED_EDITABLE, opcUa.getPlatformDataTypeMode());
@@ -253,8 +261,17 @@ public class ProtocolSchemaServiceTest {
         assertTrue(opcUa.getPointFields().stream().anyMatch(field -> "additionalConfig.nodeId".equals(field.getName())));
 
         ProtocolSchema opcUaMilo = service.getSchema("OPC_UA_MILO").orElseThrow();
-        assertTrue(opcUaMilo.getConnectionFields().stream()
-                .noneMatch(field -> "plc4xConnectionString".equals(field.getName())));
+        for (ProtocolSchema milo : List.of(opcUa, opcUaMilo)) {
+            assertTrue(milo.getConnectionFields().stream()
+                    .noneMatch(field -> "plc4xConnectionString".equals(field.getName())));
+            assertTrue(milo.getConnectionFields().stream()
+                    .anyMatch(field -> "nodeIdAliasMode".equals(field.getName())));
+            assertTrue(milo.getConnectionFields().stream()
+                    .anyMatch(field -> "nodeIdPrefix".equals(field.getName())));
+        }
+        ProtocolSchema opcUaPlc4x = service.getSchema("OPC_UA_PLC4X").orElseThrow();
+        assertTrue(opcUaPlc4x.getConnectionFields().stream()
+                .anyMatch(field -> "plc4xConnectionString".equals(field.getName())));
     }
 
     @Test
@@ -269,7 +286,7 @@ public class ProtocolSchemaServiceTest {
                         "additionalConfig.arraySize"));
         assertSchemaFields("OPC_UA",
                 List.of("url", "endpointUrl", "host", "port", "authType", "securityPolicy",
-                        "requestTimeoutMs", "plc4xConnectionString"),
+                        "requestTimeoutMs", "nodeIdAliasMode", "nodeIdPrefix"),
                 List.of("additionalConfig.nodeId", "additionalConfig.identifierType",
                         "additionalConfig.samplingInterval", "additionalConfig.arraySize", "additionalConfig.subscribe"));
         assertSchemaFields("BACNET_IP",

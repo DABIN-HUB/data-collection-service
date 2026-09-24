@@ -459,7 +459,7 @@ public class ProtocolConnectionValidator {
      */
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
         String connectionString = connection.getStringConfig("plc4xConnectionString", null);
-        if (!hasOpcUaEndpoint(deviceInfo, connection)
+        if (!hasOpcUaEndpoint(connection) && !hasText(deviceInfo.getIpAddress())
                 && isBlank(connectionString)) {
             fail(deviceInfo, protocolLabel + " requires plc4xConnectionString, url, endpointUrl, endpoint, or host");
         }
@@ -475,7 +475,7 @@ public class ProtocolConnectionValidator {
      * 校验业务条件和参数边界。
      */
     private void validateMiloOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
-        if (!hasOpcUaEndpoint(deviceInfo, connection)) {
+        if (!hasOpcUaEndpoint(connection)) {
             fail(deviceInfo, "OPC_UA_MILO requires url, endpointUrl, endpoint, or host");
         }
         validateOpcUaSecurity(deviceInfo, connection, "OPC_UA_MILO", false);
@@ -745,12 +745,11 @@ public class ProtocolConnectionValidator {
     /**
      * 执行当前业务逻辑。
      */
-    private boolean hasOpcUaEndpoint(DeviceInfo deviceInfo, DeviceConnection connection) {
+    private boolean hasOpcUaEndpoint(DeviceConnection connection) {
         return hasText(connection.getUrl())
                 || hasText(connection.getStringConfig("endpointUrl", null))
                 || hasText(connection.getStringConfig("endpoint", null))
-                || hasText(connection.getHost())
-                || hasText(deviceInfo.getIpAddress());
+                || hasText(connection.getHost());
     }
 
     /**
