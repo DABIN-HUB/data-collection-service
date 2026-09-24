@@ -77,11 +77,8 @@ public class ControlCommandApplicationService {
         if (!dataPoint.isWritable()) {
             return ApiResult.error(ResultCode.DATA_INVALID.getCode(), "点位不可写: " + pointRef);
         }
-        if (collectionService != null && !collectionService.isDeviceRunning(deviceId)) {
-            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行，禁止写入: " + deviceId);
-        }
-        if (collectionManager.getCollector(deviceId) != null && !collectionManager.isDeviceConnected(deviceId)) {
-            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未连接，禁止写入: " + deviceId);
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止写入: " + deviceId);
         }
 
         long startedAt = System.currentTimeMillis();
@@ -343,10 +340,11 @@ public class ControlCommandApplicationService {
      * @return 单点写入结果
      */
     private boolean isControlAvailable(String deviceId) {
-        if (collectionService != null && configManager.getDevice(deviceId) == null) return false;
-        if (collectionService != null && !collectionService.isDeviceRunning(deviceId)) return false;
-        if (collectionManager.getCollector(deviceId) != null && !collectionManager.isDeviceConnected(deviceId)) return false;
-        return true;
+        return configManager.getDevice(deviceId) != null
+                && collectionService != null
+                && collectionService.isDeviceRunning(deviceId)
+                && collectionManager.getCollector(deviceId) != null
+                && collectionManager.isDeviceConnected(deviceId);
     }
 
     private PointWriteResultResponse pointResult(DataPoint point, Object value, boolean success, String error) {

@@ -31,10 +31,13 @@ export function updateShadowDesired(deviceId: string, payload: ShadowDesiredUpda
   });
 }
 
-export function clearShadowDesired(deviceId: string, fields?: string[]): Promise<DeviceShadowResponse> {
+export function clearShadowDesired(deviceId: string, fields?: string[], expectedVersion?: number): Promise<DeviceShadowResponse> {
   return requestApiData<DeviceShadowResponse>({
     url: `/api/shadow/${encodeURIComponent(deviceId)}/desired`,
     method: "DELETE",
-    params: fields?.length ? { fields: fields.join(",") } : undefined
+    params: {
+      ...(fields?.length ? { fields: fields.join(",") } : {}),
+      ...(expectedVersion !== undefined ? { expectedVersion } : {})
+    }
   });
 }

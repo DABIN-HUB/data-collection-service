@@ -2,7 +2,7 @@
   <section class="exact-page cloud-view">
     <div class="section-heading">
       <div class="heading-title-line">
-        <h1>云平台配置</h1>
+        <h1>云链路监控</h1>
         <span class="heading-online"><i></i>{{ cloudOperationalState.text }}</span>
       </div>
       <div class="heading-actions">
@@ -48,6 +48,15 @@
       </section>
 
       <section class="exact-surface">
+        <div class="exact-surface-head"><h2>Outbox 消息</h2><span>{{ outboxRows.length }} 项</span></div>
+        <div v-if="!appStore.capabilities?.cloud.monitoringAvailable" class="cloud-error">当前云链路监控不可用</div>
+        <table v-else class="runtime-table"><thead><tr><th>消息</th><th>设备</th><th>状态</th><th>重试</th><th>错误</th><th>操作</th></tr></thead>
+          <tbody><tr v-for="row in outboxRows" :key="row.messageId"><td>{{ row.messageId }}</td><td>{{ row.localDeviceId || "-" }}</td><td>{{ row.status }}</td><td>{{ row.retryCount ?? 0 }}</td><td>{{ row.lastError || "-" }}</td><td><button v-if="appStore.capabilities?.cloud.managementAvailable && row.status === 'ISOLATED'" @click="replay(row.messageId)">Replay</button></td></tr></tbody>
+        </table>
+        <div class="heading-actions"><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="flush">Flush 到期消息</button><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="testLink">测试云链路</button><span v-if="testResult">{{ testResult.message }}</span></div>
+      </section>
+
+      <section class="exact-surface">
         <div class="exact-surface-head">
           <h2>链路风险</h2>
           <span>{{ cloudRisks.length }} 项</span>
@@ -67,8 +76,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 import { getCloudReportMetrics } from "@/api/monitor.api";
+import { flushCloudOutbox, listCloudOutbox, replayCloudOutbox, testCloudLink } from "@/api/cloud.api";
 import {
   buildCloudEnabledText,
   buildCloudOperationalRows,
@@ -79,12 +90,15 @@ import {
 } from "@/features/cloud/utils/cloud-report-utils";
 import { useAppStore } from "@/stores/app.store";
 import type { CloudReportMetricsResponse } from "@/types/monitor";
+import type { CloudOutboxListItem, CloudTestResponse } from "@/types/cloud";
 
 const appStore = useAppStore();
 const reportMetrics = ref<CloudReportMetricsResponse | null>(null);
 const loading = ref(false);
 const error = ref("");
 const lastRefresh = ref<Date | null>(null);
+const outboxRows = ref<CloudOutboxListItem[]>([]);
+const testResult = ref<CloudTestResponse | null>(null);
 
 const cloudOperationalState = computed(() => classifyCloudOperationalState(reportMetrics.value, Boolean(error.value)));
 const cloudEnabledText = computed(() => buildCloudEnabledText(reportMetrics.value));
@@ -106,7 +120,10 @@ async function loadCloud() {
   error.value = "";
   try {
     await appStore.initialize();
-    reportMetrics.value = await getCloudReportMetrics();
+    if (appStore.capabilities?.cloud.monitoringAvailable === true) {
+      reportMetrics.value = await getCloudReportMetrics();
+      outboxRows.value = await listCloudOutbox({ limit: 50 });
+    }
     lastRefresh.value = new Date();
   } catch (err) {
     error.value = err instanceof Error ? err.message : "云上报链路加载失败";
@@ -117,6 +134,27 @@ async function loadCloud() {
 
 async function refreshCloud() {
   await loadCloud();
+}
+
+async function replay(messageId: string) {
+  try {
+    await ElMessageBox.confirm("该操作会重新进入云端发送链路，可能再次向云平台发送消息。", "确认 Replay", { type: "warning" });
+    await replayCloudOutbox(messageId);
+    await loadCloud();
+    ElMessage.success("消息已重新进入发送队列");
+  } catch { /* cancel or API error is already visible through the next refresh */ }
+}
+
+async function flush() {
+  try {
+    await ElMessageBox.confirm("将立即触发当前到期 Outbox 消息的调度，不代表云端已经确认。", "确认 Flush", { type: "warning" });
+    await flushCloudOutbox();
+    await loadCloud();
+  } catch { /* user cancelled */ }
+}
+
+async function testLink() {
+  testResult.value = await testCloudLink();
 }
 
 function prettyJson(value: unknown): string {

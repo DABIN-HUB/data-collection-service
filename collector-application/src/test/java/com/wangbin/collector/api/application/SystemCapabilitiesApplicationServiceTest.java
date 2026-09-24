@@ -2,7 +2,9 @@ package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.SystemCapabilitiesResponse;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
+import com.wangbin.collector.monitor.metrics.CloudReportMonitorService;
 import com.wangbin.collector.storage.service.HistoryDataService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -52,7 +54,11 @@ class SystemCapabilitiesApplicationServiceTest {
         ObjectProvider<HistoryDataService> historyProvider = provider(history);
         ObjectProvider<CollectionManager> collectionProvider = provider(collectionManager);
         ObjectProvider<ShadowManager> shadowProvider = provider(shadowManager);
-        return new SystemCapabilitiesApplicationService(historyProvider, collectionProvider, shadowProvider);
+        ObjectProvider<CloudReportMonitorService> monitorProvider = provider(null);
+        ObjectProvider<CloudOutboxService> outboxProvider = provider(null);
+        ObjectProvider<CloudOperationsApplicationService> operationsProvider = provider(null);
+        return new SystemCapabilitiesApplicationService(historyProvider, collectionProvider, shadowProvider,
+                monitorProvider, outboxProvider, operationsProvider);
     }
 
     private <T> ObjectProvider<T> provider(T value) {

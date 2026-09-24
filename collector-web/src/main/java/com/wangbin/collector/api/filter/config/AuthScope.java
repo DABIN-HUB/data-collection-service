@@ -8,5 +8,6 @@ public enum AuthScope {
     DEVICE_CONTROL,
     CONFIG_MANAGE,
     SECURITY_MANAGE,
-    EDGE_INGEST
+    EDGE_INGEST,
+    CLOUD_OPERATE
 }

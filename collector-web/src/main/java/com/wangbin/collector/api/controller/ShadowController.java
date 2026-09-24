@@ -6,6 +6,9 @@ import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -72,6 +75,8 @@ public class ShadowController {
         try {
             return ApiResult.success(DeviceShadowResponse.from(
                     shadowManager.updateDesired(deviceId, desired, source, extractExpectedVersion(request))));
+        } catch (ShadowManager.ShadowVersionConflictException e) {
+            throw e;
         } catch (IllegalStateException e) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), e.getMessage());
         }
@@ -80,6 +85,17 @@ public class ShadowController {
     /**
      * 解析或转换业务数据。
      */
+    @ExceptionHandler(ShadowManager.ShadowVersionConflictException.class)
+    public ResponseEntity<ApiResult<Map<String, Object>>> handleShadowVersionConflict(
+            ShadowManager.ShadowVersionConflictException exception) {
+        Map<String, Object> data = Map.of(
+                "expectedVersion", exception.getExpectedVersion(),
+                "currentVersion", exception.getActualVersion() == null ? 0L : exception.getActualVersion());
+        ApiResult<Map<String, Object>> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备影子已发生变化，请重新读取后确认 desired");
+        result.setData(data);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
+    }
+
     private Long extractExpectedVersion(Map<String, Object> request) {
         if (request == null) {
             return null;
@@ -103,8 +119,9 @@ public class ShadowController {
 
     @DeleteMapping("/{deviceId}/desired")
     public ApiResult<DeviceShadowResponse> clearDesired(@PathVariable String deviceId,
-                                                        @RequestParam(required = false) List<String> fields) {
-        Map<String, Object> document = shadowManager.clearDesired(deviceId, fields);
+                                                        @RequestParam(required = false) List<String> fields,
+                                                        @RequestParam(required = false) Long expectedVersion) {
+        Map<String, Object> document = shadowManager.clearDesired(deviceId, fields, expectedVersion);
         if (document == null) {
             return ApiResult.error(ResultCode.DATA_NOT_FOUND.getCode(), "设备影子不存在");
         }

@@ -14,6 +14,17 @@ export interface PointWriteResultResponse {
   value?: unknown;
   success?: boolean;
   error?: string;
+  operationId?: string;
+  deviceId?: string;
+  requestedValue?: unknown;
+  accepted?: boolean;
+  writeSuccess?: boolean;
+  readbackAttempted?: boolean;
+  readbackSuccess?: boolean;
+  readbackValue?: unknown;
+  startedAt?: number;
+  completedAt?: number;
+  message?: string;
 }
 
 export interface BatchPointWriteFieldResponse {

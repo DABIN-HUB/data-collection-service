@@ -464,8 +464,7 @@ public class ShadowManager {
         long casExpectedVersion;
         synchronized (shadow) {
             if (expectedVersion != null && shadow.currentVersion() != expectedVersion) {
-                throw new IllegalStateException("shadow version conflict: expected="
-                        + expectedVersion + ", actual=" + shadow.currentVersion());
+                throw new ShadowVersionConflictException(expectedVersion, shadow.currentVersion());
             }
             previousVersion = shadow.currentVersion();
             casExpectedVersion = expectedVersion != null ? expectedVersion : previousVersion;
@@ -495,16 +494,37 @@ public class ShadowManager {
         return clearDesiredStrict(deviceId, fields, shadow);
     }
 
-    /**
-     * 清理或删除业务数据。
-     */
+    public Map<String, Object> clearDesired(String deviceId, Collection<String> fields, Long expectedVersion) {
+        DeviceShadow shadow = getShadow(deviceId);
+        if (shadow == null) return null;
+        if (expectedVersion != null) {
+            shadow = refreshLocalShadowIfVersionMismatch(deviceId, shadow, expectedVersion);
+            synchronized (shadow) {
+                if (shadow.currentVersion() != expectedVersion) {
+                    throw new ShadowVersionConflictException(expectedVersion, shadow.currentVersion());
+                }
+            }
+            return clearDesiredStrict(deviceId, fields, shadow, expectedVersion);
+        }
+        return clearDesired(deviceId, fields);
+    }
     private Map<String, Object> clearDesiredStrict(String deviceId,
                                                    Collection<String> fields,
                                                    DeviceShadow shadow) {
+        return clearDesiredStrict(deviceId, fields, shadow, null);
+    }
+
+    private Map<String, Object> clearDesiredStrict(String deviceId,
+                                                   Collection<String> fields,
+                                                   DeviceShadow shadow,
+                                                   Long expectedVersion) {
         Map<String, Object> document;
         long previousVersion;
         synchronized (shadow) {
-            previousVersion = shadow.currentVersion();
+            if (expectedVersion != null && shadow.currentVersion() != expectedVersion) {
+                throw new ShadowVersionConflictException(expectedVersion, shadow.currentVersion());
+            }
+            previousVersion = expectedVersion != null ? expectedVersion : shadow.currentVersion();
             shadow.clearDesired(fields);
             document = buildShadowDocument(shadow);
         }
@@ -1341,12 +1361,17 @@ public class ShadowManager {
     /**
      * 表示当前模块的异常语义。
      */
-    private static class ShadowVersionConflictException extends IllegalStateException {
-        /**
-         * 创建当前组件实例。
-         */
-        ShadowVersionConflictException(long expectedVersion, Long actualVersion) {
+    public static class ShadowVersionConflictException extends IllegalStateException {
+        private final long expectedVersion;
+        private final Long actualVersion;
+
+        public ShadowVersionConflictException(long expectedVersion, Long actualVersion) {
             super("shadow version conflict: expected=" + expectedVersion + ", actual=" + actualVersion);
+            this.expectedVersion = expectedVersion;
+            this.actualVersion = actualVersion;
         }
+
+        public long getExpectedVersion() { return expectedVersion; }
+        public Long getActualVersion() { return actualVersion; }
     }
 }

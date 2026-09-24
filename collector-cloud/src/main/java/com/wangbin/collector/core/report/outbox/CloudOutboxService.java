@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -182,6 +183,30 @@ public class CloudOutboxService {
     public boolean isEnabled() {
         return enabled();
     }
+
+    public Optional<CloudOutboxMessage> find(String messageId) {
+        return !enabled() ? Optional.empty() : repository.find(messageId);
+    }
+
+    public List<CloudOutboxMessage> list(CloudOutboxStatus status, String localDeviceId, int limit) {
+        return !enabled() ? List.of() : repository.list(status, localDeviceId, Math.min(200, Math.max(1, limit)));
+    }
+
+    public boolean replay(String messageId) {
+        if (!enabled()) return false;
+        CloudOutboxMessage message = repository.find(messageId).orElse(null);
+        if (message == null || message.getStatus() != CloudOutboxStatus.ISOLATED) return false;
+        message.setStatus(CloudOutboxStatus.PENDING);
+        message.setNextAttemptAt(System.currentTimeMillis());
+        message.setLastError(null);
+        repository.reschedule(message);
+        return true;
+    }
+
+    public void flush() {
+        dispatchDueMessages();
+    }
+
 
     /**
      * 返回发件箱轻量监控快照，一次调用内完成 enabled/backlog/isolation/oldest 读取。

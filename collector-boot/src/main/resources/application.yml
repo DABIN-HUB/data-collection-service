@@ -218,6 +218,9 @@ collector:
         paths: [/api/ops/network/diagnose]
         required-scope: SECURITY_MANAGE
       - methods: [POST]
+        paths: [/api/cloud/**]
+        required-scope: CLOUD_OPERATE
+      - methods: [POST]
         paths: [/api/ops/alarms/*/acknowledge]
         required-scope: DEVICE_CONTROL
       - methods: [GET]

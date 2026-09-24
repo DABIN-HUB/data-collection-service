@@ -26,6 +26,7 @@ interface AppState {
 
 const TOKEN_KEY = "collector-desktop-token";
 const SERVER_KEY = "collector-desktop-server-url";
+let capabilitiesRequest: Promise<SystemCapabilities | null> | null = null;
 
 export const useAppStore = defineStore("app", {
   state: (): AppState => ({
@@ -90,20 +91,38 @@ export const useAppStore = defineStore("app", {
       }
       configureHttp({ serverUrl: this.serverUrl, token: this.token });
       this.initialized = true;
-      void getSystemCapabilities()
+      if (this.hasCredential) {
+        void this.refreshCapabilities();
+      }
+    },
+    async refreshCapabilities(): Promise<SystemCapabilities | null> {
+      if (capabilitiesRequest) {
+        return capabilitiesRequest;
+      }
+      capabilitiesRequest = getSystemCapabilities()
         .then((capabilities) => {
           this.capabilities = capabilities;
           this.capabilitiesError = "";
           useWebSocketStore().setSupported(Boolean(capabilities.realtime.websocketAvailable));
+          return capabilities;
         })
         .catch((error: unknown) => {
           this.capabilities = null;
           this.capabilitiesError = error instanceof Error ? error.message : "系统能力读取失败";
           useWebSocketStore().setSupported(false);
+          return null;
+        })
+        .finally(() => {
+          capabilitiesRequest = null;
         });
+      return capabilitiesRequest;
     },
     async updateServerUrl(serverUrl: string) {
       const candidate = normalizeServerUrl(serverUrl);
+      this.capabilities = null;
+      this.capabilitiesError = "";
+      useWebSocketStore().setSupported(false);
+      useWebSocketStore().disableRealtime();
       if (isDesktopRuntime() && window.collectorDesktop) {
         const persisted = await window.collectorDesktop.setServerConfig({ serverUrl: candidate });
         this.serverUrl = normalizeServerUrl(persisted.serverUrl || this.serverUrl);
@@ -112,6 +131,9 @@ export const useAppStore = defineStore("app", {
       }
       localStorage.setItem(SERVER_KEY, this.serverUrl);
       configureHttp({ serverUrl: this.serverUrl });
+      if (this.hasCredential) {
+        await this.refreshCapabilities();
+      }
     },
     async setToken(token: string, remember: boolean) {
       const normalizedToken = token.trim();
@@ -140,6 +162,7 @@ export const useAppStore = defineStore("app", {
     async login(token: string, remember: boolean) {
       await this.setToken(token, remember);
       this.currentUser = "admin";
+      await this.refreshCapabilities();
     },
     async logout() {
       if (isDesktopRuntime() && window.collectorDesktop) {
@@ -147,11 +170,19 @@ export const useAppStore = defineStore("app", {
         this.applyCredentialStatus(status);
         this.token = "";
         this.rememberToken = false;
+        this.capabilities = null;
+        this.capabilitiesError = "";
+        useWebSocketStore().setSupported(false);
+        useWebSocketStore().disableRealtime();
         configureHttp({ token: "" });
         localStorage.removeItem(TOKEN_KEY);
         return;
       }
       await this.setToken("", false);
+      this.capabilities = null;
+      this.capabilitiesError = "";
+      useWebSocketStore().setSupported(false);
+      useWebSocketStore().disableRealtime();
     },
     applyCredentialStatus(status: { hasCredential: boolean; remembered: boolean; storageAvailable: boolean; rememberUnavailable: boolean }) {
       this.hasCredential = Boolean(status.hasCredential);

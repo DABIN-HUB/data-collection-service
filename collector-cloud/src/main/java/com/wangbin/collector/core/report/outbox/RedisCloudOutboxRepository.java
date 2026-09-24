@@ -212,6 +212,25 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
     /**
      * 执行当前业务逻辑。
      */
+    @Override
+    public List<CloudOutboxMessage> list(CloudOutboxStatus status, String localDeviceId, int limit) {
+        int boundedLimit = Math.max(1, Math.min(200, limit));
+        Set<String> ids = redisTemplate.opsForZSet().range(createdKey(), 0, Math.max(0, boundedLimit * 5L - 1));
+        if (ids == null || ids.isEmpty()) return Collections.emptyList();
+        List<CloudOutboxMessage> result = new ArrayList<>();
+        for (String id : ids) {
+            Optional<CloudOutboxMessage> message = find(id);
+            if (message.isEmpty()) continue;
+            CloudOutboxMessage value = message.get();
+            if (status != null && value.getStatus() != status) continue;
+            if (localDeviceId != null && !localDeviceId.isBlank()
+                    && !localDeviceId.equals(value.getLocalDeviceId())) continue;
+            result.add(value);
+            if (result.size() >= boundedLimit) break;
+        }
+        return result;
+    }
+
     private String dataKey() {
         return keyPrefix() + DATA_SUFFIX;
     }

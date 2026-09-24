@@ -4,8 +4,11 @@ import com.wangbin.collector.api.controller.dto.BatchPointWriteFieldResponse;
 import com.wangbin.collector.api.controller.dto.BatchPointWriteResponse;
 import com.wangbin.collector.api.controller.dto.PointWriteRequest;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.web.result.ApiResult;
+import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,14 +39,21 @@ class ControlCommandApplicationServiceTest {
 
     private ConfigManager configManager;
     private CollectionManager collectionManager;
+    private CollectionService collectionService;
     private ControlCommandApplicationService applicationService;
 
     @BeforeEach
     void setUp() {
         configManager = mock(ConfigManager.class);
         collectionManager = mock(CollectionManager.class);
+        collectionService = mock(CollectionService.class);
+        when(configManager.getDevice(DEVICE_ID)).thenReturn(new DeviceInfo());
+        when(collectionService.isDeviceRunning(DEVICE_ID)).thenReturn(true);
+        when(collectionManager.getCollector(DEVICE_ID)).thenReturn(mock(ProtocolCollector.class));
+        when(collectionManager.isDeviceConnected(DEVICE_ID)).thenReturn(true);
         applicationService = new ControlCommandApplicationService(
                 configManager, collectionManager, new DevicePointResolver(configManager));
+        applicationService.setCollectionService(collectionService);
     }
 
     @Test

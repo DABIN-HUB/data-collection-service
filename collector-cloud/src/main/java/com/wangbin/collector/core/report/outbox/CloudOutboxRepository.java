@@ -59,5 +59,9 @@ public interface CloudOutboxRepository {
     /**
      * 执行当前业务逻辑。
      */
+    default List<CloudOutboxMessage> list(CloudOutboxStatus status, String localDeviceId, int limit) {
+        return List.of();
+    }
+
     boolean hasPendingForDevice(String localDeviceId);
 }

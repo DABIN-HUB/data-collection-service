@@ -65,6 +65,7 @@ public class ConfigManager {
     private final Map<String, DeviceContext> deviceContextCache = new ConcurrentHashMap<>();
     private final Map<String, Long> deviceConfigVersions = new ConcurrentHashMap<>();
     private final AtomicLong configVersionSequence = new AtomicLong(System.currentTimeMillis());
+    private final AtomicLong configMutationRevision = new AtomicLong();
 
     /**
      * 读写锁，保证配置读写的线程安全
@@ -135,6 +136,7 @@ public class ConfigManager {
      */
     private void loadAllConfig() {
         log.info("开始加载所有配置...");
+        long startRevision = configMutationRevision.get();
         Map<String, DeviceContext> previousContexts;
         Map<String, Long> previousVersions;
         List<DeviceContext> localTemporaryContexts;
@@ -205,6 +207,12 @@ public class ConfigManager {
 
             lock.writeLock().lock();
             try {
+                if (configMutationRevision.get() != startRevision) {
+                    log.warn("full configuration refresh aborted because live config changed during remote load");
+                    return;
+                }
+                mergeLocalTemporaryCandidates(candidateDevices, candidateConnections, candidatePoints, candidateContexts,
+                        snapshotLocalTemporaryContexts());
                 deviceCache.clear();
                 deviceCache.putAll(candidateDevices);
                 connectionCache.clear();
@@ -214,12 +222,31 @@ public class ConfigManager {
                 deviceContextCache.clear();
                 deviceContextCache.putAll(candidateContexts);
                 reconcileConfigVersions(previousContexts, previousVersions);
+                markConfigMutation();
             } finally {
                 lock.writeLock().unlock();
             }
             log.info("配置加载完成，共加载 {} 个设备配置", candidateContexts.size());
         } catch (RuntimeException exception) {
             log.error("full configuration refresh aborted, live cache preserved, reason={}", exception.getMessage(), exception);
+        }
+    }
+
+    private void mergeLocalTemporaryCandidates(Map<String, DeviceInfo> candidateDevices,
+                                                Map<String, DeviceConnection> candidateConnections,
+                                                Map<String, List<DataPoint>> candidatePoints,
+                                                Map<String, DeviceContext> candidateContexts,
+                                                List<DeviceContext> localContexts) {
+        for (DeviceContext localContext : localContexts) {
+            if (localContext == null || localContext.getDeviceInfo() == null) continue;
+            String deviceId = localContext.getDeviceId();
+            if (candidateDevices.containsKey(deviceId)) continue;
+            DeviceConnection connection = localContext.copyConnectionConfig();
+            List<DataPoint> points = localContext.copyDataPoints();
+            candidateDevices.put(deviceId, localContext.getDeviceInfo());
+            candidatePoints.put(deviceId, points);
+            if (connection != null) candidateConnections.put(deviceId, connection);
+            candidateContexts.put(deviceId, DeviceContext.of(localContext.getDeviceInfo(), connection, points));
         }
     }
 
@@ -313,6 +340,10 @@ public class ConfigManager {
     private long nextConfigVersion() {
         return configVersionSequence.updateAndGet(current ->
                 Math.max(System.currentTimeMillis(), current + 1));
+    }
+
+    private long markConfigMutation() {
+        return configMutationRevision.incrementAndGet();
     }
     /** 获取全部设备上下文。 */
     public List<DeviceContext> getAllDeviceContexts() {
@@ -471,6 +502,7 @@ public class ConfigManager {
                     .build();
 
             eventPublisher.publishEvent(event);
+            markConfigMutation();
             log.info("设备配置已更新: {} - {}", deviceId, device.getDeviceName());
 
             return true;
@@ -528,6 +560,7 @@ public class ConfigManager {
                     .build();
 
             eventPublisher.publishEvent(event);
+            markConfigMutation();
             log.info("数据点配置已更新: {}, 共 {} 个点", deviceId, points.size());
 
             return true;
@@ -582,6 +615,7 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
+            markConfigMutation();
             log.info("连接配置已更新: {}", deviceId);
             return true;
         } catch (Exception e) {
@@ -668,6 +702,7 @@ public class ConfigManager {
         }
         try {
             eventPublisher.publishEvent(pendingEvent);
+            markConfigMutation();
         } catch (RuntimeException eventException) {
             log.error("设备配置已提交，但 Bundle 配置事件发布失败: {}", deviceId, eventException);
         }
@@ -733,6 +768,7 @@ public class ConfigManager {
         event.setExtraParams(Map.of(OLD_VERSION_KEY, oldVersion, NEW_VERSION_KEY, newVersion));
         try {
             eventPublisher.publishEvent(event);
+            markConfigMutation();
         } catch (RuntimeException e) {
             log.error("配置已提交，但发布配置变更事件失败，版本: {}", newVersion, e);
         }
@@ -847,6 +883,7 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
+            markConfigMutation();
             log.info("本地临时设备配置已保存：{}，点位={}", deviceId, safePoints.size());
             return true;
         } finally {
@@ -894,6 +931,7 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
             eventPublisher.publishEvent(event);
+            markConfigMutation();
             log.info("本地临时设备配置已删除：{}", deviceId);
             return true;
         } finally {

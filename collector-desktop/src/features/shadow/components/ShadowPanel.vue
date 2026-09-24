@@ -2,8 +2,9 @@
   <div class="local-editor-pane manual-shadow-pane">
     <div class="console-panel-head local-section-card manual-shadow-head-card">
       <h2>设备影子</h2>
-      <span>{{ deviceId || "未选择设备" }}</span>
+      <span>{{ deviceId || "未选择设备" }} · Version {{ currentShadowVersion ?? "-" }}</span>
     </div>
+    <div v-if="!shadowCapabilityAvailable" class="shadow-capability-warning">当前后端未提供设备影子能力</div>
     <div class="shadow-summary-grid">
       <div class="shadow-summary-card"><span>当前影子</span><strong>{{ shadowSummary.currentText }}</strong></div>
       <div class="shadow-summary-card"><span>期望状态</span><strong>{{ shadowSummary.desiredText }}</strong></div>
@@ -18,8 +19,8 @@
             <small class="shadow-section-status" :class="shadowError ? 'is-warning' : ''">{{ shadowStatusText }}</small>
           </div>
           <div class="inline-actions">
-            <button type="button" :disabled="!deviceId || loadingShadow" @click="loadShadowBundle">读取全部</button>
-            <button type="button" :disabled="!deviceId || loadingShadow" @click="loadShadow">读取影子</button>
+            <button type="button" :disabled="!deviceId || !shadowCapabilityAvailable || loadingShadow" @click="loadShadowBundle">读取全部</button>
+            <button type="button" :disabled="!deviceId || !shadowCapabilityAvailable || loadingShadow" @click="loadShadow">读取影子</button>
             <button type="button" :disabled="!deviceId" @click="downloadShadowPackage">导出快照</button>
           </div>
         </div>
@@ -31,10 +32,10 @@
             <h3>期望状态更新（desired）</h3>
             <small v-if="savingDesiredDeviceId" class="shadow-section-status">正在提交设备 {{ savingDesiredDeviceId }} 的期望状态</small>
           </div>
-          <button type="button" class="danger" :disabled="!deviceId || savingDesired" @click="clearDesired">清理期望状态</button>
+          <button type="button" class="danger" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired" @click="clearDesired">清理期望状态</button>
         </div>
         <textarea v-model="desiredPayload" spellcheck="false"></textarea>
-        <button type="button" class="primary wide" :disabled="!deviceId || savingDesired" @click="saveDesired">提交期望状态</button>
+        <button type="button" class="primary wide" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired" @click="saveDesired">提交期望状态</button>
       </section>
       <section class="surface-card local-section-card">
         <div class="surface-card-head">
@@ -80,6 +81,8 @@
 import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
+import { ApiRequestError } from "@/api/http";
+
 import { clearShadowDesired, getShadow, getShadowDelta, getShadowHistory, updateShadowDesired } from "@/api/shadow.api";
 import {
   DEFAULT_SHADOW_DESIRED_PAYLOAD,
@@ -104,9 +107,11 @@ import {
   type ShadowHistoryRow,
   type ShadowPanelStateMessage
 } from "@/features/shadow/utils/shadow-utils";
+import { useAppStore } from "@/stores/app.store";
 import type { DeviceShadowDeltaResponse, DeviceShadowResponse, ShadowDesiredUpdateRequest } from "@/types/shadow";
 
 const props = defineProps<{ deviceId: string }>();
+const appStore = useAppStore();
 
 const shadow = ref<DeviceShadowResponse | ShadowPanelStateMessage>({ message: "选择设备后读取影子" });
 const shadowDelta = ref<DeviceShadowDeltaResponse | ShadowPanelStateMessage>({ message: "选择设备后读取 delta" });
@@ -136,6 +141,8 @@ const shadowStatusText = computed(() => buildShadowSectionStatus({ kind: "shadow
 const shadowDeltaStatusText = computed(() => buildShadowSectionStatus({ kind: "delta", loading: loadingDelta.value, error: shadowDeltaError.value, lastSuccessAt: shadowDeltaLastSuccessAt.value }));
 const shadowHistoryStatusText = computed(() => buildShadowSectionStatus({ kind: "history", loading: loadingHistory.value, error: shadowHistoryError.value, lastSuccessAt: shadowHistoryLastSuccessAt.value }));
 const shadowHistoryEmptyText = computed(() => shadowHistoryError.value ? `读取影子历史失败：${shadowHistoryError.value}` : "暂无影子历史");
+const shadowCapabilityAvailable = computed(() => appStore.capabilities?.shadow.available === true);
+const currentShadowVersion = computed(() => "version" in shadow.value ? shadow.value.version : null);
 
 watch(() => props.deviceId, () => {
   shadowReadOwner.invalidate();
@@ -256,10 +263,22 @@ async function saveDesired() {
   if (!props.deviceId) {
     return;
   }
+  if (!shadowCapabilityAvailable.value) {
+    ElMessage.warning("当前后端未提供设备影子能力");
+    return;
+  }
+  if (!("version" in shadow.value)) {
+    ElMessage.warning("请先读取当前设备影子，再提交 desired");
+    return;
+  }
   const targetDeviceId = props.deviceId;
   let payload: ShadowDesiredUpdateRequest;
   try {
     payload = parseShadowJsonOrThrow<ShadowDesiredUpdateRequest>(desiredPayload.value, "desired JSON");
+    if (payload.expectedVersion === undefined && payload.shadowVersion === undefined) {
+      payload.expectedVersion = shadow.value.version;
+      payload.shadowVersion = shadow.value.version;
+    }
   } catch (error) {
     handleShadowError(error, "desired JSON 格式错误");
     return;
@@ -273,10 +292,14 @@ async function saveDesired() {
       shadowError.value = "";
       shadowLastSuccessAt.value = Date.now();
     }
-    ElMessage.success(buildTargetedShadowActionMessage(targetDeviceId, "期望状态已提交"));
+    ElMessage.success(buildTargetedShadowActionMessage(targetDeviceId, "期望状态已保存到设备影子"));
   } catch (error) {
-    const message = normalizeShadowErrorMessage(error, "提交期望状态失败");
-    ElMessage.error(`${buildTargetedShadowActionMessage(targetDeviceId, "提交期望状态失败")}：${message}`);
+    if (error instanceof ApiRequestError && error.httpStatus === 409) {
+      ElMessage.warning("设备影子已发生变化，请重新读取后确认 desired");
+    } else {
+      const message = normalizeShadowErrorMessage(error, "提交期望状态失败");
+      ElMessage.error(`${buildTargetedShadowActionMessage(targetDeviceId, "提交期望状态失败")}：${message}`);
+    }
   } finally {
     savingDesired.value = false;
     savingDesiredDeviceId.value = "";
@@ -287,11 +310,15 @@ async function clearDesired() {
   if (!props.deviceId) {
     return;
   }
+  if (!shadowCapabilityAvailable.value || !("version" in shadow.value)) {
+    ElMessage.warning(!shadowCapabilityAvailable.value ? "当前后端未提供设备影子能力" : "请先读取当前设备影子，再清理 desired");
+    return;
+  }
   const targetDeviceId = props.deviceId;
   savingDesired.value = true;
   savingDesiredDeviceId.value = targetDeviceId;
   try {
-    const response = await clearShadowDesired(targetDeviceId);
+    const response = await clearShadowDesired(targetDeviceId, undefined, shadow.value.version);
     if (shouldCommitShadowWrite(targetDeviceId, props.deviceId)) {
       shadow.value = response;
       shadowError.value = "";
@@ -300,8 +327,12 @@ async function clearDesired() {
     }
     ElMessage.success(buildTargetedShadowActionMessage(targetDeviceId, "期望状态已清理"));
   } catch (error) {
-    const message = normalizeShadowErrorMessage(error, "清理期望状态失败");
-    ElMessage.error(`${buildTargetedShadowActionMessage(targetDeviceId, "清理期望状态失败")}：${message}`);
+    if (error instanceof ApiRequestError && error.httpStatus === 409) {
+      ElMessage.warning("设备影子已发生变化，请重新读取后确认 desired");
+    } else {
+      const message = normalizeShadowErrorMessage(error, "清理期望状态失败");
+      ElMessage.error(`${buildTargetedShadowActionMessage(targetDeviceId, "清理期望状态失败")}：${message}`);
+    }
   } finally {
     savingDesired.value = false;
     savingDesiredDeviceId.value = "";

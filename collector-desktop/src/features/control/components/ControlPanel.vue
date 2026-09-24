@@ -50,7 +50,11 @@
           <span v-if="actionResult.target.payloadSummary">提交内容：<strong>{{ actionResult.target.payloadSummary }}</strong></span>
           <span>提交时间：<strong>{{ formatActionTime(actionResult.target.submittedAt) }}</strong></span>
           <span>完成时间：<strong>{{ formatActionTime(actionResult.completedAt) }}</strong></span>
-          <span v-if="actionResult.error">错误：<strong>{{ actionResult.error }}</strong></span>
+          <span v-if="controlResult.operationId">操作 ID：<strong>{{ controlResult.operationId }}</strong></span>
+          <span v-if="controlResult.requestedValue !== undefined">请求值：<strong>{{ String(controlResult.requestedValue) }}</strong></span>
+          <span v-if="controlResult.readbackValue !== undefined">读回值：<strong>{{ String(controlResult.readbackValue) }}</strong></span>
+          <span v-if="controlResult.writeSuccess !== undefined">写入结果：<strong>{{ controlResult.writeSuccess ? '成功' : '失败' }}</strong></span>
+          <span v-if="controlResult.readbackAttempted !== undefined">读回结果：<strong>{{ controlResult.readbackAttempted ? (controlResult.readbackSuccess ? '成功' : '失败') : '未执行' }}</strong></span>
         </div>
         <pre class="json-view">{{ resultText }}</pre>
       </section>
@@ -86,6 +90,17 @@ interface ControlPanelMessageState {
   error?: string;
 }
 
+interface ControlDisplayResult {
+  operationId?: string;
+  requestedValue?: unknown;
+  readbackValue?: unknown;
+  writeSuccess?: boolean;
+  readbackAttempted?: boolean;
+  readbackSuccess?: boolean;
+  success?: boolean;
+}
+
+
 const props = defineProps<{ deviceId: string }>();
 const deviceStore = useDeviceStore();
 
@@ -108,6 +123,7 @@ const canControl = computed(() => {
   return Boolean(runtime && runtime.phase === "ONLINE" && runtime.ready && runtime.connected);
 });
 const resultText = computed(() => JSON.stringify(result.value, null, 2));
+const controlResult = computed(() => result.value as ControlDisplayResult);
 
 const singleWritingText = computed(() => singleWritingTarget.value ? `正在写入设备 ${singleWritingTarget.value.deviceId || singleWritingTarget.value.target}` : "写入单点");
 const batchWritingText = computed(() => batchWritingTarget.value ? `正在批量写入设备 ${batchWritingTarget.value.deviceId || batchWritingTarget.value.target}` : "批量写入点位");
@@ -144,7 +160,7 @@ async function writeSingle() {
     const response = await writeDevicePoint(targetDeviceId, targetPointRef, payload);
     actionResult.value = buildActionExecutionView(target, response);
     result.value = response;
-    ElMessage.success(`设备 ${targetDeviceId} 单点写入请求已完成`);
+    notifySingleWriteResult(response as ControlDisplayResult, targetDeviceId);
   } catch (error) {
     handleControlError(error, "单点写入失败", target);
   } finally {
@@ -234,6 +250,18 @@ async function executeCommand() {
   } finally {
     commandExecuting.value = false;
     commandWritingTarget.value = null;
+  }
+}
+
+function notifySingleWriteResult(response: ControlDisplayResult, deviceId: string) {
+  if (response.writeSuccess === false || response.success === false) {
+    ElMessage.error(`设备 ${deviceId} 写入失败`);
+  } else if (response.readbackAttempted && response.readbackSuccess === false) {
+    ElMessage.warning("写入已完成，但读回验证失败");
+  } else if (response.readbackAttempted === false) {
+    ElMessage.success("写入成功，该点位不支持读回验证");
+  } else {
+    ElMessage.success(response.readbackSuccess ? "写入成功，读回验证成功" : `设备 ${deviceId} 单点写入请求已完成`);
   }
 }
 

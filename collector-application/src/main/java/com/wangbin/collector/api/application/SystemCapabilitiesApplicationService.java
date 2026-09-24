@@ -2,7 +2,9 @@ package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.SystemCapabilitiesResponse;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.report.outbox.CloudOutboxService;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
+import com.wangbin.collector.monitor.metrics.CloudReportMonitorService;
 import com.wangbin.collector.storage.service.HistoryDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -15,6 +17,9 @@ public class SystemCapabilitiesApplicationService {
     private final ObjectProvider<HistoryDataService> historyDataServiceProvider;
     private final ObjectProvider<CollectionManager> collectionManagerProvider;
     private final ObjectProvider<ShadowManager> shadowManagerProvider;
+    private final ObjectProvider<CloudReportMonitorService> cloudReportMonitorProvider;
+    private final ObjectProvider<CloudOutboxService> cloudOutboxProvider;
+    private final ObjectProvider<CloudOperationsApplicationService> cloudOperationsProvider;
 
     public SystemCapabilitiesResponse getCapabilities() {
         HistoryDataService history = historyDataServiceProvider.getIfAvailable();
@@ -23,7 +28,8 @@ public class SystemCapabilitiesApplicationService {
         boolean controlAvailable = collectionManagerProvider.getIfAvailable() != null;
         ShadowManager shadow = shadowManagerProvider.getIfAvailable();
         boolean shadowAvailable = shadow != null;
-        boolean cloudMonitoringAvailable = false;
+        boolean cloudMonitoringAvailable = cloudReportMonitorProvider.getIfAvailable() != null
+                || cloudOutboxProvider.getIfAvailable() != null;
         return SystemCapabilitiesResponse.builder()
                 .realtime(SystemCapabilitiesResponse.Realtime.builder()
                         .browserTransport("HTTP_POLLING")
@@ -43,7 +49,7 @@ public class SystemCapabilitiesApplicationService {
                 .shadow(SystemCapabilitiesResponse.Shadow.builder().available(shadowAvailable).build())
                 .cloud(SystemCapabilitiesResponse.Cloud.builder()
                         .monitoringAvailable(cloudMonitoringAvailable)
-                        .managementAvailable(false)
+                        .managementAvailable(cloudOperationsProvider.getIfAvailable() != null && cloudOutboxProvider.getIfAvailable() != null)
                         .build())
                 .build();
     }

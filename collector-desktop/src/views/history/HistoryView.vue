@@ -297,7 +297,10 @@ const historyCapabilityMessage = computed(() => appStore.capabilities?.history.r
 onMounted(async () => {
   await appStore.initialize();
   await deviceStore.refresh();
-  await applyRouteQuery({ autoQuery: true });
+  if (appStore.capabilities == null) {
+    await appStore.refreshCapabilities();
+  }
+  await applyRouteQuery({ autoQuery: appStore.capabilities?.history.available === true });
   initialized.value = true;
 });
 
@@ -407,6 +410,10 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
 }
 
 async function loadHistory() {
+  if (appStore.capabilities?.history.available !== true) {
+    ElMessage.warning(appStore.capabilities?.history.reason || appStore.capabilitiesError || "当前服务未启用历史存储能力");
+    return;
+  }
   const requestContext = currentHistoryQueryContext();
   if (!requestContext.deviceId || !requestContext.pointRef) {
     ElMessage.warning("请先选择设备和点位");
