@@ -8,13 +8,13 @@ public enum Iec104IoaEncodingMode {
     SHIFT8_COMPAT;
 
     public static Iec104IoaEncodingMode from(Object value) {
-        if (value == null) {
+        if (value == null || value.toString().isBlank()) {
             return STANDARD;
         }
         try {
-            return valueOf(value.toString().trim().toUpperCase());
+            return valueOf(value.toString().trim().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException exception) {
-            return STANDARD;
+            throw new IllegalArgumentException("Unsupported IEC104 ioaEncodingMode: " + value, exception);
         }
     }
 }

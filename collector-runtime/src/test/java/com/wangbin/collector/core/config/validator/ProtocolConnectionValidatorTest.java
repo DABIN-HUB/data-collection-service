@@ -475,6 +475,40 @@ class ProtocolConnectionValidatorTest {
                 () -> validator.validate(device("dev-rtu", "IEC101"), connection));
     }
 
+    @Test
+    void shouldAcceptSupportedIec104EncodingAndFieldLengths() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "ioaEncodingMode", "SHIFT8_COMPAT",
+                "cotFieldLength", 2,
+                "commonAddressFieldLength", 1,
+                "ioaFieldLength", 3
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void shouldRejectUnknownIec104EncodingMode() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("ioaEncodingMode", "SHFIT8"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void shouldRejectIec104FieldLengthOutsideDescriptorContract() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("ioaFieldLength", 4));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

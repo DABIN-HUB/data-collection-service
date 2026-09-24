@@ -54,7 +54,8 @@ public class ProtocolConnectionValidator {
                 requireHost(deviceInfo, connection, protocol);
                 validateSnmp(deviceInfo, connection);
             }
-            case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
+            case "IEC104" -> validateIec104(deviceInfo, connection);
+            case "IEC61850" -> requireHost(deviceInfo, connection, protocol);
             case "DLT645_2007" -> validateDlt645(deviceInfo, connection);
             case "IEC101" -> validateIec101(deviceInfo, connection);
             case "OPC_UA" -> validateMiloOpcUa(deviceInfo, connection);
@@ -349,6 +350,35 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
+    private void validateIec104(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "IEC104");
+        Object mode = connection.getProperty("ioaEncodingMode");
+        if (mode != null && !mode.toString().isBlank()) {
+            String normalized = mode.toString().trim().toUpperCase(Locale.ROOT);
+            if (!"STANDARD".equals(normalized) && !"SHIFT8_COMPAT".equals(normalized)) {
+                fail(deviceInfo, "IEC104 ioaEncodingMode must be STANDARD or SHIFT8_COMPAT");
+            }
+        }
+        validateIec104FieldLength(deviceInfo, connection, "cotFieldLength", 2, 2);
+        validateIec104FieldLength(deviceInfo, connection, "commonAddressFieldLength", 2, 2);
+        validateIec104FieldLength(deviceInfo, connection, "ioaFieldLength", 3, 3);
+    }
+
+    private void validateIec104FieldLength(DeviceInfo deviceInfo, DeviceConnection connection,
+                                           String key, int defaultValue, int maximum) {
+        Object raw = connection.getProperty(key);
+        String value = raw != null ? raw.toString().trim() : String.valueOf(defaultValue);
+        try {
+            int length = Integer.parseInt(value);
+            if (length >= 1 && length <= maximum) {
+                return;
+            }
+        } catch (NumberFormatException ignored) {
+            // Report invalid explicit values using the same configuration error contract.
+        }
+        fail(deviceInfo, "IEC104 " + key + " must be between 1 and " + maximum);
+    }
+
     private void validateIec101(DeviceInfo deviceInfo, DeviceConnection connection) {
         validateSerialConnection(deviceInfo, connection, "IEC101");
         String linkMode = connection.getStringConfig("linkMode", "UNBALANCED");

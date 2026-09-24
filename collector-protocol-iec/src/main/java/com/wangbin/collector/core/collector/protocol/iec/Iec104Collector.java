@@ -53,7 +53,7 @@ public class Iec104Collector extends AbstractIce104Collector {
                     adapter,
                     Iec104ConnectionAdapter.class,
                     "IEC104");
-            iec104Adapter.setConnectionEventListener(createConnectionEventListener());
+            iec104Adapter.setConnectionEventListener(createConnectionEventListener(iec104Adapter));
             connectManagedConnection();
             this.connection = iec104Adapter.getClient();
             onConnectionReady();
@@ -69,6 +69,7 @@ public class Iec104Collector extends AbstractIce104Collector {
     @Override
     public void doDisconnect() {
         removeConnectionSilently();
+        connection = null;
         clearProtocolState();
         突发上送PointIndex.clear();
         log.info("IEC104 连接 已关闭");
@@ -77,13 +78,16 @@ public class Iec104Collector extends AbstractIce104Collector {
     /**
      * 创建并返回业务对象。
      */
-    private ConnectionEventListener createConnectionEventListener() {
+    private ConnectionEventListener createConnectionEventListener(Iec104ConnectionAdapter adapter) {
         return new ConnectionEventListener() {
             /**
              * 创建并返回业务对象。
              */
             @Override
             public void newASdu(Connection conn, ASdu asdu) {
+                if (!isCurrentConnection(conn, adapter)) {
+                    return;
+                }
                 try {
                     handleResponse(conn, asdu);
                     lastActivityTime = System.currentTimeMillis();
@@ -97,7 +101,9 @@ public class Iec104Collector extends AbstractIce104Collector {
              */
             @Override
             public void connectionClosed(Connection conn, IOException e) {
-                handleConnectionClosed(e);
+                if (isCurrentConnection(conn, adapter)) {
+                    handleConnectionClosed(e);
+                }
             }
 
             /**
@@ -105,6 +111,9 @@ public class Iec104Collector extends AbstractIce104Collector {
              */
             @Override
             public void dataTransferStateChanged(Connection conn, boolean stopped) {
+                if (!isCurrentConnection(conn, adapter)) {
+                    return;
+                }
                 dataTransferStopped = stopped;
                 if (stopped) {
                     connectionStatus = "CONNECTED_STOPPED";
@@ -115,6 +124,12 @@ public class Iec104Collector extends AbstractIce104Collector {
                 }
             }
         };
+    }
+
+    private boolean isCurrentConnection(Connection candidate, Iec104ConnectionAdapter adapter) {
+        return candidate != null
+                && candidate == adapter.getClient()
+                && (connection == null || candidate == connection);
     }
 
     /**
@@ -135,7 +150,7 @@ public class Iec104Collector extends AbstractIce104Collector {
         CompletableFuture<Object> future = registerPendingRequest(ca, typeId, ioa);
 
         if (!maybeTriggerSingleInterrogation(point, address)) {
-            connection.readCommand(ca, ioa);
+            connection.readCommand(ca, toWireIoa(ioa));
         }
 
         try {
@@ -183,7 +198,7 @@ public class Iec104Collector extends AbstractIce104Collector {
                     triggeredQualifiers);
             if (!triggered) {
                 try {
-                    connection.readCommand(key.commonAddress(), key.ioAddress());
+                    connection.readCommand(key.commonAddress(), toWireIoa(key.ioAddress()));
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -264,7 +279,10 @@ public class Iec104Collector extends AbstractIce104Collector {
         status.put(CommonMapKeys.HOST, host);
         status.put(CommonMapKeys.PORT, port);
         status.put("commonAddress", commonAddress);
-        status.put(CommonMapKeys.TIMEOUT, timeout);
+        status.put(CommonMapKeys.TIMEOUT, connectionTimeout);
+        status.put("requestTimeout", timeout);
+        status.put("ioaFieldLength", ioaFieldLength);
+        status.put("ioaEncodingMode", ioaEncodingMode.name());
         status.put(CommonMapKeys.CONNECTED, isConnected());
         status.put("dataTransferStopped", dataTransferStopped);
         status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
@@ -350,7 +368,7 @@ public class Iec104Collector extends AbstractIce104Collector {
                 yield "counter interrogation sent";
             }
             case "read_command" -> {
-                connection.readCommand(ca, requireIntParameter(safeParams, "address"));
+                connection.readCommand(ca, toWireIoa(requireIntParameter(safeParams, "address")));
                 yield "read command sent";
             }
             case "synchronize_clocks", "clock_synchronization" -> {
@@ -562,11 +580,19 @@ public class Iec104Collector extends AbstractIce104Collector {
         rejectWriteTimeTagConfig(point);
         Iec104Address address = resolveWriteAddress(point);
         Iec104Type type = resolveWriteType(point, address);
+        boolean select = getAdditionalBoolean(point, "writeSelect", false);
+        rejectUnsupportedSelect(select);
         return new WriteTarget(
                 address,
                 type,
                 getAdditionalInt(point, "writeQl", 0),
-                getAdditionalBoolean(point, "writeSelect", false));
+                select);
+    }
+
+    private void rejectUnsupportedSelect(boolean select) {
+        if (select) {
+            throw new IllegalArgumentException("IEC104 select-before-execute requires confirmed SBO and is not supported");
+        }
     }
 
     /**
@@ -592,6 +618,13 @@ public class Iec104Collector extends AbstractIce104Collector {
                     "IEC104 write type is required, point=" + pointName
                             + ". Use writeAddress like C_SE_NC_1:101 or C_SE_TC_1:101.");
         }
+        Integer configuredTypeId = extractReadConfiguredTypeId(point);
+        if (configuredTypeId != null
+                && Iec104Type.canonicalTypeId(configuredTypeId)
+                != Iec104Type.canonicalTypeId(type.typeId())) {
+            throw new IllegalArgumentException("IEC104 write address type conflicts with point type configuration: "
+                    + point.getPointId());
+        }
         if (!type.writeSupported()) {
             String pointName = point != null ? point.getPointName() : "unknown";
             throw new IllegalArgumentException(
@@ -608,44 +641,35 @@ public class Iec104Collector extends AbstractIce104Collector {
         if (point == null) {
             return null;
         }
-        Integer configured = resolveConfiguredTypeId(point.getAdditionalConfig("typeId"));
-        if (configured != null) {
-            return configured;
+        Integer configured = null;
+        for (String key : List.of("typeId", "iecTypeId", "registerType")) {
+            Integer candidate = Iec104Utils.resolveTypeIdToken(point.getAdditionalConfig(key));
+            if (candidate == null) {
+                continue;
+            }
+            if (configured != null && !configured.equals(candidate)) {
+                throw new IllegalArgumentException("Conflicting IEC104 type configuration for point "
+                        + point.getPointId() + ": " + key);
+            }
+            configured = candidate;
         }
-        configured = resolveConfiguredTypeId(point.getAdditionalConfig("iecTypeId"));
-        if (configured != null) {
-            return configured;
-        }
-        Object registerType = point.getAdditionalConfig("registerType");
-        if (registerType != null) {
-            return resolveConfiguredTypeId(registerType);
-        }
-        return null;
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private Integer resolveConfiguredTypeId(Object raw) {
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return Iec104Utils.resolveTypeIdToken(raw);
-        } catch (IllegalArgumentException e) {
-            log.debug("IEC104 typeId 标记无效：{}", raw);
-            return null;
-        }
+        return configured;
     }
 
     /**
      * 解析或转换业务数据。
      */
     private Integer resolvePointTypeId(DataPoint point, Iec104Address address) {
-        if (address != null && address.getTypeId() != null) {
-            return Iec104Type.canonicalTypeId(address.getTypeId());
+        Integer configured = extractReadConfiguredTypeId(point);
+        if (address == null || address.getTypeId() == null) {
+            return configured;
         }
-        return extractReadConfiguredTypeId(point);
+        Integer addressType = Iec104Type.canonicalTypeId(address.getTypeId());
+        if (configured != null && !configured.equals(addressType)) {
+            throw new IllegalArgumentException("IEC104 address type conflicts with point type configuration: "
+                    + point.getPointId());
+        }
+        return addressType;
     }
 
     /**
@@ -789,6 +813,7 @@ public class Iec104Collector extends AbstractIce104Collector {
                                            Iec104Type type,
                                            int ql,
                                            boolean select) {
+        rejectUnsupportedSelect(select);
         Iec104Address address = requireCommandAddress(commonAddress, params);
         return new WriteTarget(
                 new Iec104Address(address.getCommonAddress(), address.getIoAddress(), type.typeId()),
@@ -930,9 +955,9 @@ public class Iec104Collector extends AbstractIce104Collector {
                                       PlainPointCommand<T> plainSender,
                                       TimedPointCommand<T> timedSender) throws Exception {
         if (timeTag) {
-            timedSender.send(address.getCommonAddress(), address.getIoAddress(), payload, currentTime());
+            timedSender.send(address.getCommonAddress(), toWireIoa(address.getIoAddress()), payload, currentTime());
         } else {
-            plainSender.send(address.getCommonAddress(), address.getIoAddress(), payload);
+            plainSender.send(address.getCommonAddress(), toWireIoa(address.getIoAddress()), payload);
         }
     }
 
@@ -946,9 +971,9 @@ public class Iec104Collector extends AbstractIce104Collector {
                                          PlainSetPointCommand<T> plainSender,
                                          TimedSetPointCommand<T> timedSender) throws Exception {
         if (timeTag) {
-            timedSender.send(address.getCommonAddress(), address.getIoAddress(), payload, qualifier, currentTime());
+            timedSender.send(address.getCommonAddress(), toWireIoa(address.getIoAddress()), payload, qualifier, currentTime());
         } else {
-            plainSender.send(address.getCommonAddress(), address.getIoAddress(), payload, qualifier);
+            plainSender.send(address.getCommonAddress(), toWireIoa(address.getIoAddress()), payload, qualifier);
         }
     }
 

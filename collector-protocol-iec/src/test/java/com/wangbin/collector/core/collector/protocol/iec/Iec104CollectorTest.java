@@ -2,11 +2,13 @@ package com.wangbin.collector.core.collector.protocol.iec;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.utils.JsonDataPointLoader;
+import com.wangbin.collector.core.collector.protocol.iec.base.Iec104IoaEncodingMode;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.openmuc.j60870.CauseOfTransmission;
 import org.openmuc.j60870.Connection;
 import org.openmuc.j60870.ie.IeBinaryStateInformation;
+import org.openmuc.j60870.ie.IeDoubleCommand;
 import org.openmuc.j60870.ie.IeQualifierOfSetPointCommand;
 import org.openmuc.j60870.ie.IeRegulatingStepCommand;
 import org.openmuc.j60870.ie.IeScaledValue;
@@ -26,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class Iec104CollectorTest {
 
@@ -86,7 +89,7 @@ class Iec104CollectorTest {
         point.setAdditionalConfig(Map.of(
                 "writeAddress", "C_SE_NC_1:101",
                 "writeCommonAddress", 2,
-                "writeSelect", true,
+                "writeSelect", false,
                 "writeQl", 7
         ));
 
@@ -103,7 +106,35 @@ class Iec104CollectorTest {
                 qualifierCaptor.capture());
         assertEquals(12.5f, valueCaptor.getValue().getValue(), 0.001f);
         assertEquals(7, qualifierCaptor.getValue().getQl());
-        assertTrue(qualifierCaptor.getValue().isSelect());
+        assertFalse(qualifierCaptor.getValue().isSelect());
+    }
+
+    @Test
+    void shouldRejectSelectBeforeExecuteInsteadOfSendingSelectOnly() {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        DataPoint point = createWritablePoint("M_ME_NC_1:1");
+        point.setAdditionalConfig(Map.of(
+                "writeAddress", "C_SE_NC_1:101",
+                "writeSelect", true
+        ));
+
+        assertThrows(IllegalArgumentException.class, () -> collector.doWritePoint(point, 12.5d));
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void shouldRejectConflictingWriteAddressAndPointType() {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        DataPoint point = createWritablePoint("M_ME_NC_1:1");
+        point.setAdditionalConfig(Map.of(
+                "writeAddress", "C_SC_NA_1:101",
+                "typeId", 46
+        ));
+
+        assertThrows(IllegalArgumentException.class, () -> collector.doWritePoint(point, 1.0d));
+        verifyNoInteractions(connection);
     }
 
     @Test
@@ -181,6 +212,61 @@ class Iec104CollectorTest {
         ));
 
         verify(connection).singleCommand(eq(8), eq(CauseOfTransmission.ACTIVATION), eq(16), org.mockito.ArgumentMatchers.any(IeSingleCommand.class));
+    }
+
+    @Test
+    void shouldEncodeShift8ForReadCommand() throws Exception {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+
+        collector.doExecuteCommand(1, "read_command", Map.of("address", 100));
+
+        verify(connection).readCommand(eq(1), eq(25600));
+    }
+
+    @Test
+    void shouldEncodeShift8ForPointWrite() throws Exception {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+        DataPoint point = createWritablePoint("C_SC_NA_1:100");
+
+        collector.doWritePoint(point, 1.0d);
+
+        verify(connection).singleCommand(eq(1), eq(CauseOfTransmission.ACTIVATION), eq(25600), any(IeSingleCommand.class));
+    }
+
+    @Test
+    void shouldEncodeShift8ForDoubleCommand() throws Exception {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+        DataPoint point = createWritablePoint("C_DC_NA_1:100");
+
+        collector.doWritePoint(point, "ON");
+
+        verify(connection).doubleCommand(eq(1), eq(CauseOfTransmission.ACTIVATION), eq(25600), any(IeDoubleCommand.class));
+    }
+
+    @Test
+    void shouldEncodeShift8ForBatchReadLogicalKey() throws Exception {
+        Connection connection = mock(Connection.class);
+        Iec104Collector collector = createCollector(connection);
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+        DataPoint point = createWritablePoint("100");
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            ReflectionTestUtils.invokeMethod(collector, "completeRequest", 1, null, 100, 42);
+            return null;
+        }).when(connection).readCommand(eq(1), eq(25600));
+
+        assertEquals(42, collector.doReadPoints(List.of(point)).get(point.getPointId()));
+        verify(connection).readCommand(eq(1), eq(25600));
     }
 
     @Test

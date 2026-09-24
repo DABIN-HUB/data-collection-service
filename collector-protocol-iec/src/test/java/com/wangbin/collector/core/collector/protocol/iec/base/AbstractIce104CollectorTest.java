@@ -74,6 +74,45 @@ class AbstractIce104CollectorTest {
         assertEquals(0, collector.pendingRequestSize());
     }
 
+    @Test
+    void shouldRoundTripShift8LogicalAndWireIoa() {
+        TestIec104Collector collector = new TestIec104Collector();
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+
+        assertEquals(25600, collector.toWire(100));
+        assertEquals(100, collector.fromWire(25600));
+
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.STANDARD);
+        assertEquals(100, collector.toWire(100));
+        assertEquals(100, collector.fromWire(100));
+    }
+
+    @Test
+    void shouldRejectUnalignedShift8WireIoa() {
+        TestIec104Collector collector = new TestIec104Collector();
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
+
+        assertThrows(IllegalArgumentException.class, () -> collector.fromWire(25601));
+    }
+
+    @Test
+    void shouldRejectNegativeAndUnrepresentableIoa() {
+        TestIec104Collector collector = new TestIec104Collector();
+        ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.STANDARD);
+        ReflectionTestUtils.setField(collector, "ioaFieldLength", 2);
+
+        assertThrows(IllegalArgumentException.class, () -> collector.toWire(-1));
+        assertThrows(IllegalArgumentException.class, () -> collector.toWire(65536));
+    }
+
+    @Test
+    void shouldRejectUnknownIoaEncodingMode() {
+        assertThrows(IllegalArgumentException.class, () -> Iec104IoaEncodingMode.from("SHFIT8"));
+        assertEquals(Iec104IoaEncodingMode.STANDARD, Iec104IoaEncodingMode.from(" "));
+    }
+
     private static final class TestIec104Collector extends AbstractIce104Collector {
 
         private CompletableFuture<Object> pending(int commonAddress, Integer typeId, int ioa) {
@@ -90,6 +129,14 @@ class AbstractIce104CollectorTest {
 
         private int pendingRequestSize() {
             return pendingRequests.size();
+        }
+
+        private int toWire(int logicalIoa) {
+            return toWireIoa(logicalIoa);
+        }
+
+        private int fromWire(int wireIoa) {
+            return fromWireIoa(wireIoa);
         }
 
         @Override

@@ -42,9 +42,9 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         int timeout = resolveTimeout();
 
         InetAddress address = InetAddress.getByName(host);
-        int cotFieldLength = config.getInt("cotFieldLength", 2);
-        int commonAddressFieldLength = config.getInt("commonAddressFieldLength", 2);
-        int ioaFieldLength = config.getInt("ioaFieldLength", 3);
+        int cotFieldLength = requireFieldLength("cotFieldLength", 2, 2);
+        int commonAddressFieldLength = requireFieldLength("commonAddressFieldLength", 2, 2);
+        int ioaFieldLength = requireFieldLength("ioaFieldLength", 3, 3);
         ClientConnectionBuilder builder = new ClientConnectionBuilder(address)
                 .setPort(port)
                 .setCotFieldLength(cotFieldLength)
@@ -55,11 +55,13 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
             builder.setConnectionEventListener(connectionEventListener);
         }
         connection = builder.build();
-        Thread.sleep(200L);
-        connection.startDataTransfer();
         connectionParams.put(CommonMapKeys.HOST, host);
         connectionParams.put(CommonMapKeys.PORT, port);
         connectionParams.put(CommonMapKeys.TIMEOUT, timeout);
+        connectionParams.put("cotFieldLength", cotFieldLength);
+        connectionParams.put("commonAddressFieldLength", commonAddressFieldLength);
+        connectionParams.put("ioaFieldLength", ioaFieldLength);
+        connection.startDataTransfer();
     }
 
     /**
@@ -117,5 +119,21 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
             return config.getTimeout();
         }
         return 5000;
+    }
+
+    private int requireFieldLength(String key, int defaultValue, int maximum) {
+        Object raw = config.getProperty(key);
+        if (raw == null || raw.toString().isBlank()) {
+            return defaultValue;
+        }
+        try {
+            int value = Integer.parseInt(raw.toString().trim());
+            if (value >= 1 && value <= maximum) {
+                return value;
+            }
+        } catch (NumberFormatException ignored) {
+            // Fall through to the explicit configuration error below.
+        }
+        throw new IllegalArgumentException("IEC104 " + key + " must be between 1 and " + maximum);
     }
 }

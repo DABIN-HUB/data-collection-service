@@ -51,8 +51,8 @@ public class IecProtocolDescriptorProvider implements ProtocolDescriptorProvider
                         Collections.emptyList(), "Common address used for control commands.", null),
                 registry.pointField("additionalConfig.writeQl", "number", "Write quality", false, "",
                         Collections.emptyList(), "Quality descriptor used for control commands.", null),
-                registry.pointField("additionalConfig.writeSelect", "boolean", "Select before execute", false, "",
-                        List.of("true", "false"), "Whether control commands should use select-before-execute.", null)
+                registry.pointField("additionalConfig.writeSelect", "boolean", "Select before execute (unsupported)", false, "false",
+                        List.of("false"), "Confirmed select-before-execute is not implemented; true is rejected before sending.", null)
         );
     }
 
