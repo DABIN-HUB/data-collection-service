@@ -207,6 +207,10 @@ async function openDetail(messageId: string) {
 }
 
 function errorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === "object" && "machineCode" in err
+    && (err as { machineCode?: unknown }).machineCode === "CLOUD_OUTBOX_STATE_CONFLICT") {
+    return "消息状态已发生变化，请刷新列表后重试";
+  }
   return err instanceof Error ? err.message : fallback;
 }
 

@@ -147,7 +147,7 @@ export const usePointStore = defineStore("point", {
         this.configVersionByDevice[targetDeviceId] = result.configVersion;
         await this.load(targetDeviceId);
       } catch (error) {
-        this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && error.httpStatus === 409
+        this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && (error.machineCode === "CONFIG_VERSION_CONFLICT" || error.httpStatus === 409)
           ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
           : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {

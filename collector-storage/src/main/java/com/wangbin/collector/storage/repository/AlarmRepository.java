@@ -72,7 +72,18 @@ public interface AlarmRepository {
                                                            @Param("alarmLevel") String alarmLevel,
                                                            @Param("startTs") Long startTs,
                                                            @Param("endTs") Long endTs,
-                                                           @Param("limit") int limit);
+                                                           @Param("limit") int limit,
+                                                           @Param("offset") int offset);
+
+    /** 兼容现有调用方的首屏查询入口。 */
+    default List<Map<String, Object>> queryRecentAlarmActivations(String database, String superTable,
+                                                                    String deviceId, String pointId,
+                                                                    String pointCode, String ruleId,
+                                                                    String alarmLevel, Long startTs,
+                                                                    Long endTs, int limit) {
+        return queryRecentAlarmActivations(database, superTable, deviceId, pointId, pointCode, ruleId,
+                alarmLevel, startTs, endTs, limit, 0);
+    }
 
     List<Map<String, Object>> queryRecoveriesByAlarmIds(@Param("database") String database,
                                                          @Param("superTable") String superTable,

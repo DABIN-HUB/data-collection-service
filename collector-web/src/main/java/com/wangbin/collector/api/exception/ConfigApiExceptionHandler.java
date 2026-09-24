@@ -5,6 +5,8 @@ import com.wangbin.collector.common.web.result.ApiResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import jakarta.servlet.http.HttpServletRequest;
+import com.wangbin.collector.api.filter.RequestCorrelationFilter;
 
 /**
  * 配置治理接口统一异常响应处理器。
@@ -19,8 +21,13 @@ public class ConfigApiExceptionHandler {
      * @return 统一异常响应
      */
     @ExceptionHandler(ConfigApiException.class)
-    public ResponseEntity<ApiResult<Object>> handleConfigApiException(ConfigApiException exception) {
-        return ResponseEntity.status(exception.getHttpStatus())
-                .body(ApiResult.statusError(exception.getMessage(), exception.getData()));
+    public ResponseEntity<ApiResult<Object>> handleConfigApiException(ConfigApiException exception,
+                                                                        HttpServletRequest request) {
+        String machineCode = exception.getHttpStatus().value() == 409
+                ? "CONFIG_VERSION_CONFLICT" : "CONFIG_OPERATION_FAILED";
+        ApiResult<Object> result = ApiResult.statusError(machineCode, exception.getMessage(), exception.getData());
+        Object requestId = request.getAttribute(RequestCorrelationFilter.ATTR_REQUEST_ID);
+        if (requestId != null) result.setRequestId(String.valueOf(requestId));
+        return ResponseEntity.status(exception.getHttpStatus()).body(result);
     }
 }

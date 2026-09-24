@@ -1,6 +1,7 @@
 export interface ApiResult<T> {
   code?: number;
   status?: string;
+  machineCode?: string;
   message?: string;
   data?: T;
   timestamp?: number;

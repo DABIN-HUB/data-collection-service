@@ -52,8 +52,68 @@ public class AlarmLifecycleApplicationService {
         if (history == null || !history.isEnabled()) {
             return new AlarmLifecycleResponse("disabled", List.of(), 0);
         }
-        List<Map<String, Object>> activations = history.queryRecentAlarmActivations(
-                deviceId, pointId, pointCode, ruleId, level, startTs, endTs, limit);
+        String normalizedState = normalizeState(state);
+        int targetLimit = resolveLimit(limit);
+        if (normalizedState == null) {
+            List<Map<String, Object>> activations = history.queryRecentAlarmActivations(
+                    deviceId, pointId, pointCode, ruleId, level, startTs, endTs, targetLimit);
+            List<AlarmLifecycleResponse.AlarmItem> items = overlay(activations, null);
+            return new AlarmLifecycleResponse("success", items, items.size());
+        }
+
+        int batchSize = Math.max(targetLimit, 100);
+        int offset = 0;
+        int scanned = 0;
+        List<AlarmLifecycleResponse.AlarmItem> items = new ArrayList<>();
+        while (scanned < 2000 && items.size() < targetLimit) {
+            int requestSize = Math.min(batchSize, 2000 - scanned);
+            List<Map<String, Object>> activations = offset == 0
+                    ? history.queryRecentAlarmActivations(deviceId, pointId, pointCode, ruleId, level,
+                    startTs, endTs, requestSize)
+                    : history.queryRecentAlarmActivations(deviceId, pointId, pointCode, ruleId, level,
+                    startTs, endTs, offset, requestSize);
+            if (activations.isEmpty()) {
+                break;
+            }
+            scanned += activations.size();
+            items.addAll(overlay(activations, normalizedState));
+            if (activations.size() < requestSize) {
+                break;
+            }
+            offset += activations.size();
+        }
+        if (items.size() > targetLimit) {
+            items = new ArrayList<>(items.subList(0, targetLimit));
+        }
+        if (scanned >= 2000 && items.size() < targetLimit) {
+            // 防止异常历史数据导致一次请求无限扫描；返回已找到的结果。
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("告警生命周期状态过滤达到扫描上限，state={}, scanned={}", normalizedState, scanned);
+        }
+        return new AlarmLifecycleResponse("success", items, items.size());
+    }
+
+    private String normalizeState(String state) {
+        if (state == null || state.isBlank()) {
+            return null;
+        }
+        String normalized = state.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!List.of("ACTIVE", "ACKED", "RECOVERED").contains(normalized)) {
+            throw new IllegalArgumentException("state 仅支持 ACTIVE、ACKED 或 RECOVERED");
+        }
+        return normalized;
+    }
+
+    private int resolveLimit(Integer limit) {
+        if (limit == null) {
+            return 100;
+        }
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit 必须大于 0");
+        }
+        return Math.min(limit, 200);
+    }
+
+    private List<AlarmLifecycleResponse.AlarmItem> overlay(List<Map<String, Object>> activations, String state) {
         List<String> ids = activations.stream().map(row -> text(row, "alarmId", "alarm_id", "eventId"))
                 .filter(id -> id != null && !id.isBlank()).distinct().toList();
         Map<String, Map<String, Object>> recoveryById = new HashMap<>();
@@ -71,12 +131,11 @@ public class AlarmLifecycleApplicationService {
             AlarmAcknowledgement acknowledgement = ackById.get(id);
             long occurredAt = number(activation, "event_ts", "eventTs");
             long startedAt = number(activation, "alarmStartedAt", "alarm_started_at", "startedAt");
-            if (startedAt <= 0) {
-                startedAt = occurredAt;
-            }
+            if (startedAt <= 0) startedAt = occurredAt;
             Long recoveredAt = recovery == null ? null : number(recovery, "event_ts", "eventTs");
             Long duration = recovery == null ? null : number(recovery, "alarmDurationMs", "alarm_duration_ms", "durationMillis");
             String lifecycle = recovery != null ? "RECOVERED" : acknowledgement != null ? "ACKED" : "ACTIVE";
+            if (state != null && !state.equals(lifecycle)) continue;
             long lastOccurredAt = recovery == null
                     ? number(activation, "alarmLastOccurredAt", "alarm_last_occurred_at", "lastOccurredAt")
                     : number(recovery, "alarmLastOccurredAt", "alarm_last_occurred_at", "lastOccurredAt");
@@ -85,9 +144,6 @@ public class AlarmLifecycleApplicationService {
                         .filter(value -> value > 0).orElse(lastOccurredAt);
             }
             if (lastOccurredAt <= 0) lastOccurredAt = occurredAt;
-            if (state != null && !state.isBlank() && !state.equalsIgnoreCase(lifecycle)) {
-                continue;
-            }
             items.add(new AlarmLifecycleResponse.AlarmItem(id,
                     text(activation, "deviceId", "device_id"), text(activation, "deviceName", "device_name"),
                     text(activation, "pointId", "point_id"), text(activation, "pointCode", "point_code"),
@@ -100,7 +156,7 @@ public class AlarmLifecycleApplicationService {
                     acknowledgement == null ? null : acknowledgement.note(),
                     startedAt, occurredAt, lastOccurredAt, recoveredAt, duration));
         }
-        return new AlarmLifecycleResponse("success", items, items.size());
+        return items;
     }
 
     private String text(Map<String, Object> row, String... keys) {

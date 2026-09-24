@@ -32,7 +32,7 @@ import java.util.Map;
  * 监控相关接口。
  */
 @RestController
-@RequestMapping("/monitor")
+@RequestMapping({"/monitor", "/api/monitor"})
 @RequiredArgsConstructor
 public class MonitorController {
 

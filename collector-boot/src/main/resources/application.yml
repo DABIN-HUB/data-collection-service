@@ -227,7 +227,7 @@ collector:
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE
       - methods: [GET]
-        paths: [/api/**, /monitor/**]
+        paths: [/api/**, /monitor/**, /api/monitor/**]
         required-scope: VIEW
     allow-ip-authentication: false
     trusted-proxy-ranges: []

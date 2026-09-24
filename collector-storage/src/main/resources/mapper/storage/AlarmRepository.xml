@@ -119,10 +119,11 @@
         <if test="startTs != null">AND ts &gt;= #{startTs}</if>
         <if test="endTs != null">AND ts &lt;= #{endTs}</if>
         ORDER BY ts DESC
-        LIMIT #{limit}
+        LIMIT #{limit} OFFSET #{offset}
     </select>
     <select id="queryRecoveriesByAlarmIds" resultType="java.util.Map">
-        SELECT related_alarm_id, alarm_id, alarm_event_type, event_ts, alarm_duration_ms, payload_json
+        SELECT related_alarm_id, alarm_id, alarm_event_type, event_ts,
+               alarm_started_at, alarm_last_occurred_at, alarm_duration_ms, payload_json
         FROM ${database}.${superTable}
         WHERE related_alarm_id IN
         <foreach collection="alarmIds" item="alarmId" open="(" separator="," close=")">

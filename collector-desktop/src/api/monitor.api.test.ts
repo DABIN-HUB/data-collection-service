@@ -52,15 +52,15 @@ describe("monitor.api", () => {
     const detail: PerformanceStatsSnapshot = { timeSliceCount: 4, timeSliceIntervalMs: 250, timeSliceExecutionTimes: { 0: 10 }, overloadedSlices: {}, slowestDevices: {}, deviceStats: {}, processCpuLoad: 0.2, batchDispatchRejectedCount: 0, collectRejectedCount: 0, processRejectedCount: 0, reconnectAttemptCount: 1, reconnectSuccessCount: 1, reconnectFailureCount: 0, reconnectingDevices: 0, generatedAt: 123 };
 
     const endpoints = [
-      { run: getRuntimeStatus, url: "/monitor/runtime", fixture: runtime },
-      { run: getCacheMetrics, url: "/monitor/cache", fixture: cache },
-      { run: getDeviceConnectionMetrics, url: "/monitor/devices", fixture: devices },
-      { run: getCollectorPerformance, url: "/monitor/performance", fixture: performance },
-      { run: getSystemResources, url: "/monitor/system", fixture: system },
-      { run: getExceptionStats, url: "/monitor/errors", fixture: exceptions },
-      { run: getCloudReportMetrics, url: "/monitor/report", fixture: report },
-      { run: getStorageMetrics, url: "/monitor/storage", fixture: storage },
-      { run: getPerformanceDetail, url: "/monitor/perf/detail", fixture: detail }
+      { run: getRuntimeStatus, url: "/api/monitor/runtime", fixture: runtime },
+      { run: getCacheMetrics, url: "/api/monitor/cache", fixture: cache },
+      { run: getDeviceConnectionMetrics, url: "/api/monitor/devices", fixture: devices },
+      { run: getCollectorPerformance, url: "/api/monitor/performance", fixture: performance },
+      { run: getSystemResources, url: "/api/monitor/system", fixture: system },
+      { run: getExceptionStats, url: "/api/monitor/errors", fixture: exceptions },
+      { run: getCloudReportMetrics, url: "/api/monitor/report", fixture: report },
+      { run: getStorageMetrics, url: "/api/monitor/storage", fixture: storage },
+      { run: getPerformanceDetail, url: "/api/monitor/perf/detail", fixture: detail }
     ] as const;
 
     for (const endpoint of endpoints) {

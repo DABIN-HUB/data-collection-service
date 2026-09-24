@@ -225,15 +225,29 @@ public class AlarmHistoryService {
     public List<Map<String, Object>> queryRecentAlarmActivations(String deviceId, String pointId,
                                                                   String pointCode, String ruleId, String level,
                                                                   Long startTs, Long endTs, Integer limit) {
+        int guardedLimit = Math.max(1, Math.min(limit == null ? 100 : limit, 200));
+        return queryRecentAlarmActivations(deviceId, pointId, pointCode, ruleId, level,
+                startTs, endTs, 0, guardedLimit);
+    }
+
+    /** 查询指定分页窗口的触发事件，恢复事件不占用分页名额。 */
+    public List<Map<String, Object>> queryRecentAlarmActivations(String deviceId, String pointId,
+                                                                  String pointCode, String ruleId, String level,
+                                                                  Long startTs, Long endTs, int offset, int limit) {
         if (!properties.isEnabled()) {
             return Collections.emptyList();
         }
         ensureSchema();
-        int guardedLimit = Math.max(1, Math.min(limit == null ? 100 : limit, 200));
-        List<Map<String, Object>> rows = alarmRepository.queryRecentAlarmActivations(
+        int guardedLimit = Math.max(1, Math.min(limit, 200));
+        List<Map<String, Object>> rows = offset == 0
+                ? alarmRepository.queryRecentAlarmActivations(
                 sanitizeIdentifier(properties.getDatabase()), sanitizeIdentifier(properties.getAlarmSuperTable()),
                 blankToNull(deviceId), blankToNull(pointId), blankToNull(pointCode), blankToNull(ruleId),
-                blankToNull(level), startTs, endTs, guardedLimit);
+                blankToNull(level), startTs, endTs, guardedLimit)
+                : alarmRepository.queryRecentAlarmActivations(
+                sanitizeIdentifier(properties.getDatabase()), sanitizeIdentifier(properties.getAlarmSuperTable()),
+                blankToNull(deviceId), blankToNull(pointId), blankToNull(pointCode), blankToNull(ruleId),
+                blankToNull(level), startTs, endTs, guardedLimit, Math.max(0, offset));
         rows.forEach(this::addCompatibilityKeys);
         return rows;
     }

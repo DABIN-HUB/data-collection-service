@@ -14,13 +14,17 @@ export function isDesktopRuntime(): boolean {
 export class ApiRequestError extends Error {
   httpStatus?: number;
   code?: number;
+  machineCode?: string;
+  requestId?: string;
   body?: unknown;
 
-  constructor(message: string, options: { httpStatus?: number; code?: number; body?: unknown } = {}) {
+  constructor(message: string, options: { httpStatus?: number; code?: number; machineCode?: string; requestId?: string; body?: unknown } = {}) {
     super(message);
     this.name = "ApiRequestError";
     this.httpStatus = options.httpStatus;
     this.code = options.code;
+    this.machineCode = options.machineCode;
+    this.requestId = options.requestId;
     this.body = options.body;
   }
 }
@@ -218,9 +222,14 @@ function assertSuccessfulResponseBody(body: unknown, httpStatus?: number): void 
     const status = String(apiBody.status || "").toLowerCase();
     const code = typeof apiBody.code === "number" ? apiBody.code : undefined;
     if (status === "error" || (code !== undefined && code !== 200 && code !== 0)) {
+      const machineCode = typeof apiBody.machineCode === "string" ? apiBody.machineCode : undefined;
+      const requestId = apiBody.extra && typeof apiBody.extra === "object"
+        && typeof apiBody.extra.requestId === "string" ? apiBody.extra.requestId : undefined;
       throw new ApiRequestError(localizeApiMessage(apiBody.message, httpStatus ?? code), {
         httpStatus,
         code,
+        machineCode,
+        requestId,
         body
       });
     }

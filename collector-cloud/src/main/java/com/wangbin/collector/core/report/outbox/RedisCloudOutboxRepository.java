@@ -249,7 +249,7 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
                 CloudOutboxMessage value = message.get();
                 if (status != null && value.getStatus() != status) continue;
                 if (localDeviceId != null && !localDeviceId.isBlank()
-                        && !localDeviceId.equals(value.getLocalDeviceId())) continue;
+                        && !value.containsLocalDevice(localDeviceId)) continue;
                 result.add(value);
                 if (result.size() >= boundedLimit) break;
             }

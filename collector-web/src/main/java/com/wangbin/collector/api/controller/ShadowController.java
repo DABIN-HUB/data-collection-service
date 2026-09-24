@@ -91,7 +91,8 @@ public class ShadowController {
         Map<String, Object> data = Map.of(
                 "expectedVersion", exception.getExpectedVersion(),
                 "currentVersion", exception.getActualVersion() == null ? 0L : exception.getActualVersion());
-        ApiResult<Map<String, Object>> result = ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备影子已发生变化，请重新读取后确认 desired");
+        ApiResult<Map<String, Object>> result = ApiResult.statusError("SHADOW_VERSION_CONFLICT",
+                "设备影子已发生变化，请重新读取后确认 desired", data);
         result.setData(data);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
     }

@@ -108,6 +108,24 @@ class RedisCloudOutboxRepositoryTest {
         assertTrue(lua.contains("ZADD"));
     }
 
+    @Test
+    void listMatchesDevicesInsideAggregatedCommits() throws Exception {
+        CloudOutboxMessage batch = message("batch", "device-a", CloudOutboxStatus.PENDING);
+        batch.setCommits(List.of(
+                new CloudOutboxMessage.CloudOutboxCommit("device-a", 1, 1, 2, java.util.Map.of()),
+                new CloudOutboxMessage.CloudOutboxCommit("device-b", 1, 1, 2, java.util.Map.of()),
+                new CloudOutboxMessage.CloudOutboxCommit("device-c", 1, 1, 2, java.util.Map.of())));
+        when(zset.reverseRange(any(), anyLong(), anyLong()))
+                .thenReturn(new LinkedHashSet<>(List.of("batch")));
+        when(hash.get(any(), eq("batch"))).thenReturn(mapper.writeValueAsString(batch));
+
+        assertEquals(List.of("batch"), repository.list(CloudOutboxStatus.PENDING, "device-b", 50)
+                .stream().map(CloudOutboxMessage::getMessageId).toList());
+        assertEquals(List.of("batch"), repository.list(CloudOutboxStatus.PENDING, "device-c", 50)
+                .stream().map(CloudOutboxMessage::getMessageId).toList());
+        assertTrue(repository.list(CloudOutboxStatus.PENDING, "device-x", 50).isEmpty());
+    }
+
     private CloudOutboxMessage message(String id, String device, CloudOutboxStatus status) {
         return new CloudOutboxMessage(id, device, "pk", "cloud-device", "gateway", 1L,
                 10L, 20L, 100L, 123L, 0, status, null, null, null);

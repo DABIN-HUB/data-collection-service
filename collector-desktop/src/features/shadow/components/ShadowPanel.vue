@@ -294,7 +294,7 @@ async function saveDesired() {
     }
     ElMessage.success(buildTargetedShadowActionMessage(targetDeviceId, "期望状态已保存到设备影子"));
   } catch (error) {
-    if (error instanceof ApiRequestError && error.httpStatus === 409) {
+    if (error instanceof ApiRequestError && (error.machineCode === "SHADOW_VERSION_CONFLICT" || error.httpStatus === 409)) {
       ElMessage.warning("设备影子已发生变化，请重新读取后确认 desired");
     } else {
       const message = normalizeShadowErrorMessage(error, "提交期望状态失败");
@@ -327,7 +327,7 @@ async function clearDesired() {
     }
     ElMessage.success(buildTargetedShadowActionMessage(targetDeviceId, "期望状态已清理"));
   } catch (error) {
-    if (error instanceof ApiRequestError && error.httpStatus === 409) {
+    if (error instanceof ApiRequestError && (error.machineCode === "SHADOW_VERSION_CONFLICT" || error.httpStatus === 409)) {
       ElMessage.warning("设备影子已发生变化，请重新读取后确认 desired");
     } else {
       const message = normalizeShadowErrorMessage(error, "清理期望状态失败");
