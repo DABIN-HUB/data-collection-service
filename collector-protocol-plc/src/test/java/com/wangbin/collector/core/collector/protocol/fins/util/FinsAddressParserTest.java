@@ -8,6 +8,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FinsAddressParserTest {
 
@@ -28,7 +29,22 @@ class FinsAddressParserTest {
         assertEquals(FinsMemoryArea.CIO, address.getMemoryArea());
         assertEquals(0, address.getWordAddress());
         assertEquals(1, address.getBitOffset());
+        assertEquals("BOOLEAN", address.getDataType());
+        assertTrue(address.isBitUnit());
         assertEquals(1, address.readUnitCount());
+        FinsAddress dmBit = FinsAddressParser.parse("DM:100.3", "BOOLEAN", Map.of());
+        assertEquals(3, dmBit.getBitOffset());
+        assertEquals("BOOLEAN", dmBit.getDataType());
+        assertTrue(dmBit.isBitUnit());
+    }
+
+    @Test
+    void shouldNormalizeBoolAliasForBitAddress() {
+        FinsAddress address = FinsAddressParser.parse("DM:100.3", "BOOL", Map.of());
+
+        assertEquals(3, address.getBitOffset());
+        assertEquals("BOOLEAN", address.getDataType());
+        assertTrue(address.isBitUnit());
     }
 
     @Test
@@ -51,5 +67,11 @@ class FinsAddressParserTest {
     void shouldRejectBitAddressForNonBooleanType() {
         assertThrows(IllegalArgumentException.class,
                 () -> FinsAddressParser.parse("DM:100.3", "INT16", Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> FinsAddressParser.parse("DM:100.3", "UINT16", Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> FinsAddressParser.parse("DM:100.3", "FLOAT", Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> FinsAddressParser.parse("DM:100", "INT16", Map.of("bitIndex", 3)));
     }
 }
