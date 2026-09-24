@@ -646,6 +646,12 @@ class CloudReportFailureIsolationTest {
         }
 
         @Override
+        public boolean replayIsolated(CloudOutboxMessage message) {
+            return messages.computeIfPresent(message.getMessageId(), (id, current) ->
+                    current.getStatus() == CloudOutboxStatus.ISOLATED ? message : current) == message;
+        }
+
+        @Override
         public void complete(String messageId) {
             messages.remove(messageId);
         }

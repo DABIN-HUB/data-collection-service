@@ -93,7 +93,7 @@ class ShadowControllerTest {
 
     @Test
     void shouldClearDesiredFields() throws Exception {
-        when(shadowManager.clearDesired("dev-1", List.of("temperature")))
+        when(shadowManager.clearDesired("dev-1", List.of("temperature"), null))
                 .thenReturn(shadowDocument());
 
         mockMvc.perform(delete("/api/shadow/dev-1/desired")
@@ -102,7 +102,34 @@ class ShadowControllerTest {
                 .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.data.state.reported.temperature", is(25)));
 
-        verify(shadowManager).clearDesired("dev-1", List.of("temperature"));
+        verify(shadowManager).clearDesired("dev-1", List.of("temperature"), null);
+    }
+
+    @Test
+    void shouldReturnConflictWithVersionsOnStaleUpdate() throws Exception {
+        when(shadowManager.updateDesired(eq("dev-1"), argThat(map -> map.containsKey("temperature")),
+                eq("api"), eq(2L)))
+                .thenThrow(new ShadowManager.ShadowVersionConflictException(2L, 3L));
+
+        mockMvc.perform(post("/api/shadow/dev-1/desired")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "expectedVersion", 2, "properties", Map.of("temperature", 26)))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.data.expectedVersion", is(2)))
+                .andExpect(jsonPath("$.data.currentVersion", is(3)));
+    }
+
+    @Test
+    void shouldReturnConflictWithVersionsOnStaleClear() throws Exception {
+        when(shadowManager.clearDesired("dev-1", List.of("temperature"), 2L))
+                .thenThrow(new ShadowManager.ShadowVersionConflictException(2L, 3L));
+
+        mockMvc.perform(delete("/api/shadow/dev-1/desired")
+                        .param("fields", "temperature").param("expectedVersion", "2"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.data.expectedVersion", is(2)))
+                .andExpect(jsonPath("$.data.currentVersion", is(3)));
     }
 
     private Map<String, Object> shadowDocument() {

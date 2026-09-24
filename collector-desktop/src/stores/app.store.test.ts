@@ -2,7 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import { DEFAULT_SERVER_URL, configureHttp, getHttpConfig } from "@/api/http";
+import type { SystemCapabilities } from "@/types/system";
 import { useAppStore } from "./app.store";
+
+const { getSystemCapabilities } = vi.hoisted(() => ({ getSystemCapabilities: vi.fn() }));
+vi.mock("@/api/system.api", () => ({ getSystemCapabilities }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function capabilities(websocketAvailable: boolean): SystemCapabilities {
+  return { realtime: { websocketAvailable } } as SystemCapabilities;
+}
 
 const globalWindow = globalThis as unknown as { window?: Window };
 const originalWindow = globalWindow.window;
@@ -69,6 +83,56 @@ beforeEach(() => {
   globalWindow.window = originalWindow;
   configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "" });
   vi.restoreAllMocks();
+  getSystemCapabilities.mockReset();
+  getSystemCapabilities.mockResolvedValue(capabilities(false));
+});
+
+describe("app.store capability request isolation", () => {
+  it("discards server A response after switching to server B, without clearing B's in-flight request", async () => {
+    globalWindow.window = {} as Window;
+    const a = deferred<SystemCapabilities>();
+    const b = deferred<SystemCapabilities>();
+    getSystemCapabilities.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+    const store = useAppStore();
+    store.hasCredential = true;
+    const oldRequest = store.refreshCapabilities();
+    const switchRequest = store.updateServerUrl("http://127.0.0.1:19090/collector");
+    a.resolve(capabilities(true));
+    expect(await oldRequest).toBeNull();
+    expect(store.capabilities).toBeNull();
+    expect(getSystemCapabilities).toHaveBeenCalledTimes(2);
+    b.resolve(capabilities(false));
+    await switchRequest;
+    expect(store.capabilities).toEqual(capabilities(false));
+  });
+
+  it("discards old credential's response after login and retains the new credential's capability", async () => {
+    globalWindow.window = {} as Window;
+    const old = deferred<SystemCapabilities>();
+    const current = deferred<SystemCapabilities>();
+    getSystemCapabilities.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const store = useAppStore();
+    const pending = store.refreshCapabilities();
+    const login = store.login("replacement-credential", false);
+    await Promise.resolve();
+    old.resolve(capabilities(true));
+    expect(await pending).toBeNull();
+    current.resolve(capabilities(false));
+    await login;
+    expect(store.capabilities).toEqual(capabilities(false));
+  });
+
+  it("does not restore capabilities from an outstanding request after logout", async () => {
+    globalWindow.window = {} as Window;
+    const old = deferred<SystemCapabilities>();
+    getSystemCapabilities.mockReturnValueOnce(old.promise);
+    const store = useAppStore();
+    const pending = store.refreshCapabilities();
+    await store.logout();
+    old.resolve(capabilities(true));
+    expect(await pending).toBeNull();
+    expect(store.capabilities).toBeNull();
+  });
 });
 
 describe("app.store Electron serverUrl source-of-truth", () => {

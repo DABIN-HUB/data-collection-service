@@ -41,6 +41,14 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
                     + "end;"
                     + "return 1;",
             Long.class);
+    private static final DefaultRedisScript<Long> REPLAY_ISOLATED_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('HEXISTS',KEYS[1],ARGV[1]) == 0 "
+                    + "or redis.call('SISMEMBER',KEYS[2],ARGV[1]) == 0 then return 0 end;"
+                    + "redis.call('HSET',KEYS[1],ARGV[1],ARGV[2]);"
+                    + "redis.call('SREM',KEYS[2],ARGV[1]);"
+                    + "redis.call('ZADD',KEYS[3],ARGV[3],ARGV[1]);"
+                    + "return 1;",
+            Long.class);
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -151,6 +159,21 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
     }
 
     /**
+     * 通过 Redis 脚本一次完成隔离资格校验与到期索引更新，避免并发重放覆盖已领取消息。
+     */
+    @Override
+    public boolean replayIsolated(CloudOutboxMessage message) {
+        validateMessage(message);
+        if (message.getStatus() != CloudOutboxStatus.PENDING) {
+            throw new IllegalArgumentException("重放目标消息必须处于待发送状态");
+        }
+        Long updated = redisTemplate.execute(REPLAY_ISOLATED_SCRIPT,
+                List.of(dataKey(), isolatedKey(), dueKey()),
+                message.getMessageId(), serialize(message), Long.toString(message.getNextAttemptAt()));
+        return Long.valueOf(1L).equals(updated);
+    }
+
+    /**
      * 执行当前业务逻辑。
      */
     @Override
@@ -215,18 +238,23 @@ public class RedisCloudOutboxRepository implements CloudOutboxRepository {
     @Override
     public List<CloudOutboxMessage> list(CloudOutboxStatus status, String localDeviceId, int limit) {
         int boundedLimit = Math.max(1, Math.min(200, limit));
-        Set<String> ids = redisTemplate.opsForZSet().range(createdKey(), 0, Math.max(0, boundedLimit * 5L - 1));
-        if (ids == null || ids.isEmpty()) return Collections.emptyList();
         List<CloudOutboxMessage> result = new ArrayList<>();
-        for (String id : ids) {
-            Optional<CloudOutboxMessage> message = find(id);
-            if (message.isEmpty()) continue;
-            CloudOutboxMessage value = message.get();
-            if (status != null && value.getStatus() != status) continue;
-            if (localDeviceId != null && !localDeviceId.isBlank()
-                    && !localDeviceId.equals(value.getLocalDeviceId())) continue;
-            result.add(value);
-            if (result.size() >= boundedLimit) break;
+        long offset = 0L;
+        while (result.size() < boundedLimit) {
+            Set<String> ids = redisTemplate.opsForZSet().reverseRange(createdKey(), offset, offset + 199L);
+            if (ids == null || ids.isEmpty()) break;
+            for (String id : ids) {
+                Optional<CloudOutboxMessage> message = find(id);
+                if (message.isEmpty()) continue;
+                CloudOutboxMessage value = message.get();
+                if (status != null && value.getStatus() != status) continue;
+                if (localDeviceId != null && !localDeviceId.isBlank()
+                        && !localDeviceId.equals(value.getLocalDeviceId())) continue;
+                result.add(value);
+                if (result.size() >= boundedLimit) break;
+            }
+            if (ids.size() < 200) break;
+            offset += ids.size();
         }
         return result;
     }

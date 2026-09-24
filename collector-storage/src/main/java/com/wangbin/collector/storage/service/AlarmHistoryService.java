@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -114,7 +116,12 @@ public class AlarmHistoryService {
                 valueLong,
                 valueBool,
                 notification.getUnit(),
-                toJson(notification)
+                toJson(notification),
+                notification.getEventId(),
+                notification.getRelatedEventId(),
+                notification.getStartedAt() > 0 ? notification.getStartedAt() : null,
+                notification.getLastOccurredAt() > 0 ? notification.getLastOccurredAt() : null,
+                notification.getDurationMillis()
         );
     }
 
@@ -214,6 +221,43 @@ public class AlarmHistoryService {
         return properties.isEnabled();
     }
 
+    /** 查询触发事件，恢复事件不占用分页名额。 */
+    public List<Map<String, Object>> queryRecentAlarmActivations(String deviceId, String pointId,
+                                                                  String pointCode, String ruleId, String level,
+                                                                  Long startTs, Long endTs, Integer limit) {
+        if (!properties.isEnabled()) {
+            return Collections.emptyList();
+        }
+        ensureSchema();
+        int guardedLimit = Math.max(1, Math.min(limit == null ? 100 : limit, 200));
+        List<Map<String, Object>> rows = alarmRepository.queryRecentAlarmActivations(
+                sanitizeIdentifier(properties.getDatabase()), sanitizeIdentifier(properties.getAlarmSuperTable()),
+                blankToNull(deviceId), blankToNull(pointId), blankToNull(pointCode), blankToNull(ruleId),
+                blankToNull(level), startTs, endTs, guardedLimit);
+        rows.forEach(this::addCompatibilityKeys);
+        return rows;
+    }
+
+    /** 按告警标识查询恢复事件，单次最多 200 个标识。 */
+    public List<Map<String, Object>> queryRecoveriesByAlarmIds(List<String> alarmIds) {
+        if (alarmIds == null || alarmIds.isEmpty() || !properties.isEnabled()) {
+            return Collections.emptyList();
+        }
+        List<String> ids = new ArrayList<>(new LinkedHashSet<>(alarmIds.stream()
+                .filter(id -> id != null && !id.isBlank()).map(String::trim).toList()));
+        if (ids.size() > 200) {
+            throw new IllegalArgumentException("单次最多查询 200 条告警恢复记录");
+        }
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        ensureSchema();
+        List<Map<String, Object>> rows = alarmRepository.queryRecoveriesByAlarmIds(
+                sanitizeIdentifier(properties.getDatabase()), sanitizeIdentifier(properties.getAlarmSuperTable()), ids);
+        rows.forEach(this::addCompatibilityKeys);
+        return rows;
+    }
+
     /**
      * 执行当前业务逻辑。
      */
@@ -239,7 +283,20 @@ public class AlarmHistoryService {
             String superTable = sanitizeIdentifier(properties.getAlarmSuperTable());
             dataRepository.createDatabase(database, properties.getKeepDays());
             alarmRepository.createStable(database, superTable);
-            ensureAlarmEventTypeColumn(database, superTable);
+            synchronized (AlarmRepository.class) {
+                ensureAlarmEventTypeColumn(database, superTable);
+                for (Map.Entry<String, String> column : Map.of(
+                        "alarm_id", "NCHAR(128)",
+                        "related_alarm_id", "NCHAR(128)",
+                        "alarm_started_at", "BIGINT",
+                        "alarm_last_occurred_at", "BIGINT",
+                        "alarm_duration_ms", "BIGINT").entrySet()) {
+                    Long count = dataRepository.countColumn(database, superTable, column.getKey());
+                    if (count == null || count == 0) {
+                        alarmRepository.addAlarmLifecycleColumn(database, superTable, column.getKey(), column.getValue());
+                    }
+                }
+            }
             schemaReady.set(true);
         }
     }
@@ -281,7 +338,35 @@ public class AlarmHistoryService {
      * 执行当前业务逻辑。
      */
     private void addCompatibilityKeys(Map<String, Object> row) {
-        if (row == null || !row.containsKey("alarm_event_type")) {
+        if (row == null) {
+            return;
+        }
+        for (Map.Entry<String, String> key : Map.of(
+                "alarm_id", "alarmId", "related_alarm_id", "relatedAlarmId",
+                "alarm_started_at", "alarmStartedAt", "alarm_last_occurred_at", "alarmLastOccurredAt",
+                "alarm_duration_ms", "alarmDurationMs").entrySet()) {
+            Object value = row.get(key.getKey());
+            if (value != null) {
+                row.putIfAbsent(key.getValue(), value);
+            }
+        }
+        Object payload = row.getOrDefault("payload_json", row.get("payloadJson"));
+        if (payload instanceof String json && !json.isBlank()) {
+            try {
+                Map<?, ?> legacy = objectMapper.readValue(json, Map.class);
+                for (Map.Entry<String, String> field : Map.of(
+                        "alarmId", "eventId", "relatedAlarmId", "relatedEventId",
+                        "alarmStartedAt", "startedAt", "alarmLastOccurredAt", "lastOccurredAt",
+                        "alarmDurationMs", "durationMillis").entrySet()) {
+                    if (row.get(field.getKey()) == null && legacy.get(field.getValue()) != null) {
+                        row.put(field.getKey(), legacy.get(field.getValue()));
+                    }
+                }
+            } catch (JsonProcessingException ignored) {
+                // 旧记录可能包含非 JSON 内容，保持已有查询结果。
+            }
+        }
+        if (!row.containsKey("alarm_event_type")) {
             return;
         }
         Object value = row.get("alarm_event_type");

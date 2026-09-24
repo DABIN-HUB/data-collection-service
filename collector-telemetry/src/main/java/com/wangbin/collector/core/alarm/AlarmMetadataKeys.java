@@ -13,6 +13,8 @@ public final class AlarmMetadataKeys {
     public static final String RELATED_EVENT_ID = "relatedEventId";
     public static final String ALARM_STARTED_AT = "alarmStartedAt";
     public static final String ALARM_OCCURRED_AT = "alarmOccurredAt";
+    /** 当前事件最后一次命中的时间，恢复通知仍指向原事件。 */
+    public static final String ALARM_LAST_OCCURRED_AT = "alarmLastOccurredAt";
     public static final String ALARM_DURATION_MILLIS = "alarmDurationMillis";
 
     /**

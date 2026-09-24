@@ -48,6 +48,27 @@ class SystemCapabilitiesApplicationServiceTest {
         assertTrue(response.getHistory().getReason() != null && !response.getHistory().getReason().isBlank());
     }
 
+    @Test
+    void shouldExposeMonitoringWhenMonitorExistsEvenWithoutBusinessOutbox() {
+        SystemCapabilitiesApplicationService service = new SystemCapabilitiesApplicationService(
+                provider(null), provider(null), provider(null),
+                provider(mock(CloudReportMonitorService.class)), provider(null), provider(null));
+
+        SystemCapabilitiesResponse response = service.getCapabilities();
+
+        assertTrue(response.getCloud().isMonitoringAvailable());
+        assertFalse(response.getCloud().isManagementAvailable());
+    }
+
+    @Test
+    void shouldNotAdvertiseMonitoringFromOutboxAlone() {
+        SystemCapabilitiesApplicationService service = new SystemCapabilitiesApplicationService(
+                provider(null), provider(null), provider(null), provider(null),
+                provider(mock(CloudOutboxService.class)), provider(null));
+
+        assertFalse(service.getCapabilities().getCloud().isMonitoringAvailable());
+    }
+
     private SystemCapabilitiesApplicationService newService(HistoryDataService history,
                                                             CollectionManager collectionManager,
                                                             ShadowManager shadowManager) {

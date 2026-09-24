@@ -6,11 +6,11 @@
         CREATE STABLE IF NOT EXISTS ${database}.${superTable} (
             ts TIMESTAMP,
             event_ts BIGINT,
-            device_name NCHAR(256),
+            device_name NCHAR(128),
             point_id NCHAR(128),
             point_code NCHAR(128),
             rule_id NCHAR(128),
-            rule_name NCHAR(256),
+            rule_name NCHAR(128),
             alarm_level NCHAR(64),
             alarm_event_type NCHAR(64),
             message NCHAR(1024),
@@ -19,7 +19,12 @@
             value_long BIGINT,
             value_bool BOOL,
             unit NCHAR(64),
-            payload_json NCHAR(4096)
+            payload_json NCHAR(4096),
+            alarm_id NCHAR(128),
+            related_alarm_id NCHAR(128),
+            alarm_started_at BIGINT,
+            alarm_last_occurred_at BIGINT,
+            alarm_duration_ms BIGINT
         ) TAGS (
             device_id NCHAR(128)
         )
@@ -27,6 +32,9 @@
 
     <update id="addAlarmEventTypeColumn">
         ALTER STABLE ${database}.${superTable} ADD COLUMN alarm_event_type NCHAR(64)
+    </update>
+    <update id="addAlarmLifecycleColumn">
+        ALTER STABLE ${database}.${superTable} ADD COLUMN ${column} ${definition}
     </update>
 
     <update id="createChildTable">
@@ -37,14 +45,14 @@
 
     <insert id="insertAlarm">
         INSERT INTO ${database}.${subTable}
-        (ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json)
+        (ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json,alarm_id,related_alarm_id,alarm_started_at,alarm_last_occurred_at,alarm_duration_ms)
         VALUES
-        (#{eventTs},#{eventTs},#{deviceName},#{pointId},#{pointCode},#{ruleId},#{ruleName},#{alarmLevel},#{eventType},#{message},#{valueText},#{valueDouble},#{valueLong},#{valueBool},#{unit},#{payloadJson})
+        (#{eventTs},#{eventTs},#{deviceName},#{pointId},#{pointCode},#{ruleId},#{ruleName},#{alarmLevel},#{eventType},#{message},#{valueText},#{valueDouble},#{valueLong},#{valueBool},#{unit},#{payloadJson},#{alarmId},#{relatedAlarmId},#{alarmStartedAt},#{alarmLastOccurredAt},#{alarmDurationMs})
     </insert>
 
     <select id="queryAlarmHistory" resultType="java.util.Map">
         SELECT
-            ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
+            ts,event_ts,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json,alarm_id,related_alarm_id,alarm_started_at,alarm_last_occurred_at,alarm_duration_ms
         FROM ${database}.${subTable}
         WHERE 1 = 1
         <if test="pointId != null and pointId != ''">
@@ -70,7 +78,7 @@
     </select>
     <select id="queryRecentAlarmHistory" resultType="java.util.Map">
         SELECT
-            ts,event_ts,device_id,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json
+            ts,event_ts,device_id,device_name,point_id,point_code,rule_id,rule_name,alarm_level,alarm_event_type,message,value_text,value_double,value_long,value_bool,unit,payload_json,alarm_id,related_alarm_id,alarm_started_at,alarm_last_occurred_at,alarm_duration_ms
         FROM ${database}.${superTable}
         WHERE 1 = 1
         <if test="deviceId != null and deviceId != ''">
@@ -96,6 +104,32 @@
         </if>
         ORDER BY ts DESC
         LIMIT #{limit}
+    </select>
+    <select id="queryRecentAlarmActivations" resultType="java.util.Map">
+        SELECT ts,event_ts,device_id,device_name,point_id,point_code,rule_id,rule_name,
+               alarm_level,alarm_event_type,message,value_text,unit,payload_json,alarm_id,related_alarm_id,
+               alarm_started_at,alarm_last_occurred_at,alarm_duration_ms
+        FROM ${database}.${superTable}
+        WHERE alarm_event_type = 'ALARM'
+        <if test="deviceId != null">AND device_id = #{deviceId}</if>
+        <if test="pointId != null">AND point_id = #{pointId}</if>
+        <if test="pointCode != null">AND point_code = #{pointCode}</if>
+        <if test="ruleId != null">AND rule_id = #{ruleId}</if>
+        <if test="alarmLevel != null">AND alarm_level = #{alarmLevel}</if>
+        <if test="startTs != null">AND ts &gt;= #{startTs}</if>
+        <if test="endTs != null">AND ts &lt;= #{endTs}</if>
+        ORDER BY ts DESC
+        LIMIT #{limit}
+    </select>
+    <select id="queryRecoveriesByAlarmIds" resultType="java.util.Map">
+        SELECT related_alarm_id, alarm_id, alarm_event_type, event_ts, alarm_duration_ms, payload_json
+        FROM ${database}.${superTable}
+        WHERE related_alarm_id IN
+        <foreach collection="alarmIds" item="alarmId" open="(" separator="," close=")">
+            #{alarmId}
+        </foreach>
+        AND alarm_event_type = 'ALARM_RECOVERED'
+        ORDER BY ts DESC
     </select>
     <select id="countRecentAlarmHistory" resultType="long">
         SELECT COUNT(*)

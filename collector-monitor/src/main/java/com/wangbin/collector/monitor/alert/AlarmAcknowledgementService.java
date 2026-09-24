@@ -3,6 +3,7 @@ package com.wangbin.collector.monitor.alert;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.core.alarm.AlarmStateProperties;
+import com.wangbin.collector.core.alarm.AlarmStateTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +30,7 @@ public class AlarmAcknowledgementService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final AlarmStateProperties properties;
+    private final AlarmStateTracker alarmStateTracker;
     private final Map<String, AlarmAcknowledgement> records = new LinkedHashMap<>();
 
     /**
@@ -35,10 +38,12 @@ public class AlarmAcknowledgementService {
      */
     public AlarmAcknowledgementService(StringRedisTemplate redisTemplate,
                                        ObjectMapper objectMapper,
-                                       AlarmStateProperties properties) {
+                                       AlarmStateProperties properties,
+                                       AlarmStateTracker alarmStateTracker) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.alarmStateTracker = alarmStateTracker;
     }
 
     /**
@@ -50,6 +55,7 @@ public class AlarmAcknowledgementService {
         String normalizedAlarmId = validateAlarmId(alarmId);
         AlarmAcknowledgement existing = findExisting(normalizedAlarmId);
         if (existing != null) {
+            updateRuntimeState(existing);
             return existing;
         }
 
@@ -63,7 +69,19 @@ public class AlarmAcknowledgementService {
         AlarmAcknowledgement result = persisted == null ? acknowledgement : persisted;
         records.put(normalizedAlarmId, result);
         removeOldestIfNecessary();
+        updateRuntimeState(result);
         return result;
+    }
+
+    /** 审计落盘优先；运行态缺失时仍返回幂等确认记录。 */
+    private void updateRuntimeState(AlarmAcknowledgement acknowledgement) {
+        try {
+            alarmStateTracker.acknowledgeByAlarmId(acknowledgement.alarmId(),
+                    acknowledgement.operator(), acknowledgement.acknowledgedAt(),
+                    acknowledgement.note(), acknowledgement.idempotencyKey());
+        } catch (RuntimeException exception) {
+            log.warn("告警确认记录已保存，更新运行态失败: alarmId={}", acknowledgement.alarmId(), exception);
+        }
     }
 
     /**
@@ -71,14 +89,35 @@ public class AlarmAcknowledgementService {
      */
     public synchronized Map<String, AlarmAcknowledgement> findAll(List<String> alarmIds) {
         Map<String, AlarmAcknowledgement> result = new LinkedHashMap<>();
+        List<String> missing = new ArrayList<>();
         for (String alarmId : alarmIds) {
             if (!StringUtils.hasText(alarmId)) {
                 continue;
             }
             String normalizedAlarmId = alarmId.trim();
-            AlarmAcknowledgement acknowledgement = findExisting(normalizedAlarmId);
+            AlarmAcknowledgement acknowledgement = records.get(normalizedAlarmId);
             if (acknowledgement != null) {
                 result.put(normalizedAlarmId, acknowledgement);
+            } else if (properties.isEnabled() && !missing.contains(normalizedAlarmId)) {
+                missing.add(normalizedAlarmId);
+            }
+        }
+        if (!missing.isEmpty()) {
+            try {
+                List<String> keys = missing.stream().map(this::redisKey).toList();
+                List<String> payloads = redisTemplate.opsForValue().multiGet(keys);
+                if (payloads != null) {
+                    for (int index = 0; index < Math.min(missing.size(), payloads.size()); index++) {
+                        String payload = payloads.get(index);
+                        if (!StringUtils.hasText(payload)) continue;
+                        AlarmAcknowledgement acknowledgement = objectMapper.readValue(payload, AlarmAcknowledgement.class);
+                        records.put(missing.get(index), acknowledgement);
+                        result.put(missing.get(index), acknowledgement);
+                    }
+                    removeOldestIfNecessary();
+                }
+            } catch (RuntimeException | JsonProcessingException exception) {
+                log.warn("批量读取告警确认记录失败，降级使用本地状态", exception);
             }
         }
         return Map.copyOf(result);

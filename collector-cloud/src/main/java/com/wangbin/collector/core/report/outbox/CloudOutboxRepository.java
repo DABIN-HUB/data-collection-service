@@ -37,6 +37,16 @@ public interface CloudOutboxRepository {
     boolean rescheduleIfPresent(CloudOutboxMessage message);
 
     /**
+     * 仅当消息存在且仍在隔离集合中时，原子地将其恢复为待调度状态。
+     *
+     * @param message 已清除错误并设置为到期待发送状态的消息
+     * @return 隔离状态未发生变化且恢复成功时返回 true
+     */
+    default boolean replayIsolated(CloudOutboxMessage message) {
+        return false;
+    }
+
+    /**
      * 完成并移除消息。
      */
     void complete(String messageId);

@@ -194,13 +194,15 @@ public class CloudOutboxService {
 
     public boolean replay(String messageId) {
         if (!enabled()) return false;
-        CloudOutboxMessage message = repository.find(messageId).orElse(null);
-        if (message == null || message.getStatus() != CloudOutboxStatus.ISOLATED) return false;
-        message.setStatus(CloudOutboxStatus.PENDING);
-        message.setNextAttemptAt(System.currentTimeMillis());
-        message.setLastError(null);
-        repository.reschedule(message);
-        return true;
+        CloudOutboxMessage current = repository.find(messageId).orElse(null);
+        if (current == null || current.getStatus() != CloudOutboxStatus.ISOLATED) return false;
+        CloudOutboxMessage pending = new CloudOutboxMessage(
+                current.getMessageId(), current.getLocalDeviceId(), current.getProductKey(),
+                current.getDeviceName(), current.getGatewayDeviceId(), current.getShadowVersion(),
+                current.getWindowStart(), current.getWindowEnd(), current.getCreatedAt(),
+                System.currentTimeMillis(), current.getAttempts(), CloudOutboxStatus.PENDING,
+                null, current.getReportData(), current.getCommits());
+        return repository.replayIsolated(pending);
     }
 
     public void flush() {

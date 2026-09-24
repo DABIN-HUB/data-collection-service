@@ -463,6 +463,7 @@ public class ConfigManager {
      */
     public boolean updateDeviceConfig(DeviceInfo device) {
         Objects.requireNonNull(device, "设备信息不能为空");
+        ConfigUpdateEvent event;
 
         try {
             lock.writeLock().lock();
@@ -492,7 +493,7 @@ public class ConfigManager {
             long newVersion = nextConfigVersion();
             deviceConfigVersions.put(deviceId, newVersion);
             // 发布配置更新事件
-            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+            event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.DEVICE.getValue())
                     .previousVersion(previousVersion)
@@ -501,17 +502,16 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
 
-            eventPublisher.publishEvent(event);
             markConfigMutation();
             log.info("设备配置已更新: {} - {}", deviceId, device.getDeviceName());
-
-            return true;
         } catch (Exception e) {
             log.error("更新设备配置失败: {}", device.getDeviceId(), e);
             return false;
         } finally {
             lock.writeLock().unlock();
         }
+        publishCommittedEvent(event);
+        return true;
     }
 
     /**
@@ -524,6 +524,7 @@ public class ConfigManager {
     public boolean updateDataPoints(String deviceId, List<DataPoint> points) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         Objects.requireNonNull(points, "数据点列表不能为空");
+        ConfigUpdateEvent event;
 
         try {
             lock.writeLock().lock();
@@ -551,7 +552,7 @@ public class ConfigManager {
             deviceConfigVersions.put(deviceId, newVersion);
 
             // 发布配置更新事件
-            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+            event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.POINTS.getValue())
                     .previousVersion(previousVersion)
@@ -559,17 +560,16 @@ public class ConfigManager {
                     .updateTime(new Date())
                     .build();
 
-            eventPublisher.publishEvent(event);
             markConfigMutation();
             log.info("数据点配置已更新: {}, 共 {} 个点", deviceId, points.size());
-
-            return true;
         } catch (Exception e) {
             log.error("更新数据点配置失败: {}", deviceId, e);
             return false;
         } finally {
             lock.writeLock().unlock();
         }
+        publishCommittedEvent(event);
+        return true;
     }
 
     /**
@@ -581,6 +581,7 @@ public class ConfigManager {
      */
     public boolean updateConnectionConfig(String deviceId, DeviceConnection connection) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        ConfigUpdateEvent event;
 
         try {
             lock.writeLock().lock();
@@ -607,22 +608,30 @@ public class ConfigManager {
             long newVersion = nextConfigVersion();
             deviceConfigVersions.put(deviceId, newVersion);
 
-            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+            event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.CONNECTION.getValue())
                     .previousVersion(previousVersion)
                     .configVersion(newVersion)
                     .updateTime(new Date())
                     .build();
-            eventPublisher.publishEvent(event);
             markConfigMutation();
             log.info("连接配置已更新: {}", deviceId);
-            return true;
         } catch (Exception e) {
             log.error("更新连接配置失败: {}", deviceId, e);
             return false;
         } finally {
             lock.writeLock().unlock();
+        }
+        publishCommittedEvent(event);
+        return true;
+    }
+
+    private void publishCommittedEvent(ConfigUpdateEvent event) {
+        try {
+            eventPublisher.publishEvent(event);
+        } catch (RuntimeException exception) {
+            log.error("配置已提交，但配置变更事件发布失败: {}", event.getDeviceId(), exception);
         }
     }
 
@@ -690,6 +699,7 @@ public class ConfigManager {
                     .connectionChanged(!Objects.equals(connectionBackup.get(deviceId), candidate.getConnectionConfig()))
                     .updateTime(new Date()).build();
             commitResult = new DeviceConfigCommitResult(deviceId, previousVersion, newVersion, normalized.get(deviceId).size());
+            markConfigMutation();
         } catch (RuntimeException exception) {
             restoreCache(deviceCache, deviceBackup);
             restoreCache(connectionCache, connectionBackup);
@@ -702,7 +712,6 @@ public class ConfigManager {
         }
         try {
             eventPublisher.publishEvent(pendingEvent);
-            markConfigMutation();
         } catch (RuntimeException eventException) {
             log.error("设备配置已提交，但 Bundle 配置事件发布失败: {}", deviceId, eventException);
         }
@@ -753,6 +762,7 @@ public class ConfigManager {
                 throw e;
             }
             newVersion = calculateConfigVersion();
+            markConfigMutation();
         } catch (IllegalArgumentException e) {
             log.warn("设备配置批量导入校验失败，现有缓存未修改: {}", e.getMessage());
             return false;
@@ -768,7 +778,6 @@ public class ConfigManager {
         event.setExtraParams(Map.of(OLD_VERSION_KEY, oldVersion, NEW_VERSION_KEY, newVersion));
         try {
             eventPublisher.publishEvent(event);
-            markConfigMutation();
         } catch (RuntimeException e) {
             log.error("配置已提交，但发布配置变更事件失败，版本: {}", newVersion, e);
         }
@@ -836,6 +845,7 @@ public class ConfigManager {
 
         List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
         validateLocalPoints(deviceId, safePoints);
+        ConfigUpdateEvent event;
 
         lock.writeLock().lock();
         try {
@@ -874,7 +884,8 @@ public class ConfigManager {
             long previousConfigVersion = previousVersion != null ? previousVersion : 0L;
             long newConfigVersion = nextConfigVersion();
             deviceConfigVersions.put(deviceId, newConfigVersion);
-            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+            markConfigMutation();
+            event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.LOCAL.getValue())
                     .previousVersion(previousConfigVersion)
@@ -882,13 +893,12 @@ public class ConfigManager {
                     .connectionChanged(true)
                     .updateTime(new Date())
                     .build();
-            eventPublisher.publishEvent(event);
-            markConfigMutation();
             log.info("本地临时设备配置已保存：{}，点位={}", deviceId, safePoints.size());
-            return true;
         } finally {
             lock.writeLock().unlock();
         }
+        publishCommittedEvent(event);
+        return true;
     }
 
     /**
@@ -896,6 +906,7 @@ public class ConfigManager {
      */
     public boolean deleteLocalDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        ConfigUpdateEvent event;
 
         lock.writeLock().lock();
         try {
@@ -923,20 +934,20 @@ public class ConfigManager {
             long previousConfigVersion = previousVersion != null ? previousVersion : 0L;
             long newConfigVersion = nextConfigVersion();
             deviceConfigVersions.remove(deviceId);
-            ConfigUpdateEvent event = ConfigUpdateEvent.builder()
+            markConfigMutation();
+            event = ConfigUpdateEvent.builder()
                     .deviceId(deviceId)
                     .configType(ConfigUpdateType.LOCAL_DELETE.getValue())
                     .previousVersion(previousConfigVersion)
                     .configVersion(newConfigVersion)
                     .updateTime(new Date())
                     .build();
-            eventPublisher.publishEvent(event);
-            markConfigMutation();
             log.info("本地临时设备配置已删除：{}", deviceId);
-            return true;
         } finally {
             lock.writeLock().unlock();
         }
+        publishCommittedEvent(event);
+        return true;
     }
 
     public boolean isLocalTemporaryDevice(String deviceId) {
@@ -1069,11 +1080,15 @@ public class ConfigManager {
     public void clearAllCache() {
         try {
             lock.writeLock().lock();
+            boolean changed = !deviceCache.isEmpty() || !pointCache.isEmpty()
+                    || !connectionCache.isEmpty() || !deviceContextCache.isEmpty()
+                    || !deviceConfigVersions.isEmpty();
             deviceCache.clear();
             pointCache.clear();
             connectionCache.clear();
             deviceContextCache.clear();
             deviceConfigVersions.clear();
+            if (changed) markConfigMutation();
             log.info("所有配置缓存已清空");
         } finally {
             lock.writeLock().unlock();
@@ -1480,11 +1495,12 @@ public class ConfigManager {
     private void removeDeviceConfig(String deviceId) {
         try {
             lock.writeLock().lock();
-            deviceCache.remove(deviceId);
-            pointCache.remove(deviceId);
-            connectionCache.remove(deviceId);
-            deviceContextCache.remove(deviceId);
-            deviceConfigVersions.remove(deviceId);
+            boolean changed = deviceCache.remove(deviceId) != null;
+            changed |= pointCache.remove(deviceId) != null;
+            changed |= connectionCache.remove(deviceId) != null;
+            changed |= deviceContextCache.remove(deviceId) != null;
+            changed |= deviceConfigVersions.remove(deviceId) != null;
+            if (changed) markConfigMutation();
         } finally {
             lock.writeLock().unlock();
         }
@@ -1555,6 +1571,7 @@ public class ConfigManager {
                     }
                     rebuildDeviceContext(deviceId);
                     deviceConfigVersions.put(deviceId, nextConfigVersion());
+                    markConfigMutation();
                     log.info("连接配置重载成功并推进版本: {}", deviceId);
                 } else {
                     log.debug("连接配置未变化，保持版本: {}", deviceId);

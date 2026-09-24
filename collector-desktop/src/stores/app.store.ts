@@ -27,6 +27,13 @@ interface AppState {
 const TOKEN_KEY = "collector-desktop-token";
 const SERVER_KEY = "collector-desktop-server-url";
 let capabilitiesRequest: Promise<SystemCapabilities | null> | null = null;
+let capabilitiesEpoch = 0;
+
+function nextCapabilitiesEpoch(): number {
+  capabilitiesEpoch += 1;
+  capabilitiesRequest = null;
+  return capabilitiesEpoch;
+}
 
 export const useAppStore = defineStore("app", {
   state: (): AppState => ({
@@ -48,6 +55,14 @@ export const useAppStore = defineStore("app", {
     capabilitiesError: ""
   }),
   actions: {
+    invalidateCapabilities() {
+      nextCapabilitiesEpoch();
+      this.capabilities = null;
+      this.capabilitiesError = "";
+      const websocketStore = useWebSocketStore();
+      websocketStore.setSupported(false);
+      websocketStore.disableRealtime();
+    },
     async initialize() {
       if (this.initialized) {
         return;
@@ -99,34 +114,37 @@ export const useAppStore = defineStore("app", {
       if (capabilitiesRequest) {
         return capabilitiesRequest;
       }
-      capabilitiesRequest = getSystemCapabilities()
+      const requestEpoch = capabilitiesEpoch;
+      const requestServerUrl = this.serverUrl;
+      const request = getSystemCapabilities()
         .then((capabilities) => {
+          if (requestEpoch !== capabilitiesEpoch || requestServerUrl !== this.serverUrl) return null;
           this.capabilities = capabilities;
           this.capabilitiesError = "";
           useWebSocketStore().setSupported(Boolean(capabilities.realtime.websocketAvailable));
           return capabilities;
         })
         .catch((error: unknown) => {
+          if (requestEpoch !== capabilitiesEpoch || requestServerUrl !== this.serverUrl) return null;
           this.capabilities = null;
           this.capabilitiesError = error instanceof Error ? error.message : "系统能力读取失败";
           useWebSocketStore().setSupported(false);
           return null;
         })
         .finally(() => {
-          capabilitiesRequest = null;
+          if (capabilitiesRequest === request) capabilitiesRequest = null;
         });
-      return capabilitiesRequest;
+      capabilitiesRequest = request;
+      return request;
     },
     async updateServerUrl(serverUrl: string) {
       const candidate = normalizeServerUrl(serverUrl);
-      this.capabilities = null;
-      this.capabilitiesError = "";
-      useWebSocketStore().setSupported(false);
-      useWebSocketStore().disableRealtime();
       if (isDesktopRuntime() && window.collectorDesktop) {
         const persisted = await window.collectorDesktop.setServerConfig({ serverUrl: candidate });
+        this.invalidateCapabilities();
         this.serverUrl = normalizeServerUrl(persisted.serverUrl || this.serverUrl);
       } else {
+        this.invalidateCapabilities();
         this.serverUrl = candidate;
       }
       localStorage.setItem(SERVER_KEY, this.serverUrl);
@@ -138,6 +156,7 @@ export const useAppStore = defineStore("app", {
     async setToken(token: string, remember: boolean) {
       const normalizedToken = token.trim();
       if (isDesktopRuntime() && window.collectorDesktop) {
+        this.invalidateCapabilities();
         const status = await window.collectorDesktop.setCredential({ token: normalizedToken, remember });
         this.applyCredentialStatus(status);
         this.token = "";
@@ -148,6 +167,7 @@ export const useAppStore = defineStore("app", {
         }
         return;
       }
+      if (this.token !== normalizedToken) this.invalidateCapabilities();
       this.token = normalizedToken;
       this.rememberToken = remember;
       this.hasCredential = Boolean(this.token);
@@ -165,24 +185,17 @@ export const useAppStore = defineStore("app", {
       await this.refreshCapabilities();
     },
     async logout() {
+      this.invalidateCapabilities();
       if (isDesktopRuntime() && window.collectorDesktop) {
         const status = await window.collectorDesktop.clearCredential();
         this.applyCredentialStatus(status);
         this.token = "";
         this.rememberToken = false;
-        this.capabilities = null;
-        this.capabilitiesError = "";
-        useWebSocketStore().setSupported(false);
-        useWebSocketStore().disableRealtime();
         configureHttp({ token: "" });
         localStorage.removeItem(TOKEN_KEY);
         return;
       }
       await this.setToken("", false);
-      this.capabilities = null;
-      this.capabilitiesError = "";
-      useWebSocketStore().setSupported(false);
-      useWebSocketStore().disableRealtime();
     },
     applyCredentialStatus(status: { hasCredential: boolean; remembered: boolean; storageAvailable: boolean; rememberUnavailable: boolean }) {
       this.hasCredential = Boolean(status.hasCredential);

@@ -39,7 +39,7 @@
 
       <section class="exact-surface">
         <div class="exact-surface-head">
-          <h2>Outbox / ACK 明细</h2>
+          <h2>Outbox / ACK 指标</h2>
           <span>{{ cloudOperationalRows.length }} 项</span>
         </div>
         <div class="modao-property-grid">
@@ -49,12 +49,35 @@
 
       <section class="exact-surface">
         <div class="exact-surface-head"><h2>Outbox 消息</h2><span>{{ outboxRows.length }} 项</span></div>
+        <div class="heading-actions">
+          <select v-model="outboxStatus" aria-label="Outbox 状态" @change="loadCloud">
+            <option value="">全部状态</option>
+            <option v-for="status in outboxStatuses" :key="status" :value="status">{{ status }}</option>
+          </select>
+          <input v-model="outboxDeviceId" aria-label="本地设备 ID" placeholder="本地设备 ID" @keyup.enter="loadCloud" />
+          <button type="button" :disabled="loading" @click="loadCloud">筛选</button>
+        </div>
         <div v-if="!appStore.capabilities?.cloud.monitoringAvailable" class="cloud-error">当前云链路监控不可用</div>
-        <table v-else class="runtime-table"><thead><tr><th>消息</th><th>设备</th><th>状态</th><th>重试</th><th>错误</th><th>操作</th></tr></thead>
-          <tbody><tr v-for="row in outboxRows" :key="row.messageId"><td>{{ row.messageId }}</td><td>{{ row.localDeviceId || "-" }}</td><td>{{ row.status }}</td><td>{{ row.retryCount ?? 0 }}</td><td>{{ row.lastError || "-" }}</td><td><button v-if="appStore.capabilities?.cloud.managementAvailable && row.status === 'ISOLATED'" @click="replay(row.messageId)">Replay</button></td></tr></tbody>
+        <table v-else class="runtime-table"><thead><tr><th>消息</th><th>设备</th><th>状态</th><th>重试</th><th>创建时间</th><th>下次尝试</th><th>错误</th><th>操作</th></tr></thead>
+          <tbody><tr v-for="row in outboxRows" :key="row.messageId"><td>{{ row.messageId }}</td><td>{{ row.localDeviceId || "-" }}</td><td>{{ row.status }}</td><td>{{ row.retryCount ?? 0 }}</td><td>{{ formatTimestamp(row.createdAt) }}</td><td>{{ formatTimestamp(row.nextAttemptAt) }}</td><td>{{ row.lastError || "-" }}</td><td><button type="button" @click="openDetail(row.messageId)">查看详情</button><button v-if="appStore.capabilities?.cloud.managementAvailable && row.status === 'ISOLATED'" type="button" @click="replay(row.messageId)">Replay</button></td></tr></tbody>
         </table>
+        <div v-if="appStore.capabilities?.cloud.monitoringAvailable && !loading && !outboxRows.length" class="cloud-empty">暂无 Outbox 消息</div>
+        <div v-if="actionError" class="cloud-error" role="alert">{{ actionError }}</div>
         <div class="heading-actions"><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="flush">Flush 到期消息</button><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="testLink">测试云链路</button><span v-if="testResult">{{ testResult.message }}</span></div>
       </section>
+
+      <el-drawer v-model="detailVisible" :title="`Outbox 消息 ${selectedMessageId}`" size="min(720px, 90vw)">
+        <div v-if="detailLoading">详情加载中…</div>
+        <div v-else-if="detailError" class="cloud-error" role="alert">{{ detailError }}</div>
+        <div v-else-if="!detail" class="cloud-empty">消息详情为空</div>
+        <template v-else>
+          <div class="modao-property-grid">
+            <div v-for="item in detailFields" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+          </div>
+          <details class="exact-json-panel"><summary>查看上报快照 JSON</summary><pre class="json-view">{{ prettyJson(detail.reportData) }}</pre></details>
+          <details class="exact-json-panel"><summary>查看提交记录 JSON</summary><pre class="json-view">{{ prettyJson(detail.commits) }}</pre></details>
+        </template>
+      </el-drawer>
 
       <section class="exact-surface">
         <div class="exact-surface-head">
@@ -75,11 +98,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { ElDrawer, ElMessage, ElMessageBox } from "element-plus";
 
 import { getCloudReportMetrics } from "@/api/monitor.api";
-import { flushCloudOutbox, listCloudOutbox, replayCloudOutbox, testCloudLink } from "@/api/cloud.api";
+import { flushCloudOutbox, getCloudOutboxDetail, listCloudOutbox, replayCloudOutbox, testCloudLink } from "@/api/cloud.api";
 import {
   buildCloudEnabledText,
   buildCloudOperationalRows,
@@ -90,7 +113,7 @@ import {
 } from "@/features/cloud/utils/cloud-report-utils";
 import { useAppStore } from "@/stores/app.store";
 import type { CloudReportMetricsResponse } from "@/types/monitor";
-import type { CloudOutboxListItem, CloudTestResponse } from "@/types/cloud";
+import type { CloudOutboxDetail, CloudOutboxListItem, CloudTestResponse } from "@/types/cloud";
 
 const appStore = useAppStore();
 const reportMetrics = ref<CloudReportMetricsResponse | null>(null);
@@ -98,7 +121,33 @@ const loading = ref(false);
 const error = ref("");
 const lastRefresh = ref<Date | null>(null);
 const outboxRows = ref<CloudOutboxListItem[]>([]);
+const outboxStatuses = ["PENDING", "PUBLISHING", "WAITING_ACK", "WAITING_CONFIG", "ISOLATED"] as const;
+const outboxStatus = ref("");
+const outboxDeviceId = ref("");
 const testResult = ref<CloudTestResponse | null>(null);
+const actionError = ref("");
+const detailVisible = ref(false);
+const selectedMessageId = ref("");
+const detailLoading = ref(false);
+const detailError = ref("");
+const detail = ref<CloudOutboxDetail | null>(null);
+let detailGeneration = 0;
+onUnmounted(() => { detailGeneration++; });
+
+const detailFields = computed(() => detail.value ? [
+  { label: "消息 ID", value: detail.value.summary.messageId },
+  { label: "本地设备", value: detail.value.summary.localDeviceId || "-" },
+  { label: "云端设备", value: detail.value.summary.cloudDeviceId || "-" },
+  { label: "网关设备", value: detail.value.summary.gatewayDeviceId || "-" },
+  { label: "状态", value: detail.value.summary.status || "-" },
+  { label: "重试次数", value: String(detail.value.summary.retryCount ?? 0) },
+  { label: "创建时间", value: formatTimestamp(detail.value.summary.createdAt) },
+  { label: "下次尝试", value: formatTimestamp(detail.value.summary.nextAttemptAt) },
+  { label: "窗口开始", value: formatTimestamp(detail.value.windowStart) },
+  { label: "窗口结束", value: formatTimestamp(detail.value.windowEnd) },
+  { label: "影子版本", value: String(detail.value.shadowVersion ?? "-") },
+  { label: "最后错误", value: detail.value.summary.lastError || "-" }
+] : []);
 
 const cloudOperationalState = computed(() => classifyCloudOperationalState(reportMetrics.value, Boolean(error.value)));
 const cloudEnabledText = computed(() => buildCloudEnabledText(reportMetrics.value));
@@ -122,7 +171,11 @@ async function loadCloud() {
     await appStore.initialize();
     if (appStore.capabilities?.cloud.monitoringAvailable === true) {
       reportMetrics.value = await getCloudReportMetrics();
-      outboxRows.value = await listCloudOutbox({ limit: 50 });
+      outboxRows.value = await listCloudOutbox({
+        status: outboxStatus.value || undefined,
+        deviceId: outboxDeviceId.value.trim() || undefined,
+        limit: 50
+      });
     }
     lastRefresh.value = new Date();
   } catch (err) {
@@ -136,25 +189,66 @@ async function refreshCloud() {
   await loadCloud();
 }
 
+async function openDetail(messageId: string) {
+  const generation = ++detailGeneration;
+  selectedMessageId.value = messageId;
+  detailVisible.value = true;
+  detail.value = null;
+  detailError.value = "";
+  detailLoading.value = true;
+  try {
+    const result = await getCloudOutboxDetail(messageId);
+    if (generation === detailGeneration) detail.value = result;
+  } catch (err) {
+    if (generation === detailGeneration) detailError.value = errorMessage(err, "消息详情加载失败");
+  } finally {
+    if (generation === detailGeneration) detailLoading.value = false;
+  }
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
+function formatTimestamp(timestamp?: number): string {
+  return timestamp == null ? "-" : new Date(timestamp).toLocaleString();
+}
+
 async function replay(messageId: string) {
   try {
     await ElMessageBox.confirm("该操作会重新进入云端发送链路，可能再次向云平台发送消息。", "确认 Replay", { type: "warning" });
+  } catch { return; }
+  actionError.value = "";
+  try {
     await replayCloudOutbox(messageId);
     await loadCloud();
     ElMessage.success("消息已重新进入发送队列");
-  } catch { /* cancel or API error is already visible through the next refresh */ }
+  } catch (err) {
+    actionError.value = `消息 ${messageId} 重放失败：${errorMessage(err, "请求失败")}`;
+  }
 }
 
 async function flush() {
   try {
     await ElMessageBox.confirm("将立即触发当前到期 Outbox 消息的调度，不代表云端已经确认。", "确认 Flush", { type: "warning" });
+  } catch { return; }
+  actionError.value = "";
+  try {
     await flushCloudOutbox();
     await loadCloud();
-  } catch { /* user cancelled */ }
+  } catch (err) {
+    actionError.value = `Outbox 调度失败：${errorMessage(err, "请求失败")}`;
+  }
 }
 
 async function testLink() {
-  testResult.value = await testCloudLink();
+  actionError.value = "";
+  testResult.value = null;
+  try {
+    testResult.value = await testCloudLink();
+  } catch (err) {
+    actionError.value = `云链路测试失败：${errorMessage(err, "请求失败")}`;
+  }
 }
 
 function prettyJson(value: unknown): string {

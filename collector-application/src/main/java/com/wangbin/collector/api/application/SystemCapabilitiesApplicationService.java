@@ -28,8 +28,7 @@ public class SystemCapabilitiesApplicationService {
         boolean controlAvailable = collectionManagerProvider.getIfAvailable() != null;
         ShadowManager shadow = shadowManagerProvider.getIfAvailable();
         boolean shadowAvailable = shadow != null;
-        boolean cloudMonitoringAvailable = cloudReportMonitorProvider.getIfAvailable() != null
-                || cloudOutboxProvider.getIfAvailable() != null;
+        boolean cloudMonitoringAvailable = cloudReportMonitorProvider.getIfAvailable() != null;
         return SystemCapabilitiesResponse.builder()
                 .realtime(SystemCapabilitiesResponse.Realtime.builder()
                         .browserTransport("HTTP_POLLING")

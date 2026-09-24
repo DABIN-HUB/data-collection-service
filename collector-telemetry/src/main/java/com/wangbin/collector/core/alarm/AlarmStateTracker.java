@@ -42,6 +42,10 @@ public class AlarmStateTracker {
         String stateKey = stateKey(deviceId, pointId, rule);
         RuleState ruleState = states.computeIfAbsent(stateKey, this::restoreState);
         synchronized (ruleState) {
+            ruleState.deviceId = deviceId;
+            ruleState.pointId = pointId;
+            ruleState.ruleId = rule.getRuleId();
+            ruleState.ruleName = rule.getRuleName();
             AlarmTransition transition = evaluateState(stateKey, ruleState, rule, value, timestamp);
             persistState(stateKey, ruleState, timestamp);
             return transition;
@@ -64,6 +68,53 @@ public class AlarmStateTracker {
         }
     }
 
+    /** 按事件标识确认运行态；历史事件不能确认同一规则的新事件。 */
+    public boolean acknowledgeByAlarmId(String alarmId, String operator, long ackedAt,
+                                        String note, String idempotencyKey) {
+        if (!StringUtils.hasText(alarmId)) {
+            return false;
+        }
+        for (Map.Entry<String, RuleState> entry : states.entrySet()) {
+            RuleState current = entry.getValue();
+            synchronized (current) {
+                if (alarmId.equals(current.alarmId)) {
+                    return acknowledgeCurrent(entry.getKey(), current, alarmId, operator, ackedAt, note, idempotencyKey);
+                }
+            }
+        }
+        AlarmStateSnapshot snapshot = stateRepository.findByAlarmId(alarmId).orElse(null);
+        if (snapshot == null) return false;
+        String stateKey = snapshot.getStateKey();
+        RuleState state = states.computeIfAbsent(stateKey, this::restoreState);
+        synchronized (state) {
+            return acknowledgeCurrent(stateKey, state, alarmId, operator, ackedAt, note, idempotencyKey);
+        }
+    }
+
+    private boolean acknowledgeCurrent(String stateKey, RuleState state, String alarmId,
+                                       String operator, long ackedAt, String note, String idempotencyKey) {
+            if (!alarmId.equals(state.alarmId)
+                    || stateRepository.find(stateKey)
+                    .map(snapshot -> !alarmId.equals(snapshot.getAlarmId()))
+                    .orElse(false)) return false;
+            if (state.lifecycleState != AlarmLifecycleState.ACTIVE
+                    && state.lifecycleState != AlarmLifecycleState.ACKED
+                    && state.lifecycleState != AlarmLifecycleState.RECOVERED) {
+                return false;
+            }
+            if (state.lifecycleState == AlarmLifecycleState.ACTIVE) {
+                state.lifecycleState = AlarmLifecycleState.ACKED;
+            }
+            if (state.ackedAt == 0L) {
+                state.ackedBy = operator;
+                state.ackedAt = ackedAt;
+                state.ackNote = note;
+                state.ackIdempotencyKey = idempotencyKey;
+            }
+            persistState(stateKey, state, ackedAt);
+            return true;
+    }
+
     /**
      * 执行当前业务逻辑。
      */
@@ -73,7 +124,11 @@ public class AlarmStateTracker {
                         snapshot.getLifecycleState(),
                         snapshot.getPendingSince(),
                         snapshot.getActiveSince(),
-                        snapshot.getAlarmId()))
+                        snapshot.getAlarmId(), snapshot.getLastOccurredAt(),
+                        snapshot.getAckedBy(), snapshot.getAckedAt(),
+                        snapshot.getAckNote(), snapshot.getAckIdempotencyKey(),
+                        snapshot.getRecoveredAt(), snapshot.getDeviceId(), snapshot.getPointId(),
+                        snapshot.getRuleId(), snapshot.getRuleName()))
                 .orElseGet(RuleState::new);
     }
 
@@ -81,13 +136,24 @@ public class AlarmStateTracker {
      * 写入或持久化业务数据。
      */
     private void persistState(String stateKey, RuleState state, long updatedAt) {
-        stateRepository.save(new AlarmStateSnapshot(
+        AlarmStateSnapshot snapshot = new AlarmStateSnapshot(
                 stateKey,
                 state.lifecycleState,
                 state.pendingSince,
                 state.activeSince,
                 state.alarmId,
-                updatedAt));
+                updatedAt);
+        snapshot.setLastOccurredAt(state.lastOccurredAt);
+        snapshot.setAckedBy(state.ackedBy);
+        snapshot.setAckedAt(state.ackedAt);
+        snapshot.setAckNote(state.ackNote);
+        snapshot.setAckIdempotencyKey(state.ackIdempotencyKey);
+        snapshot.setRecoveredAt(state.recoveredAt);
+        snapshot.setDeviceId(state.deviceId);
+        snapshot.setPointId(state.pointId);
+        snapshot.setRuleId(state.ruleId);
+        snapshot.setRuleName(state.ruleName);
+        stateRepository.save(snapshot);
     }
 
     /**
@@ -104,16 +170,20 @@ public class AlarmStateTracker {
             if (isRecovered(rule, value)) {
                 state.lifecycleState = AlarmLifecycleState.RECOVERED;
                 state.pendingSince = 0L;
+                state.recoveredAt = timestamp;
                 return AlarmTransition.recovered(
-                        state.alarmId, state.activeSince, timestamp);
+                        state.alarmId, state.activeSince, timestamp, state.lastOccurredAt);
+            }
+            if (matched) {
+                state.lastOccurredAt = Math.max(state.lastOccurredAt, timestamp);
             }
             return AlarmTransition.none(state.lifecycleState);
         }
 
         if (state.lifecycleState == AlarmLifecycleState.RECOVERED) {
-            state.lifecycleState = AlarmLifecycleState.NORMAL;
-            state.alarmId = null;
-            state.activeSince = 0L;
+            if (!matched) {
+                return AlarmTransition.none(state.lifecycleState);
+            }
         }
         if (!matched) {
             state.lifecycleState = AlarmLifecycleState.NORMAL;
@@ -146,6 +216,12 @@ public class AlarmStateTracker {
                                      long occurredAt) {
         state.lifecycleState = AlarmLifecycleState.ACTIVE;
         state.activeSince = startedAt;
+        state.lastOccurredAt = occurredAt;
+        state.recoveredAt = 0L;
+        state.ackedBy = null;
+        state.ackedAt = 0L;
+        state.ackNote = null;
+        state.ackIdempotencyKey = null;
         state.alarmId = UUID.nameUUIDFromBytes(
                 (stateKey + "|" + startedAt).getBytes(StandardCharsets.UTF_8)).toString();
         return AlarmTransition.activated(state.alarmId, startedAt, occurredAt);
@@ -205,6 +281,16 @@ public class AlarmStateTracker {
         private long pendingSince;
         private long activeSince;
         private String alarmId;
+        private long lastOccurredAt;
+        private String ackedBy;
+        private long ackedAt;
+        private String ackNote;
+        private String ackIdempotencyKey;
+        private long recoveredAt;
+        private String deviceId;
+        private String pointId;
+        private String ruleId;
+        private String ruleName;
 
         /**
          * 创建当前组件实例。
@@ -218,12 +304,25 @@ public class AlarmStateTracker {
         private RuleState(AlarmLifecycleState lifecycleState,
                           long pendingSince,
                           long activeSince,
-                          String alarmId) {
+                          String alarmId, long lastOccurredAt, String ackedBy,
+                          long ackedAt, String ackNote, String ackIdempotencyKey,
+                          long recoveredAt, String deviceId, String pointId, String ruleId, String ruleName) {
             this.lifecycleState = lifecycleState == null
                     ? AlarmLifecycleState.NORMAL : lifecycleState;
             this.pendingSince = pendingSince;
             this.activeSince = activeSince;
             this.alarmId = alarmId;
+            this.lastOccurredAt = lastOccurredAt == 0L && activeSince > 0L
+                    ? activeSince : lastOccurredAt;
+            this.ackedBy = ackedBy;
+            this.ackedAt = ackedAt;
+            this.ackNote = ackNote;
+            this.ackIdempotencyKey = ackIdempotencyKey;
+            this.recoveredAt = recoveredAt;
+            this.deviceId = deviceId;
+            this.pointId = pointId;
+            this.ruleId = ruleId;
+            this.ruleName = ruleName;
         }
     }
 }

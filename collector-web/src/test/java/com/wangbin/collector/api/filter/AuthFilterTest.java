@@ -319,6 +319,26 @@ class AuthFilterTest {
         assertThat(status(filter, operatorRequest)).isEqualTo(HttpServletResponse.SC_OK);
     }
 
+    @Test
+    void shouldSeparateCloudViewAndOperateScopes() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("cloud-operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.CLOUD_OPERATE));
+        properties.setAccessRules(List.of(
+                accessRule(List.of("POST"), List.of("/api/cloud/**"), AuthScope.CLOUD_OPERATE),
+                accessRule(List.of("GET"), List.of("/api/**", "/monitor/**"), AuthScope.VIEW)));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("GET", "/api/cloud/outbox", "viewer-token"))).isEqualTo(200);
+        assertThat(status(filter, request("GET", "/api/cloud/outbox/msg-1", "viewer-token"))).isEqualTo(200);
+        for (String path : List.of("/api/cloud/outbox/msg-1/replay", "/api/cloud/flush", "/api/cloud/test")) {
+            assertThat(status(filter, request("POST", path, "viewer-token"))).isEqualTo(403);
+            assertThat(status(filter, request("POST", path, "cloud-operator-token"))).isEqualTo(200);
+        }
+    }
+
     private AuthProperties controlAndShadowAuthProperties() {
         AuthProperties properties = new AuthProperties();
         properties.setAccessRules(List.of(

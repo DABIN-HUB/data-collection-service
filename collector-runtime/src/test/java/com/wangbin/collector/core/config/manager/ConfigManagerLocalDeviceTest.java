@@ -13,6 +13,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -43,6 +47,71 @@ class ConfigManagerLocalDeviceTest {
                 eventPublisher,
                 new FieldUniquenessValidator(),
                 null);
+    }
+
+    @Test
+    void shouldNotRestoreRemovedDeviceFromConcurrentFullRefresh() throws Exception {
+        assertTrue(configManager.updateDeviceConfig(device("removed")));
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(configSyncService.loadAllDevices()).thenAnswer(invocation -> {
+            reading.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS));
+            return List.of(device("removed"));
+        });
+        CompletableFuture<Void> refresh = CompletableFuture.runAsync(() ->
+                ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig"));
+        try {
+            assertTrue(reading.await(5, TimeUnit.SECONDS));
+            assertTrue(configManager.clearDeviceConfig("removed"));
+        } finally {
+            resume.countDown();
+        }
+        refresh.get(5, TimeUnit.SECONDS);
+        assertFalse(configManager.containsDevice("removed"));
+    }
+
+    @Test
+    void shouldNotOverwriteConcurrentConnectionReload() throws Exception {
+        assertTrue(configManager.updateDeviceConfig(device("reloaded")));
+        DeviceConnection changed = connection("reloaded");
+        changed.setHost("192.0.2.15");
+        when(configSyncService.loadConnectionConfig("reloaded")).thenReturn(changed);
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(configSyncService.loadAllDevices()).thenAnswer(invocation -> {
+            reading.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS));
+            return List.of(device("reloaded"));
+        });
+        CompletableFuture<Void> refresh = CompletableFuture.runAsync(() ->
+                ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig"));
+        try {
+            assertTrue(reading.await(5, TimeUnit.SECONDS));
+            ReflectionTestUtils.invokeMethod(configManager, "reloadConnectionConfig", "reloaded");
+        } finally {
+            resume.countDown();
+        }
+        refresh.get(5, TimeUnit.SECONDS);
+        assertEquals("192.0.2.15", configManager.getConnectionConfig("reloaded").getHost());
+    }
+
+    @Test
+    void shouldKeepCommittedBundleAndLegacyUpdateAfterEventFailure() {
+        assertTrue(configManager.updateDeviceConfig(device("event-failure")));
+        long version = configManager.getDeviceConfigVersion("event-failure");
+        doThrow(new IllegalStateException("listener failed")).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any());
+        DeviceInfo replacement = device("event-failure");
+        replacement.setDeviceName("committed");
+        assertTrue(configManager.updateDeviceConfig(replacement));
+        assertEquals("committed", configManager.getDevice("event-failure").getDeviceName());
+        long nextVersion = configManager.getDeviceConfigVersion("event-failure");
+        assertTrue(nextVersion > version);
+        DeviceInfo bundleDevice = device("event-failure");
+        bundleDevice.setDeviceName("bundle committed");
+        configManager.replaceDeviceContextAtomically("event-failure", bundleDevice, null, List.of(), nextVersion);
+        assertEquals("bundle committed", configManager.getDevice("event-failure").getDeviceName());
+        assertTrue(configManager.getDeviceConfigVersion("event-failure") > nextVersion);
     }
 
     @Test

@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -152,6 +153,54 @@ public class CloudOutboxServiceTest {
         assertEquals(CloudOutboxStatus.PUBLISHING, restored.getStatus());
     }
 
+    @Test
+    void replayOnlyIsolatedAndRestoreDuePendingWithoutChangingAttempts() {
+        CloudOutboxService service = new CloudOutboxService(repository, coordinator,
+                mock(ReportManager.class), mock(ReportConfigProvider.class), properties);
+        CloudOutboxMessage isolated = message("isolated", "dev-a");
+        isolated.setStatus(CloudOutboxStatus.ISOLATED);
+        isolated.setAttempts(2);
+        isolated.setLastError("cloud unavailable");
+        repository.saveIfAbsent(isolated, Long.MAX_VALUE);
+
+        assertTrue(service.replay("isolated"));
+        CloudOutboxMessage replayed = repository.find("isolated").orElseThrow();
+        assertEquals(CloudOutboxStatus.PENDING, replayed.getStatus());
+        assertEquals(2, replayed.getAttempts());
+        assertEquals(null, replayed.getLastError());
+        assertTrue(replayed.getNextAttemptAt() <= System.currentTimeMillis());
+        assertFalse(service.replay("isolated"));
+        assertFalse(service.replay("missing"));
+    }
+
+    @Test
+    void replayRejectsEveryNonIsolatedStatus() {
+        CloudOutboxService service = new CloudOutboxService(repository, coordinator,
+                mock(ReportManager.class), mock(ReportConfigProvider.class), properties);
+        for (CloudOutboxStatus status : CloudOutboxStatus.values()) {
+            if (status == CloudOutboxStatus.ISOLATED) continue;
+            CloudOutboxMessage message = message(status.name(), "dev-a");
+            message.setStatus(status);
+            repository.saveIfAbsent(message, Long.MAX_VALUE);
+            assertFalse(service.replay(message.getMessageId()), status.name());
+            assertEquals(status, repository.find(message.getMessageId()).orElseThrow().getStatus());
+        }
+    }
+
+    @Test
+    void replayReturnsConflictWhenIsolationChangesAfterRead() {
+        CloudOutboxRepository backend = mock(CloudOutboxRepository.class);
+        CloudOutboxMessage stale = message("stale", "dev-a");
+        stale.setStatus(CloudOutboxStatus.ISOLATED);
+        when(backend.find("stale")).thenReturn(Optional.of(stale));
+        when(backend.replayIsolated(stale)).thenReturn(false);
+        CloudOutboxService service = new CloudOutboxService(backend, coordinator,
+                mock(ReportManager.class), mock(ReportConfigProvider.class), properties);
+
+        assertFalse(service.replay("stale"));
+        verify(backend, never()).reschedule(stale);
+    }
+
     private CloudOutboxMessage message(String messageId, String localDeviceId) {
         ReportData data = reportData("cloud-" + localDeviceId);
         data.addMetadata(MessageConstant.FIELD_MESSAGE_ID, messageId);
@@ -222,6 +271,12 @@ public class CloudOutboxServiceTest {
         @Override
         public boolean rescheduleIfPresent(CloudOutboxMessage message) {
             return messages.replace(message.getMessageId(), message) != null;
+        }
+
+        @Override
+        public boolean replayIsolated(CloudOutboxMessage message) {
+            return messages.computeIfPresent(message.getMessageId(), (id, current) ->
+                    current.getStatus() == CloudOutboxStatus.ISOLATED ? message : current) == message;
         }
 
         @Override
