@@ -2,6 +2,7 @@ package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
+import com.wangbin.collector.api.filter.RequestCorrelationFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -112,10 +113,15 @@ class ShadowControllerTest {
                 .thenThrow(new ShadowManager.ShadowVersionConflictException(2L, 3L));
 
         mockMvc.perform(post("/api/shadow/dev-1/desired")
+                        .requestAttr(RequestCorrelationFilter.ATTR_REQUEST_ID, "shadow-409")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(Map.of(
                                 "expectedVersion", 2, "properties", Map.of("temperature", 26)))))
                 .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is(409)))
+                .andExpect(jsonPath("$.status", is("error")))
+                .andExpect(jsonPath("$.machineCode", is("SHADOW_VERSION_CONFLICT")))
+                .andExpect(jsonPath("$.extra.requestId", is("shadow-409")))
                 .andExpect(jsonPath("$.data.expectedVersion", is(2)))
                 .andExpect(jsonPath("$.data.currentVersion", is(3)));
     }

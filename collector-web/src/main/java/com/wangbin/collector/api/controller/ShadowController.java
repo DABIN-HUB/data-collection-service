@@ -2,12 +2,14 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.controller.dto.DeviceShadowDeltaResponse;
 import com.wangbin.collector.api.controller.dto.DeviceShadowResponse;
+import com.wangbin.collector.api.error.ApiErrorResponseFactory;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -87,14 +89,12 @@ public class ShadowController {
      */
     @ExceptionHandler(ShadowManager.ShadowVersionConflictException.class)
     public ResponseEntity<ApiResult<Map<String, Object>>> handleShadowVersionConflict(
-            ShadowManager.ShadowVersionConflictException exception) {
+            ShadowManager.ShadowVersionConflictException exception, HttpServletRequest request) {
         Map<String, Object> data = Map.of(
                 "expectedVersion", exception.getExpectedVersion(),
                 "currentVersion", exception.getActualVersion() == null ? 0L : exception.getActualVersion());
-        ApiResult<Map<String, Object>> result = ApiResult.statusError("SHADOW_VERSION_CONFLICT",
+        return ApiErrorResponseFactory.response(request, HttpStatus.CONFLICT, "SHADOW_VERSION_CONFLICT",
                 "设备影子已发生变化，请重新读取后确认 desired", data);
-        result.setData(data);
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
     }
 
     private Long extractExpectedVersion(Map<String, Object> request) {

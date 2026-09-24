@@ -3,6 +3,7 @@ package com.wangbin.collector.api.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.api.controller.dto.AlarmLifecycleResponse;
+import com.wangbin.collector.api.exception.AlarmQueryValidationException;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgement;
 import com.wangbin.collector.monitor.alert.AlarmAcknowledgementService;
 import com.wangbin.collector.core.alarm.AlarmStateRepository;
@@ -49,11 +50,11 @@ public class AlarmLifecycleApplicationService {
     /** 查询触发事件并叠加不限于级别过滤范围内的恢复事件。 */
     public AlarmLifecycleResponse query(String deviceId, String pointId, String pointCode, String ruleId,
                                         String level, String state, Long startTs, Long endTs, Integer limit) {
+        String normalizedState = normalizeState(state);
+        int targetLimit = resolveLimit(limit);
         if (history == null || !history.isEnabled()) {
             return new AlarmLifecycleResponse("disabled", List.of(), 0);
         }
-        String normalizedState = normalizeState(state);
-        int targetLimit = resolveLimit(limit);
         if (normalizedState == null) {
             List<Map<String, Object>> activations = history.queryRecentAlarmActivations(
                     deviceId, pointId, pointCode, ruleId, level, startTs, endTs, targetLimit);
@@ -98,7 +99,7 @@ public class AlarmLifecycleApplicationService {
         }
         String normalized = state.trim().toUpperCase(java.util.Locale.ROOT);
         if (!List.of("ACTIVE", "ACKED", "RECOVERED").contains(normalized)) {
-            throw new IllegalArgumentException("state 仅支持 ACTIVE、ACKED 或 RECOVERED");
+            throw new AlarmQueryValidationException("告警状态仅支持 ACTIVE、ACKED、RECOVERED");
         }
         return normalized;
     }
@@ -108,7 +109,7 @@ public class AlarmLifecycleApplicationService {
             return 100;
         }
         if (limit <= 0) {
-            throw new IllegalArgumentException("limit 必须大于 0");
+            throw new AlarmQueryValidationException("limit 必须大于 0");
         }
         return Math.min(limit, 200);
     }

@@ -6,6 +6,7 @@ import com.wangbin.collector.api.controller.dto.CloudOutboxDetailResponse;
 import com.wangbin.collector.api.controller.dto.CloudOutboxItemResponse;
 import com.wangbin.collector.api.controller.dto.CloudTestResponse;
 import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
+import com.wangbin.collector.api.filter.RequestCorrelationFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -48,8 +49,28 @@ class CloudOperationsControllerTest {
     @Test
     void shouldReturnMissingDetailAsErrorEnvelope() throws Exception {
         when(service.detail("missing")).thenReturn(Optional.empty());
-        mockMvc.perform(get("/api/cloud/outbox/missing"))
-                .andExpect(jsonPath("$.code", is(404)));
+        mockMvc.perform(get("/api/cloud/outbox/missing")
+                        .requestAttr(RequestCorrelationFilter.ATTR_REQUEST_ID, "cloud-404"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code", is(404)))
+                .andExpect(jsonPath("$.status", is("error")))
+                .andExpect(jsonPath("$.machineCode", is("RESOURCE_NOT_FOUND")))
+                .andExpect(jsonPath("$.extra.requestId", is("cloud-404")));
+    }
+
+    @Test
+    void shouldRejectReplayWhenMessageIsNotIsolated() throws Exception {
+        when(service.detail("pending")).thenReturn(Optional.of(CloudOutboxDetailResponse.builder()
+                .summary(CloudOutboxItemResponse.builder().messageId("pending")
+                        .status(CloudOutboxStatus.PENDING).build()).build()));
+
+        mockMvc.perform(post("/api/cloud/outbox/pending/replay")
+                        .requestAttr(RequestCorrelationFilter.ATTR_REQUEST_ID, "cloud-409"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is(409)))
+                .andExpect(jsonPath("$.status", is("error")))
+                .andExpect(jsonPath("$.machineCode", is("CLOUD_OUTBOX_STATE_CONFLICT")))
+                .andExpect(jsonPath("$.extra.requestId", is("cloud-409")));
     }
 
     @Test

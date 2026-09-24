@@ -1,5 +1,7 @@
 package com.wangbin.collector.api.filter;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.api.filter.config.AuthProperties;
 import com.wangbin.collector.api.filter.config.AuthScope;
 import com.wangbin.collector.api.filter.config.AccessLogProperties;
@@ -19,10 +21,69 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
+import org.slf4j.MDC;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthFilterTest {
+
+    @Test
+    void rejectedRequestSharesGeneratedIdAcrossHeaderAndErrorBody() throws Exception {
+        MockHttpServletRequest request = request("GET", "/api/config/devices", null);
+        MockHttpServletResponse response = correlatedAuth(new AuthProperties(), request);
+
+        assertError(response, 401, "AUTH_REQUIRED");
+        assertThat(new ObjectMapper().readTree(response.getContentAsString()).path("message").asText())
+                .isEqualTo("认证失败");
+        assertThat(MDC.get(RequestCorrelationFilter.MDC_REQUEST_ID)).isNull();
+    }
+
+    @Test
+    void deniedScopeIncludesRequiredScopeAndRequestId() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("view-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        MockHttpServletRequest request = request("POST", "/api/control/device/dev-1/point/p1", "view-token");
+        request.addHeader("X-Request-Id", "abc-123");
+
+        MockHttpServletResponse response = correlatedAuth(properties, request);
+
+        assertError(response, 403, "PERMISSION_DENIED");
+        assertThat(response.getHeader("X-Request-Id")).isEqualTo("abc-123");
+        assertThat(new ObjectMapper().readTree(response.getContentAsString()).path("data")
+                .path("requiredScope").asText()).isEqualTo("DEVICE_CONTROL");
+    }
+
+    @Test
+    void oversizedSignedBodyUsesSameErrorContract() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.setMaxSignedBodyBytes(1);
+        MockHttpServletRequest request = request("POST", "/api/config/device/dev-1", null);
+        request.addHeader(properties.getServiceHeader(), "client-1");
+        request.setContent("{}".getBytes(StandardCharsets.UTF_8));
+
+        assertError(correlatedAuth(properties, request), 413, "REQUEST_BODY_TOO_LARGE");
+    }
+
+    private MockHttpServletResponse correlatedAuth(AuthProperties properties, MockHttpServletRequest request)
+            throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        RequestCorrelationFilter correlation = new RequestCorrelationFilter(new AccessLogProperties());
+        AuthFilter auth = new AuthFilter(properties, Clock.systemUTC());
+        correlation.doFilter(request, response, (servletRequest, servletResponse) ->
+                auth.doFilter(servletRequest, servletResponse, new MockFilterChain()));
+        return response;
+    }
+
+    private void assertError(MockHttpServletResponse response, int code, String machineCode) throws Exception {
+        JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
+        assertThat(response.getStatus()).isEqualTo(code);
+        assertThat(body.path("code").asInt()).isEqualTo(code);
+        assertThat(body.path("status").asText()).isEqualTo("error");
+        assertThat(body.path("machineCode").asText()).isEqualTo(machineCode);
+        assertThat(body.path("extra").path("requestId").asText()).isNotBlank()
+                .isEqualTo(response.getHeader("X-Request-Id"));
+    }
 
     @Test
     void shouldAllowOpsToken() throws Exception {

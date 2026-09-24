@@ -5,9 +5,11 @@ import com.wangbin.collector.api.controller.dto.CloudFlushResponse;
 import com.wangbin.collector.api.controller.dto.CloudOutboxDetailResponse;
 import com.wangbin.collector.api.controller.dto.CloudOutboxItemResponse;
 import com.wangbin.collector.api.controller.dto.CloudTestResponse;
+import com.wangbin.collector.api.error.ApiErrorResponseFactory;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,29 +30,23 @@ public class CloudOperationsController {
     }
 
     @GetMapping("/outbox/{messageId}")
-    public ResponseEntity<ApiResult<CloudOutboxDetailResponse>> detail(@PathVariable String messageId) {
+    public ResponseEntity<ApiResult<CloudOutboxDetailResponse>> detail(@PathVariable String messageId,
+                                                                       HttpServletRequest request) {
         return service.detail(messageId).map(value -> ResponseEntity.ok(ApiResult.success(value)))
-                .orElseGet(() -> {
-                    ApiResult<CloudOutboxDetailResponse> result = ApiResult.statusError(
-                            "RESOURCE_NOT_FOUND", "云端发件箱消息不存在", null);
-                    result.setCode(HttpStatus.NOT_FOUND.value());
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
-                });
+                .orElseGet(() -> ApiErrorResponseFactory.response(request, HttpStatus.NOT_FOUND,
+                        "RESOURCE_NOT_FOUND", "云端发件箱消息不存在", null));
     }
 
     @PostMapping("/outbox/{messageId}/replay")
-    public ResponseEntity<ApiResult<Void>> replay(@PathVariable String messageId) {
+    public ResponseEntity<ApiResult<Void>> replay(@PathVariable String messageId, HttpServletRequest request) {
         var detail = service.detail(messageId);
         if (detail.isEmpty()) {
-            ApiResult<Void> result = ApiResult.statusError("RESOURCE_NOT_FOUND", "云端发件箱消息不存在", null);
-            result.setCode(HttpStatus.NOT_FOUND.value());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
+            return ApiErrorResponseFactory.response(request, HttpStatus.NOT_FOUND,
+                    "RESOURCE_NOT_FOUND", "云端发件箱消息不存在", null);
         }
         if (detail.get().getSummary().getStatus() != CloudOutboxStatus.ISOLATED || !service.replay(messageId).isSuccess()) {
-            ApiResult<Void> result = ApiResult.statusError("CLOUD_OUTBOX_STATE_CONFLICT",
-                    "消息状态已发生变化，请刷新列表后重试", null);
-            result.setCode(HttpStatus.CONFLICT.value());
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
+            return ApiErrorResponseFactory.response(request, HttpStatus.CONFLICT,
+                    "CLOUD_OUTBOX_STATE_CONFLICT", "消息状态已发生变化，请刷新列表后重试", null);
         }
         return ResponseEntity.ok(ApiResult.success("云端发件箱消息已重新进入发送队列", null));
     }

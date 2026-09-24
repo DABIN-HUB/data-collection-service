@@ -1,6 +1,6 @@
 package com.wangbin.collector.api.exception;
 
-import com.wangbin.collector.api.filter.RequestCorrelationFilter;
+import com.wangbin.collector.api.error.ApiErrorResponseFactory;
 import com.wangbin.collector.common.web.result.ApiResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -35,20 +35,15 @@ public class ApiValidationExceptionHandler {
         return error(request, errors);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ApiResult<Map<String, String>>> handleIllegalArgument(
-            IllegalArgumentException exception, HttpServletRequest request) {
+    @ExceptionHandler(AlarmQueryValidationException.class)
+    public ResponseEntity<ApiResult<Map<String, String>>> handleAlarmQueryValidation(
+            AlarmQueryValidationException exception, HttpServletRequest request) {
         return error(request, Map.of("request", exception.getMessage()));
     }
 
     private ResponseEntity<ApiResult<Map<String, String>>> error(HttpServletRequest request,
                                                                   Map<String, String> data) {
-        ApiResult<Map<String, String>> result = ApiResult.statusError(
+        return ApiErrorResponseFactory.response(request, HttpStatus.BAD_REQUEST,
                 "VALIDATION_ERROR", "请求参数校验失败", data);
-        Object requestId = request.getAttribute(RequestCorrelationFilter.ATTR_REQUEST_ID);
-        if (requestId != null) {
-            result.setRequestId(String.valueOf(requestId));
-        }
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result);
     }
 }

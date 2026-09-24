@@ -92,6 +92,31 @@ describe("http", () => {
     expect(unwrapApiResponse<ApiResult<null>>(body, "envelope")).toEqual(body);
   });
 
+  it("业务错误保留 machineCode、requestId、code 和 HTTP 状态码", () => {
+    const body = {
+      status: "error",
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      message: "配置版本冲突",
+      extra: { requestId: "request-123" }
+    };
+
+    try {
+      unwrapApiResponse(body, 412);
+      throw new Error("should throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiRequestError);
+      expect(error).toMatchObject({
+        message: "配置版本冲突",
+        httpStatus: 412,
+        code: 409,
+        machineCode: "CONFIG_VERSION_CONFLICT",
+        requestId: "request-123",
+        body
+      });
+    }
+  });
+
   it("把业务错误转换成包含状态码的异常", () => {
     expect(() => unwrapApiResponse({ code: 403, message: "权限不足" })).toThrow("权限不足");
   });
@@ -194,6 +219,30 @@ describe("http", () => {
     configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "" });
 
     await expect(request({ url: "/api/protocols", method: "GET" })).rejects.toThrow("接口访问令牌缺失或无效");
+  });
+
+  it("Electron 代理业务错误保留 machineCode、requestId、code", async () => {
+    const body = {
+      status: "error",
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      message: "配置版本冲突",
+      extra: { requestId: "request-456" }
+    };
+    installDesktopProxy(vi.fn().mockResolvedValue({
+      status: 409,
+      statusText: "Conflict",
+      headers: {},
+      body
+    }));
+
+    await expect(request({ url: "/api/config/devices", method: "POST" })).rejects.toMatchObject({
+      httpStatus: 409,
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      requestId: "request-456",
+      body
+    });
   });
 
   it("Electron 代理返回非 ApiResult 的 HTTP 错误时也不会误判成功", async () => {
