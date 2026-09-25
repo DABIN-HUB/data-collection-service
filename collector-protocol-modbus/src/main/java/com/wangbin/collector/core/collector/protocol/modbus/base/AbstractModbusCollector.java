@@ -111,7 +111,11 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
             if (parts.length != 2) throw new IllegalArgumentException("Invalid Modbus address: " + address);
             RegisterType type = parseRegisterTypeToken(parts[0]);
             int value = parseAddressNumber(parts[1], address);
-            int offset = value >= 10000 ? value % 10000 - 1 : value;
+            // 0x00001 的前导零也属于五位引用地址，不能按整数 1 当作原始偏移。
+            boolean reference = parts[1].length() == 5
+                    && parts[1].charAt(0) == parts[0].charAt(0)
+                    && Character.isDigit(parts[1].charAt(0));
+            int offset = reference || value >= 10000 ? value % 10000 - 1 : value;
             return new ModbusAddress(type, validateOffset(offset, address));
         }
         int value = parseAddressNumber(text, address);

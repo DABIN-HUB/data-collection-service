@@ -89,9 +89,9 @@ public class ModbusReadPlanBuilder {
                 continue;
             }
 
-            int expectedAddress = chunkStart + chunkQuantity;
-            boolean contiguous = address == expectedAddress;
-            boolean exceedsLimit = chunkQuantity + registerCount > limit;
+            int pointEnd = address + registerCount;
+            boolean contiguous = address <= chunkStart + chunkQuantity;
+            boolean exceedsLimit = pointEnd - chunkStart > limit;
 
             if (!contiguous || exceedsLimit) {
                 plans.add(buildPlan(deviceId, unitId, type, chunkStart, chunkQuantity, chunk));
@@ -101,7 +101,7 @@ public class ModbusReadPlanBuilder {
                 chunkQuantity = registerCount;
             } else {
                 chunk.add(gp);
-                chunkQuantity += registerCount;
+                chunkQuantity = Math.max(chunkQuantity, pointEnd - chunkStart);
             }
         }
 

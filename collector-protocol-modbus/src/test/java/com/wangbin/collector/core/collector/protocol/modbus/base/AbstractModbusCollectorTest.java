@@ -37,6 +37,33 @@ class AbstractModbusCollectorTest {
     }
 
     @Test
+    void shouldReadOverlappingRegisterPointsInOneSpan() {
+        RecordingTransport transport = new RecordingTransport();
+        transport.readResponse = new byte[]{0, 1, 0, 2};
+        TestModbusCollector collector = new TestModbusCollector(transport);
+        List<DataPoint> points = List.of(
+                point("wide", "4:0", "UINT32"),
+                point("narrow", "4:1", "UINT16"));
+
+        collector.rebuildReadPlans("dev-1", points);
+        Map<String, Object> values = collector.readRaw(points);
+
+        assertEquals(65538L, ((Number) values.get("wide")).longValue());
+        assertEquals(2, ((Number) values.get("narrow")).intValue());
+        assertEquals(List.of(new ReadCall(1, RegisterType.HOLDING_REGISTER, 0, 2)), transport.readCalls);
+    }
+
+    @Test
+    void shouldResolveTypedCoilReferenceToZeroBasedOffset() {
+        TestModbusCollector collector = new TestModbusCollector(new RecordingTransport());
+
+        assertEquals(RegisterType.COIL, collector.parseModbusAddress("0x00001").getRegisterType());
+        assertEquals(0, collector.parseModbusAddress("0x00001").getAddress());
+        assertEquals(0, collector.parseModbusAddress("4x40001").getAddress());
+        assertEquals(1, collector.parseModbusAddress("COIL:1").getAddress());
+    }
+
+    @Test
     void shouldNotWriteNullWhenReadPlanFails() {
         RecordingTransport transport = new RecordingTransport();
         transport.readFailure = new IllegalStateException("read failed");
