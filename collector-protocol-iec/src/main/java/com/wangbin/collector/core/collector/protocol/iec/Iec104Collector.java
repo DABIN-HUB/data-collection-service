@@ -424,7 +424,9 @@ public class Iec104Collector extends AbstractIce104Collector {
     protected void handleSpontaneous(int commonAddress, Integer typeId, int ioa, ASduType type, Object value, ASdu asdu) {
         super.handleSpontaneous(commonAddress, typeId, ioa, type, value, asdu);
         DataPoint point = findSpontaneousPoint(commonAddress, typeId, ioa);
-        if (point != null) {
+        log.debug("IEC104 测量映射：CA={}，ASDU={}，逻辑IOA={}，点位={}，匹配={}",
+                commonAddress, type, ioa, point != null ? point.getPointId() : null, point != null);
+        if (point != null && !"POLLING".equalsIgnoreCase(point.getCollectionMode())) {
             ingestPushedValue(point, value);
         }
     }

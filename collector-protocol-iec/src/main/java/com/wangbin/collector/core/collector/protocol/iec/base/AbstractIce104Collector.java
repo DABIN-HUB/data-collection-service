@@ -134,8 +134,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             CauseOfTransmission cot = asdu.getCauseOfTransmission();
             int commonAddr = asdu.getCommonAddress();
 
-            log.debug("IEC104 ASDU：类型={}，传送原因={}，否定确认={}",
-                    type, cot, asdu.isNegativeConfirm());
+            log.debug("IEC104 ASDU：类型={}，传送原因={}，公共地址={}，连续序列={}，元素数={}，否定确认={}",
+                    type, cot, commonAddr, asdu.isSequenceOfElements(),
+                    asdu.getSequenceLength(), asdu.isNegativeConfirm());
 
             if (type == ASduType.C_IC_NA_1) {
                 handleInterrogationAsdu(asdu);
@@ -154,26 +155,28 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             }
 
             boolean isResponse = isResponseCause(cot);
+            Integer typeId = Iec104Utils.resolveTypeId(type);
 
             for (InformationObject io : ios) {
                 int rawIoa = io.getInformationObjectAddress();
-                int ioa = fromWireIoa(rawIoa);
                 InformationElement[][] elements = io.getInformationElements();
-
-                Object value = null;
-                if (elements != null && elements.length > 0) {
-                    value = parseValue(type, elements[0]);
+                int count = asdu.isSequenceOfElements() && elements != null ? elements.length : 1;
+                for (int i = 0; i < count; i++) {
+                    // j60870 的 sequence 只携带起始 IOA，每个元素组对应后续连续地址。
+                    int wireIoa = sequenceWireIoa(rawIoa, i);
+                    int ioa = fromWireIoa(wireIoa);
+                    Object value = elements != null && i < elements.length
+                            ? parseValue(type, elements[i]) : null;
+                    Object normalized = normalizeValue(value);
+                    boolean pendingRead = hasPendingRequest(commonAddr, typeId, ioa);
+                    cacheValue(commonAddr, typeId, ioa, normalized);
+                    completeRequest(commonAddr, typeId, ioa, normalized);
+                    if (!isResponse || (type != null && type.name().startsWith("M_")
+                            && normalized != null && !pendingRead)) {
+                        handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
+                    }
+                    result.put(String.valueOf(ioa), normalized);
                 }
-                Integer typeId = Iec104Utils.resolveTypeId(type);
-                Object normalized = normalizeValue(value);
-                cacheValue(commonAddr, typeId, ioa, normalized);
-
-                completeRequest(commonAddr, typeId, ioa, normalized);
-                if (!isResponse) {
-                    handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
-                }
-
-                result.put(String.valueOf(ioa), normalized);
             }
 
         } catch (Exception e) {
@@ -352,6 +355,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             completePendingKey(new Iec104Key(commonAddress, typeId, ioAddress), value);
         }
         completePendingKey(new Iec104Key(commonAddress, null, ioAddress), value);
+    }
+
+    private boolean hasPendingRequest(int commonAddress, Integer typeId, int ioAddress) {
+        return (typeId != null && pendingRequests.containsKey(new Iec104Key(commonAddress, typeId, ioAddress)))
+                || pendingRequests.containsKey(new Iec104Key(commonAddress, null, ioAddress));
+    }
+
+    /**
+     * 按 IEC104 的地址编码模式计算 sequence 中每个元素的 wire IOA。
+     * SHIFT8_COMPAT 的每个逻辑地址占用一个 256 对齐的 wire 地址，不能在解码后再累加逻辑地址。
+     */
+    private int sequenceWireIoa(int rawIoa, int elementIndex) {
+        long increment = ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT
+                ? (long) elementIndex << 8 : elementIndex;
+        long wireIoa = Math.addExact((long) rawIoa, increment);
+        validateIoa(wireIoa);
+        return (int) wireIoa;
     }
 
     /**

@@ -84,13 +84,25 @@ public final class OpcUaAddressParser {
      * 解析或转换业务数据。
      */
     private static NodeId resolveNodeId(DataPoint point, Map<String, Object> config) {
-        String explicit = firstNonBlank(
-                asString(config.get("nodeId")),
-                asString(config.get("id")),
-                point.getAddress()
-        );
-        if (explicit != null && !explicit.isBlank()) {
-            return parseNodeId(explicit.trim());
+        String configuredNodeId = asString(config.get("nodeId"));
+        String configuredId = asString(config.get("id"));
+        String pointAddress = point.getAddress();
+        NodeId canonical = null;
+        for (String candidate : new String[]{configuredNodeId, configuredId, pointAddress}) {
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            NodeId parsed = parseNodeId(candidate.trim());
+            if (canonical == null) {
+                canonical = parsed;
+            } else if (!canonical.equals(parsed)) {
+                throw new IllegalArgumentException("OPC UA NodeId 配置冲突: pointId=" + point.getPointId()
+                        + ", nodeId=" + configuredNodeId + ", id=" + configuredId
+                        + ", address=" + pointAddress);
+            }
+        }
+        if (canonical != null) {
+            return canonical;
         }
 
         int namespace = parseInt(firstPresent(config, "namespace", "ns"), 0);

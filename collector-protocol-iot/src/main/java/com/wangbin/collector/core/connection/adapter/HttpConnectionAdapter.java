@@ -379,8 +379,10 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      * 创建并返回业务对象。
      */
     private String buildFullUrl(String endpoint) {
-        // 确保 endpoint 以 / 开头
-        if (!endpoint.startsWith("/")) {
+        // 空路径表示直接请求配置的完整 URL，不能自动补斜杠改变资源路径。
+        if (endpoint == null || endpoint.isEmpty()) {
+            endpoint = "";
+        } else if (!endpoint.startsWith("/")) {
             endpoint = "/" + endpoint;
         }
 

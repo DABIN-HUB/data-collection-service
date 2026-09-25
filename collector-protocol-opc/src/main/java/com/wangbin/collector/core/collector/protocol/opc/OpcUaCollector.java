@@ -100,16 +100,10 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         List<NodeId> nodeIds = new ArrayList<>(points.size());
         for (DataPoint point : points) {
-            OpcUaAddress address = resolveAddress(point);
+            resolveAddress(point);
             nodeIds.add(resolveNodeId(point));
         }
-        List<DataValue> dataValues = readValues(nodeIds);
-        for (int i = 0; i < points.size(); i++) {
-            DataValue value = dataValues.get(i);
-            values.put(points.get(i).getPointId(), value != null && value.getValue() != null
-                    ? value.getValue().getValue() : null);
-        }
-        return values;
+        return readValues(points, nodeIds);
     }
 
     /**
@@ -288,7 +282,12 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
      * 处理当前业务流程。
      */
     private void handleNotification(DataPoint point, OpcUaAddress address, DataValue value) {
-        Object payload = value != null && value.getValue() != null ? value.getValue().getValue() : null;
+        if (!isGoodRead(value)) {
+            log.warn("OPC UA 订阅点位读取失败: 设备={}，点位={}，状态={}",
+                    deviceInfo.getDeviceId(), point.getPointId(), readStatus(value));
+            return;
+        }
+        Object payload = value.getValue() != null ? value.getValue().getValue() : null;
         ingestPushedValue(point, payload);
         log.info("OPC UA push 设备={} 点位={} 值={}",
                 deviceInfo.getDeviceId(), point.getPointId(), payload);
@@ -307,13 +306,17 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
                 .map(this::resolveNodeIdForCommand)
                 .collect(Collectors.toList());
         List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, readTargets);
+        if (values == null || values.size() != nodeIds.size()) {
+            throw new IllegalStateException("OPC UA 命令读取响应数量不匹配: requested=" + nodeIds.size()
+                    + ", received=" + (values == null ? "null" : values.size()));
+        }
         List<Map<String, Object>> response = new ArrayList<>(nodeIds.size());
         for (int i = 0; i < nodeIds.size(); i++) {
             DataValue value = values.get(i);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("nodeId", nodeIds.get(i));
-            item.put("value", value != null && value.getValue() != null ? value.getValue().getValue() : null);
-            item.put("status", value != null && value.getStatusCode() != null ? value.getStatusCode().toString() : "null");
+            item.put("value", isGoodRead(value) && value.getValue() != null ? value.getValue().getValue() : null);
+            item.put("status", readStatus(value));
             item.put("sourceTimestamp", value != null && value.getSourceTime() != null ? value.getSourceTime().getJavaDate() : null);
             response.add(item);
         }

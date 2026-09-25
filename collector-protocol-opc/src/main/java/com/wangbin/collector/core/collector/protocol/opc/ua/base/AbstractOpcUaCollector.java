@@ -99,12 +99,33 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      */
     protected Object readValue(OpcUaAddress address, NodeId nodeId) throws Exception {
         DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
-        return value != null && value.getValue() != null ? value.getValue().getValue() : null;
+        if (!isGoodRead(value)) {
+            throw new IllegalStateException("OPC UA 读取失败: nodeId=" + nodeId + ", status=" + readStatus(value));
+        }
+        return value.getValue() != null ? value.getValue().getValue() : null;
+    }
+
+    protected boolean isGoodRead(DataValue value) {
+        return value != null && value.getStatusCode() != null && value.getStatusCode().isGood();
+    }
+
+    protected String readStatus(DataValue value) {
+        return value != null && value.getStatusCode() != null ? value.getStatusCode().toString() : "null";
     }
 
     protected NodeId resolveNodeId(DataPoint point) {
         DeviceConnection connection = requireConnectionConfig();
-        return nodeIdResolver.resolve(point, connection);
+        NodeId resolved = nodeIdResolver.resolve(point, connection);
+        log.debug("OPC UA NodeId 解析：设备={}，点位={}，pointCode={}，address={}，additionalConfig.nodeId={}，additionalConfig.id={}，aliasMode={}，prefix={}，resolved={}",
+                deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                point != null ? point.getPointId() : null,
+                point != null ? point.getPointCode() : null,
+                point != null ? point.getAddress() : null,
+                point != null ? point.getAdditionalConfig("nodeId") : null,
+                point != null ? point.getAdditionalConfig("id") : null,
+                connection.getString("nodeIdAliasMode", "NONE"),
+                connection.getString("nodeIdPrefix", ""), resolved);
+        return resolved;
     }
 
     protected NodeId resolveNodeIdForCommand(NodeId nodeId) {
@@ -117,11 +138,28 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
     protected Map<String, Object> readValues(List<DataPoint> points, List<NodeId> nodeIds) throws Exception {
         List<DataValue> values = readValues(nodeIds);
+        if (values == null || values.size() != points.size()) {
+            throw new IllegalStateException("OPC UA 批量响应数量不匹配: requested=" + points.size()
+                    + ", received=" + (values == null ? "null" : values.size()));
+        }
         Map<String, Object> result = new HashMap<>();
+        String firstFailure = null;
         for (int i = 0; i < points.size(); i++) {
             DataValue value = values.get(i);
-            result.put(points.get(i).getPointId(), value != null && value.getValue() != null
+            if (!isGoodRead(value)) {
+                String failure = "pointId=" + points.get(i).getPointId() + ", nodeId=" + nodeIds.get(i)
+                        + ", status=" + readStatus(value);
+                if (firstFailure == null) {
+                    firstFailure = failure;
+                }
+                log.warn("OPC UA 批量读取点位失败: {}", failure);
+                continue;
+            }
+            result.put(points.get(i).getPointId(), value.getValue() != null
                     ? value.getValue().getValue() : null);
+        }
+        if (result.isEmpty() && firstFailure != null) {
+            throw new IllegalStateException("OPC UA 批量读取全部失败: " + firstFailure);
         }
         return result;
     }

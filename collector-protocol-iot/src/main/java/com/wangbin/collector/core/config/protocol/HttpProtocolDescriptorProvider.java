@@ -27,10 +27,10 @@ public class HttpProtocolDescriptorProvider implements ProtocolDescriptorProvide
                         registry.field("port", "number", "Port", false, "8080", null, "connection"),
                         registry.field("sslEnabled", "boolean", "Enable HTTPS", false, "false",
                                 List.of("true", "false"), "security"),
-                        registry.field("path", "string", "Base path", false, "", null, "request"),
-                        registry.field("method", "select", "Request method", false, "POST",
+                        registry.field("path", "string", "直接请求路径（完整 URL 已含路径时留空）", false, "", null, "request"),
+                        registry.field("method", "select", "请求方法（直接读取一般使用 GET）", false, "POST",
                                 List.of("GET", "POST", "PUT", "DELETE", "HEAD"), "request"),
-                        registry.field("requestMode", "select", "Request mode", false, "AUTO_COMPAT",
+                        registry.field("requestMode", "select", "请求模式（直接读取选 DIRECT，历史配置保留 AUTO_COMPAT）", false, "AUTO_COMPAT",
                                 List.of("AUTO_COMPAT", "ENVELOPE", "DIRECT"), "request"),
                         registry.field("headers", "object", "Request headers", false, "{}", null, "request"),
                         registry.field("queryParams", "object", "Query parameters", false, "{}", null, "request"),
@@ -52,12 +52,12 @@ public class HttpProtocolDescriptorProvider implements ProtocolDescriptorProvide
                         registry.field("authParams", "object", "Extended auth params", false, "{}", null, "security"),
                         registry.field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
-                        registry.field("responseMode", "select", "Response extraction mode", false, "RAW",
+                        registry.field("responseMode", "select", "响应提取模式（点位数组选择 POINT_ARRAY）", false, "RAW",
                                 List.of("RAW", "JSON_PATH", "POINT_ARRAY"), "response"),
-                        registry.field("responsePath", "string", "JSONPath response path", false, "$.value", null, "response"),
-                        registry.field("responseArrayPath", "string", "Response array JSONPath", false, "$.points", null, "response"),
-                        registry.field("responseKeyField", "string", "Response array key field", false, "name", null, "response"),
-                        registry.field("responseValueField", "string", "Response array value field", false, "value", null, "response"))));
+                        registry.field("responsePath", "string", "JSONPath 响应路径", false, "$.value", null, "response"),
+                        registry.field("responseArrayPath", "string", "点位数组路径，例如 $.points", false, "$.points", null, "response"),
+                        registry.field("responseKeyField", "string", "数组点位键字段，例如 name", false, "name", null, "response"),
+                        registry.field("responseValueField", "string", "数组点位值字段，例如 value", false, "value", null, "response"))));
 
         registry.registerAlias("HTTPS", "HTTP", cfg -> {
             cfg.setSslEnabled(true);

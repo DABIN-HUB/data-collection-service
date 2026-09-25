@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.opc.ua.address;
 
+import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OpcUaNodeIdResolverTest {
 
@@ -34,6 +36,27 @@ class OpcUaNodeIdResolverTest {
     void blankPrefixKeepsNodeIdUnchanged() {
         NodeId original = NodeId.parse("ns=2;s=Joint1");
         assertEquals(original, resolver.resolve(original, connection("PREFIX", "")));
+    }
+
+    @Test
+    void protoForgeTemplateAddressRequiresExplicitAliasConfiguration() {
+        DataPoint point = new DataPoint();
+        point.setPointId("joint1_angle");
+        point.setAddress("ns=2;s=Joint1");
+        assertEquals(NodeId.parse("ns=2;s=Joint1"), resolver.resolve(point, new DeviceConnection()));
+        DeviceConnection alias = connection("PREFIX", "pf_proto_opcua");
+        assertEquals(NodeId.parse("ns=2;s=pf_proto_opcua.Joint1"), resolver.resolve(point, alias));
+        point.setAddress("ns=2;s=pf_proto_opcua.Joint1");
+        assertEquals(NodeId.parse("ns=2;s=pf_proto_opcua.Joint1"), resolver.resolve(point, alias));
+    }
+
+    @Test
+    void conflictingNodeIdSourcesAreRejected() {
+        DataPoint point = new DataPoint();
+        point.setPointId("joint1_angle");
+        point.setAddress("ns=2;s=Joint1");
+        point.setAdditionalConfig(Map.of("nodeId", "ns=2;s=OldJoint1"));
+        assertThrows(IllegalArgumentException.class, () -> resolver.resolve(point, new DeviceConnection()));
     }
 
     private DeviceConnection connection(String mode, String prefix) {

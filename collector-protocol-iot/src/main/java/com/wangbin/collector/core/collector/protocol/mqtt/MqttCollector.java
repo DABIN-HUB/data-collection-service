@@ -106,12 +106,15 @@ public class MqttCollector extends ConnectionBackedCollector {
      */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-        Map<String, Object> result = new ConcurrentHashMap<>();
+        Map<String, Object> result = new HashMap<>();
         if (points == null) {
             return result;
         }
         for (DataPoint point : points) {
-            result.put(point.getPointId(), latestValues.get(point.getPointId()));
+            Object value = latestValues.get(point.getPointId());
+            if (value != null) {
+                result.put(point.getPointId(), value);
+            }
         }
         return result;
     }
