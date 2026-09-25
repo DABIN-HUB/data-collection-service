@@ -24,6 +24,13 @@ public interface ConnectionAdapter<C> {
     void disconnect() throws Exception;
 
     /**
+     * 最终释放客户端和后台资源；即使连接状态已经变为 DISCONNECTED 也必须执行。
+     */
+    default void closeResources() throws Exception {
+        disconnect();
+    }
+
+    /**
      * 处理连接生命周期。
      */
     void reconnect() throws Exception;

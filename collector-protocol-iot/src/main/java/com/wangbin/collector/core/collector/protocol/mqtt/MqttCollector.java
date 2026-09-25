@@ -7,18 +7,20 @@ import com.alibaba.fastjson2.JSONPath;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.scheduler.ProtocolPointSelectionSupport;
 import com.wangbin.collector.core.config.CollectorProperties;
+import com.wangbin.collector.core.config.validator.MqttConfigurationContract;
 import com.wangbin.collector.core.connection.adapter.MqttConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.MqttReceivedMessage;
 import lombok.extern.slf4j.Slf4j;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,13 +30,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUtils.asBoolean;
-import static com.wangbin.collector.core.collector.protocol.mqtt.MqttCollectorUtils.asInt;
+
 
 /**
  * 实现当前协议或设备的采集能力。
  */
 @Slf4j
-public class MqttCollector extends ConnectionBackedCollector {
+public class MqttCollector extends ConnectionBackedCollector implements ProtocolPointSelectionSupport {
 
     private CollectorProperties.MqttConfig defaultConfig;
     private MqttConnectionAdapter mqttConnection;
@@ -64,15 +66,22 @@ public class MqttCollector extends ConnectionBackedCollector {
     @Override
     protected void doConnect() throws Exception {
         initConfig();
-        this.mqttConnection = createAndConnectAdapter(MqttConnectionAdapter.class, "MQTT");
-        this.mqttConnection.addMessageListener(inboundListener);
-        for (MqttTopicSubscription subscription : getDefaultSubscriptions()) {
-            ensureTopicSubscription(subscription.getTopic(), subscription.getQos());
-            baseSubscribedTopics.add(subscription.getTopic());
-        }
-        for (DataPoint point : pointDefinitions.values()) {
-            MqttPointOptions options = resolvePointOptions(point);
-            bindPointToTopic(point, options);
+        // Read plans are rebuilt by the lifecycle coordinator after connect. Register the
+        // listener before connecting; the rebuild then binds points before the first subscribe.
+        MqttConnectionAdapter adapter = null;
+        try {
+            adapter = requireAdapterType(createManagedConnection(), MqttConnectionAdapter.class, "MQTT");
+            adapter.addMessageListener(inboundListener);
+            this.mqttConnection = adapter;
+            connectManagedConnection();
+        } catch (Exception failure) {
+            if (adapter != null) adapter.removeMessageListener(inboundListener);
+            removeManagedConnection("MQTT");
+            mqttConnection = null;
+            topicBindings.clear();
+            topicRefCount.clear();
+            baseSubscribedTopics.clear();
+            throw failure;
         }
     }
 
@@ -125,7 +134,7 @@ public class MqttCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         MqttPointOptions options = resolvePointOptions(point);
-        byte[] payload = buildPayloadForWrite(value, options);
+        byte[] payload = buildPayloadForWrite(point, value, options);
         publish(options.getWriteTopic(), payload, options.getQos(), options.isRetain());
         return true;
     }
@@ -167,14 +176,16 @@ public class MqttCollector extends ConnectionBackedCollector {
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
             for (String topic : List.copyOf(topicBindings.keySet())) {
-                if (!baseSubscribedTopics.contains(topic)) {
-                    if (mqttConnection != null) {
-                        mqttConnection.unsubscribe(topic);
+                Set<String> bindings = topicBindings.get(topic);
+                if (bindings != null) {
+                    for (String pointId : List.copyOf(bindings)) {
+                        removePointFromTopic(pointId, topic);
                     }
+                }
+                if (!baseSubscribedTopics.contains(topic)) {
                     topicRefCount.remove(topic);
                 }
             }
-            topicBindings.clear();
             pointOptions.clear();
             pointDefinitions.clear();
             latestValues.clear();
@@ -190,6 +201,24 @@ public class MqttCollector extends ConnectionBackedCollector {
                 removePointFromTopic(point.getPointId(), options.getTopic());
             }
         }
+    }
+
+    @Override
+    public List<DataPoint> filterPollingPoints(List<DataPoint> points) {
+        if (points == null) {
+            return List.of();
+        }
+        return points.stream()
+                .filter(point -> "POLLING".equalsIgnoreCase(point.getCollectionMode()))
+                .toList();
+    }
+
+    @Override
+    public List<DataPoint> filterAutoSubscriptionPoints(List<DataPoint> points) {
+        if (points == null) {
+            return List.of();
+        }
+        return points.stream().filter(this::isSubscribeMode).toList();
     }
 
     /**
@@ -229,17 +258,63 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 创建并返回业务对象。
      */
     @Override
-    protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        if (points == null) {
-            return;
+    public synchronized void rebuildReadPlans(String deviceId, List<DataPoint> points) {
+        try {
+            buildReadPlans(deviceId, points);
+        } catch (RuntimeException failure) {
+            lastError = failure.getMessage();
+            connectionStatus = "ERROR";
+            throw failure;
         }
+    }
+
+    @Override
+    protected void buildReadPlans(String deviceId, List<DataPoint> points) {
+        Map<String, DataPoint> replacement = new HashMap<>();
+        Map<String, MqttPointOptions> replacementOptions = new HashMap<>();
         int defaultQos = getDefaultQos();
-        for (DataPoint point : points) {
-            pointDefinitions.put(point.getPointId(), point);
-            pointOptions.put(point.getPointId(), MqttPointOptions.from(point, defaultQos,
+        for (DataPoint point : points == null ? List.<DataPoint>of() : points) {
+            replacement.put(point.getPointId(), point);
+            replacementOptions.put(point.getPointId(), MqttPointOptions.from(point, defaultQos,
                     deviceInfo != null ? deviceInfo.getDeviceId() : null));
         }
+        for (String oldId : List.copyOf(pointDefinitions.keySet())) {
+            MqttPointOptions old = pointOptions.get(oldId);
+            MqttPointOptions next = replacementOptions.get(oldId);
+            boolean removeBinding = old != null && (next == null || !isSubscribeMode(replacement.get(oldId))
+                    || !old.getTopic().equals(next.getTopic()));
+            if (removeBinding && mqttConnection != null) {
+                try { removePointFromTopic(oldId, old.getTopic()); }
+                catch (Exception exception) { throw new IllegalStateException("MQTT obsolete binding cleanup failed", exception); }
+            }
+            if (!replacement.containsKey(oldId) || removeBinding) {
+                latestValues.remove(oldId);
+                latestTimestamps.remove(oldId);
+            }
+        }
+        pointDefinitions.clear();
+        pointDefinitions.putAll(replacement);
+        pointOptions.clear();
+        pointOptions.putAll(replacementOptions);
+        if (mqttConnection != null) {
+            for (DataPoint point : replacement.values()) {
+                try {
+                    MqttPointOptions options = replacementOptions.get(point.getPointId());
+                    if (isSubscribeMode(point)) bindPointToTopic(point, options);
+                }
+                catch (Exception exception) { throw new IllegalStateException("MQTT binding refresh failed", exception); }
+            }
+            for (MqttTopicSubscription subscription : getDefaultSubscriptions()) {
+                try { addBaseSubscription(subscription.getTopic(), subscription.getQos()); }
+                catch (Exception exception) { throw new IllegalStateException("MQTT default subscription failed", exception); }
+            }
+        }
         log.info("MQTT 点位加载完成，数量={}，设备={}", pointOptions.size(), deviceId);
+    }
+
+    private boolean isSubscribeMode(DataPoint point) {
+        String mode = point == null ? null : point.getCollectionMode();
+        return mode == null || mode.isBlank() || "SUBSCRIBE".equalsIgnoreCase(mode);
     }
 
     /**
@@ -281,22 +356,22 @@ public class MqttCollector extends ConnectionBackedCollector {
     }
 
     private int getDefaultQos() {
-        return getIntValue(getConnectionProperties().get("subscribeQos"),
-                defaultConfig != null ? defaultConfig.getQos() : 1);
+        return MqttConfigurationContract.qos(getConnectionProperties().get("subscribeQos"),
+                defaultConfig != null ? defaultConfig.getQos() : 1, "subscribeQos");
     }
 
     private List<MqttTopicSubscription> getDefaultSubscriptions() {
         Object configuredTopics = getConnectionProperties().get("subscribeTopics");
-        return parseTopics(resolveTopicTemplate(configuredTopics), getDefaultQos());
+        return parseTopics(configuredTopics, getDefaultQos());
     }
 
     private Object resolveTopicTemplate(Object value) {
-        if (value == null || deviceInfo == null || deviceInfo.getDeviceId() == null) {
+        if (value == null) {
             return value;
         }
         Map<String, Object> values = new HashMap<>();
-        values.put("deviceId", deviceInfo.getDeviceId());
-        values.put("device_id", deviceInfo.getDeviceId());
+        values.put("deviceId", deviceInfo == null ? null : deviceInfo.getDeviceId());
+        values.put("device_id", deviceInfo == null ? null : deviceInfo.getDeviceId());
         return ProtocolTemplateResolver.resolve(value.toString(), values);
     }
 
@@ -313,8 +388,9 @@ public class MqttCollector extends ConnectionBackedCollector {
                 if (item == null) {
                     continue;
                 }
-                String text = item.toString().trim();
+                String text = resolveTopicTemplate(item).toString().trim();
                 if (!text.isEmpty()) {
+                    MqttConfigurationContract.filter(text);
                     topics.add(new MqttTopicSubscription(text, defaultQos));
                 }
             }
@@ -324,7 +400,9 @@ public class MqttCollector extends ConnectionBackedCollector {
         for (String part : parts) {
             String trimmed = part.trim();
             if (!trimmed.isEmpty()) {
-                topics.add(new MqttTopicSubscription(trimmed, defaultQos));
+                String topic = resolveTopicTemplate(trimmed).toString();
+                MqttConfigurationContract.filter(topic);
+                topics.add(new MqttTopicSubscription(topic, defaultQos));
             }
         }
         return topics;
@@ -415,10 +493,26 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private void bindPointToTopic(DataPoint point, MqttPointOptions options) throws Exception {
-        pointDefinitions.put(point.getPointId(), point);
-        topicBindings.computeIfAbsent(options.getTopic(), t -> ConcurrentHashMap.newKeySet())
-                .add(point.getPointId());
-        ensureTopicSubscription(options.getTopic(), options.getQos());
+        String pointId = point.getPointId();
+        for (String bound : List.copyOf(topicBindings.keySet())) {
+            if (!bound.equals(options.getTopic()) && topicBindings.get(bound).contains(pointId)) {
+                removePointFromTopic(pointId, bound);
+                latestValues.remove(pointId);
+                latestTimestamps.remove(pointId);
+            }
+        }
+        Set<String> bindings = topicBindings.computeIfAbsent(options.getTopic(), t -> ConcurrentHashMap.newKeySet());
+        if (bindings.add(pointId)) {
+            try {
+                ensureTopicSubscription(options.getTopic(), options.getQos());
+            } catch (Exception failure) {
+                bindings.remove(pointId);
+                if (bindings.isEmpty()) topicBindings.remove(options.getTopic(), bindings);
+                throw failure;
+            }
+        }
+        pointDefinitions.put(pointId, point);
+        pointOptions.put(pointId, options);
     }
 
     /**
@@ -426,30 +520,62 @@ public class MqttCollector extends ConnectionBackedCollector {
      */
     private void removePointFromTopic(String pointId, String topic) throws Exception {
         Set<String> bindings = topicBindings.get(topic);
-        if (bindings != null) {
-            bindings.remove(pointId);
-            if (bindings.isEmpty() && !baseSubscribedTopics.contains(topic)) {
-                topicBindings.remove(topic);
-            }
+        if (bindings != null && bindings.remove(pointId)) {
+            if (bindings.isEmpty()) topicBindings.remove(topic, bindings);
+            decrementTopicSubscription(topic);
+            reconcileTopicQos(topic);
         }
-        decrementTopicSubscription(topic);
     }
 
     /**
      * 校验业务条件和参数边界。
      */
     private synchronized void ensureTopicSubscription(String topic, int qos) throws Exception {
-        if (topic == null || topic.isBlank()) {
+        MqttConfigurationContract.filter(topic);
+        int count = topicRefCount.getOrDefault(topic, 0);
+        if (mqttConnection == null) {
+            // Logical point binding is allowed before the wire connection exists.
+            // Only the adapter performs wire subscriptions once it has connected.
+            topicRefCount.put(topic, count + 1);
             return;
         }
-        if (mqttConnection == null) {
-            throw new IllegalStateException("MQTT连接未建立");
-        }
-        int count = topicRefCount.getOrDefault(topic, 0);
-        if (count == 0 && !mqttConnection.isSubscribed(topic)) {
+        if (!mqttConnection.isSubscribed(topic) || mqttConnection.getSubscribedQos(topic) < qos) {
             mqttConnection.subscribe(topic, qos);
         }
         topicRefCount.put(topic, count + 1);
+    }
+
+    private void reconcileTopicQos(String topic) throws Exception {
+        Set<String> bindings = topicBindings.get(topic);
+        if (mqttConnection == null || (bindings == null || bindings.isEmpty()) && !baseSubscribedTopics.contains(topic)) {
+            return;
+        }
+        int desired = 0;
+        if (bindings != null) {
+            for (String pointId : bindings) {
+                MqttPointOptions options = pointOptions.get(pointId);
+                if (options != null) desired = Math.max(desired, options.getQos());
+            }
+        }
+        if (baseSubscribedTopics.contains(topic)) {
+            desired = Math.max(desired, getDefaultQos());
+        }
+        if (mqttConnection.getSubscribedQos(topic) != desired) {
+            mqttConnection.subscribe(topic, desired);
+        }
+    }
+
+    private synchronized void addBaseSubscription(String topic, int qos) throws Exception {
+        MqttConfigurationContract.filter(topic);
+        if (baseSubscribedTopics.add(topic)) {
+            try {
+                if (!mqttConnection.isSubscribed(topic)) mqttConnection.subscribe(topic, qos);
+                topicRefCount.merge(topic, 1, Integer::sum);
+            } catch (Exception failure) {
+                baseSubscribedTopics.remove(topic);
+                throw failure;
+            }
+        }
     }
 
     /**
@@ -461,7 +587,8 @@ public class MqttCollector extends ConnectionBackedCollector {
             return;
         }
         if (current <= 1) {
-            topicRefCount.remove(topic);
+            if (baseSubscribedTopics.contains(topic)) topicRefCount.put(topic, 1);
+            else topicRefCount.remove(topic);
             if (!baseSubscribedTopics.contains(topic) && mqttConnection != null) {
                 mqttConnection.unsubscribe(topic);
             }
@@ -483,26 +610,47 @@ public class MqttCollector extends ConnectionBackedCollector {
     /**
      * 创建并返回业务对象。
      */
-    private byte[] buildPayloadForWrite(Object value, MqttPointOptions options) {
+    private byte[] buildPayloadForWrite(DataPoint point, Object value, MqttPointOptions options) {
         String payloadText;
         if (options.getPublishTemplate() != null && !options.getPublishTemplate().isBlank()) {
-            payloadText = options.getPublishTemplate().replace("${value}", Objects.toString(value, ""));
+            Map<String, Object> values = new HashMap<>();
+            values.put("value", value);
+            values.put("pointId", point.getPointId());
+            values.put("pointCode", point.getPointCode());
+            values.put("deviceId", deviceInfo != null ? deviceInfo.getDeviceId() : null);
+            values.put("timestamp", System.currentTimeMillis());
+            payloadText = MqttConfigurationContract.resolveTemplate(options.getPublishTemplate(), values,
+                    Set.of("value", "pointId", "pointCode", "deviceId", "timestamp"));
         } else {
-            payloadText = Objects.toString(value, "");
+            payloadText = "JSON".equals(options.getPayloadEncoding())
+                    ? JSON.toJSONString(value)
+                    : Objects.toString(value, "");
         }
-        return payloadText.getBytes(options.getCharset());
+        byte[] encoded = payloadText.getBytes(options.getCharset());
+        return switch (options.getPayloadEncoding()) {
+            case "BASE64" -> Base64.getEncoder().encode(encoded);
+            case "HEX" -> toHex(encoded).getBytes(StandardCharsets.US_ASCII);
+            default -> encoded;
+        };
+    }
+
+    private String toHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return result.toString();
     }
 
     /**
      * 处理当前业务流程。
      */
     private Object executePublishCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
+        String topic = Objects.toString(resolveTopicTemplate(params.get(CommonMapKeys.TOPIC)), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
+        MqttConfigurationContract.publishTopic(topic);
         Object payloadObj = params.getOrDefault("payload", "");
-        int qos = asInt(params.get("qos"), getDefaultQos());
+        int qos = MqttConfigurationContract.qos(params.get("qos"), getDefaultQos(), "command qos");
         boolean retained = asBoolean(params.get("retained"), false);
         byte[] payload = Objects.toString(payloadObj, "").getBytes(StandardCharsets.UTF_8);
         publish(topic, payload, qos, retained);
@@ -513,13 +661,13 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private Object executeSubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
+        String topic = Objects.toString(resolveTopicTemplate(params.get(CommonMapKeys.TOPIC)), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
-        int qos = asInt(params.get("qos"), getDefaultQos());
-        ensureTopicSubscription(topic, qos);
-        baseSubscribedTopics.add(topic);
+        MqttConfigurationContract.filter(topic);
+        int qos = MqttConfigurationContract.qos(params.get("qos"), getDefaultQos(), "command qos");
+        addBaseSubscription(topic, qos);
         return Map.of("topic", topic, "status", "subscribed");
     }
 
@@ -527,16 +675,12 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private Object executeUnsubscribeCommand(Map<String, Object> params) throws Exception {
-        String topic = Objects.toString(params.get(CommonMapKeys.TOPIC), "");
+        String topic = Objects.toString(resolveTopicTemplate(params.get(CommonMapKeys.TOPIC)), "");
         if (topic.isBlank()) {
             throw new IllegalArgumentException("topic is required");
         }
-        baseSubscribedTopics.remove(topic);
-        topicBindings.remove(topic);
-        if (topicRefCount.containsKey(topic)) {
-            topicRefCount.put(topic, 1);
-            decrementTopicSubscription(topic);
-        }
+        MqttConfigurationContract.filter(topic);
+        if (baseSubscribedTopics.remove(topic)) decrementTopicSubscription(topic);
         return Map.of("topic", topic, "status", "unsubscribed");
     }
 
@@ -559,8 +703,11 @@ public class MqttCollector extends ConnectionBackedCollector {
      * 处理当前业务流程。
      */
     private void handleIncomingMessage(String topic, MqttMessageEnvelope envelope) {
-        Set<String> bindings = topicBindings.get(topic);
-        if (bindings == null || bindings.isEmpty()) {
+        Set<String> bindings = topicBindings.entrySet().stream()
+                .filter(entry -> MqttTopicFilterMatcher.matches(entry.getKey(), topic))
+                .flatMap(entry -> entry.getValue().stream())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (bindings.isEmpty()) {
             log.debug("收到无绑定点位的 MQTT 消息，主题={}", topic);
             return;
         }
@@ -591,78 +738,52 @@ public class MqttCollector extends ConnectionBackedCollector {
             return null;
         }
         byte[] actualPayload = payload;
-        if ("base64".equalsIgnoreCase(options.getPayloadEncoding())) {
-            actualPayload = Base64.getDecoder().decode(payload);
+        switch (options.getPayloadEncoding()) {
+            case "BASE64" -> actualPayload = Base64.getDecoder().decode(payload);
+            case "HEX" -> actualPayload = decodeHex(payload);
+            case "JSON", "PLAIN_TEXT", "AUTO_COMPAT" -> { }
+            default -> throw new IllegalArgumentException("Unsupported MQTT payload encoding");
         }
         String text = new String(actualPayload, options.getCharset());
-        Object raw = text;
-        if (options.getJsonPath() != null && !options.getJsonPath().isBlank()) {
-            Object json = JSON.parse(text);
-            raw = JSONPath.eval(json, options.getJsonPath());
-        } else {
-            try {
-                Object json = JSON.parse(text);
-                if (json instanceof Map<?, ?> map && map.containsKey("value")) {
-                    raw = map.get("value");
-                }
-            } catch (Exception ignored) {
-                // 非 JSON 载荷继续按原始文本处理。
-            }
+        if ("PLAIN_TEXT".equals(options.getPayloadEncoding())) {
+            return text;
         }
-        return convertToDataType(point.getDataType(), raw);
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private Object convertToDataType(String dataType, Object raw) {
-        if (raw == null) {
-            return null;
-        }
-        if (dataType == null || dataType.isBlank()) {
-            return raw;
-        }
-        String type = dataType.trim().toUpperCase(Locale.ROOT);
+        boolean jsonRequired = "JSON".equals(options.getPayloadEncoding())
+                || (options.getJsonPath() != null && !options.getJsonPath().isBlank());
+        Object raw;
         try {
-            return switch (type) {
-                case "INT", "INTEGER", "INT8", "INT16", "INT32" -> toNumber(raw).intValue();
-                case "LONG", "INT64" -> toNumber(raw).longValue();
-                case "UINT8", "BYTE" -> toNumber(raw).intValue();
-                case "UINT16" -> toNumber(raw).intValue();
-                case "UINT32" -> toNumber(raw).longValue();
-                case "FLOAT", "FLOAT32" -> toNumber(raw).floatValue();
-                case "DOUBLE", "FLOAT64" -> toNumber(raw).doubleValue();
-                case "BOOLEAN", "BOOL" -> toBoolean(raw);
-                case "SHORT" -> toNumber(raw).shortValue();
-                default -> raw.toString();
-            };
-        } catch (Exception ex) {
-            log.warn("MQTT 数据类型转换失败: type={}, 值={}", type, raw, ex);
-            return null;
+            raw = JSON.parse(text);
+        } catch (Exception parseFailure) {
+            if (!jsonRequired) {
+                return text;
+            }
+            throw parseFailure;
         }
+        if (options.getJsonPath() != null && !options.getJsonPath().isBlank()) {
+            return JSONPath.eval(raw, options.getJsonPath());
+        }
+        if (raw instanceof Map<?, ?> map && map.containsKey("value")) {
+            return map.get("value");
+        }
+        if (raw instanceof Map<?, ?> || raw instanceof Collection<?> || raw == null) {
+            throw new IllegalArgumentException("MQTT JSON payload requires scalar or value field");
+        }
+        return raw;
+    }
+
+    private byte[] decodeHex(byte[] payload) {
+        String text = new String(payload, StandardCharsets.UTF_8).trim();
+        if ((text.length() & 1) != 0 || !text.matches("[0-9a-fA-F]*")) {
+            throw new IllegalArgumentException("MQTT HEX payload must contain an even number of hex digits");
+        }
+        byte[] result = new byte[text.length() / 2];
+        for (int index = 0; index < result.length; index++) {
+            result[index] = (byte) Integer.parseInt(text.substring(index * 2, index * 2 + 2), 16);
+        }
+        return result;
     }
 
     /**
      * 解析或转换业务数据。
      */
-    private Number toNumber(Object value) {
-        if (value instanceof Number number) {
-            return number;
-        }
-        return Double.parseDouble(value.toString());
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private boolean toBoolean(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        String text = value.toString().trim().toLowerCase(Locale.ROOT);
-        if (text.isEmpty()) {
-            return false;
-        }
-        return "true".equals(text) || "1".equals(text) || "on".equals(text) || "yes".equals(text);
-    }
 }

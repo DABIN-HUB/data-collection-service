@@ -7,6 +7,9 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import com.wangbin.collector.core.connection.dispatch.MessageBatchDispatcher;
 import com.wangbin.collector.core.connection.dispatch.OverflowStrategy;
+import com.wangbin.collector.core.collector.protocol.mqtt.MqttTopicFilterMatcher;
+import com.wangbin.collector.core.collector.protocol.mqtt.ProtocolTemplateResolver;
+import com.wangbin.collector.core.config.validator.MqttConfigurationContract;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
@@ -37,9 +40,13 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 import java.util.concurrent.LinkedBlockingQueue;
+
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -64,6 +71,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     private final Map<String, Integer> subscribedTopics = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Consumer<MqttReceivedMessage>> messageListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<List<MqttReceivedMessage>>> batchListeners = new CopyOnWriteArrayList<>();
+    private final AtomicLong droppedMessages = new AtomicLong();
+    private final AtomicBoolean closing = new AtomicBoolean();
+
     private OverflowStrategy overflowStrategy = OverflowStrategy.BLOCK;
     private String clientId;
     private boolean useMqttV5;
@@ -80,12 +90,20 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
      * 处理组件生命周期。
      */
     private void initialize() {
+        String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
+        MqttConfigurationContract.validate(config, deviceId, false);
         this.clientId = generateClientId();
-        String version = config.getStringConfig("version", "v5");
-        this.useMqttV5 = !"v3".equalsIgnoreCase(version) && !"3".equals(version);
+        String version = MqttConfigurationContract.version(config.getProperty("version"));
+        this.useMqttV5 = "v5".equals(version);
         ensureDispatcher();
-        String serverUri = buildServerUri();
+        if (MqttConfigurationContract.hasBrokerEndpoint(config)) {
+            initializeClient();
+        }
+    }
 
+    private void initializeClient() {
+        MqttConfigurationContract.validate(config, deviceInfo != null ? deviceInfo.getDeviceId() : null, true);
+        String serverUri = buildServerUri();
         try {
             if (useMqttV5) {
                 this.persistenceV5 = new MemoryPersistence();
@@ -99,7 +117,7 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                 configureV3Options();
             }
         } catch (Exception e) {
-            log.error("MQTT 客户端初始化失败", e);
+            log.error("MQTT 客户端初始化失败");
             throw new RuntimeException("MQTT 客户端初始化失败", e);
         }
     }
@@ -121,11 +139,14 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
      * 创建并返回业务对象。
      */
     private String buildServerUri() {
-        if (config.getUrl() != null && !config.getUrl().isEmpty()) {
-            return config.getUrl();
-        }
-        String protocol = Boolean.TRUE.equals(config.getSslEnabled()) ? "ssl" : "tcp";
-        return String.format("%s://%s:%d", protocol, config.getHost(), config.getPort());
+        return MqttConfigurationContract.brokerUri(config);
+    }
+
+    private String resolveConnectionTopic(String topic) {
+        String deviceId = deviceInfo != null ? deviceInfo.getDeviceId() : null;
+        return ProtocolTemplateResolver.resolve(topic, Map.of(
+                "deviceId", deviceId == null ? "" : deviceId,
+                "device_id", deviceId == null ? "" : deviceId));
     }
 
     /**
@@ -177,8 +198,10 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         if (willTopic == null) {
             return;
         }
+        willTopic = resolveConnectionTopic(willTopic);
+        MqttConfigurationContract.publishTopic(willTopic);
         String willMessage = config.getStringConfig("willMessage", "");
-        int willQos = config.getIntConfig("willQos", 0);
+        int willQos = MqttConfigurationContract.qos(config.getProperty("willQos"), 0, "willQos");
         boolean willRetained = config.getBoolConfig("willRetained", false);
         MqttMessage willMsg = new MqttMessage(willMessage.getBytes(StandardCharsets.UTF_8));
         willMsg.setQos(willQos);
@@ -194,8 +217,10 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         if (willTopic == null) {
             return;
         }
+        willTopic = resolveConnectionTopic(willTopic);
+        MqttConfigurationContract.publishTopic(willTopic);
         String willMessage = config.getStringConfig("willMessage", "");
-        int willQos = config.getIntConfig("willQos", 0);
+        int willQos = MqttConfigurationContract.qos(config.getProperty("willQos"), 0, "willQos");
         boolean willRetained = config.getBoolConfig("willRetained", false);
         connectionOptionsV3.setWill(willTopic, willMessage.getBytes(StandardCharsets.UTF_8), willQos, willRetained);
     }
@@ -205,6 +230,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
      */
     private void configureSSL() {
         if (!Boolean.TRUE.equals(config.getSslEnabled())) {
+            return;
+        }
+        if (!config.getBoolConfig("insecureSkipVerify", false)) {
             return;
         }
         try {
@@ -276,6 +304,27 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
+    @Override
+    public synchronized void closeResources() throws Exception {
+        if (!closing.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            // A broker-loss callback already set DISCONNECTED: base disconnect() would skip doDisconnect().
+            if (status == ConnectionStatus.DISCONNECTED || status == ConnectionStatus.RECONNECTING) {
+                doDisconnect();
+            } else {
+                disconnect();
+            }
+        } finally {
+            subscribedTopics.clear();
+            messageListeners.clear();
+            batchListeners.clear();
+        }
+    }
+
+
     /**
      * 处理当前业务流程。
      */
@@ -283,8 +332,11 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         if (batch == null || batch.isEmpty()) {
             return;
         }
-        for (MqttReceivedMessage message : batch) {
-            offerReceiveBuffer(message);
+        boolean listenerOwnsMessages = !batchListeners.isEmpty() || !messageListeners.isEmpty();
+        if (!listenerOwnsMessages) {
+            for (MqttReceivedMessage message : batch) {
+                offerReceiveBuffer(message);
+            }
         }
         for (Consumer<List<MqttReceivedMessage>> listener : batchListeners) {
             try {
@@ -341,26 +393,31 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     @Override
     protected void doConnect() throws Exception {
         ensureDispatcher();
+        if (mqttClientV5 == null && mqttClientV3 == null) {
+            initializeClient();
+        }
         Semaphore connectSemaphore = resolveConnectSemaphore();
         connectSemaphore.acquire();
         try {
             log.info("开始连接 MQTT：{}（protocol={}）", clientId, useMqttV5 ? "v5" : "v3");
             if (useMqttV5) {
-                IMqttToken connectToken = mqttClientV5.connect(connectionOptionsV5);
-                connectToken.waitForCompletion(config.getConnectTimeout());
+                if (!mqttClientV5.isConnected()) {
+                    IMqttToken connectToken = mqttClientV5.connect(connectionOptionsV5);
+                    connectToken.waitForCompletion(config.getConnectTimeout());
+                }
                 if (!mqttClientV5.isConnected()) {
                     throw new Exception("MQTT v5 连接未完成");
                 }
             } else {
-                org.eclipse.paho.client.mqttv3.IMqttToken token = mqttClientV3.connect(connectionOptionsV3);
-                token.waitForCompletion(config.getConnectTimeout());
+                if (!mqttClientV3.isConnected()) {
+                    org.eclipse.paho.client.mqttv3.IMqttToken token = mqttClientV3.connect(connectionOptionsV3);
+                    token.waitForCompletion(config.getConnectTimeout());
+                }
                 if (!mqttClientV3.isConnected()) {
                     throw new Exception("MQTT v3 连接未完成");
                 }
             }
-            if (subscribedTopics.isEmpty()) {
-                subscribeConfiguredTopics();
-            } else {
+            if (!subscribedTopics.isEmpty()) {
                 resubscribeAllTopics();
             }
             log.info("MQTT 连接建立成功：{}", clientId);
@@ -388,47 +445,20 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         }
     }
 
-    /**
-     * 维护注册或订阅关系。
-     */
-    private void subscribeConfiguredTopics() throws Exception {
-        Object topicsObj = config.getConfigValue("subscribeTopics");
-        int qos = config.getIntConfig("subscribeQos", 1);
-        int subscribed = 0;
-        if (topicsObj instanceof List<?> topics) {
-            for (Object obj : topics) {
-                String topic = Objects.toString(obj, "").trim();
-                if (!topic.isEmpty()) {
-                    subscribeTopic(topic, qos, true);
-                    subscribed++;
-                }
-            }
-        } else if (topicsObj instanceof String topics) {
-            String[] arr = topics.split(",");
-            for (String topic : arr) {
-                String trimmed = topic.trim();
-                if (!trimmed.isEmpty()) {
-                    subscribeTopic(trimmed, qos, true);
-                    subscribed++;
-                }
-            }
-        }
-        if (subscribed == 0) {
-            String defaultTopic = String.format("devices/%s/#",
-                    deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
-            subscribeTopic(defaultTopic, 1, true);
-        }
-    }
 
     /**
      * 维护注册或订阅关系。
      */
     private void subscribeTopic(String topic, int qos, boolean track) throws Exception {
-        if (topic == null || topic.isEmpty()) {
-            return;
+        MqttTopicFilterMatcher.validateFilter(topic);
+        if (qos < 0 || qos > 2) {
+            throw new IllegalArgumentException("MQTT subscription QoS must be 0, 1 or 2");
         }
         if (track) {
-            subscribedTopics.put(topic, qos);
+            Integer existing = subscribedTopics.get(topic);
+            if (existing != null && existing == qos) {
+                return;
+            }
         }
         if (useMqttV5) {
             IMqttToken subscribeToken = mqttClientV5.subscribe(topic, qos);
@@ -437,23 +467,22 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
             org.eclipse.paho.client.mqttv3.IMqttToken subscribeToken = mqttClientV3.subscribe(topic, qos);
             subscribeToken.waitForCompletion(5000);
         }
+        if (track) {
+            subscribedTopics.put(topic, qos);
+        }
         log.info("MQTT 订阅成功 - Topic: {}, QoS: {}", topic, qos);
     }
 
     /**
      * 执行当前业务逻辑。
      */
-    private void resubscribeAllTopics() {
+    private void resubscribeAllTopics() throws Exception {
         if (subscribedTopics.isEmpty()) {
             return;
         }
-        subscribedTopics.forEach((topic, qos) -> {
-            try {
-                subscribeTopic(topic, qos, false);
-            } catch (Exception e) {
-                log.warn("MQTT 重新订阅失败 - Topic: {}", topic, e);
-            }
-        });
+        for (Map.Entry<String, Integer> entry : subscribedTopics.entrySet()) {
+            subscribeTopic(entry.getKey(), entry.getValue(), false);
+        }
     }
 
     /**
@@ -475,6 +504,7 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                 }
                 mqttClientV3.close();
             }
+            subscribedTopics.clear();
             log.info("MQTT 连接断开成功：{}", clientId);
         } catch (Exception e) {
             log.warn("MQTT 断开连接异常", e);
@@ -497,7 +527,34 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         } else if (mqttClientV3 != null && mqttClientV3.isConnected()) {
             mqttClientV3.unsubscribe(topics).waitForCompletion(5000);
         }
-        subscribedTopics.clear();
+    }
+
+    @Override
+    public synchronized void reconnect() throws Exception {
+        // AbstractConnectionAdapter.disconnect() closes the Paho client before calling
+        // doConnect(), which makes the same adapter unable to restore subscriptions.
+        // Reconnect keeps the client and the desired topic set, while final disconnect
+        // still closes both resources through doDisconnect().
+        status = ConnectionStatus.RECONNECTING;
+        metrics.setStatus(status);
+        try {
+            unsubscribeAllTopics();
+            if (useMqttV5 && mqttClientV5 != null && mqttClientV5.isConnected()) {
+                mqttClientV5.disconnect().waitForCompletion(5000);
+            } else if (!useMqttV5 && mqttClientV3 != null && mqttClientV3.isConnected()) {
+                mqttClientV3.disconnect().waitForCompletion(5000);
+            }
+            Thread.sleep(Math.max(0L, config.getInitialReconnectDelay()));
+            doConnect();
+            status = ConnectionStatus.CONNECTED;
+            metrics.setStatus(status);
+            metrics.setLastError(null);
+        } catch (Exception failure) {
+            status = ConnectionStatus.ERROR;
+            metrics.setStatus(status);
+            metrics.setLastError(failure.getMessage());
+            throw failure;
+        }
     }
 
     /**
@@ -507,7 +564,7 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     protected void doSend(byte[] data) throws UnsupportedOperationException {
         try {
             publishInternal(getPublishTopic(), data,
-                    config.getIntConfig("publishQos", 1),
+                    MqttConfigurationContract.qos(config.getProperty("publishQos"), 1, "publishQos"),
                     config.getBoolConfig("retained", false));
         } catch (Exception e) {
             throw new UnsupportedOperationException("MQTT 发送操作失败", e);
@@ -517,10 +574,14 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     private String getPublishTopic() {
         String topic = config.getStringConfig("publishTopic", null);
         if (topic != null && !topic.isEmpty()) {
-            return topic;
+            String resolved = resolveConnectionTopic(topic);
+            MqttConfigurationContract.publishTopic(resolved);
+            return resolved;
         }
-        return String.format("devices/%s/data",
+        String resolved = String.format("devices/%s/data",
                 deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
+        MqttConfigurationContract.publishTopic(resolved);
+        return resolved;
     }
 
     /**
@@ -531,8 +592,9 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                 || (!useMqttV5 && (mqttClientV3 == null || !mqttClientV3.isConnected()))) {
             throw new IllegalStateException("MQTT 连接未激活");
         }
-        if (topic == null || topic.isEmpty()) {
-            throw new IllegalArgumentException("MQTT topic 不能为空");
+        MqttConfigurationContract.publishTopic(topic);
+        if (qos < 0 || qos > 2) {
+            throw new IllegalArgumentException("MQTT publish QoS must be 0, 1 or 2");
         }
         byte[] body = payload != null ? payload : new byte[0];
         if (useMqttV5) {
@@ -617,6 +679,8 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
             log.info("MQTT 认证已在连接过程中完成");
             return;
         }
+        authTopic = resolveConnectionTopic(authTopic);
+        MqttConfigurationContract.publishTopic(authTopic);
         String authMessage = buildAuthMessage();
         byte[] payload = authMessage.getBytes(StandardCharsets.UTF_8);
         if (useMqttV5) {
@@ -657,7 +721,8 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         String reason = disconnectResponse != null ? disconnectResponse.getReasonString() : "未知";
         log.error("MQTT v5 连接断开：{}，原因：{}", clientId, reason);
         status = ConnectionStatus.DISCONNECTED;
-        log.info("MQTT v5 已断开，等待采集调度器统一重连：{}", clientId);
+        metrics.setStatus(status);
+
     }
 
     /**
@@ -695,14 +760,19 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
                                         boolean retained,
                                         Map<String, String> props) {
         MqttReceivedMessage inbound = new MqttReceivedMessage(topic, payload, qos, retained, props);
-        if (messageDispatcher == null) {
+        MessageBatchDispatcher<MqttReceivedMessage> dispatcher = messageDispatcher;
+        if (dispatcher == null) {
             log.warn("MQTT 消息调度器未初始化，丢弃消息 主题={}", topic);
             return;
         }
         try {
-            messageDispatcher.enqueue(inbound);
-            messagesReceived.incrementAndGet();
-            bytesReceived.addAndGet(payload != null ? payload.length : 0L);
+            if (dispatcher.enqueue(inbound)) {
+                messagesReceived.incrementAndGet();
+                bytesReceived.addAndGet(payload != null ? payload.length : 0L);
+            } else {
+                droppedMessages.incrementAndGet();
+                log.warn("MQTT 消息因 dispatcher overflow 被丢弃，主题={}", topic);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("MQTT 消息入队被中断 主题={}", topic);
@@ -736,9 +806,6 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     public void connectComplete(boolean reconnect, String serverURI) {
         log.info("MQTT 连接完成 - 重连: {}, 服务端: {}", reconnect, serverURI);
         status = ConnectionStatus.CONNECTED;
-        if (reconnect) {
-            resubscribeAllTopics();
-        }
     }
 
     /**
@@ -756,13 +823,15 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
     public void connectionLost(Throwable cause) {
         log.error("MQTT v3 连接丢失：{}", clientId, cause);
         status = ConnectionStatus.DISCONNECTED;
-        log.info("MQTT v3 已断开，等待采集调度器统一重连：{}", clientId);
+        metrics.setStatus(status);
+
     }
 
     /**
      * 维护注册或订阅关系。
      */
     public void subscribe(String topic, int qos) throws Exception {
+        MqttTopicFilterMatcher.validateFilter(topic);
         subscribeTopic(topic, qos, true);
     }
 
@@ -773,13 +842,27 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         if (topic == null || topic.isEmpty()) {
             return;
         }
-        subscribedTopics.remove(topic);
+        MqttTopicFilterMatcher.validateFilter(topic);
         if (useMqttV5 && mqttClientV5 != null && mqttClientV5.isConnected()) {
             mqttClientV5.unsubscribe(topic).waitForCompletion(5000);
         } else if (mqttClientV3 != null && mqttClientV3.isConnected()) {
             mqttClientV3.unsubscribe(topic).waitForCompletion(5000);
         }
+        subscribedTopics.remove(topic);
         log.info("取消订阅 MQTT 主题：{}", topic);
+    }
+
+    @Override
+    public synchronized Map<String, Object> getStatistics() {
+        Map<String, Object> result = new java.util.HashMap<>(super.getStatistics());
+        result.put("droppedMessages", droppedMessages.get());
+        return result;
+    }
+
+    @Override
+    public void resetStatistics() {
+        super.resetStatistics();
+        droppedMessages.set(0);
     }
 
     /**
@@ -795,6 +878,10 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
 
     public boolean isSubscribed(String topic) {
         return subscribedTopics.containsKey(topic);
+    }
+
+    public int getSubscribedQos(String topic) {
+        return subscribedTopics.getOrDefault(topic, -1);
     }
 
     /**

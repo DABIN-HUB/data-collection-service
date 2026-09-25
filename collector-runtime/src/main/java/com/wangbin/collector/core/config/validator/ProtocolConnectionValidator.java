@@ -40,7 +40,9 @@ public class ProtocolConnectionValidator {
 
         switch (canonicalize(protocol)) {
             case "HTTP" -> validateHttp(deviceInfo, connection);
-            case "MQTT", "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
+            case "MQTT" -> validateMqtt(deviceInfo, connection,
+                    "MQTT_SSL".equalsIgnoreCase(protocol.trim()));
+            case "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
@@ -89,6 +91,14 @@ public class ProtocolConnectionValidator {
         requireUrlOrHostPort(deviceInfo, connection, "HTTP");
         try {
             HttpConfigurationContract.validate(connection);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+        }
+    }
+
+    private void validateMqtt(DeviceInfo deviceInfo, DeviceConnection connection, boolean sslAlias) {
+        try {
+            MqttConfigurationContract.validate(connection, deviceInfo.getDeviceId(), !sslAlias);
         } catch (IllegalArgumentException exception) {
             fail(deviceInfo, exception.getMessage());
         }

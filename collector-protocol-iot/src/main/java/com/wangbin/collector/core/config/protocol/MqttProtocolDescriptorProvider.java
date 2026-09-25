@@ -5,7 +5,10 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * MQTT 协议元数据提供者。
@@ -17,17 +20,17 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("MQTT", "MQTT",
-                "MQTT subscription/publish collection protocol.",
+                "SUBSCRIBE receives live telemetry; POLLING only reads the last received message cache, never queries the broker.",
                 List.of("MQTT_SSL"), MqttCollector.class, "MQTT", 1883,
                 ProtocolAddressingMode.SYMBOLIC,
                 true, true, true,
                 List.of("devices/${deviceId}/temperature", "factory/line1/+/status"),
                 registry.fields(
-                        registry.field("url", "string", "Broker URL", false, "tcp://127.0.0.1:1883", null, "connection"),
-                        registry.field("brokerUrl", "string", "Broker URL alias", false, "tcp://127.0.0.1:1883", null, "connection"),
-                        registry.field("host", "string", "Broker host", false, "127.0.0.1", null, "connection"),
+                        registry.field("url", "string", "Broker URL (canonical)", false, "", null, "connection"),
+                        registry.field("brokerUrl", "string", "Broker URL (legacy alias)", false, "", null, "connection"),
+                        registry.field("host", "string", "Broker host (fallback)", false, "", null, "connection"),
                         registry.field("port", "number", "Broker port", false, "1883", null, "connection"),
-                        registry.field("clientId", "string", "Client ID", true, "device_mqtt", null, "connection"),
+                        registry.field("clientId", "string", "Client ID (blank = device-scoped generated ID)", false, "", null, "connection"),
                         registry.field("version", "select", "MQTT version", true, "v5", List.of("v5", "v3"), "connection"),
                         registry.field("username", "string", "Username", false, "", null, "security"),
                         registry.field("password", "password", "Password", false, "", null, "security"),
@@ -45,8 +48,10 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
                                 List.of("true", "false"), "topic"),
                         registry.field("cleanSession", "boolean", "Clean session", false, "true",
                                 List.of("true", "false"), "advanced"),
-                        registry.field("autoReconnect", "boolean", "Auto reconnect", false, "true",
+                        registry.field("autoReconnect", "boolean", "Framework-managed reconnect (Paho auto reconnect disabled)", false, "true",
                                 List.of("true", "false"), "advanced"),
+                        registry.field("insecureSkipVerify", "boolean", "Skip MQTT TLS certificate verification (unsafe)", false, "false",
+                                List.of("true", "false"), "security"),
                         registry.field("connectTimeout", "number", "Connect timeout (ms)", false, "10000", null, "advanced"),
                         registry.field("heartbeatInterval", "number", "Heartbeat interval (ms)", false, "60000", null, "advanced"),
                         registry.field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced"),
@@ -73,13 +78,38 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
         registry.registerAlias("MQTT_SSL", "MQTT", cfg -> {
             cfg.setSslEnabled(true);
             ProtocolDescriptorRegistry.applyDefaultPort(cfg, 8883);
+            if (cfg.getUrl() != null) {
+                cfg.setUrl(toSecureScheme(cfg.getUrl()));
+            }
+            Map<String, Object> ext = cfg.getExtJson();
+            if (ext == null) {
+                ext = new LinkedHashMap<>();
+                cfg.setExtJson(ext);
+            }
+            if (ext.get("brokerUrl") instanceof String brokerUrl) {
+                ext.put("brokerUrl", toSecureScheme(brokerUrl));
+            }
         });
+    }
+
+    private String toSecureScheme(String brokerUrl) {
+        int separator = brokerUrl.indexOf("://");
+        if (separator <= 0) {
+            return brokerUrl;
+        }
+        String scheme = brokerUrl.substring(0, separator);
+        String secureScheme = switch (scheme.toLowerCase(Locale.ROOT)) {
+            case "tcp" -> "ssl";
+            case "ws" -> "wss";
+            default -> scheme;
+        };
+        return secureScheme + brokerUrl.substring(separator);
     }
 
     private List<ProtocolFieldConfig> pointFields(ProtocolDescriptorRegistry registry) {
         return List.of(
                 registry.pointField("additionalConfig.topic", "string", "Topic", false, "",
-                        Collections.emptyList(), "MQTT subscribe topic. When empty, address is used as the topic.", null),
+                        Collections.emptyList(), "MQTT subscribe filter (exact, + or #). SUBSCRIBE receives telemetry; POLLING reads only the last received cache.", null),
                 registry.pointField("additionalConfig.writeTopic", "string", "Write topic", false, "",
                         Collections.emptyList(), "MQTT topic used for point writes or command publishes.", null),
                 registry.pointField("additionalConfig.qos", "select", "QoS", false, "",
@@ -89,7 +119,7 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
                 registry.pointField("additionalConfig.jsonPath", "string", "JSONPath", false, "",
                         Collections.emptyList(), "Path used to extract the target value from a JSON payload.", null),
                 registry.pointField("additionalConfig.payloadEncoding", "select", "Payload encoding", false, "",
-                        List.of("JSON", "PLAIN_TEXT", "BASE64", "HEX"), "Decoder used for subscribed payloads.", null),
+                        List.of("JSON", "PLAIN_TEXT", "BASE64", "HEX"), "JSON parses scalar/{value} and optional JSONPath; PLAIN_TEXT decodes charset; BASE64/HEX decode text to bytes first. Unset preserves legacy scalar/{value}/plain-text compatibility.", null),
                 registry.pointField("additionalConfig.charset", "string", "Charset", false, "UTF-8",
                         Collections.emptyList(), "Charset used for text payload decoding.", null),
                 registry.pointField("additionalConfig.publishTemplate", "textarea", "Publish template", false, "",

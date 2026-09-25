@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.protocol.mqtt;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.config.validator.MqttConfigurationContract;
 import lombok.Getter;
 
 import java.nio.charset.Charset;
@@ -8,6 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Locale;
+import java.util.Set;
+import com.alibaba.fastjson2.JSONPath;
 
 /**
  * 定义当前模块的业务组件。
@@ -53,7 +57,7 @@ public class MqttPointOptions {
     }
 
     /**
-     * 根据设备身份解析 ProtoForge 等设备端使用的主题占位符。
+     * 根据设备和点位上下文解析 MQTT topic template。
      */
     public static MqttPointOptions from(DataPoint point, int defaultQos, String deviceId) {
         Map<String, Object> templateValues = new HashMap<>();
@@ -69,25 +73,50 @@ public class MqttPointOptions {
         if (topic == null || topic.isBlank()) {
             throw new IllegalArgumentException("MQTT point missing topic: " + point.getPointId());
         }
-        String writeTopic = resolveTopic(Optional.ofNullable(point.getAdditionalConfig("writeTopic"))
+        MqttConfigurationContract.filter(topic);
+        String configuredWriteTopic = Optional.ofNullable(point.getAdditionalConfig("writeTopic"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())
-                .orElse(topic), templateValues);
-        int qos = Optional.ofNullable(point.getAdditionalConfig("qos"))
-                .map(value -> MqttCollectorUtils.asInt(value, defaultQos))
-                .orElse(defaultQos);
-        boolean retain = Optional.ofNullable(point.getAdditionalConfig("retain"))
-                .map(value -> MqttCollectorUtils.asBoolean(value, false))
-                .orElse(false);
+                .orElse(null);
+        String writeTopic = configuredWriteTopic == null ? topic : resolveTopic(configuredWriteTopic, templateValues);
+        if (configuredWriteTopic != null || "W".equalsIgnoreCase(point.getReadWrite())
+                || "RW".equalsIgnoreCase(point.getReadWrite())) {
+            MqttConfigurationContract.publishTopic(writeTopic);
+        }
+        int qos = MqttConfigurationContract.qos(point.getAdditionalConfig("qos"), defaultQos, "point qos");
+        boolean retain = MqttConfigurationContract.flag(point.getAdditionalConfig("retain"), false, "point retain");
         String jsonPath = Optional.ofNullable(point.getAdditionalConfig("jsonPath"))
                 .map(Object::toString)
                 .orElse(null);
         String encoding = Optional.ofNullable(point.getAdditionalConfig("payloadEncoding"))
                 .map(Object::toString)
-                .orElse("plain");
+                .filter(s -> !s.isBlank())
+                .orElse(jsonPath == null || jsonPath.isBlank() ? "AUTO_COMPAT" : "JSON")
+                .trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("JSON", "PLAIN_TEXT", "BASE64", "HEX", "AUTO_COMPAT").contains(encoding)
+                || "AUTO_COMPAT".equals(encoding) && point.getAdditionalConfig("payloadEncoding") != null
+                && !point.getAdditionalConfig("payloadEncoding").toString().isBlank()) {
+            throw new IllegalArgumentException("MQTT unsupported payloadEncoding");
+        }
+        if (jsonPath != null && !jsonPath.isBlank()) {
+            if (!"JSON".equals(encoding)) {
+                throw new IllegalArgumentException("MQTT jsonPath requires JSON payloadEncoding");
+            }
+            JSONPath.of(jsonPath);
+        }
         String template = Optional.ofNullable(point.getAdditionalConfig("publishTemplate"))
                 .map(Object::toString)
                 .orElse(null);
+        if (template != null && !template.isBlank()) {
+            Map<String, Object> payloadValues = new HashMap<>();
+            payloadValues.put("value", "sample");
+            payloadValues.put("pointId", point.getPointId());
+            payloadValues.put("pointCode", point.getPointCode());
+            payloadValues.put("deviceId", deviceId);
+            payloadValues.put("timestamp", 1);
+            MqttConfigurationContract.resolveTemplate(template, payloadValues,
+                    Set.of("value", "pointId", "pointCode", "deviceId", "timestamp"));
+        }
         Charset charset = Optional.ofNullable(point.getAdditionalConfig("charset"))
                 .map(Object::toString)
                 .filter(s -> !s.isBlank())

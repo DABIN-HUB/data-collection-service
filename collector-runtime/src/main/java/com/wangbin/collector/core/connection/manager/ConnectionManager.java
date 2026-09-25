@@ -310,9 +310,7 @@ public class ConnectionManager {
         ConnectionAdapter connection = connections.remove(deviceId);
         if (connection != null) {
             try {
-                if (connection.isConnected()) {
-                    connection.disconnect();
-                }
+                connection.closeResources();
             } catch (Exception e) {
                 log.error("断开连接失败: {}", deviceId, e);
             }
@@ -365,10 +363,6 @@ public class ConnectionManager {
         log.debug("开始心跳检查...");
 
         for (ConnectionAdapter connection : connections.values()) {
-            if (!connection.isConnected()) {
-                continue;
-            }
-
             submitHeartbeat(connection);
 
         }
@@ -427,6 +421,13 @@ public class ConnectionManager {
      */
     private void handleHeartbeat(ConnectionAdapter connection) {
         try {
+            if (!connection.isConnected()) {
+                DeviceConnection disconnectedConfig = connection.getConnectionConfig();
+                if (disconnectedConfig != null && disconnectedConfig.isAutoReconnect()) {
+                    reconnect(connection.getDeviceId());
+                }
+                return;
+            }
             ConnectionMetrics metrics = connection.getMetrics();
             long timeoutThreshold = resolveHeartbeatTimeout(connection);
 
