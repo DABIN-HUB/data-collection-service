@@ -37,18 +37,15 @@ public class JsonPathHttpResponseExtractor implements HttpResponseExtractor {
         if (value == null) {
             return Collections.emptyMap();
         }
-        if (points.size() == 1) {
-            return Map.of(points.get(0).getPointId(), value);
-        }
         if (value instanceof JSONObject object) {
             Map<String, Object> result = new HashMap<>();
             for (DataPoint point : points) {
-                Object item = object.get(point.getPointId());
-                if (item == null && point.getPointCode() != null) item = object.get(point.getPointCode());
+                Object item = HttpPointMappingResolver.lookup(object, point);
                 if (item != null) result.put(point.getPointId(), item);
             }
             return result;
         }
+        if (points.size() == 1) return Map.of(points.get(0).getPointId(), value);
         return Collections.emptyMap();
     }
 }

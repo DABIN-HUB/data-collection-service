@@ -3,9 +3,11 @@ package com.wangbin.collector.core.connection.adapter;
 
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONPath;
 import com.wangbin.collector.common.config.ThreadPoolFallbacks;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.core.config.validator.HttpConfigurationContract;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import lombok.extern.slf4j.Slf4j;
 
@@ -13,7 +15,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -66,6 +67,12 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      * 处理组件生命周期。
      */
     private void initialize() {
+        HttpConfigurationContract.validate(config);
+        if ("JSON_PATH".equals(HttpConfigurationContract.responseMode(config))) {
+            JSONPath.of(config.getString("responsePath", "$"));
+        } else if ("POINT_ARRAY".equals(HttpConfigurationContract.responseMode(config))) {
+            JSONPath.of(config.getString("responseArrayPath", "$.points"));
+        }
         this.baseUrl = buildBaseUrl();
         this.customHeaders = getCustomHeaders();
         this.httpExecutor = resolveHttpExecutor();
@@ -84,7 +91,11 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
     }
 
     public byte[] request(String method, String endpoint) throws Exception {
-        HttpRequest request = buildRequest(method, endpoint, null);
+        return request(method, endpoint, null);
+    }
+
+    public byte[] request(String method, String endpoint, byte[] body) throws Exception {
+        HttpRequest request = buildRequest(method, endpoint, body);
         HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("HTTP 请求失败，状态码: " + response.statusCode());
@@ -103,18 +114,10 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
 
         // 根据 host/port 构建基础 URL
         String protocol = Boolean.TRUE.equals(config.getSslEnabled()) ? "https" : "http";
-        String path = config.getStringConfig("path", "");
-
-        // 确保 path 以 / 开头
-        if (!path.startsWith("/") && !path.isEmpty()) {
-            path = "/" + path;
-        }
-
-        return String.format("%s://%s:%d%s",
+        return String.format("%s://%s:%d",
                 protocol,
                 config.getHost(),
-                config.getPort(),
-                path);
+                config.getPort());
     }
 
     private Map<String, String> getCustomHeaders() {
@@ -141,13 +144,13 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
                 .executor(httpExecutor);
 
         // 配置 SSL
-        if (Boolean.TRUE.equals(config.getSslEnabled())) {
+        if (Boolean.TRUE.equals(config.getBool("insecureSkipVerify", false))) {
             builder.sslContext(createTrustAllSSLContext());
         }
 
         // 配置代理
         String proxyHost = config.getStringConfig("proxyHost", null);
-        if (proxyHost != null) {
+        if (proxyHost != null && !proxyHost.isBlank()) {
             int proxyPort = config.getIntConfig("proxyPort", 8080);
             builder.proxy(java.net.ProxySelector.of(new java.net.InetSocketAddress(proxyHost, proxyPort)));
         }
@@ -178,8 +181,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             sslContext.init(null, trustAllCerts, new SecureRandom());
             return sslContext;
         } catch (Exception e) {
-            log.error("创建 SSL 上下文失败", e);
-            return null;
+            throw new IllegalStateException("HTTP TLS context initialization failed", e);
         }
     }
 
@@ -188,9 +190,11 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      */
     @Override
     protected void doConnect() throws Exception {
-        // HTTP 连接健康检查
+        String healthPath = config.getStringConfig("healthCheckPath", "");
+        if (healthPath == null || healthPath.isBlank()) {
+            return;
+        }
         try {
-            String healthPath = config.getStringConfig("healthCheckPath", "/health");
             HttpRequest request = buildRequest("GET", healthPath, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -256,14 +260,8 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             String endpoint = config.getStringConfig("receiveEndpoint", "/api/receive");
             String method = config.getStringConfig("receiveMethod", "GET");
 
-            HttpRequest request = buildRequest(method, endpoint, null);
-
-            // 设置读取超时
-            HttpClient tempClient = httpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(timeout))
-                    .build();
-
-            HttpResponse<byte[]> response = tempClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            HttpRequest request = buildRequest(method, endpoint, null, timeout);
+            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return response.body();
@@ -285,7 +283,10 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      */
     @Override
     protected void doHeartbeat() throws Exception {
-        String heartbeatEndpoint = config.getStringConfig("heartbeatEndpoint", "/health");
+        String heartbeatEndpoint = config.getStringConfig("heartbeatEndpoint", "");
+        if (heartbeatEndpoint == null || heartbeatEndpoint.isBlank()) {
+            return;
+        }
 
         HttpRequest request = buildRequest("GET", heartbeatEndpoint, null);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -314,8 +315,12 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             // 提取认证 Token
             String authToken = extractAuthToken(response);
-            if (authToken != null) {
-                customHeaders.put("Authorization", "Bearer " + authToken);
+            if (authToken != null && !authToken.isBlank()) {
+                customHeaders.keySet().removeIf(k -> "Authorization".equalsIgnoreCase(k));
+                customHeaders.put("Authorization", authToken.regionMatches(true, 0, "Bearer ", 0, 7)
+                        ? authToken : "Bearer " + authToken);
+            } else {
+                throw new IllegalStateException("HTTP authentication response has no token");
             }
             log.info("HTTP 认证成功: {}", deviceInfo != null ? deviceInfo.getDeviceId() : "UNKNOWN");
         } else {
@@ -327,13 +332,17 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      * 创建并返回业务对象。
      */
     private HttpRequest buildRequest(String method, String endpoint, byte[] body) {
+        return buildRequest(method, endpoint, body, config.getReadTimeout());
+    }
+
+    private HttpRequest buildRequest(String method, String endpoint, byte[] body, long timeout) {
         String url = buildFullUrl(endpoint);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofMillis(config.getReadTimeout()));
+                .timeout(Duration.ofMillis(timeout));
 
         // 设置请求方法
-        switch (method.toUpperCase()) {
+        switch (HttpConfigurationContract.method(method, "GET", "method")) {
             case "GET":
                 builder.GET();
                 break;
@@ -349,28 +358,40 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
             case "HEAD":
                 builder.method("HEAD", HttpRequest.BodyPublishers.noBody());
                 break;
-            default:
-                builder.method(method, HttpRequest.BodyPublishers.ofByteArray(body != null ? body : new byte[0]));
+            default: throw new IllegalArgumentException("HTTP unsupported method");
         }
 
-        // 设置基本认证
-        if (config.getUsername() != null && config.getPassword() != null) {
+        // A dynamically acquired token overrides configured credentials after authentication.
+        boolean dynamicAuth = customHeaders.keySet().stream().anyMatch(k -> "Authorization".equalsIgnoreCase(k));
+        if (!dynamicAuth && config.getUsername() != null && !config.getUsername().isBlank()
+                && config.getPassword() != null && !config.getPassword().isBlank()) {
             String auth = config.getUsername() + ":" + config.getPassword();
             String encoded = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
             builder.header("Authorization", "Basic " + encoded);
         }
 
         // 设置 Bearer Token
-        if (config.getAuthToken() != null) {
+        if (!dynamicAuth && config.getAuthToken() != null && !config.getAuthToken().isBlank()) {
             builder.header("Authorization", "Bearer " + config.getAuthToken());
         }
 
         // 添加自定义请求头
-        customHeaders.forEach(builder::header);
+        customHeaders.forEach((key, value) -> {
+            if ("Authorization".equalsIgnoreCase(key) || "Content-Type".equalsIgnoreCase(key)
+                    || "User-Agent".equalsIgnoreCase(key)) {
+                builder.setHeader(key, value);
+            } else {
+                builder.header(key, value);
+            }
+        });
 
         // 设置默认请求头
-        builder.header("Content-Type", "application/json");
-        builder.header("User-Agent", "DataCollector/1.0");
+        if (customHeaders.keySet().stream().noneMatch(k -> "Content-Type".equalsIgnoreCase(k))) {
+            builder.header("Content-Type", "application/json");
+        }
+        if (customHeaders.keySet().stream().noneMatch(k -> "User-Agent".equalsIgnoreCase(k))) {
+            builder.header("User-Agent", "DataCollector/1.0");
+        }
 
         return builder.build();
     }
@@ -379,45 +400,7 @@ public class HttpConnectionAdapter extends AbstractConnectionAdapter<HttpClient>
      * 创建并返回业务对象。
      */
     private String buildFullUrl(String endpoint) {
-        // 空路径表示直接请求配置的完整 URL，不能自动补斜杠改变资源路径。
-        if (endpoint == null || endpoint.isEmpty()) {
-            endpoint = "";
-        } else if (!endpoint.startsWith("/")) {
-            endpoint = "/" + endpoint;
-        }
-
-        // 添加查询参数
-        String queryString = buildQueryString();
-        if (!queryString.isEmpty()) {
-            if (baseUrl.contains("?")) {
-                return baseUrl + endpoint + "&" + queryString;
-            } else {
-                return baseUrl + endpoint + "?" + queryString;
-            }
-        }
-
-        return baseUrl + endpoint;
-    }
-
-    /**
-     * 创建并返回业务对象。
-     */
-    private String buildQueryString() {
-        Map<String, Object> queryParamsMap = config.getMapConfig("queryParams");
-        if (queryParamsMap == null || queryParamsMap.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, Object> entry : queryParamsMap.entrySet()) {
-            if (sb.length() > 0) {
-                sb.append("&");
-            }
-            sb.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8))
-                    .append("=")
-                    .append(URLEncoder.encode(entry.getValue().toString(), StandardCharsets.UTF_8));
-        }
-        return sb.toString();
+        return HttpUrlResolver.resolve(baseUrl, endpoint, config.getMapConfig("queryParams")).toString();
     }
 
     /**

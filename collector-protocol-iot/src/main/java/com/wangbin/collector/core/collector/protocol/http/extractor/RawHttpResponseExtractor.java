@@ -19,7 +19,10 @@ public class RawHttpResponseExtractor implements HttpResponseExtractor {
         String text = new String(response, StandardCharsets.UTF_8).trim();
         if (text.isEmpty()) return result;
         Object parsed;
-        try { parsed = JSON.parse(text); } catch (Exception ignored) {
+        try { parsed = JSON.parse(text); } catch (Exception exception) {
+            if (text.startsWith("{") || text.startsWith("[") || text.startsWith("\"")) {
+                throw new IllegalArgumentException("HTTP INVALID_JSON: malformed structured response", exception);
+            }
             if (points.size() == 1) result.put(points.get(0).getPointId(), text);
             return result;
         }
@@ -28,14 +31,14 @@ public class RawHttpResponseExtractor implements HttpResponseExtractor {
             if (values instanceof JSONObject valuesObject) {
                 putMap(points, result, valuesObject);
             } else if (object.get("pointId") != null && object.containsKey("value")) {
-                result.put(object.getString("pointId"), object.get("value"));
+                putIdentified(points, result, object.getString("pointId"), object.get("value"));
             } else {
                 putMap(points, result, object);
             }
         } else if (parsed instanceof JSONArray array) {
             for (Object item : array) {
                 if (item instanceof JSONObject object && object.get("pointId") != null && object.containsKey("value")) {
-                    result.put(object.getString("pointId"), object.get("value"));
+                    putIdentified(points, result, object.getString("pointId"), object.get("value"));
                 }
             }
         } else if (points.size() == 1) {
@@ -46,10 +49,15 @@ public class RawHttpResponseExtractor implements HttpResponseExtractor {
 
     private void putMap(List<DataPoint> points, Map<String, Object> result, JSONObject source) {
         for (DataPoint point : points) {
-            if (source.containsKey(point.getPointId())) result.put(point.getPointId(), source.get(point.getPointId()));
-            else if (point.getPointCode() != null && source.containsKey(point.getPointCode())) {
-                result.put(point.getPointId(), source.get(point.getPointCode()));
-            }
+            Object value = HttpPointMappingResolver.lookup(source, point);
+            if (value != null) result.put(point.getPointId(), value);
+        }
+    }
+
+    private void putIdentified(List<DataPoint> points, Map<String, Object> result, String key, Object value) {
+        if (value == null) return;
+        for (DataPoint point : points) {
+            if (HttpPointMappingResolver.keys(point).contains(key)) result.put(point.getPointId(), value);
         }
     }
 }
