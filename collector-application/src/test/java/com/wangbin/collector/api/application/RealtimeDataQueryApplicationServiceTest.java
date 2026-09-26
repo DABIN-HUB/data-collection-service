@@ -12,6 +12,7 @@ import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.PointRealtimePayload;
 import com.wangbin.collector.api.controller.dto.PointRealtimeResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
@@ -95,6 +96,13 @@ class RealtimeDataQueryApplicationServiceTest {
         assertEquals("STALE", compact.getRealtimeStatus());
         assertEquals("D", full.getQualityLevel());
         assertEquals("D", compact.getQualityLevel());
+        assertEquals(DataQuality.DEVICE_ERROR.getCode(), full.getQuality());
+        assertEquals(DataQuality.DEVICE_ERROR.getCode(), compact.getQuality());
+        assertEquals(20, full.getQuality());
+        assertEquals(20, compact.getQuality());
+        assertEquals(DataQuality.DEVICE_ERROR.getDescription(), full.getQualityDescription());
+        assertEquals(DataQuality.DEVICE_ERROR.getDescription(), compact.getQualityDescription());
+        assertEquals(Boolean.FALSE, full.getQualityAcceptable());
         assertEquals(Boolean.FALSE, compact.getQualityAcceptable());
         assertEquals(100, result.getQuality());
     }
@@ -102,6 +110,8 @@ class RealtimeDataQueryApplicationServiceTest {
     @Test
     void degradedAndStoppedShouldNotBeReportedAsDeviceFaultAndOnlinePreservesOriginalQuality() {
         DataPoint point = point("dev-1", "p-1", "temperature");
+        when(pointRuntimeStateService.snapshot("dev-1", point))
+                .thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
         ProcessResult result = new ProcessResult();
         result.setSuccess(true);
         result.setProcessedValue(1);
@@ -109,17 +119,31 @@ class RealtimeDataQueryApplicationServiceTest {
         when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
         when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-1", "p-1"), result));
         when(collectionService.getDeviceRuntimeSnapshot("dev-1"))
-                .thenReturn(runtime(DeviceRuntimePhase.DEGRADED, true), runtime(DeviceRuntimePhase.STOPPED, false),
-                        runtime(DeviceRuntimePhase.ONLINE, true));
+                .thenReturn(runtime(DeviceRuntimePhase.DEGRADED, true), runtime(DeviceRuntimePhase.DEGRADED, true),
+                        runtime(DeviceRuntimePhase.STOPPED, false), runtime(DeviceRuntimePhase.ONLINE, true));
 
         CompactRealtimePointPayload degraded = service.getCompactDeviceData("dev-1").getRows().get(0);
+        PointRealtimePayload degradedFull = service.getDeviceData("dev-1", null).getData().get("p-1");
         CompactRealtimePointPayload stopped = service.getCompactDeviceData("dev-1").getRows().get(0);
         CompactRealtimePointPayload online = service.getCompactDeviceData("dev-1").getRows().get(0);
+        assertEquals(DataQuality.UNCERTAIN.getCode(), degraded.getQuality());
+        assertEquals(50, degraded.getQuality());
         assertEquals("C", degraded.getQualityLevel());
+        assertEquals(Boolean.TRUE, degraded.getStale());
+        assertEquals(Boolean.FALSE, degraded.getQualityAcceptable());
+        assertEquals(DataQuality.UNCERTAIN.getCode(), degradedFull.getQuality());
+        assertEquals(50, degradedFull.getQuality());
+        assertEquals("C", degradedFull.getQualityLevel());
+        assertEquals(DataQuality.UNCERTAIN.getDescription(), degradedFull.getQualityDescription());
+        assertEquals(Boolean.TRUE, degradedFull.getStale());
+        assertEquals(Boolean.FALSE, degradedFull.getQualityAcceptable());
+        assertEquals(DataQuality.UNCERTAIN.getCode(), stopped.getQuality());
         assertEquals("C", stopped.getQualityLevel());
-        assertEquals("UNCERTAIN", degraded.getQualityDescription());
-        assertEquals("UNCERTAIN", stopped.getQualityDescription());
+        assertEquals(DataQuality.UNCERTAIN.getDescription(), degraded.getQualityDescription());
+        assertEquals(DataQuality.UNCERTAIN.getDescription(), stopped.getQualityDescription());
+        assertEquals(100, online.getQuality());
         assertEquals("A", online.getQualityLevel());
+        assertEquals("GOOD", online.getRealtimeStatus());
         assertEquals(Boolean.FALSE, online.getStale());
     }
 

@@ -13,6 +13,7 @@ import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.PointRealtimePayload;
 import com.wangbin.collector.api.controller.dto.PointRealtimeResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
@@ -635,13 +636,13 @@ public class RealtimeDataQueryApplicationService {
         if (!unhealthy(health)) {
             return;
         }
-        boolean deviceError = deviceError(health);
+        DataQuality quality = effectiveQuality(health);
         payload.setStale(true);
-        payload.setRealtimeStatus(deviceError && payload.getValue() == null ? "DISCONNECTED" : "STALE");
+        payload.setRealtimeStatus(deviceError(health) && payload.getValue() == null ? "DISCONNECTED" : "STALE");
         payload.setErrorMessage(healthError(health));
-        payload.setQuality(deviceError ? 0 : 50);
-        payload.setQualityLevel(deviceError ? "D" : "C");
-        payload.setQualityDescription(deviceError ? "DEVICE_ERROR" : "UNCERTAIN");
+        payload.setQuality(quality.getCode());
+        payload.setQualityLevel(quality.getQualityLevel());
+        payload.setQualityDescription(quality.getDescription());
         payload.setQualityAvailable(true);
         payload.setQualityAcceptable(false);
         if (health.lastSuccessfulCollectionAt() > 0) {
@@ -653,13 +654,13 @@ public class RealtimeDataQueryApplicationService {
         if (!unhealthy(health)) {
             return;
         }
-        boolean deviceError = deviceError(health);
+        DataQuality quality = effectiveQuality(health);
         payload.setStale(true);
-        payload.setRealtimeStatus(deviceError && payload.getValue() == null ? "DISCONNECTED" : "STALE");
+        payload.setRealtimeStatus(deviceError(health) && payload.getValue() == null ? "DISCONNECTED" : "STALE");
         payload.setErrorMessage(healthError(health));
-        payload.setQuality(deviceError ? 0 : 50);
-        payload.setQualityLevel(deviceError ? "D" : "C");
-        payload.setQualityDescription(deviceError ? "DEVICE_ERROR" : "UNCERTAIN");
+        payload.setQuality(quality.getCode());
+        payload.setQualityLevel(quality.getQualityLevel());
+        payload.setQualityDescription(quality.getDescription());
         payload.setQualityAvailable(true);
         payload.setQualityAcceptable(false);
         if (health.lastSuccessfulCollectionAt() > 0) {
@@ -669,6 +670,10 @@ public class RealtimeDataQueryApplicationService {
 
     private boolean unhealthy(DeviceRuntimeSnapshot health) {
         return health != null && health.phase() != DeviceRuntimePhase.ONLINE;
+    }
+
+    private DataQuality effectiveQuality(DeviceRuntimeSnapshot health) {
+        return deviceError(health) ? DataQuality.DEVICE_ERROR : DataQuality.UNCERTAIN;
     }
 
     private boolean deviceError(DeviceRuntimeSnapshot health) {
