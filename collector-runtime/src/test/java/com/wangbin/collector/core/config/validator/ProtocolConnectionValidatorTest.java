@@ -6,6 +6,7 @@ import com.wangbin.collector.common.exception.CollectorException;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -507,6 +508,61 @@ class ProtocolConnectionValidatorTest {
 
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void mqttValidatorAcceptsVersionAliasesQosAndLegacyBrokerUrl() {
+        for (String version : List.of("v3", "3.1.1", "v5", "5")) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setExtJson(ext("brokerUrl", "tcp://127.0.0.1:1883",
+                    "version", version, "subscribeQos", "0", "publishQos", "2"));
+            assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection), version);
+        }
+    }
+
+    @Test
+    void mqttValidatorRejectsInvalidVersionAndEachInvalidQos() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        Map<String, Object> options = ext("version", "v4");
+        connection.setExtJson(options);
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.remove("version");
+        for (String key : List.of("subscribeQos", "publishQos", "willQos")) {
+            options.put(key, "3");
+            assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection), key);
+            options.remove(key);
+        }
+    }
+
+    @Test
+    void mqttValidatorRejectsConflictingBrokerUrlsAndTlsScheme() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        connection.setExtJson(ext("brokerUrl", "tcp://other-host:1883"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setExtJson(ext("brokerUrl", "tcp://127.0.0.1:1883"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setSslEnabled(true);
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setUrl("ssl://127.0.0.1:8883");
+        connection.setExtJson(ext("brokerUrl", "ssl://127.0.0.1:8883"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+    }
+
+    @Test
+    void mqttValidatorChecksSubscribeTopicsStringsAndCollections() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        Map<String, Object> options = ext("subscribeTopics", "devices/${deviceId}/#, other/{device_id}/+");
+        connection.setExtJson(options);
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${deviceId}/#", "other/{device_id}/+"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${deviceId}/#/invalid"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${unknown}/#"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
     }
 
     private DeviceInfo device(String deviceId, String protocolType) {
