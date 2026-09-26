@@ -237,7 +237,7 @@ public class CollectionScheduler {
         } else {
             phase = DeviceRuntimePhase.STOPPED;
         }
-        boolean ready = running && connected && firstSampleAt > 0;
+        boolean ready = phase == DeviceRuntimePhase.ONLINE;
         int configuredPointCount = configManager != null && configManager.getDataPoints(deviceId) != null
                 ? configManager.getDataPoints(deviceId).size() : 0;
         long configVersion = configManager != null ? configManager.getDeviceConfigVersion(deviceId) : 0L;

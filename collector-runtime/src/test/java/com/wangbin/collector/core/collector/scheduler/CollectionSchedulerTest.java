@@ -2,6 +2,8 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -104,6 +106,73 @@ public class CollectionSchedulerTest {
         InOrder inOrder = inOrder(restartCoordinator, lifecycleCoordinator);
         inOrder.verify(restartCoordinator).cancelAll();
         inOrder.verify(lifecycleCoordinator).stopAllDevices();
+    }
+
+    @Test
+    void runtimeReadyRequiresOnlinePhaseWithoutErasingFirstSample() {
+        String deviceId = "dev-runtime-ready";
+        long generation = 7L;
+        runtimeState.markRunning(deviceId, generation);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, generation);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+
+        DeviceRuntimeSnapshot waiting = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.WAITING_FIRST_SAMPLE, waiting.phase());
+        assertFalse(waiting.ready());
+        assertTrue(waiting.connected());
+
+        performanceMonitor.recordBatchSuccess(deviceId, generation, 1, 10L);
+        DeviceRuntimeSnapshot online = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.ONLINE, online.phase());
+        assertTrue(online.ready());
+        assertTrue(online.firstSampleAt() > 0);
+
+        performanceMonitor.recordBatchFailure(deviceId, generation);
+        DeviceRuntimeSnapshot degraded = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.DEGRADED, degraded.phase());
+        assertFalse(degraded.ready());
+        assertTrue(degraded.connected());
+        assertEquals(online.firstSampleAt(), degraded.firstSampleAt());
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            performanceMonitor.recordBatchFailure(deviceId, generation);
+        }
+        DeviceRuntimeSnapshot failed = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.FAILED, failed.phase());
+        assertFalse(failed.ready());
+        assertTrue(failed.connected());
+        assertEquals(online.firstSampleAt(), failed.firstSampleAt());
+
+        when(reconnectCoordinator.isReconnecting(deviceId)).thenReturn(true);
+        DeviceRuntimeSnapshot reconnecting = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.RECONNECTING, reconnecting.phase());
+        assertFalse(reconnecting.ready());
+        assertTrue(reconnecting.connected());
+        assertEquals(online.firstSampleAt(), reconnecting.firstSampleAt());
+    }
+
+    @Test
+    void runtimeReadyMustFollowConnectionAndCurrentGeneration() {
+        String deviceId = "dev-runtime-generation";
+        runtimeState.markRunning(deviceId, 3L);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, 3L);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        performanceMonitor.recordBatchSuccess(deviceId, 3L, 1, 10L);
+        assertTrue(scheduler.getDeviceRuntimeSnapshot(deviceId).ready());
+
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(false);
+        DeviceRuntimeSnapshot disconnected = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.FAILED, disconnected.phase());
+        assertFalse(disconnected.ready());
+        assertFalse(disconnected.connected());
+        assertTrue(disconnected.firstSampleAt() > 0);
+
+        runtimeState.markRunning(deviceId, 4L);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        DeviceRuntimeSnapshot newGeneration = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.WAITING_FIRST_SAMPLE, newGeneration.phase());
+        assertFalse(newGeneration.ready());
+        assertEquals(0L, newGeneration.firstSampleAt());
     }
 
     @AfterEach

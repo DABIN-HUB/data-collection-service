@@ -16,6 +16,9 @@ import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -48,6 +51,7 @@ class RealtimeDataQueryApplicationServiceTest {
     private ConfigManager configManager;
     private PointRuntimeStateService pointRuntimeStateService;
     private RealtimeChangeTracker realtimeChangeTracker;
+    private CollectionService collectionService;
     private RealtimeDataQueryApplicationService service;
 
     @BeforeEach
@@ -56,13 +60,158 @@ class RealtimeDataQueryApplicationServiceTest {
         configManager = mock(ConfigManager.class);
         pointRuntimeStateService = mock(PointRuntimeStateService.class);
         realtimeChangeTracker = mock(RealtimeChangeTracker.class);
+        collectionService = mock(CollectionService.class);
         when(realtimeChangeTracker.snapshotId()).thenReturn("snapshot-test");
         when(realtimeChangeTracker.configEpoch()).thenReturn(1L);
         when(realtimeChangeTracker.currentRevision()).thenReturn(0L);
         when(realtimeChangeTracker.capture()).thenReturn(new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 0L));
         when(realtimeChangeTracker.validateCursor("snapshot-test", 1L, 0L))
                 .thenReturn(RealtimeChangeTracker.CursorValidation.valid(0L));
-        service = new RealtimeDataQueryApplicationService(cacheManager, configManager, pointRuntimeStateService, realtimeChangeTracker);
+        service = new RealtimeDataQueryApplicationService(cacheManager, configManager, pointRuntimeStateService, realtimeChangeTracker, collectionService);
+    }
+
+    @Test
+    void fullAndCompactShouldOverlayFailedRuntimeWithoutMutatingCachedLastGoodResult() {
+        DataPoint point = point("dev-1", "p-1", "temperature");
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(12.3D);
+        result.setQuality(100);
+        when(configManager.getDataPointByPointId("dev-1", "p-1")).thenReturn(point);
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(pointRuntimeStateService.snapshot("dev-1", point))
+                .thenReturn(new PointRuntimeStateSnapshot(1000L, 1, null, 0D, 0L));
+        when(cacheManager.get(any(CacheKey.class))).thenReturn(result);
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-1", "p-1"), result));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1")).thenReturn(runtime(DeviceRuntimePhase.FAILED, false));
+
+        PointRealtimePayload full = service.getPointData("dev-1", "p-1").getData();
+        CompactRealtimePointPayload compact = service.getCompactDeviceData("dev-1").getRows().get(0);
+        assertEquals(12.3D, full.getValue());
+        assertEquals(12.3D, compact.getValue());
+        assertEquals(Boolean.TRUE, full.getStale());
+        assertEquals(Boolean.TRUE, compact.getStale());
+        assertEquals("STALE", full.getRealtimeStatus());
+        assertEquals("STALE", compact.getRealtimeStatus());
+        assertEquals("D", full.getQualityLevel());
+        assertEquals("D", compact.getQualityLevel());
+        assertEquals(Boolean.FALSE, compact.getQualityAcceptable());
+        assertEquals(100, result.getQuality());
+    }
+
+    @Test
+    void degradedAndStoppedShouldNotBeReportedAsDeviceFaultAndOnlinePreservesOriginalQuality() {
+        DataPoint point = point("dev-1", "p-1", "temperature");
+        ProcessResult result = new ProcessResult();
+        result.setSuccess(true);
+        result.setProcessedValue(1);
+        result.setQuality(100);
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-1", "p-1"), result));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1"))
+                .thenReturn(runtime(DeviceRuntimePhase.DEGRADED, true), runtime(DeviceRuntimePhase.STOPPED, false),
+                        runtime(DeviceRuntimePhase.ONLINE, true));
+
+        CompactRealtimePointPayload degraded = service.getCompactDeviceData("dev-1").getRows().get(0);
+        CompactRealtimePointPayload stopped = service.getCompactDeviceData("dev-1").getRows().get(0);
+        CompactRealtimePointPayload online = service.getCompactDeviceData("dev-1").getRows().get(0);
+        assertEquals("C", degraded.getQualityLevel());
+        assertEquals("C", stopped.getQualityLevel());
+        assertEquals("UNCERTAIN", degraded.getQualityDescription());
+        assertEquals("UNCERTAIN", stopped.getQualityDescription());
+        assertEquals("A", online.getQualityLevel());
+        assertEquals(Boolean.FALSE, online.getStale());
+    }
+
+    @Test
+    void deltaShouldReturnHealthOnlyChangesAndRecoveryWithoutValueRevision() {
+        DataPoint point = point("dev-a", "p1", "temperature");
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 5L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 5L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(5L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
+        when(realtimeChangeTracker.findChangedKeys(5L, 5L, "dev-a", 20_001)).thenReturn(List.of());
+        when(configManager.getDataPoints("dev-a")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-a", "p1"), "last-good"));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-a"))
+                .thenReturn(runtime(DeviceRuntimePhase.ONLINE, true), runtime(DeviceRuntimePhase.FAILED, false),
+                        runtime(DeviceRuntimePhase.ONLINE, true));
+
+        service.getCompactDeviceData("dev-a");
+        CompactRealtimeDeltaResponse failed = service.getCompactDeviceRealtimeDelta("dev-a", "snapshot-test", 1L, 5L);
+        CompactRealtimeDeltaResponse recovered = service.getCompactDeviceRealtimeDelta("dev-a", "snapshot-test", 1L, 5L);
+        assertEquals(1, failed.getChangedCount());
+        assertEquals("D", failed.getRows().get(0).getQualityLevel());
+        assertEquals("last-good", failed.getRows().get(0).getValue());
+        assertEquals(1, recovered.getChangedCount());
+        assertEquals(Boolean.FALSE, recovered.getRows().get(0).getStale());
+        assertEquals("UNASSESSED", recovered.getRows().get(0).getRealtimeStatus());
+    }
+
+    @Test
+    void aggregateDeltaShouldIncludeHealthOnlyChangesFromMultipleDevices() {
+        DataPoint first = point("dev-a", "p1", "temperature");
+        DataPoint second = point("dev-b", "p2", "humidity");
+        RealtimeChangeTracker.SnapshotCursor boundary = new RealtimeChangeTracker.SnapshotCursor("snapshot-test", 1L, 5L);
+        when(realtimeChangeTracker.capture()).thenReturn(boundary);
+        when(realtimeChangeTracker.validateCursor(boundary, "snapshot-test", 1L, 5L))
+                .thenReturn(RealtimeChangeTracker.CursorValidation.valid(5L));
+        when(realtimeChangeTracker.validateBoundary(boundary))
+                .thenReturn(RealtimeChangeTracker.BoundaryValidation.current());
+        when(realtimeChangeTracker.findChangedKeys(5L, 5L, null, 20_001)).thenReturn(List.of());
+        when(configManager.getAllDeviceIds()).thenReturn(List.of("dev-a", "dev-b"));
+        when(configManager.getDataPoints("dev-a")).thenReturn(List.of(first));
+        when(configManager.getDataPoints("dev-b")).thenReturn(List.of(second));
+        when(cacheManager.getAll(anyList())).thenAnswer(invocation -> {
+            List<CacheKey> keys = invocation.getArgument(0);
+            return Map.of(keys.get(0), "a", keys.get(1), "b");
+        });
+        when(collectionService.getDeviceRuntimeSnapshot("dev-a"))
+                .thenReturn(runtime(DeviceRuntimePhase.ONLINE, true), runtime(DeviceRuntimePhase.STOPPED, false));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-b"))
+                .thenReturn(runtime(DeviceRuntimePhase.ONLINE, true), runtime(DeviceRuntimePhase.FAILED, false));
+
+        service.getCompactAllRealtimeData();
+        CompactRealtimeDeltaResponse response = service.getCompactAllRealtimeDelta("snapshot-test", 1L, 5L);
+        assertEquals(2, response.getChangedCount());
+        assertEquals(List.of("C", "D"), response.getRows().stream().map(CompactRealtimePointPayload::getQualityLevel).toList());
+        assertEquals(List.of("a", "b"), response.getRows().stream().map(CompactRealtimePointPayload::getValue).toList());
+    }
+
+    @Test
+    void disconnectedWithoutCachedValueShouldRemainStaleAndDisconnected() {
+        DataPoint point = point("dev-1", "p-1", "temperature");
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of());
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1")).thenReturn(runtime(DeviceRuntimePhase.FAILED, false));
+
+        CompactRealtimePointPayload row = service.getCompactDeviceData("dev-1").getRows().get(0);
+        assertEquals(Boolean.TRUE, row.getStale());
+        assertEquals("DISCONNECTED", row.getRealtimeStatus());
+        assertEquals("D", row.getQualityLevel());
+        assertNull(row.getValue());
+    }
+
+    @Test
+    void runtimeSnapshotFailureShouldKeepLastGoodValueButNotClaimGoodQuality() {
+        DataPoint point = point("dev-1", "p-1", "temperature");
+        when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(cacheManager.getAll(anyList())).thenReturn(Map.of(CacheKey.dataKey("dev-1", "p-1"), "last-good"));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1"))
+                .thenThrow(new IllegalStateException("runtime unavailable"));
+
+        CompactDeviceRealtimeDataResponse response = service.getCompactDeviceData("dev-1");
+        assertEquals("success", response.getStatus());
+        assertEquals("last-good", response.getRows().get(0).getValue());
+        assertEquals("D", response.getRows().get(0).getQualityLevel());
+        assertEquals(Boolean.TRUE, response.getRows().get(0).getStale());
+    }
+
+    private DeviceRuntimeSnapshot runtime(DeviceRuntimePhase phase, boolean connected) {
+        return new DeviceRuntimeSnapshot("dev-1", phase, phase != DeviceRuntimePhase.STOPPED, false, connected,
+                false, 0L, 0L, 1L, 0L, 0, 0L, "连接已断开", 0L);
     }
 
     @Test
@@ -299,6 +448,8 @@ class RealtimeDataQueryApplicationServiceTest {
         result.setProcessingTime(7L);
         result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, 1800000000123L);
         when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1"))
+                .thenReturn(runtime(DeviceRuntimePhase.ONLINE, true));
         when(cacheManager.getAll(anyList())).thenAnswer(invocation -> Map.of(invocation.<List<CacheKey>>getArgument(0).get(0), result));
 
         CompactRealtimePointPayload row = service.getCompactDeviceData("dev-1").getRows().get(0);
@@ -319,6 +470,8 @@ class RealtimeDataQueryApplicationServiceTest {
     void getCompactDeviceDataShouldMapPlainCachedValueWithoutQualityAssessment() {
         DataPoint point = point("dev-1", "p-1", "temperature");
         when(configManager.getDataPoints("dev-1")).thenReturn(List.of(point));
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1"))
+                .thenReturn(runtime(DeviceRuntimePhase.ONLINE, true));
         when(cacheManager.getAll(anyList())).thenAnswer(invocation -> Map.of(invocation.<List<CacheKey>>getArgument(0).get(0), 12.3D));
 
         CompactRealtimePointPayload row = service.getCompactDeviceData("dev-1").getRows().get(0);

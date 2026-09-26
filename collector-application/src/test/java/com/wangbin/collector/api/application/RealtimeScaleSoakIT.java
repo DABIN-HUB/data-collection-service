@@ -65,7 +65,8 @@ class RealtimeScaleSoakIT {
                 cacheManager,
                 configManager,
                 runtimeStateService,
-                tracker);
+                tracker,
+                mock(com.wangbin.collector.core.collector.CollectionService.class));
 
         MemorySnapshot startMemory = MemorySnapshot.capture();
         long recordStarted = System.nanoTime();

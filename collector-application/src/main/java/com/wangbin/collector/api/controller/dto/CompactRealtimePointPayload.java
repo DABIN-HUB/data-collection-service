@@ -114,6 +114,18 @@ public class CompactRealtimePointPayload {
      */
     private Object lastUpdateTime;
 
+    /** 本次查询的有效实时状态，不改变缓存中的采集结果。 */
+    private String realtimeStatus;
+
+    /** 运行态错误摘要。 */
+    private String errorMessage;
+
+    /** 当前值是否因设备运行态异常而成为旧值。 */
+    private Boolean stale;
+
+    /** 最近一次成功采集的时间。 */
+    private Long lastSuccessfulCollectionAt;
+
     /**
      * 根据点位配置和缓存值构建实时表格紧凑负载。
      *
@@ -156,9 +168,19 @@ public class CompactRealtimePointPayload {
             this.processSuccess = processResult.isSuccess();
             this.processingTime = processResult.getProcessingTime();
             this.lastUpdateTime = metadata == null ? null : metadata.get(ProcessResultMetadataKeys.COLLECT_TIME);
+            this.realtimeStatus = processResult.isSuccess()
+                    ? (processResult.isQualityAcceptable() ? "GOOD" : "COLLECT_ERROR") : "PROCESS_ERROR";
+            this.errorMessage = processResult.getMessage();
+            this.stale = false;
+            Object collectTime = this.lastUpdateTime;
+            if (processResult.isSuccess() && collectTime instanceof Number number) {
+                this.lastSuccessfulCollectionAt = number.longValue();
+            }
             return;
         }
         this.value = cachedValue;
         this.qualityAvailable = false;
+        this.realtimeStatus = cachedValue == null ? "NO_VALUE" : "UNASSESSED";
+        this.stale = false;
     }
 }
