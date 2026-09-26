@@ -420,7 +420,7 @@ collector-desktop/release/win-unpacked/数据采集工作台.exe
 - `Modbus`：支持 TCP / RTU / ASCII，支持读计划、连续地址聚合读取、批量分块写
 - `Siemens S7`：支持 `DB` / `I` / `Q` / `M` 等地址形式，支持读、写和订阅
 - `Mitsubishi MC`：当前已落地自研 `MC 3E Binary over TCP` 采集链路，支持轮询读写
-- `OMRON FINS`：已支持 `FINS/UDP` 读写与连续块合并读取
+- `OMRON FINS`：支持 `FINS/UDP` / `FINS/TCP` 轮询读写与连续块合并；TCP 节点协商、请求期限、ProtoForge/TCP 实读、可写点写后读回并恢复原值、断链自动恢复已验证；ProtoForge 声明支持 UDP，但当前 Python 3.12 运行时因 `reuse_address` 不兼容未监听 UDP 9600，UDP 实采状态为 `BLOCKED_BY_PROTOFORGE_RUNTIME`；`AUTO` 固定选择 UDP，不因超时切换
 - `EtherNet/IP`：支持 `Logix Tag` 风格符号地址读写
 - `ADS`：支持 `Beckhoff ADS / AMS` 符号读写与订阅
 - `KNXnet/IP`：支持组地址采集，支持 `DPT` 类型映射

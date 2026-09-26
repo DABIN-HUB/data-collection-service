@@ -2,6 +2,7 @@ package com.wangbin.collector.core.config.validator;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.enums.FinsTransportMode;
 import com.wangbin.collector.common.exception.CollectorException;
 import org.springframework.stereotype.Component;
 
@@ -193,13 +194,25 @@ public class ProtocolConnectionValidator {
             fail(deviceInfo, "OMRON_FINS requires localNode");
         }
 
+        FinsTransportMode mode;
+        try {
+            mode = FinsTransportMode.from(connection.getProperty("transport"));
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+            return;
+        }
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNetwork", null), 0, 255, "plcNetwork");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNode", null), 0, 255, "plcNode");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcUnit", null), 0, 255, "plcUnit");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNetwork", null), 0, 255, "localNetwork");
-        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNode", null), 0, 255, "localNode");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNode", null),
+                0, mode == FinsTransportMode.TCP ? 254 : 255, "localNode");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("localUnit", null), 0, 255, "localUnit");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("serviceIdSeed", null), 0, 255, "serviceIdSeed");
+        validatePositive(deviceInfo, connection.getConnectTimeout(), "OMRON_FINS connectTimeout");
+        validateOmronFinsRange(deviceInfo, connection.getBufferSize(), 14, 65507, "bufferSize");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("maxFrameSize", null),
+                34, 1_048_576, "maxFrameSize");
         validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "OMRON_FINS maxWordsPerRequest");
         validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "OMRON_FINS maxBitsPerRequest");
         validatePositive(deviceInfo, connection.getReadTimeout(), "OMRON_FINS readTimeout");

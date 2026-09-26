@@ -17,20 +17,23 @@ public class OmronProtocolDescriptorProvider implements ProtocolDescriptorProvid
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("OMRON_FINS", "OMRON FINS",
-                "Self-owned OMRON FINS/UDP collector for polling read/write on common PLC memory areas.",
+                "OMRON FINS over UDP/TCP with explicit transport and connection lifecycle.",
                 List.of("FINS", "OMRONFINS"), OmronFinsCollector.class, "OMRON_FINS", 9600,
                 ProtocolAddressingMode.MIXED,
                 true, true, false,
                 List.of("DM:100", "DM:100.3", "CIO:0.1", "WR:20", "HR:50", "EM0:100", "DM:200#8"),
                 registry.fields(
                         registry.field("host", "string", "Device host", true, "127.0.0.1", null, "connection",
-                                "OMRON PLC IP address for FINS/UDP communication."),
+                                "OMRON PLC IP address for FINS communication."),
                         registry.field("port", "number", "Port", false, "9600", null, "connection",
-                                "FINS/UDP destination port. Leave empty to use the default 9600."),
+                                "FINS endpoint port for the selected UDP or TCP transport."),
+                        registry.field("transport", "select", "Transport", false, "AUTO",
+                                List.of("UDP", "TCP", "AUTO"), "connection",
+                                "Use UDP or TCP explicitly. AUTO preserves legacy configuration and stays on UDP; a request timeout never changes transport."),
                         registry.field("plcNode", "number", "PLC node", true, "1", null, "protocol",
-                                "Destination node number on the PLC side."),
+                                "Configured destination node for UDP; TCP uses the server node returned by handshake."),
                         registry.field("localNode", "number", "Local node", true, "10", null, "protocol",
-                                "Source node number used by the collector host."),
+                                "Configured source node for UDP and TCP handshake request; TCP uses the assigned client node."),
                         registry.field("plcUnit", "number", "PLC unit", false, "0", null, "protocol",
                                 "Destination unit number. CPU unit commonly uses 0."),
                         registry.field("localUnit", "number", "Local unit", false, "0", null, "protocol",
@@ -54,10 +57,16 @@ public class OmronProtocolDescriptorProvider implements ProtocolDescriptorProvid
                         registry.field("wordOrder", "select", "Word order", false, "BIG_ENDIAN",
                                 List.of("BIG_ENDIAN", "LITTLE_ENDIAN"), "advanced",
                                 "Default word order used for 32-bit and 64-bit values when the point does not override it."),
-                        registry.field("readTimeout", "number", "Read timeout (ms)", false, "5000", null, "advanced",
-                                "UDP receive timeout while waiting for one FINS response."),
-                        registry.field("timeout", "number", "Protocol timeout (ms)", false, "5000", null, "advanced",
-                                "Fallback timeout used when readTimeout is empty.")))
+                        registry.field("connectTimeoutMs", "number", "Connect timeout (ms)", false, "5000", null, "advanced",
+                                "TCP connect and node handshake deadline; not used as the UDP receive timeout."),
+                        registry.field("readTimeoutMs", "number", "Request timeout (ms)", false, "30000", null, "advanced",
+                                "Total deadline for one FINS exchange; stale UDP packets do not extend it."),
+                        registry.field("timeout", "number", "Protocol timeout (ms)", false, "30000", null, "advanced",
+                                "Fallback request timeout when readTimeout is empty."),
+                        registry.field("bufferSize", "number", "UDP receive buffer", false, "8192", null, "advanced",
+                                "Maximum UDP datagram bytes (14..65507)."),
+                        registry.field("maxFrameSize", "number", "TCP maximum frame bytes", false, "8192", null, "advanced",
+                                "Maximum complete FINS/TCP frame, including magic and length (34..1048576).")))
                 .withPointFields(finsPointFields(registry)));
     }
 

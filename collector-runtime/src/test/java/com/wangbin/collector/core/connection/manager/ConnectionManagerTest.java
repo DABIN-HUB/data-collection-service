@@ -127,6 +127,31 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void stoppedDeviceWithQueuedReconnectNeverReappearsOnLaterHeartbeatCycles() throws Exception {
+        ExecutorService executor = mock(ExecutorService.class);
+        Queue<Runnable> submitted = new ArrayDeque<>();
+        when(executor.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            submitted.add(invocation.getArgument(0));
+            return mock(java.util.concurrent.Future.class);
+        });
+        Fixture fixture = new Fixture(executor);
+        ConnectionAdapter<?> adapter = fixture.add("dev-fins", false, true);
+
+        // A failed connection is queued for reconnect; device stop removes its managed adapter.
+        fixture.manager.startHeartbeatMonitor();
+        assertEquals(1, submitted.size());
+        fixture.manager.removeConnection("dev-fins");
+        submitted.remove().run();
+        fixture.manager.startHeartbeatMonitor();
+        fixture.manager.startHeartbeatMonitor();
+
+        assertNull(fixture.manager.getConnection("dev-fins"));
+        assertEquals(0, submitted.size());
+        verify(adapter, never()).reconnect();
+        verify(adapter).closeResources();
+    }
+
+    @Test
     void repeatedHeartbeatScanKeepsOnlyOneInFlightReconnectPerDevice() throws Exception {
         ExecutorService executor = mock(ExecutorService.class);
         Queue<Runnable> submitted = new ArrayDeque<>();

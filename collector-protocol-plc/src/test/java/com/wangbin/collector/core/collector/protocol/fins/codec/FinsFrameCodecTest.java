@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FinsFrameCodecTest {
@@ -57,6 +58,18 @@ class FinsFrameCodecTest {
         assertEquals(0x06, request[10] & 0xFF);
         assertEquals(0x01, request[11] & 0xFF);
         assertArrayEquals(new byte[]{0x01, 0x02}, parsed.payload());
+    }
+
+    @Test
+    void shouldRejectMismatchedSidAndCommandInResponse() {
+        byte[] response = new byte[]{
+                (byte) 0xC0, 0, 2, 0, 1, 0, 0, 10, 0, (byte) 0xFF,
+                0x01, 0x01, 0x00, 0x00, 0x12, 0x34
+        };
+        assertThrows(IllegalArgumentException.class, () -> FinsFrameCodec.parseReadResponse(response, 0));
+        response[9] = 0;
+        response[11] = 2;
+        assertThrows(IllegalArgumentException.class, () -> FinsFrameCodec.parseReadResponse(response, 0));
     }
 
     private FinsConnectionConfig config() {

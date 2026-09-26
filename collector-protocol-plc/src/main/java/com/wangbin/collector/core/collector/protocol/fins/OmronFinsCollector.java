@@ -19,8 +19,9 @@ import com.wangbin.collector.core.collector.protocol.fins.service.FinsReadPlanIt
 import com.wangbin.collector.core.collector.protocol.fins.service.FinsWritePlan;
 import com.wangbin.collector.core.collector.protocol.fins.service.FinsWritePlanBuilder;
 import com.wangbin.collector.core.collector.protocol.fins.service.FinsWritePlanItem;
+import com.wangbin.collector.core.collector.protocol.fins.transport.FinsTransportException;
 import com.wangbin.collector.core.collector.protocol.fins.util.FinsAddressParser;
-import com.wangbin.collector.core.connection.adapter.OmronFinsUdpConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.OmronFinsConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
@@ -70,7 +71,8 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     private volatile Integer lastFinsEndCode;
     private volatile Integer lastRequestUnitCount;
 
-    private OmronFinsUdpConnectionAdapter connectionAdapter;
+    private OmronFinsConnectionAdapter connectionAdapter;
+    private FinsConnectionConfig configuredFinsConfig;
     private FinsConnectionConfig finsConfig;
 
     @Override
@@ -89,19 +91,42 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
-        this.connectionAdapter = createAndConnectAdapter(desiredConfig, OmronFinsUdpConnectionAdapter.class, "OMRON FINS");
+        this.connectionAdapter = createAndConnectAdapter(desiredConfig, OmronFinsConnectionAdapter.class, "OMRON FINS");
 
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
             currentConfig = desiredConfig;
         }
-        this.finsConfig = FinsConnectionConfig.from(currentConfig);
+        this.configuredFinsConfig = FinsConnectionConfig.from(currentConfig, deviceInfo);
+        var nodes = connectionAdapter.getEffectiveNodes();
+        this.finsConfig = nodes == null ? configuredFinsConfig
+                : configuredFinsConfig.withEffectiveNodes(nodes.sourceNode(), nodes.destinationNode());
         this.sidSequence.set(finsConfig.getServiceIdSeed() & 0xFF);
         resetProtocolMetrics();
         this.configuredReadPlans = Collections.emptyList();
         this.configuredReadPlanPointKeys = Collections.emptySet();
         log.info("OMRON FINS 采集器 已连接, 设备={}, 主机={}, 端口={}",
                 deviceInfo.getDeviceId(), finsConfig.getHost(), finsConfig.getPort());
+    }
+
+    @Override
+    public boolean isConnected() {
+        OmronFinsConnectionAdapter adapter = connectionAdapter;
+        return connected && adapter != null && adapter.isConnected();
+    }
+
+    /** 传输故障已把采集器标为断开时，仍须移除受管连接以终止自动重连。 */
+    @Override
+    public void disconnect() throws CollectorException {
+        try {
+            super.disconnect();
+        } finally {
+            if (connectionAdapter != null) {
+                doDisconnect();
+                connected = false;
+                connectionStatus = "DISCONNECTED";
+            }
+        }
     }
 
     /**
@@ -111,6 +136,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     protected void doDisconnect() {
         removeManagedConnection("OMRON FINS");
         connectionAdapter = null;
+        configuredFinsConfig = null;
         finsConfig = null;
         configuredAddresses.clear();
         wordWriteLocks.clear();
@@ -515,8 +541,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     @Override
     protected Map<String, Object> doGetDeviceStatus() {
         Map<String, Object> status = new LinkedHashMap<>();
-        FinsConnectionConfig config = finsConfig;
+        FinsConnectionConfig config = configuredFinsConfig;
         if (config != null) {
+            status.put("configuredTransport", config.getTransport().name());
             status.put(CommonMapKeys.HOST, config.getHost());
             status.put(CommonMapKeys.PORT, config.getPort());
             status.put("plcNetwork", config.getPlcNetwork());
@@ -525,9 +552,23 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
             status.put("localNetwork", config.getLocalNetwork());
             status.put("localNode", config.getLocalNode());
             status.put("localUnit", config.getLocalUnit());
+            status.put("connectTimeout", config.getConnectTimeoutMs());
+            status.put("requestTimeout", config.getTimeoutMs());
             status.put("batchReadEnabled", config.isBatchReadEnabled());
             status.put("maxWordsPerRequest", config.getMaxWordsPerRequest());
             status.put("maxBitsPerRequest", config.getMaxBitsPerRequest());
+        }
+        OmronFinsConnectionAdapter adapter = connectionAdapter;
+        if (adapter != null) {
+            var effectiveTransport = adapter.getEffectiveTransport();
+            if (effectiveTransport != null) {
+                status.put("effectiveTransport", effectiveTransport.name());
+            }
+            var nodes = adapter.getEffectiveNodes();
+            if (nodes != null) {
+                status.put("effectiveSourceNode", nodes.sourceNode());
+                status.put("effectiveDestinationNode", nodes.destinationNode());
+            }
         }
         status.put("configuredReadPlans", configuredReadPlans.size());
         status.put("requestCount", requestCount.get());
@@ -622,8 +663,14 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      * 校验业务条件和参数边界。
      */
     private FinsConnectionConfig requireFinsConfig() {
-        if (finsConfig == null) {
+        if (configuredFinsConfig == null) {
             throw new IllegalStateException("FINS connection config is not initialized");
+        }
+        OmronFinsConnectionAdapter adapter = connectionAdapter;
+        if (adapter != null) {
+            var nodes = adapter.getEffectiveNodes();
+            finsConfig = nodes == null ? configuredFinsConfig
+                    : configuredFinsConfig.withEffectiveNodes(nodes.sourceNode(), nodes.destinationNode());
         }
         return finsConfig;
     }
@@ -1027,7 +1074,7 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private byte[] exchange(byte[] request) throws Exception {
-        OmronFinsUdpConnectionAdapter adapter = connectionAdapter;
+        OmronFinsConnectionAdapter adapter = connectionAdapter;
         if (adapter == null) {
             throw new IllegalStateException("OMRON FINS connection adapter is not initialized");
         }
@@ -1145,10 +1192,14 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     private void invalidateConnectionIfNeeded(Throwable throwable) {
-        if (throwable instanceof SocketTimeoutException || throwable instanceof SocketException) {
-            log.warn("作废OMRON FINS 连接 ，原因=传输失败, 设备={}", deviceInfo.getDeviceId(), throwable);
-            connected = false;
-            connectionStatus = "ERROR";
+        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+            if (cause instanceof FinsTransportException || cause instanceof SocketTimeoutException
+                    || cause instanceof SocketException) {
+                log.warn("作废 OMRON FINS 连接，原因=传输失败, 设备={}", deviceInfo.getDeviceId(), throwable);
+                connected = false;
+                connectionStatus = "ERROR";
+                return;
+            }
         }
     }
 }

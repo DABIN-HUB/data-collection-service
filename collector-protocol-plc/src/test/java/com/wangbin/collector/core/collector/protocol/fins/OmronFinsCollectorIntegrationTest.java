@@ -9,6 +9,7 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.protocol.OmronProtocolDescriptorProvider;
 import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
+import com.wangbin.collector.core.connection.adapter.OmronFinsConnectionAdapter;
 import com.wangbin.collector.core.connection.factory.ConnectionFactory;
 import com.wangbin.collector.core.connection.factory.provider.OmronConnectionAdapterProvider;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
@@ -20,18 +21,94 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class OmronFinsCollectorIntegrationTest {
+
+    @Test
+    void sidWrapsFrom255ToZeroWithoutChangingTheConnection() {
+        OmronFinsCollector collector = new OmronFinsCollector();
+        AtomicInteger sequence = (AtomicInteger) ReflectionTestUtils.getField(collector, "sidSequence");
+        sequence.set(255);
+        assertEquals(255, (int) ReflectionTestUtils.invokeMethod(collector, "nextSid"));
+        assertEquals(0, (int) ReflectionTestUtils.invokeMethod(collector, "nextSid"));
+    }
+
+    @Test
+    void tcpNegotiatedNodesFlowThroughCollectorReadBatchWriteAndCommand() throws Exception {
+        try (FakeFinsUdpServer backend = new FakeFinsUdpServer();
+             FakeFinsTcpServer server = new FakeFinsTcpServer(backend)) {
+            backend.putWord(FinsMemoryArea.DM, 100, 11);
+            backend.putWord(FinsMemoryArea.DM, 101, 12);
+            DataPoint p1 = point("p1", "DM:100", "INT16", "RW");
+            DataPoint p2 = point("p2", "DM:101", "INT16", "RW");
+            DeviceConnection settings = connection(server.port(), 750, true);
+            settings.getExtJson().put("transport", "TCP");
+            settings.setConnectTimeout(500);
+            settings.getExtJson().put("maxFrameSize", 256);
+            OmronFinsCollector collector = prepareCollector(server.port(), settings, List.of(p1, p2));
+            try {
+                assertEquals(11, ((Number) collector.readPoint(p1)).intValue());
+                collector.rebuildReadPlans("dev-fins", List.of(p1, p2));
+                Map<String, Object> reads = collector.readPoints(List.of(p1, p2));
+                assertEquals(11, ((Number) reads.get("p1")).intValue());
+                assertEquals(12, ((Number) reads.get("p2")).intValue());
+                assertTrue(collector.writePoint(p1, 21));
+                assertEquals(21, backend.getWord(FinsMemoryArea.DM, 100));
+                assertEquals(21, ((Number) collector.readPoint(p1)).intValue());
+                Map<DataPoint, Object> writes = new LinkedHashMap<>();
+                writes.put(p1, 31);
+                writes.put(p2, 32);
+                assertEquals(Map.of("p1", true, "p2", true), collector.writePoints(writes));
+                assertEquals(31, backend.getWord(FinsMemoryArea.DM, 100));
+                assertEquals(32, backend.getWord(FinsMemoryArea.DM, 101));
+                assertEquals(1, ((Map<?, ?>) collector.executeCommand("CPU_STATUS_READ", Map.of())).get("status"));
+                assertEquals(List.of("01:01:1", "01:01:2", "01:02:1", "01:01:1", "01:02:2", "06:01:0"),
+                        server.requests());
+                assertEquals(10, settings.getIntConfig("localNode", null));
+                assertEquals(1, settings.getIntConfig("plcNode", null));
+            } finally {
+                collector.disconnect();
+            }
+        }
+    }
+
+    @Test
+    void collectorConnectedTracksCurrentFinsTransportSession() throws Exception {
+        try (FakeFinsUdpServer backend = new FakeFinsUdpServer();
+             FakeFinsTcpServer server = new FakeFinsTcpServer(backend)) {
+            DeviceConnection settings = connection(server.port(), 750, true);
+            settings.getExtJson().put("transport", "TCP");
+            OmronFinsCollector collector = prepareCollector(server.port(), settings, List.of());
+            try {
+                assertTrue(collector.isConnected());
+                OmronFinsConnectionAdapter adapter = (OmronFinsConnectionAdapter)
+                        ReflectionTestUtils.getField(collector, "connectionAdapter");
+                adapter.disconnect();
+                assertTrue(!collector.isConnected());
+            } finally {
+                collector.disconnect();
+            }
+        }
+    }
 
     @Test
     void shouldReadWriteAndReadBitPointOverUdp() throws Exception {
@@ -202,8 +279,12 @@ class OmronFinsCollectorIntegrationTest {
                                                 List<DataPoint> points,
                                                 int readTimeoutMs,
                                                 boolean batchReadEnabled) throws Exception {
-        DeviceInfo deviceInfo = deviceInfo(server.port());
-        DeviceConnection connection = connection(server.port(), readTimeoutMs, batchReadEnabled);
+        return prepareCollector(server.port(), connection(server.port(), readTimeoutMs, batchReadEnabled), points);
+    }
+
+    private OmronFinsCollector prepareCollector(int port, DeviceConnection connection,
+                                                List<DataPoint> points) throws Exception {
+        DeviceInfo deviceInfo = deviceInfo(port);
 
         ConfigManager configManager = mock(ConfigManager.class);
         when(configManager.getDeviceContext("dev-fins")).thenReturn(DeviceContext.of(deviceInfo, connection, points));
@@ -275,6 +356,94 @@ class OmronFinsCollectorIntegrationTest {
 
     private long metric(Map<String, Object> status, String key) {
         return ((Number) status.get(key)).longValue();
+    }
+
+    /** TCP 壳承载现有内存 PLC 的真实 FINS 命令，检查 Collector 发送的原始节点及路由。 */
+    private static final class FakeFinsTcpServer implements AutoCloseable {
+        private final ServerSocket listener;
+        private final Thread worker;
+        private final FakeFinsUdpServer backend;
+        private final List<String> requests = java.util.Collections.synchronizedList(new ArrayList<>());
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        private FakeFinsTcpServer(FakeFinsUdpServer backend) throws Exception {
+            this.backend = backend;
+            listener = new ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"));
+            worker = new Thread(this::serve, "fake-fins-tcp-collector-server");
+            worker.setDaemon(true);
+            worker.start();
+        }
+
+        private int port() {
+            return listener.getLocalPort();
+        }
+
+        private List<String> requests() {
+            synchronized (requests) {
+                return List.copyOf(requests);
+            }
+        }
+
+        private void serve() {
+            try (Socket socket = listener.accept()) {
+                socket.setSoTimeout(1500);
+                DataInputStream input = new DataInputStream(socket.getInputStream());
+                DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+                byte[] handshake = readFrame(input, 0);
+                assertArrayEquals(new byte[]{0, 0, 0, 10}, handshake);
+                writeFrame(output, 1, new byte[]{0, 0, 0, 37, 0, 0, 0, 52});
+                while (true) {
+                    byte[] request;
+                    try {
+                        request = readFrame(input, 2);
+                    } catch (java.io.EOFException expected) {
+                        break;
+                    }
+                    assertEquals(52, request[4] & 0xff);
+                    assertEquals(37, request[7] & 0xff);
+                    int units = request.length >= 18 ? ((request[16] & 0xff) << 8) | (request[17] & 0xff) : 0;
+                    requests.add(String.format("%02x:%02x:%d", request[10] & 0xff, request[11] & 0xff, units));
+                    byte[] reply = backend.handle(request);
+                    writeFrame(output, 2, reply);
+                }
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        }
+
+        private static byte[] readFrame(DataInputStream input, int expectedCommand) throws Exception {
+            byte[] magic = new byte[4];
+            input.readFully(magic);
+            assertArrayEquals("FINS".getBytes(StandardCharsets.US_ASCII), magic);
+            int length = input.readInt();
+            assertTrue(length >= 8 && length <= 256);
+            assertEquals(expectedCommand, input.readInt());
+            assertEquals(0, input.readInt());
+            byte[] body = new byte[length - 8];
+            input.readFully(body);
+            return body;
+        }
+
+        private static void writeFrame(DataOutputStream output, int command, byte[] body) throws Exception {
+            output.write("FINS".getBytes(StandardCharsets.US_ASCII));
+            output.writeInt(8 + body.length);
+            output.writeInt(command);
+            output.writeInt(0);
+            output.write(body);
+            output.flush();
+        }
+
+        @Override
+        public void close() throws Exception {
+            listener.close();
+            worker.join(2000);
+            if (worker.isAlive()) {
+                throw new AssertionError("TCP test peer did not exit");
+            }
+            if (failure.get() != null) {
+                throw new AssertionError("TCP test peer failed", failure.get());
+            }
+        }
     }
 
     private static final class FakeFinsUdpServer implements AutoCloseable {
@@ -389,6 +558,10 @@ class OmronFinsCollectorIntegrationTest {
             byte[] response = new byte[14 + payload.length];
             System.arraycopy(request, 0, response, 0, Math.min(10, request.length));
             response[0] = (byte) 0xC0;
+            for (int offset = 0; offset < 3; offset++) {
+                response[3 + offset] = request[6 + offset];
+                response[6 + offset] = request[3 + offset];
+            }
             response[10] = (byte) mainCommand;
             response[11] = (byte) subCommand;
             response[12] = (byte) ((endCode >> 8) & 0xFF);
@@ -417,6 +590,10 @@ class OmronFinsCollectorIntegrationTest {
             byte[] response = new byte[14 + payload.length];
             System.arraycopy(request, 0, response, 0, 10);
             response[0] = (byte) 0xC0;
+            for (int offset = 0; offset < 3; offset++) {
+                response[3 + offset] = request[6 + offset];
+                response[6 + offset] = request[3 + offset];
+            }
             response[10] = (byte) mainCommand;
             response[11] = (byte) subCommand;
             System.arraycopy(payload, 0, response, 14, payload.length);
