@@ -4,6 +4,7 @@ package com.wangbin.collector.core.collector.protocol.s7;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
@@ -17,6 +18,8 @@ import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.S7ConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.plc4x.java.api.exceptions.PlcConnectionException;
+import org.apache.plc4x.java.api.exceptions.PlcIoException;
 import org.apache.plc4x.java.api.messages.PlcReadResponse;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionEvent;
 import org.apache.plc4x.java.api.messages.PlcSubscriptionResponse;
@@ -39,6 +42,7 @@ import org.apache.plc4x.java.spi.values.DefaultPlcValueHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.lang.reflect.Array;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,6 +55,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -79,12 +84,18 @@ public class S7Collector extends ConnectionBackedCollector {
     private final Map<String, String> configuredSubscriptionModes = new ConcurrentHashMap<>();
     private final Map<String, String> configuredSubscriptionAddresses = new ConcurrentHashMap<>();
     private final Map<String, PlcSubscriptionHandle> subscriptionHandles = new ConcurrentHashMap<>();
+    private final Map<String, Object> subscriptionTokens = new ConcurrentHashMap<>();
+    private final Object subscriptionLifecycleLock = new Object();
     private final Map<String, AtomicLong> responseCodeStats = new ConcurrentHashMap<>();
+    private final AtomicLong batchRequestCount = new AtomicLong();
+    private final AtomicLong blockFallbackCount = new AtomicLong();
+    private final AtomicLong batchTimeoutCount = new AtomicLong();
+    private final AtomicLong batchResponseTimeMs = new AtomicLong();
     private final AtomicLong subscriptionEventCount = new AtomicLong();
     private final AtomicLong subscriptionRegisterFailureCount = new AtomicLong();
     private final AtomicLong subscriptionEventErrorCount = new AtomicLong();
 
-    private S7ConnectionAdapter connectionAdapter;
+    private volatile S7ConnectionAdapter connectionAdapter;
     private volatile List<S7ReadPlan> configuredReadPlans = Collections.emptyList();
     private int timeout = 5000;
     private int maxFieldsPerRequest = 64;
@@ -115,7 +126,13 @@ public class S7Collector extends ConnectionBackedCollector {
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
-        this.connectionAdapter = createAndConnectAdapter(desiredConfig, S7ConnectionAdapter.class, "S7");
+        int configuredMaxFields = desiredConfig.getInt("maxFieldsPerRequest", 64);
+        if (configuredMaxFields <= 0) {
+            throw new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
+        }
+        synchronized (subscriptionLifecycleLock) {
+            this.connectionAdapter = createAndConnectAdapter(desiredConfig, S7ConnectionAdapter.class, "S7");
+        }
 
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
@@ -126,7 +143,12 @@ public class S7Collector extends ConnectionBackedCollector {
                 ? currentConfig.getReadTimeout()
                 : currentConfig.getTimeout();
         this.timeout = configuredTimeout != null && configuredTimeout > 0 ? configuredTimeout : 5000;
-        this.maxFieldsPerRequest = Math.max(1, currentConfig.getInt("maxFieldsPerRequest", 64));
+        this.maxFieldsPerRequest = currentConfig.getInt("maxFieldsPerRequest", 64);
+        if (this.maxFieldsPerRequest <= 0) {
+            removeManagedConnection("S7");
+            connectionAdapter = null;
+            throw new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
+        }
         this.subscriptionSupported = currentConfig.getBool("subscriptionEnabled",
                 requireConnection().getClient().getMetadata().isSubscribeSupported());
         resetProtocolMetrics();
@@ -139,8 +161,12 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     @Override
     protected void doDisconnect() {
-        removeManagedConnection("S7");
-        connectionAdapter = null;
+        synchronized (subscriptionLifecycleLock) {
+            subscriptionTokens.clear();
+            subscriptionHandles.clear();
+            connectionAdapter = null;
+            removeManagedConnection("S7");
+        }
         configuredAddresses.clear();
         configuredSubscriptionModes.clear();
         configuredSubscriptionAddresses.clear();
@@ -326,14 +352,22 @@ public class S7Collector extends ConnectionBackedCollector {
         S7Address address = requireAddress(point);
         String fieldName = resolvePointTagName(point);
 
-        PlcReadResponse response = await(requireConnection().getClient()
-                .readRequestBuilder()
-                .addTagAddress(fieldName, address.getPlc4xAddress())
-                .build()
-                .execute());
-        recordResponseCode("read", point, address.getRawAddress(), response != null ? response.getResponseCode(fieldName) : null);
-        ensureResponseOk(response, fieldName, "read");
-        return extractValue(response, fieldName, point, address);
+        S7ConnectionAdapter session = requireConnection();
+        try {
+            PlcReadResponse response = await(session.getClient()
+                    .readRequestBuilder()
+                    .addTagAddress(fieldName, address.getPlc4xAddress())
+                    .build()
+                    .execute(), session);
+            recordResponseCode("read", point, address.getRawAddress(), response != null ? response.getResponseCode(fieldName) : null);
+            ensureResponseOk(response, fieldName, "read");
+            return extractValue(response, fieldName, point, address);
+        } catch (Exception ex) {
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            throw ex;
+        }
     }
 
     /**
@@ -346,27 +380,58 @@ public class S7Collector extends ConnectionBackedCollector {
             return results;
         }
 
-        for (S7ReadPlan readPlan : planReadPoints(points)) {
-            executeReadPlan(readPlan, results);
+        Map<String, DataQuality> failureQualities = new HashMap<>();
+        for (S7ReadPlan readPlan : readPlanBuilder.buildIsolatingInvalidPoints(points, maxFieldsPerRequest, point -> {
+            if (point.getPointId() != null) {
+                results.put(point.getPointId(), null);
+                failureQualities.put(point.getPointId(), DataQuality.CONFIG_ERROR);
+            }
+            recordFailureSnapshot("read", point, point.getAddress(), "INVALID_ADDRESS");
+            log.warn("PLC4X S7 点位规划失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), point.getPointId());
+        })) {
+            executeReadPlan(readPlan, results, failureQualities);
+        }
+        for (DataPoint point : points) {
+            if (point != null && point.getPointId() != null && results.containsKey(point.getPointId())
+                    && results.get(point.getPointId()) == null) {
+                publishReadFailure(point, failureQualities.getOrDefault(point.getPointId(), DataQuality.BAD));
+            }
         }
         return results;
     }
     /**
      * 执行当前业务逻辑。
      */
+    private void publishReadFailure(DataPoint point, DataQuality quality) {
+        ProcessResult failure = ProcessResult.error(null, "S7 read failed", quality);
+        enrichTelemetryMetadata(failure, null, null, System.currentTimeMillis(), "POLLING");
+        lastProcessResults.put(point.getPointId(), failure);
+        if (telemetryIngressService != null) {
+            telemetryIngressService.append(deviceInfo.getDeviceId(), point, failure);
+        }
+    }
+
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         S7Address address = requireAddress(point);
         String fieldName = resolvePointTagName(point);
 
-        PlcWriteResponse response = await(requireConnection().getClient()
-                .writeRequestBuilder()
-                .addTagAddress(fieldName, address.getPlc4xAddress(), coerceWriteValue(value, address, point))
-                .build()
-                .execute());
-        recordResponseCode("write", point, address.getRawAddress(), response != null ? response.getResponseCode(fieldName) : null);
-        ensureResponseOk(response, fieldName, "write");
-        return true;
+        S7ConnectionAdapter session = requireConnection();
+        try {
+            PlcWriteResponse response = await(session.getClient()
+                    .writeRequestBuilder()
+                    .addTagAddress(fieldName, address.getPlc4xAddress(), coerceWriteValue(value, address, point))
+                    .build()
+                    .execute(), session);
+            recordResponseCode("write", point, address.getRawAddress(), response != null ? response.getResponseCode(fieldName) : null);
+            ensureResponseOk(response, fieldName, "write");
+            return true;
+        } catch (Exception ex) {
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            throw ex;
+        }
     }
 
     /**
@@ -379,8 +444,9 @@ public class S7Collector extends ConnectionBackedCollector {
             return results;
         }
 
+        S7ConnectionAdapter session = requireConnection();
         try {
-            PlcWriteRequest.Builder builder = requireConnection().getClient().writeRequestBuilder();
+            PlcWriteRequest.Builder builder = session.getClient().writeRequestBuilder();
             List<DataPoint> orderedPoints = new ArrayList<>();
 
             for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
@@ -393,7 +459,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 orderedPoints.add(point);
             }
 
-            PlcWriteResponse response = await(builder.build().execute());
+            PlcWriteResponse response = await(builder.build().execute(), session);
             for (DataPoint point : orderedPoints) {
                 String fieldName = resolvePointTagName(point);
                 PlcResponseCode responseCode = response != null ? response.getResponseCode(fieldName) : null;
@@ -402,17 +468,15 @@ public class S7Collector extends ConnectionBackedCollector {
             }
             return results;
         } catch (Exception ex) {
-            log.warn("PLC4X S7 批量 写入 失败, 降级为逐点写入:{}", ex.getMessage());
-            for (Map.Entry<DataPoint, Object> entry : points.entrySet()) {
-                DataPoint point = entry.getKey();
-                if (point == null) {
-                    continue;
-                }
-                try {
-                    results.put(point.getPointId(), doWritePoint(point, entry.getValue()));
-                } catch (Exception singleEx) {
-                    recordFailureSnapshot("write", point, point.getAddress(), "EXCEPTION");
-                    log.error("PLC4X S7 点位 写入 失败, 点位={}", point.getPointId(), singleEx);
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            // 写入 Future 失败时部分字段可能已提交，禁止逐点重放不确定的写入。
+            log.warn("PLC4X S7 批量写入未确认, 设备={}, 字段数={}, 错误={}",
+                    deviceInfo.getDeviceId(), points.size(), ex.getClass().getSimpleName());
+            for (DataPoint point : points.keySet()) {
+                if (point != null) {
+                    recordFailureSnapshot("write", point, point.getAddress(), "UNCONFIRMED");
                     results.put(point.getPointId(), false);
                 }
             }
@@ -431,9 +495,11 @@ public class S7Collector extends ConnectionBackedCollector {
         ensureSubscriptionSupported();
         unsubscribeExisting(points);
 
-        var builder = requireConnection().getClient().subscriptionRequestBuilder();
+        S7ConnectionAdapter subscriptionSession = requireConnection();
+        var builder = subscriptionSession.getClient().subscriptionRequestBuilder();
         List<SubscriptionRegistration> orderedPoints = new ArrayList<>();
-        for (DataPoint point : points) {
+        try {
+            for (DataPoint point : points) {
             if (point == null) {
                 continue;
             }
@@ -443,55 +509,115 @@ public class S7Collector extends ConnectionBackedCollector {
 
             if (isEventSubscriptionMode(subscriptionMode)) {
                 String subscriptionAddress = resolveEventSubscriptionAddress(point, subscriptionMode);
-                configuredSubscriptionModes.put(cacheKey, subscriptionMode);
-                configuredSubscriptionAddresses.put(cacheKey, subscriptionAddress);
+                Object token = new Object();
                 builder.addEventTagAddress(fieldName, subscriptionAddress,
-                        event -> handleSubscriptionEvent(point, fieldName, null, subscriptionMode, subscriptionAddress, event));
-                orderedPoints.add(new SubscriptionRegistration(point, fieldName, subscriptionMode, subscriptionAddress));
+                        event -> handleSubscriptionEvent(point, fieldName, null, subscriptionMode,
+                                subscriptionAddress, subscriptionSession, token, event));
+                synchronized (subscriptionLifecycleLock) {
+                    subscriptionTokens.put(cacheKey, token);
+                }
+                orderedPoints.add(new SubscriptionRegistration(point, fieldName, subscriptionMode, subscriptionAddress, token));
                 continue;
             }
 
             S7Address address = requireAddress(point);
             validateArrayPointConfiguration(point, address, "subscribe");
-            configuredSubscriptionModes.put(cacheKey, subscriptionMode);
-            configuredSubscriptionAddresses.put(cacheKey, address.getRawAddress());
+            Object token = new Object();
             builder.addCyclicTagAddress(
                     fieldName,
                     address.getPlc4xAddress(),
                     resolveSubscriptionInterval(point),
-                    event -> handleSubscriptionEvent(point, fieldName, address, subscriptionMode, address.getRawAddress(), event));
-            orderedPoints.add(new SubscriptionRegistration(point, fieldName, subscriptionMode, address.getRawAddress()));
+                    event -> handleSubscriptionEvent(point, fieldName, address, subscriptionMode,
+                            address.getRawAddress(), subscriptionSession, token, event));
+            synchronized (subscriptionLifecycleLock) {
+                subscriptionTokens.put(cacheKey, token);
+            }
+            orderedPoints.add(new SubscriptionRegistration(point, fieldName, subscriptionMode, address.getRawAddress(), token));
+            }
+        } catch (Exception ex) {
+            for (SubscriptionRegistration registration : orderedPoints) {
+                clearRegistrationToken(registration);
+            }
+            throw ex;
+        }
+        if (orderedPoints.isEmpty()) {
+            throw new IllegalArgumentException("PLC4X S7 subscribe requires at least one valid point");
         }
 
-        PlcSubscriptionResponse response = await(builder.build().execute());
-        int registered = 0;
-        for (SubscriptionRegistration registration : orderedPoints) {
-            PlcResponseCode responseCode = response != null ? response.getResponseCode(registration.fieldName()) : null;
-            recordResponseCode("subscribe", registration.point(), registration.displayAddress(), responseCode);
-            if (responseCode != PlcResponseCode.OK) {
-                subscriptionRegisterFailureCount.incrementAndGet();
-                lastSubscriptionError = "subscribe responseCode=" + responseCode;
-                log.warn("PLC4X S7 订阅失败, 设备={}, 点位={}, subscriptionMode={}, 响应码={}",
-                        deviceInfo.getDeviceId(), registration.point().getPointId(), registration.subscriptionMode(), responseCode);
-                continue;
+        PlcSubscriptionResponse response;
+        try {
+            response = await(builder.build().execute(), subscriptionSession);
+        } catch (Exception ex) {
+            for (SubscriptionRegistration registration : orderedPoints) {
+                clearRegistrationToken(registration);
             }
-            PlcSubscriptionHandle handle = response.getSubscriptionHandle(registration.fieldName());
-            if (handle == null) {
-                subscriptionRegisterFailureCount.incrementAndGet();
-                recordFailureSnapshot("subscribe", registration.point(), registration.displayAddress(), "NULL_HANDLE");
-                log.warn("PLC4X S7 订阅返回空句柄, 设备={}, 点位={}",
-                        deviceInfo.getDeviceId(), registration.point().getPointId());
-                continue;
-            }
-            subscriptionHandles.put(resolvePointCacheKey(registration.point()), handle);
-            registered++;
+            throw ex;
         }
-
-        if (registered == 0) {
-            throw new IllegalStateException("PLC4X S7 subscribe did not register any point");
+        Map<String, PlcSubscriptionHandle> attemptHandles = new LinkedHashMap<>();
+        try {
+            IllegalStateException failure = response == null
+                    ? new IllegalStateException("PLC4X S7 subscribe returned no response") : null;
+            for (SubscriptionRegistration registration : orderedPoints) {
+                String cacheKey = resolvePointCacheKey(registration.point());
+                PlcResponseCode responseCode = response == null ? null : response.getResponseCode(registration.fieldName());
+                recordResponseCode("subscribe", registration.point(), registration.displayAddress(), responseCode);
+                PlcSubscriptionHandle handle = response == null ? null : response.getSubscriptionHandle(registration.fieldName());
+                if (handle != null) {
+                    attemptHandles.put(cacheKey, handle);
+                }
+                if (responseCode != PlcResponseCode.OK || handle == null) {
+                    if (responseCode == PlcResponseCode.OK) {
+                        recordFailureSnapshot("subscribe", registration.point(), registration.displayAddress(), "NULL_HANDLE");
+                    }
+                    if (failure == null) {
+                        failure = new IllegalStateException("PLC4X S7 subscribe failed for point "
+                                + registration.point().getPointId() + ": "
+                                + (responseCode != PlcResponseCode.OK ? responseCode : "NULL_HANDLE"));
+                    }
+                }
+            }
+            synchronized (subscriptionLifecycleLock) {
+                if (failure == null) {
+                    for (SubscriptionRegistration registration : orderedPoints) {
+                        String cacheKey = resolvePointCacheKey(registration.point());
+                        if (connectionAdapter != subscriptionSession || !subscriptionSession.isConnected()
+                                || subscriptionTokens.get(cacheKey) != registration.token()) {
+                            failure = new IllegalStateException("PLC4X S7 subscription session changed during registration");
+                            break;
+                        }
+                    }
+                }
+                if (failure == null) {
+                    subscriptionHandles.putAll(attemptHandles);
+                    for (SubscriptionRegistration registration : orderedPoints) {
+                        String cacheKey = resolvePointCacheKey(registration.point());
+                        configuredSubscriptionModes.put(cacheKey, registration.subscriptionMode());
+                        configuredSubscriptionAddresses.put(cacheKey, registration.displayAddress());
+                    }
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        } catch (Exception failure) {
+            subscriptionRegisterFailureCount.incrementAndGet();
+            lastSubscriptionError = failure.getMessage();
+            for (SubscriptionRegistration registration : orderedPoints) {
+                clearRegistrationToken(registration);
+            }
+            if (!attemptHandles.isEmpty()) {
+                try {
+                    unsubscribeSessionHandles(subscriptionSession, attemptHandles.values());
+                } catch (Exception cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                    log.warn("PLC4X S7 本次订阅句柄回滚失败, 设备={}, 数量={}",
+                            deviceInfo.getDeviceId(), attemptHandles.size(), cleanupFailure);
+                }
+            }
+            throw failure;
         }
         log.info("PLC4X S7 订阅已注册, 设备={}, 数量={}",
-                deviceInfo.getDeviceId(), registered);
+                deviceInfo.getDeviceId(), attemptHandles.size());
     }
 
     /**
@@ -500,8 +626,15 @@ public class S7Collector extends ConnectionBackedCollector {
     @Override
     protected void doUnsubscribe(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
-            unsubscribeHandles(new ArrayList<>(subscriptionHandles.values()));
-            subscriptionHandles.clear();
+            List<PlcSubscriptionHandle> handlesToRemove;
+            synchronized (subscriptionLifecycleLock) {
+                subscriptionTokens.clear();
+                configuredSubscriptionModes.clear();
+                configuredSubscriptionAddresses.clear();
+                handlesToRemove = new ArrayList<>(subscriptionHandles.values());
+                subscriptionHandles.clear();
+            }
+            unsubscribeHandles(handlesToRemove);
             return;
         }
         List<PlcSubscriptionHandle> handlesToRemove = new ArrayList<>();
@@ -509,9 +642,15 @@ public class S7Collector extends ConnectionBackedCollector {
             if (point == null) {
                 continue;
             }
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
-            if (handle != null) {
-                handlesToRemove.add(handle);
+            synchronized (subscriptionLifecycleLock) {
+                String cacheKey = resolvePointCacheKey(point);
+                subscriptionTokens.remove(cacheKey);
+                configuredSubscriptionModes.remove(cacheKey);
+                configuredSubscriptionAddresses.remove(cacheKey);
+                PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey);
+                if (handle != null) {
+                    handlesToRemove.add(handle);
+                }
             }
         }
         unsubscribeHandles(handlesToRemove);
@@ -553,6 +692,10 @@ public class S7Collector extends ConnectionBackedCollector {
         status.put("arrayConfiguredPoints", intValue(pointSummary.get("arrayPointCount")));
         status.put("maxFieldsPerRequest", maxFieldsPerRequest);
         status.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
+        status.put("batchRequestCount", batchRequestCount.get());
+        status.put("batchResponseTimeMs", batchResponseTimeMs.get());
+        status.put("batchTimeoutCount", batchTimeoutCount.get());
+        status.put("blockFallbackCount", blockFallbackCount.get());
         status.put("activeSubscriptions", subscriptionHandles.size());
         status.put("subscriptionEventCount", subscriptionEventCount.get());
         status.put("subscriptionRegisterFailureCount", subscriptionRegisterFailureCount.get());
@@ -592,16 +735,32 @@ public class S7Collector extends ConnectionBackedCollector {
         };
     }
 
+    @Override
+    public void rebuildReadPlans(String deviceId, List<DataPoint> points) {
+        try {
+            buildReadPlans(deviceId, points);
+        } catch (Exception ex) {
+            throw new IllegalStateException("S7 读取计划或订阅准备失败，设备=" + deviceId, ex);
+        }
+    }
+
     /**
      * 创建并返回业务对象。
      */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) throws Exception {
-        cachePointDefinitions(points);
         List<DataPoint> pollPoints = new ArrayList<>();
         List<DataPoint> subscriptionPoints = new ArrayList<>();
         partitionPoints(points, pollPoints, subscriptionPoints);
-        configuredReadPlans = readPlanBuilder.build(pollPoints, maxFieldsPerRequest);
+        List<DataPoint> validPollingPoints = cachePointDefinitions(points);
+        configuredReadPlans = readPlanBuilder.buildIsolatingInvalidPoints(validPollingPoints, maxFieldsPerRequest,
+                (point, reason) -> {
+                    configuredAddresses.remove(resolvePointCacheKey(point));
+                    recordInvalidPollingPoint(point, reason);
+                });
+        if (!pollPoints.isEmpty() && configuredReadPlans.isEmpty()) {
+            throw new IllegalStateException("S7 polling 点全部无效，无法构建读取计划");
+        }
         reconcileAutoSubscriptions(subscriptionPoints);
     }
 
@@ -610,6 +769,10 @@ public class S7Collector extends ConnectionBackedCollector {
         Map<String, Object> stats = new LinkedHashMap<>(super.getStatistics());
         Map<String, Object> protocolMetrics = new LinkedHashMap<>();
         protocolMetrics.put(CommonMapKeys.PLANNED_READ_BATCH_COUNT, configuredReadPlans.size());
+        protocolMetrics.put("batchRequestCount", batchRequestCount.get());
+        protocolMetrics.put("batchResponseTimeMs", batchResponseTimeMs.get());
+        protocolMetrics.put("batchTimeoutCount", batchTimeoutCount.get());
+        protocolMetrics.put("blockFallbackCount", blockFallbackCount.get());
         protocolMetrics.put("configuredSubscriptionPointCount", configuredSubscriptionModes.size());
         protocolMetrics.put("configuredEventPointCount", countConfiguredEventPoints());
         protocolMetrics.put("activeSubscriptionCount", subscriptionHandles.size());
@@ -634,19 +797,38 @@ public class S7Collector extends ConnectionBackedCollector {
     /**
      * 执行当前业务逻辑。
      */
-    private void cachePointDefinitions(List<DataPoint> points) {
+    private List<DataPoint> cachePointDefinitions(List<DataPoint> points) {
         configuredAddresses.clear();
         configuredSubscriptionModes.clear();
         configuredSubscriptionAddresses.clear();
+        List<DataPoint> validPollingPoints = new ArrayList<>();
         if (points == null) {
-            return;
+            return validPollingPoints;
         }
         for (DataPoint point : points) {
             if (point == null) {
                 continue;
             }
-            rememberPointDefinition(point);
+            try {
+                rememberPointDefinition(point);
+                if (!isSubscriptionPoint(point)) {
+                    validPollingPoints.add(point);
+                }
+            } catch (IllegalArgumentException ex) {
+                if (isSubscriptionPoint(point)) {
+                    throw ex;
+                }
+                recordInvalidPollingPoint(point, ex);
+            }
         }
+        return validPollingPoints;
+    }
+
+    private void recordInvalidPollingPoint(DataPoint point, IllegalArgumentException reason) {
+        recordFailureSnapshot("read-plan", point, point.getAddress(), "INVALID_CONFIGURATION");
+        log.warn("PLC4X S7 polling 点已隔离, 设备={}, 点位={}, 地址={}, 原因={}",
+                deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                point.getPointId(), point.getAddress(), reason.getMessage());
     }
 
     /**
@@ -656,9 +838,8 @@ public class S7Collector extends ConnectionBackedCollector {
         String cacheKey = resolvePointCacheKey(point);
         if (isSubscriptionPoint(point)) {
             String subscriptionMode = requireSupportedSubscriptionMode(point);
-            configuredSubscriptionModes.put(cacheKey, subscriptionMode);
             if (isEventSubscriptionMode(subscriptionMode)) {
-                configuredSubscriptionAddresses.put(cacheKey, resolveEventSubscriptionAddress(point, subscriptionMode));
+                resolveEventSubscriptionAddress(point, subscriptionMode);
             }
         }
         try {
@@ -835,18 +1016,27 @@ public class S7Collector extends ConnectionBackedCollector {
     /**
      * 执行当前业务逻辑。
      */
-    private List<S7ReadPlan> planReadPoints(List<DataPoint> points) {
-        return readPlanBuilder.build(points, maxFieldsPerRequest);
-    }
 
     /**
      * 处理当前业务流程。
      */
-    private void executeReadPlan(S7ReadPlan readPlan, Map<String, Object> results) {
+    private void executeReadPlan(S7ReadPlan readPlan,
+                                 Map<String, Object> results,
+                                 Map<String, DataQuality> failureQualities) {
         List<DataPoint> points = readPlan != null ? readPlan.getPoints() : Collections.emptyList();
         if (points.isEmpty()) {
             return;
         }
+        if (!isConnected()) {
+            for (DataPoint point : points) {
+                if (point != null && point.getPointId() != null) {
+                    results.put(point.getPointId(), null);
+                    failureQualities.put(point.getPointId(), DataQuality.DEVICE_ERROR);
+                }
+            }
+            return;
+        }
+        DataQuality planFailureQuality = null;
         try {
             if (canUseBlockRead(readPlan)) {
                 try {
@@ -855,22 +1045,59 @@ public class S7Collector extends ConnectionBackedCollector {
                         populateBlockReadResults(readPlan, results, blockBytes);
                         return;
                     }
+                    blockFallbackCount.incrementAndGet();
                     log.warn("PLC4X S7 块读取返回空载荷，降级为标签批量读取, 设备={}, 分段键={}, 块地址={}",
                             deviceInfo.getDeviceId(), readPlan.getSegmentKey(), readPlan.getBlockReadAddress());
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     throw ex;
                 } catch (Exception ex) {
+                    if (isTransportFailure(ex) || isTimeout(ex)) {
+                        throw ex;
+                    }
+                    blockFallbackCount.incrementAndGet();
                     log.warn("PLC4X S7 块读取失败，降级为标签批量读取, 设备={}, 分段键={}, 块地址={}, 错误={}",
                             deviceInfo.getDeviceId(), readPlan.getSegmentKey(), readPlan.getBlockReadAddress(), ex.getMessage());
                 }
             }
-            populateTagBatchReadResults(readPlan, results, executeTagBatchReadPlanRequest(readPlan));
+            populateTagBatchReadResults(readPlan, results, failureQualities, executeTagBatchReadPlanRequest(readPlan));
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            planFailureQuality = DataQuality.DEVICE_ERROR;
             recordPlanReadFailure(readPlan, points, ex);
         } catch (Exception ex) {
+            planFailureQuality = isTimeout(ex) ? DataQuality.TIMEOUT : DataQuality.DEVICE_ERROR;
+            boolean transportFailure = isTransportFailure(ex);
+            if (!transportFailure && !isTimeout(ex) && isConnected()) {
+                blockFallbackCount.incrementAndGet();
+                for (DataPoint point : points) {
+                    if (!isConnected()) {
+                        break;
+                    }
+                    if (point != null && point.getPointId() != null && !results.containsKey(point.getPointId())) {
+                        try {
+                            results.put(point.getPointId(), doReadPoint(point));
+                        } catch (Exception pointFailure) {
+                            recordFailureSnapshot("read", point, point.getAddress(), "EXCEPTION");
+                            results.put(point.getPointId(), null);
+                            failureQualities.put(point.getPointId(), isTimeout(pointFailure)
+                                    ? DataQuality.TIMEOUT : DataQuality.DEVICE_ERROR);
+                            if (isTransportFailure(pointFailure) || isTimeout(pointFailure)) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             recordPlanReadFailure(readPlan, points, ex);
+        }
+        for (DataPoint point : points) {
+            if (point != null && point.getPointId() != null) {
+                results.putIfAbsent(point.getPointId(), null);
+                if (results.get(point.getPointId()) == null && planFailureQuality != null) {
+                    failureQualities.putIfAbsent(point.getPointId(), planFailureQuality);
+                }
+            }
         }
     }
 
@@ -886,6 +1113,7 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private void populateTagBatchReadResults(S7ReadPlan readPlan,
                                              Map<String, Object> results,
+                                             Map<String, DataQuality> failureQualities,
                                              PlcReadResponse response) {
         for (DataPoint point : readPlan.getPoints()) {
             if (point == null || point.getPointId() == null) {
@@ -896,9 +1124,19 @@ public class S7Collector extends ConnectionBackedCollector {
             recordResponseCode("read", point, point.getAddress(), responseCode);
             if (responseCode != PlcResponseCode.OK) {
                 results.put(point.getPointId(), null);
+                failureQualities.put(point.getPointId(), responseCode == PlcResponseCode.INVALID_ADDRESS
+                        ? DataQuality.CONFIG_ERROR : DataQuality.DEVICE_ERROR);
                 continue;
             }
-            results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
+            try {
+                results.put(point.getPointId(), extractValue(response, fieldName, point, requireAddress(point)));
+            } catch (Exception ex) {
+                recordFailureSnapshot("read", point, point.getAddress(), "DECODE_ERROR");
+                results.put(point.getPointId(), null);
+                failureQualities.put(point.getPointId(), DataQuality.VALUE_INVALID);
+                log.warn("PLC4X S7 batch point decode failed, device={}, point={}",
+                        deviceInfo.getDeviceId(), point.getPointId(), ex);
+            }
         }
     }
 
@@ -1055,29 +1293,58 @@ public class S7Collector extends ConnectionBackedCollector {
         if (readPlan == null || !hasText(readPlan.getBlockReadAddress())) {
             throw new IllegalArgumentException("PLC4X S7 block read address is not available");
         }
-        PlcReadResponse response = await(requireConnection().getClient()
-                .readRequestBuilder()
-                .addTagAddress(READ_PLAN_BLOCK_FIELD_NAME, readPlan.getBlockReadAddress())
-                .build()
-                .execute());
-        ensureResponseOk(response, READ_PLAN_BLOCK_FIELD_NAME, "read");
-        PlcValue plcValue = response.getPlcValue(READ_PLAN_BLOCK_FIELD_NAME);
-        return plcValue == null || plcValue.isNull() ? null : plcValue.getRaw();
+        S7ConnectionAdapter session = requireConnection();
+        long startedAt = System.nanoTime();
+        batchRequestCount.incrementAndGet();
+        try {
+            PlcReadResponse response = await(session.getClient()
+                    .readRequestBuilder()
+                    .addTagAddress(READ_PLAN_BLOCK_FIELD_NAME, readPlan.getBlockReadAddress())
+                    .build()
+                    .execute(), session);
+            ensureResponseOk(response, READ_PLAN_BLOCK_FIELD_NAME, "read");
+            PlcValue plcValue = response.getPlcValue(READ_PLAN_BLOCK_FIELD_NAME);
+            return plcValue == null || plcValue.isNull() ? null : plcValue.getRaw();
+        } catch (TimeoutException ex) {
+            batchTimeoutCount.incrementAndGet();
+            throw ex;
+        } catch (Exception ex) {
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            throw ex;
+        } finally {
+            batchResponseTimeMs.addAndGet(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
+        }
     }
 
     /**
      * 处理当前业务流程。
      */
     protected PlcReadResponse executeTagBatchReadPlanRequest(S7ReadPlan readPlan) throws Exception {
-        var builder = requireConnection().getClient().readRequestBuilder();
-        for (S7ReadPlanItem item : readPlan.getItems()) {
-            DataPoint point = item != null ? item.getPoint() : null;
-            if (point == null) {
-                continue;
+        S7ConnectionAdapter session = requireConnection();
+        long startedAt = System.nanoTime();
+        batchRequestCount.incrementAndGet();
+        try {
+            var builder = session.getClient().readRequestBuilder();
+            for (S7ReadPlanItem item : readPlan.getItems()) {
+                DataPoint point = item != null ? item.getPoint() : null;
+                if (point != null) {
+                    builder.addTagAddress(resolvePointTagName(point), item.getAddress().getPlc4xAddress());
+                }
             }
-            builder.addTagAddress(resolvePointTagName(point), item.getAddress().getPlc4xAddress());
+            return await(builder.build().execute(), session);
+        } catch (TimeoutException ex) {
+            batchTimeoutCount.incrementAndGet();
+            throw ex;
+        } catch (Exception ex) {
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            throw ex;
+        } finally {
+            batchResponseTimeMs.addAndGet(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         }
-        return await(builder.build().execute());
     }
 
     /**
@@ -1117,7 +1384,25 @@ public class S7Collector extends ConnectionBackedCollector {
                                          S7Address address,
                                          String subscriptionMode,
                                          String subscriptionAddress,
+                                         S7ConnectionAdapter subscriptionSession,
+                                         Object token,
                                          PlcSubscriptionEvent event) {
+        synchronized (subscriptionLifecycleLock) {
+            String cacheKey = resolvePointCacheKey(point);
+            if (connectionAdapter != subscriptionSession || !subscriptionSession.isConnected()
+                    || subscriptionTokens.get(cacheKey) != token || !subscriptionHandles.containsKey(cacheKey)) {
+                return;
+            }
+            handleCurrentSubscriptionEvent(point, fieldName, address, subscriptionMode, subscriptionAddress, event);
+        }
+    }
+
+    private void handleCurrentSubscriptionEvent(DataPoint point,
+                                                String fieldName,
+                                                S7Address address,
+                                                String subscriptionMode,
+                                                String subscriptionAddress,
+                                                PlcSubscriptionEvent event) {
         try {
             PlcResponseCode responseCode = event != null ? event.getResponseCode(fieldName) : null;
             recordResponseCode("subscription-event", point, subscriptionAddress, responseCode);
@@ -1255,6 +1540,10 @@ public class S7Collector extends ConnectionBackedCollector {
      * 记录或统计业务状态。
      */
     private void resetProtocolMetrics() {
+        batchRequestCount.set(0L);
+        batchResponseTimeMs.set(0L);
+        batchTimeoutCount.set(0L);
+        blockFallbackCount.set(0L);
         subscriptionEventCount.set(0L);
         subscriptionRegisterFailureCount.set(0L);
         subscriptionEventErrorCount.set(0L);
@@ -1532,12 +1821,62 @@ public class S7Collector extends ConnectionBackedCollector {
     /**
      * 执行当前业务逻辑。
      */
-    private <T> T await(CompletableFuture<? extends T> future) throws Exception {
+    private <T> T await(CompletableFuture<? extends T> future, S7ConnectionAdapter session) throws Exception {
         try {
             return future.get(timeout, TimeUnit.MILLISECONDS);
         } catch (InterruptedException ex) {
+            future.cancel(false);
             Thread.currentThread().interrupt();
             throw ex;
+        } catch (TimeoutException ex) {
+            // 取消 Future 不保证撤销已发出的请求，超时会话不再复用；写请求也不自动重放。
+            future.cancel(false);
+            invalidateTransport(session);
+            throw ex;
+        } catch (Exception ex) {
+            if (isTransportFailure(ex)) {
+                invalidateTransport(session);
+            }
+            throw ex;
+        }
+    }
+
+    private boolean isTimeout(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof TimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTransportFailure(Throwable failure) {
+        if (connectionAdapter != null && !connectionAdapter.isConnected()) {
+            return true;
+        }
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof PlcConnectionException || cause instanceof PlcIoException || cause instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void invalidateTransport(S7ConnectionAdapter session) {
+        synchronized (subscriptionLifecycleLock) {
+            if (session == null || connectionAdapter != session) {
+                return;
+            }
+            subscriptionTokens.clear();
+            subscriptionHandles.clear();
+            connectionAdapter = null;
+            connected = false;
+            connectionStatus = "ERROR";
+            subscribedPointMap.clear();
+            subscribedPointsSet.clear();
+            if (connectionManager == null || connectionManager.getConnection(deviceInfo.getDeviceId()) == session) {
+                removeManagedConnection("S7");
+            }
         }
     }
 
@@ -1564,15 +1903,29 @@ public class S7Collector extends ConnectionBackedCollector {
     /**
      * 维护注册或订阅关系。
      */
+    private void clearRegistrationToken(SubscriptionRegistration registration) {
+        synchronized (subscriptionLifecycleLock) {
+            subscriptionTokens.remove(resolvePointCacheKey(registration.point()), registration.token());
+        }
+    }
+
     private void unsubscribeExisting(List<DataPoint> points) throws Exception {
         List<PlcSubscriptionHandle> existingHandles = new ArrayList<>();
         for (DataPoint point : points) {
             if (point == null) {
                 continue;
             }
-            PlcSubscriptionHandle handle = subscriptionHandles.remove(resolvePointCacheKey(point));
-            if (handle != null) {
-                existingHandles.add(handle);
+            synchronized (subscriptionLifecycleLock) {
+                String cacheKey = resolvePointCacheKey(point);
+                subscriptionTokens.remove(cacheKey);
+                PlcSubscriptionHandle handle = subscriptionHandles.remove(cacheKey);
+                configuredSubscriptionModes.remove(cacheKey);
+                configuredSubscriptionAddresses.remove(cacheKey);
+                subscribedPointMap.remove(point.getPointId());
+                subscribedPointsSet.remove(point.getPointId());
+                if (handle != null) {
+                    existingHandles.add(handle);
+                }
             }
         }
         unsubscribeHandles(existingHandles);
@@ -1585,9 +1938,14 @@ public class S7Collector extends ConnectionBackedCollector {
         if (handles == null || handles.isEmpty() || connectionAdapter == null) {
             return;
         }
-        PlcUnsubscriptionRequest.Builder builder = requireConnection().getClient().unsubscriptionRequestBuilder();
+        unsubscribeSessionHandles(requireConnection(), handles);
+    }
+
+    private void unsubscribeSessionHandles(S7ConnectionAdapter session,
+                                           Collection<PlcSubscriptionHandle> handles) throws Exception {
+        PlcUnsubscriptionRequest.Builder builder = session.getClient().unsubscriptionRequestBuilder();
         builder.addHandles(handles);
-        await(builder.build().execute());
+        await(builder.build().execute(), session);
     }
 
     /**
@@ -1773,12 +2131,9 @@ public class S7Collector extends ConnectionBackedCollector {
             info.put("ping", connection.getBool("ping", false));
             info.put("pingTime", connection.getInt("pingTime", null));
             info.put("retryTime", connection.getInt("retryTime", null));
+            info.put("connectionSource", hasRawConnectionString(connection)
+                    ? "EXPLICIT_PLC4X_STRING" : "GENERATED");
             info.put("readTimeout", connection.getReadTimeout() != null ? connection.getReadTimeout() : connection.getTimeout());
-            info.put("rawConnectionStringOverride", hasRawConnectionString(connection));
-            info.put("plc4xConnectionString", connection.getString("plc4xConnectionString", null));
-        }
-        if (connectionAdapter != null) {
-            info.put("connectionString", connectionAdapter.getConnectionString());
         }
         return info;
     }
@@ -1838,6 +2193,9 @@ public class S7Collector extends ConnectionBackedCollector {
                 }
 
                 S7Address address = S7AddressParser.parse(point);
+                if (!isSubscriptionPoint(point)) {
+                    readPlanBuilder.build(List.of(point), maxFieldsPerRequest);
+                }
                 parsedCount++;
                 areaCounts.merge(address.getArea(), 1, Integer::sum);
                 if (!address.isScalar()) {
@@ -2317,6 +2675,7 @@ public class S7Collector extends ConnectionBackedCollector {
     private record SubscriptionRegistration(DataPoint point,
                                             String fieldName,
                                             String subscriptionMode,
-                                            String displayAddress) {
+                                            String displayAddress,
+                                            Object token) {
     }
 }

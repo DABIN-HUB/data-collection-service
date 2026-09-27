@@ -7,7 +7,6 @@ import com.wangbin.collector.core.collector.protocol.s7.domain.S7PlcType;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,7 +17,9 @@ public final class S7AddressParser {
 
     private static final Pattern DB_TIA_PATTERN = Pattern.compile("^DB(\\d+)\\.DB([XBWD])(\\d+)(?:\\.(\\d+))?$");
     private static final Pattern DB_SHORT_PATTERN = Pattern.compile("^DB(\\d+):(\\d+)(?:\\.(\\d+))?$");
+    private static final Pattern DB_COLON_TIA_PATTERN = Pattern.compile("^DB(\\d+):DB([XBWD])(\\d+)(?:\\.(\\d+))?$");
     private static final Pattern AREA_TIA_PATTERN = Pattern.compile("^([IQM])([BWD]?)(\\d+)(?:\\.(\\d+))?$");
+    private static final Pattern STRING_TYPE_PATTERN = Pattern.compile("^(W?STRING)(?:\\((\\d+)\\))?$");
     private static final Pattern TYPED_PATTERN = Pattern.compile(
             "^(%?DB\\d+(?::(?:DB[XBWD])?\\d+(?:\\.\\d+)?|\\.DB[XBWD]\\d+(?:\\.\\d+)?)?|%?[IQM](?:\\d+(?:\\.\\d+)?|[BWD]\\d+)|%?[CDTL]\\d+(?:\\.\\d+)?)"
                     + ":(BOOL|BYTE|WORD|DWORD|LWORD|SINT|USINT|INT|UINT|DINT|UDINT|LINT|ULINT|REAL|LREAL|CHAR|WCHAR|STRING(?:\\(\\d+\\))?|WSTRING(?:\\(\\d+\\))?|TIME|LTIME|DATE|TIME_OF_DAY|DATE_AND_TIME|S5TIME)"
@@ -68,61 +69,111 @@ public final class S7AddressParser {
         Matcher typedMatcher = TYPED_PATTERN.matcher(normalized);
         if (typedMatcher.matches()) {
             int arraySize = resolveArraySize(typedMatcher.group(3), effectiveConfig);
-            String canonicalAddress = canonicalizeTypedAddress(typedMatcher.group(1), typedMatcher.group(2), arraySize);
-            return new S7Address(
-                    rawAddress,
-                    canonicalAddress,
-                    detectArea(canonicalAddress),
-                    typedMatcher.group(2).toUpperCase(Locale.ROOT),
-                    arraySize
-            );
+            String typeExpression = normalizeTypeExpression(typedMatcher.group(2), effectiveConfig);
+            String configuredType = configuredDriverType(effectiveConfig);
+            if (configuredType != null && !typeExpression.equals(normalizeTypeExpression(configuredType, effectiveConfig))) {
+                throw new IllegalArgumentException("S7 address type conflicts with driverDataType: " + rawAddress);
+            }
+            return parseLocation(rawAddress, typedMatcher.group(1), typeExpression, arraySize);
         }
 
+        int arraySize = resolveArraySize(null, effectiveConfig);
+        return parseLocation(rawAddress, normalized, inferLocationType(normalized, dataType, effectiveConfig), arraySize);
+    }
+
+    /**
+     * 将不同写法的地址转换为同一驱动地址，并检查位偏移及地址宽度。
+     */
+    private static S7Address parseLocation(String rawAddress, String addressPart, String typeExpression, int arraySize) {
+        String normalized = addressPart.startsWith("%") ? addressPart.substring(1) : addressPart;
         Matcher dbTiaMatcher = DB_TIA_PATTERN.matcher(normalized);
         if (dbTiaMatcher.matches()) {
-            String typeExpression = inferTypeExpression(dataType, dbTiaMatcher.group(2), effectiveConfig);
-            int arraySize = resolveArraySize(null, effectiveConfig);
+            validateLocation(dbTiaMatcher.group(2), dbTiaMatcher.group(4), typeExpression);
             String canonicalAddress = buildDbCanonicalAddress(dbTiaMatcher.group(1), dbTiaMatcher.group(3), dbTiaMatcher.group(4), typeExpression, arraySize);
+            return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, arraySize);
+        }
+        Matcher dbColonTiaMatcher = DB_COLON_TIA_PATTERN.matcher(normalized);
+        if (dbColonTiaMatcher.matches()) {
+            validateLocation(dbColonTiaMatcher.group(2), dbColonTiaMatcher.group(4), typeExpression);
+            String canonicalAddress = buildDbCanonicalAddress(dbColonTiaMatcher.group(1), dbColonTiaMatcher.group(3),
+                    dbColonTiaMatcher.group(4), typeExpression, arraySize);
             return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, arraySize);
         }
 
         Matcher dbShortMatcher = DB_SHORT_PATTERN.matcher(normalized);
         if (dbShortMatcher.matches()) {
-            String typeExpression = dbShortMatcher.group(3) != null
-                    ? "BOOL"
-                    : inferTypeExpression(dataType, null, effectiveConfig);
-            int arraySize = resolveArraySize(null, effectiveConfig);
+            validateLocation(null, dbShortMatcher.group(3), typeExpression);
             String canonicalAddress = buildDbCanonicalAddress(dbShortMatcher.group(1), dbShortMatcher.group(2), dbShortMatcher.group(3), typeExpression, arraySize);
             return new S7Address(rawAddress, canonicalAddress, "DB", typeExpression, arraySize);
         }
 
         Matcher areaMatcher = AREA_TIA_PATTERN.matcher(normalized);
         if (areaMatcher.matches()) {
-            String typeExpression = areaMatcher.group(4) != null
-                    ? "BOOL"
-                    : inferTypeExpression(dataType, areaMatcher.group(2), effectiveConfig);
-            int arraySize = resolveArraySize(null, effectiveConfig);
+            validateLocation(areaMatcher.group(2), areaMatcher.group(4), typeExpression);
             String canonicalAddress = buildAreaCanonicalAddress(areaMatcher.group(1), areaMatcher.group(3), areaMatcher.group(4), typeExpression, arraySize);
             return new S7Address(rawAddress, canonicalAddress, detectArea(canonicalAddress), typeExpression, arraySize);
         }
 
+        if (normalized.matches("^[CDTL]\\d+(?:\\.\\d+)?$")) {
+            StringBuilder canonicalAddress = new StringBuilder("%").append(normalized).append(':').append(typeExpression);
+            appendArraySuffix(canonicalAddress, arraySize);
+            return new S7Address(rawAddress, canonicalAddress.toString(), "TAG", typeExpression, arraySize);
+        }
         throw new IllegalArgumentException("Unsupported S7 address format: " + rawAddress);
     }
 
     /**
-     * 执行当前业务逻辑。
+     * 按类型显式声明优先于平台类型的规则解析非类型化地址。
      */
-    private static String canonicalizeTypedAddress(String addressPart, String typePart, int arraySize) {
-        boolean explicitPercent = addressPart.startsWith("%");
-        String normalizedAddress = addressPart.toUpperCase(Locale.ROOT);
-        if (!explicitPercent) {
-            normalizedAddress = "%" + normalizedAddress;
+    private static String inferLocationType(String addressPart, String dataType, Map<String, Object> config) {
+        String normalized = addressPart.startsWith("%") ? addressPart.substring(1) : addressPart;
+        Matcher dbTia = DB_TIA_PATTERN.matcher(normalized);
+        if (dbTia.matches()) {
+            return inferTypeExpression(dataType, dbTia.group(2), config);
         }
-        StringBuilder builder = new StringBuilder(normalizedAddress)
-                .append(':')
-                .append(typePart.toUpperCase(Locale.ROOT));
-        appendArraySuffix(builder, arraySize);
-        return builder.toString();
+        Matcher dbShort = DB_SHORT_PATTERN.matcher(normalized);
+        if (dbShort.matches()) {
+            return inferTypeExpression(dataType, dbShort.group(3) != null ? "X" : null, config);
+        }
+        Matcher area = AREA_TIA_PATTERN.matcher(normalized);
+        if (area.matches()) {
+            return inferTypeExpression(dataType, area.group(4) != null ? "X" : area.group(2), config);
+        }
+        throw new IllegalArgumentException("Unsupported S7 address format: " + addressPart);
+    }
+
+    /**
+     * 位地址只能读写布尔量，显式 B/W/D 前缀不得与数据宽度冲突。
+     */
+    private static void validateLocation(String widthCode, String bitOffset, String typeExpression) {
+        String baseType = S7PlcType.fromText(typeExpression).name();
+        boolean bool = "BOOL".equals(baseType);
+        if (bitOffset != null) {
+            int bit = parsePositiveInt(bitOffset, "S7 bit offset", false);
+            if (bit > 7 || !bool) {
+                throw new IllegalArgumentException("S7 bit offset requires BOOL and a value from 0 to 7");
+            }
+        } else if (bool || "X".equals(widthCode)) {
+            throw new IllegalArgumentException("S7 boolean address requires a bit offset");
+        }
+        if (widthCode != null && !widthCode.isEmpty() && !"X".equals(widthCode)) {
+            int width = switch (widthCode) {
+                case "B" -> 1;
+                case "W" -> 2;
+                case "D" -> 4;
+                default -> throw new IllegalArgumentException("Unsupported S7 address width: " + widthCode);
+            };
+            int typeWidth = switch (baseType) {
+                case "SINT", "USINT", "CHAR", "STRING", "WSTRING" -> 1;
+                case "INT", "UINT", "WCHAR", "DATE", "S5TIME" -> 2;
+                case "DINT", "UDINT", "REAL", "TIME", "TIME_OF_DAY" -> 4;
+                case "LINT", "ULINT", "LREAL", "LTIME", "DATE_AND_TIME" -> 8;
+                default -> 0;
+            };
+            if (typeWidth != width) {
+                throw new IllegalArgumentException("S7 address width " + widthCode + " conflicts with type " + typeExpression);
+            }
+        }
     }
 
     /**
@@ -135,17 +186,17 @@ public final class S7AddressParser {
                 throw new IllegalArgumentException("S7 boolean DB address requires a bit offset");
             }
             builder = new StringBuilder("%DB")
-                    .append(dbNumber)
+                    .append(parsePositiveInt(dbNumber, "S7 DB number", false))
                     .append(':')
-                    .append(byteOffset)
+                    .append(parsePositiveInt(byteOffset, "S7 byte offset", false))
                     .append('.')
-                    .append(bitOffset)
+                    .append(parsePositiveInt(bitOffset, "S7 bit offset", false))
                     .append(":BOOL");
         } else {
             builder = new StringBuilder("%DB")
-                    .append(dbNumber)
+                    .append(parsePositiveInt(dbNumber, "S7 DB number", false))
                     .append(':')
-                    .append(byteOffset)
+                    .append(parsePositiveInt(byteOffset, "S7 byte offset", false))
                     .append(':')
                     .append(typeExpression);
         }
@@ -164,14 +215,14 @@ public final class S7AddressParser {
             }
             builder = new StringBuilder("%")
                     .append(area)
-                    .append(byteOffset)
+                    .append(parsePositiveInt(byteOffset, "S7 byte offset", false))
                     .append('.')
-                    .append(bitOffset)
+                    .append(parsePositiveInt(bitOffset, "S7 bit offset", false))
                     .append(":BOOL");
         } else {
             builder = new StringBuilder("%")
                     .append(area)
-                    .append(byteOffset)
+                    .append(parsePositiveInt(byteOffset, "S7 byte offset", false))
                     .append(':')
                     .append(typeExpression);
         }
@@ -203,19 +254,14 @@ public final class S7AddressParser {
      * 执行当前业务逻辑。
      */
     private static String inferTypeExpression(String dataType, String shortCode, Map<String, Object> config) {
-        String overrideType = firstNonBlank(
-                asString(config.get("driverDataType")),
-                asString(config.get("s7Type")),
-                asString(config.get("plc4xType")),
-                asString(config.get("plcType"))
-        );
+        String overrideType = configuredDriverType(config);
         if (overrideType != null) {
             return normalizeTypeExpression(overrideType, config);
         }
 
         String normalizedDataType = dataType != null ? dataType.trim().toUpperCase(Locale.ROOT) : null;
         if (normalizedDataType == null || normalizedDataType.isBlank()) {
-            normalizedDataType = switch (Objects.toString(shortCode, "").toUpperCase(Locale.ROOT)) {
+            normalizedDataType = switch (shortCode == null ? "" : shortCode.toUpperCase(Locale.ROOT)) {
                 case "B" -> "BYTE";
                 case "W" -> "INT";
                 case "D" -> "DINT";
@@ -230,13 +276,21 @@ public final class S7AddressParser {
      * 解析或转换业务数据。
      */
     private static String normalizeTypeExpression(String typeExpression, Map<String, Object> config) {
+        String normalized = typeExpression.trim().toUpperCase(Locale.ROOT);
+        Matcher stringType = STRING_TYPE_PATTERN.matcher(normalized);
+        if (stringType.matches()) {
+            int length = stringType.group(2) == null ? resolveStringLength(config, 254)
+                    : parsePositiveInt(stringType.group(2), "S7 string length", true);
+            Integer configured = configuredStringLength(config);
+            if (configured != null && configured != length) {
+                throw new IllegalArgumentException("S7 encoded string length conflicts with stringLength");
+            }
+            return stringType.group(1) + "(" + length + ")";
+        }
+        if (normalized.startsWith("STRING(") || normalized.startsWith("WSTRING(")) {
+            throw new IllegalArgumentException("Invalid S7 string length: " + typeExpression);
+        }
         S7PlcType plcType = S7PlcType.fromText(typeExpression);
-        if (plcType == S7PlcType.STRING) {
-            return "STRING(" + resolveStringLength(config, 254) + ")";
-        }
-        if (plcType == S7PlcType.WSTRING) {
-            return "WSTRING(" + resolveStringLength(config, 254) + ")";
-        }
         return plcType.toTypeExpression();
     }
 
@@ -244,30 +298,41 @@ public final class S7AddressParser {
      * 解析或转换业务数据。
      */
     private static int resolveStringLength(Map<String, Object> config, int defaultValue) {
-        Object value = firstPresent(config, "stringLength", "s7StringLength");
-        if (value instanceof Number number) {
-            return Math.max(1, number.intValue());
-        }
-        if (value != null) {
-            try {
-                return Math.max(1, Integer.parseInt(value.toString().trim()));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return defaultValue;
+        Integer configured = configuredStringLength(config);
+        return configured == null ? defaultValue : configured;
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static Object firstPresent(Map<String, Object> config, String... keys) {
-        for (String key : keys) {
+    private static Integer configuredStringLength(Map<String, Object> config) {
+        Integer length = null;
+        for (String key : new String[]{"stringLength", "s7StringLength"}) {
             if (config.containsKey(key)) {
-                return config.get(key);
+                int candidate = parsePositiveInt(asString(config.get(key)), "S7 string length", true);
+                if (length != null && length != candidate) {
+                    throw new IllegalArgumentException("Conflicting S7 string length configuration");
+                }
+                length = candidate;
             }
         }
-        return null;
+        return length;
     }
+
+    private static String configuredDriverType(Map<String, Object> config) {
+        return firstNonBlank(asString(config.get("driverDataType")), asString(config.get("s7Type")),
+                asString(config.get("plc4xType")), asString(config.get("plcType")));
+    }
+
+    private static int parsePositiveInt(String value, String field, boolean strictlyPositive) {
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < 0 || (strictlyPositive && parsed == 0)) {
+                throw new IllegalArgumentException(field + " must be greater than " + (strictlyPositive ? "0" : "or equal to 0"));
+            }
+            return parsed;
+        } catch (NullPointerException | NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid " + field + ": " + value, e);
+        }
+    }
+
 
     /**
      * 执行当前业务逻辑。
@@ -292,25 +357,25 @@ public final class S7AddressParser {
      * 解析或转换业务数据。
      */
     private static int resolveArraySize(String explicitArrayPart, Map<String, Object> config) {
-        if (explicitArrayPart != null && !explicitArrayPart.isBlank()) {
-            return parseArraySize(explicitArrayPart);
+        Integer size = explicitArrayPart == null ? null : parseArraySize(explicitArrayPart);
+        for (String key : new String[]{"arraySize", "s7ArraySize"}) {
+            if (config.containsKey(key)) {
+                int configured = parseArraySize(asString(config.get(key)));
+                if (size != null && size != configured) {
+                    throw new IllegalArgumentException("S7 array size conflicts with " + key);
+                }
+                size = configured;
+            }
         }
-        Object configured = firstPresent(config, "arraySize", "s7ArraySize");
-        if (configured == null) {
-            return 1;
-        }
-        return parseArraySize(String.valueOf(configured));
+        return size == null ? 1 : size;
     }
 
     /**
      * 解析或转换业务数据。
      */
     private static int parseArraySize(String arrayPart) {
-        if (arrayPart == null || arrayPart.isBlank()) {
-            return 1;
-        }
-        int arraySize = Integer.parseInt(arrayPart.trim());
-        if (arraySize <= 0) {
+        int arraySize = parsePositiveInt(arrayPart, "S7 array size", false);
+        if (arraySize == 0) {
             throw new IllegalArgumentException("S7 array size must be greater than 0");
         }
         return arraySize;

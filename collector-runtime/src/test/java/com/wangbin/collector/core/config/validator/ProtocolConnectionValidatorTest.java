@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProtocolConnectionValidatorTest {
@@ -387,7 +388,79 @@ class ProtocolConnectionValidatorTest {
     @Test
     void shouldAcceptS7WithRawConnectionStringOnly() {
         DeviceConnection connection = new DeviceConnection();
-        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10?controller-type=S7_1500"));
+        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10:102?controller-type=S7_1500"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldAcceptS7ExplicitUriWithoutPortUsingPlc4xDefault() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example?controller-type=S7_1500",
+                "rack", "bad"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldIgnoreGeneratedFieldsWhenExplicitS7UriIsSelected() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example:102?controller-type=S7_1500",
+                "controllerType", "S7_200", "rack", "bad", "slot", -1, "pduSize", 0,
+                "ping", "bad", "retryTime", 5));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectMalformedOrWrongProtocolS7Overrides() {
+        for (String uri : List.of("modbus-tcp://plc:102", "s7://:102", "s7://plc:", "s7://plc:0",
+                "s7://plc:65536", "s7://plc:102/path", "s7://plc?retry-time=5",
+                "s7://plc:102?retry-time=5",
+                "s7://plc:102?retry%2Dtime=5", "s7://plc:102?bad=%GG")) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("127.0.0.1");
+            connection.setExtJson(ext("plc4xConnectionString", uri));
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection), uri);
+        }
+    }
+
+    @Test
+    void shouldNotIncludeS7OverrideInValidationError() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example:102?retry-time=5&secret=placeholder"));
+
+        CollectorException error = assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+        assertFalse(error.getMessage().contains("placeholder"));
+        assertFalse(error.getMessage().contains("s7://"));
+    }
+
+    @Test
+    void shouldRejectInvalidS7NormalFieldsWithoutSilentDefault() {
+        for (Map<String, Object> fields : List.of(ext("rack", "bad"), ext("remoteRack", -1),
+                ext("rack", 8), ext("slot", 32), ext("remoteSlot", "bad"),
+                ext("remoteRack2", 8), ext("remoteSlot2", 32),
+                ext("pduSize", "bad"), ext("pduSize", 0), ext("pduSize", 65536),
+                ext("maxFieldsPerRequest", "bad"), ext("maxFieldsPerRequest", 0),
+                ext("controllerType", "S7_200"), ext("controllerType", ""),
+                ext("retryTime", 1), ext("retryTime", "bad"))) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("127.0.0.1");
+            connection.setExtJson(fields);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection), fields.toString());
+        }
+    }
+
+    @Test
+    void shouldAllowDefaultS7ControllerAndSupportedNormalRoute() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("rack", 7, "slot", 31, "pduSize", 65535, "maxFieldsPerRequest", 64));
 
         assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
     }

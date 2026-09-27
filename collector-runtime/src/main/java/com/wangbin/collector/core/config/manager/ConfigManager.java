@@ -11,6 +11,7 @@ import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
+import com.wangbin.collector.core.config.validator.ProtocolPointValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -77,6 +78,7 @@ public class ConfigManager {
     private final ApplicationEventPublisher eventPublisher;
     private final FieldUniquenessValidator fieldUniquenessValidator;
     private final ProtocolConnectionValidator protocolConnectionValidator;
+    private final List<ProtocolPointValidator> pointValidators;
     private final LocalDeviceConfigStore localDeviceConfigStore;
 
     /** 保留旧的四参数构造方式，供嵌入式调用方兼容。 */
@@ -86,12 +88,22 @@ public class ConfigManager {
                          LocalDeviceConfigStore localDeviceConfigStore) {
         this(configSyncService, eventPublisher, fieldUniquenessValidator, localDeviceConfigStore, null);
     }
-    @Autowired
     public ConfigManager(ConfigSyncService configSyncService,
                          ApplicationEventPublisher eventPublisher,
                          FieldUniquenessValidator fieldUniquenessValidator,
                          LocalDeviceConfigStore localDeviceConfigStore,
                          ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider) {
+        this(configSyncService, eventPublisher, fieldUniquenessValidator, localDeviceConfigStore,
+                protocolConnectionValidatorProvider, null);
+    }
+
+    @Autowired
+    public ConfigManager(ConfigSyncService configSyncService,
+                         ApplicationEventPublisher eventPublisher,
+                         FieldUniquenessValidator fieldUniquenessValidator,
+                         LocalDeviceConfigStore localDeviceConfigStore,
+                         ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider,
+                         ObjectProvider<ProtocolPointValidator> pointValidatorProvider) {
         this.configSyncService = configSyncService;
         this.eventPublisher = eventPublisher;
         this.fieldUniquenessValidator = fieldUniquenessValidator;
@@ -99,6 +111,8 @@ public class ConfigManager {
         this.protocolConnectionValidator = protocolConnectionValidatorProvider != null
                 ? protocolConnectionValidatorProvider.getIfAvailable(ProtocolConnectionValidator::new)
                 : new ProtocolConnectionValidator();
+        this.pointValidators = pointValidatorProvider != null
+                ? pointValidatorProvider.orderedStream().toList() : List.of();
     }
 
     /**
@@ -539,6 +553,7 @@ public class ConfigManager {
 
             List<DataPoint> safePoints = new ArrayList<>(points);
             normalizeDataPointCollectionPolicy(deviceCache.get(deviceId), safePoints);
+            validateProtocolPoints(deviceCache.get(deviceId), safePoints);
 
             if (fieldUniquenessValidator != null) {
                 fieldUniquenessValidator.validate(deviceId, safePoints);
@@ -650,6 +665,7 @@ public class ConfigManager {
         for (DataPoint point : safePoints) if (point != null) point.setDeviceId(deviceId);
         DeviceContext candidate = DeviceContext.of(device, connection, safePoints);
         validateImportContext(candidate, new HashSet<>(), new HashMap<>());
+        validateProtocolPoints(candidate.getDeviceInfo(), candidate.getDataPoints());
     }
 
 
@@ -687,6 +703,7 @@ public class ConfigManager {
             Set<String> ids = new HashSet<>();
             Map<String, List<DataPoint>> normalized = new HashMap<>();
             validateImportContext(candidate, ids, normalized);
+            validateProtocolPoints(candidate.getDeviceInfo(), normalized.get(deviceId));
             deviceCache.put(deviceId, candidate.getDeviceInfo());
             if (candidate.getConnectionConfig() == null) connectionCache.remove(deviceId);
             else connectionCache.put(deviceId, candidate.copyConnectionConfig());
@@ -733,6 +750,7 @@ public class ConfigManager {
             Map<String, List<DataPoint>> normalizedPoints = new HashMap<>();
             for (DeviceContext context : contexts) {
                 validateImportContext(context, deviceIds, normalizedPoints);
+                validateProtocolPoints(context.getDeviceInfo(), normalizedPoints.get(context.getDeviceId()));
             }
 
             Map<String, DeviceInfo> deviceBackup = new HashMap<>(deviceCache);
@@ -866,6 +884,7 @@ public class ConfigManager {
             normalizeLocalPoints(device, safePoints);
 
             protocolConnectionValidator.validate(device, connection);
+            validateProtocolPoints(device, safePoints);
             if (fieldUniquenessValidator != null) {
                 fieldUniquenessValidator.validate(deviceId, safePoints);
             }
@@ -1326,6 +1345,15 @@ public class ConfigManager {
         additionalConfig.remove("reportProductKey");
         additionalConfig.remove("productKey");
         additionalConfig.remove("cloudBindings");
+    }
+
+    /** 新候选配置在写入缓存前校验；历史数据加载不走此入口。 */
+    private void validateProtocolPoints(DeviceInfo device, List<DataPoint> points) {
+        for (ProtocolPointValidator validator : pointValidators) {
+            if (validator.supports(device)) {
+                validator.validate(points);
+            }
+        }
     }
 
     /**

@@ -294,6 +294,25 @@ public class ProtocolSchemaServiceTest {
                         "covEnabled", "readPropertyMultipleEnabled"),
                 List.of("additionalConfig.driverDataType", "additionalConfig.writePriority", "additionalConfig.covMode"));
     }
+
+    @Test
+    void shouldDescribeS7ConnectionOverrideAndFrameworkReconnectContract() {
+        ProtocolSchema s7 = service.getSchema("SIEMENS_S7").orElseThrow();
+        ProtocolFieldConfig host = s7.getConnectionFields().stream()
+                .filter(field -> "host".equals(field.getName())).findFirst().orElseThrow();
+        ProtocolFieldConfig retryTime = s7.getConnectionFields().stream()
+                .filter(field -> "retryTime".equals(field.getName())).findFirst().orElseThrow();
+        ProtocolFieldConfig readTimeout = s7.getConnectionFields().stream()
+                .filter(field -> "readTimeout".equals(field.getName())).findFirst().orElseThrow();
+        ProtocolFieldConfig controller = s7.getConnectionFields().stream()
+                .filter(field -> "controllerType".equals(field.getName())).findFirst().orElseThrow();
+
+        assertEquals("plc4xConnectionString=empty", host.getRequiredWhen());
+        assertTrue(!host.isRequired());
+        assertEquals("0", retryTime.getDefaultValue());
+        assertEquals("30000", readTimeout.getDefaultValue());
+        assertEquals("S7_1200", controller.getDefaultValue());
+    }
     @Test
     void shouldExposeFieldStorageMetadata() {
         ProtocolSchema modbus = service.getSchema("MODBUS_TCP").orElseThrow();

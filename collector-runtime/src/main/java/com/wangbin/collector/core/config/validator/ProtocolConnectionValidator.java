@@ -6,6 +6,9 @@ import com.wangbin.collector.common.domain.enums.FinsTransportMode;
 import com.wangbin.collector.common.exception.CollectorException;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Set;
 
@@ -106,50 +109,94 @@ public class ProtocolConnectionValidator {
     }
 
     private void validateS7(DeviceInfo deviceInfo, DeviceConnection connection) {
-        String connectionString = firstNonBlank(
-                connection.getStringConfig("plc4xConnectionString", null),
-                connection.getStringConfig("plc4x-connection-string", null));
-        if (isBlank(connectionString)) {
-            requireHost(deviceInfo, connection, "SIEMENS_S7");
+        String connectionString = connection.getStringConfig("plc4xConnectionString", null);
+        if (hasText(connectionString)) {
+            validateS7Uri(deviceInfo, connectionString);
+        } else {
+            String host = firstNonBlank(connection.getHost(), deviceInfo.getIpAddress());
+            if (isBlank(host) || !host.equals(host.trim()) || host.contains(" ")
+                    || host.contains(":") || host.contains("/") || host.contains("?")
+                    || host.contains("#") || host.contains("@")) {
+                fail(deviceInfo, "SIEMENS_S7 host is required and must be a host name or IPv4 address");
+            }
+            Integer port = firstNonNull(connection.getPort(), deviceInfo.getPort());
+            if (port != null && (port <= 0 || port > 65535)) {
+                fail(deviceInfo, "SIEMENS_S7 port must be between 1 and 65535");
+            }
+            s7Range(deviceInfo, connection, "rack", 0, 7);
+            s7Range(deviceInfo, connection, "remoteRack", 0, 7);
+            s7Range(deviceInfo, connection, "slot", 0, 31);
+            s7Range(deviceInfo, connection, "remoteSlot", 0, 31);
+            s7Range(deviceInfo, connection, "pduSize", 1, 65535);
+            s7Range(deviceInfo, connection, "localTsap", 1, 65535);
+            s7Range(deviceInfo, connection, "remoteTsap", 1, 65535);
+            s7Range(deviceInfo, connection, "remoteRack2", 0, 7);
+            s7Range(deviceInfo, connection, "remoteSlot2", 0, 31);
+            s7Range(deviceInfo, connection, "maxAmqCaller", 1, 65535);
+            s7Range(deviceInfo, connection, "maxAmqCallee", 1, 65535);
+            s7Range(deviceInfo, connection, "pingTime", 1, Integer.MAX_VALUE);
+            Integer retryTime = s7Range(deviceInfo, connection, "retryTime", 0, Integer.MAX_VALUE);
+            if (retryTime != null && retryTime > 0) {
+                fail(deviceInfo, "SIEMENS_S7 retryTime must be 0; the collector framework owns reconnection");
+            }
+            String controllerType = normalizeValue(connection.getStringConfig("controllerType", "S7_1200"));
+            if (!S7_CONTROLLER_TYPES.contains(controllerType)) {
+                fail(deviceInfo, "SIEMENS_S7 controllerType must be one of S7_300, S7_400, S7_1200, S7_1500, LOGO");
+            }
+            validateBooleanFlag(deviceInfo, connection.getProperty("ping"), "SIEMENS_S7 ping");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
         }
-
-        Integer port = firstNonNull(connection.getPort(), deviceInfo.getPort());
-        if (port != null && (port <= 0 || port > 65535)) {
-            fail(deviceInfo, "SIEMENS_S7 port must be between 1 and 65535");
-        }
-
-        validateNonNegative(deviceInfo,
-                firstNonNull(connection.getIntConfig("rack", null), connection.getIntConfig("remoteRack", null)),
-                "SIEMENS_S7 rack");
-        validateNonNegative(deviceInfo,
-                firstNonNull(connection.getIntConfig("slot", null), connection.getIntConfig("remoteSlot", null)),
-                "SIEMENS_S7 slot");
-        validatePositive(deviceInfo, connection.getIntConfig("pduSize", null), "SIEMENS_S7 pduSize");
-        validatePositive(deviceInfo, connection.getIntConfig("maxFieldsPerRequest", null),
-                "SIEMENS_S7 maxFieldsPerRequest");
-        validatePositive(deviceInfo, connection.getIntConfig("localTsap", null), "SIEMENS_S7 localTsap");
-        validatePositive(deviceInfo, connection.getIntConfig("remoteTsap", null), "SIEMENS_S7 remoteTsap");
-        validateNonNegative(deviceInfo, connection.getIntConfig("remoteRack2", null), "SIEMENS_S7 remoteRack2");
-        validateNonNegative(deviceInfo, connection.getIntConfig("remoteSlot2", null), "SIEMENS_S7 remoteSlot2");
-        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCaller", null), "SIEMENS_S7 maxAmqCaller");
-        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCallee", null), "SIEMENS_S7 maxAmqCallee");
-        validatePositive(deviceInfo, connection.getIntConfig("pingTime", null), "SIEMENS_S7 pingTime");
-        validatePositive(deviceInfo, connection.getIntConfig("retryTime", null), "SIEMENS_S7 retryTime");
+        // 批量大小和采集超时仍由采集侧使用，不随连接串覆盖失效。
+        s7Range(deviceInfo, connection, "maxFieldsPerRequest", 1, Integer.MAX_VALUE);
         validatePositive(deviceInfo, connection.getReadTimeout(), "SIEMENS_S7 readTimeout");
         validatePositive(deviceInfo, connection.getTimeout(), "SIEMENS_S7 timeout");
-
-        String controllerType = normalizeValue(firstNonBlank(
-                connection.getStringConfig("controllerType", null),
-                "S7_1200"));
-        if (!S7_CONTROLLER_TYPES.contains(controllerType)) {
-            fail(deviceInfo, "SIEMENS_S7 controllerType must be one of S7_300, S7_400, S7_1200, S7_1500, LOGO");
-        }
-
         validateBooleanFlag(deviceInfo, connection.getProperty("subscriptionEnabled"),
                 "SIEMENS_S7 subscriptionEnabled");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
+    }
+
+    private void validateS7Uri(DeviceInfo deviceInfo, String connectionString) {
+        try {
+            URI uri = URI.create(connectionString.trim());
+            // 与适配器一致：PLC4X S7 TCP 可省略端口，但拒绝显式空端口。
+            if (!"s7".equals(uri.getScheme()) || uri.getHost() == null || uri.getHost().isBlank()
+                    || (uri.getPort() == -1 && !uri.getHost().equals(uri.getRawAuthority()))
+                    || uri.getPort() == 0 || uri.getPort() > 65535 || uri.getRawUserInfo() != null
+                    || (uri.getRawPath() != null && !uri.getRawPath().isEmpty()) || uri.getRawFragment() != null) {
+                fail(deviceInfo, "SIEMENS_S7 plc4xConnectionString must be s7://host[:port]");
+            }
+            String query = uri.getRawQuery();
+            if (query != null) {
+                for (String option : query.split("&")) {
+                    String decoded = URLDecoder.decode(option, StandardCharsets.UTF_8);
+                    String key = decoded.split("=", 2)[0].trim();
+                    if ("retry-time".equalsIgnoreCase(key) && !"retry-time=0".equals(decoded)) {
+                        fail(deviceInfo, "SIEMENS_S7 retry-time must be 0; the collector framework owns reconnection");
+                    }
+                }
+            }
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, "SIEMENS_S7 plc4xConnectionString is invalid");
+        }
+    }
+
+    private Integer s7Range(DeviceInfo deviceInfo, DeviceConnection connection,
+                            String key, int minimum, int maximum) {
+        Object raw = connection.getProperty(key);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw.toString().trim());
+            if (value >= minimum && value <= maximum) {
+                return value;
+            }
+        } catch (NumberFormatException ignored) {
+            // getIntConfig 会吞掉非法值，S7 显式配置必须拒绝而非回退默认值。
+        }
+        fail(deviceInfo, "SIEMENS_S7 " + key + " must be between " + minimum + " and " + maximum);
+        return null;
     }
 
     /**
