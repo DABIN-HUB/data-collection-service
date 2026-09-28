@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.config.validator;
 
+import com.wangbin.collector.common.domain.ads.AdsConnectionContract;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.ethernetip.EtherNetIpConnectionContract;
@@ -748,34 +749,10 @@ public class ProtocolConnectionValidator {
      * 校验业务条件和参数边界。
      */
     private void validateAds(DeviceInfo deviceInfo, DeviceConnection connection) {
-        requireHost(deviceInfo, connection, "ADS");
-
-        String targetAmsNetId = firstNonBlank(
-                connection.getStringConfig("targetAmsNetId", null),
-                connection.getStringConfig("target-ams-net-id", null));
-        if (!isValidAmsNetId(targetAmsNetId)) {
-            fail(deviceInfo, "ADS requires valid targetAmsNetId");
-        }
-
-        Integer targetAmsPort = firstPositive(
-                connection.getIntConfig("targetAmsPort", null),
-                connection.getIntConfig("target-ams-port", null));
-        if (targetAmsPort == null) {
-            fail(deviceInfo, "ADS requires targetAmsPort");
-        }
-
-        String sourceAmsNetId = firstNonBlank(
-                connection.getStringConfig("sourceAmsNetId", null),
-                connection.getStringConfig("source-ams-net-id", null));
-        if (!isValidAmsNetId(sourceAmsNetId)) {
-            fail(deviceInfo, "ADS requires valid sourceAmsNetId");
-        }
-
-        Integer sourceAmsPort = firstPositive(
-                connection.getIntConfig("sourceAmsPort", null),
-                connection.getIntConfig("source-ams-port", null));
-        if (sourceAmsPort == null) {
-            fail(deviceInfo, "ADS requires sourceAmsPort");
+        try {
+            AdsConnectionContract.validate(deviceInfo, connection);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
         }
     }
 
@@ -1050,30 +1027,6 @@ public class ProtocolConnectionValidator {
         if (!S7_DEVICE_GROUPS.contains(normalized)) {
             fail(deviceInfo, "SIEMENS_S7 " + fieldName + " must be PG_OR_PC, OS, or OTHERS");
         }
-    }
-
-    /**
-     * 校验 ADS AMS Net ID 的六段数字格式。
-     */
-    private boolean isValidAmsNetId(String value) {
-        if (isBlank(value)) {
-            return false;
-        }
-        String[] segments = value.trim().split("\\.");
-        if (segments.length != 6) {
-            return false;
-        }
-        for (String segment : segments) {
-            try {
-                int numeric = Integer.parseInt(segment);
-                if (numeric < 0 || numeric > 255) {
-                    return false;
-                }
-            } catch (NumberFormatException exception) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

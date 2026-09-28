@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.collector.protocol.ads.util;
 
+import com.wangbin.collector.common.domain.ads.AmsNetIdParser;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

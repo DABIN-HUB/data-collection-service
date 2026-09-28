@@ -103,11 +103,17 @@ public enum AdsPlcType implements CodecBackedPlcType<Plc4xValueCodec> {
             throw new IllegalArgumentException("ADS PLC type cannot be empty");
         }
         String normalized = text.trim().toUpperCase(Locale.ROOT);
-        if (normalized.startsWith("STRING(")) {
-            return "STRING";
-        }
-        if (normalized.startsWith("WSTRING(")) {
-            return "WSTRING";
+        if (normalized.startsWith("STRING(") || normalized.startsWith("WSTRING(")) {
+            int open = normalized.indexOf('(');
+            String length = normalized.substring(open + 1);
+            if (!length.matches("[0-9]{1,3}\\)")) {
+                throw new IllegalArgumentException("Invalid ADS string type length");
+            }
+            int count = Integer.parseInt(length.substring(0, length.length() - 1));
+            if (count <= 0) {
+                throw new IllegalArgumentException("ADS string type length must be positive");
+            }
+            return normalized.substring(0, open);
         }
         return normalized;
     }

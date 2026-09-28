@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.protocol.ads.domain;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AdsPlcTypeTest {
 
@@ -20,5 +21,12 @@ class AdsPlcTypeTest {
         assertEquals(AdsPlcType.SINT, AdsPlcType.fromPlatformDataType("BYTE"));
         assertEquals(AdsPlcType.BYTE, AdsPlcType.fromPlatformDataType("CHAR"));
         assertEquals(AdsPlcType.UINT, AdsPlcType.fromPlatformDataType("WORD"));
+    }
+
+    @Test
+    void shouldRejectMalformedStringTypeExpressions() {
+        for (String type : new String[]{"STRING(", "STRING(abc)", "STRING(0)", "STRING(1000)", "WSTRING(1)garbage"}) {
+            assertThrows(IllegalArgumentException.class, () -> AdsPlcType.fromDriverText(type));
+        }
     }
 }
