@@ -57,7 +57,7 @@ public class Mc4eBinaryFrameCodec implements McFrameCodec {
      */
     @Override
     public byte[] validateResponse(byte[] request, byte[] response) {
-        McResponseParser.validate4eBinarySerial(request, response);
+        McResponseParser.validate4eBinaryCorrelation(request, response);
         return response;
     }
 

@@ -24,6 +24,7 @@ public final class FakeMcServer implements AutoCloseable {
     private final ServerSocket serverSocket;
     private final FakeMcMemoryModel memoryModel = new FakeMcMemoryModel();
     private final AtomicReference<RuntimeException> asyncFailure = new AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicInteger writeRequestCount = new java.util.concurrent.atomic.AtomicInteger();
     private final CountDownLatch started = new CountDownLatch(1);
 
     private volatile boolean running = true;
@@ -31,6 +32,7 @@ public final class FakeMcServer implements AutoCloseable {
     private volatile boolean forceLengthMismatch;
     private volatile boolean forceUnexpectedSubheader;
     private volatile boolean force4eSerialMismatch;
+    private volatile int truncatedReadBytes;
     private volatile long responseDelayMs;
     private Thread acceptThread;
 
@@ -64,6 +66,14 @@ public final class FakeMcServer implements AutoCloseable {
 
     public void force4eSerialMismatch(boolean value) {
         this.force4eSerialMismatch = value;
+    }
+
+    public void truncateReadPayloadBy(int bytes) {
+        this.truncatedReadBytes = bytes;
+    }
+
+    public int writeRequestCount() {
+        return writeRequestCount.get();
     }
 
     public void setResponseDelayMs(long responseDelayMs) {
@@ -127,6 +137,9 @@ public final class FakeMcServer implements AutoCloseable {
     private byte[] handleRequest(byte[] request) {
         verifyNoAsyncFailure();
         RequestModel model = parseRequest(request);
+        if (model.command == 0x1401 || model.command == 0x1402) {
+            writeRequestCount.incrementAndGet();
+        }
         return switch (model.command) {
             case 0x0401 -> buildReadResponse(model, model.bitUnit
                     ? memoryModel.readBits(model.deviceCode, model.deviceNumber, model.unitCount)
@@ -162,8 +175,9 @@ public final class FakeMcServer implements AutoCloseable {
             model.unitCount = readUInt16(request, 19);
             model.payload = slice(request, 21, request.length);
         } else {
-            model.unitCount = request[13] & 0xFF;
-            model.payload = slice(request, 15, request.length);
+            model.subcommand = readUInt16(request, 13);
+            model.unitCount = request[15] & 0xFF;
+            model.payload = slice(request, 17, request.length);
         }
         return model;
     }
@@ -180,8 +194,9 @@ public final class FakeMcServer implements AutoCloseable {
             model.unitCount = readUInt16(request, 23);
             model.payload = slice(request, 25, request.length);
         } else {
-            model.unitCount = request[17] & 0xFF;
-            model.payload = slice(request, 19, request.length);
+            model.subcommand = readUInt16(request, 17);
+            model.unitCount = request[19] & 0xFF;
+            model.payload = slice(request, 21, request.length);
         }
         return model;
     }
@@ -192,13 +207,14 @@ public final class FakeMcServer implements AutoCloseable {
         if (model.command == 0x0401 || model.command == 0x1401) {
             model.subcommand = parseAsciiHex(request, 26, 4);
             model.bitUnit = model.subcommand == 0x0001;
-            model.deviceNumber = parseAsciiDeviceNumber(new String(request, 30, 6, StandardCharsets.US_ASCII));
-            model.deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(request, 36, 2, StandardCharsets.US_ASCII));
+            model.deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(request, 30, 2, StandardCharsets.US_ASCII));
+            model.deviceNumber = parseAsciiDeviceNumber(new String(request, 32, 6, StandardCharsets.US_ASCII), model.deviceCode);
             model.unitCount = parseAsciiHex(request, 38, 4);
             model.payload = slice(request, 42, request.length);
         } else {
-            model.unitCount = parseAsciiHex(request, 26, 2);
-            model.payload = slice(request, 28, request.length);
+            model.subcommand = parseAsciiHex(request, 26, 4);
+            model.unitCount = parseAsciiHex(request, 30, 2);
+            model.payload = slice(request, 34, request.length);
         }
         return model;
     }
@@ -208,8 +224,8 @@ public final class FakeMcServer implements AutoCloseable {
             int offset = 0;
             StringBuilder payload = new StringBuilder();
             for (int i = 0; i < model.unitCount; i++) {
-                int deviceNumber = parseAsciiDeviceNumber(new String(model.payload, offset, 6, StandardCharsets.US_ASCII));
-                McDeviceCode deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(model.payload, offset + 6, 2, StandardCharsets.US_ASCII));
+                McDeviceCode deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(model.payload, offset, 2, StandardCharsets.US_ASCII));
+                int deviceNumber = parseAsciiDeviceNumber(new String(model.payload, offset + 2, 6, StandardCharsets.US_ASCII), deviceCode);
                 byte[] wordPayload = memoryModel.readWords(deviceCode, deviceNumber, 1);
                 payload.append(new String(McAsciiCodecSupport.encodeWritePayload(
                         new McAddress("D0", "D0", deviceCode, deviceNumber, McDriverType.UINT16, 1, null, null),
@@ -238,8 +254,8 @@ public final class FakeMcServer implements AutoCloseable {
             if (model.frameType == FrameType.ASCII_3E) {
                 int offset = 0;
                 for (int i = 0; i < model.unitCount; i++) {
-                    int deviceNumber = parseAsciiDeviceNumber(new String(model.payload, offset, 6, StandardCharsets.US_ASCII));
-                    McDeviceCode deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(model.payload, offset + 6, 2, StandardCharsets.US_ASCII));
+                    McDeviceCode deviceCode = McAsciiCodecSupport.parseDeviceCodeText(new String(model.payload, offset, 2, StandardCharsets.US_ASCII));
+                    int deviceNumber = parseAsciiDeviceNumber(new String(model.payload, offset + 2, 6, StandardCharsets.US_ASCII), deviceCode);
                     byte[] payload = slice(model.payload, offset + 8, offset + 12);
                     byte[] binaryPayload = McAsciiCodecSupport.decodeReadPayload(
                             new McAddress("D0", "D0", deviceCode, deviceNumber, McDriverType.UINT16, 1, null, null),
@@ -296,10 +312,16 @@ public final class FakeMcServer implements AutoCloseable {
 
     private byte[] buildResponse(RequestModel model, byte[] payload, int endCode) {
         byte[] safePayload = payload != null ? payload : new byte[0];
+        if (endCode == 0 && (model.command == 0x0401 || model.command == 0x0403)
+                && truncatedReadBytes > 0) {
+            safePayload = java.util.Arrays.copyOf(safePayload,
+                    Math.max(0, safePayload.length - truncatedReadBytes));
+        }
+        byte[] responsePayload = safePayload;
         return switch (model.frameType) {
-            case BINARY_3E -> build3eBinaryResponse(safePayload, endCode);
-            case BINARY_4E -> build4eBinaryResponse(safePayload, endCode, model.serialNo);
-            case ASCII_3E -> build3eAsciiResponse(safePayload, endCode);
+            case BINARY_3E -> build3eBinaryResponse(responsePayload, endCode);
+            case BINARY_4E -> build4eBinaryResponse(responsePayload, endCode, model.serialNo);
+            case ASCII_3E -> build3eAsciiResponse(responsePayload, endCode);
         };
     }
 
@@ -309,6 +331,11 @@ public final class FakeMcServer implements AutoCloseable {
         byte[] response = new byte[HEADER_3E_BINARY + declaredLength];
         response[0] = forceUnexpectedSubheader ? (byte) 0x00 : (byte) 0xD0;
         response[1] = 0x00;
+        response[2] = 0x00;
+        response[3] = (byte) 0xFF;
+        response[4] = (byte) 0xFF;
+        response[5] = 0x03;
+        response[6] = 0x00;
         response[7] = (byte) (encodedLength & 0xFF);
         response[8] = (byte) ((encodedLength >> 8) & 0xFF);
         response[9] = (byte) (endCode & 0xFF);
@@ -326,6 +353,11 @@ public final class FakeMcServer implements AutoCloseable {
         int effectiveSerial = force4eSerialMismatch ? ((serialNo + 1) & 0xFFFF) : serialNo;
         response[2] = (byte) (effectiveSerial & 0xFF);
         response[3] = (byte) ((effectiveSerial >> 8) & 0xFF);
+        response[6] = 0x00;
+        response[7] = (byte) 0xFF;
+        response[8] = (byte) 0xFF;
+        response[9] = 0x03;
+        response[10] = 0x00;
         response[11] = (byte) (encodedLength & 0xFF);
         response[12] = (byte) ((encodedLength >> 8) & 0xFF);
         response[13] = (byte) (endCode & 0xFF);
@@ -424,15 +456,8 @@ public final class FakeMcServer implements AutoCloseable {
         return Integer.parseInt(new String(payload, offset, width, StandardCharsets.US_ASCII), 16);
     }
 
-    private int parseAsciiDeviceNumber(String text) {
-        if (text == null || text.isBlank()) {
-            return 0;
-        }
-        String normalized = text.trim().toUpperCase();
-        if (normalized.matches(".*[A-F].*")) {
-            return Integer.parseInt(normalized, 16);
-        }
-        return Integer.parseInt(normalized, 10);
+    private int parseAsciiDeviceNumber(String text, McDeviceCode deviceCode) {
+        return Integer.parseInt(text, deviceCode.getRadix());
     }
 
     private byte[] slice(byte[] payload, int start, int end) {

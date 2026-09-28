@@ -638,6 +638,40 @@ class ProtocolConnectionValidatorTest {
         assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
     }
 
+    @Test
+    void mcRejectsExplicitInvalidFrameAndNumericConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        Map<String, Object> options = new LinkedHashMap<>();
+        connection.setExtJson(options);
+        assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        for (String frame : List.of("3E_BINARY", "3E_ASCII", "4E_BINARY")) {
+            options.put("frameType", frame);
+            assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        }
+        for (String frame : List.of("", "3E", "BINARY", "4E_ASCII", "TEST")) {
+            options.put("frameType", frame);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), frame);
+        }
+        options.put("frameType", " 3e_ascii ");
+        assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        options.remove("frameType");
+        for (String field : List.of("networkNo", "pcNo", "ioNo", "stationNo", "monitoringTimer",
+                "maxWordsPerRequest", "maxBitsPerRequest", "maxRandomReadPoints", "maxRandomWritePoints")) {
+            options.put(field, -1);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.put(field, "not-a-number");
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.put(field, "1e2");
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.remove(field);
+        }
+    }
+
     private DeviceInfo device(String deviceId, String protocolType) {
         DeviceInfo deviceInfo = new DeviceInfo();
         deviceInfo.setDeviceId(deviceId);

@@ -7,6 +7,7 @@ import com.wangbin.collector.core.collector.protocol.mc.domain.McDriverType;
 import com.wangbin.collector.core.collector.protocol.mc.util.McByteCodec;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class McFrameBuilderTest {
@@ -59,11 +60,15 @@ class McFrameBuilderTest {
 
         assertEquals(0x03, frame[11] & 0xFF);
         assertEquals(0x04, frame[12] & 0xFF);
-        assertEquals(0x02, frame[13] & 0xFF);
-        assertEquals(0x64, frame[15] & 0xFF);
-        assertEquals(0xA8, frame[18] & 0xFF);
-        assertEquals(0xC8, frame[19] & 0xFF);
-        assertEquals(0xA8, frame[22] & 0xFF);
+        assertEquals(0x10, frame[7] & 0xFF);
+        assertEquals(0x00, frame[13] & 0xFF);
+        assertEquals(0x00, frame[14] & 0xFF);
+        assertEquals(0x02, frame[15] & 0xFF);
+        assertEquals(0x00, frame[16] & 0xFF);
+        assertEquals(0x64, frame[17] & 0xFF);
+        assertEquals(0xA8, frame[20] & 0xFF);
+        assertEquals(0xC8, frame[21] & 0xFF);
+        assertEquals(0xA8, frame[24] & 0xFF);
     }
 
     @Test
@@ -79,12 +84,16 @@ class McFrameBuilderTest {
 
         assertEquals(0x02, frame[11] & 0xFF);
         assertEquals(0x14, frame[12] & 0xFF);
-        assertEquals(0x02, frame[13] & 0xFF);
-        assertEquals(0x64, frame[15] & 0xFF);
-        assertEquals(0x34, frame[19] & 0xFF);
-        assertEquals(0x12, frame[20] & 0xFF);
-        assertEquals(0xC8, frame[21] & 0xFF);
-        assertEquals(0x78, frame[25] & 0xFF);
+        assertEquals(0x14, frame[7] & 0xFF);
+        assertEquals(0x00, frame[13] & 0xFF);
+        assertEquals(0x00, frame[14] & 0xFF);
+        assertEquals(0x02, frame[15] & 0xFF);
+        assertEquals(0x00, frame[16] & 0xFF);
+        assertEquals(0x64, frame[17] & 0xFF);
+        assertEquals(0x34, frame[21] & 0xFF);
+        assertEquals(0x12, frame[22] & 0xFF);
+        assertEquals(0xC8, frame[23] & 0xFF);
+        assertEquals(0x78, frame[27] & 0xFF);
     }
 
     @Test
@@ -95,7 +104,7 @@ class McFrameBuilderTest {
         byte[] frame = McFrameBuilder.buildAsciiBatchRead(address, connection);
         String text = new String(frame, java.nio.charset.StandardCharsets.US_ASCII);
 
-        assertEquals("500000FF03FF000018001004010000000100D*0001", text);
+        assertEquals("500000FF03FF000018001004010000D*0001000001", text);
     }
 
     @Test
@@ -115,5 +124,35 @@ class McFrameBuilderTest {
         assertEquals(0x04, frame[16] & 0xFF);
         assertEquals(0x64, frame[19] & 0xFF);
         assertEquals(0xA8, frame[22] & 0xFF);
+    }
+
+    @Test
+    void randomRequestsMatchOfficialWordUnitFrameLayouts() {
+        DeviceConnection connection = new DeviceConnection();
+        McAddress first = new McAddress("D100", "D100", McDeviceCode.D, 100, McDriverType.UINT16, 1, null, null);
+        McAddress second = new McAddress("D200", "D200", McDeviceCode.D, 200, McDriverType.UINT16, 1, null, null);
+        McRandomReadRequest reads = new McRandomReadRequest(java.util.List.of(first, second));
+        McRandomWriteRequest writes = new McRandomWriteRequest(java.util.List.of(
+                new McRandomWriteItem(first, new byte[]{0x34, 0x12}),
+                new McRandomWriteItem(second, new byte[]{0x78, 0x56})));
+        assertArrayEquals(java.util.HexFormat.of().parseHex(
+                "500000FFFF030010001000030400000200640000A8C80000A8"),
+                McFrameBuilder.buildRandomRead(reads, connection));
+        assertArrayEquals(java.util.HexFormat.of().parseHex(
+                "500000FFFF030014001000021400000200640000A83412C80000A87856"),
+                McFrameBuilder.buildRandomWrite(writes, connection));
+        assertArrayEquals(java.util.HexFormat.of().parseHex(
+                "54003412000000FFFF030010001000030400000200640000A8C80000A8"),
+                McFrameBuilder.build4eRandomRead(reads, connection, 0x1234));
+        assertArrayEquals(java.util.HexFormat.of().parseHex(
+                "54003412000000FFFF030014001000021400000200640000A83412C80000A87856"),
+                McFrameBuilder.build4eRandomWrite(writes, connection, 0x1234));
+        assertEquals("500000FF03FF0000200010040300000200D*000100D*000200",
+                new String(McFrameBuilder.buildAsciiRandomRead(reads, connection), java.nio.charset.StandardCharsets.US_ASCII));
+        McRandomWriteRequest asciiWrites = new McRandomWriteRequest(java.util.List.of(
+                new McRandomWriteItem(first, "1234".getBytes(java.nio.charset.StandardCharsets.US_ASCII)),
+                new McRandomWriteItem(second, "5678".getBytes(java.nio.charset.StandardCharsets.US_ASCII))));
+        assertEquals("500000FF03FF0000280010140200000200D*0001001234D*0002005678",
+                new String(McFrameBuilder.buildAsciiRandomWrite(asciiWrites, connection), java.nio.charset.StandardCharsets.US_ASCII));
     }
 }

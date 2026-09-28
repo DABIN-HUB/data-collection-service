@@ -15,7 +15,7 @@ import com.wangbin.collector.core.collector.protocol.mc.codec.McRandomReadReques
 import com.wangbin.collector.core.collector.protocol.mc.codec.McRandomWriteItem;
 import com.wangbin.collector.core.collector.protocol.mc.codec.McRandomWriteRequest;
 import com.wangbin.collector.core.collector.protocol.mc.codec.McResponseParser;
-import com.wangbin.collector.core.collector.protocol.mc.codec.UnsupportedMcFrameCodec;
+import com.wangbin.collector.core.collector.protocol.mc.codec.McPayloadLengthException;
 import com.wangbin.collector.core.collector.protocol.mc.domain.McAddress;
 import com.wangbin.collector.core.collector.protocol.mc.domain.McDriverType;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlan;
@@ -27,6 +27,7 @@ import com.wangbin.collector.core.collector.protocol.mc.plan.McWritePlanItem;
 import com.wangbin.collector.core.collector.protocol.mc.util.McAddressParser;
 import com.wangbin.collector.core.collector.protocol.mc.util.McByteCodec;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
+import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.MitsubishiMcConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessContext;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -103,23 +104,28 @@ public class McCollector extends ConnectionBackedCollector {
     @Override
     protected void doConnect() throws Exception {
         DeviceConnection desiredConfig = requireConnectionConfig();
-        this.connectionAdapter = createAndConnectAdapter(desiredConfig, MitsubishiMcConnectionAdapter.class, "Mitsubishi MC");
-
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
             currentConfig = desiredConfig;
         }
+        ProtocolConnectionValidator validator = new ProtocolConnectionValidator();
+        validator.validate(deviceInfo, desiredConfig);
+        if (currentConfig != desiredConfig) {
+            validator.validate(deviceInfo, currentConfig);
+        }
+        resolveFrameCodec(currentConfig);
+        this.connectionAdapter = createAndConnectAdapter(desiredConfig, MitsubishiMcConnectionAdapter.class, "Mitsubishi MC");
 
         Integer configuredTimeout = currentConfig.getReadTimeout() != null
                 ? currentConfig.getReadTimeout()
                 : currentConfig.getTimeout();
         this.timeout = configuredTimeout != null && configuredTimeout > 0 ? configuredTimeout : 5000;
-        this.maxWordsPerRequest = Math.max(1, currentConfig.getInt("maxWordsPerRequest", 120));
-        this.maxBitsPerRequest = Math.max(1, currentConfig.getInt("maxBitsPerRequest", 256));
+        this.maxWordsPerRequest = currentConfig.getInt("maxWordsPerRequest", 120);
+        this.maxBitsPerRequest = currentConfig.getInt("maxBitsPerRequest", 256);
         this.randomReadEnabled = Boolean.TRUE.equals(currentConfig.getBool("randomReadEnabled", false));
-        this.maxRandomReadPoints = Math.max(1, currentConfig.getInt("maxRandomReadPoints", 8));
+        this.maxRandomReadPoints = currentConfig.getInt("maxRandomReadPoints", 8);
         this.randomWriteEnabled = Boolean.TRUE.equals(currentConfig.getBool("randomWriteEnabled", false));
-        this.maxRandomWritePoints = Math.max(1, currentConfig.getInt("maxRandomWritePoints", 8));
+        this.maxRandomWritePoints = currentConfig.getInt("maxRandomWritePoints", 8);
         this.configuredReadPlans = Collections.emptyList();
         this.configuredReadPlanPointKeys = Collections.emptySet();
         this.lastFallbackCount.set(0);
@@ -389,6 +395,23 @@ public class McCollector extends ConnectionBackedCollector {
         }
         Map<String, Object> valuesByPointKey = buildPointValueLookup(points);
         for (McWritePlan writePlan : planWritePoints(points)) {
+            if (writePlan.getItems().stream().anyMatch(item -> item.getAddress().hasBitOffset())) {
+                for (McWritePlanItem item : writePlan.getItems()) {
+                    DataPoint point = item.getPoint();
+                    try {
+                        Object value = valuesByPointKey.get(resolvePointCacheKey(point));
+                        results.put(point.getPointId(), doWritePoint(point, value));
+                    } catch (Exception ex) {
+                        if (shouldInvalidateConnection(ex)) {
+                            invalidateConnection(ex);
+                            throw new IllegalStateException("MC word-bit write result unknown after session failure", ex);
+                        }
+                        recordException(ex, point);
+                        results.put(point.getPointId(), false);
+                    }
+                }
+                continue;
+            }
             try {
                 executeBatchWritePlan(writePlan, valuesByPointKey);
                 for (McWritePlanItem item : writePlan.getItems()) {
@@ -398,6 +421,10 @@ public class McCollector extends ConnectionBackedCollector {
                     }
                 }
             } catch (Exception ex) {
+                if (shouldInvalidateConnection(ex)) {
+                    invalidateConnection(ex);
+                    throw new IllegalStateException("MC batch write result unknown after session failure", ex);
+                }
                 log.warn("MC 批量 写入 plan 失败, 降级到 单点写入, 设备={}, 分段键={}, 启动={}, 单元数量={}, 错误={}",
                         deviceInfo.getDeviceId(),
                         writePlan.getSegmentKey(),
@@ -606,6 +633,13 @@ public class McCollector extends ConnectionBackedCollector {
             byte[] response = exchange(frameCodec, request);
             lastMcEndCode = frameCodec.readEndCode(response);
             byte[] payload = frameCodec.parseReadPayload(response);
+            int requiredLength = 0;
+            for (McAddress address : addresses) {
+                requiredLength += frameCodec.rawReadPayloadLength(address);
+            }
+            if (payload.length < requiredLength) {
+                throw new McPayloadLengthException("random read", requiredLength, payload.length);
+            }
             int offset = 0;
             for (DataPoint point : points) {
                 McAddress address = requireAddress(point);
@@ -619,7 +653,17 @@ public class McCollector extends ConnectionBackedCollector {
             }
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
+                invalidateConnection(ex);
                 throw new IllegalStateException("MC random read failed", ex);
+            }
+            if (ex instanceof McPayloadLengthException) {
+                log.warn("MC random read payload was short, device={}, error={}",
+                        deviceInfo.getDeviceId(), ex.getMessage());
+                for (DataPoint point : points) {
+                    recordException(ex, point);
+                    results.put(point.getPointId(), null);
+                }
+                return;
             }
             log.warn("MC 随机读取失败, 降级到 计划读取, 设备={}, 错误={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
@@ -659,7 +703,8 @@ public class McCollector extends ConnectionBackedCollector {
             return true;
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
-                throw new IllegalStateException("MC random write failed", ex);
+                invalidateConnection(ex);
+                throw new IllegalStateException("MC random write result unknown after session failure", ex);
             }
             log.warn("MC 随机写入失败, 降级到 计划写入, 设备={}, 错误={}",
                     deviceInfo.getDeviceId(), ex.getMessage());
@@ -797,6 +842,21 @@ public class McCollector extends ConnectionBackedCollector {
             byte[] payload = executeBatchReadPayload(readPlan);
             populateBatchReadResults(readPlan, results, payload);
         } catch (Exception ex) {
+            if (shouldInvalidateConnection(ex)) {
+                invalidateConnection(ex);
+                throw new IllegalStateException("MC continuous read failed after session invalidation", ex);
+            }
+            if (ex instanceof McPayloadLengthException) {
+                log.warn("MC continuous read payload was short, device={}, segment={}, error={}",
+                        deviceInfo.getDeviceId(), readPlan.getSegmentKey(), ex.getMessage());
+                for (DataPoint point : points) {
+                    if (point != null && point.getPointId() != null) {
+                        recordException(ex, point);
+                        results.put(point.getPointId(), null);
+                    }
+                }
+                return;
+            }
             log.warn("MC 批量 读取 plan 失败, 降级到 单点读取, 设备={}, 分段键={}, 启动={}, 单元数量={}, 错误={}",
                     deviceInfo.getDeviceId(),
                     readPlan.getSegmentKey(),
@@ -823,7 +883,12 @@ public class McCollector extends ConnectionBackedCollector {
         byte[] request = frameCodec.buildBatchRead(batchAddress, requireRuntimeConnectionConfig());
         byte[] response = exchange(frameCodec, request);
         lastMcEndCode = frameCodec.readEndCode(response);
-        return frameCodec.normalizeReadPayload(batchAddress, frameCodec.parseReadPayload(response));
+        byte[] rawPayload = frameCodec.parseReadPayload(response);
+        int requiredLength = frameCodec.rawReadPayloadLength(batchAddress);
+        if (rawPayload.length < requiredLength) {
+            throw new McPayloadLengthException("continuous read", requiredLength, rawPayload.length);
+        }
+        return frameCodec.normalizeReadPayload(batchAddress, rawPayload);
     }
 
     /**
@@ -832,6 +897,13 @@ public class McCollector extends ConnectionBackedCollector {
     protected void populateBatchReadResults(McReadPlan readPlan,
                                             Map<String, Object> results,
                                             byte[] payload) {
+        int requiredLength = readPlan.isBitUnit()
+                ? (readPlan.getTotalUnitCount() + 1) / 2
+                : readPlan.getTotalUnitCount() * 2;
+        if (payload == null || payload.length < requiredLength) {
+            throw new McPayloadLengthException("continuous read", requiredLength,
+                    payload == null ? 0 : payload.length);
+        }
         if (readPlan.isBitUnit()) {
             List<Boolean> bitValues = decodeBitPlanValues(readPlan, payload);
             for (McReadPlanItem item : readPlan.getItems()) {
@@ -856,6 +928,11 @@ public class McCollector extends ConnectionBackedCollector {
             }
             int start = item.getPayloadByteOffset();
             int end = start + item.getPayloadByteLength();
+            if (item.getAddress().hasBitOffset()) {
+                int word = (payload[start] & 0xFF) | ((payload[start + 1] & 0xFF) << 8);
+                results.put(point.getPointId(), ((word >>> item.getAddress().getBitIndex()) & 1) == 1);
+                continue;
+            }
             byte[] slice = Arrays.copyOfRange(payload, start, end);
             results.put(point.getPointId(), McByteCodec.decode(item.getAddress(), slice));
         }
@@ -1198,16 +1275,19 @@ public class McCollector extends ConnectionBackedCollector {
         if (connection == null) {
             return defaultFrameCodec;
         }
-        String frameType = connection.getString("frameType", "3E_BINARY");
-        if (frameType == null || frameType.isBlank()) {
+        Object configured = connection.getProperty("frameType");
+        if (configured == null && (connection.getExtJson() == null
+                || !connection.getExtJson().containsKey("frameType"))) {
             return defaultFrameCodec;
         }
-        String normalized = frameType.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
+        if (!(configured instanceof String frameType)) {
+            throw new IllegalArgumentException("Unsupported Mitsubishi MC frameType: " + configured);
+        }
+        return switch (frameType.trim().toUpperCase(java.util.Locale.ROOT)) {
             case "3E_BINARY" -> defaultFrameCodec;
             case "3E_ASCII" -> asciiFrameCodec;
             case "4E_BINARY" -> binary4eFrameCodec;
-            default -> new UnsupportedMcFrameCodec(normalized);
+            default -> throw new IllegalArgumentException("Unsupported Mitsubishi MC frameType: " + frameType);
         };
     }
 

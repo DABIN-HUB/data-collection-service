@@ -205,23 +205,23 @@ public class ProtocolConnectionValidator {
     private void validateMc(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "MITSUBISHI_MC");
 
-        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        Integer port = connection.getPort() != null ? connection.getPort() : deviceInfo.getPort();
         if (port != null && (port <= 0 || port > 65535)) {
             fail(deviceInfo, "MITSUBISHI_MC port must be between 1 and 65535");
         }
 
-        validateMcRange(deviceInfo, connection.getIntConfig("networkNo", null), 0, 255, "networkNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("pcNo", null), 0, 255, "pcNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("ioNo", null), 0, 65535, "ioNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("stationNo", null), 0, 255, "stationNo");
-        validatePositive(deviceInfo, connection.getIntConfig("monitoringTimer", null), "MITSUBISHI_MC monitoringTimer");
-        validatePositive(deviceInfo, connection.getIntConfig("maxRandomReadPoints", null), "MITSUBISHI_MC maxRandomReadPoints");
-        validatePositive(deviceInfo, connection.getIntConfig("maxRandomWritePoints", null), "MITSUBISHI_MC maxRandomWritePoints");
-        validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "MITSUBISHI_MC maxWordsPerRequest");
-        validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "MITSUBISHI_MC maxBitsPerRequest");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "networkNo"), 0, 255, "networkNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "pcNo"), 0, 255, "pcNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "ioNo"), 0, 65535, "ioNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "stationNo"), 0, 255, "stationNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "monitoringTimer"), 1, 65535, "monitoringTimer");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxRandomReadPoints"), 1, 255, "maxRandomReadPoints");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxRandomWritePoints"), 1, 255, "maxRandomWritePoints");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxWordsPerRequest"), 1, 960, "maxWordsPerRequest");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxBitsPerRequest"), 1, 3584, "maxBitsPerRequest");
         validatePositive(deviceInfo, connection.getReadTimeout(), "MITSUBISHI_MC readTimeout");
         validatePositive(deviceInfo, connection.getTimeout(), "MITSUBISHI_MC timeout");
-        validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
+        validateMcFrameType(deviceInfo, connection);
     }
 
     /**
@@ -920,6 +920,25 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
+    private Integer mcInteger(DeviceInfo deviceInfo, DeviceConnection connection, String key) {
+        Object raw = connection.getProperty(key);
+        if (raw == null) {
+            if (connection.getExtJson() != null && connection.getExtJson().containsKey(key)) {
+                fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+            }
+            return null;
+        }
+        if (raw instanceof Boolean) {
+            fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+        }
+        try {
+            return Integer.valueOf(raw.toString());
+        } catch (NumberFormatException invalid) {
+            fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+            return null;
+        }
+    }
+
     private void validateMcRange(DeviceInfo deviceInfo,
                                  Integer value,
                                  int min,
@@ -964,12 +983,15 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
-    private void validateMcFrameType(DeviceInfo deviceInfo, String value) {
-        if (isBlank(value)) {
+    private void validateMcFrameType(DeviceInfo deviceInfo, DeviceConnection connection) {
+        Object raw = connection.getProperty("frameType");
+        if (raw == null && (connection.getExtJson() == null
+                || !connection.getExtJson().containsKey("frameType"))) {
             return;
         }
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("3E_BINARY", "3E_ASCII", "4E_BINARY").contains(normalized)) {
+        if (!(raw instanceof String value)
+                || !Set.of("3E_BINARY", "3E_ASCII", "4E_BINARY")
+                        .contains(value.trim().toUpperCase(Locale.ROOT))) {
             fail(deviceInfo, "MITSUBISHI_MC frameType must be one of 3E_BINARY, 3E_ASCII, 4E_BINARY");
         }
     }

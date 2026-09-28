@@ -88,6 +88,49 @@ public final class McResponseParser {
         }
     }
 
+    public static void validate3eBinaryCorrelation(byte[] request, byte[] response) {
+        validateRouting(request, response, 0x50, 0xD0, 2, 2, 5, PAYLOAD_OFFSET);
+    }
+
+    public static void validate3eAsciiCorrelation(byte[] request, byte[] response) {
+        if (request == null || request.length < ASCII_HEADER_LENGTH
+                || response == null || response.length < ASCII_PAYLOAD_OFFSET
+                || request[0] != '5' || request[1] != '0' || request[2] != '0' || request[3] != '0'
+                || response[0] != 'D' || response[1] != '0' || response[2] != '0' || response[3] != '0') {
+            throw new IllegalArgumentException("Unexpected MC ASCII response frame");
+        }
+        for (int i = 0; i < 10; i++) {
+            if (request[4 + i] != response[4 + i]) {
+                throw new IllegalArgumentException("Unexpected MC ASCII response route");
+            }
+        }
+    }
+
+    public static void validate4eBinaryCorrelation(byte[] request, byte[] response) {
+        validateRouting(request, response, 0x54, 0xD4, 6, 6, 5, BINARY_4E_PAYLOAD_OFFSET);
+        if (response[4] != 0 || response[5] != 0) {
+            throw new IllegalArgumentException("Unexpected MC 4E response reserved field");
+        }
+        validate4eBinarySerial(request, response);
+    }
+
+    private static void validateRouting(byte[] request, byte[] response,
+                                        int requestSubheader, int responseSubheader,
+                                        int requestRouteOffset, int responseRouteOffset,
+                                        int routeLength, int minimumResponseLength) {
+        if (request == null || request.length < requestRouteOffset + routeLength
+                || response == null || response.length < minimumResponseLength
+                || (request[0] & 0xFF) != requestSubheader || request[1] != 0
+                || (response[0] & 0xFF) != responseSubheader || response[1] != 0) {
+            throw new IllegalArgumentException("Unexpected MC response frame type or subheader");
+        }
+        for (int i = 0; i < routeLength; i++) {
+            if (request[requestRouteOffset + i] != response[responseRouteOffset + i]) {
+                throw new IllegalArgumentException("Unexpected MC response route");
+            }
+        }
+    }
+
     /**
      * 查询并返回业务数据。
      */

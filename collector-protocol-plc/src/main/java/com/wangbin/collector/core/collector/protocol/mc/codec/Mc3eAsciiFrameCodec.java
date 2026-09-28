@@ -48,6 +48,12 @@ public class Mc3eAsciiFrameCodec implements McFrameCodec {
         return McFrameBuilder.buildAsciiRandomWrite(request, config);
     }
 
+    @Override
+    public byte[] validateResponse(byte[] request, byte[] response) {
+        McResponseParser.validate3eAsciiCorrelation(request, response);
+        return response;
+    }
+
     /**
      * 解析或转换业务数据。
      */

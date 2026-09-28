@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class McByteCodecTest {
 
@@ -43,5 +44,18 @@ class McByteCodecTest {
 
         assertArrayEquals(new byte[]{0x41, 0x42, 0x00, 0x00, 0x00, 0x00}, encoded);
         assertEquals("AB", decoded);
+    }
+
+    @Test
+    void shortFixedLengthPayloadsNeverBecomeValues() {
+        for (McDriverType type : List.of(McDriverType.INT32, McDriverType.FLOAT64)) {
+            McAddress address = new McAddress("D100", "D100", McDeviceCode.D, 100, type, 1, null, null);
+            assertThrows(IllegalArgumentException.class,
+                    () -> McByteCodec.decode(address, new byte[address.getWordCount() * 2 - 2]));
+        }
+        McAddress array = new McAddress("D100[4]", "D100[4]", McDeviceCode.D, 100, McDriverType.UINT16, 4, null, null);
+        assertThrows(IllegalArgumentException.class, () -> McByteCodec.decode(array, new byte[6]));
+        McAddress string = new McAddress("D100", "D100", McDeviceCode.D, 100, McDriverType.STRING, 1, 5, null);
+        assertThrows(IllegalArgumentException.class, () -> McByteCodec.decode(string, new byte[]{'A', 'B', 'C', 'D'}));
     }
 }

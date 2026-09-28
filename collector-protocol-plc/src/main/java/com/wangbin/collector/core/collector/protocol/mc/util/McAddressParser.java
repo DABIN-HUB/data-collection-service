@@ -110,19 +110,21 @@ public final class McAddressParser {
      * 解析或转换业务数据。
      */
     private static Integer resolveBitIndex(String explicitBitIndex, Map<String, Object> config) {
-        String value = explicitBitIndex;
-        if ((value == null || value.isBlank()) && config != null && !config.isEmpty()) {
-            Object configured = firstPresent(config, "bitIndex", "mcBitIndex");
-            if (configured != null) {
-                value = String.valueOf(configured);
-            }
-        }
+        Object configured = config != null ? firstPresent(config, "bitIndex", "mcBitIndex") : null;
+        String value = explicitBitIndex != null ? explicitBitIndex
+                : configured != null ? String.valueOf(configured) : null;
         if (value == null || value.isBlank()) {
             return null;
         }
         int parsed = Integer.parseInt(value.trim());
         if (parsed < 0 || parsed > 15) {
             throw new IllegalArgumentException("MC bit offset must be between 0 and 15");
+        }
+        if (explicitBitIndex != null && configured != null) {
+            int configIndex = Integer.parseInt(String.valueOf(configured).trim());
+            if (configIndex < 0 || configIndex > 15 || configIndex != parsed) {
+                throw new IllegalArgumentException("MC address bit offset conflicts with additionalConfig.bitIndex");
+            }
         }
         return parsed;
     }

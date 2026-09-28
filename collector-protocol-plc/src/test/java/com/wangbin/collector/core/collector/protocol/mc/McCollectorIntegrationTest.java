@@ -85,6 +85,93 @@ class McCollectorIntegrationTest {
     }
 
     @Test
+    void allAdvertisedFrameVariantsExecuteSparseRandomReadAndWrite() throws Exception {
+        for (String frameType : List.of("3E_BINARY", "3E_ASCII", "4E_BINARY")) {
+            try (FakeMcServer server = new FakeMcServer()) {
+                server.memory().putWord(McDeviceCode.D, 100, 11);
+                server.memory().putWord(McDeviceCode.D, 200, 22);
+                DataPoint first = point("p1", "D100", "INT", "RW");
+                DataPoint second = point("p2", "D200", "INT", "RW");
+                McCollector collector = prepareCollector(server, List.of(first, second), 1000, frameType, true);
+                try {
+                    assertEquals(11.0, collector.readPoints(List.of(first, second)).get("p1"), frameType);
+                    assertEquals(22.0, collector.readPoints(List.of(first, second)).get("p2"), frameType);
+                    assertEquals(Map.of("p1", true, "p2", true),
+                            collector.writePoints(Map.of(first, 33, second, 44)), frameType);
+                    assertEquals(List.of(33), server.memory().snapshotWords(McDeviceCode.D, 100, 1));
+                    assertEquals(List.of(44), server.memory().snapshotWords(McDeviceCode.D, 200, 1));
+                } finally {
+                    collector.disconnect();
+                }
+            }
+        }
+    }
+
+    @Test
+    void shortContinuousResponseFailsEntireSpanWithoutPerPointFallback() throws Exception {
+        try (FakeMcServer server = new FakeMcServer()) {
+            server.memory().putWord(McDeviceCode.D, 100, 11);
+            server.memory().putWord(McDeviceCode.D, 101, 12);
+            DataPoint first = point("p1", "D100", "INT", "R");
+            DataPoint second = point("p2", "D101", "INT", "R");
+            McCollector collector = prepareCollector(server, List.of(first, second));
+            try {
+                server.truncateReadPayloadBy(2);
+                Map<String, Object> values = collector.readPoints(List.of(first, second));
+                assertTrue(values.containsKey("p1"));
+                assertTrue(values.containsKey("p2"));
+                assertEquals(null, values.get("p1"));
+                assertEquals(null, values.get("p2"));
+                assertEquals(0, collector.getDeviceStatus().get("lastFallbackCount"));
+            } finally {
+                collector.disconnect();
+            }
+        }
+    }
+
+    @Test
+    void shortRandomResponseFailsAllItemsWithoutNormalPlanFallback() throws Exception {
+        try (FakeMcServer server = new FakeMcServer()) {
+            server.memory().putWord(McDeviceCode.D, 100, 11);
+            server.memory().putWord(McDeviceCode.D, 200, 22);
+            DataPoint first = point("p1", "D100", "INT", "R");
+            DataPoint second = point("p2", "D200", "INT", "R");
+            McCollector collector = prepareCollector(server, List.of(first, second), 1000, "3E_BINARY", true);
+            try {
+                server.truncateReadPayloadBy(2);
+                Map<String, Object> values = collector.readPoints(List.of(first, second));
+                assertEquals(null, values.get("p1"));
+                assertEquals(null, values.get("p2"));
+                assertEquals(0, collector.getDeviceStatus().get("lastFallbackCount"));
+            } finally {
+                collector.disconnect();
+            }
+        }
+    }
+
+    @Test
+    void timedOutBatchAndRandomWritesAreNeverReplayedAsIndividualWrites() throws Exception {
+        for (boolean random : List.of(false, true)) {
+            try (FakeMcServer server = new FakeMcServer()) {
+                DataPoint first = point("p1", "D100", "INT", "RW");
+                DataPoint second = point("p2", random ? "D200" : "D101", "INT", "RW");
+                McCollector collector = prepareCollector(server, List.of(first, second), 100,
+                        "3E_BINARY", false, random);
+                try {
+                    server.setResponseDelayMs(500);
+                    RuntimeException failure = assertThrows(RuntimeException.class,
+                            () -> collector.writePoints(Map.of(first, 11, second, 12)));
+                    assertTrue(failure.getMessage().contains("MC batch point write failed"));
+                    assertEquals(1, server.writeRequestCount());
+                    assertEquals(false, collector.getDeviceStatus().get("connected"));
+                } finally {
+                    collector.disconnect();
+                }
+            }
+        }
+    }
+
+    @Test
     void shouldWriteSinglePointThroughRealSocketAdapter() throws Exception {
         try (FakeMcServer server = new FakeMcServer()) {
             DataPoint point = point("p1", "D100", "INT", "RW");
@@ -150,6 +237,42 @@ class McCollectorIntegrationTest {
             assertEquals(true, collector.readPoint(point));
             assertEquals(List.of(0b1000), server.memory().snapshotWords(McDeviceCode.D, 100, 1));
             collector.disconnect();
+        }
+    }
+
+    @Test
+    void realSocketKeepsNativeBitBatchSeparateFromWordBitViews() throws Exception {
+        try (FakeMcServer server = new FakeMcServer()) {
+            server.memory().putBit(McDeviceCode.M, 100, false);
+            server.memory().putBit(McDeviceCode.M, 101, true);
+            server.memory().putWord(McDeviceCode.D, 100, 0b1000_0001);
+            DataPoint m100 = point("m100", "M100", "boolean", "RW");
+            DataPoint m101 = point("m101", "M101", "boolean", "RW");
+            DataPoint bit1 = point("bit1", "D100.1", "boolean", "RW");
+            DataPoint bit3 = point("bit3", "D100.3", "boolean", "RW");
+            McCollector collector = prepareCollector(server, List.of(m100, m101, bit1, bit3));
+            try {
+                Map<String, Object> values = collector.readPoints(List.of(m100, m101, bit1, bit3));
+                assertEquals(false, values.get("m100"));
+                assertEquals(true, values.get("m101"));
+                assertEquals(false, values.get("bit1"));
+                assertEquals(false, values.get("bit3"));
+                Map<DataPoint, Object> writes = new LinkedHashMap<>();
+                writes.put(m100, true);
+                writes.put(m101, false);
+                writes.put(bit1, true);
+                writes.put(bit3, true);
+                assertEquals(Map.of("m100", true, "m101", true, "bit1", true, "bit3", true),
+                        collector.writePoints(writes));
+                assertEquals(List.of(0b1000_1011), server.memory().snapshotWords(McDeviceCode.D, 100, 1));
+                Map<String, Object> readback = collector.readPoints(List.of(m100, m101, bit1, bit3));
+                assertEquals(true, readback.get("m100"));
+                assertEquals(false, readback.get("m101"));
+                assertEquals(true, readback.get("bit1"));
+                assertEquals(true, readback.get("bit3"));
+            } finally {
+                collector.disconnect();
+            }
         }
     }
 
