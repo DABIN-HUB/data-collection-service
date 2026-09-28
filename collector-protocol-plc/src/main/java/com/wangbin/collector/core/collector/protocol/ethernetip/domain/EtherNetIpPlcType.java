@@ -4,7 +4,10 @@ import com.wangbin.collector.core.collector.protocol.plc4x.domain.CodecBackedPlc
 import com.wangbin.collector.core.collector.protocol.plc4x.domain.Plc4xValueCodec;
 import com.wangbin.collector.core.collector.protocol.plc4x.domain.PlcTypeAliasLookup;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Locale;
+import org.apache.plc4x.java.api.value.PlcValue;
 
 /**
  * 定义当前模块的枚举值。
@@ -75,6 +78,82 @@ public enum EtherNetIpPlcType implements CodecBackedPlcType<Plc4xValueCodec> {
 
     public Plc4xValueCodec getCodec() {
         return codec;
+    }
+
+    /**
+     * 整数类型按 CIP 原生位宽转换，拒绝溢出而不是静默截断。
+     */
+    @Override
+    public Object write(Object value) {
+        return switch (this) {
+            case BYTE, USINT -> checkedInteger(value, 8, false).shortValue();
+            case SINT -> checkedInteger(value, 8, true).byteValue();
+            case INT -> checkedInteger(value, 16, true).shortValue();
+            case WORD, UINT -> checkedInteger(value, 16, false).intValue();
+            case DINT -> checkedInteger(value, 32, true).intValue();
+            case DWORD, UDINT -> checkedInteger(value, 32, false).longValue();
+            case LINT -> checkedInteger(value, 64, true).longValue();
+            case LWORD, ULINT -> checkedInteger(value, 64, false);
+            default -> codec.write(value);
+        };
+    }
+
+    /**
+     * 读取时保留无符号宽度，并对驱动异常负值及超范围值直接报错。
+     */
+    @Override
+    public Object read(PlcValue value) {
+        if (value == null) {
+            return null;
+        }
+        Object rawValue = value.getObject();
+        if (rawValue == null) {
+            if (value.isBigInteger()) {
+                rawValue = value.getBigInteger();
+            } else if (value.isLong()) {
+                rawValue = value.getLong();
+            } else if (value.isInteger()) {
+                rawValue = value.getInteger();
+            } else if (value.isShort()) {
+                rawValue = value.getShort();
+            } else if (value.isByte()) {
+                rawValue = value.getByte();
+            }
+        }
+        Object numericValue = rawValue;
+        return switch (this) {
+            case BYTE, USINT -> checkedInteger(numericValue, 8, false).shortValue();
+            case SINT -> checkedInteger(numericValue, 8, true).byteValue();
+            case INT -> checkedInteger(numericValue, 16, true).shortValue();
+            case WORD, UINT -> checkedInteger(numericValue, 16, false).intValue();
+            case DINT -> checkedInteger(numericValue, 32, true).intValue();
+            case DWORD, UDINT -> checkedInteger(numericValue, 32, false).longValue();
+            case LINT -> checkedInteger(numericValue, 64, true).longValue();
+            case LWORD, ULINT -> checkedInteger(numericValue, 64, false);
+            default -> codec.read(value);
+        };
+    }
+
+    private static BigInteger checkedInteger(Object input, int bits, boolean signed) {
+        Object value = input instanceof PlcValue plcValue ? plcValue.getObject() : input;
+        BigInteger integer;
+        try {
+            if (value instanceof BigInteger bigInteger) {
+                integer = bigInteger;
+            } else if (value instanceof Number number) {
+                integer = new BigDecimal(number.toString()).toBigIntegerExact();
+            } else {
+                integer = new BigDecimal(String.valueOf(value).trim()).toBigIntegerExact();
+            }
+        } catch (NumberFormatException | ArithmeticException exception) {
+            throw new IllegalArgumentException("Invalid EtherNet/IP integer value: " + value, exception);
+        }
+        BigInteger minimum = signed ? BigInteger.ONE.shiftLeft(bits - 1).negate() : BigInteger.ZERO;
+        BigInteger maximum = BigInteger.ONE.shiftLeft(signed ? bits - 1 : bits).subtract(BigInteger.ONE);
+        if (integer.compareTo(minimum) < 0 || integer.compareTo(maximum) > 0) {
+            throw new IllegalArgumentException("EtherNet/IP integer out of range (" + bits + " bits): " + value);
+        }
+        return integer;
     }
 
     /**

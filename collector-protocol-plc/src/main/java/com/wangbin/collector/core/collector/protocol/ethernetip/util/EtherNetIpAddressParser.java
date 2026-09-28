@@ -3,189 +3,128 @@ package com.wangbin.collector.core.collector.protocol.ethernetip.util;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpPlcType;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
+import org.apache.plc4x.java.eip.base.tag.EipTag;
 
 import java.util.Collections;
-import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 定义当前模块的业务组件。
+ * 将 Logix 符号地址及原生 PLC4X 地址转换为驱动实际接受的 TYPE:COUNT 格式。
  */
 public final class EtherNetIpAddressParser {
+    private static final Pattern ADDRESS = Pattern.compile("^([%a-zA-Z_.0-9]+(?:\\[([0-9]+)])?)(?::([A-Z]+))?(?::([0-9]+))?$");
 
-    private static final Pattern LOGIX_TYPED_PATTERN = Pattern.compile("^(.+):([A-Z][A-Z0-9_]*)(?:\\[(\\d+)])?$");
-    private static final Pattern EIP_SEGMENT_PATTERN = Pattern.compile("^%(.+?)(?::(\\d+))?(?::([A-Z][A-Z0-9_]*))?$");
-
-    /**
-     * 创建当前组件实例。
-     */
     private EtherNetIpAddressParser() {
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
     public static EtherNetIpTagAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
         }
-        String address = firstNonBlank(
-                point.getAddress(),
+        String address = firstNonBlank(point.getAddress(),
                 asString(point.getAdditionalConfig("plc4xAddress")),
                 asString(point.getAdditionalConfig("etherNetIpAddress")),
                 asString(point.getAdditionalConfig("logixAddress")),
-                asString(point.getAdditionalConfig("tagName"))
-        );
+                asString(point.getAdditionalConfig("tagName")));
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
     public static EtherNetIpTagAddress parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static EtherNetIpTagAddress parse(String address, String dataType, Map<String, Object> config) {
+    private static EtherNetIpTagAddress parse(String address, String platformType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("EtherNet/IP tag address cannot be empty");
         }
-        Map<String, Object> effectiveConfig = config != null ? config : Collections.emptyMap();
-        String rawAddress = address.trim();
-        EtherNetIpPlcType explicitType = resolveExplicitType(effectiveConfig);
-        EtherNetIpPlcType inferredType = explicitType != null ? explicitType : inferType(dataType);
-
-        if (rawAddress.startsWith("%")) {
-            return parseEipAddress(rawAddress, inferredType);
+        String raw = address.trim();
+        Matcher matcher = ADDRESS.matcher(raw);
+        if (!matcher.matches() || !EipTag.matches(raw)) {
+            throw new IllegalArgumentException("Unsupported EtherNet/IP PLC4X address: " + raw);
         }
-        return parseLogixAddress(rawAddress, inferredType);
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private static EtherNetIpTagAddress parseEipAddress(String rawAddress, EtherNetIpPlcType inferredType) {
-        Matcher matcher = EIP_SEGMENT_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
-        if (!matcher.matches()) {
-            throw new IllegalArgumentException("Unsupported EtherNet/IP symbolic address: " + rawAddress);
-        }
-
-        String tagPart = rawAddress.substring(1);
-        String working = tagPart;
-        EtherNetIpPlcType explicitType = null;
-        Integer elementCount = null;
-
-        int lastColon = working.lastIndexOf(':');
-        if (lastColon >= 0) {
-            String tail = working.substring(lastColon + 1).trim();
-            explicitType = tryParseDriverType(tail);
-            if (explicitType != null) {
-                working = working.substring(0, lastColon);
+        Map<String, Object> options = config != null ? config : Collections.emptyMap();
+        String tag = matcher.group(1);
+        Integer index = matcher.group(2) != null ? positiveOrZero(matcher.group(2), "array index") : null;
+        Integer configuredIndex = integerOption(options, "arrayIndex");
+        if (configuredIndex != null) {
+            if (configuredIndex < 0 || (index != null && !index.equals(configuredIndex))) {
+                throw new IllegalArgumentException("EtherNet/IP array index conflict: " + raw);
+            }
+            if (index == null) {
+                tag += "[" + configuredIndex + "]";
             }
         }
-
-        lastColon = working.lastIndexOf(':');
-        if (lastColon >= 0) {
-            String tail = working.substring(lastColon + 1).trim();
-            if (tail.matches("\\d+")) {
-                elementCount = Integer.parseInt(tail);
-                working = working.substring(0, lastColon);
-            }
+        Integer count = matcher.group(4) != null ? positive(matcher.group(4), "array count") : null;
+        Integer configuredCount = integerOption(options, "arraySize");
+        Integer elementCount = integerOption(options, "elementCount");
+        if (configuredCount != null && elementCount != null && !configuredCount.equals(elementCount)) {
+            throw new IllegalArgumentException("EtherNet/IP array count conflict: " + raw);
         }
-
-        EtherNetIpPlcType finalType = explicitType != null ? explicitType : inferredType;
-        int arraySize = elementCount != null ? Math.max(1, elementCount) : 1;
-        StringBuilder plc4xAddress = new StringBuilder("%").append(working);
-        if (finalType != null) {
-            plc4xAddress.append(':').append(arraySize).append(':').append(finalType.toTypeExpression());
-        } else if (elementCount != null) {
-            plc4xAddress.append(':').append(arraySize);
+        Integer desiredCount = configuredCount != null ? configuredCount : elementCount;
+        if (desiredCount != null && (desiredCount <= 0 || (count != null && !count.equals(desiredCount)))) {
+            throw new IllegalArgumentException("EtherNet/IP array count conflict: " + raw);
         }
-
-        return new EtherNetIpTagAddress(rawAddress, plc4xAddress.toString(), working,
-                finalType != null ? finalType.toTypeExpression() : null, arraySize);
+        if (count == null) {
+            count = desiredCount;
+        }
+        // PLC4X 0.13.0 的 EipTag 序列化将 elementNb 写入 16 位无符号字段。
+        if (count != null && count > 65535) {
+            throw new IllegalArgumentException("EtherNet/IP array count out of range: " + count);
+        }
+        String explicit = matcher.group(3);
+        EtherNetIpPlcType type = explicit != null ? EtherNetIpPlcType.fromDriverText(explicit)
+                : resolveType(options, platformType);
+        String normalized = tag + (type != null ? ":" + type.toTypeExpression() : "")
+                + (count != null ? ":" + count : "");
+        // EipTag.of 对语法不符返回 null；同时核对解析结果，防止驱动悄悄改写计数或类型。
+        EipTag driverTag = EipTag.of(normalized);
+        if (driverTag == null || !tag.equals(driverTag.getTag())
+                || (type != null && !type.toTypeExpression().equals(driverTag.getType().name()))
+                || (count != null && count != driverTag.getElementNb())) {
+            throw new IllegalArgumentException("Unsupported EtherNet/IP PLC4X address: " + normalized);
+        }
+        return new EtherNetIpTagAddress(raw, normalized, tag,
+                type != null ? type.toTypeExpression() : driverTag.getType().name(),
+                count != null ? count : driverTag.getElementNb());
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static EtherNetIpTagAddress parseLogixAddress(String rawAddress, EtherNetIpPlcType inferredType) {
-        Matcher matcher = LOGIX_TYPED_PATTERN.matcher(rawAddress.toUpperCase(Locale.ROOT));
-        String tagName = rawAddress;
-        EtherNetIpPlcType explicitType = null;
-        int arraySize = 1;
-
-        if (matcher.matches()) {
-            explicitType = tryParseDriverType(matcher.group(2));
-            if (explicitType != null) {
-                int typeSeparator = rawAddress.lastIndexOf(':');
-                tagName = rawAddress.substring(0, typeSeparator);
-                if (matcher.group(3) != null) {
-                    arraySize = Math.max(1, Integer.parseInt(matcher.group(3)));
-                }
-            }
+    private static EtherNetIpPlcType resolveType(Map<String, Object> options, String platformType) {
+        String explicit = firstNonBlank(asString(options.get("driverDataType")), asString(options.get("eipType")),
+                asString(options.get("logixType")), asString(options.get("plc4xType")), asString(options.get("plcType")));
+        if (explicit != null) {
+            return EtherNetIpPlcType.fromDriverText(explicit);
         }
-
-        EtherNetIpPlcType finalType = explicitType != null ? explicitType : inferredType;
-        String plc4xAddress = rawAddress;
-        if (explicitType == null && finalType != null) {
-            plc4xAddress = tagName + ":" + finalType.toTypeExpression() + (arraySize > 1 ? "[" + arraySize + "]" : "");
-        }
-
-        return new EtherNetIpTagAddress(rawAddress, plc4xAddress, tagName,
-                finalType != null ? finalType.toTypeExpression() : null, arraySize);
+        return platformType != null && !platformType.isBlank()
+                ? EtherNetIpPlcType.fromPlatformDataType(platformType) : null;
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static EtherNetIpPlcType inferType(String dataType) {
-        if (dataType == null || dataType.isBlank()) {
-            return null;
+    private static Integer integerOption(Map<String, Object> options, String key) {
+        Object value = options.get(key);
+        return value == null || value.toString().isBlank() ? null : positiveOrZero(value.toString(), key);
+    }
+
+    private static int positive(String text, String field) {
+        int value = positiveOrZero(text, field);
+        if (value == 0) {
+            throw new IllegalArgumentException("EtherNet/IP " + field + " must be positive: " + text);
         }
-        return EtherNetIpPlcType.fromPlatformDataType(dataType);
+        return value;
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static EtherNetIpPlcType resolveExplicitType(Map<String, Object> config) {
-        String type = firstNonBlank(
-                asString(config.get("driverDataType")),
-                asString(config.get("eipType")),
-                asString(config.get("logixType")),
-                asString(config.get("plc4xType")),
-                asString(config.get("plcType"))
-        );
-        return type != null ? EtherNetIpPlcType.fromDriverText(type) : null;
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static EtherNetIpPlcType tryParseDriverType(String text) {
-        if (text == null || text.isBlank()) {
-            return null;
+    private static int positiveOrZero(String text, String field) {
+        if (!text.matches("[0-9]+")) {
+            throw new IllegalArgumentException("Invalid EtherNet/IP " + field + ": " + text);
         }
         try {
-            return EtherNetIpPlcType.fromDriverText(text);
-        } catch (IllegalArgumentException ignored) {
-            return null;
+            return Integer.parseInt(text);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("EtherNet/IP " + field + " out of range: " + text, exception);
         }
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private static String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
         for (String value : values) {
             if (value != null && !value.isBlank()) {
                 return value.trim();
@@ -194,9 +133,6 @@ public final class EtherNetIpAddressParser {
         return null;
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private static String asString(Object value) {
         return value != null ? value.toString() : null;
     }

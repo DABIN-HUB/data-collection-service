@@ -18,6 +18,48 @@ class ProtocolConnectionValidatorTest {
     private final ProtocolConnectionValidator validator = new ProtocolConnectionValidator();
 
     @Test
+    void shouldValidateEtherNetIpOverrideIndependentlyOfAutoFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "logix:tcp://plc.example:44818",
+                "backplane", -1, "slot", "invalid", "communicationPath", "["));
+        assertDoesNotThrow(() -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        for (String invalid : List.of("s7://plc", "modbus://plc", "opcua://plc", "abc",
+                "logix:tcp://plc:0", "logix:tcp://plc:65536")) {
+            connection.setExtJson(ext("plc4xConnectionString", invalid));
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        }
+    }
+
+    @Test
+    void shouldRejectInvalidEtherNetIpAutoSettings() {
+        for (int port : List.of(0, -1, 65536)) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("plc.example");
+            connection.setPort(port);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        }
+        for (Map<String, Object> settings : List.of(ext("maxFieldsPerRequest", 0),
+                ext("maxFieldsPerRequest", -1), ext("maxFieldsPerRequest", "invalid"),
+                ext("communicationPath", "["), ext("communicationPath", "abc"),
+                ext("communicationPath", "[1]"), ext("communicationPath", "[-1,0]"),
+                ext("backplane", -1), ext("slot", -1), ext("bigEndian", "wrong"))) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("plc.example");
+            connection.setExtJson(settings);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection), settings.toString());
+        }
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("plc.example");
+        connection.setExtJson(ext("communicationPath", "[1,4,2,192.168.0.1,1,1]",
+                "backplane", -1, "slot", -1));
+        assertDoesNotThrow(() -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+    }
+
+    @Test
     void shouldAcceptUrlForNetworkProtocols() {
         DeviceConnection connection = new DeviceConnection();
         connection.setUrl("tcp://127.0.0.1:1883");

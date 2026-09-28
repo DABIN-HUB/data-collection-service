@@ -2,13 +2,13 @@ package com.wangbin.collector.core.connection.adapter;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.ethernetip.EtherNetIpConnectionContract;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.DefaultPlcDriverManager;
 import org.apache.plc4x.java.api.PlcConnection;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * 定义当前模块的业务组件。
@@ -32,12 +32,32 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
     @Override
     protected void doConnect() throws Exception {
         connectionString = buildConnectionString();
-        connection = new DefaultPlcDriverManager().getConnection(connectionString);
-        if (connection != null && !connection.isConnected()) {
-            connection.connect();
+        try {
+            connection = new DefaultPlcDriverManager().getConnection(connectionString);
+            if (connection == null) {
+                throw new IllegalStateException("PLC4X 未返回 EtherNet/IP 连接");
+            }
+            if (!connection.isConnected()) {
+                connection.connect();
+            }
+        } catch (Exception exception) {
+            // 驱动错误可能包含显式连接串和查询参数，不传递到公共日志或状态。
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception ignored) {
+                    // 保留原始建连失败语义。
+                } finally {
+                    connection = null;
+                }
+            }
+            connectionString = null;
+            throw new IllegalStateException("PLC4X EtherNet/IP 建连失败，请检查连接配置和设备状态");
         }
-        setConnectionParam("connectionString", connectionString);
-        log.info("PLC4X EtherNet/IP 连接 已创建:{}", connectionString);
+        setConnectionParam("connectionSource", hasText(config.getString("plc4xConnectionString", null))
+                ? "EXPLICIT" : "AUTO");
+        setConnectionParam("driver", "PLC4X");
+        log.info("PLC4X EtherNet/IP 连接已创建，设备:{}", getDeviceId());
     }
 
     /**
@@ -51,6 +71,7 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
             }
         } finally {
             connection = null;
+            connectionString = null;
         }
     }
 
@@ -83,24 +104,22 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
     }
 
     public String getConnectionString() {
-        return connectionString;
+        return connectionString == null ? null : "logix:tcp://[已隐藏]";
     }
 
     /**
      * 创建并返回业务对象。
      */
     private String buildConnectionString() {
+        EtherNetIpConnectionContract.validate(deviceInfo, config);
         String configured = config.getString("plc4xConnectionString", null);
         if (hasText(configured)) {
             return configured;
         }
 
         String host = resolveHost();
-        if (!hasText(host)) {
-            throw new IllegalStateException("Invalid EtherNet/IP connection host");
-        }
-
-        int port = resolvePort() != null && resolvePort() > 0 ? resolvePort() : 44818;
+        Integer configuredPort = resolvePort();
+        int port = configuredPort == null ? 44818 : configuredPort;
         List<String> options = new ArrayList<>();
 
         String communicationPath = firstNonBlank(
@@ -108,11 +127,14 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
                 config.getString("communication-path", null)
         );
         if (!hasText(communicationPath)) {
-            int backplane = config.getInt("backplane", 1);
-            int slot = config.getInt("slot", 0);
-            communicationPath = "[" + backplane + "," + slot + "]";
+            int backplane = EtherNetIpConnectionContract.integer(config, "backplane", 1, 1, 2);
+            int slot = EtherNetIpConnectionContract.integer(config, "slot", 0, 0, 255);
+            communicationPath = backplane + "," + slot;
+        } else {
+            // PLC4X 0.13.0 按逗号直接切分路由，不识别配置界面的方括号。
+            communicationPath = EtherNetIpConnectionContract.normalizeRoute(communicationPath);
         }
-        options.add("communicationPath=" + communicationPath);
+        options.add("communication-path=" + communicationPath);
 
         if (hasConfig("bigEndian")) {
             options.add("big-endian=" + config.getBool("bigEndian", Boolean.TRUE));
@@ -128,14 +150,10 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
             options.add("tcp.no-delay=" + config.getBool("tcpNoDelay", Boolean.TRUE));
         }
 
-        long requestTimeout = resolveRequestTimeout();
-        if (requestTimeout > 0) {
-            options.add("tcp.default-timeout=" + requestTimeout);
-        }
-
-        String controllerType = normalizeControllerType(config.getString("controllerType", null));
-        if (hasText(controllerType)) {
-            options.add("controller-type=" + controllerType);
+        // PLC4X 0.13.0 将 tcp.default-timeout 用于 TCP 建连，不能用读取超时填充。
+        Integer connectTimeout = config.getConnectTimeout();
+        if (connectTimeout != null) {
+            options.add("tcp.default-timeout=" + connectTimeout);
         }
 
         StringBuilder builder = new StringBuilder("logix:tcp://")
@@ -146,31 +164,6 @@ public class EtherNetIpConnectionAdapter extends AbstractConnectionAdapter<PlcCo
             builder.append('?').append(String.join("&", options));
         }
         return builder.toString();
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private long resolveRequestTimeout() {
-        Integer readTimeout = config.getReadTimeout();
-        if (readTimeout != null && readTimeout > 0) {
-            return readTimeout;
-        }
-        Integer timeout = config.getTimeout();
-        if (timeout != null && timeout > 0) {
-            return timeout;
-        }
-        return 5000L;
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private String normalizeControllerType(String controllerType) {
-        if (!hasText(controllerType)) {
-            return null;
-        }
-        return controllerType.trim().replace('-', '_').toUpperCase(Locale.ROOT);
     }
 
     /**

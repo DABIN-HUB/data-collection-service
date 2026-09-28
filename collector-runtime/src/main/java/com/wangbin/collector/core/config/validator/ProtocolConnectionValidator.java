@@ -2,6 +2,7 @@ package com.wangbin.collector.core.config.validator;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.ethernetip.EtherNetIpConnectionContract;
 import com.wangbin.collector.common.domain.enums.FinsTransportMode;
 import com.wangbin.collector.common.exception.CollectorException;
 import org.springframework.stereotype.Component;
@@ -54,7 +55,7 @@ public class ProtocolConnectionValidator {
             case "BACNET_IP" -> validateBacnetIp(deviceInfo, connection);
             case "BACNET_MSTP" -> validateBacnetMstp(deviceInfo, connection);
             case "BACNET_SC" -> validateBacnetSc(deviceInfo, connection);
-            case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
+            case "ETHERNET_IP" -> validateEtherNetIp(deviceInfo, connection);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
             case "SNMP" -> {
@@ -103,6 +104,14 @@ public class ProtocolConnectionValidator {
     private void validateMqtt(DeviceInfo deviceInfo, DeviceConnection connection, boolean sslAlias) {
         try {
             MqttConfigurationContract.validate(connection, deviceInfo.getDeviceId(), !sslAlias);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+        }
+    }
+
+    private void validateEtherNetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        try {
+            EtherNetIpConnectionContract.validate(deviceInfo, connection);
         } catch (IllegalArgumentException exception) {
             fail(deviceInfo, exception.getMessage());
         }
