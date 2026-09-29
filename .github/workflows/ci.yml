@@ -43,25 +43,8 @@ jobs:
       - name: 构建并同步网页控制台
         run: npm --prefix collector-desktop run build:web
 
-      - name: Maven clean package diagnostics
-        id: maven_package
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          mvn -B -ntp clean package -DskipTests 2>&1 | tee /tmp/maven-package.log
-
-      - name: Upload Maven diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: maven-package-log
-          path: /tmp/maven-package.log
-          if-no-files-found: error
-
-      - name: Fail when Maven package failed
-        if: steps.maven_package.outcome != 'success'
-        run: exit 1
+      - name: Maven clean package（跳过测试）
+        run: mvn -B -ntp clean package -DskipTests
 
       - name: 检查最终可执行Jar
         shell: bash
@@ -80,3 +63,7 @@ jobs:
           jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/index.html$'
           jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.js$'
           jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.css$'
+
+      - name: 执行P0固定回归（诊断继续）
+        continue-on-error: true
+        run: mvn -B -ntp -pl collector-boot -am -Pp0-regression test
