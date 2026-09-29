@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, fix/feature-2-runtime-stabilization ]
   pull_request:
     branches: [ main, master ]
 
