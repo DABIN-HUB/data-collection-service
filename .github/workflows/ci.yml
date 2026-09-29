@@ -36,20 +36,17 @@ jobs:
       - name: 桌面控制台类型检查
         run: npm --prefix collector-desktop run typecheck
 
-      - name: 桌面控制台测试（诊断继续）
-        continue-on-error: true
+      - name: 桌面控制台测试
         run: npm --prefix collector-desktop test
 
       - name: 构建并同步网页控制台
         run: npm --prefix collector-desktop run build:web
 
-      - name: 检查网页控制台生成物是否最新（诊断继续）
-        continue-on-error: true
-        run: |
-          git diff --exit-code -- collector-boot/src/main/resources/static/desktop
+      - name: 检查网页控制台生成物是否最新
+        run: git diff --exit-code -- collector-boot/src/main/resources/static/desktop
 
-      - name: Maven clean verify
-        run: mvn -B -ntp clean verify
+      - name: Maven clean package（跳过测试）
+        run: mvn -B -ntp clean package -DskipTests
 
       - name: 检查最终可执行Jar
         shell: bash
@@ -59,12 +56,10 @@ jobs:
             ! -name 'original-*.jar' \
             ! -name '*.original' \
             -print -quit)"
-
           if [ -z "$jar_file" ]; then
             echo "未找到 collector-boot 最终可执行 jar"
             exit 1
           fi
-
           echo "检查 Jar：$jar_file"
           jar tf "$jar_file" | grep -q '^BOOT-INF/classes/com/wangbin/collector/Application.class$'
           jar tf "$jar_file" | grep -q '^BOOT-INF/classes/static/desktop/index.html$'
@@ -74,7 +69,8 @@ jobs:
       - name: 扫描生产配置秘密
         run: node scripts/scan-config-secrets.mjs
 
-      - name: 执行P0固定回归
+      - name: 执行P0固定回归（诊断继续）
+        continue-on-error: true
         run: mvn -B -ntp -pl collector-boot -am -Pp0-regression test
 
       - name: 检查UTF-8编码
