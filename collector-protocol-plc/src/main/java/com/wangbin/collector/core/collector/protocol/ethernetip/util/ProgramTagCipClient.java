@@ -15,7 +15,7 @@ import java.util.Arrays;
 
 /**
  * 对 PLC4X 0.13.0 无法表示的 Program: 符号执行独立的 UCMM 标量读取。
- * 同一个 Collector 复用一个受超时约束的 EtherNet/IP Session；连接异常后自动失效，下一次读取重建会话。
+ * 当前 Collector 每次读取创建该客户端，因此一次读取严格对应一个受超时约束的 EtherNet/IP Session。
  */
 public final class ProgramTagCipClient implements AutoCloseable {
     private static final int MAX_RESPONSE_BYTES = 4096;
@@ -41,6 +41,7 @@ public final class ProgramTagCipClient implements AutoCloseable {
 
     public synchronized Object read(String tag) throws IOException {
         byte[] request = encodeRead(tag);
+        IOException readFailure = null;
         try {
             ensureSession();
             ByteBuffer body = ByteBuffer.allocate(16 + request.length).order(ByteOrder.LITTLE_ENDIAN);
@@ -52,15 +53,20 @@ public final class ProgramTagCipClient implements AutoCloseable {
             Packet reply = receive(input, 0x6F, session);
             return decodeReadResponse(reply.payload);
         } catch (IOException failure) {
-            closeQuietly();
+            readFailure = failure;
             throw failure;
+        } finally {
+            try {
+                close();
+            } catch (IOException closeFailure) {
+                if (readFailure == null) throw closeFailure;
+                readFailure.addSuppressed(closeFailure);
+            }
         }
     }
 
     private void ensureSession() throws IOException {
-        if (socket != null && socket.isConnected() && !socket.isClosed() && session != 0) {
-            return;
-        }
+        if (socket != null && socket.isConnected() && !socket.isClosed() && session != 0) return;
         closeQuietly();
         Socket candidate = new Socket();
         try {
@@ -98,20 +104,12 @@ public final class ProgramTagCipClient implements AutoCloseable {
         int status = Byte.toUnsignedInt(data[18]);
         int extendedWords = Byte.toUnsignedInt(data[19]);
         int valueOffset = 20 + extendedWords * 2;
-        if (service != 0xCC || valueOffset > data.length) {
-            throw new IOException("EtherNet/IP CIP 读取响应结构无效");
-        }
-        if (status != 0) {
-            throw new IOException("EtherNet/IP CIP 读取失败，状态=" + status);
-        }
-        if (data.length < valueOffset + 2) {
-            throw new IOException("EtherNet/IP CIP 读取响应缺少类型");
-        }
+        if (service != 0xCC || valueOffset > data.length) throw new IOException("EtherNet/IP CIP 读取响应结构无效");
+        if (status != 0) throw new IOException("EtherNet/IP CIP 读取失败，状态=" + status);
+        if (data.length < valueOffset + 2) throw new IOException("EtherNet/IP CIP 读取响应缺少类型");
         int typeCode = ushort(data, valueOffset);
         CIPDataTypeCode type = CIPDataTypeCode.enumForValue(typeCode);
-        if (type == null) {
-            throw new IOException("EtherNet/IP CIP 未知数据类型=" + typeCode);
-        }
+        if (type == null) throw new IOException("EtherNet/IP CIP 未知数据类型=" + typeCode);
         int offset = valueOffset + 2;
         int required = switch (type) {
             case BOOL, SINT -> 1;
@@ -120,9 +118,7 @@ public final class ProgramTagCipClient implements AutoCloseable {
             case LINT, LREAL -> 8;
             default -> throw new IOException("EtherNet/IP Program 标量类型暂不支持=" + type);
         };
-        if (data.length < offset + required) {
-            throw new IOException("EtherNet/IP CIP 标量长度与类型不一致");
-        }
+        if (data.length < offset + required) throw new IOException("EtherNet/IP CIP 标量长度与类型不一致");
         ByteBuffer value = ByteBuffer.wrap(data, offset, required).order(ByteOrder.LITTLE_ENDIAN);
         return switch (type) {
             case BOOL -> data[offset] != 0;
@@ -145,19 +141,13 @@ public final class ProgramTagCipClient implements AutoCloseable {
         ByteArrayOutputStream path = new ByteArrayOutputStream();
         for (String element : elements) {
             byte[] symbol = element.getBytes(StandardCharsets.US_ASCII);
-            if (symbol.length > 255) {
-                throw new IllegalArgumentException("EtherNet/IP Program tag segment too long");
-            }
+            if (symbol.length > 255) throw new IllegalArgumentException("EtherNet/IP Program tag segment too long");
             path.write(0x91);
             path.write(symbol.length);
             path.writeBytes(symbol);
-            if ((symbol.length & 1) != 0) {
-                path.write(0);
-            }
+            if ((symbol.length & 1) != 0) path.write(0);
         }
-        if (path.size() / 2 > 255) {
-            throw new IllegalArgumentException("EtherNet/IP Program tag path too long");
-        }
+        if (path.size() / 2 > 255) throw new IllegalArgumentException("EtherNet/IP Program tag path too long");
         ByteArrayOutputStream cip = new ByteArrayOutputStream();
         cip.write(0x4C);
         cip.write(path.size() / 2);
@@ -223,7 +213,7 @@ public final class ProgramTagCipClient implements AutoCloseable {
         try {
             close();
         } catch (IOException ignored) {
-            // 读取失败时只保留原始异常；下次调用会重新建 Session。
+            // 清理旧状态，不覆盖后续连接异常。
         }
     }
 
