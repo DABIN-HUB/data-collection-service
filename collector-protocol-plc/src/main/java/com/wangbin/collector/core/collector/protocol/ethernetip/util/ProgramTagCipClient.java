@@ -15,14 +15,20 @@ import java.util.Arrays;
 
 /**
  * 对 PLC4X 0.13.0 无法表示的 Program: 符号执行独立的 UCMM 标量读取。
- * 每次请求使用受超时约束的独立会话，不复用 PLC4X 的内部会话句柄。
+ * 同一个 Collector 复用一个受超时约束的 EtherNet/IP Session；连接异常后自动失效，下一次读取重建会话。
  */
-public final class ProgramTagCipClient {
+public final class ProgramTagCipClient implements AutoCloseable {
     private static final int MAX_RESPONSE_BYTES = 4096;
     private static final byte[] CONTEXT = "PRGTAG01".getBytes(StandardCharsets.US_ASCII);
+
     private final String host;
     private final int port;
     private final int timeout;
+
+    private Socket socket;
+    private DataInputStream input;
+    private OutputStream output;
+    private int session;
 
     public ProgramTagCipClient(String host, int port, int timeout) {
         if (host == null || host.isBlank() || port < 1 || port > 65535 || timeout < 1) {
@@ -33,71 +39,101 @@ public final class ProgramTagCipClient {
         this.timeout = timeout;
     }
 
-    public Object read(String tag) throws IOException {
+    public synchronized Object read(String tag) throws IOException {
         byte[] request = encodeRead(tag);
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), timeout);
-            socket.setSoTimeout(timeout);
-            DataInputStream input = new DataInputStream(socket.getInputStream());
-            OutputStream output = socket.getOutputStream();
-            output.write(packet(0x65, 0, new byte[]{1, 0, 0, 0}));
-            Packet registration = receive(input, 0x65, 0);
-            if (registration.payload.length != 4 || registration.session == 0) {
-                throw new IOException("EtherNet/IP 注册会话响应无效");
-            }
+        try {
+            ensureSession();
             ByteBuffer body = ByteBuffer.allocate(16 + request.length).order(ByteOrder.LITTLE_ENDIAN);
             body.putInt(0).putShort((short) 0).putShort((short) 2);
             body.putShort((short) 0).putShort((short) 0);
             body.putShort((short) 0xB2).putShort((short) request.length).put(request);
-            output.write(packet(0x6F, registration.session, body.array()));
-            Packet reply = receive(input, 0x6F, registration.session);
-            byte[] data = reply.payload;
-            if (data.length < 20 || ushort(data, 6) != 2 || ushort(data, 8) != 0
-                    || ushort(data, 10) != 0 || ushort(data, 12) != 0xB2
-                    || ushort(data, 14) != data.length - 16) {
-                throw new IOException("EtherNet/IP UCMM 响应结构无效");
-            }
-            int service = Byte.toUnsignedInt(data[16]);
-            int status = Byte.toUnsignedInt(data[18]);
-            int extendedWords = Byte.toUnsignedInt(data[19]);
-            int valueOffset = 20 + extendedWords * 2;
-            if (service != 0xCC || valueOffset > data.length) {
-                throw new IOException("EtherNet/IP CIP 读取响应结构无效");
-            }
-            if (status != 0) {
-                throw new IOException("EtherNet/IP CIP 读取失败，状态=" + status);
-            }
-            if (data.length < valueOffset + 2) {
-                throw new IOException("EtherNet/IP CIP 读取响应缺少类型");
-            }
-            int typeCode = ushort(data, valueOffset);
-            CIPDataTypeCode type = CIPDataTypeCode.enumForValue(typeCode);
-            if (type == null) {
-                throw new IOException("EtherNet/IP CIP 未知数据类型=" + typeCode);
-            }
-            int offset = valueOffset + 2;
-            int required = switch (type) {
-                case BOOL, SINT -> 1;
-                case INT -> 2;
-                case DINT, REAL -> 4;
-                case LINT, LREAL -> 8;
-                default -> throw new IOException("EtherNet/IP Program 标量类型暂不支持=" + type);
-            };
-            if (data.length != offset + required) {
-                throw new IOException("EtherNet/IP CIP 标量长度与类型不一致");
-            }
-            ByteBuffer value = ByteBuffer.wrap(data, offset, required).order(ByteOrder.LITTLE_ENDIAN);
-            return switch (type) {
-                case BOOL -> data[offset] != 0;
-                case SINT -> data[offset];
-                case INT -> value.getShort();
-                case DINT -> value.getInt();
-                case LINT -> value.getLong();
-                case REAL -> value.getFloat();
-                case LREAL -> value.getDouble();
-                default -> throw new IOException("EtherNet/IP Program 标量类型暂不支持=" + type);
-            };
+            output.write(packet(0x6F, session, body.array()));
+            output.flush();
+            Packet reply = receive(input, 0x6F, session);
+            return decodeReadResponse(reply.payload);
+        } catch (IOException failure) {
+            closeQuietly();
+            throw failure;
         }
+    }
+
+    private void ensureSession() throws IOException {
+        if (socket != null && socket.isConnected() && !socket.isClosed() && session != 0) {
+            return;
+        }
+        closeQuietly();
+        Socket candidate = new Socket();
+        try {
+            candidate.connect(new InetSocketAddress(host, port), timeout);
+            candidate.setSoTimeout(timeout);
+            DataInputStream candidateInput = new DataInputStream(candidate.getInputStream());
+            OutputStream candidateOutput = candidate.getOutputStream();
+            candidateOutput.write(packet(0x65, 0, new byte[]{1, 0, 0, 0}));
+            candidateOutput.flush();
+            Packet registration = receive(candidateInput, 0x65, 0);
+            if (registration.payload.length != 4 || registration.session == 0) {
+                throw new IOException("EtherNet/IP 注册会话响应无效");
+            }
+            socket = candidate;
+            input = candidateInput;
+            output = candidateOutput;
+            session = registration.session;
+        } catch (IOException failure) {
+            try {
+                candidate.close();
+            } catch (IOException ignored) {
+                // 保留原始连接异常。
+            }
+            throw failure;
+        }
+    }
+
+    private static Object decodeReadResponse(byte[] data) throws IOException {
+        if (data.length < 20 || ushort(data, 6) != 2 || ushort(data, 8) != 0
+                || ushort(data, 10) != 0 || ushort(data, 12) != 0xB2
+                || ushort(data, 14) != data.length - 16) {
+            throw new IOException("EtherNet/IP UCMM 响应结构无效");
+        }
+        int service = Byte.toUnsignedInt(data[16]);
+        int status = Byte.toUnsignedInt(data[18]);
+        int extendedWords = Byte.toUnsignedInt(data[19]);
+        int valueOffset = 20 + extendedWords * 2;
+        if (service != 0xCC || valueOffset > data.length) {
+            throw new IOException("EtherNet/IP CIP 读取响应结构无效");
+        }
+        if (status != 0) {
+            throw new IOException("EtherNet/IP CIP 读取失败，状态=" + status);
+        }
+        if (data.length < valueOffset + 2) {
+            throw new IOException("EtherNet/IP CIP 读取响应缺少类型");
+        }
+        int typeCode = ushort(data, valueOffset);
+        CIPDataTypeCode type = CIPDataTypeCode.enumForValue(typeCode);
+        if (type == null) {
+            throw new IOException("EtherNet/IP CIP 未知数据类型=" + typeCode);
+        }
+        int offset = valueOffset + 2;
+        int required = switch (type) {
+            case BOOL, SINT -> 1;
+            case INT -> 2;
+            case DINT, REAL -> 4;
+            case LINT, LREAL -> 8;
+            default -> throw new IOException("EtherNet/IP Program 标量类型暂不支持=" + type);
+        };
+        if (data.length < offset + required) {
+            throw new IOException("EtherNet/IP CIP 标量长度与类型不一致");
+        }
+        ByteBuffer value = ByteBuffer.wrap(data, offset, required).order(ByteOrder.LITTLE_ENDIAN);
+        return switch (type) {
+            case BOOL -> data[offset] != 0;
+            case SINT -> data[offset];
+            case INT -> value.getShort();
+            case DINT -> value.getInt();
+            case LINT -> value.getLong();
+            case REAL -> value.getFloat();
+            case LREAL -> value.getDouble();
+            default -> throw new IOException("EtherNet/IP Program 标量类型暂不支持=" + type);
+        };
     }
 
     /** 将 Program:Main 保持为同一个 ANSI Extended Symbol Segment。 */
@@ -156,6 +192,39 @@ public final class ProgramTagCipClient {
 
     private static int ushort(byte[] bytes, int offset) {
         return (bytes[offset] & 0xff) | ((bytes[offset + 1] & 0xff) << 8);
+    }
+
+    @Override
+    public synchronized void close() throws IOException {
+        IOException closeFailure = null;
+        if (output != null && session != 0) {
+            try {
+                output.write(packet(0x66, session, new byte[0]));
+                output.flush();
+            } catch (IOException failure) {
+                closeFailure = failure;
+            }
+        }
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException failure) {
+                if (closeFailure == null) closeFailure = failure;
+            }
+        }
+        socket = null;
+        input = null;
+        output = null;
+        session = 0;
+        if (closeFailure != null) throw closeFailure;
+    }
+
+    private void closeQuietly() {
+        try {
+            close();
+        } catch (IOException ignored) {
+            // 读取失败时只保留原始异常；下次调用会重新建 Session。
+        }
     }
 
     private record Packet(int session, byte[] payload) {
