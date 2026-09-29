@@ -54,6 +54,15 @@ public class CompactDeviceRealtimeDataResponse {
      */
     private List<CompactRealtimePointPayload> rows;
 
+    /** 设备健康及分层运行态；兼容原有 status。 */
+    private String deviceHealth;
+    private String transportState;
+    private String protocolState;
+    private String acquisitionState;
+    private Long lastAttemptAt;
+    private Long lastSuccessAt;
+    private Long lastValueAt;
+
     /**
      * 响应生成时间戳，单位毫秒。
      */

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONPath;
 import com.alibaba.fastjson2.JSONObject;
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.runtime.PointMappingException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -35,7 +36,7 @@ public class JsonPathHttpResponseExtractor implements HttpResponseExtractor {
             throw new IllegalArgumentException("HTTP JSONPath extraction failed: " + path, exception);
         }
         if (value == null) {
-            return Collections.emptyMap();
+            throw new PointMappingException("HTTP JSONPath did not match response: " + path);
         }
         if (value instanceof JSONObject object) {
             Map<String, Object> result = new HashMap<>();
@@ -43,9 +44,12 @@ public class JsonPathHttpResponseExtractor implements HttpResponseExtractor {
                 Object item = HttpPointMappingResolver.lookup(object, point);
                 if (item != null) result.put(point.getPointId(), item);
             }
+            if (result.isEmpty()) {
+                throw new PointMappingException("HTTP response did not map any configured point: " + path);
+            }
             return result;
         }
         if (points.size() == 1) return Map.of(points.get(0).getPointId(), value);
-        return Collections.emptyMap();
+        throw new PointMappingException("HTTP JSONPath result cannot map multiple points: " + path);
     }
 }

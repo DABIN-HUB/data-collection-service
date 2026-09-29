@@ -20,7 +20,7 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("MQTT", "MQTT",
-                "SUBSCRIBE receives live telemetry; POLLING only reads the last received message cache, never queries the broker.",
+                "MQTT 默认使用 SUBSCRIBE 接收实时遥测；显式旧 POLLING 仅读取已接收缓存，不向 Broker 发起读取。",
                 List.of("MQTT_SSL"), MqttCollector.class, "MQTT", 1883,
                 ProtocolAddressingMode.SYMBOLIC,
                 true, true, true,
@@ -108,6 +108,8 @@ public class MqttProtocolDescriptorProvider implements ProtocolDescriptorProvide
 
     private List<ProtocolFieldConfig> pointFields(ProtocolDescriptorRegistry registry) {
         return List.of(
+                registry.pointField("collectionMode", "select", "采集模式", false, "SUBSCRIBE",
+                        List.of("SUBSCRIBE", "POLLING"), "默认 SUBSCRIBE 接收推送；POLLING 仅为旧配置兼容，不主动查询 Broker。", null),
                 registry.pointField("additionalConfig.topic", "string", "Topic", false, "",
                         Collections.emptyList(), "MQTT subscribe filter (exact, + or #). SUBSCRIBE receives telemetry; POLLING reads only the last received cache.", null),
                 registry.pointField("additionalConfig.writeTopic", "string", "Write topic", false, "",

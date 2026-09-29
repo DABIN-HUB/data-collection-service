@@ -304,6 +304,12 @@ public class PointRealtimePayload {
      */
     private String realtimeStatus;
 
+    /** 失败分类：CONFIG_ERROR、COMM_ERROR、MAPPING_ERROR、DECODE_ERROR、NO_VALUE 等。 */
+    private String failureType;
+    private String errorCode;
+    private Long lastAttemptAt;
+    private Long lastValueAt;
+
     /**
      * 实时状态的错误摘要。
      */

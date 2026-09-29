@@ -38,6 +38,18 @@ public class TelemetryIngressService {
         }
     }
 
+    public void append(String deviceId, DataPoint point, ProcessResult processResult, Long generation) {
+        if (deviceId == null || deviceId.isBlank() || point == null || processResult == null) {
+            return;
+        }
+        try {
+            dataPostProcessor.savePointAsync(deviceId, point, processResult, generation);
+        } catch (Exception e) {
+            log.error("遥测 ingress 追加 失败, 设备={}, 点位={}",
+                    deviceId, point.getPointId(), e);
+        }
+    }
+
     /**
      * 写入或持久化业务数据。
      */

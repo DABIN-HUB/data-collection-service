@@ -308,6 +308,11 @@ public class MqttCollector extends ConnectionBackedCollector implements Protocol
                 try { addBaseSubscription(subscription.getTopic(), subscription.getQos()); }
                 catch (Exception exception) { throw new IllegalStateException("MQTT default subscription failed", exception); }
             }
+            // 只有全部配置主题取得 SUBACK，才报告订阅协议就绪；空订阅不能证明可用。
+            if (mqttConnection.isConnected() && !topicRefCount.isEmpty()
+                    && topicRefCount.keySet().stream().allMatch(mqttConnection::isSubscribed)) {
+                reportProtocolReady();
+            }
         }
         log.info("MQTT 点位加载完成，数量={}，设备={}", pointOptions.size(), deviceId);
     }

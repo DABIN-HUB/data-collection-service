@@ -67,6 +67,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
         this.connectionAdapter = opcUaAdapter;
         this.client = opcUaAdapter.getClient();
+        reportProtocolReady();
 
         log.info("OPC UA连接建立成功: end点位={} securityPolicy={}", endpointUrl, securityPolicy);
     }

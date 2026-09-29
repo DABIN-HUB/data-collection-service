@@ -244,7 +244,8 @@ public class CollectionScheduler {
         return new DeviceRuntimeSnapshot(
                 deviceId, phase, running, starting, connected, reconnecting,
                 reconnectCoordinator.getNextRetryAt(deviceId), scheduleInfo != null ? scheduleInfo.getStartTime() : 0L,
-                scheduleInfo != null ? scheduleInfo.getGeneration() : 0L, lastSuccessfulCollectionAt,
+                scheduleInfo != null ? scheduleInfo.getGeneration() : runtimeState.getStartingGeneration(deviceId),
+                lastSuccessfulCollectionAt,
                 consecutiveFailures, backoffUntil, degradedReason, System.currentTimeMillis(), ready,
                 firstSampleAt, configuredPointCount, degradedReason, configVersion);
     }

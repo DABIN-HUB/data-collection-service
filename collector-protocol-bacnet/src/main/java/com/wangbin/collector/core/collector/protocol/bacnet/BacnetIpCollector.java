@@ -33,6 +33,7 @@ import com.wangbin.collector.core.collector.protocol.bacnet.util.BacnetAddressPa
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.scheduler.ProtocolPointSelectionSupport;
 import com.wangbin.collector.core.connection.adapter.BacnetConnectionAdapter;
+import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
@@ -109,6 +110,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
         configuredAddresses.clear();
         subscriptionBindings.clear();
         deviceSnapshotService.clear();
+        reportMatchedDiscovery();
         log.info("{} 采集器 已连接, 设备={}, 超时毫秒={}", protocolDisplayName(), deviceInfo.getDeviceId(), requestTimeoutMs);
     }
 
@@ -1146,6 +1148,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
             connectionStatus = "CONNECTED";
             lastConnectTime = System.currentTimeMillis();
             lastActivityTime = System.currentTimeMillis();
+            reportMatchedDiscovery();
             handleAdapterReconnect();
             return true;
         } catch (Exception ex) {
@@ -1562,9 +1565,21 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
         return message.toString();
     }
 
-    /**
-     * 创建并返回业务对象。
-     */
+    /** 仅匹配目标设备实例的 I-Am 可证明 BACnet/IP 协议已响应。 */
+    private void reportMatchedDiscovery() {
+        if (!(connectionAdapter instanceof BacnetIpConnectionAdapter)) {
+            return;
+        }
+        BacnetRemoteDevice remote = connectionAdapter.getRemoteDevice();
+        DeviceConnection config = getCurrentConnectionConfig();
+        Integer expectedInstance = config != null ? config.getIntConfig("remoteDeviceInstance", null) : null;
+        if (remote != null && remote.isDiscoveredByWhoIs() && expectedInstance != null
+                && remote.getDeviceInstance() == expectedInstance) {
+            reportProtocolReady();
+        }
+    }
+
+    /** 创建并连接 BACnet 适配器。 */
     protected BacnetConnectionAdapter createBacnetConnectionAdapter(DeviceConnection desiredConfig) throws Exception {
         ConnectionAdapter<?> adapter = createManagedConnection(desiredConfig);
         if (!(adapter instanceof BacnetConnectionAdapter bacnetAdapter)) {

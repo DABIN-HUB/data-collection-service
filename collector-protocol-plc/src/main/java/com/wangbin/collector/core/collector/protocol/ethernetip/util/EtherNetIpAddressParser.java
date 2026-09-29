@@ -15,6 +15,8 @@ import java.util.regex.Pattern;
  */
 public final class EtherNetIpAddressParser {
     private static final Pattern ADDRESS = Pattern.compile("^([%a-zA-Z_.0-9]+(?:\\[([0-9]+)])?)(?::([A-Z]+))?(?::([0-9]+))?$");
+    private static final Pattern PROGRAM_ADDRESS = Pattern.compile(
+            "^(Program:[A-Za-z_][A-Za-z_0-9]*(?:\\.[A-Za-z_][A-Za-z_0-9]*)+)(?::([A-Z]+))?(?::([0-9]+))?$");
 
     private EtherNetIpAddressParser() {
     }
@@ -40,13 +42,15 @@ public final class EtherNetIpAddressParser {
             throw new IllegalArgumentException("EtherNet/IP tag address cannot be empty");
         }
         String raw = address.trim();
-        Matcher matcher = ADDRESS.matcher(raw);
-        if (!matcher.matches() || !EipTag.matches(raw)) {
-            throw new IllegalArgumentException("Unsupported EtherNet/IP PLC4X address: " + raw);
+        // Program:Main 必须作为单个 CIP 符号段编码；PLC4X 的 toAnsi 会丢失冒号。
+        boolean program = raw.startsWith("Program:");
+        Matcher matcher = (program ? PROGRAM_ADDRESS : ADDRESS).matcher(raw);
+        if (!matcher.matches() || (!program && !EipTag.matches(raw))) {
+            throw new IllegalArgumentException("Unsupported EtherNet/IP address: " + raw);
         }
         Map<String, Object> options = config != null ? config : Collections.emptyMap();
         String tag = matcher.group(1);
-        Integer index = matcher.group(2) != null ? positiveOrZero(matcher.group(2), "array index") : null;
+        Integer index = !program && matcher.group(2) != null ? positiveOrZero(matcher.group(2), "array index") : null;
         Integer configuredIndex = integerOption(options, "arrayIndex");
         if (configuredIndex != null) {
             if (configuredIndex < 0 || (index != null && !index.equals(configuredIndex))) {
@@ -56,7 +60,8 @@ public final class EtherNetIpAddressParser {
                 tag += "[" + configuredIndex + "]";
             }
         }
-        Integer count = matcher.group(4) != null ? positive(matcher.group(4), "array count") : null;
+        Integer count = (program ? matcher.group(3) : matcher.group(4)) != null
+                ? positive(program ? matcher.group(3) : matcher.group(4), "array count") : null;
         Integer configuredCount = integerOption(options, "arraySize");
         Integer elementCount = integerOption(options, "elementCount");
         if (configuredCount != null && elementCount != null && !configuredCount.equals(elementCount)) {
@@ -73,11 +78,18 @@ public final class EtherNetIpAddressParser {
         if (count != null && count > 65535) {
             throw new IllegalArgumentException("EtherNet/IP array count out of range: " + count);
         }
-        String explicit = matcher.group(3);
+        if (program && (configuredIndex != null || (count != null && count != 1))) {
+            throw new IllegalArgumentException("EtherNet/IP Program tag currently supports only a scalar: " + raw);
+        }
+        String explicit = matcher.group(program ? 2 : 3);
         EtherNetIpPlcType type = explicit != null ? EtherNetIpPlcType.fromDriverText(explicit)
                 : resolveType(options, platformType);
         String normalized = tag + (type != null ? ":" + type.toTypeExpression() : "")
                 + (count != null ? ":" + count : "");
+        if (program) {
+            return new EtherNetIpTagAddress(raw, normalized, tag,
+                    type != null ? type.toTypeExpression() : "DINT", count != null ? count : 1);
+        }
         // EipTag.of 对语法不符返回 null；同时核对解析结果，防止驱动悄悄改写计数或类型。
         EipTag driverTag = EipTag.of(normalized);
         if (driverTag == null || !tag.equals(driverTag.getTag())

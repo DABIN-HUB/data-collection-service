@@ -3,12 +3,15 @@ package com.wangbin.collector.core.collector.scheduler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.collector.runtime.PointMappingException;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Map;
@@ -39,6 +42,12 @@ public class DeviceBatchExecutor {
     private final CollectionTaskGuard collectionTaskGuard;
     private final SchedulerRuntimeState runtimeState;
     private final PerformanceMonitor performanceMonitor;
+    private AcquisitionRuntimeTracker acquisitionRuntimeTracker;
+
+    @Autowired(required = false)
+    public void setAcquisitionRuntimeTracker(AcquisitionRuntimeTracker acquisitionRuntimeTracker) {
+        this.acquisitionRuntimeTracker = acquisitionRuntimeTracker;
+    }
     private final ReconnectCoordinator reconnectCoordinator;
     private final ExecutorService batchDispatcherExecutor;
     private final ThreadPoolExecutor asyncCollectorExecutor;
@@ -152,12 +161,15 @@ public class DeviceBatchExecutor {
 
         long startTime = System.currentTimeMillis();
         boolean success = false;
+        String failureReason = "COMM_ERROR";
+        String failureDetail = null;
         try {
             if (!isBatchTaskExecutionStillValid(batchTask)) {
                 return;
             }
 
             if (!collectionManager.isDeviceConnected(deviceId)) {
+                failureReason = "COMM_ERROR";
                 reconnectCoordinator.scheduleIfNeeded(deviceId, generation);
                 log.debug("设备已断开，跳过本轮批量任务，等待异步重连完成，设备={}", deviceId);
                 return;
@@ -176,6 +188,8 @@ public class DeviceBatchExecutor {
                 values = collectFuture.get(collectTimeoutMs, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
                 collectFuture.cancel(true);
+                failureReason = "COMM_ERROR";
+                failureDetail = "采集超时";
                 batchTask.recordFailure();
                 log.warn("批量采集超时, 设备={}, 超时毫秒={}", deviceId, collectTimeoutMs);
                 return;
@@ -192,13 +206,21 @@ public class DeviceBatchExecutor {
                 unregisterCollectFuture(deviceId, collectFuture);
             }
 
-            if (!isBatchTaskExecutionStillValid(batchTask) || values == null || values.isEmpty()) {
+            if (!isBatchTaskExecutionStillValid(batchTask)) {
+                return;
+            }
+            if (values == null || values.isEmpty()) {
+                failureReason = "NO_VALUE";
+                failureDetail = "协议请求已完成，但没有返回配置点数据";
                 return;
             }
 
             CompletableFuture<Void> processFuture = submitProcessTask(deviceId, generation, points, values);
             if (processFuture == null) {
                 return;
+            }
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.recordPollingResults(deviceId, generation, points, values);
             }
             batchTask.registerInFlight(processFuture);
             registerProcessFuture(deviceId, processFuture);
@@ -209,6 +231,8 @@ public class DeviceBatchExecutor {
             success = true;
             batchTask.recordSuccess();
         } catch (Exception e) {
+            failureReason = classifyFailure(e);
+            failureDetail = failureDetail(e);
             batchTask.recordFailure();
             log.error("设备批量采集失败, 设备={}", deviceId, e);
         } finally {
@@ -217,6 +241,10 @@ public class DeviceBatchExecutor {
                 collectionStatistics.collectionSuccess(deviceId, executionTime);
                 performanceMonitor.recordBatchSuccess(deviceId, generation, points.size(), executionTime);
             } else {
+                if (acquisitionRuntimeTracker != null) {
+                    acquisitionRuntimeTracker.recordPollingFailure(deviceId, generation, points,
+                            failureReason, failureDetail);
+                }
                 collectionStatistics.collectionFailed(deviceId);
                 performanceMonitor.recordBatchFailure(deviceId, generation);
             }
@@ -226,6 +254,23 @@ public class DeviceBatchExecutor {
                 adjustBatchSize(deviceId, 5);
             }
         }
+    }
+
+    /** 保留异常因果链中的映射失败，避免把 HTTP 响应映射错误误归为通信失败。 */
+    private String classifyFailure(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof PointMappingException) return "MAPPING_ERROR";
+        }
+        return "COMM_ERROR";
+    }
+
+    private String failureDetail(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof PointMappingException) return "响应已到达，但未匹配配置的点位或 JSONPath";
+            String message = current.getMessage();
+            if (message != null && message.contains("404")) return "HTTP 请求返回 404";
+        }
+        return "协议读取或通信失败";
     }
 
     Future<Map<String, Object>> submitCollectTask(String deviceId,

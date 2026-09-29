@@ -18,6 +18,9 @@ export interface PointRealtimePayload extends DataPoint {
   processMessage?: string;
   processSuccess?: boolean;
   realtimeStatus?: "GOOD" | "CONNECTING" | "COLLECT_ERROR" | "PROCESS_ERROR" | "DISCONNECTED" | "NO_VALUE" | "STALE" | "UNASSESSED" | string;
+  failureType?: string;
+  lastAttemptAt?: number;
+  lastValueAt?: number;
   errorMessage?: string;
   stale?: boolean;
   lastSuccessfulCollectionAt?: number;
@@ -53,6 +56,12 @@ export interface DeviceRealtimeDataResponse {
   deviceId?: string;
   dataCount?: number;
   data?: Record<string, PointRealtimePayload>;
+  deviceHealth?: string;
+  transportState?: string;
+  protocolState?: string;
+  acquisitionState?: string;
+  lastAttemptAt?: number;
+  lastValueAt?: number;
   timestamp?: number;
   [key: string]: unknown;
 }
@@ -86,6 +95,9 @@ export interface CompactRealtimePointPayload {
   qualityAvailable?: boolean;
   processSuccess?: boolean;
   realtimeStatus?: string;
+  failureType?: string;
+  lastAttemptAt?: number;
+  lastValueAt?: number;
   errorMessage?: string;
   stale?: boolean;
   lastSuccessfulCollectionAt?: number;
@@ -98,6 +110,10 @@ export interface CompactRealtimeDeviceStatus {
   message?: string;
   deviceId?: string;
   dataCount?: number;
+  deviceHealth?: string;
+  transportState?: string;
+  protocolState?: string;
+  acquisitionState?: string;
 }
 
 export interface CompactDeviceRealtimeDataResponse {
@@ -109,6 +125,12 @@ export interface CompactDeviceRealtimeDataResponse {
   deviceId?: string;
   dataCount?: number;
   rows?: CompactRealtimePointPayload[];
+  deviceHealth?: string;
+  transportState?: string;
+  protocolState?: string;
+  acquisitionState?: string;
+  lastAttemptAt?: number;
+  lastValueAt?: number;
   timestamp?: number;
   [key: string]: unknown;
 }

@@ -10,6 +10,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
 import com.wangbin.collector.core.config.validator.HttpConfigurationContract;
+import com.wangbin.collector.core.collector.runtime.PointMappingException;
 import com.wangbin.collector.core.collector.protocol.http.extractor.HttpResponseExtractor;
 import com.wangbin.collector.core.collector.protocol.http.extractor.JsonPathHttpResponseExtractor;
 import com.wangbin.collector.core.collector.protocol.http.extractor.PointArrayHttpResponseExtractor;
@@ -243,9 +244,13 @@ public class HttpCollector extends ConnectionBackedCollector {
             httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
             response = tryReceiveResponse();
         }
+        if (response != null) {
+            // HTTP 状态码已通过连接适配器校验；JSON 映射失败不应抹去协议层响应事实。
+            reportProtocolReady();
+        }
         Map<String, Object> values = selectResponseExtractor(config).extract(response, points,
                 config.getExtJson() != null ? config.getExtJson() : Map.of());
-        if (values.isEmpty()) throw new IllegalStateException("HTTP POINT_NOT_FOUND: no requested points mapped");
+        if (values.isEmpty()) throw new PointMappingException("HTTP POINT_NOT_FOUND: no requested points mapped");
         return values;
     }
 

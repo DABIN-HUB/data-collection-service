@@ -29,6 +29,18 @@
         </div>
       </div>
       <small v-if="realtimeError">{{ realtimeError }}</small>
+      <div v-if="realtimeDeviceId && deviceHealthSnapshot?.deviceHealth" class="realtime-health-strip">
+        <strong>设备健康（最近完整快照）：{{ realtimeDeviceHealthText(deviceHealthSnapshot.deviceHealth) }}</strong>
+        <span>传输：{{ realtimeLayerStateText(deviceHealthSnapshot.transportState) }}</span>
+        <span>协议：{{ realtimeLayerStateText(deviceHealthSnapshot.protocolState) }}</span>
+        <span>采集：{{ realtimeLayerStateText(deviceHealthSnapshot.acquisitionState) }}</span>
+        <span>最近尝试：{{ formatTime(deviceHealthSnapshot.lastAttemptAt) }}</span>
+        <span>最近有效值：{{ formatTime(deviceHealthSnapshot.lastValueAt) }}</span>
+      </div>
+      <div v-else-if="!realtimeDeviceId && allDeviceHealth.length" class="realtime-health-strip">
+        <span>设备健康（最近完整快照）：</span>
+        <span v-for="health in deviceHealthLevels" :key="health">{{ realtimeDeviceHealthText(health) }} {{ allDeviceHealth.filter((device) => device.deviceHealth === health).length }}</span>
+      </div>
 
       <div class="exact-diagnostic-cards realtime-summary-cards">
         <div class="exact-diagnostic-card"><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div>
@@ -132,7 +144,7 @@ import { ApiRequestError } from "@/api/http";
 import { getPointRealtimeData } from "@/api/data.api";
 import { useAppStore } from "@/stores/app.store";
 import { useDeviceStore } from "@/stores/device.store";
-import type { RealtimePointRow } from "@/types/monitor";
+import type { CompactAllDeviceRealtimeDataResponse, CompactDeviceRealtimeDataResponse, CompactRealtimeDeviceStatus, RealtimePointRow } from "@/types/monitor";
 import {
   buildRealtimeSummary,
   normalizeSinglePointRealtimeRow,
@@ -143,7 +155,8 @@ import {
   realtimeScale,
   realtimeValueText,
   realtimeStatusText,
-  realtimeErrorText
+  realtimeErrorText,
+  realtimeDeviceHealthText
 } from "@/features/realtime/utils/realtime-utils";
 import { loadRealtimeDeltaResponseByContext, loadRealtimeFullResponseByContext } from "@/features/realtime/utils/realtime-load-strategy";
 import {
@@ -178,6 +191,9 @@ const realtimeAuto = ref(true);
 const realtimeDeviceId = ref("");
 const realtimeKeyword = ref("");
 const realtimeRows = ref<RealtimePointRow[]>([]);
+const deviceHealthSnapshot = ref<CompactDeviceRealtimeDataResponse | null>(null);
+const allDeviceHealth = ref<CompactRealtimeDeviceStatus[]>([]);
+const deviceHealthLevels = ["OFFLINE", "ONLINE_NO_DATA", "ONLINE_PARTIAL", "ONLINE_HEALTHY", "DEGRADED", "UNKNOWN"];
 const realtimePage = ref(1);
 const realtimePageSize = ref(DEFAULT_REALTIME_PAGE_SIZE);
 const realtimeSingleDeviceId = ref("");
@@ -235,6 +251,7 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
       }
       const nextState = applyFullRealtimeSnapshot(response, requestContext);
       realtimeRows.value = nextState.rows;
+      updateDeviceHealth(response, requestContext.mode);
       realtimeDeltaState = {
         cursor: nextState.cursor,
         successfulDeltaCycles: nextState.successfulDeltaCycles,
@@ -264,6 +281,7 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
     }
     const nextState = applyFullRealtimeSnapshot(fullResponse, requestContext);
     realtimeRows.value = nextState.rows;
+    updateDeviceHealth(fullResponse, requestContext.mode);
     realtimeDeltaState = {
       cursor: nextState.cursor,
       successfulDeltaCycles: nextState.successfulDeltaCycles,
@@ -274,6 +292,10 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
       return;
     }
     realtimeError.value = error instanceof Error ? error.message : "实时数据刷新失败";
+    realtimeRows.value = [];
+    resetRealtimeDeltaState(realtimeDeltaState);
+    deviceHealthSnapshot.value = null;
+    allDeviceHealth.value = [];
     logRealtimeRequestError(error);
   } finally {
     if (realtimeRequestOwner.isLatest(requestTicket)) {
@@ -309,6 +331,7 @@ async function loadSingleRealtime() {
   const requestTicket = singleRealtimeRequestOwner.begin(requestContext);
   singleLoading.value = true;
   singleRealtimeError.value = "";
+  realtimeSingleResult.value = { message: "查询中" };
   pendingSingleRealtimeContext.value = requestContext;
   try {
     const response = await getPointRealtimeData(requestContext.deviceId, requestContext.pointId || "");
@@ -359,8 +382,36 @@ function isExpectedRealtimeRequestFailure(error: unknown): boolean {
 
 function handleRealtimeDeviceChange() {
   realtimePage.value = 1;
+  realtimeRows.value = [];
+  deviceHealthSnapshot.value = null;
+  allDeviceHealth.value = [];
   resetRealtimeDeltaState(realtimeDeltaState);
   void loadRealtime("device-change");
+}
+
+function updateDeviceHealth(response: CompactAllDeviceRealtimeDataResponse | CompactDeviceRealtimeDataResponse, mode: RealtimeRequestContext["mode"]) {
+  if (mode === "all") {
+    deviceHealthSnapshot.value = null;
+    const aggregate = response as CompactAllDeviceRealtimeDataResponse;
+    allDeviceHealth.value = (aggregate.devices || []).map((device) => ({
+      ...device,
+      deviceHealth: device.deviceHealth || "UNKNOWN"
+    }));
+    return;
+  }
+  const snapshot = response as CompactDeviceRealtimeDataResponse;
+  deviceHealthSnapshot.value = snapshot.deviceHealth ? snapshot : null;
+  allDeviceHealth.value = [];
+}
+
+function realtimeLayerStateText(state?: string): string {
+  const labels: Record<string, string> = {
+    UNKNOWN: "未知", CONNECTING: "连接中", CONNECTED: "已连接", DISCONNECTED: "已断开",
+    STOPPED: "已停止", NEGOTIATING: "协商中", READY: "就绪", ERROR: "异常",
+    IDLE: "空闲", WAITING: "等待", ACTIVE: "活跃", PARTIAL: "部分有效",
+    STALE: "旧值", FAILED: "失败"
+  };
+  return state ? labels[state] || state : "未知";
 }
 
 function handleRealtimePageSizeChange() {
@@ -421,6 +472,10 @@ function applyRouteQuery() {
 }
 
 function enrichRealtimeRowWithRuntime(row: RealtimePointRow): RealtimePointRow {
+  if (row.failureType !== undefined || row.lastAttemptAt !== undefined || row.lastValueAt !== undefined ||
+      ["WAITING", "CONFIG_ERROR", "COMM_ERROR", "MAPPING_ERROR", "DECODE_ERROR"].includes(String(row.realtimeStatus))) {
+    return row;
+  }
   const runtime = row.deviceId ? deviceStore.runtimeMap[row.deviceId] : undefined;
   if (!runtime) {
     return row;
@@ -446,6 +501,7 @@ function deviceDisplayName(deviceId: string): string {
 
 function formatTime(value: unknown): string {
   if (typeof value === "number") {
+    if (value <= 0) return "-";
     return new Date(value).toLocaleString();
   }
   if (!value) {
@@ -512,3 +568,22 @@ watch(() => [route.query.deviceId, route.query.pointId], () => {
   applyRouteQuery();
 });
 </script>
+
+<style scoped>
+.realtime-health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--exact-border);
+  border-radius: 8px;
+  color: var(--exact-dim);
+  background: var(--exact-panel);
+  font-size: 12px;
+}
+
+.realtime-health-strip strong {
+  color: #e2e8f0;
+}
+</style>

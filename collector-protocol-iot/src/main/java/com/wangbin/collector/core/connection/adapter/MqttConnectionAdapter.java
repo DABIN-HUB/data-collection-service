@@ -463,9 +463,17 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
         if (useMqttV5) {
             IMqttToken subscribeToken = mqttClientV5.subscribe(topic, qos);
             subscribeToken.waitForCompletion(5000);
+            int[] reasonCodes = subscribeToken.getReasonCodes();
+            if (reasonCodes == null || reasonCodes.length != 1 || reasonCodes[0] > 2) {
+                throw new IllegalStateException("MQTT v5 SUBACK 未授予订阅: " + topic);
+            }
         } else {
             org.eclipse.paho.client.mqttv3.IMqttToken subscribeToken = mqttClientV3.subscribe(topic, qos);
             subscribeToken.waitForCompletion(5000);
+            int[] grantedQos = subscribeToken.getGrantedQos();
+            if (grantedQos == null || grantedQos.length != 1 || grantedQos[0] < 0 || grantedQos[0] > 2) {
+                throw new IllegalStateException("MQTT v3 SUBACK 未授予订阅: " + topic);
+            }
         }
         if (track) {
             subscribedTopics.put(topic, qos);

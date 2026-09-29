@@ -64,7 +64,10 @@ public class HttpProtocolDescriptorProvider implements ProtocolDescriptorProvide
                         registry.field("responsePath", "string", "JSONPath 响应路径", false, "$.value", null, "response"),
                         registry.field("responseArrayPath", "string", "点位数组路径，例如 $.points", false, "$.points", null, "response"),
                         registry.field("responseKeyField", "string", "数组点位键字段，例如 name", false, "name", null, "response"),
-                        registry.field("responseValueField", "string", "数组点位值字段，例如 value", false, "value", null, "response"))));
+                        registry.field("responseValueField", "string", "数组点位值字段，例如 value", false, "value", null, "response")))
+                .withPointFields(List.of(
+                        registry.pointField("additionalConfig.responseKey", "string", "响应点位键", false, "",
+                                List.of(), "当 HTTP 响应的点位键与 address/pointCode/pointId 不同时显式填写；POINT_ARRAY 模式匹配数组元素的 responseKeyField。", null))));
 
         registry.registerAlias("HTTPS", "HTTP", cfg -> {
             cfg.setSslEnabled(true);

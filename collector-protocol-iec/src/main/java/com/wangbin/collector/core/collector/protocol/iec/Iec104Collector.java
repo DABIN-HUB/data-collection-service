@@ -56,7 +56,9 @@ public class Iec104Collector extends AbstractIce104Collector {
             iec104Adapter.setConnectionEventListener(createConnectionEventListener(iec104Adapter));
             connectManagedConnection();
             this.connection = iec104Adapter.getClient();
-            onConnectionReady();
+            if (!dataTransferStopped) {
+                onConnectionReady();
+            }
         } catch (Exception e) {
             removeConnectionSilently();
             throw e;
@@ -114,6 +116,7 @@ public class Iec104Collector extends AbstractIce104Collector {
                 if (!isCurrentConnection(conn, adapter)) {
                     return;
                 }
+                boolean wasStopped = dataTransferStopped;
                 dataTransferStopped = stopped;
                 if (stopped) {
                     connectionStatus = "CONNECTED_STOPPED";
@@ -121,6 +124,10 @@ public class Iec104Collector extends AbstractIce104Collector {
                 } else {
                     connectionStatus = connected ? "CONNECTED" : connectionStatus;
                     log.info("IEC104 数据传输已启动：{}", conn.getRemoteInetAddress());
+                    reportProtocolReady();
+                    if (wasStopped && connection != null) {
+                        onConnectionReady();
+                    }
                 }
             }
         };

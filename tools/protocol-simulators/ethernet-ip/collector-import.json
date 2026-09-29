@@ -1,0 +1,124 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_enip_device001",
+        "deviceId": "ref_enip_device001",
+        "deviceName": "REF_ENIP_DEVICE001",
+        "protocolType": "ETHERNET_IP",
+        "connectionType": "ETHERNET_IP",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 14418,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_enip_device001",
+        "connectionType": "ETHERNET_IP",
+        "host": "127.0.0.1",
+        "port": 14418,
+        "extJson": {
+          "communicationPath": "[1,0]",
+          "backplane": 1,
+          "slot": 0
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_enip_device001-run_status",
+          "pointCode": "run_status",
+          "pointName": "run_status",
+          "deviceId": "ref_enip_device001",
+          "address": "Run",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "run_status"
+          }
+        },
+        {
+          "pointId": "ref_enip_device001-cpu_load",
+          "pointCode": "cpu_load",
+          "pointName": "cpu_load",
+          "deviceId": "ref_enip_device001",
+          "address": "CPULoad",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "%",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "cpu_load"
+          }
+        },
+        {
+          "pointId": "ref_enip_device001-motor_speed",
+          "pointCode": "motor_speed",
+          "pointName": "motor_speed",
+          "deviceId": "ref_enip_device001",
+          "address": "MotorSpeed",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "RPM",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "motor_speed"
+          }
+        },
+        {
+          "pointId": "ref_enip_device001-line_pressure",
+          "pointCode": "line_pressure",
+          "pointName": "line_pressure",
+          "deviceId": "ref_enip_device001",
+          "address": "LinePressure",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "PSI",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "line_pressure"
+          }
+        },
+        {
+          "pointId": "ref_enip_device001-product_count",
+          "pointCode": "product_count",
+          "pointName": "product_count",
+          "deviceId": "ref_enip_device001",
+          "address": "Count",
+          "dataType": "UINT32",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "product_count"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

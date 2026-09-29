@@ -1,8 +1,10 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.core.port.DeviceDataActivityReporter;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,6 +25,12 @@ public class PerformanceMonitor implements DeviceDataActivityReporter {
     private static final int MAX_PHASE_WHEEL_SAMPLES = 20_000;
 
     final Map<String, DevicePerformance> devicePerformance = new ConcurrentHashMap<>();
+    private AcquisitionRuntimeTracker acquisitionRuntimeTracker;
+
+    @Autowired(required = false)
+    public void setAcquisitionRuntimeTracker(AcquisitionRuntimeTracker acquisitionRuntimeTracker) {
+        this.acquisitionRuntimeTracker = acquisitionRuntimeTracker;
+    }
     private final AtomicLong totalProcessedPoints = new AtomicLong(0);
     private final AtomicLong totalSuccessfulBatches = new AtomicLong(0);
     private final AtomicLong totalFailedBatches = new AtomicLong(0);
@@ -145,6 +153,9 @@ public class PerformanceMonitor implements DeviceDataActivityReporter {
         DevicePerformance performance = devicePerformance.get(deviceId);
         if (performance == null) return;
         performance.recordDataSuccess(sourceGeneration, collectTime);
+        if (acquisitionRuntimeTracker != null) {
+            acquisitionRuntimeTracker.recordDeviceEvent(deviceId, sourceGeneration, collectTime);
+        }
     }
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
         recordBatchSuccess(deviceId, 0L, pointCount, executionTime);

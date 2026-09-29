@@ -126,35 +126,38 @@ export function realtimeValueText(row: RealtimePointRow): string {
   return row.stale ? `${text}（旧值）` : text;
 }
 export function realtimeQualityText(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["qualityLevel", "qualityDescription", "quality", "qualityCode", "status"], "UNKNOWN"));
   if (row.qualityAvailable === false) {
     return "未评估";
   }
+  if (row.qualityDescription) {
+    return row.qualityDescription;
+  }
+  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode"], "UNKNOWN")).toUpperCase();
+  const labels: Record<string, string> = {
+    A: "良好", GOOD: "良好", OK: "良好", SUCCESS: "良好", "100": "良好",
+    B: "处理错误", C: "不确定", UNCERTAIN: "不确定", "50": "不确定",
+    BAD: "异常", ERROR: "异常", FAILED: "失败", D: "异常", "0": "异常",
+    "10": "配置错误", "20": "设备错误", "30": "超时", "40": "值无效",
+    "60": "处理错误", "70": "缓存错误"
+  };
   if (row.qualityAcceptable === false || row.processSuccess === false) {
-    return quality === "UNKNOWN" ? "异常" : quality;
+    return labels[quality] === "良好" ? "异常" : labels[quality] || "异常";
   }
-  switch (quality.toUpperCase()) {
-    case "GOOD":
-    case "OK":
-    case "SUCCESS":
-      return "良好";
-    case "BAD":
-    case "ERROR":
-      return "异常";
-    default:
-      return quality || "未知";
-  }
+  return labels[quality] || "未知";
 }
 
 export function realtimeQualityClass(row: RealtimePointRow): string {
-  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode", "status"], "UNKNOWN")).toUpperCase();
-  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) {
+  if (row.qualityAvailable === false) {
+    return "";
+  }
+  if (row.qualityAcceptable === false || row.processSuccess === false) {
     return "is-bad";
   }
-  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) {
+  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode"], "UNKNOWN")).toUpperCase();
+  if (["A", "GOOD", "OK", "SUCCESS", "100"].includes(quality) && row.stale !== true) {
     return "is-good";
   }
-  if (["BAD", "ERROR", "FAILED"].includes(quality)) {
+  if (["BAD", "ERROR", "FAILED", "D", "0", "10", "20", "30", "40", "60", "70"].includes(quality)) {
     return "is-bad";
   }
   return "";
@@ -163,14 +166,44 @@ export function realtimeQualityClass(row: RealtimePointRow): string {
 export function realtimeStatusText(row: RealtimePointRow): string {
   switch (String(row.realtimeStatus || "UNASSESSED").toUpperCase()) {
     case "GOOD": return "正常";
+    case "WAITING": return "等待首次采集";
     case "CONNECTING": return "连接中";
     case "DISCONNECTED": return "连接已断开";
     case "COLLECT_ERROR": return "采集失败";
+    case "BAD": return "采集失败";
     case "PROCESS_ERROR": return "处理失败";
     case "NO_VALUE": return "暂无有效采集值";
-    case "STALE": return "旧值 / 数据已过期";
+    case "CONFIG_ERROR": return "配置错误";
+    case "COMM_ERROR": return "通信失败";
+    case "MAPPING_ERROR": return "映射错误";
+    case "DECODE_ERROR": return "解码失败";
+    case "STALE": return row.failureType && row.failureType !== "STALE"
+      ? `旧值 / 数据已过期（${realtimeFailureText(row.failureType)}）` : "旧值 / 数据已过期";
     case "UNASSESSED": return "未评估";
     default: return String(row.realtimeStatus || "未评估");
+  }
+}
+
+function realtimeFailureText(failureType: string): string {
+  switch (failureType) {
+    case "CONFIG_ERROR": return "配置错误";
+    case "COMM_ERROR": return "通信失败";
+    case "MAPPING_ERROR": return "映射错误";
+    case "DECODE_ERROR": return "解码失败";
+    case "NO_VALUE": return "无有效值";
+    case "BAD": return "采集失败";
+    default: return failureType;
+  }
+}
+
+export function realtimeDeviceHealthText(health?: string): string {
+  switch (health) {
+    case "OFFLINE": return "离线";
+    case "ONLINE_NO_DATA": return "在线无数据";
+    case "ONLINE_PARTIAL": return "部分点位有效";
+    case "ONLINE_HEALTHY": return "健康";
+    case "DEGRADED": return "运行降级";
+    default: return health || "未知";
   }
 }
 
@@ -218,11 +251,14 @@ function looksLikeRealtimePoint(row: RealtimePointRow): boolean {
 }
 
 function isGoodQuality(row: RealtimePointRow): boolean {
-  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false) {
+  if (row.qualityAvailable === false || row.qualityAcceptable === false || row.processSuccess === false || row.stale === true) {
     return false;
   }
-  const value = String(row.qualityLevel || row.quality || row.status || "").toUpperCase();
-  return ["A", "GOOD", "OK", "SUCCESS", "ONLINE", "1", "100"].includes(value);
+  if (row.realtimeStatus && (row.realtimeStatus !== "GOOD" || row.value === null || row.value === undefined)) {
+    return false;
+  }
+  const quality = String(valueOf(row, ["qualityLevel", "quality", "qualityCode"], "")).toUpperCase();
+  return ["A", "GOOD", "OK", "SUCCESS", "100"].includes(quality);
 }
 
 function valueOf(row: RealtimePointRow, keys: string[], fallback: unknown): unknown {

@@ -38,7 +38,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected boolean timeTag = true;
     protected CollectorProperties.Iec104Config iec104Config;
 
-    protected boolean dataTransferStopped = true;
+    protected volatile boolean dataTransferStopped = true;
 
     protected final Map<Iec104Key, CopyOnWriteArrayList<CompletableFuture<Object>>> pendingRequests = new ConcurrentHashMap<>();
     protected final Map<Iec104Key, CacheEntry> valueCache = new ConcurrentHashMap<>();
@@ -489,7 +489,6 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 执行当前业务逻辑。
      */
     protected void onConnectionReady() {
-        dataTransferStopped = false;
         maybeTriggerGeneralInterrogation("connect");
         startGeneralInterrogationLoop();
     }

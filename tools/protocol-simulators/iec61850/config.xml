@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DataPointsCoefficients>
+  <DataPoint name="LD0.GGIO1.AnIn1.mag.f" i="0" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">230.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">2.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">0.000000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn2.mag.f" i="1" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">231.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">2.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">0.500000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn3.mag.f" i="2" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">229.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">2.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">1.000000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn4.mag.f" i="3" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">12.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">1.500000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn5.mag.f" i="4" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">12.500000</Coefficient>
+    <Coefficient name="B" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">2.000000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn6.mag.f" i="5" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">11.500000</Coefficient>
+    <Coefficient name="B" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">2.500000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn7.mag.f" i="6" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">50.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">0.200000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">3.000000</Coefficient>
+  </DataPoint>
+  <DataPoint name="LD0.GGIO1.AnIn8.mag.f" i="7" type="IEC61850_FLOAT32">
+    <Coefficient name="A" randomness="0.00">75.000000</Coefficient>
+    <Coefficient name="B" randomness="0.00">5.000000</Coefficient>
+    <Coefficient name="C" randomness="0.00">1.000000</Coefficient>
+    <Coefficient name="D" randomness="0.00">3.500000</Coefficient>
+  </DataPoint>
+</DataPointsCoefficients>

@@ -39,6 +39,18 @@ public class DeviceRealtimeDataResponse {
      */
     private Map<String, PointRealtimePayload> data;
 
+    /** 当前设备健康状态；与现有业务 status 字段并存。 */
+    private String deviceHealth;
+
+    /** 传输、协议会话和采集状态，不以连接成功推断点位有效。 */
+    private String transportState;
+    private String protocolState;
+    private String acquisitionState;
+    private Long lastAttemptAt;
+    /** 最近一次成功进入实时缓存的有效采集时间。 */
+    private Long lastSuccessAt;
+    private Long lastValueAt;
+
     /**
      * 响应生成时间戳，单位毫秒。
      */

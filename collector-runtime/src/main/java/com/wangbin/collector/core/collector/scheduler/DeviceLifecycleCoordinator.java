@@ -4,9 +4,11 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.port.CollectionHealthReporter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -39,10 +41,12 @@ public class DeviceLifecycleCoordinator {
     private final PerformanceMonitor performanceMonitor;
     private final DeviceStartPreparer deviceStartPreparer;
     private final DeviceLifecycleCleanup deviceLifecycleCleanup;
+    private final AcquisitionRuntimeTracker acquisitionRuntimeTracker;
     private final ThreadPoolExecutor deviceStartExecutor;
     private final Map<String, StartFuture> startingFutures = new ConcurrentHashMap<>();
     private final Map<String, DeviceLifecycleLock> lifecycleLocks = new ConcurrentHashMap<>();
 
+    @Autowired
     public DeviceLifecycleCoordinator(CollectionManager collectionManager,
                                       CollectionStatistics collectionStatistics,
                                       CollectionHealthReporter collectionHealthReporter,
@@ -53,7 +57,8 @@ public class DeviceLifecycleCoordinator {
                                       PerformanceMonitor performanceMonitor,
                                       DeviceStartPreparer deviceStartPreparer,
                                       DeviceLifecycleCleanup deviceLifecycleCleanup,
-                                      @Qualifier("deviceStartExecutor") ThreadPoolExecutor deviceStartExecutor) {
+                                      @Qualifier("deviceStartExecutor") ThreadPoolExecutor deviceStartExecutor,
+                                      AcquisitionRuntimeTracker acquisitionRuntimeTracker) {
         this.collectionManager = collectionManager;
         this.collectionStatistics = collectionStatistics;
         this.collectionHealthReporter = collectionHealthReporter;
@@ -65,6 +70,24 @@ public class DeviceLifecycleCoordinator {
         this.deviceStartPreparer = deviceStartPreparer;
         this.deviceLifecycleCleanup = deviceLifecycleCleanup;
         this.deviceStartExecutor = deviceStartExecutor;
+        this.acquisitionRuntimeTracker = acquisitionRuntimeTracker;
+    }
+
+    /** 保留已有的手工构造调用方式。 */
+    public DeviceLifecycleCoordinator(CollectionManager collectionManager,
+                                      CollectionStatistics collectionStatistics,
+                                      CollectionHealthReporter collectionHealthReporter,
+                                      DeviceBatchPlanner deviceBatchPlanner,
+                                      ProtocolBatchStrategy protocolBatchStrategy,
+                                      CollectionTaskGuard collectionTaskGuard,
+                                      SchedulerRuntimeState runtimeState,
+                                      PerformanceMonitor performanceMonitor,
+                                      DeviceStartPreparer deviceStartPreparer,
+                                      DeviceLifecycleCleanup deviceLifecycleCleanup,
+                                      ThreadPoolExecutor deviceStartExecutor) {
+        this(collectionManager, collectionStatistics, collectionHealthReporter, deviceBatchPlanner,
+                protocolBatchStrategy, collectionTaskGuard, runtimeState, performanceMonitor,
+                deviceStartPreparer, deviceLifecycleCleanup, deviceStartExecutor, null);
     }
 
     public boolean startDevice(String deviceId) {
@@ -136,6 +159,9 @@ public class DeviceLifecycleCoordinator {
                 return false;
             }
             performanceMonitor.resetDeviceRuntimeWindow(deviceId, preparation.generation());
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.open(deviceId, preparation.generation(), preparation.deviceInfo(), preparation.dataPoints());
+            }
             if (!connectDevice(deviceId, preparation.connectTimeoutMs(), preparation.generation())) {
                 cleanupFailedStart(deviceId, preparation.generation());
                 return false;
@@ -297,6 +323,9 @@ public class DeviceLifecycleCoordinator {
                     deviceId,
                     wasRunning,
                     wasStarting);
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.clear(deviceId);
+            }
             return criticalCleanupSucceeded && cleanupResult.criticalCleanupSucceeded();
         } catch (Exception e) {
             log.error("停止设备失败, 设备={}", deviceId, e);
@@ -332,6 +361,9 @@ public class DeviceLifecycleCoordinator {
         try {
             cancelStartingFutureIfGeneration(deviceId, generation);
             deviceLifecycleCleanup.cleanupFailedStart(deviceId, generation);
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.clearIfGeneration(deviceId, generation);
+            }
         } finally {
             releaseLifecycleLock(deviceId, lifecycleLock);
         }
@@ -373,21 +405,24 @@ public class DeviceLifecycleCoordinator {
             }
 
             initializeBatchSizing(deviceId, preparation.deviceInfo());
-            batchTasks = buildDeviceBatchTasks(deviceId, generation, preparation.dataPoints());
+            List<DataPoint> readablePoints = acquisitionRuntimeTracker == null ? preparation.dataPoints()
+                    : preparation.dataPoints().stream().filter(point -> point != null
+                    && acquisitionRuntimeTracker.isValidPoint(deviceId, generation, point.getPointId())).toList();
+            batchTasks = buildDeviceBatchTasks(deviceId, generation, readablePoints);
             if (!isStartGenerationCurrent(deviceId, generation)) {
                 batchTasks.forEach(DeviceBatchTask::cancel);
                 discardStaleStart(deviceId, generation);
                 return false;
             }
 
-            collectionManager.rebuildReadPlans(deviceId, preparation.dataPoints());
+            collectionManager.rebuildReadPlans(deviceId, readablePoints);
             if (!isStartGenerationCurrent(deviceId, generation)) {
                 batchTasks.forEach(DeviceBatchTask::cancel);
                 discardStaleStart(deviceId, generation);
                 return false;
             }
 
-            autoSubscribeIfSupported(deviceId, preparation.dataPoints());
+            autoSubscribeIfSupported(deviceId, readablePoints);
             if (!isStartGenerationCurrent(deviceId, generation)) {
                 batchTasks.forEach(DeviceBatchTask::cancel);
                 discardStaleStart(deviceId, generation);
@@ -397,6 +432,15 @@ public class DeviceLifecycleCoordinator {
             if (!runtimeState.commitRunning(deviceId, generation, batchTasks)) {
                 batchTasks.forEach(DeviceBatchTask::cancel);
                 return false;
+            }
+            if (acquisitionRuntimeTracker != null) {
+                java.util.Set<String> pollingPointIds = new java.util.HashSet<>();
+                for (DeviceBatchTask task : batchTasks) {
+                    for (DataPoint point : task.points) {
+                        if (point != null) pollingPointIds.add(point.getPointId());
+                    }
+                }
+                acquisitionRuntimeTracker.markPollingPlan(deviceId, generation, pollingPointIds);
             }
             collectionStatistics.startCollection(deviceId, preparation.dataPoints().size());
             collectionHealthReporter.markDeviceStarted(deviceId);
@@ -423,6 +467,9 @@ public class DeviceLifecycleCoordinator {
         cancelStartingFutureIfGeneration(deviceId, generation);
         collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
         deviceLifecycleCleanup.discardStaleStart(deviceId, generation);
+        if (acquisitionRuntimeTracker != null) {
+            acquisitionRuntimeTracker.clearIfGeneration(deviceId, generation);
+        }
         log.debug("丢弃旧代次启动结果, 设备={}, 运行代次={}", deviceId, generation);
     }
 

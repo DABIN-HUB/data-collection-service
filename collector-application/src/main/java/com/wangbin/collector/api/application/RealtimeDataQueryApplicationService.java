@@ -20,6 +20,9 @@ import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeState;
+import com.wangbin.collector.core.collector.runtime.PointAcquisitionSnapshot;
+import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -55,6 +58,7 @@ public class RealtimeDataQueryApplicationService {
     private final PointRuntimeStateService pointRuntimeStateService;
     private final RealtimeChangeTracker realtimeChangeTracker;
     private final CollectionService collectionService;
+    private final RuntimeStateCoordinator runtimeStateCoordinator;
     private final Map<String, HealthState> healthStates = new ConcurrentHashMap<>();
 
     /**
@@ -65,12 +69,14 @@ public class RealtimeDataQueryApplicationService {
             ConfigManager configManager,
             PointRuntimeStateService pointRuntimeStateService,
             RealtimeChangeTracker realtimeChangeTracker,
-            CollectionService collectionService) {
+            CollectionService collectionService,
+            RuntimeStateCoordinator runtimeStateCoordinator) {
         this.cacheManager = cacheManager;
         this.configManager = configManager;
         this.pointRuntimeStateService = pointRuntimeStateService;
         this.realtimeChangeTracker = realtimeChangeTracker;
         this.collectionService = collectionService;
+        this.runtimeStateCoordinator = runtimeStateCoordinator;
     }
 
     /**
@@ -130,7 +136,7 @@ public class RealtimeDataQueryApplicationService {
                     ? Collections.emptyMap()
                     : cacheManager.getAll(buildCacheKeys(deviceId, dataPoints));
             Map<String, PointRealtimePayload> dataMap = buildPointDataMap(deviceId, dataPoints, values);
-            DeviceRuntimeSnapshot health = observeHealth(deviceId, realtimeChangeTracker.currentRevision());
+            DeviceRuntimeState health = observeHealth(deviceId, realtimeChangeTracker.currentRevision());
             dataMap.values().forEach(payload -> overlay(payload, health));
 
             return DeviceRealtimeDataResponse.builder()
@@ -138,6 +144,13 @@ public class RealtimeDataQueryApplicationService {
                     .deviceId(deviceId)
                     .dataCount(dataMap.size())
                     .data(dataMap)
+                    .deviceHealth(health.health().name())
+                    .transportState(health.transport().name())
+                    .protocolState(health.protocol().name())
+                    .acquisitionState(health.acquisition().name())
+                    .lastAttemptAt(lastAttemptAt(health))
+                    .lastSuccessAt(health.lastValueAt())
+                    .lastValueAt(health.lastValueAt())
                     .timestamp(System.currentTimeMillis())
                     .build();
         } catch (Exception exception) {
@@ -190,8 +203,15 @@ public class RealtimeDataQueryApplicationService {
                         entry.getValue(),
                         values);
                 if (response.getData() != null && !response.getData().isEmpty()) {
-                    DeviceRuntimeSnapshot health = observeHealth(entry.getKey(), realtimeChangeTracker.currentRevision());
+                    DeviceRuntimeState health = observeHealth(entry.getKey(), realtimeChangeTracker.currentRevision());
                     response.getData().values().forEach(payload -> overlay(payload, health));
+                    response.setDeviceHealth(health.health().name());
+                    response.setTransportState(health.transport().name());
+                    response.setProtocolState(health.protocol().name());
+                    response.setAcquisitionState(health.acquisition().name());
+                    response.setLastAttemptAt(lastAttemptAt(health));
+                    response.setLastSuccessAt(health.lastValueAt());
+                    response.setLastValueAt(health.lastValueAt());
                 }
                 devices.add(response);
                 totalDataCount += response.getDataCount() == null ? 0 : response.getDataCount();
@@ -243,7 +263,7 @@ public class RealtimeDataQueryApplicationService {
 
             Map<CacheKey, Object> values = cacheManager.getAll(buildCacheKeys(deviceId, dataPoints));
             List<CompactRealtimePointPayload> rows = buildCompactRows(deviceId, dataPoints, values);
-            DeviceRuntimeSnapshot health = observeHealth(deviceId, cursor.revision());
+            DeviceRuntimeState health = observeHealth(deviceId, cursor.revision());
             rows.forEach(row -> overlay(row, health));
             return CompactDeviceRealtimeDataResponse.builder()
                     .status(STATUS_SUCCESS)
@@ -253,6 +273,13 @@ public class RealtimeDataQueryApplicationService {
                     .deviceId(deviceId)
                     .dataCount(rows.size())
                     .rows(rows)
+                    .deviceHealth(health.health().name())
+                    .transportState(health.transport().name())
+                    .protocolState(health.protocol().name())
+                    .acquisitionState(health.acquisition().name())
+                    .lastAttemptAt(lastAttemptAt(health))
+                    .lastSuccessAt(health.lastValueAt())
+                    .lastValueAt(health.lastValueAt())
                     .timestamp(System.currentTimeMillis())
                     .build();
         } catch (Exception exception) {
@@ -317,10 +344,15 @@ public class RealtimeDataQueryApplicationService {
                     continue;
                 }
                 List<CompactRealtimePointPayload> deviceRows = buildCompactRows(deviceId, dataPoints, values);
-                DeviceRuntimeSnapshot health = observeHealth(deviceId, cursor.revision());
+                DeviceRuntimeState health = observeHealth(deviceId, cursor.revision());
                 deviceRows.forEach(row -> overlay(row, health));
                 rows.addAll(deviceRows);
-                devices.add(compactDeviceStatus(deviceId, STATUS_SUCCESS, null, deviceRows.size()));
+                CompactRealtimeDeviceStatus deviceStatus = compactDeviceStatus(deviceId, STATUS_SUCCESS, null, deviceRows.size());
+                deviceStatus.setDeviceHealth(health.health().name());
+                deviceStatus.setTransportState(health.transport().name());
+                deviceStatus.setProtocolState(health.protocol().name());
+                deviceStatus.setAcquisitionState(health.acquisition().name());
+                devices.add(deviceStatus);
             }
 
             return CompactAllDeviceRealtimeDataResponse.builder()
@@ -468,11 +500,11 @@ public class RealtimeDataQueryApplicationService {
         }
         // 健康变化不改变缓存修订号，按设备补发点位；同一修订号下重复补发可服务独立客户端。
         Set<RealtimeChangeTracker.PointKey> changed = new LinkedHashSet<>(valueChangedKeys);
-        Map<String, DeviceRuntimeSnapshot> healthByDevice = new LinkedHashMap<>();
+        Map<String, DeviceRuntimeState> healthByDevice = new LinkedHashMap<>();
         List<String> healthDeviceIds = deviceId == null ? configManager.getAllDeviceIds() : List.of(deviceId);
         if (healthDeviceIds != null) {
             for (String healthDeviceId : healthDeviceIds) {
-                DeviceRuntimeSnapshot health = observeHealth(healthDeviceId, boundary.revision());
+                DeviceRuntimeState health = observeHealth(healthDeviceId, boundary.revision());
                 healthByDevice.put(healthDeviceId, health);
                 HealthState state = healthStates.get(healthDeviceId);
                 if (state != null && state.changedAtRevision() >= sinceRevision) {
@@ -524,7 +556,7 @@ public class RealtimeDataQueryApplicationService {
             DataPoint point = orderedPoints.get(index);
             CacheKey cacheKey = CacheKey.dataKey(rowDeviceId, point.getPointId());
             CompactRealtimePointPayload row = CompactRealtimePointPayload.from(point, rowDeviceId, values.get(cacheKey));
-            DeviceRuntimeSnapshot health = healthByDevice.computeIfAbsent(rowDeviceId,
+            DeviceRuntimeState health = healthByDevice.computeIfAbsent(rowDeviceId,
                     id -> observeHealth(id, boundary.revision()));
             overlay(row, health);
             rows.add(row);
@@ -608,20 +640,13 @@ public class RealtimeDataQueryApplicationService {
         return compactDeltaReset(scope, deviceId, fromRevision, realtimeChangeTracker.capture(), boundaryValidation.resetReason());
     }
 
-    private DeviceRuntimeSnapshot observeHealth(String deviceId, long revision) {
-        DeviceRuntimeSnapshot snapshot;
-        try {
-            snapshot = collectionService.getDeviceRuntimeSnapshot(deviceId);
-        } catch (RuntimeException exception) {
-            log.warn("读取设备运行态失败，设备={}", deviceId, exception);
-            snapshot = new DeviceRuntimeSnapshot(deviceId, DeviceRuntimePhase.FAILED, false, false,
-                    false, false, 0L, 0L, 0L, 0L, 0, 0L, exception.getMessage(), System.currentTimeMillis());
-        }
-        if (snapshot == null || snapshot.phase() == null) {
-            snapshot = new DeviceRuntimeSnapshot(deviceId, DeviceRuntimePhase.FAILED, false, false,
-                    false, false, 0L, 0L, 0L, 0L, 0, 0L, "设备运行态不可用", System.currentTimeMillis());
-        }
-        String signature = snapshot.phase() + ":" + snapshot.connected() + ":" + snapshot.ready();
+    private DeviceRuntimeState observeHealth(String deviceId, long revision) {
+        DeviceRuntimeState state = runtimeStateCoordinator.snapshot(deviceId);
+        String signature = state.health() + ":" + state.transport() + ":" + state.protocol()
+                + ":" + state.acquisition() + ":" + state.points().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue().outcome() + "/" + entry.getValue().failureReason())
+                .toList();
         healthStates.compute(deviceId, (ignored, previous) -> {
             if (previous == null) {
                 return new HealthState(signature, -1L);
@@ -629,72 +654,101 @@ public class RealtimeDataQueryApplicationService {
             return previous.signature().equals(signature)
                     ? previous : new HealthState(signature, revision);
         });
-        return snapshot;
+        return state;
     }
 
-    private void overlay(PointRealtimePayload payload, DeviceRuntimeSnapshot health) {
-        if (!unhealthy(health)) {
-            return;
-        }
-        DataQuality quality = effectiveQuality(health);
-        payload.setStale(true);
-        payload.setRealtimeStatus(deviceError(health) && payload.getValue() == null ? "DISCONNECTED" : "STALE");
-        payload.setErrorMessage(healthError(health));
-        payload.setQuality(quality.getCode());
-        payload.setQualityLevel(quality.getQualityLevel());
-        payload.setQualityDescription(quality.getDescription());
-        payload.setQualityAvailable(true);
-        payload.setQualityAcceptable(false);
-        if (health.lastSuccessfulCollectionAt() > 0) {
-            payload.setLastSuccessfulCollectionAt(health.lastSuccessfulCollectionAt());
-        }
-    }
-
-    private void overlay(CompactRealtimePointPayload payload, DeviceRuntimeSnapshot health) {
-        if (!unhealthy(health)) {
-            return;
-        }
-        DataQuality quality = effectiveQuality(health);
-        payload.setStale(true);
-        payload.setRealtimeStatus(deviceError(health) && payload.getValue() == null ? "DISCONNECTED" : "STALE");
-        payload.setErrorMessage(healthError(health));
-        payload.setQuality(quality.getCode());
-        payload.setQualityLevel(quality.getQualityLevel());
-        payload.setQualityDescription(quality.getDescription());
-        payload.setQualityAvailable(true);
-        payload.setQualityAcceptable(false);
-        if (health.lastSuccessfulCollectionAt() > 0) {
-            payload.setLastSuccessfulCollectionAt(health.lastSuccessfulCollectionAt());
+    private void overlay(PointRealtimePayload payload, DeviceRuntimeState state) {
+        PointPresentation presentation = present(state, payload.getPointId(), payload.getValue());
+        payload.setLastAttemptAt(presentation.lastAttemptAt());
+        payload.setLastValueAt(presentation.lastValueAt());
+        if (presentation.status() == null) return;
+        payload.setRealtimeStatus(presentation.status());
+        payload.setFailureType(presentation.failureType());
+        payload.setErrorCode(presentation.failureType());
+        payload.setErrorMessage(presentation.message());
+        payload.setStale(presentation.stale());
+        if (presentation.quality() != null) {
+            DataQuality quality = presentation.quality();
+            payload.setQuality(quality.getCode());
+            payload.setQualityLevel(quality.getQualityLevel());
+            payload.setQualityDescription(quality.getDescription());
+            payload.setQualityAvailable(true);
+            payload.setQualityAcceptable(false);
         }
     }
 
-    private boolean unhealthy(DeviceRuntimeSnapshot health) {
-        return health != null && health.phase() != DeviceRuntimePhase.ONLINE;
+    private void overlay(CompactRealtimePointPayload payload, DeviceRuntimeState state) {
+        PointPresentation presentation = present(state, payload.getPointId(), payload.getValue());
+        payload.setLastAttemptAt(presentation.lastAttemptAt());
+        payload.setLastValueAt(presentation.lastValueAt());
+        if (presentation.status() == null) return;
+        payload.setRealtimeStatus(presentation.status());
+        payload.setFailureType(presentation.failureType());
+        payload.setErrorCode(presentation.failureType());
+        payload.setErrorMessage(presentation.message());
+        payload.setStale(presentation.stale());
+        if (presentation.quality() != null) {
+            DataQuality quality = presentation.quality();
+            payload.setQuality(quality.getCode());
+            payload.setQualityLevel(quality.getQualityLevel());
+            payload.setQualityDescription(quality.getDescription());
+            payload.setQualityAvailable(true);
+            payload.setQualityAcceptable(false);
+        }
     }
 
-    private DataQuality effectiveQuality(DeviceRuntimeSnapshot health) {
-        return deviceError(health) ? DataQuality.DEVICE_ERROR : DataQuality.UNCERTAIN;
+    private long lastAttemptAt(DeviceRuntimeState state) {
+        return state.points().values().stream().mapToLong(PointAcquisitionSnapshot::lastAttemptAt)
+                .max().orElse(0L);
     }
 
-    private boolean deviceError(DeviceRuntimeSnapshot health) {
-        return health.phase() == DeviceRuntimePhase.FAILED
-                || (health.phase() != DeviceRuntimePhase.STOPPED
-                    && health.phase() != DeviceRuntimePhase.STARTING
-                    && health.phase() != DeviceRuntimePhase.CONNECTING
-                    && !health.connected());
+    private PointPresentation present(DeviceRuntimeState state, String pointId, Object value) {
+        PointAcquisitionSnapshot fact = state.points().get(pointId);
+        long attemptedAt = fact == null ? 0L : fact.lastAttemptAt();
+        long valueAt = fact == null ? 0L : fact.lastValueAt();
+        boolean disconnected = state.runtime().running() && !state.runtime().connected();
+        if (fact != null && fact.outcome() == PointAcquisitionSnapshot.Outcome.OBSERVED
+                && !disconnected && value != null) {
+            return new PointPresentation(null, null, null, false, null, attemptedAt, valueAt);
+        }
+        if (fact != null && fact.outcome() == PointAcquisitionSnapshot.Outcome.FAILED) {
+            String failure = classifyFailure(fact.failureReason());
+            DataQuality quality = "CONFIG_ERROR".equals(failure) ? DataQuality.CONFIG_ERROR
+                    : "COMM_ERROR".equals(failure) ? DataQuality.DEVICE_ERROR : DataQuality.BAD;
+            return new PointPresentation(value != null && !"CONFIG_ERROR".equals(failure) ? "STALE" : failure, failure,
+                    fact.errorMessage() != null ? fact.errorMessage() : fact.failureReason(),
+                    value != null, quality, attemptedAt, valueAt);
+        }
+        if (value != null || (fact != null && fact.outcome() == PointAcquisitionSnapshot.Outcome.STALE)) {
+            return new PointPresentation("STALE", "STALE", disconnected ? "设备连接已断开" : "当前运行代次没有新鲜值",
+                    true, DataQuality.UNCERTAIN, attemptedAt, valueAt);
+        }
+        if (attemptedAt > 0L || (state.firstValueDeadlineAt() > 0L
+                && state.generatedAt() >= state.firstValueDeadlineAt())) {
+            return new PointPresentation("NO_VALUE", "NO_VALUE", "采集后未收到该点有效值",
+                    false, DataQuality.BAD, attemptedAt, valueAt);
+        }
+        if (disconnected) {
+            return new PointPresentation("COMM_ERROR", "COMM_ERROR", "设备连接已断开",
+                    false, DataQuality.DEVICE_ERROR, attemptedAt, valueAt);
+        }
+        return new PointPresentation("WAITING", null, null, false, null, attemptedAt, valueAt);
     }
 
-    private String healthError(DeviceRuntimeSnapshot health) {
-        if (health.phase() == DeviceRuntimePhase.STOPPED) {
-            return "设备已停止采集";
-        }
-        if (health.lastError() != null && !health.lastError().isBlank()) {
-            return health.lastError();
-        }
-        if (health.degradedReason() != null && !health.degradedReason().isBlank()) {
-            return health.degradedReason();
-        }
-        return "设备运行状态：" + health.phase();
+    private String classifyFailure(String reason) {
+        if (reason == null) return "BAD";
+        String normalized = reason.toUpperCase(java.util.Locale.ROOT);
+        if (normalized.contains("CONFIG") || normalized.contains("ADDRESS")) return "CONFIG_ERROR";
+        if (normalized.contains("MAPPING")) return "MAPPING_ERROR";
+        if (normalized.contains("DECODE") || normalized.contains("PROCESS")) return "DECODE_ERROR";
+        if (normalized.contains("NO_VALUE")) return "NO_VALUE";
+        if (normalized.contains("TIMEOUT") || normalized.contains("COMM") || normalized.contains("CONNECT")
+                || normalized.contains("HTTP_404") || normalized.contains("EXCEPTION")) return "COMM_ERROR";
+        return "BAD";
+    }
+
+    private record PointPresentation(String status, String failureType, String message,
+                                     boolean stale, DataQuality quality, long lastAttemptAt, long lastValueAt) {
     }
 
     private record HealthState(String signature, long changedAtRevision) {

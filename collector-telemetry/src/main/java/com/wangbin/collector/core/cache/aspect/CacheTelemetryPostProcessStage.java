@@ -4,6 +4,8 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,12 +21,20 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
 
     private final MultiLevelCacheManager multiLevelCacheManager;
     private final RealtimeChangeTracker realtimeChangeTracker;
+    private final AcquisitionRuntimeTracker acquisitionRuntimeTracker;
 
     @Autowired
     CacheTelemetryPostProcessStage(MultiLevelCacheManager multiLevelCacheManager,
-                                   RealtimeChangeTracker realtimeChangeTracker) {
+                                   RealtimeChangeTracker realtimeChangeTracker,
+                                   AcquisitionRuntimeTracker acquisitionRuntimeTracker) {
         this.multiLevelCacheManager = multiLevelCacheManager;
         this.realtimeChangeTracker = realtimeChangeTracker;
+        this.acquisitionRuntimeTracker = acquisitionRuntimeTracker;
+    }
+
+    CacheTelemetryPostProcessStage(MultiLevelCacheManager multiLevelCacheManager,
+                                   RealtimeChangeTracker realtimeChangeTracker) {
+        this(multiLevelCacheManager, realtimeChangeTracker, null);
     }
 
     /**
@@ -68,6 +78,12 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
         boolean success = multiLevelCacheManager.put(cacheKey, context.cacheValue(), getCacheExpireTime(point));
         if (!success) {
             return;
+        }
+        ProcessResult result = context.processResult();
+        if (acquisitionRuntimeTracker != null && result != null) {
+            acquisitionRuntimeTracker.recordCachedPoint(context.deviceId(), point, context.generation(),
+                    result.isSuccess() && result.isQualityAcceptable() && result.getFinalValue() != null,
+                    result.getQuality(), System.currentTimeMillis());
         }
         try {
             realtimeChangeTracker.record(context.deviceId(), point.getPointId(), context.cacheValue());

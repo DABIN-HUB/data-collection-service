@@ -56,6 +56,7 @@ public class Iec61850Collector extends AbstractIec61850Collector {
             connectManagedConnection();
             this.association = iec61850Adapter.getClient();
             reloadServerModel();
+            reportProtocolReady();
         } catch (Exception e) {
             removeConnectionSilently();
             throw e;

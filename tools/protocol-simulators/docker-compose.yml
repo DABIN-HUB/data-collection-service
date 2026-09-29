@@ -1,0 +1,55 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "18830:1883"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  mqtt-publisher:
+    image: eclipse-mosquitto:2
+    entrypoint: ["/bin/sh", "/scripts/publish.sh"]
+    volumes:
+      - ./mqtt/publish.sh:/scripts/publish.sh:ro
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
+  http:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./http/mappings:/home/wiremock/mappings:ro
+    restart: unless-stopped
+
+  iec104:
+    image: ghcr.io/richyp7/iec60870-5-104-simulator:main
+    ports:
+      - "12404:2404"
+      - "18081:8080"
+    volumes:
+      - ./iec104/SimulationOptions.json:/app/Configuration/SimulationOptions.json:ro
+    restart: unless-stopped
+
+  s7:
+    image: fbarresi/softplc:latest-linux
+    environment:
+      DATA_PATH: /demodata
+    ports:
+      - "11020:102"
+      - "18082:8080"
+    restart: unless-stopped
+
+  iec61850:
+    image: stinging/61850-sim:1.1
+    environment:
+      IED_NAME: REFIED
+      SIMULATION_FREQUENCY: "8"
+    ports:
+      - "11030:102"
+    volumes:
+      - ./iec61850/model.cid:/model.cid:ro
+      - ./iec61850/config.xml:/config.xml
+    restart: unless-stopped

@@ -1,0 +1,167 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_iec61850_device001",
+        "deviceId": "ref_iec61850_device001",
+        "deviceName": "REF_IEC61850_DEVICE001",
+        "protocolType": "IEC61850",
+        "connectionType": "IEC61850",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 11030,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_iec61850_device001",
+        "connectionType": "IEC61850",
+        "host": "127.0.0.1",
+        "port": 11030,
+        "timeout": 10000,
+        "extJson": {}
+      },
+      "points": [
+        {
+          "pointId": "ref_iec61850_device001-phase_voltage_a",
+          "pointCode": "phase_voltage_a",
+          "pointName": "phase_voltage_a",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn1.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "V",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-phase_voltage_b",
+          "pointCode": "phase_voltage_b",
+          "pointName": "phase_voltage_b",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn2.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "V",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-phase_voltage_c",
+          "pointCode": "phase_voltage_c",
+          "pointName": "phase_voltage_c",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn3.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "V",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-phase_current_a",
+          "pointCode": "phase_current_a",
+          "pointName": "phase_current_a",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn4.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-phase_current_b",
+          "pointCode": "phase_current_b",
+          "pointName": "phase_current_b",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn5.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-phase_current_c",
+          "pointCode": "phase_current_c",
+          "pointName": "phase_current_c",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn6.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-frequency",
+          "pointCode": "frequency",
+          "pointName": "frequency",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn7.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "Hz",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        },
+        {
+          "pointId": "ref_iec61850_device001-active_power",
+          "pointCode": "active_power",
+          "pointName": "active_power",
+          "deviceId": "ref_iec61850_device001",
+          "address": "REFIEDLD0/GGIO1.AnIn8.mag.f@MX",
+          "dataType": "FLOAT32",
+          "readWrite": "R",
+          "unit": "kW",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": false
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

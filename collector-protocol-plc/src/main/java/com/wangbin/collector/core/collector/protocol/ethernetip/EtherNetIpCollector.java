@@ -11,6 +11,7 @@ import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetI
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
 import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpAddressParser;
 import com.wangbin.collector.core.collector.protocol.ethernetip.util.EtherNetIpPlcTypeResolver;
+import com.wangbin.collector.core.collector.protocol.ethernetip.util.ProgramTagCipClient;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import com.wangbin.collector.core.connection.adapter.EtherNetIpConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessResult;
@@ -298,8 +299,10 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
+        if (address.getTagName().startsWith("Program:")) {
+            return programClient().read(address.getTagName());
+        }
         String fieldName = resolvePointTagName(point);
-
         PlcReadResponse response;
         try {
             response = await(requireConnection().getClient()
@@ -348,6 +351,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         EtherNetIpTagAddress address = requireAddress(point);
+        if (address.getTagName().startsWith("Program:")) {
+            throw unsupported("Program scoped tag write", "Program 路径写入未实现，禁止改写其他标签");
+        }
         String fieldName = resolvePointTagName(point);
 
         PlcWriteResponse response;
@@ -384,6 +390,10 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             }
             try {
                 EtherNetIpTagAddress address = requireAddress(point);
+                if (address.getTagName().startsWith("Program:")) {
+                    results.put(point.getPointId(), false);
+                    continue;
+                }
                 if (!address.isScalar()) {
                     validateArrayPointConfiguration(point, address, "write");
                 }
@@ -591,6 +601,16 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             }
             try {
                 EtherNetIpTagAddress address = requireAddress(point);
+                if (address.getTagName().startsWith("Program:")) {
+                    try {
+                        results.put(point.getPointId(), programClient().read(address.getTagName()));
+                    } catch (Exception ex) {
+                        log.warn("EtherNet/IP Program 点位读取失败: 点位={}", point.getPointId(), ex);
+                        reportPointFailure(point, "COMM_ERROR");
+                        results.put(point.getPointId(), null);
+                    }
+                    continue;
+                }
                 if (!address.isScalar()) {
                     validateArrayPointConfiguration(point, address, "read");
                 }
@@ -838,6 +858,15 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         private FatalTransportException(String message, Throwable cause) {
             super(message, cause);
         }
+    }
+
+    private ProgramTagCipClient programClient() {
+        DeviceConnection config = getCurrentConnectionConfig();
+        if (config == null || config.getHost() == null || config.getHost().isBlank()) {
+            throw new IllegalStateException("EtherNet/IP Program 点位需要明确的连接 host 和 port");
+        }
+        return new ProgramTagCipClient(config.getHost(),
+                config.getPort() == null ? 44818 : config.getPort(), timeout);
     }
 
     /**

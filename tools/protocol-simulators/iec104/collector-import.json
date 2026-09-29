@@ -1,0 +1,177 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_iec104_device001",
+        "deviceId": "ref_iec104_device001",
+        "deviceName": "REF_IEC104_DEVICE001",
+        "protocolType": "IEC104",
+        "connectionType": "IEC104",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 12404,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_iec104_device001",
+        "connectionType": "IEC104",
+        "host": "127.0.0.1",
+        "port": 12404,
+        "extJson": {
+          "slaveId": 1,
+          "commonAddress": 1
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_iec104_device001-phase_current_a",
+          "pointCode": "phase_current_a",
+          "pointName": "phase_current_a",
+          "deviceId": "ref_iec104_device001",
+          "address": "4001",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "phase_current_a"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-phase_current_b",
+          "pointCode": "phase_current_b",
+          "pointName": "phase_current_b",
+          "deviceId": "ref_iec104_device001",
+          "address": "4002",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "phase_current_b"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-phase_current_c",
+          "pointCode": "phase_current_c",
+          "pointName": "phase_current_c",
+          "deviceId": "ref_iec104_device001",
+          "address": "4003",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "phase_current_c"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-zero_seq_current",
+          "pointCode": "zero_seq_current",
+          "pointName": "zero_seq_current",
+          "deviceId": "ref_iec104_device001",
+          "address": "4004",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "A",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "zero_seq_current"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-overcurrent_flag",
+          "pointCode": "overcurrent_flag",
+          "pointName": "overcurrent_flag",
+          "deviceId": "ref_iec104_device001",
+          "address": "4005",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "overcurrent_flag"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-distance_zone1",
+          "pointCode": "distance_zone1",
+          "pointName": "distance_zone1",
+          "deviceId": "ref_iec104_device001",
+          "address": "4006",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "distance_zone1"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-distance_zone2",
+          "pointCode": "distance_zone2",
+          "pointName": "distance_zone2",
+          "deviceId": "ref_iec104_device001",
+          "address": "4007",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "distance_zone2"
+          }
+        },
+        {
+          "pointId": "ref_iec104_device001-trip_command",
+          "pointCode": "trip_command",
+          "pointName": "trip_command",
+          "deviceId": "ref_iec104_device001",
+          "address": "4008",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "trip_command"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

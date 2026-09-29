@@ -491,6 +491,7 @@ public class ConfigManager {
             }
 
             DeviceInfo oldDevice = deviceCache.get(deviceId);
+            DeviceContext previousContext = deviceContextCache.get(deviceId);
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
 
             // 检查是否需要更新连接
@@ -503,7 +504,12 @@ public class ConfigManager {
             deviceCache.put(deviceId, device);
             rebuildDeviceContext(deviceId);
             if (isLocalTemporaryDeviceInfo(device)) {
-                persistLocalTemporaryContexts();
+                try {
+                    persistLocalTemporaryContexts();
+                } catch (RuntimeException exception) {
+                    restoreDeviceContext(deviceId, previousContext);
+                    throw exception;
+                }
             }
 
             long newVersion = nextConfigVersion();
@@ -538,6 +544,11 @@ public class ConfigManager {
      * @return 是否更新成功
      */
     public boolean updateDataPoints(String deviceId, List<DataPoint> points) {
+        return updateDataPoints(deviceId, points, true);
+    }
+
+    /** 远端历史快照由运行期逐点隔离；新写入仍进行严格协议校验。 */
+    private boolean updateDataPoints(String deviceId, List<DataPoint> points, boolean validateNewPoints) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         Objects.requireNonNull(points, "数据点列表不能为空");
         ConfigUpdateEvent event;
@@ -550,10 +561,14 @@ public class ConfigManager {
                 return false;
             }
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
+            DeviceContext previousContext = deviceContextCache.get(deviceId);
 
-            List<DataPoint> safePoints = new ArrayList<>(points);
+            List<DataPoint> safePoints = new ArrayList<>(DeviceContext.of(deviceCache.get(deviceId), null, points)
+                    .copyDataPoints());
             normalizeDataPointCollectionPolicy(deviceCache.get(deviceId), safePoints);
-            validateProtocolPoints(deviceCache.get(deviceId), safePoints);
+            if (validateNewPoints) {
+                validateProtocolPoints(deviceCache.get(deviceId), safePoints);
+            }
 
             if (fieldUniquenessValidator != null) {
                 fieldUniquenessValidator.validate(deviceId, safePoints);
@@ -562,7 +577,12 @@ public class ConfigManager {
             pointCache.put(deviceId, safePoints);
             rebuildDeviceContext(deviceId);
             if (isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) {
-                persistLocalTemporaryContexts();
+                try {
+                    persistLocalTemporaryContexts();
+                } catch (RuntimeException exception) {
+                    restoreDeviceContext(deviceId, previousContext);
+                    throw exception;
+                }
             }
 
             long newVersion = nextConfigVersion();
@@ -608,6 +628,7 @@ public class ConfigManager {
                 return false;
             }
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
+            DeviceContext previousContext = deviceContextCache.get(deviceId);
 
             if (connection != null) {
                 connection.setDeviceId(deviceId);
@@ -619,7 +640,12 @@ public class ConfigManager {
 
             rebuildDeviceContext(deviceId);
             if (isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) {
-                persistLocalTemporaryContexts();
+                try {
+                    persistLocalTemporaryContexts();
+                } catch (RuntimeException exception) {
+                    restoreDeviceContext(deviceId, previousContext);
+                    throw exception;
+                }
             }
 
             long newVersion = nextConfigVersion();
@@ -842,7 +868,10 @@ public class ConfigManager {
             connection.setDeviceId(deviceId);
             protocolConnectionValidator.validate(context.getDeviceInfo(), connection);
         }
-        List<DataPoint> points = context.copyDataPoints();
+        List<DataPoint> points = new ArrayList<>(context.copyDataPoints());
+        for (DataPoint point : points) {
+            point.setDeviceId(deviceId);
+        }
         normalizeDataPointCollectionPolicy(context.getDeviceInfo(), points);
         if (fieldUniquenessValidator != null) {
             fieldUniquenessValidator.validate(deviceId, points);
@@ -865,6 +894,11 @@ public class ConfigManager {
 
         List<DataPoint> safePoints = points != null ? new ArrayList<>(points) : new ArrayList<>();
         validateLocalPoints(deviceId, safePoints);
+        // 写入前复制候选配置，失败时不能修改调用方持有的对象或旧缓存。
+        DeviceContext inputSnapshot = DeviceContext.of(device, connection, safePoints);
+        device = inputSnapshot.getDeviceInfo();
+        connection = inputSnapshot.copyConnectionConfig();
+        safePoints = new ArrayList<>(inputSnapshot.copyDataPoints());
         ConfigUpdateEvent event;
 
         lock.writeLock().lock();
@@ -1024,6 +1058,9 @@ public class ConfigManager {
             return isCachedDeviceConfigAvailable(deviceId);
         }
         reloadDeviceConfig(deviceId);
+        if (!containsDevice(deviceId)) {
+            return false;
+        }
         reloadDataPoints(deviceId);
         reloadConnectionConfig(deviceId);
 
@@ -1144,7 +1181,7 @@ public class ConfigManager {
             connectionCache.put(deviceId, connection);
         }
         pointCache.put(deviceId, context.copyDataPoints());
-        rebuildDeviceContext(deviceId);
+        deviceContextCache.put(deviceId, context);
     }
 
     /**
@@ -1312,7 +1349,7 @@ public class ConfigManager {
                 point.setReadWrite("R");
             }
             if (!StringUtils.hasText(point.getCollectionMode())) {
-                point.setCollectionMode("POLLING");
+                point.setCollectionMode(isMqttProtocol(device) ? "SUBSCRIBE" : "POLLING");
             }
             if (point.getStatus() == null) {
                 point.setStatus(1);
@@ -1372,6 +1409,9 @@ public class ConfigManager {
             if (point == null) {
                 continue;
             }
+            if (isMqttProtocol(device) && !StringUtils.hasText(point.getCollectionMode())) {
+                point.setCollectionMode("SUBSCRIBE");
+            }
             Map<String, Object> additionalConfig = point.getAdditionalConfig();
             removePointCloudIdentity(additionalConfig);
             point.setAdditionalConfig(additionalConfig);
@@ -1401,6 +1441,14 @@ public class ConfigManager {
      */
     private long normalizePositive(Long value, long defaultValue) {
         return value != null && value > 0 ? value : defaultValue;
+    }
+
+    private boolean isMqttProtocol(DeviceInfo device) {
+        if (device == null || !StringUtils.hasText(device.getProtocolType())) {
+            return false;
+        }
+        String protocol = device.getProtocolType().trim();
+        return "MQTT".equalsIgnoreCase(protocol) || "MQTT_SSL".equalsIgnoreCase(protocol);
     }
 
     private boolean isLocalTemporaryDeviceInfo(DeviceInfo device) {
@@ -1566,11 +1614,16 @@ public class ConfigManager {
             return;
         }
 
+        if (isLocalTemporaryDevice(deviceId)) {
+            log.debug("本地临时设备不接受远端点位重载: {}", deviceId);
+            return;
+        }
         try {
             List<DataPoint> points = configSyncService.loadDataPoints(deviceId);
-            if (points != null) {
-                updateDataPoints(deviceId, points);
-                log.info("数据点配置重载成功: {}", deviceId);
+            if (points != null && !isLocalTemporaryDevice(deviceId)) {
+                if (updateDataPoints(deviceId, points, false)) {
+                    log.info("数据点配置重载成功: {}", deviceId);
+                }
             }
         } catch (Exception e) {
             log.error("重新加载数据点配置失败: {}", deviceId, e);
@@ -1587,11 +1640,17 @@ public class ConfigManager {
             log.warn("设备ID为空，跳过连接配置重载");
             return;
         }
+        if (!containsDevice(deviceId) || isLocalTemporaryDevice(deviceId)) {
+            return;
+        }
 
         try {
             DeviceConnection connection = configSyncService.loadConnectionConfig(deviceId);
             lock.writeLock().lock();
             try {
+                if (!deviceCache.containsKey(deviceId) || isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) {
+                    return;
+                }
                 DeviceConnection previous = connectionCache.get(deviceId);
                 if (!Objects.equals(previous, connection)) {
                     if (connection != null) {

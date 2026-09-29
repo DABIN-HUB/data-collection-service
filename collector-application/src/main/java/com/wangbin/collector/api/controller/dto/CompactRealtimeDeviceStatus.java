@@ -31,4 +31,10 @@ public class CompactRealtimeDeviceStatus {
      * 当前设备贡献的点位行数。
      */
     private Integer dataCount;
+
+    /** 分层运行态；status 继续表示本次查询的业务结果。 */
+    private String deviceHealth;
+    private String transportState;
+    private String protocolState;
+    private String acquisitionState;
 }

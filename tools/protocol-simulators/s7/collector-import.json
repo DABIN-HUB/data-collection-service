@@ -1,0 +1,129 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_s7_device001",
+        "deviceId": "ref_s7_device001",
+        "deviceName": "REF_S7_DEVICE001",
+        "protocolType": "SIEMENS_S7",
+        "connectionType": "SIEMENS_S7",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 11020,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_s7_device001",
+        "connectionType": "SIEMENS_S7",
+        "host": "127.0.0.1",
+        "port": 11020,
+        "extJson": {
+          "rack": 0,
+          "slot": 1,
+          "controllerType": "S7_1200"
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_s7_device001-di_channel_0",
+          "pointCode": "di_channel_0",
+          "pointName": "di_channel_0",
+          "deviceId": "ref_s7_device001",
+          "address": "DB1.DBX0.0",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "di_channel_0",
+            "driverDataType": "BOOL"
+          }
+        },
+        {
+          "pointId": "ref_s7_device001-di_channel_1",
+          "pointCode": "di_channel_1",
+          "pointName": "di_channel_1",
+          "deviceId": "ref_s7_device001",
+          "address": "DB1.DBX0.1",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "di_channel_1",
+            "driverDataType": "BOOL"
+          }
+        },
+        {
+          "pointId": "ref_s7_device001-do_channel_0",
+          "pointCode": "do_channel_0",
+          "pointName": "do_channel_0",
+          "deviceId": "ref_s7_device001",
+          "address": "DB1.DBX1.0",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "do_channel_0",
+            "driverDataType": "BOOL"
+          }
+        },
+        {
+          "pointId": "ref_s7_device001-ai_channel_0",
+          "pointCode": "ai_channel_0",
+          "pointName": "ai_channel_0",
+          "deviceId": "ref_s7_device001",
+          "address": "DB1.DBD4",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "mA",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "ai_channel_0",
+            "driverDataType": "REAL"
+          }
+        },
+        {
+          "pointId": "ref_s7_device001-ao_channel_0",
+          "pointCode": "ao_channel_0",
+          "pointName": "ao_channel_0",
+          "deviceId": "ref_s7_device001",
+          "address": "DB1.DBD8",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "mA",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "ao_channel_0",
+            "driverDataType": "REAL"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

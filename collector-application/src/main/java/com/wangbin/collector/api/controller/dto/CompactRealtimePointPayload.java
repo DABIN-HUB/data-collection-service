@@ -117,6 +117,12 @@ public class CompactRealtimePointPayload {
     /** 本次查询的有效实时状态，不改变缓存中的采集结果。 */
     private String realtimeStatus;
 
+    /** 失败分类和最近一次实际请求、有效值时间。 */
+    private String failureType;
+    private String errorCode;
+    private Long lastAttemptAt;
+    private Long lastValueAt;
+
     /** 运行态错误摘要。 */
     private String errorMessage;
 

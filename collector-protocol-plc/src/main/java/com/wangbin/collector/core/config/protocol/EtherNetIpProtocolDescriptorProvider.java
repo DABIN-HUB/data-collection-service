@@ -17,11 +17,11 @@ public class EtherNetIpProtocolDescriptorProvider implements ProtocolDescriptorP
     @Override
     public void register(ProtocolDescriptorRegistry registry) {
         registry.registerPrimary(registry.descriptor("ETHERNET_IP", "EtherNet/IP",
-                "PLC4X-backed EtherNet/IP / Logix tag collector.",
+                "PLC4X 0.13.0 Logix：受限标量读写；Program: 命名空间标量通过独立 CIP UCMM 路径仅读取；数组不可用。",
                 List.of("EIP", "LOGIX", "AB_ETH"), EtherNetIpCollector.class, "ETHERNET_IP", 44818,
                 ProtocolAddressingMode.SYMBOLIC,
                 true, true, false,
-                List.of("MainProgram.Tag1", "MainProgram.Tag2", "Tag[0]:DINT:1", "%Tag[0]:DINT:1"),
+                List.of("Tag1:DINT", "TagArray[0]:DINT", "MainProgram.Tag:DINT"),
                 registry.fields(
                         registry.conditional("host", "string", "设备地址", false, "127.0.0.1", null,
                                 "connection", "plc4xConnectionString empty"),
@@ -45,15 +45,14 @@ public class EtherNetIpProtocolDescriptorProvider implements ProtocolDescriptorP
     }
 
     private List<String> driverDataTypes() {
-        // PLC4X 0.13.0 EipTag/CIPDataTypeCode 与当前编解码器共同覆盖这些标量类型。
-        return List.of("BOOL", "BYTE", "SINT", "USINT", "INT", "UINT", "WORD", "DINT",
-                "UDINT", "DWORD", "LINT", "ULINT", "LWORD", "REAL", "LREAL", "STRING");
+        // PLC4X 0.13.0 的读写分支均已覆盖的标量；枚举存在不等于驱动能解码。
+        return List.of("BOOL", "SINT", "INT", "DINT", "LINT", "REAL", "LREAL");
     }
 
     private List<ProtocolFieldConfig> pointFields(ProtocolDescriptorRegistry registry) {
         return List.of(
-                registry.pointField("additionalConfig.arraySize", "number", "Array size", false, "",
-                        Collections.emptyList(), "数组读取/写入严格匹配配置长度；数组点不支持缩放、偏移、精度、上下限和告警处理。", null)
+                registry.pointField("additionalConfig.arraySize", "number", "历史数组长度（当前驱动不可用）", false, "",
+                        Collections.emptyList(), "PLC4X 0.13.0 请求仅单元素；数组长度大于 1 的新点位会在保存时拒绝，旧配置保留字段供迁移。", null)
         );
     }
 }

@@ -110,6 +110,9 @@ public class Plc4xOpcUaCollector extends ConnectionBackedCollector {
                 requireConnection().getClient().getMetadata().isSubscribeSupported());
         this.browseSupported = requireConnection().getClient().getMetadata().isBrowseSupported();
         resetSubscriptionDiagnostics();
+        if (connectionAdapter.isConnected()) {
+            reportProtocolReady();
+        }
         log.info("PLC4X OPC UA 采集器 已连接, 设备={}, 超时={}, 单次最大字段数={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
     }
