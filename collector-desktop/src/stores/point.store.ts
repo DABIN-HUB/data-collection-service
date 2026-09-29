@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 
 import { getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
-import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
+import { applyPointBatchEdit, buildIncrementalPoints, defaultCollectionMode, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
 import type { DeviceConnection } from "@/types/config";
 import type { DeviceInfo } from "@/types/device";
@@ -41,31 +41,24 @@ export const usePointStore = defineStore("point", {
   actions: {
     async load(deviceId: string) {
       const targetDeviceId = normalizeDeviceId(deviceId);
-      if (!targetDeviceId) {
-        return;
-      }
+      if (!targetDeviceId) return;
       const requestGeneration = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
       this.loadGenerationByDevice[targetDeviceId] = requestGeneration;
       this.loadingByDevice[targetDeviceId] = true;
       this.errorByDevice[targetDeviceId] = "";
       try {
         const response = await getDeviceConfigBundle(targetDeviceId);
-        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
-          return;
-        }
-        this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || []);
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
+        const mode = defaultCollectionMode(response.device?.protocolType);
+        this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || [], mode);
         this.configVersionByDevice[targetDeviceId] = response.configVersion;
         this.bundleDeviceByDevice[targetDeviceId] = response.device;
         this.bundleConnectionByDevice[targetDeviceId] = response.connection;
       } catch (error) {
-        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) {
-          return;
-        }
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
         this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置加载失败";
       } finally {
-        if (requestGeneration === this.loadGenerationByDevice[targetDeviceId]) {
-          this.loadingByDevice[targetDeviceId] = false;
-        }
+        if (requestGeneration === this.loadGenerationByDevice[targetDeviceId]) this.loadingByDevice[targetDeviceId] = false;
       }
     },
     setSelectedIds(deviceId: string, ids: string[]) {
@@ -77,6 +70,7 @@ export const usePointStore = defineStore("point", {
     addEmptyPoint(deviceId: string) {
       const rows = this.getPoints(deviceId);
       const nextIndex = rows.length + 1;
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
       this.pointsByDevice[deviceId] = normalizePointRows([
         ...rows,
         {
@@ -85,18 +79,21 @@ export const usePointStore = defineStore("point", {
           address: "40001",
           dataType: "FLOAT",
           readWrite: "R",
+          collectionMode: mode,
           unit: "-"
         }
-      ]);
+      ], mode);
     },
     appendGeneratedPoints(deviceId: string, options: BuildIncrementalPointsOptions) {
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
       this.pointsByDevice[deviceId] = normalizePointRows([
         ...this.getPoints(deviceId),
-        ...buildIncrementalPoints(options)
-      ]);
+        ...buildIncrementalPoints({ ...options, collectionMode: options.collectionMode || mode })
+      ], mode);
     },
     replacePoints(deviceId: string, points: DataPoint[]) {
-      this.pointsByDevice[deviceId] = normalizePointRows(points);
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
+      this.pointsByDevice[deviceId] = normalizePointRows(points, mode);
       this.selectedIdsByDevice[deviceId] = [];
     },
     applyBatch(deviceId: string, payload: PointBatchEditPayload) {
@@ -109,23 +106,17 @@ export const usePointStore = defineStore("point", {
     },
     clearError(deviceId: string) {
       const targetDeviceId = normalizeDeviceId(deviceId);
-      if (!targetDeviceId) {
-        return;
-      }
+      if (!targetDeviceId) return;
       this.errorByDevice[targetDeviceId] = "";
     },
     setError(deviceId: string, message: string) {
       const targetDeviceId = normalizeDeviceId(deviceId);
-      if (!targetDeviceId) {
-        return;
-      }
+      if (!targetDeviceId) return;
       this.errorByDevice[targetDeviceId] = message;
     },
     async save(deviceId: string) {
       const targetDeviceId = normalizeDeviceId(deviceId);
-      if (!targetDeviceId) {
-        return;
-      }
+      if (!targetDeviceId) return;
       const payload = clonePoints(this.getPoints(targetDeviceId));
       const device = this.bundleDeviceByDevice[targetDeviceId];
       const connection = this.bundleConnectionByDevice[targetDeviceId];
