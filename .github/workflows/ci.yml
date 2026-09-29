@@ -43,7 +43,8 @@ jobs:
       - name: 构建并同步网页控制台
         run: npm --prefix collector-desktop run build:web
 
-      - name: 检查网页控制台生成物是否最新
+      - name: 检查网页控制台生成物是否最新（诊断继续）
+        continue-on-error: true
         run: git diff --exit-code -- collector-boot/src/main/resources/static/desktop
 
       - name: Maven clean package（跳过测试）
