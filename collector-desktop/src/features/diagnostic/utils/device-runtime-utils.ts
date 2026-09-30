@@ -19,7 +19,7 @@ export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): s
     case "STARTING": return "启动中";
     case "CONNECTING": return "连接中";
     case "WAITING_FIRST_SAMPLE": return "等待首采";
-    case "ONLINE": return "采集正常";
+    case "ONLINE": return "运行中（点位质量待核对）";
     case "DEGRADED": return "采集降级";
     case "RECONNECTING": return "重连中";
     case "FAILED": return "运行失败";
@@ -29,7 +29,7 @@ export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): s
 export function runtimeOperationMessage(runtime: DeviceRuntimeSnapshot | undefined, action: "START" | "STOP"): string {
   if (action === "STOP") return runtime?.phase === "STOPPED" ? "设备已停止" : "设备停止操作已完成";
   switch (runtime?.phase) {
-    case "ONLINE": return "设备采集已就绪";
+    case "ONLINE": return "设备运行中；请在实时数据核对当前点位质量";
     case "WAITING_FIRST_SAMPLE": return "设备已启动并建立连接，正在等待首轮有效采集";
     case "DEGRADED": return `设备已启动，但当前采集处于降级状态${runtime.degradedReason ? `：${runtime.degradedReason}` : ""}`;
     case "FAILED": return `设备启动失败${runtime.degradedReason ? `：${runtime.degradedReason}` : ""}`;

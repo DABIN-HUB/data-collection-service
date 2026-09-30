@@ -339,7 +339,7 @@ async function handleImportFile(event: Event) {
   try {
     validatePointImportFile(file);
     const content = await file.text();
-    const preview = buildPointImportPreview(parsePointCsv(content));
+    const preview = buildPointImportPreview(parsePointCsv(content), protocolCode.value);
     importPreview.value = preview;
     importPreviewLabel.value = file.name;
     importPreviewVisible.value = true;
@@ -458,7 +458,7 @@ function qualityText(value: unknown): string {
 }
 
 function displayExtraValue(point: DataPoint, fieldName: string): string {
-  const value = getPointExtraValue(point, fieldName);
+  const value = fieldName === "collectionMode" ? point.collectionMode : getPointExtraValue(point, fieldName);
   return value === undefined || value === null || value === "" ? "-" : String(value);
 }
 

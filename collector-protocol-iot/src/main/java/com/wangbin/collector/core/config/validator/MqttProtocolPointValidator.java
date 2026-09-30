@@ -33,8 +33,9 @@ public class MqttProtocolPointValidator implements ProtocolPointValidator {
             }
             try {
                 String mode = point.getCollectionMode();
-                if (mode == null || !"SUBSCRIBE".equalsIgnoreCase(mode.trim())) {
-                    throw new IllegalArgumentException("MQTT collectionMode requires SUBSCRIBE");
+                if (mode == null || !("SUBSCRIPTION".equalsIgnoreCase(mode.trim())
+                        || "SUBSCRIBE".equalsIgnoreCase(mode.trim()))) {
+                    throw new IllegalArgumentException("MQTT collectionMode requires SUBSCRIPTION (legacy SUBSCRIBE also supported)");
                 }
                 // 设备 ID 由配置管理器赋值；占位 ID 仅用于校验模板结构，不会保存。
                 String deviceId = point.getDeviceId() != null && !point.getDeviceId().isBlank()

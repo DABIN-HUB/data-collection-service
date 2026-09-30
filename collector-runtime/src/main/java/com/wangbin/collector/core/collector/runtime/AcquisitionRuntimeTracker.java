@@ -96,6 +96,10 @@ public class AcquisitionRuntimeTracker {
                 if (point == null) continue;
                 PointFact fact = window.points.get(point.getPointId());
                 if (fact == null || fact.configError != null) continue;
+                // 本代次真实轮询返回了可解码的点值，证明协议读取成功；TCP 连通和空响应均不计入。
+                if (values != null && values.get(point.getPointId()) != null && window.protocolReadyAt == 0L) {
+                    window.protocolReadyAt = now;
+                }
                 if (fact.failureReason != null && fact.lastFailureAt >= fact.lastAttemptAt) continue;
                 fact.polling = true;
                 fact.lastAttemptAt = now;

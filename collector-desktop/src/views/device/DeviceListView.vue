@@ -369,9 +369,10 @@ function deviceAddress(device: DeviceViewModel): string {
 }
 
 function statusBadgeClass(device: DeviceViewModel): string {
+  const phase = String(device.runtime?.phase || "UNKNOWN").toUpperCase();
   const status = String(device.status || device["runtimeStatus"] || "UNKNOWN").toUpperCase();
-  if (status === "ONLINE" || status === "RUNNING") return "is-online";
-  if (status === "ERROR") return "is-error";
+  if (phase === "FAILED" || phase === "DEGRADED" || status === "ERROR") return "is-error";
+  // 配置 ONLINE / 运行阶段 ONLINE 不能证明当前点位质量 GOOD。
   return "";
 }
 
